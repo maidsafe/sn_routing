@@ -304,7 +304,7 @@ impl ProvingNode {
             _ => return Err(RoutingError::UnknownConnection(pub_id)),
         }
 
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id, true)? {
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
             self.dispatch_routing_message(routing_msg, outbox)
         } else {
             Ok(Transition::Stay)
@@ -575,6 +575,8 @@ impl Relocated for ProvingNode {
 }
 
 impl Unapproved for ProvingNode {
+    const SEND_ACK: bool = true;
+
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         if let Some(pub_id) = self.peer_mgr.get_peer_by_name(proxy_name).map(Peer::pub_id) {
             if self.peer_mgr.is_connected(pub_id) {

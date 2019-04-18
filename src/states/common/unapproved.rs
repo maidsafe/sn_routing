@@ -20,13 +20,15 @@ use crate::{
 use std::collections::BTreeSet;
 
 pub trait Unapproved: Bootstrapped {
+    // Whether acknowledge hop messages sent to us.
+    const SEND_ACK: bool;
+
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError>;
 
     fn filter_hop_message(
         &mut self,
         hop_msg: HopMessage,
         pub_id: PublicId,
-        send_ack: bool,
     ) -> Result<Option<RoutingMessage>, RoutingError> {
         hop_msg.verify(pub_id.signing_public_key())?;
 
@@ -35,7 +37,7 @@ pub trait Unapproved: Bootstrapped {
 
         let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
-        if in_authority && send_ack {
+        if in_authority && Self::SEND_ACK {
             self.send_ack(&routing_msg, 0);
         }
 

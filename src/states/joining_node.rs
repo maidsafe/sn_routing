@@ -215,7 +215,7 @@ impl JoiningNode {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id, true)? {
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
             Ok(self.dispatch_routing_message(routing_msg))
         } else {
             Ok(Transition::Stay)
@@ -380,6 +380,8 @@ impl Bootstrapped for JoiningNode {
 }
 
 impl Unapproved for JoiningNode {
+    const SEND_ACK: bool = true;
+
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
         if self.proxy_pub_id.name() == proxy_name {
             Ok(&self.proxy_pub_id)
