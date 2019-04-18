@@ -155,7 +155,7 @@ fn random_churn<R: Rng>(
     let len = nodes.len();
     let section_count = count_sections(nodes);
     if section_count > 1 && !rng.gen_weighted_bool(section_count as u32) {
-        // Use min_sec_size than section size to prevent collapsing any groups.
+        // Use min_sec_size rather than section size to prevent collapsing any groups.
         let max_drop = (nodes[0].chain().min_sec_size() - 1)
             * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
             / QUORUM_DENOMINATOR;

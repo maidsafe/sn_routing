@@ -991,6 +991,10 @@ impl Node {
         self.gen_pfx_info = Some(gen_pfx_info);
         let _ = self.init_parsec()?; // We don't reset the chain on prefix change.
 
+        // Clear any pending candidate
+        // TODO: maybe also disconnect if currently connected.
+        self.peer_mgr.clear_candidate();
+
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
         for ni in neighbour_infos {
             if sibling_pfx != *ni.prefix() {
@@ -1021,8 +1025,6 @@ impl Node {
         cached_events
             .iter()
             .filter(|event| match **event {
-                // FIXME: once has_unconsensused_observations only considers votes than Obs
-                // can enable this similar to Offline event
                 NetworkEvent::Online(_pub_id, _) => false,
                 NetworkEvent::Offline(pub_id) => {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(event)
