@@ -56,8 +56,6 @@ pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
     JoiningNode(JoiningNode),
-    // TODO: remove
-    #[allow(dead_code)]
     ProvingNode(ProvingNode),
     Node(Node),
     Terminated,

@@ -26,6 +26,7 @@ pub trait Unapproved: Bootstrapped {
         &mut self,
         hop_msg: HopMessage,
         pub_id: PublicId,
+        send_ack: bool,
     ) -> Result<Option<RoutingMessage>, RoutingError> {
         hop_msg.verify(pub_id.signing_public_key())?;
 
@@ -34,7 +35,7 @@ pub trait Unapproved: Bootstrapped {
 
         let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
-        if in_authority {
+        if in_authority && send_ack {
             self.send_ack(&routing_msg, 0);
         }
 
