@@ -607,8 +607,10 @@ impl Node {
     }
 
     /// Indicates if there are any pending observations in the parsec object
-    pub fn has_unconsensused_observations(&self) -> bool {
-        self.machine.current().has_unconsensused_observations()
+    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
+        self.machine
+            .current()
+            .has_unconsensused_observations(filter_opaque)
     }
 
     /// Indicates if a given `PublicId` is in the peer manager as a routing peer

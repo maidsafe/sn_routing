@@ -360,11 +360,6 @@ impl PeerManager {
         );
     }
 
-    /// Removes any existing candidate
-    pub fn clear_candidate(&mut self) {
-        self.candidate = Candidate::None;
-    }
-
     /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
     /// another ongoing (i.e. unapproved) candidate exists, or if the candidate is unsuitable for
     /// adding to our section, returns an error.

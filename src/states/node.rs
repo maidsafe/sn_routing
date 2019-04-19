@@ -991,10 +991,6 @@ impl Node {
         self.gen_pfx_info = Some(gen_pfx_info);
         let _ = self.init_parsec()?; // We don't reset the chain on prefix change.
 
-        // Clear any pending candidate
-        // TODO: maybe also disconnect if currently connected.
-        self.peer_mgr.clear_candidate();
-
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
         for ni in neighbour_infos {
             if sibling_pfx != *ni.prefix() {
@@ -1025,8 +1021,7 @@ impl Node {
         cached_events
             .iter()
             .filter(|event| match **event {
-                NetworkEvent::Online(_pub_id, _) => false,
-                NetworkEvent::Offline(pub_id) => {
+                NetworkEvent::Online(pub_id, _) | NetworkEvent::Offline(pub_id) => {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(event)
                 }
                 NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
@@ -1384,6 +1379,15 @@ impl Node {
                 },
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
+            )
+            | (
+                ConnectionInfoRequest {
+                    encrypted_conn_info,
+                    pub_id,
+                    msg_id,
+                },
+                src @ ManagedNode(_),
+                dst @ Client { .. },
             ) => self.handle_connection_info_request(
                 encrypted_conn_info,
                 pub_id,
@@ -3298,11 +3302,24 @@ impl Node {
         self.clients_rate_limiter.usage_map().clone()
     }
 
-    pub fn has_unconsensused_observations(&self) -> bool {
-        self.parsec_map
-            .values()
-            .last()
-            .map_or(false, Parsec::has_unconsensused_observations)
+    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
+        if filter_opaque {
+            match self.parsec_map.values().last() {
+                None => false,
+                Some(par) => par.our_unpolled_observations().any(|obs| {
+                    if let parsec::Observation::OpaquePayload(_) = obs {
+                        true
+                    } else {
+                        false
+                    }
+                }),
+            }
+        } else {
+            self.parsec_map
+                .values()
+                .last()
+                .map_or(false, Parsec::has_unconsensused_observations)
+        }
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
