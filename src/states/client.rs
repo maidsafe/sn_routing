@@ -79,7 +79,7 @@ impl Client {
         client
     }
 
-    pub fn handle_action(&mut self, action: Action) -> Transition {
+    pub fn handle_action(&mut self, action: Action, _: &mut EventBox) -> Transition {
         match action {
             Action::ClientSendRequest {
                 content,
