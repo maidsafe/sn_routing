@@ -6,29 +6,32 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{unrelocated, Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION};
-use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage};
-use crate::action::Action;
-use crate::chain::SectionInfo;
-use crate::error::{InterfaceError, Result, RoutingError};
-use crate::event::Event;
-use crate::id::{FullId, PublicId};
-use crate::messages::{
-    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, UserMessage,
-    UserMessageCache,
+use super::common::{
+    from_crust_bytes, unrelocated, Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION,
 };
-use crate::outbox::EventBox;
-use crate::routing_message_filter::RoutingMessageFilter;
-use crate::routing_table::Authority;
-use crate::state_machine::Transition;
-use crate::states::common::from_crust_bytes;
-use crate::time::{Duration, Instant};
-use crate::timer::Timer;
-use crate::xor_name::XorName;
-use crate::CrustBytes;
-use crate::{CrustEvent, Service};
-use std::collections::BTreeMap;
-use std::fmt::{self, Display, Formatter};
+use crate::{
+    ack_manager::{Ack, AckManager, UnacknowledgedMessage},
+    chain::SectionInfo,
+    error::{InterfaceError, RoutingError},
+    event::Event,
+    id::{FullId, PublicId},
+    messages::{
+        DirectMessage, HopMessage, Message, MessageContent, Request, RoutingMessage, UserMessage,
+        UserMessageCache,
+    },
+    outbox::EventBox,
+    routing_message_filter::RoutingMessageFilter,
+    routing_table::Authority,
+    state_machine::Transition,
+    time::{Duration, Instant},
+    timer::Timer,
+    xor_name::XorName,
+    CrustBytes, Service,
+};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Display, Formatter},
+};
 
 /// Duration to wait before sending rate limit exceeded messages.
 pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
@@ -79,116 +82,9 @@ impl Client {
         client
     }
 
-    pub fn handle_action(&mut self, action: Action, _: &mut EventBox) -> Transition {
-        match action {
-            Action::ClientSendRequest {
-                content,
-                dst,
-                priority,
-                result_tx,
-            } => {
-                let src = Authority::Client {
-                    client_id: *self.full_id.public_id(),
-                    proxy_node_name: *self.proxy_pub_id.name(),
-                };
-
-                let user_msg = UserMessage::Request(content);
-                let result = match self.send_user_message(src, dst, user_msg, priority) {
-                    Err(RoutingError::Interface(err)) => Err(err),
-                    Err(_) | Ok(_) => Ok(()),
-                };
-
-                let _ = result_tx.send(result);
-            }
-            Action::NodeSendMessage { result_tx, .. } => {
-                let _ = result_tx.send(Err(InterfaceError::InvalidState));
-            }
-            Action::GetId { result_tx } => {
-                let _ = result_tx.send(*self.id());
-            }
-            Action::HandleTimeout(token) => self.handle_timeout(token),
-            Action::TakeResourceProofResult(..) => {
-                error!("Action::TakeResourceProofResult received by Client state");
-            }
-            Action::Terminate => {
-                return Transition::Terminate;
-            }
-        }
-
-        Transition::Stay
-    }
-
-    pub fn handle_crust_event(
-        &mut self,
-        crust_event: CrustEvent<PublicId>,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        match crust_event {
-            CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
-            CrustEvent::NewMessage(pub_id, _, bytes) => {
-                self.handle_new_message(pub_id, bytes, outbox)
-            }
-            _ => {
-                debug!("{} Unhandled crust event {:?}", self, crust_event);
-                Transition::Stay
-            }
-        }
-    }
-
     fn handle_ack_response(&mut self, ack: Ack) -> Transition {
         self.ack_mgr.receive(ack);
         Transition::Stay
-    }
-
-    fn handle_timeout(&mut self, token: u64) {
-        let proxy_pub_id = self.proxy_pub_id;
-
-        // Check if token corresponds to a rate limit exceeded msg.
-        if let Some(unacked_msg) = self.resend_buf.remove(&token) {
-            if unacked_msg.expires_at.map_or(false, |i| i < Instant::now()) {
-                return;
-            }
-
-            self.routing_msg_filter().remove_from_outgoing_filter(
-                &unacked_msg.routing_msg,
-                &proxy_pub_id,
-                unacked_msg.route,
-            );
-            if let Err(error) = self.send_routing_message_via_route(
-                unacked_msg.routing_msg,
-                unacked_msg.src_section,
-                unacked_msg.route,
-                unacked_msg.expires_at,
-            ) {
-                debug!("{} Failed to send message: {:?}", self, error);
-            }
-            return;
-        }
-
-        // Check if token corresponds to an unacknowledged msg.
-        self.resend_unacknowledged_timed_out_msgs(token)
-    }
-
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        let transition = match from_crust_bytes(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg),
-            Err(error) => Err(error),
-        };
-
-        match transition {
-            Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
-            Err(error) => {
-                debug!("{} {:?}", self, error);
-                Transition::Stay
-            }
-        }
     }
 
     fn handle_hop_message(
@@ -196,7 +92,7 @@ impl Client {
         hop_msg: HopMessage,
         pub_id: PublicId,
         outbox: &mut EventBox,
-    ) -> Result<Transition> {
+    ) -> Result<Transition, RoutingError> {
         if self.proxy_pub_id != pub_id {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
@@ -208,7 +104,10 @@ impl Client {
         }
     }
 
-    fn handle_direct_message(&mut self, direct_msg: DirectMessage) -> Result<Transition> {
+    fn handle_direct_message(
+        &mut self,
+        direct_msg: DirectMessage,
+    ) -> Result<Transition, RoutingError> {
         if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
                 let token = self.timer().schedule(RATE_EXCEED_RETRY);
@@ -275,7 +174,7 @@ impl Client {
         dst: Authority<XorName>,
         user_msg: UserMessage,
         priority: u8,
-    ) -> Result<()> {
+    ) -> Result<(), RoutingError> {
         let parts = user_msg.to_parts(priority)?;
         let msg_expiry_dur = self.msg_expiry_dur;
         for part in parts {
@@ -305,6 +204,77 @@ impl Base for Client {
             client_id == self.full_id.public_id()
         } else {
             false
+        }
+    }
+
+    fn handle_client_send_request(
+        &mut self,
+        dst: Authority<XorName>,
+        content: Request,
+        priority: u8,
+    ) -> Result<(), InterfaceError> {
+        let src = Authority::Client {
+            client_id: *self.full_id.public_id(),
+            proxy_node_name: *self.proxy_pub_id.name(),
+        };
+        let user_msg = UserMessage::Request(content);
+
+        match self.send_user_message(src, dst, user_msg, priority) {
+            Err(RoutingError::Interface(err)) => Err(err),
+            Err(_) | Ok(_) => Ok(()),
+        }
+    }
+
+    fn handle_timeout(&mut self, token: u64, _: &mut EventBox) -> Transition {
+        let proxy_pub_id = self.proxy_pub_id;
+
+        // Check if token corresponds to a rate limit exceeded msg.
+        if let Some(unacked_msg) = self.resend_buf.remove(&token) {
+            if unacked_msg.expires_at.map_or(false, |i| i < Instant::now()) {
+                return Transition::Stay;
+            }
+
+            self.routing_msg_filter().remove_from_outgoing_filter(
+                &unacked_msg.routing_msg,
+                &proxy_pub_id,
+                unacked_msg.route,
+            );
+            if let Err(error) = self.send_routing_message_via_route(
+                unacked_msg.routing_msg,
+                unacked_msg.src_section,
+                unacked_msg.route,
+                unacked_msg.expires_at,
+            ) {
+                debug!("{} Failed to send message: {:?}", self, error);
+            }
+
+            return Transition::Stay;
+        }
+
+        // Check if token corresponds to an unacknowledged msg.
+        self.resend_unacknowledged_timed_out_msgs(token);
+        Transition::Stay
+    }
+
+    fn handle_new_message(
+        &mut self,
+        pub_id: PublicId,
+        bytes: CrustBytes,
+        outbox: &mut EventBox,
+    ) -> Transition {
+        let transition = match from_crust_bytes(bytes) {
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
+            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg),
+            Err(error) => Err(error),
+        };
+
+        match transition {
+            Ok(transition) => transition,
+            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
+            Err(error) => {
+                debug!("{} - {:?}", self, error);
+                Transition::Stay
+            }
         }
     }
 
@@ -366,7 +336,7 @@ impl Bootstrapped for Client {
         src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
-    ) -> Result<()> {
+    ) -> Result<(), RoutingError> {
         self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
     }
 
@@ -382,7 +352,7 @@ impl Bootstrapped for Client {
 impl Unapproved for Client {
     const SEND_ACK: bool = false;
 
-    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
+    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         unrelocated::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }
 }

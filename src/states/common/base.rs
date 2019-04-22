@@ -6,18 +6,20 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::error::RoutingError;
-use crate::id::{FullId, PublicId};
-use crate::messages::{DirectMessage, HopMessage, Message, SignedMessage};
-use crate::outbox::EventBox;
-use crate::routing_table::Authority;
-use crate::state_machine::Transition;
-use crate::xor_name::XorName;
-use crate::CrustBytes;
-use crate::Service;
+use crate::{
+    action::Action,
+    crust::{ConnectionInfoResult, CrustError, CrustUser, PrivConnectionInfo},
+    error::{InterfaceError, RoutingError},
+    id::{FullId, PublicId},
+    messages::{DirectMessage, HopMessage, Message, Request, SignedMessage, UserMessage},
+    outbox::EventBox,
+    routing_table::Authority,
+    state_machine::Transition,
+    xor_name::XorName,
+    CrustBytes, CrustEvent, Service,
+};
 use maidsafe_utilities::serialisation;
-use std::collections::BTreeSet;
-use std::fmt::Display;
+use std::{collections::BTreeSet, fmt::Display, net::SocketAddr};
 
 // Trait for all states.
 pub trait Base: Display {
@@ -26,7 +28,190 @@ pub trait Base: Display {
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
 
+    fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
+        match action {
+            Action::ClientSendRequest {
+                dst,
+                content,
+                priority,
+                result_tx,
+            } => {
+                let result = self.handle_client_send_request(dst, content, priority);
+                let _ = result_tx.send(result);
+            }
+            Action::NodeSendMessage {
+                src,
+                dst,
+                content,
+                priority,
+                result_tx,
+            } => {
+                let result = self.handle_node_send_message(src, dst, content, priority);
+                let _ = result_tx.send(result);
+            }
+            Action::GetId { result_tx } => {
+                let _ = result_tx.send(*self.id());
+            }
+            Action::HandleTimeout(token) => {
+                if let Transition::Terminate = self.handle_timeout(token, outbox) {
+                    return Transition::Terminate;
+                }
+            }
+            Action::TakeResourceProofResult(pub_id, messages) => {
+                self.handle_resource_proof_result(pub_id, messages);
+            }
+            Action::Terminate => {
+                return Transition::Terminate;
+            }
+        }
+
+        self.finish_handle_action(outbox)
+    }
+
+    fn handle_client_send_request(
+        &mut self,
+        _dst: Authority<XorName>,
+        _content: Request,
+        _priority: u8,
+    ) -> Result<(), InterfaceError> {
+        warn!(
+            "{} - Cannot handle ClientSendRequest - invalid state.",
+            self
+        );
+        Err(InterfaceError::InvalidState)
+    }
+
+    fn handle_node_send_message(
+        &mut self,
+        _src: Authority<XorName>,
+        _dst: Authority<XorName>,
+        _content: UserMessage,
+        _priority: u8,
+    ) -> Result<(), InterfaceError> {
+        warn!("{} - Cannot handle NodeSendMessage - invalid state.", self);
+        Err(InterfaceError::InvalidState)
+    }
+
+    fn handle_timeout(&mut self, _token: u64, _outbox: &mut EventBox) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_resource_proof_result(&mut self, _pub_id: PublicId, _messages: Vec<DirectMessage>) {
+        error!(
+            "{} - Action::ResourceProofResult received by invalid state",
+            self
+        );
+    }
+
+    fn finish_handle_action(&mut self, _outbox: &mut EventBox) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_crust_event(
+        &mut self,
+        crust_event: CrustEvent<PublicId>,
+        outbox: &mut EventBox,
+    ) -> Transition {
+        let transition = match crust_event {
+            CrustEvent::BootstrapAccept(pub_id, peer_kind) => {
+                self.handle_bootstrap_accept(pub_id, peer_kind)
+            }
+            CrustEvent::BootstrapConnect(pub_id, socked_addr) => {
+                self.handle_bootstrap_connect(pub_id, socked_addr)
+            }
+            CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
+            CrustEvent::ConnectSuccess(pub_id) => self.handle_connect_success(pub_id, outbox),
+            CrustEvent::ConnectFailure(pub_id) => self.handle_connect_failure(pub_id, outbox),
+            CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
+            CrustEvent::NewMessage(pub_id, _, bytes) => {
+                self.handle_new_message(pub_id, bytes, outbox)
+            }
+            CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult {
+                result_token,
+                result,
+            }) => self.handle_connection_info_prepared(result_token, result),
+            CrustEvent::ListenerStarted(port) => self.handle_listener_started(port, outbox),
+            CrustEvent::ListenerFailed => self.handle_listener_failed(outbox),
+            CrustEvent::WriteMsgSizeProhibitive(pub_id, msg) => {
+                self.handle_message_too_large(pub_id, msg)
+            }
+        };
+
+        if let Transition::Stay = transition {
+            self.finish_handle_crust_event(outbox)
+        } else {
+            transition
+        }
+    }
+
+    fn handle_bootstrap_accept(&mut self, _pub_id: PublicId, _peer_kind: CrustUser) -> Transition {
+        debug!("{} - Unhandled crust event: BootstrapAccept", self);
+        Transition::Stay
+    }
+
+    fn handle_bootstrap_connect(
+        &mut self,
+        _pub_id: PublicId,
+        _socked_addr: SocketAddr,
+    ) -> Transition {
+        debug!("{} - Unhandled crust event: BootstrapConnect", self);
+        Transition::Stay
+    }
+
+    fn handle_bootstrap_failed(&mut self, _outbox: &mut EventBox) -> Transition {
+        debug!("{} - Unhandled crust event: BootstrapFailed", self);
+        Transition::Stay
+    }
+
+    fn handle_connect_success(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_connect_failure(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
+        Transition::Stay
+    }
+
     fn handle_lost_peer(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_connection_info_prepared(
+        &mut self,
+        _result_token: u32,
+        _result: Result<PrivConnectionInfo<PublicId>, CrustError>,
+    ) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_listener_started(&mut self, _port: u16, _outbox: &mut EventBox) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_listener_failed(&mut self, _outbox: &mut EventBox) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_message_too_large(&mut self, pub_id: PublicId, msg: Vec<u8>) -> Transition {
+        error!(
+            "{} - Failed to send {}-byte message to {:?}: Message too large.",
+            self,
+            msg.len(),
+            pub_id
+        );
+
+        Transition::Stay
+    }
+
+    fn handle_new_message(
+        &mut self,
+        _pub_id: PublicId,
+        _bytes: CrustBytes,
+        _outbox: &mut EventBox,
+    ) -> Transition {
+        Transition::Stay
+    }
+
+    fn finish_handle_crust_event(&mut self, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
