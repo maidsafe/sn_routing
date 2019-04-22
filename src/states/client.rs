@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION};
+use super::common::{unrelocated, Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use crate::action::Action;
 use crate::chain::SectionInfo;
@@ -382,12 +382,7 @@ impl Unapproved for Client {
     const SEND_ACK: bool = false;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
-        if self.proxy_pub_id.name() == proxy_name {
-            Ok(&self.proxy_pub_id)
-        } else {
-            error!("{} Unable to find connection to proxy node.", self);
-            Err(RoutingError::ProxyConnectionNotFound)
-        }
+        unrelocated::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }
 }
 

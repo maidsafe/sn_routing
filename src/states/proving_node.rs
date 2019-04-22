@@ -557,20 +557,14 @@ impl Relocated for ProvingNode {
         true
     }
 
-    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
-        match self.peer_mgr.add_to_routing_table(pub_id) {
-            Err(error) => {
-                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
-                self.disconnect_peer(pub_id);
-                return;
-            }
-            Ok(()) => (),
-        }
+    fn add_to_routing_table_success(&mut self, _: &PublicId) {}
 
-        if self.notified_nodes.insert(*pub_id) {
-            info!("{} Added {} to routing table.", self, pub_id);
-            outbox.send_event(Event::NodeAdded(*pub_id.name()));
-        }
+    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId) {
+        self.disconnect_peer(pub_id)
+    }
+
+    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
+        self.notified_nodes.insert(pub_id)
     }
 }
 

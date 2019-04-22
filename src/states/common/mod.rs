@@ -10,6 +10,7 @@ mod base;
 mod bootstrapped;
 mod relocated;
 mod unapproved;
+pub mod unrelocated;
 
 pub use self::{
     base::Base, bootstrapped::Bootstrapped, relocated::Relocated, unapproved::Unapproved,

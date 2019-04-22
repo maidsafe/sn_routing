@@ -896,7 +896,7 @@ impl Node {
             completed_events,
         } = self.chain.finalise_prefix_change()?;
         self.gen_pfx_info = gen_pfx_info;
-        let _ = self.init_parsec(); // We don't reset the chain on prefix change.
+        self.init_parsec(); // We don't reset the chain on prefix change.
 
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
         for ni in neighbour_infos {
@@ -1193,16 +1193,16 @@ impl Node {
                 | NeighbourInfo(..)
                 | NeighbourConfirm(..)
                 | Merge(..)
-                | UserMessagePart { .. }
-                | ConnectionInfoRequest { .. } => {
+                | UserMessagePart { .. } => {
                     // These messages should not be handled before node becomes established
-                    trace!(
-                        "{} Not approved yet. Delaying message handling: {:?}",
-                        self,
-                        routing_msg
-                    );
-                    self.routing_msg_backlog.push(routing_msg);
+                    self.add_routing_message_to_backlog(routing_msg);
                     return Ok(());
+                }
+                ConnectionInfoRequest { .. } => {
+                    if !self.chain.our_prefix().matches(&routing_msg.src.name()) {
+                        self.add_routing_message_to_backlog(routing_msg);
+                        return Ok(());
+                    }
                 }
                 Relocate { .. }
                 | ConnectionInfoResponse { .. }
@@ -1353,6 +1353,16 @@ impl Node {
         }
     }
 
+    // Backlog the message to be processed once we are approved.
+    fn add_routing_message_to_backlog(&mut self, msg: RoutingMessage) {
+        trace!(
+            "{} Not approved yet. Delaying message handling: {:?}",
+            self,
+            msg
+        );
+        self.routing_msg_backlog.push(msg);
+    }
+
     fn handle_candidate_approval(
         &mut self,
         new_pub_id: PublicId,
@@ -1410,26 +1420,16 @@ impl Node {
         Ok(())
     }
 
-    fn init_parsec(&mut self) -> bool {
-        let new = match self
+    fn init_parsec(&mut self) {
+        if let Entry::Vacant(entry) = self
             .parsec_map
             .entry(*self.gen_pfx_info.first_info.version())
         {
-            Entry::Occupied(_) => false,
-            Entry::Vacant(entry) => {
-                let _ = entry.insert(create_parsec(self.full_id.clone(), &self.gen_pfx_info));
-                true
-            }
-        };
-
-        if new {
+            let _ = entry.insert(create_parsec(self.full_id.clone(), &self.gen_pfx_info));
             info!(
                 "{}: Init new Parsec, genesis = {:?}",
                 self, self.gen_pfx_info
             );
-            true
-        } else {
-            false
         }
     }
 
@@ -2801,23 +2801,18 @@ impl Relocated for Node {
         !self.chain.is_member() || self.chain.is_peer_valid(pub_id)
     }
 
-    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
-        match self.peer_mgr.add_to_routing_table(pub_id) {
-            Err(error) => {
-                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
-                if !self.chain.is_peer_valid(pub_id) {
-                    self.disconnect_peer(pub_id);
-                }
-                return;
-            }
-            Ok(()) => (),
-        }
+    fn add_to_routing_table_success(&mut self, _: &PublicId) {
+        self.print_rt_size();
+    }
 
-        if self.notified_nodes.insert(*pub_id) {
-            info!("{} Added {} to routing table.", self, pub_id);
-            outbox.send_event(Event::NodeAdded(*pub_id.name()));
-            self.print_rt_size();
+    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId) {
+        if !self.chain.is_peer_valid(pub_id) {
+            self.disconnect_peer(pub_id);
         }
+    }
+
+    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
+        self.notified_nodes.insert(pub_id)
     }
 }
 
@@ -2844,7 +2839,6 @@ fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, Routing
     })
 }
 
-#[cfg(not(feature = "mock_parsec"))]
 fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
     if gen_pfx_info
         .first_info
@@ -2852,38 +2846,16 @@ fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<Netwo
         .contains(full_id.public_id())
     {
         Parsec::from_genesis(
+            #[cfg(feature = "mock_parsec")]
+            *gen_pfx_info.first_info.hash(),
             full_id,
             &gen_pfx_info.first_info.members(),
             ConsensusMode::Single,
         )
     } else {
         Parsec::from_existing(
-            full_id,
-            &gen_pfx_info.first_info.members(),
-            &gen_pfx_info.latest_info.members(),
-            ConsensusMode::Single,
-        )
-    }
-}
-
-#[cfg(feature = "mock_parsec")]
-fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
-    let section_hash = *gen_pfx_info.first_info.hash();
-
-    if gen_pfx_info
-        .first_info
-        .members()
-        .contains(full_id.public_id())
-    {
-        Parsec::from_genesis(
-            section_hash,
-            full_id,
-            &gen_pfx_info.first_info.members(),
-            ConsensusMode::Single,
-        )
-    } else {
-        Parsec::from_existing(
-            section_hash,
+            #[cfg(feature = "mock_parsec")]
+            *gen_pfx_info.first_info.hash(),
             full_id,
             &gen_pfx_info.first_info.members(),
             &gen_pfx_info.latest_info.members(),

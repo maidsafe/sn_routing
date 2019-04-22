@@ -10,6 +10,7 @@ use super::bootstrapped::Bootstrapped;
 use crate::{
     crust::CrustError,
     error::RoutingError,
+    event::Event,
     id::PublicId,
     messages::{MessageContent, SignedMessage},
     outbox::EventBox,
@@ -29,7 +30,9 @@ pub trait Relocated: Bootstrapped {
     fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox);
     fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox);
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
-    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox);
+    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool;
+    fn add_to_routing_table_success(&mut self, pub_id: &PublicId);
+    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId);
 
     fn handle_connection_info_prepared(
         &mut self,
@@ -409,19 +412,36 @@ pub trait Relocated: Bootstrapped {
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
+        if !self.crust_service().is_connected(target) {
+            trace!("{} Not connected to {:?}. Dropping peer.", self, target);
+            self.disconnect_peer(target);
+            return Ok(());
+        }
+
         if self.filter_outgoing_routing_msg(signed_msg.routing_message(), target, route) {
             return Ok(());
         }
 
-        if self.crust_service().is_connected(target) {
-            let priority = signed_msg.priority();
-            let bytes = self.to_hop_bytes(signed_msg, route, sent_to)?;
-            self.send_or_drop(target, bytes, priority);
-        } else {
-            trace!("{} Not connected to {:?}. Dropping peer.", self, target);
-            self.disconnect_peer(target);
+        let priority = signed_msg.priority();
+        let bytes = self.to_hop_bytes(signed_msg, route, sent_to)?;
+        self.send_or_drop(target, bytes, priority);
+        Ok(())
+    }
+
+    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
+        match self.peer_mgr().add_to_routing_table(pub_id) {
+            Err(error) => {
+                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
+                self.add_to_routing_table_failure(pub_id);
+                return;
+            }
+            Ok(()) => (),
         }
 
-        Ok(())
+        if self.add_to_notified_nodes(*pub_id) {
+            info!("{} Added {} to routing table.", self, pub_id);
+            outbox.send_event(Event::NodeAdded(*pub_id.name()));
+            self.add_to_routing_table_success(pub_id);
+        }
     }
 }
