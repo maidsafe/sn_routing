@@ -101,11 +101,11 @@ impl Bootstrapping {
                 // preserve the pre-refactor behaviour.
                 let _ = result_tx.send(Ok(()));
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => self.handle_timeout(token),
-            Action::ResourceProofResult(..) => {
+            Action::HandleTimeout(token) => self.handle_timeout(token),
+            Action::TakeResourceProofResult(..) => {
                 warn!("{} Cannot handle {:?} - not bootstrapped.", self, action);
             }
             Action::Terminate => {
@@ -142,7 +142,7 @@ impl Bootstrapping {
             CrustEvent::ListenerStarted(port) => {
                 if self.client_restriction() {
                     error!("{} A client must not run a crust listener.", self);
-                    outbox.send_event(Event::Terminate);
+                    outbox.send_event(Event::Terminated);
                     return Transition::Terminate;
                 }
                 trace!("{} Listener started on port {}.", self, port);
@@ -157,7 +157,7 @@ impl Bootstrapping {
                 } else {
                     error!("{} Failed to start listening.", self);
                 }
-                outbox.send_event(Event::Terminate);
+                outbox.send_event(Event::Terminated);
                 Transition::Terminate
             }
             _ => {
@@ -260,7 +260,7 @@ impl Bootstrapping {
 
     fn handle_bootstrap_failed(&mut self, outbox: &mut EventBox) -> Transition {
         info!("{} Failed to bootstrap. Terminating.", self);
-        outbox.send_event(Event::Terminate);
+        outbox.send_event(Event::Terminated);
         Transition::Terminate
     }
 
@@ -486,6 +486,6 @@ mod tests {
         unwrap!(state_machine.step(&mut outbox));
         let events = outbox.take_all();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0], Event::Terminate);
+        assert_eq!(events[0], Event::Terminated);
     }
 }

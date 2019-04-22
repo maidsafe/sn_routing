@@ -102,12 +102,12 @@ impl Client {
             Action::NodeSendMessage { result_tx, .. } => {
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => self.handle_timeout(token),
-            Action::ResourceProofResult(..) => {
-                error!("Action::ResourceProofResult received by Client state");
+            Action::HandleTimeout(token) => self.handle_timeout(token),
+            Action::TakeResourceProofResult(..) => {
+                error!("Action::TakeResourceProofResult received by Client state");
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -312,7 +312,7 @@ impl Base for Client {
 
         if self.proxy_pub_id == pub_id {
             debug!("{} Lost bootstrap connection to {}.", self, pub_id);
-            outbox.send_event(Event::Terminate);
+            outbox.send_event(Event::Terminated);
             Transition::Terminate
         } else {
             Transition::Stay

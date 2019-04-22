@@ -287,7 +287,7 @@ impl ExpectedPuts {
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
-                if let Event::Request {
+                if let Event::RequestReceived {
                     request: Request::PutIData { data, msg_id },
                     src,
                     dst,
@@ -340,7 +340,7 @@ impl ExpectedPuts {
         }
         for client in clients {
             while let Ok(event) = client.inner.try_next_ev() {
-                if let Event::Response {
+                if let Event::ResponseReceived {
                     response: Response::GetIData { res, msg_id },
                     src,
                     dst,
@@ -350,7 +350,7 @@ impl ExpectedPuts {
                     let key = (*data.name(), msg_id, src, dst);
                     assert!(
                         self.messages.remove(&key),
-                        "Unexpected request for client {}: {:?}",
+                        "Unexpected response for client {}: {:?}",
                         client.name(),
                         key
                     );

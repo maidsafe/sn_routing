@@ -358,7 +358,7 @@ fn core() {
                         assert!(result.is_ok());
                     }
 
-                    TestEvent(index, Event::Request { request, src, dst }) => {
+                    TestEvent(index, Event::RequestReceived { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
                         if let Request::PutMData { msg_id, .. } = request {
                             let node = &mut nodes[index].node;
@@ -368,7 +368,7 @@ fn core() {
 
                     TestEvent(
                         index,
-                        Event::Response {
+                        Event::ResponseReceived {
                             response:
                                 Response::PutMData {
                                     res: Ok(()),
@@ -415,7 +415,7 @@ fn core() {
                     }
                     TestEvent(
                         index,
-                        Event::Request {
+                        Event::RequestReceived {
                             request: Request::PutMData { .. },
                             ..
                         },
@@ -461,7 +461,7 @@ fn core() {
                     }
                     TestEvent(
                         index,
-                        Event::Request {
+                        Event::RequestReceived {
                             request:
                                 Request::PutMData {
                                     data,
@@ -482,7 +482,7 @@ fn core() {
                             requester,
                         ));
                     }
-                    TestEvent(index, Event::Request { request, src, dst }) => {
+                    TestEvent(index, Event::RequestReceived { request, src, dst }) => {
                         if let Request::PutMData { msg_id, .. } = request {
                             unwrap!(nodes[index].node.send_put_mdata_response(
                                 dst,
@@ -494,7 +494,7 @@ fn core() {
                     }
                     TestEvent(
                         index,
-                        Event::Response {
+                        Event::ResponseReceived {
                             response: Response::PutMData { res: Err(_), .. },
                             ..
                         },
@@ -602,7 +602,7 @@ fn core() {
                 }
                 TestEvent(
                     index,
-                    Event::Request {
+                    Event::RequestReceived {
                         request:
                             Request::PutMData {
                                 data,
@@ -623,7 +623,7 @@ fn core() {
                         requester,
                     ));
                 }
-                TestEvent(index, Event::Request { request, src, dst }) => {
+                TestEvent(index, Event::RequestReceived { request, src, dst }) => {
                     if let Request::PutMData { msg_id, .. } = request {
                         if 2 * (index + 1) < MIN_SECTION_SIZE {
                             unwrap!(nodes[index].node.send_put_mdata_response(
@@ -637,7 +637,7 @@ fn core() {
                 }
                 TestEvent(
                     _index,
-                    Event::Response {
+                    Event::ResponseReceived {
                         response: Response::PutMData { res: Err(_), .. },
                         ..
                     },
@@ -677,7 +677,7 @@ fn core() {
                         assert!(result.is_ok());
                         let _ = sent_ids.insert(message_id);
                     }
-                    TestEvent(index, Event::Request { request, src, dst }) => {
+                    TestEvent(index, Event::RequestReceived { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
                         if let Request::PutMData { msg_id, .. } = request {
                             unwrap!(nodes[index].node.send_put_mdata_response(
@@ -690,7 +690,7 @@ fn core() {
                     }
                     TestEvent(
                         index,
-                        Event::Response {
+                        Event::ResponseReceived {
                             response:
                                 Response::PutMData {
                                     res: Ok(()),

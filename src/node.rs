@@ -156,7 +156,7 @@ impl NodeBuilder {
                     error!(
                         "More than one routing node found on LAN. Currently this is not supported."
                     );
-                    outbox2.send_event(Event::Terminate);
+                    outbox2.send_event(Event::Terminated);
                     State::Terminated
                 } else {
                     Bootstrapping::new(
@@ -292,10 +292,10 @@ impl Node {
         DEFAULT_PRIORITY
     );
 
-    /// Send a `DelMDataUserPermissions` request.
+    /// Send a `DeleteMDataUserPermissions` request.
     impl_request!(
-        send_del_mdata_user_permissions_request,
-        DelMDataUserPermissions {
+        send_delete_mdata_user_permissions_request,
+        DeleteMDataUserPermissions {
             name: XorName,
             tag: u64,
             user: User,
@@ -484,16 +484,26 @@ impl Node {
         CLIENT_GET_PRIORITY
     );
 
-    /// Respond to a `InsAuthKey` request.
-    impl_response!(send_ins_auth_key_response, InsAuthKey, (), DEFAULT_PRIORITY);
-
-    /// Respond to a `DelAuthKey` request.
-    impl_response!(send_del_auth_key_response, DelAuthKey, (), DEFAULT_PRIORITY);
-
-    /// Respond to a `DelMDataUserPermissions` request.
+    /// Respond to a `InsertAuthKey` request.
     impl_response!(
-        send_del_mdata_user_permissions_response,
-        DelMDataUserPermissions,
+        send_insert_auth_key_response,
+        InsertAuthKey,
+        (),
+        DEFAULT_PRIORITY
+    );
+
+    /// Respond to a `DeleteAuthKey` request.
+    impl_response!(
+        send_delete_auth_key_response,
+        DeleteAuthKey,
+        (),
+        DEFAULT_PRIORITY
+    );
+
+    /// Respond to a `DeleteMDataUserPermissions` request.
+    impl_response!(
+        send_delete_mdata_user_permissions_response,
+        DeleteMDataUserPermissions,
         (),
         DEFAULT_PRIORITY
     );

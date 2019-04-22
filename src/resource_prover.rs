@@ -164,7 +164,7 @@ impl ResourceProver {
                 seed
             );
 
-            let action = Action::ResourceProofResult(pub_id, messages);
+            let action = Action::TakeResourceProofResult(pub_id, messages);
             if action_sender.send(action).is_err() {
                 // In theory this means the receiver disconnected, so the main thread stopped/reset
                 error!(
@@ -268,7 +268,7 @@ impl ResourceProver {
                 self.response_progress()
             );
         }
-        outbox.send_event(Event::Terminate);
+        outbox.send_event(Event::Terminated);
     }
 
     // For the ongoing collection of `ResourceProofResponse` messages, returns a tuple comprising:

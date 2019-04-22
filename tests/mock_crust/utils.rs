@@ -464,7 +464,7 @@ pub fn create_connected_nodes_with_cache(
                 Event::NodeLost(..)
                 | Event::SectionSplit(..)
                 | Event::RestartRequired
-                | Event::Tick => (),
+                | Event::TimerTicked => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -602,7 +602,7 @@ pub fn add_connected_nodes_until_split(
             match event {
                 Event::NodeAdded(..)
                 | Event::NodeLost(..)
-                | Event::Tick
+                | Event::TimerTicked
                 | Event::SectionSplit(..) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }

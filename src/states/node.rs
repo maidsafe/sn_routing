@@ -51,7 +51,7 @@ use std::fmt::{Display, Formatter};
 use std::net::IpAddr;
 use std::{cmp, fmt, iter, mem};
 
-/// Time after which a `Tick` event is sent.
+/// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
@@ -301,10 +301,10 @@ impl Node {
 
                 let _ = result_tx.send(result);
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => {
+            Action::HandleTimeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
@@ -312,8 +312,8 @@ impl Node {
             Action::Terminate => {
                 return Transition::Terminate;
             }
-            Action::ResourceProofResult(..) => {
-                error!("Action::ResourceProofResult received by Node state");
+            Action::TakeResourceProofResult(..) => {
+                error!("Action::TakeResourceProofResult received by Node state");
             }
         }
 
@@ -351,14 +351,14 @@ impl Node {
             CrustEvent::ListenerStarted(port) => {
                 trace!("{} Listener started on port {}.", self, port);
                 if self.is_first_node && self.init_first_node(outbox).is_err() {
-                    outbox.send_event(Event::Terminate);
+                    outbox.send_event(Event::Terminated);
                     return Transition::Terminate;
                 }
                 return Transition::Stay;
             }
             CrustEvent::ListenerFailed => {
                 error!("{} Failed to start listening.", self);
-                outbox.send_event(Event::Terminate);
+                outbox.send_event(Event::Terminated);
                 return Transition::Terminate;
             }
             CrustEvent::WriteMsgSizeProhibitive(pub_id, msg) => {
@@ -771,7 +771,7 @@ impl Node {
             self.send_neighbour_infos();
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
-            outbox.send_event(Event::SectionMerge(*sec_info.prefix()));
+            outbox.send_event(Event::SectionMerged(*sec_info.prefix()));
         }
 
         let our_name = *self.full_id.public_id().name();
@@ -2085,7 +2085,7 @@ impl Node {
             self.proxy_load_amount = 0;
 
             if self.chain.is_member() {
-                outbox.send_event(Event::Tick);
+                outbox.send_event(Event::TimerTicked);
             }
 
             return Transition::Stay;

@@ -864,12 +864,12 @@ impl UserMessage {
     /// destination authorities.
     pub fn into_event(self, src: Authority<XorName>, dst: Authority<XorName>) -> Event {
         match self {
-            UserMessage::Request(request) => Event::Request {
+            UserMessage::Request(request) => Event::RequestReceived {
                 request: request,
                 src: src,
                 dst: dst,
             },
-            UserMessage::Response(response) => Event::Response {
+            UserMessage::Response(response) => Event::ResponseReceived {
                 response: response,
                 src: src,
                 dst: dst,

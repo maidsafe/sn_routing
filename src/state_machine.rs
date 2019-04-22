@@ -75,7 +75,7 @@ impl EventType {
         use std::borrow::Borrow;
         match *self {
             EventType::Action(ref action) => match *action.borrow() {
-                Action::Timeout(_) => false,
+                Action::HandleTimeout(_) => false,
                 _ => true,
             },
             _ => true,
@@ -489,7 +489,7 @@ impl StateMachine {
             .state
             .get_timed_out_tokens()
             .iter()
-            .map(|token| EventType::Action(Box::new(Action::Timeout(*token))))
+            .map(|token| EventType::Action(Box::new(Action::HandleTimeout(*token))))
             .collect_vec();
 
         // Interleave timer events with routing or crust events.

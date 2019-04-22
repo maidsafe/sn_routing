@@ -355,7 +355,7 @@ impl Client {
 
     /// Deletes a permission set for a given user
     #[allow(clippy::too_many_arguments)]
-    pub fn del_mdata_user_permissions(
+    pub fn delete_mdata_user_permissions(
         &mut self,
         dst: Authority<XorName>,
         name: XorName,
@@ -365,7 +365,7 @@ impl Client {
         msg_id: MessageId,
         requester: PublicSignKey,
     ) -> Result<(), InterfaceError> {
-        let request = Request::DelMDataUserPermissions {
+        let request = Request::DeleteMDataUserPermissions {
             name: name,
             tag: tag,
             user: user,
@@ -409,14 +409,14 @@ impl Client {
     }
 
     /// Adds a new authorised key to MaidManager
-    pub fn ins_auth_key(
+    pub fn insert_auth_key(
         &mut self,
         dst: Authority<XorName>,
         key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::InsAuthKey {
+        let request = Request::InsertAuthKey {
             key: key,
             version: version,
             msg_id: message_id,
@@ -426,14 +426,14 @@ impl Client {
     }
 
     /// Removes an authorised key from MaidManager
-    pub fn del_auth_key(
+    pub fn delete_auth_key(
         &mut self,
         dst: Authority<XorName>,
         key: PublicSignKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
-        let request = Request::DelAuthKey {
+        let request = Request::DeleteAuthKey {
             key: key,
             version: version,
             msg_id: message_id,
@@ -511,7 +511,7 @@ impl Client {
     /// Returns the `PublicId` of this client.
     pub fn id(&self) -> Result<PublicId, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::Id {
+        self.action_sender.send(Action::GetId {
             result_tx: result_tx,
         })?;
         Ok(result_rx.recv()?)

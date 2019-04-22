@@ -37,11 +37,13 @@ pub enum Action {
         priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    Id {
+    GetId {
         result_tx: Sender<PublicId>,
     },
-    Timeout(u64),
-    ResourceProofResult(PublicId, Vec<DirectMessage>),
+    HandleTimeout(u64),
+    // Used to pass the messages created as a result of handling a resource proof request from the
+    // worker thread back to the main event loop.
+    TakeResourceProofResult(PublicId, Vec<DirectMessage>),
     Terminate,
 }
 
@@ -62,11 +64,13 @@ impl Debug for Action {
                 "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
                 content, dst
             ),
-            Action::Id { .. } => write!(formatter, "Action::Id"),
-            Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
-            Action::ResourceProofResult(pub_id, _) => {
-                write!(formatter, "Action::ResourceProofResult({:?}, ...)", pub_id)
-            }
+            Action::GetId { .. } => write!(formatter, "Action::GetId"),
+            Action::HandleTimeout(token) => write!(formatter, "Action::HandleTimeout({})", token),
+            Action::TakeResourceProofResult(pub_id, _) => write!(
+                formatter,
+                "Action::TakeResourceProofResult({:?}, ...)",
+                pub_id
+            ),
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }
     }

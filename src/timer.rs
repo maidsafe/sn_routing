@@ -113,7 +113,7 @@ mod implementation {
                     // `deadlines`.
                     let tokens = deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
                     for token in tokens {
-                        let _ = sender.send(Action::Timeout(token));
+                        let _ = sender.send(Action::HandleTimeout(token));
                     }
                 }
             }
@@ -186,10 +186,10 @@ mod implementation {
                     }
                     let action = action_receiver.try_recv();
                     match action.expect("Should have received an action.") {
-                        Action::Timeout(token) => assert_eq!(token, u64::from(count - i - 1)),
+                        Action::HandleTimeout(token) => assert_eq!(token, u64::from(count - i - 1)),
                         unexpected_action => {
                             panic!(
-                                "Expected `Action::Timeout`, but received {:?}",
+                                "Expected `Action::HandleTimeout`, but received {:?}",
                                 unexpected_action
                             );
                         }

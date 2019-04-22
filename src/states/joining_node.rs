@@ -93,15 +93,15 @@ impl JoiningNode {
                 warn!("{} Cannot handle {:?} - not joined.", self, action);
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => {
+            Action::HandleTimeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
             }
-            Action::ResourceProofResult(..) => {
+            Action::TakeResourceProofResult(..) => {
                 warn!("{} Cannot handle {:?} - not joined.", self, action);
             }
             Action::Terminate => {
@@ -336,7 +336,7 @@ impl Base for JoiningNode {
 
         if self.proxy_pub_id == pub_id {
             debug!("{} Lost bootstrap connection to {}.", self, pub_id);
-            outbox.send_event(Event::Terminate);
+            outbox.send_event(Event::Terminated);
             Transition::Terminate
         } else {
             Transition::Stay

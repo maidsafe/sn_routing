@@ -148,15 +148,15 @@ impl ProvingNode {
                 //              approved?
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => {
+            Action::HandleTimeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
             }
-            Action::ResourceProofResult(pub_id, messages) => {
+            Action::TakeResourceProofResult(pub_id, messages) => {
                 let msg = self
                     .resource_prover
                     .handle_action_res_proof(pub_id, messages);
@@ -459,7 +459,7 @@ impl Base for ProvingNode {
         if self.dropped_peer(&pub_id) {
             Transition::Stay
         } else {
-            outbox.send_event(Event::Terminate);
+            outbox.send_event(Event::Terminated);
             Transition::Terminate
         }
     }

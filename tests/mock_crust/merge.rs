@@ -52,8 +52,8 @@ fn merge(prefix_lengths: Vec<usize>) {
         for node in &mut *nodes {
             while let Ok(event) = node.try_next_ev() {
                 match event {
-                    Event::NodeAdded(..) | Event::NodeLost(..) | Event::Tick => (),
-                    Event::SectionMerge(prefix) => {
+                    Event::NodeAdded(..) | Event::NodeLost(..) | Event::TimerTicked => (),
+                    Event::SectionMerged(prefix) => {
                         if prefix.is_empty() {
                             merge_events_missing -= 1;
                         }

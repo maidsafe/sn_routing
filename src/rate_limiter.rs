@@ -118,10 +118,10 @@ impl RateLimiter {
                         | PutMData { .. }
                         | MutateMDataEntries { .. }
                         | SetMDataUserPermissions { .. }
-                        | DelMDataUserPermissions { .. }
+                        | DeleteMDataUserPermissions { .. }
                         | ChangeMDataOwner { .. }
-                        | InsAuthKey { .. }
-                        | DelAuthKey { .. } => (payload.len() as u64, false),
+                        | InsertAuthKey { .. }
+                        | DeleteAuthKey { .. } => (payload.len() as u64, false),
                         Refresh(..) => return Err(RoutingError::InvalidMessage),
                     }
                 }
@@ -220,10 +220,10 @@ impl RateLimiter {
                         | PutMData { .. }
                         | MutateMDataEntries { .. }
                         | SetMDataUserPermissions { .. }
-                        | DelMDataUserPermissions { .. }
+                        | DeleteMDataUserPermissions { .. }
                         | ChangeMDataOwner { .. }
-                        | InsAuthKey { .. }
-                        | DelAuthKey { .. } => return None,
+                        | InsertAuthKey { .. }
+                        | DeleteAuthKey { .. } => return None,
                     }
                 }
                 _ => return None,
