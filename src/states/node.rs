@@ -2531,15 +2531,16 @@ impl Base for Node {
         trace!("{} - Listener started on port {}.", self, port);
         if self.is_first_node && self.init_first_node(outbox).is_err() {
             outbox.send_event(Event::Terminated);
-            return Transition::Terminate;
+            Transition::Terminate
+        } else {
+            Transition::Stay
         }
-        return Transition::Stay;
     }
 
     fn handle_listener_failed(&mut self, outbox: &mut EventBox) -> Transition {
         error!("{} - Failed to start listening.", self);
         outbox.send_event(Event::Terminated);
-        return Transition::Terminate;
+        Transition::Terminate
     }
 
     fn finish_handle_crust_event(&mut self, outbox: &mut EventBox) -> Transition {

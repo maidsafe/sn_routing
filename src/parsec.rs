@@ -140,7 +140,7 @@ impl ParsecMap {
             .values()
             .last()
             .map(|parsec| parsec.gossip_recipients().collect())
-            .unwrap_or(vec![])
+            .unwrap_or_else(Vec::new)
     }
 
     pub fn poll(&mut self) -> Option<Block> {
@@ -153,7 +153,7 @@ impl ParsecMap {
         self.map
             .values()
             .last()
-            .map(|parsec| parsec.our_unpolled_observations())
+            .map(Parsec::our_unpolled_observations)
             .into_iter()
             .flatten()
     }
