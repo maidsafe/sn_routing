@@ -36,7 +36,7 @@ use crate::{
 };
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::BTreeSet,
     fmt::{self, Display, Formatter},
 };
 
@@ -46,8 +46,6 @@ pub struct ProvingNode {
     /// ID from before relocating.
     old_full_id: FullId,
     full_id: FullId,
-    /// The queue of routing messages to be processed by us.
-    msg_queue: VecDeque<RoutingMessage>,
     /// Routing messages addressed to us that we cannot handle until we are approved.
     msg_backlog: Vec<RoutingMessage>,
     min_section_size: usize,
@@ -90,7 +88,6 @@ impl ProvingNode {
             ack_mgr: AckManager::new(),
             old_full_id,
             full_id: new_full_id,
-            msg_queue: VecDeque::new(),
             msg_backlog: Vec::new(),
             min_section_size,
             peer_mgr,
@@ -141,8 +138,6 @@ impl ProvingNode {
     }
 
     pub fn into_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
-        let msg_queue = self.msg_queue.into_iter().chain(self.msg_backlog).collect();
-
         let node = Node::from_proving_node(
             self.ack_mgr,
             self.cache,
@@ -150,7 +145,7 @@ impl ProvingNode {
             self.full_id,
             gen_pfx_info,
             self.min_section_size,
-            msg_queue,
+            self.msg_backlog.into_iter().collect(),
             self.notified_nodes,
             self.peer_mgr,
             self.routing_msg_filter,
