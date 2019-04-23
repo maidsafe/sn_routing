@@ -16,7 +16,7 @@ use super::crust::{
 use crate::id::PublicId;
 #[cfg(feature = "mock_serialise")]
 use crate::messages::DirectMessage;
-#[cfg(feature = "mock_parsec")]
+#[cfg(any(all(test, not(feature = "mock_serialise")), feature = "mock_parsec"))]
 use crate::parsec;
 use crate::CrustBytes;
 use crate::CrustEvent;
@@ -789,7 +789,6 @@ where
 #[cfg(not(feature = "mock_serialise"))]
 #[allow(clippy::let_unit_value)]
 fn test_is_parsec_req_resp() {
-    use crate::chain::NetworkEvent;
     use crate::id::FullId;
     use crate::messages::{
         DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
@@ -808,10 +807,7 @@ fn test_is_parsec_req_resp() {
 
     // Parsec doesn't provide constructors for requests and responses, but they have the same
     // representation as a `Vec`, or a `()` in mock Parsec.
-    let (req, rsp): (
-        parsec::Request<NetworkEvent, PublicId>,
-        parsec::Response<NetworkEvent, PublicId>,
-    ) = {
+    let (req, rsp): (parsec::Request, parsec::Response) = {
         #[cfg(feature = "mock_parsec")]
         let repr = ();
         #[cfg(not(feature = "mock_parsec"))]

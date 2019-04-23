@@ -199,6 +199,8 @@ mod types;
 mod utils;
 mod xor_name;
 
+pub(crate) mod parsec;
+
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;
 
@@ -248,8 +250,6 @@ pub use crate::id::{FullId, PublicId};
 pub use crate::messages::{AccountInfo, Request, Response};
 #[cfg(feature = "mock_base")]
 pub use crate::mock_crust::crust;
-#[cfg(feature = "mock_parsec")]
-pub(crate) use crate::mock_parsec as parsec;
 pub use crate::node::{Node, NodeBuilder};
 #[cfg(feature = "mock_base")]
 pub use crate::peer_manager::test_consts;
@@ -261,8 +261,6 @@ pub use crate::routing_table::Error as RoutingTableError;
 pub use crate::routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};
 pub use crate::types::MessageId;
 pub use crate::xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
-#[cfg(not(feature = "mock_parsec"))]
-pub(crate) use parsec;
 
 type Service = crust::Service<PublicId>;
 use crate::crust::Event as CrustEvent;

@@ -26,7 +26,7 @@ use crate::{
         UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
     },
     outbox::EventBox,
-    parsec::{self, ConsensusMode, Parsec},
+    parsec::{self, ParsecMap},
     peer_manager::{Peer, PeerManager, PeerState},
     rate_limiter::RateLimiter,
     resource_prover::RESOURCE_PROOF_DURATION,
@@ -49,9 +49,11 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
 use safe_crypto::Signature;
+#[cfg(feature = "mock_base")]
+use std::collections::BTreeMap;
 use std::{
     cmp,
-    collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::{IpAddr, SocketAddr},
@@ -116,7 +118,7 @@ pub struct Node {
     proxy_load_amount: u64,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
-    parsec_map: BTreeMap<u64, Parsec<NetworkEvent, FullId>>,
+    parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     poke_timer_token: u64,
     gossip_timer_token: u64,
@@ -226,17 +228,13 @@ impl Node {
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
         let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
 
-        let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
-        let mut parsec_map = BTreeMap::new();
-        let _ = parsec_map.insert(*gen_pfx_info.first_info.version(), parsec);
-
         Self {
             ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 USER_MSG_CACHE_EXPIRY_DURATION,
             ),
             crust_service: crust_service,
-            full_id: full_id,
+            full_id: full_id.clone(),
             is_first_node,
             msg_queue,
             peer_mgr,
@@ -256,7 +254,7 @@ impl Node {
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
-            parsec_map,
+            parsec_map: ParsecMap::new(full_id, &gen_pfx_info),
             gen_pfx_info: gen_pfx_info.clone(),
             poke_timer_token,
             gossip_timer_token,
@@ -404,52 +402,46 @@ impl Node {
     fn handle_parsec_request(
         &mut self,
         msg_version: u64,
-        par_request: parsec::Request<NetworkEvent, PublicId>,
+        par_request: parsec::Request,
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        match self
-            .parsec_map
-            .get_mut(&msg_version)
-            .map(|par| par.handle_request(&pub_id, par_request))
-        {
-            Some(Ok(rsp)) => {
-                let direct_msg = Message::Direct(DirectMessage::ParsecResponse(msg_version, rsp));
-                self.send_message(&pub_id, direct_msg);
-            }
-            Some(Err(err)) => debug!("{} Error handling parsec request: {:?}", self, err),
-            None => return Ok(()), // No such parsec version yet.
+        let log_ident = format!("{}", self);
+        let (response, poll) =
+            self.parsec_map
+                .handle_request(msg_version, par_request, pub_id, &log_ident);
+
+        if let Some(response) = response {
+            self.send_message(&pub_id, response);
         }
-        if Some(&msg_version) == self.parsec_map.keys().last() {
-            self.parsec_poll(outbox)?;
+
+        if poll {
+            self.parsec_poll(outbox)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn handle_parsec_response(
         &mut self,
         msg_version: u64,
-        par_response: parsec::Response<NetworkEvent, PublicId>,
+        par_response: parsec::Response,
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        match self
+        let log_ident = format!("{}", self);
+        if self
             .parsec_map
-            .get_mut(&msg_version)
-            .map(|par| par.handle_response(&pub_id, par_response))
+            .handle_response(msg_version, par_response, pub_id, &log_ident)
         {
-            Some(Ok(_)) => {}
-            Some(Err(err)) => trace!("{} Error handling parsec response: {:?}", self, err),
-            None => return Ok(()), // No such parsec version yet.
+            self.parsec_poll(outbox)
+        } else {
+            Ok(())
         }
-        if Some(&msg_version) == self.parsec_map.keys().last() {
-            self.parsec_poll(outbox)?;
-        }
-        Ok(())
     }
 
     fn parsec_poll(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
-        while let Some(block) = self.parsec_map.values_mut().last().and_then(Parsec::poll) {
+        while let Some(block) = self.parsec_map.poll() {
             match block.payload() {
                 parsec::Observation::Accusation { .. } => {
                     // FIXME: Handle properly
@@ -740,11 +732,11 @@ impl Node {
     }
 
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
-        let drained_obs = if let Some(par) = self.parsec_map.values().last() {
-            par.our_unpolled_observations().cloned().collect()
-        } else {
-            vec![]
-        };
+        let drained_obs: Vec<_> = self
+            .parsec_map
+            .our_unpolled_observations()
+            .cloned()
+            .collect();
         let sibling_pfx = self.chain.our_prefix().sibling();
 
         let PrefixChangeOutcome {
@@ -1278,16 +1270,9 @@ impl Node {
     }
 
     fn init_parsec(&mut self) {
-        if let Entry::Vacant(entry) = self
-            .parsec_map
-            .entry(*self.gen_pfx_info.first_info.version())
-        {
-            let _ = entry.insert(create_parsec(self.full_id.clone(), &self.gen_pfx_info));
-            info!(
-                "{}: Init new Parsec, genesis = {:?}",
-                self, self.gen_pfx_info
-            );
-        }
+        let log_ident = format!("{}", self);
+        self.parsec_map
+            .init(self.full_id.clone(), &self.gen_pfx_info, &log_ident)
     }
 
     // Completes a Node startup process and allows a node to behave as a `ManagedNode`.
@@ -1889,9 +1874,6 @@ impl Node {
             |si: &SectionInfo| si == sec_info || si.prev_hash().contains(sec_info.hash());
         Ok(self
             .parsec_map
-            .values()
-            .last()
-            .ok_or(RoutingError::InvalidStateForOperation)?
             .our_unpolled_observations()
             .filter_map(|obs| match obs {
                 parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(sec_info)) => {
@@ -1939,34 +1921,26 @@ impl Node {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
             None => {
-                let (v, mut recipients) = match self.parsec_map.iter().last() {
-                    Some((v, par)) => (*v, par.gossip_recipients().collect_vec()),
-                    None => return, // We haven't joined a section yet.
-                };
+                let version = self.parsec_map.last_version();
+                let mut recipients = self.parsec_map.gossip_recipients();
                 if recipients.is_empty() {
-                    return; // Parsec hasn't caught up with the event of us joining yet.
+                    // Parsec hasn't caught up with the event of us joining yet.
+                    return;
                 }
-                recipients.retain(|pub_id| self.peer_mgr.is_connected(pub_id));
 
+                recipients.retain(|pub_id| self.peer_mgr.is_connected(pub_id));
                 if recipients.is_empty() {
                     log_or_panic!(LogLevel::Error, "Not connected to any gossip recipient.");
                     return;
                 }
 
                 let rand_index = utils::rand_index(recipients.len());
-                (v, *recipients[rand_index])
+                (version, *recipients[rand_index])
             }
         };
 
-        let par_req = self
-            .parsec_map
-            .get_mut(&version)
-            .and_then(|par| par.create_gossip(&gossip_target).ok());
-        if let Some(par_req) = par_req {
-            self.send_message(
-                &gossip_target,
-                Message::Direct(DirectMessage::ParsecRequest(version, par_req)),
-            );
+        if let Some(msg) = self.parsec_map.create_gossip(version, &gossip_target) {
+            self.send_message(&gossip_target, msg);
         }
     }
 
@@ -2023,22 +1997,8 @@ impl Node {
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
         trace!("{} Vote for Event {:?}", self, event);
-        let self_disp = format!("{}", self);
-        if let Some(ref mut par) = self.parsec_map.values_mut().last() {
-            let obs = match event.into_obs() {
-                Err(_) => {
-                    warn!(
-                        "{} Failed to convert NetworkEvent to Parsec Observation.",
-                        self_disp
-                    );
-                    return;
-                }
-                Ok(obs) => obs,
-            };
-            if let Err(e) = par.vote_for(obs) {
-                trace!("{} Parsec vote error: {:?}", self_disp, e);
-            }
-        }
+        let log_ident = format!("{}", self);
+        self.parsec_map.vote_for(event, &log_ident)
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -2618,23 +2578,8 @@ impl Node {
     }
 
     pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
-        if filter_opaque {
-            match self.parsec_map.values().last() {
-                None => false,
-                Some(par) => par.our_unpolled_observations().any(|obs| {
-                    if let parsec::Observation::OpaquePayload(_) = obs {
-                        true
-                    } else {
-                        false
-                    }
-                }),
-            }
-        } else {
-            self.parsec_map
-                .values()
-                .last()
-                .map_or(false, Parsec::has_unconsensused_observations)
-        }
+        self.parsec_map
+            .has_unconsensused_observations(filter_opaque)
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
@@ -2805,29 +2750,4 @@ fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, Routing
         );
         err
     })
-}
-
-fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
-    if gen_pfx_info
-        .first_info
-        .members()
-        .contains(full_id.public_id())
-    {
-        Parsec::from_genesis(
-            #[cfg(feature = "mock_parsec")]
-            *gen_pfx_info.first_info.hash(),
-            full_id,
-            &gen_pfx_info.first_info.members(),
-            ConsensusMode::Single,
-        )
-    } else {
-        Parsec::from_existing(
-            #[cfg(feature = "mock_parsec")]
-            *gen_pfx_info.first_info.hash(),
-            full_id,
-            &gen_pfx_info.first_info.members(),
-            &gen_pfx_info.latest_info.members(),
-            ConsensusMode::Single,
-        )
-    }
 }

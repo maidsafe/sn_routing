@@ -13,7 +13,7 @@ pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::ack_manager::Ack;
-use crate::chain::{GenesisPfxInfo, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo};
+use crate::chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo};
 use crate::data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 use crate::error::{BootstrapResponseError, Result, RoutingError};
 use crate::event::Event;
@@ -135,9 +135,9 @@ pub enum DirectMessage {
     /// Poke a node to send us the first gossip request
     ParsecPoke(u64),
     /// Parsec request message
-    ParsecRequest(u64, parsec::Request<NetworkEvent, PublicId>),
+    ParsecRequest(u64, parsec::Request),
     /// Parsec response message
-    ParsecResponse(u64, parsec::Response<NetworkEvent, PublicId>),
+    ParsecResponse(u64, parsec::Response),
 }
 
 impl DirectMessage {
