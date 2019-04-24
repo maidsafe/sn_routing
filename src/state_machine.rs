@@ -13,7 +13,7 @@ use crate::{
     outbox::EventBox,
     routing_table::Prefix,
     states::common::Base,
-    states::{Bootstrapping, Client, JoiningNode, Node, ProvingNode},
+    states::{Bootstrapping, Client, Node, ProvingNode, RelocatingNode},
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
@@ -39,7 +39,7 @@ macro_rules! state_dispatch {
         match $self {
             State::Bootstrapping($state) => $expr,
             State::Client($state) => $expr,
-            State::JoiningNode($state) => $expr,
+            State::RelocatingNode($state) => $expr,
             State::ProvingNode($state) => $expr,
             State::Node($state) => $expr,
             State::Terminated => $term_expr,
@@ -65,7 +65,7 @@ pub struct StateMachine {
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
-    JoiningNode(JoiningNode),
+    RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
     Node(Node),
     Terminated,
@@ -195,7 +195,7 @@ impl State {
         match *self {
             State::Node(ref mut state) => state.get_timed_out_tokens(),
             State::Client(ref mut state) => state.get_timed_out_tokens(),
-            State::JoiningNode(ref mut state) => state.get_timed_out_tokens(),
+            State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
             _ => vec![],
         }
     }
@@ -225,7 +225,7 @@ impl State {
         match *self {
             State::Node(ref state) => state.in_authority(auth),
             State::Client(ref state) => state.in_authority(auth),
-            State::JoiningNode(ref state) => state.in_authority(auth),
+            State::RelocatingNode(ref state) => state.in_authority(auth),
             _ => false,
         }
     }
@@ -234,7 +234,7 @@ impl State {
         match *self {
             State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
             State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::JoiningNode(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
             _ => false,
         }
     }
@@ -245,11 +245,11 @@ impl State {
 #[allow(clippy::large_enum_variant)]
 pub enum Transition {
     Stay,
-    // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `ProvingNode`.
+    // `Bootstrapping` state transitioning to `Client`, `RelocatingNode`, or `ProvingNode`.
     IntoBootstrapped {
         proxy_public_id: PublicId,
     },
-    // `JoiningNode` state transitioning back to `Bootstrapping`.
+    // `RelocatingNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
@@ -396,7 +396,7 @@ impl StateMachine {
                 let crust_rx = &mut self.crust_rx;
 
                 self.state.replace_with(|state| match state {
-                    State::JoiningNode(src) => {
+                    State::RelocatingNode(src) => {
                         let crust_sender = CrustEventSender::new(
                             crust_tx,
                             MaidSafeEventCategory::Crust,

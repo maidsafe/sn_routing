@@ -162,7 +162,7 @@ impl NodeBuilder {
                     Bootstrapping::new(
                         action_sender,
                         self.cache,
-                        BootstrappingTargetState::JoiningNode,
+                        BootstrappingTargetState::RelocatingNode,
                         crust_service,
                         full_id,
                         min_section_size,

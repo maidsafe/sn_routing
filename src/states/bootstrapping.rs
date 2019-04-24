@@ -8,7 +8,7 @@
 
 use super::{
     common::{from_crust_bytes, Base},
-    Client, JoiningNode, ProvingNode,
+    Client, ProvingNode, RelocatingNode,
 };
 use crate::{
     cache::Cache,
@@ -43,14 +43,14 @@ pub enum TargetState {
     Client {
         msg_expiry_dur: Duration,
     },
-    JoiningNode,
+    RelocatingNode,
     ProvingNode {
         old_full_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
 }
 
-// State of Client, JoiningNode or Node while bootstrapping.
+// State of Client or Node while bootstrapping.
 pub struct Bootstrapping {
     action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
@@ -78,7 +78,7 @@ impl Bootstrapping {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningNode | TargetState::ProvingNode { .. } => {
+            TargetState::RelocatingNode | TargetState::ProvingNode { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
@@ -109,8 +109,8 @@ impl Bootstrapping {
                 msg_expiry_dur,
                 outbox,
             )),
-            TargetState::JoiningNode => {
-                if let Some(joining_node) = JoiningNode::from_bootstrapping(
+            TargetState::RelocatingNode => {
+                if let Some(node) = RelocatingNode::from_bootstrapping(
                     self.action_sender,
                     self.cache,
                     self.crust_service,
@@ -119,7 +119,7 @@ impl Bootstrapping {
                     proxy_public_id,
                     self.timer,
                 ) {
-                    State::JoiningNode(joining_node)
+                    State::RelocatingNode(node)
                 } else {
                     outbox.send_event(Event::RestartRequired);
                     State::Terminated
@@ -146,7 +146,7 @@ impl Bootstrapping {
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningNode | TargetState::ProvingNode { .. } => false,
+            TargetState::RelocatingNode | TargetState::ProvingNode { .. } => false,
         }
     }
 

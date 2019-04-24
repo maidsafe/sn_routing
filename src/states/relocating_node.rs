@@ -39,7 +39,7 @@ use std::{
 /// Total time to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
 
-pub struct JoiningNode {
+pub struct RelocatingNode {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
     crust_service: Service,
@@ -55,7 +55,7 @@ pub struct JoiningNode {
     timer: Timer,
 }
 
-impl JoiningNode {
+impl RelocatingNode {
     #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         action_sender: RoutingActionSender,
@@ -67,7 +67,7 @@ impl JoiningNode {
         timer: Timer,
     ) -> Option<Self> {
         let relocation_timer_token = timer.schedule(RELOCATE_TIMEOUT);
-        let mut joining_node = JoiningNode {
+        let mut node = Self {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
@@ -80,12 +80,12 @@ impl JoiningNode {
             timer: timer,
         };
 
-        if let Err(error) = joining_node.relocate() {
-            error!("{} Failed to start relocation: {:?}", joining_node, error);
+        if let Err(error) = node.relocate() {
+            error!("{} Failed to start relocation: {:?}", node, error);
             None
         } else {
-            debug!("{} State changed to JoiningNode.", joining_node);
-            Some(joining_node)
+            debug!("{} State changed to RelocatingNode.", node);
+            Some(node)
         }
     }
 
@@ -244,7 +244,7 @@ impl JoiningNode {
     }
 }
 
-impl Base for JoiningNode {
+impl Base for RelocatingNode {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -316,7 +316,7 @@ impl Base for JoiningNode {
     }
 }
 
-impl Bootstrapped for JoiningNode {
+impl Bootstrapped for RelocatingNode {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -347,7 +347,7 @@ impl Bootstrapped for JoiningNode {
     }
 }
 
-impl Unapproved for JoiningNode {
+impl Unapproved for RelocatingNode {
     const SEND_ACK: bool = true;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
@@ -355,8 +355,8 @@ impl Unapproved for JoiningNode {
     }
 }
 
-impl Display for JoiningNode {
+impl Display for RelocatingNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "JoiningNode({}())", self.name())
+        write!(formatter, "RelocatingNode({}())", self.name())
     }
 }
