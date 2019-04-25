@@ -19,7 +19,7 @@ use crate::{
 };
 use std::collections::BTreeSet;
 
-pub trait Unapproved: Bootstrapped {
+pub trait NotEstablished: Bootstrapped {
     // Whether acknowledge hop messages sent to us.
     const SEND_ACK: bool;
 

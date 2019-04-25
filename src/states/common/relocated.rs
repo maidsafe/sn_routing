@@ -8,6 +8,7 @@
 
 use super::bootstrapped::Bootstrapped;
 use crate::{
+    ack_manager::Ack,
     crust::CrustError,
     error::RoutingError,
     event::Event,
@@ -27,10 +28,12 @@ use std::collections::BTreeSet;
 
 /// Common functionality for node states post-relocation.
 pub trait Relocated: Bootstrapped {
-    fn peer_mgr(&mut self) -> &mut PeerManager;
+    fn peer_mgr(&self) -> &PeerManager;
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager;
     fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox);
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
     fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool;
+    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool;
     fn add_to_routing_table_success(&mut self, pub_id: &PublicId);
     fn add_to_routing_table_failure(&mut self, pub_id: &PublicId);
 
@@ -45,7 +48,10 @@ pub trait Relocated: Bootstrapped {
                     "{} Failed to prepare connection info: {:?}. Retrying.",
                     self, err
                 );
-                let new_token = match self.peer_mgr().get_new_connection_info_token(result_token) {
+                let new_token = match self
+                    .peer_mgr_mut()
+                    .get_new_connection_info_token(result_token)
+                {
                     Err(error) => {
                         debug!(
                             "{} Failed to prepare connection info, but no entry found in \
@@ -64,7 +70,7 @@ pub trait Relocated: Bootstrapped {
 
         let our_pub_info = our_connection_info.to_pub_connection_info();
         match self
-            .peer_mgr()
+            .peer_mgr_mut()
             .connection_info_prepared(result_token, our_connection_info)
         {
             Err(error) => {
@@ -131,7 +137,7 @@ pub trait Relocated: Bootstrapped {
         }
 
         use crate::peer_manager::ConnectionInfoReceivedResult::*;
-        match self.peer_mgr().connection_info_received(
+        match self.peer_mgr_mut().connection_info_received(
             src,
             dst,
             their_connection_info,
@@ -207,7 +213,7 @@ pub trait Relocated: Bootstrapped {
         }
 
         use crate::peer_manager::ConnectionInfoReceivedResult::*;
-        match self.peer_mgr().connection_info_received(
+        match self.peer_mgr_mut().connection_info_received(
             Authority::ManagedNode(src),
             dst,
             their_connection_info,
@@ -255,11 +261,22 @@ pub trait Relocated: Bootstrapped {
             return Transition::Stay;
         }
 
-        self.peer_mgr().connected_to(&pub_id);
+        self.peer_mgr_mut().connected_to(&pub_id);
         debug!("{} Received ConnectSuccess from {}.", self, pub_id);
         self.process_connection(pub_id, outbox);
 
         Transition::Stay
+    }
+
+    fn handle_ack_response(&mut self, ack: Ack) {
+        self.ack_mgr_mut().receive(ack)
+    }
+
+    fn log_connect_failure(&mut self, pub_id: &PublicId) {
+        if let Some(&PeerState::CrustConnecting) = self.peer_mgr().get_peer(pub_id).map(Peer::state)
+        {
+            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
+        }
     }
 
     fn decrypt_connection_info(
@@ -308,7 +325,7 @@ pub trait Relocated: Bootstrapped {
 
         // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
         if let Some(token) = self
-            .peer_mgr()
+            .peer_mgr_mut()
             .get_connection_token(src, dst, their_public_id)
         {
             self.crust_service().prepare_connection_info(token);
@@ -403,7 +420,7 @@ pub trait Relocated: Bootstrapped {
                 self, pub_id
             );
             let _ = self.crust_service().disconnect(pub_id);
-            let _ = self.peer_mgr().remove_peer(pub_id);
+            let _ = self.peer_mgr_mut().remove_peer(pub_id);
         }
     }
 
@@ -433,7 +450,7 @@ pub trait Relocated: Bootstrapped {
     }
 
     fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
-        match self.peer_mgr().add_to_routing_table(pub_id) {
+        match self.peer_mgr_mut().add_to_routing_table(pub_id) {
             Err(error) => {
                 debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
                 self.add_to_routing_table_failure(pub_id);

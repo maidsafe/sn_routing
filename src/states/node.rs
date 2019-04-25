@@ -994,7 +994,10 @@ impl Node {
                 Section(_),
             ) => self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs),
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
-            (Ack(ack, _), _, _) => self.handle_ack_response(ack),
+            (Ack(ack, _), _, _) => {
+                self.handle_ack_response(ack);
+                Ok(())
+            }
             (
                 UserMessagePart {
                     hash,
@@ -1754,11 +1757,6 @@ impl Node {
 
     fn handle_merge(&mut self, digest: Digest256) -> Result<(), RoutingError> {
         self.vote_for_event(NetworkEvent::NeighbourMerge(digest));
-        Ok(())
-    }
-
-    fn handle_ack_response(&mut self, ack: Ack) -> Result<(), RoutingError> {
-        self.ack_mgr.receive(ack);
         Ok(())
     }
 
@@ -2693,7 +2691,11 @@ impl Bootstrapped for Node {
 }
 
 impl Relocated for Node {
-    fn peer_mgr(&mut self) -> &mut PeerManager {
+    fn peer_mgr(&self) -> &PeerManager {
+        &self.peer_mgr
+    }
+
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
         &mut self.peer_mgr
     }
 
@@ -2720,6 +2722,10 @@ impl Relocated for Node {
 
     fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
         self.notified_nodes.insert(pub_id)
+    }
+
+    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
+        self.notified_nodes.remove(pub_id)
     }
 }
 

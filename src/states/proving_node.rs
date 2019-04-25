@@ -7,11 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    common::{Base, Bootstrapped, Relocated, Unapproved},
+    common::{proxied, Base, Bootstrapped, NotEstablished, Relocated, RelocatedNotEstablished},
     node::Node,
 };
 use crate::{
-    ack_manager::{Ack, AckManager},
+    ack_manager::AckManager,
     cache::Cache,
     chain::{GenesisPfxInfo, SectionInfo},
     config_handler,
@@ -158,105 +158,22 @@ impl ProvingNode {
         State::Node(node)
     }
 
-    /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
-    fn check_direct_message_sender(
-        &self,
-        msg: &DirectMessage,
-        pub_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(&PeerState::Connected) | Some(&PeerState::Proxy) => Ok(()),
-            _ => {
-                debug!(
-                    "{} Illegitimate direct message {:?} from {:?}.",
-                    self, msg, pub_id
-                );
-                Err(RoutingError::InvalidStateForOperation)
-            }
-        }
-    }
-
     fn dispatch_routing_message(
         &mut self,
         msg: RoutingMessage,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
-
-        let src_name = msg.src.name();
-
         match msg {
-            RoutingMessage {
-                content:
-                    ConnectionInfoRequest {
-                        encrypted_conn_info,
-                        pub_id,
-                        msg_id,
-                    },
-                src: ManagedNode(_),
-                dst: ManagedNode(_),
-            } => {
-                if self.joining_prefix.matches(&src_name) {
-                    self.handle_connection_info_request(
-                        encrypted_conn_info,
-                        pub_id,
-                        msg_id,
-                        msg.src,
-                        msg.dst,
-                        outbox,
-                    )?
-                } else {
-                    self.add_message_to_backlog(RoutingMessage {
-                        content: ConnectionInfoRequest {
-                            encrypted_conn_info,
-                            pub_id,
-                            msg_id,
-                        },
-                        ..msg
-                    })
-                }
-            }
-            RoutingMessage {
-                content:
-                    ConnectionInfoResponse {
-                        encrypted_conn_info,
-                        pub_id,
-                        msg_id,
-                    },
-                src: ManagedNode(src_name),
-                dst: Client { .. },
-            } => self.handle_connection_info_response(
-                encrypted_conn_info,
-                pub_id,
-                msg_id,
-                src_name,
-                msg.dst,
-            )?,
             RoutingMessage {
                 content: NodeApproval(gen_info),
                 src: PrefixSection(_),
                 dst: Client { .. },
-            } => return Ok(self.handle_node_approval(gen_info)),
-            RoutingMessage {
-                content: Ack(ack, _),
-                ..
-            } => self.handle_ack_response(ack),
-            _ => {
-                self.add_message_to_backlog(msg);
-            }
+            } => Ok(self.handle_node_approval(gen_info)),
+            _ => self
+                .handle_routing_message(msg, outbox)
+                .map(|()| Transition::Stay),
         }
-
-        Ok(Transition::Stay)
-    }
-
-    // Backlog the message to be processed once we are approved.
-    fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
-        trace!(
-            "{} Not approved yet. Delaying message handling: {:?}",
-            self,
-            msg
-        );
-        self.msg_backlog.push(msg);
     }
 
     fn handle_node_approval(&mut self, gen_pfx_info: GenesisPfxInfo) -> Transition {
@@ -268,10 +185,6 @@ impl ProvingNode {
         );
 
         Transition::IntoNode { gen_pfx_info }
-    }
-
-    fn handle_ack_response(&mut self, ack: Ack) {
-        self.ack_mgr.receive(ack)
     }
 
     fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
@@ -339,13 +252,7 @@ impl Base for ProvingNode {
     }
 
     fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) -> Transition {
-        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
-        {
-            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
-        }
-
-        let _ = self.dropped_peer(&pub_id);
-        Transition::Stay
+        RelocatedNotEstablished::handle_connect_failure(self, pub_id)
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
@@ -452,7 +359,11 @@ impl Bootstrapped for ProvingNode {
 }
 
 impl Relocated for ProvingNode {
-    fn peer_mgr(&mut self) -> &mut PeerManager {
+    fn peer_mgr(&self) -> &PeerManager {
+        &self.peer_mgr
+    }
+
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
         &mut self.peer_mgr
     }
 
@@ -511,26 +422,27 @@ impl Relocated for ProvingNode {
     fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
         self.notified_nodes.insert(pub_id)
     }
+
+    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
+        self.notified_nodes.remove(pub_id)
+    }
 }
 
-impl Unapproved for ProvingNode {
+impl NotEstablished for ProvingNode {
     const SEND_ACK: bool = true;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        if let Some(pub_id) = self.peer_mgr.get_peer_by_name(proxy_name).map(Peer::pub_id) {
-            if self.peer_mgr.is_connected(pub_id) {
-                Ok(pub_id)
-            } else {
-                error!(
-                    "{} Unable to find connection to proxy in PeerManager.",
-                    self
-                );
-                Err(RoutingError::ProxyConnectionNotFound)
-            }
-        } else {
-            error!("{} Unable to find proxy in PeerManager.", self);
-            Err(RoutingError::ProxyConnectionNotFound)
-        }
+        proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
+    }
+}
+
+impl RelocatedNotEstablished for ProvingNode {
+    fn our_prefix(&self) -> &Prefix<XorName> {
+        &self.joining_prefix
+    }
+
+    fn push_message_to_backlog(&mut self, msg: RoutingMessage) {
+        self.msg_backlog.push(msg)
     }
 }
 
