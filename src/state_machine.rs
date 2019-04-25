@@ -8,12 +8,12 @@
 
 use crate::{
     action::Action,
-    chain::GenesisPfxInfo,
+    chain::{GenesisPfxInfo, SectionInfo},
     id::{FullId, PublicId},
     outbox::EventBox,
     routing_table::Prefix,
     states::common::Base,
-    states::{Bootstrapping, Client, Node, ProvingNode, RelocatingNode},
+    states::{Bootstrapping, Client, EstablishingNode, Node, ProvingNode, RelocatingNode},
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
@@ -41,6 +41,7 @@ macro_rules! state_dispatch {
             State::Client($state) => $expr,
             State::RelocatingNode($state) => $expr,
             State::ProvingNode($state) => $expr,
+            State::EstablishingNode($state) => $expr,
             State::Node($state) => $expr,
             State::Terminated => $term_expr,
         }
@@ -67,6 +68,7 @@ pub enum State {
     Client(Client),
     RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
+    EstablishingNode(EstablishingNode),
     Node(Node),
     Terminated,
 }
@@ -123,8 +125,13 @@ impl State {
     #[cfg(feature = "mock_base")]
     fn chain(&self) -> Option<&Chain> {
         match *self {
+            State::EstablishingNode(ref state) => Some(state.chain()),
             State::Node(ref state) => Some(state.chain()),
-            _ => None,
+            State::Bootstrapping(_)
+            | State::Client(_)
+            | State::RelocatingNode(_)
+            | State::ProvingNode(_)
+            | State::Terminated => None,
         }
     }
 
@@ -197,6 +204,7 @@ impl State {
             State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
             State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
+            State::EstablishingNode(ref mut state) => state.get_timed_out_tokens(),
             State::Node(ref mut state) => state.get_timed_out_tokens(),
         }
     }
@@ -216,6 +224,9 @@ impl State {
             | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_) => false,
+            State::EstablishingNode(ref state) => {
+                state.has_unconsensused_observations(filter_opaque)
+            }
             State::Node(ref state) => state.has_unconsensused_observations(filter_opaque),
         }
     }
@@ -234,6 +245,7 @@ impl State {
             State::Client(ref state) => state.in_authority(auth),
             State::RelocatingNode(ref state) => state.in_authority(auth),
             State::ProvingNode(ref state) => state.in_authority(auth),
+            State::EstablishingNode(ref state) => state.in_authority(auth),
             State::Node(ref state) => state.in_authority(auth),
         }
     }
@@ -244,6 +256,7 @@ impl State {
             State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
             State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
             State::ProvingNode(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::EstablishingNode(ref state) => state.ack_mgr().has_unacked_msg(),
             State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
         }
     }
@@ -263,9 +276,14 @@ pub enum Transition {
         new_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
-    // `ProvingNode` state transitioning to `Node`.
-    IntoNode {
+    // `ProvingNode` state transitioning to `EstablishingNode`.
+    IntoEstablishingNode {
         gen_pfx_info: GenesisPfxInfo,
+    },
+    // `EstablishingNode` state transition to `Node`.
+    IntoNode {
+        sec_info: SectionInfo,
+        old_pfx: Prefix<XorName>,
     },
     Terminate,
 }
@@ -416,8 +434,14 @@ impl StateMachine {
                     _ => unreachable!(),
                 })
             }
-            IntoNode { gen_pfx_info } => self.state.replace_with(|state| match state {
-                State::ProvingNode(src) => src.into_node(gen_pfx_info),
+            IntoEstablishingNode { gen_pfx_info } => {
+                self.state.replace_with(|state| match state {
+                    State::ProvingNode(src) => src.into_establishing_node(gen_pfx_info),
+                    _ => unreachable!(),
+                });
+            }
+            IntoNode { sec_info, old_pfx } => self.state.replace_with(|state| match state {
+                State::EstablishingNode(src) => src.into_node(sec_info, old_pfx, outbox),
                 _ => unreachable!(),
             }),
             Terminate => self.terminate(),

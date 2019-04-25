@@ -36,9 +36,11 @@ pub struct ParsecMap {
 
 impl ParsecMap {
     pub fn new(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Self {
-        let parsec = create(full_id, gen_pfx_info);
         let mut map = BTreeMap::new();
-        let _ = map.insert(*gen_pfx_info.first_info.version(), parsec);
+        let _ = map.insert(
+            *gen_pfx_info.first_info.version(),
+            create(full_id, gen_pfx_info),
+        );
 
         Self { map }
     }
@@ -100,11 +102,10 @@ impl ParsecMap {
     }
 
     pub fn create_gossip(&mut self, version: u64, target: &id::PublicId) -> Option<Message> {
-        let parsec = self.map.get_mut(&version)?;
-        parsec
-            .create_gossip(target)
-            .ok()
-            .map(|request| Message::Direct(DirectMessage::ParsecRequest(version, request)))
+        let request = self.map.get_mut(&version)?.create_gossip(target).ok()?;
+        Some(Message::Direct(DirectMessage::ParsecRequest(
+            version, request,
+        )))
     }
 
     pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &str) {
@@ -177,7 +178,7 @@ impl ParsecMap {
 }
 
 /// Create Parsec instance.
-pub fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
+fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
     if gen_pfx_info
         .first_info
         .members()

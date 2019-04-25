@@ -14,7 +14,7 @@ use crate::{
     error::RoutingError,
     id::PublicId,
     outbox::EventBox,
-    parsec::{Block, Observation},
+    parsec::{self, Block, Observation, ParsecMap},
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     xor_name::XorName,
@@ -23,7 +23,7 @@ use maidsafe_utilities::serialisation;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Relocated {
-    fn parsec_poll_one(&mut self) -> Option<Block>;
+    fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain_mut(&mut self) -> &mut Chain;
 
     /// Handles an accumulated `Online` event.
@@ -70,8 +70,49 @@ pub trait Approved: Relocated {
         sec_info: SectionInfo,
     ) -> Result<(), RoutingError>;
 
-    fn parsec_poll_all(&mut self, outbox: &mut EventBox) -> Result<Transition, RoutingError> {
-        while let Some(block) = self.parsec_poll_one() {
+    fn handle_parsec_request(
+        &mut self,
+        msg_version: u64,
+        par_request: parsec::Request,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        let log_ident = format!("{}", self);
+        let (response, poll) =
+            self.parsec_map_mut()
+                .handle_request(msg_version, par_request, pub_id, &log_ident);
+
+        if let Some(response) = response {
+            self.send_message(&pub_id, response);
+        }
+
+        if poll {
+            self.parsec_poll(outbox)
+        } else {
+            Ok(Transition::Stay)
+        }
+    }
+
+    fn handle_parsec_response(
+        &mut self,
+        msg_version: u64,
+        par_response: parsec::Response,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        let log_ident = format!("{}", self);
+        if self
+            .parsec_map_mut()
+            .handle_response(msg_version, par_response, pub_id, &log_ident)
+        {
+            self.parsec_poll(outbox)
+        } else {
+            Ok(Transition::Stay)
+        }
+    }
+
+    fn parsec_poll(&mut self, outbox: &mut EventBox) -> Result<Transition, RoutingError> {
+        while let Some(block) = self.parsec_map_mut().poll() {
             match block.payload() {
                 Observation::Accusation { .. } => {
                     // FIXME: Handle properly

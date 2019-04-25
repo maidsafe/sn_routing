@@ -9,6 +9,7 @@
 mod bootstrapping;
 mod client;
 pub mod common;
+mod establishing_node;
 mod node;
 mod proving_node;
 mod relocating_node;
@@ -16,6 +17,7 @@ mod relocating_node;
 pub use self::{
     bootstrapping::{Bootstrapping, TargetState as BootstrappingTargetState},
     client::{Client, RATE_EXCEED_RETRY},
+    establishing_node::EstablishingNode,
     node::Node,
     proving_node::ProvingNode,
     relocating_node::RelocatingNode,
@@ -38,8 +40,30 @@ pub use self::{
 //        │   └────────────────┘ └─────────────┘
 //        │                        │
 //        │                        │
+//        │                        ▼
+//        │                      ┌──────────────────┐
+//        │                      │ EstablishingNode │
+//        │                      └──────────────────┘
+//        │                        │
+//        │                        │
 //        ▼                        ▼
 // ┌────────┐                    ┌──────┐
 // │ Client │                    │ Node │
 // └────────┘                    └──────┘
+//
+//
+// # Common traits
+//                           Bootstrapping
+//                           │   Client
+//                           │   │   RelocatingNode
+//                           │   │   │   ProvingNode
+//                           │   │   │   │   EstablishingNode
+//                           │   │   │   │   │   Node
+//                           │   │   │   │   │   │
+// Base                      *   *   *   *   *   *
+// Bootstrapped                  *   *   *   *   *
+// NotEstablished                *   *   *   *
+// Relocated                             *   *   *
+// RelocatedNotEstablished               *   *
+// Approved                                  *   *
 //

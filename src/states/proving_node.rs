@@ -8,7 +8,7 @@
 
 use super::{
     common::{proxied, Base, Bootstrapped, NotEstablished, Relocated, RelocatedNotEstablished},
-    node::Node,
+    establishing_node::EstablishingNode,
 };
 use crate::{
     ack_manager::AckManager,
@@ -140,22 +140,20 @@ impl ProvingNode {
         }
     }
 
-    pub fn into_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
-        let node = Node::from_proving_node(
+    pub fn into_establishing_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
+        State::EstablishingNode(EstablishingNode::from_proving_node(
             self.ack_mgr,
             self.cache,
             self.crust_service,
             self.full_id,
             gen_pfx_info,
             self.min_section_size,
-            self.msg_backlog.into_iter().collect(),
+            self.msg_backlog,
             self.notified_nodes,
             self.peer_mgr,
             self.routing_msg_filter,
             self.timer,
-        );
-
-        State::Node(node)
+        ))
     }
 
     fn dispatch_routing_message(
@@ -184,7 +182,7 @@ impl ProvingNode {
             self
         );
 
-        Transition::IntoNode { gen_pfx_info }
+        Transition::IntoEstablishingNode { gen_pfx_info }
     }
 
     fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
