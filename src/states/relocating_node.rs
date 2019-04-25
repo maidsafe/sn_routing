@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    common::{from_crust_bytes, unrelocated, Base, Bootstrapped, Unapproved},
+    common::{unrelocated, Base, Bootstrapped, Unapproved},
     Bootstrapping, BootstrappingTargetState,
 };
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
     error::{Result, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{HopMessage, Message, MessageContent, RoutingMessage},
+    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     resource_prover::RESOURCE_PROOF_DURATION,
     routing_message_filter::RoutingMessageFilter,
@@ -27,7 +27,7 @@ use crate::{
     timer::Timer,
     types::{MessageId, RoutingActionSender},
     xor_name::XorName,
-    CrustBytes, CrustEvent, CrustEventSender, Service,
+    CrustEvent, CrustEventSender, Service,
 };
 use log::LogLevel;
 use std::{
@@ -153,18 +153,6 @@ impl RelocatingNode {
         old_crust_service
     }
 
-    fn handle_hop_message(&mut self, hop_msg: HopMessage, pub_id: PublicId) -> Result<Transition> {
-        if self.proxy_pub_id != pub_id {
-            return Err(RoutingError::UnknownConnection(pub_id));
-        }
-
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
-            Ok(self.dispatch_routing_message(routing_msg))
-        } else {
-            Ok(Transition::Stay)
-        }
-    }
-
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
         use crate::messages::MessageContent::*;
         match routing_msg.content {
@@ -260,6 +248,10 @@ impl Base for RelocatingNode {
         }
     }
 
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
+    }
+
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.relocation_timer_token == token {
             info!(
@@ -285,33 +277,31 @@ impl Base for RelocatingNode {
         }
     }
 
-    fn handle_new_message(
+    fn handle_direct_message(
         &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
+        msg: DirectMessage,
+        _: PublicId,
         _: &mut EventBox,
-    ) -> Transition {
-        let result = match from_crust_bytes(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
-            Ok(message) => {
-                debug!("{} - Unhandled new message: {:?}", self, message);
-                Ok(Transition::Stay)
-            }
-            Err(error) => Err(error),
-        };
-
-        match result {
-            Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
-            Err(error) => {
-                debug!("{} - {:?}", self, error);
-                Transition::Stay
-            }
-        }
+    ) -> Result<Transition> {
+        debug!("{} - Unhandled direct message: {:?}", self, msg);
+        Ok(Transition::Stay)
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition> {
+        if self.proxy_pub_id != pub_id {
+            return Err(RoutingError::UnknownConnection(pub_id));
+        }
+
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            Ok(self.dispatch_routing_message(routing_msg))
+        } else {
+            Ok(Transition::Stay)
+        }
     }
 }
 

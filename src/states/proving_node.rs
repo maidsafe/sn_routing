@@ -10,7 +10,6 @@ use super::{
     common::{Base, Bootstrapped, Relocated, Unapproved},
     node::Node,
 };
-use crate::states::common::from_crust_bytes;
 use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
@@ -20,7 +19,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, RoutingMessage},
+    messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     peer_manager::{Peer, PeerManager, PeerState},
     resource_prover::ResourceProver,
@@ -32,7 +31,7 @@ use crate::{
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
-    CrustBytes, Service,
+    Service,
 };
 use maidsafe_utilities::serialisation;
 use std::{
@@ -159,43 +158,6 @@ impl ProvingNode {
         State::Node(node)
     }
 
-    fn handle_direct_message(
-        &mut self,
-        msg: DirectMessage,
-        pub_id: PublicId,
-        _outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        self.check_direct_message_sender(&msg, &pub_id)?;
-
-        use crate::messages::DirectMessage::*;
-        match msg {
-            ResourceProof {
-                seed,
-                target_size,
-                difficulty,
-            } => {
-                let log_ident = format!("{}", self);
-                self.resource_prover.handle_request(
-                    pub_id,
-                    seed,
-                    target_size,
-                    difficulty,
-                    log_ident,
-                );
-            }
-            ResourceProofResponseReceipt => {
-                if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
-                    self.send_direct_message(pub_id, msg);
-                }
-            }
-            _ => {
-                debug!("{} Unhandled direct message: {:?}", self, msg);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
     fn check_direct_message_sender(
         &self,
@@ -211,24 +173,6 @@ impl ProvingNode {
                 );
                 Err(RoutingError::InvalidStateForOperation)
             }
-        }
-    }
-
-    fn handle_hop_message(
-        &mut self,
-        hop_msg: HopMessage,
-        pub_id: PublicId,
-        outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
-        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Connected) | Some(&PeerState::Proxy) => (),
-            _ => return Err(RoutingError::UnknownConnection(pub_id)),
-        }
-
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
-            self.dispatch_routing_message(routing_msg, outbox)
-        } else {
-            Ok(Transition::Stay)
         }
     }
 
@@ -343,7 +287,7 @@ impl ProvingNode {
         }
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
@@ -364,6 +308,10 @@ impl Base for ProvingNode {
         } else {
             false
         }
+    }
+
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
@@ -419,32 +367,59 @@ impl Base for ProvingNode {
         Relocated::handle_connection_info_prepared(self, result_token, result)
     }
 
-    fn handle_new_message(
+    fn handle_direct_message(
         &mut self,
+        msg: DirectMessage,
         pub_id: PublicId,
-        bytes: CrustBytes,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        let result = match from_crust_bytes(bytes) {
-            Ok(Message::Direct(msg)) => self
-                .handle_direct_message(msg, pub_id, outbox)
-                .map(|_| Transition::Stay),
-            Ok(Message::Hop(msg)) => self.handle_hop_message(msg, pub_id, outbox),
-            Err(error) => Err(error),
-        };
+        _outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        self.check_direct_message_sender(&msg, &pub_id)?;
 
-        match result {
-            Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
-            Err(err) => {
-                debug!("{} - {:?}", self, err);
-                Transition::Stay
+        use crate::messages::DirectMessage::*;
+        match msg {
+            ResourceProof {
+                seed,
+                target_size,
+                difficulty,
+            } => {
+                let log_ident = format!("{}", self);
+                self.resource_prover.handle_request(
+                    pub_id,
+                    seed,
+                    target_size,
+                    difficulty,
+                    log_ident,
+                );
+            }
+            ResourceProofResponseReceipt => {
+                if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
+                    self.send_direct_message(pub_id, msg);
+                }
+            }
+            _ => {
+                debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }
+
+        Ok(Transition::Stay)
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
+            Some(&PeerState::Connected) | Some(&PeerState::Proxy) => (),
+            _ => return Err(RoutingError::UnknownConnection(pub_id)),
+        }
+
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            self.dispatch_routing_message(routing_msg, outbox)
+        } else {
+            Ok(Transition::Stay)
+        }
     }
 }
 

@@ -28,6 +28,20 @@ pub trait Base: Display {
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
 
+    fn handle_direct_message(
+        &mut self,
+        msg: DirectMessage,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError>;
+
+    fn handle_hop_message(
+        &mut self,
+        msg: HopMessage,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError>;
+
     fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
         match action {
             Action::ClientSendRequest {
@@ -204,11 +218,26 @@ pub trait Base: Display {
 
     fn handle_new_message(
         &mut self,
-        _pub_id: PublicId,
-        _bytes: CrustBytes,
-        _outbox: &mut EventBox,
+        pub_id: PublicId,
+        bytes: CrustBytes,
+        outbox: &mut EventBox,
     ) -> Transition {
-        Transition::Stay
+        let result = match from_crust_bytes(bytes) {
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
+            Ok(Message::Direct(direct_msg)) => {
+                self.handle_direct_message(direct_msg, pub_id, outbox)
+            }
+            Err(error) => Err(error),
+        };
+
+        match result {
+            Ok(transition) => transition,
+            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
+            Err(err) => {
+                debug!("{} - {:?}", self, err);
+                Transition::Stay
+            }
+        }
     }
 
     fn finish_handle_crust_event(&mut self, _outbox: &mut EventBox) -> Transition {

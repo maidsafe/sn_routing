@@ -6,24 +6,21 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    common::{from_crust_bytes, Base},
-    Client, ProvingNode, RelocatingNode,
-};
+use super::{common::Base, Client, ProvingNode, RelocatingNode};
 use crate::{
     cache::Cache,
     crust::CrustUser,
-    error::InterfaceError,
+    error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, Message, Request, UserMessage},
+    messages::{DirectMessage, HopMessage, Message, Request, UserMessage},
     outbox::EventBox,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
-    CrustBytes, Service,
+    Service,
 };
 use maidsafe_utilities::serialisation;
 use std::{
@@ -148,28 +145,6 @@ impl Bootstrapping {
         match self.target_state {
             TargetState::Client { .. } => true,
             TargetState::RelocatingNode | TargetState::ProvingNode { .. } => false,
-        }
-    }
-
-    fn handle_direct_message(
-        &mut self,
-        direct_message: DirectMessage,
-        pub_id: PublicId,
-    ) -> Transition {
-        use self::DirectMessage::*;
-        match direct_message {
-            BootstrapResponse(Ok(())) => Transition::IntoBootstrapped {
-                proxy_public_id: pub_id,
-            },
-            BootstrapResponse(Err(error)) => {
-                info!("{} Connection failed: {}", self, error);
-                self.rebootstrap();
-                Transition::Stay
-            }
-            _ => {
-                debug!("{} - Unhandled direct message: {:?}", self, direct_message);
-                Transition::Stay
-            }
         }
     }
 
@@ -323,25 +298,6 @@ impl Base for Bootstrapping {
         Transition::Stay
     }
 
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
-        _: &mut EventBox,
-    ) -> Transition {
-        match from_crust_bytes(bytes) {
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, pub_id),
-            Ok(message) => {
-                debug!("{} - Unhandled new message: {:?}", self, message);
-                Transition::Stay
-            }
-            Err(error) => {
-                debug!("{} - {:?}", self, error);
-                Transition::Stay
-            }
-        }
-    }
-
     fn handle_listener_started(&mut self, port: u16, outbox: &mut EventBox) -> Transition {
         if self.client_restriction() {
             error!("{} - A client must not run a crust listener.", self);
@@ -363,6 +319,39 @@ impl Base for Bootstrapping {
         }
         outbox.send_event(Event::Terminated);
         Transition::Terminate
+    }
+
+    fn handle_direct_message(
+        &mut self,
+        msg: DirectMessage,
+        pub_id: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        use self::DirectMessage::*;
+        match msg {
+            BootstrapResponse(Ok(())) => Ok(Transition::IntoBootstrapped {
+                proxy_public_id: pub_id,
+            }),
+            BootstrapResponse(Err(error)) => {
+                info!("{} Connection failed: {}", self, error);
+                self.rebootstrap();
+                Ok(Transition::Stay)
+            }
+            _ => {
+                debug!("{} - Unhandled direct message: {:?}", self, msg);
+                Ok(Transition::Stay)
+            }
+        }
+    }
+
+    fn handle_hop_message(
+        &mut self,
+        msg: HopMessage,
+        _: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        debug!("{} - Unhandled hop message: {:?}", self, msg);
+        Ok(Transition::Stay)
     }
 }
 

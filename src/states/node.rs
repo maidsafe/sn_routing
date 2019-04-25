@@ -6,9 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{
-    from_crust_bytes, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION,
-};
+use super::common::{Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
@@ -41,7 +39,7 @@ use crate::{
     types::MessageId,
     utils::{self, DisplayDuration},
     xor_name::XorName,
-    CrustBytes, Service,
+    Service,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -311,88 +309,6 @@ impl Node {
                 }
             }
         }
-    }
-
-    // Deconstruct a `DirectMessage` and handle or forward as appropriate.
-    fn handle_direct_message(
-        &mut self,
-        direct_message: DirectMessage,
-        pub_id: PublicId,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        use crate::messages::DirectMessage::*;
-        if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
-            match error {
-                RoutingError::ClientConnectionNotFound => (),
-                _ => self.ban_and_disconnect_peer(&pub_id),
-            }
-            return Err(error);
-        }
-
-        match direct_message {
-            MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, pub_id)?,
-            BootstrapRequest(signature) => {
-                if let Err(error) = self.handle_bootstrap_request(pub_id, signature) {
-                    warn!(
-                        "{} Invalid BootstrapRequest received ({:?}), dropping {}.",
-                        self, error, pub_id
-                    );
-                    self.ban_and_disconnect_peer(&pub_id);
-                }
-            }
-            CandidateInfo {
-                ref old_public_id,
-                ref new_public_id,
-                ref signature_using_old,
-                ref signature_using_new,
-                ref new_client_auth,
-            } => {
-                if *new_public_id != pub_id {
-                    error!(
-                        "{} CandidateInfo(new_public_id: {}) does not match crust id {}.",
-                        self, new_public_id, pub_id
-                    );
-                    self.disconnect_peer(&pub_id);
-                    return Err(RoutingError::InvalidSource);
-                }
-                self.handle_candidate_info(
-                    old_public_id,
-                    &pub_id,
-                    signature_using_old,
-                    signature_using_new,
-                    new_client_auth,
-                    outbox,
-                );
-            }
-            ResourceProofResponse {
-                part_index,
-                part_count,
-                proof,
-                leading_zero_bytes,
-            } => {
-                self.handle_resource_proof_response(
-                    pub_id,
-                    part_index,
-                    part_count,
-                    proof,
-                    leading_zero_bytes,
-                );
-            }
-            ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
-            ParsecRequest(version, par_request) => {
-                self.handle_parsec_request(version, par_request, pub_id, outbox)?;
-            }
-            ParsecResponse(version, par_response) => {
-                self.handle_parsec_response(version, par_response, pub_id, outbox)?;
-            }
-            BootstrapResponse(_)
-            | ProxyRateLimitExceeded { .. }
-            | ResourceProof { .. }
-            | ResourceProofResponseReceipt => {
-                debug!("{} Unhandled direct message: {:?}", self, direct_message);
-            }
-        }
-        Ok(())
     }
 
     fn handle_parsec_poke(&mut self, msg_version: u64, pub_id: PublicId) {
@@ -868,90 +784,6 @@ impl Node {
             self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new())?;
         }
         Ok(())
-    }
-
-    fn handle_hop_message(
-        &mut self,
-        hop_msg: HopMessage,
-        pub_id: PublicId,
-    ) -> Result<(), RoutingError> {
-        hop_msg.verify(pub_id.signing_public_key())?;
-        let mut client_ip = None;
-        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Bootstrapper { .. }) => {
-                warn!(
-                    "{} Hop message received from bootstrapper {:?}, disconnecting.",
-                    self, pub_id
-                );
-                Err(RoutingError::InvalidStateForOperation)
-            }
-            Some(&PeerState::Client { ip, .. }) => {
-                client_ip = Some(ip);
-                Ok(*self.name())
-            }
-            Some(&PeerState::JoiningNode) => Ok(*self.name()),
-            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Routing) => {
-                Ok(*pub_id.name())
-            }
-            Some(&PeerState::ConnectionInfoPreparing { .. })
-            | Some(&PeerState::ConnectionInfoReady(_))
-            | Some(&PeerState::CrustConnecting)
-            | Some(&PeerState::Connected)
-            | None => {
-                if self.dropped_clients.contains_key(&pub_id) {
-                    debug!(
-                        "{} Ignoring {:?} from recently-disconnected client {:?}.",
-                        self, hop_msg, pub_id
-                    );
-                    return Ok(());
-                } else {
-                    Ok(*self.name())
-                    // FIXME - confirm we can return with an error here by running soak tests
-                    // debug!("{} Invalid sender {} of {:?}", self, pub_id, hop_msg);
-                    // return Err(RoutingError::InvalidSource);
-                }
-            }
-        };
-
-        if let Some(ip) = client_ip {
-            match self.check_valid_client_message(&ip, hop_msg.content.routing_message()) {
-                Ok(added_bytes) => {
-                    self.proxy_load_amount += added_bytes;
-                    self.peer_mgr.add_client_traffic(&pub_id, added_bytes);
-                }
-                Err(e) => hop_name_result = Err(e),
-            }
-        }
-
-        match hop_name_result {
-            Ok(hop_name) => {
-                let HopMessage {
-                    content,
-                    route,
-                    sent_to,
-                    ..
-                } = hop_msg;
-                self.handle_signed_message(content, route, hop_name, &sent_to)
-            }
-            Err(RoutingError::ExceedsRateLimit(hash)) => {
-                trace!(
-                    "{} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
-                    self,
-                    pub_id
-                );
-                self.send_direct_message(
-                    pub_id,
-                    DirectMessage::ProxyRateLimitExceeded {
-                        ack: Ack::compute(hop_msg.content.routing_message())?,
-                    },
-                );
-                Err(RoutingError::ExceedsRateLimit(hash))
-            }
-            Err(error) => {
-                self.ban_and_disconnect_peer(&pub_id);
-                Err(error)
-            }
-        }
     }
 
     // Verify the message, then, if it is for us, handle the enclosed routing message and swarm it
@@ -2370,7 +2202,11 @@ impl Base for Node {
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         let conn_peers = self.connected_peers();
-        self.chain().closest_names(&name, count, &conn_peers)
+        self.chain.closest_names(&name, count, &conn_peers)
+    }
+
+    fn min_section_size(&self) -> usize {
+        self.chain.min_sec_size()
     }
 
     fn handle_node_send_message(
@@ -2511,28 +2347,6 @@ impl Base for Node {
         }
     }
 
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        let result = match from_crust_bytes(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
-            Ok(Message::Direct(direct_msg)) => {
-                self.handle_direct_message(direct_msg, pub_id, outbox)
-            }
-            Err(error) => Err(error),
-        };
-
-        match result {
-            Err(RoutingError::FilterCheckFailed) | Ok(_) => (),
-            Err(err) => debug!("{} - {:?}", self, err),
-        }
-
-        Transition::Stay
-    }
-
     fn handle_connection_info_prepared(
         &mut self,
         result_token: u32,
@@ -2562,8 +2376,173 @@ impl Base for Node {
         Transition::Stay
     }
 
-    fn min_section_size(&self) -> usize {
-        self.chain.min_sec_size()
+    // Deconstruct a `DirectMessage` and handle or forward as appropriate.
+    fn handle_direct_message(
+        &mut self,
+        direct_message: DirectMessage,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        use crate::messages::DirectMessage::*;
+        if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
+            match error {
+                RoutingError::ClientConnectionNotFound => (),
+                _ => self.ban_and_disconnect_peer(&pub_id),
+            }
+            return Err(error);
+        }
+
+        match direct_message {
+            MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, pub_id)?,
+            BootstrapRequest(signature) => {
+                if let Err(error) = self.handle_bootstrap_request(pub_id, signature) {
+                    warn!(
+                        "{} Invalid BootstrapRequest received ({:?}), dropping {}.",
+                        self, error, pub_id
+                    );
+                    self.ban_and_disconnect_peer(&pub_id);
+                }
+            }
+            CandidateInfo {
+                ref old_public_id,
+                ref new_public_id,
+                ref signature_using_old,
+                ref signature_using_new,
+                ref new_client_auth,
+            } => {
+                if *new_public_id != pub_id {
+                    error!(
+                        "{} CandidateInfo(new_public_id: {}) does not match crust id {}.",
+                        self, new_public_id, pub_id
+                    );
+                    self.disconnect_peer(&pub_id);
+                    return Err(RoutingError::InvalidSource);
+                }
+                self.handle_candidate_info(
+                    old_public_id,
+                    &pub_id,
+                    signature_using_old,
+                    signature_using_new,
+                    new_client_auth,
+                    outbox,
+                );
+            }
+            ResourceProofResponse {
+                part_index,
+                part_count,
+                proof,
+                leading_zero_bytes,
+            } => {
+                self.handle_resource_proof_response(
+                    pub_id,
+                    part_index,
+                    part_count,
+                    proof,
+                    leading_zero_bytes,
+                );
+            }
+            ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
+            ParsecRequest(version, par_request) => {
+                self.handle_parsec_request(version, par_request, pub_id, outbox)?;
+            }
+            ParsecResponse(version, par_response) => {
+                self.handle_parsec_response(version, par_response, pub_id, outbox)?;
+            }
+            BootstrapResponse(_)
+            | ProxyRateLimitExceeded { .. }
+            | ResourceProof { .. }
+            | ResourceProofResponseReceipt => {
+                debug!("{} Unhandled direct message: {:?}", self, direct_message);
+            }
+        }
+
+        Ok(Transition::Stay)
+    }
+
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        hop_msg.verify(pub_id.signing_public_key())?;
+        let mut client_ip = None;
+        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
+            Some(&PeerState::Bootstrapper { .. }) => {
+                warn!(
+                    "{} Hop message received from bootstrapper {:?}, disconnecting.",
+                    self, pub_id
+                );
+                Err(RoutingError::InvalidStateForOperation)
+            }
+            Some(&PeerState::Client { ip, .. }) => {
+                client_ip = Some(ip);
+                Ok(*self.name())
+            }
+            Some(&PeerState::JoiningNode) => Ok(*self.name()),
+            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Routing) => {
+                Ok(*pub_id.name())
+            }
+            Some(&PeerState::ConnectionInfoPreparing { .. })
+            | Some(&PeerState::ConnectionInfoReady(_))
+            | Some(&PeerState::CrustConnecting)
+            | Some(&PeerState::Connected)
+            | None => {
+                if self.dropped_clients.contains_key(&pub_id) {
+                    debug!(
+                        "{} Ignoring {:?} from recently-disconnected client {:?}.",
+                        self, hop_msg, pub_id
+                    );
+                    return Ok(Transition::Stay);
+                } else {
+                    Ok(*self.name())
+                    // FIXME - confirm we can return with an error here by running soak tests
+                    // debug!("{} Invalid sender {} of {:?}", self, pub_id, hop_msg);
+                    // return Err(RoutingError::InvalidSource);
+                }
+            }
+        };
+
+        if let Some(ip) = client_ip {
+            match self.check_valid_client_message(&ip, hop_msg.content.routing_message()) {
+                Ok(added_bytes) => {
+                    self.proxy_load_amount += added_bytes;
+                    self.peer_mgr.add_client_traffic(&pub_id, added_bytes);
+                }
+                Err(e) => hop_name_result = Err(e),
+            }
+        }
+
+        match hop_name_result {
+            Ok(hop_name) => {
+                let HopMessage {
+                    content,
+                    route,
+                    sent_to,
+                    ..
+                } = hop_msg;
+                self.handle_signed_message(content, route, hop_name, &sent_to)
+                    .map(|()| Transition::Stay)
+            }
+            Err(RoutingError::ExceedsRateLimit(hash)) => {
+                trace!(
+                    "{} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
+                    self,
+                    pub_id
+                );
+                self.send_direct_message(
+                    pub_id,
+                    DirectMessage::ProxyRateLimitExceeded {
+                        ack: Ack::compute(hop_msg.content.routing_message())?,
+                    },
+                );
+                Err(RoutingError::ExceedsRateLimit(hash))
+            }
+            Err(error) => {
+                self.ban_and_disconnect_peer(&pub_id);
+                Err(error)
+            }
+        }
     }
 }
 
