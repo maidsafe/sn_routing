@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
+use super::common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
@@ -24,7 +24,7 @@ use crate::{
         UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
     },
     outbox::EventBox,
-    parsec::{self, ParsecMap},
+    parsec::{self, Block, ParsecMap},
     peer_manager::{Peer, PeerManager, PeerState},
     rate_limiter::RateLimiter,
     resource_prover::RESOURCE_PROOF_DURATION,
@@ -321,7 +321,7 @@ impl Node {
         par_request: parsec::Request,
         pub_id: PublicId,
         outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         let log_ident = format!("{}", self);
         let (response, poll) =
             self.parsec_map
@@ -332,9 +332,9 @@ impl Node {
         }
 
         if poll {
-            self.parsec_poll(outbox)
+            self.parsec_poll_all(outbox)
         } else {
-            Ok(())
+            Ok(Transition::Stay)
         }
     }
 
@@ -344,146 +344,16 @@ impl Node {
         par_response: parsec::Response,
         pub_id: PublicId,
         outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         let log_ident = format!("{}", self);
         if self
             .parsec_map
             .handle_response(msg_version, par_response, pub_id, &log_ident)
         {
-            self.parsec_poll(outbox)
+            self.parsec_poll_all(outbox)
         } else {
-            Ok(())
+            Ok(Transition::Stay)
         }
-    }
-
-    fn parsec_poll(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
-        while let Some(block) = self.parsec_map.poll() {
-            match block.payload() {
-                parsec::Observation::Accusation { .. } => {
-                    // FIXME: Handle properly
-                    unreachable!("...")
-                }
-                parsec::Observation::Genesis(_) => {
-                    // FIXME: Validate with Chain info.
-                    continue;
-                }
-                parsec::Observation::OpaquePayload(event) => {
-                    if let Some(proof) = block.proofs().iter().next().map(|p| Proof {
-                        pub_id: *p.public_id(),
-                        sig: *p.signature(),
-                    }) {
-                        trace!(
-                            "{} Parsec OpaquePayload: {} - {:?}",
-                            self,
-                            proof.pub_id(),
-                            event
-                        );
-                        self.chain.handle_opaque_event(event, proof)?;
-                    }
-                }
-                parsec::Observation::Add {
-                    peer_id,
-                    related_info,
-                } => {
-                    let event =
-                        NetworkEvent::Online(*peer_id, serialisation::deserialise(&related_info)?);
-                    let to_sig = |p: &parsec::Proof<_>| (*p.public_id(), *p.signature());
-                    let sigs = block.proofs().iter().map(to_sig).collect();
-                    let proof_set = ProofSet { sigs };
-                    trace!("{} Parsec Add: - {}", self, peer_id);
-                    self.chain.handle_churn_event(&event, proof_set)?;
-                }
-                parsec::Observation::Remove { peer_id, .. } => {
-                    let event = NetworkEvent::Offline(*peer_id);
-                    let to_sig = |p: &parsec::Proof<_>| (*p.public_id(), *p.signature());
-                    let sigs = block.proofs().iter().map(to_sig).collect();
-                    let proof_set = ProofSet { sigs };
-                    trace!("{} Parsec Remove: - {}", self, peer_id);
-                    self.chain.handle_churn_event(&event, proof_set)?;
-                }
-            }
-
-            self.chain_poll(outbox)?;
-        }
-
-        Ok(())
-    }
-
-    fn chain_poll(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
-        let mut our_pfx = *self.chain.our_prefix();
-        while let Some(event) = self.chain.poll()? {
-            trace!("{} Handle accumulated event: {:?}", self, event);
-
-            match event {
-                NetworkEvent::Online(pub_id, client_auth) => {
-                    self.handle_online_event(pub_id, client_auth, outbox)?;
-                }
-                NetworkEvent::Offline(pub_id) => {
-                    self.handle_offline_event(pub_id, outbox)?;
-                }
-                NetworkEvent::OurMerge => self.handle_our_merge_event()?,
-                NetworkEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
-                NetworkEvent::SectionInfo(ref sec_info) => {
-                    self.handle_section_info_event(sec_info, our_pfx, outbox)?;
-                }
-                NetworkEvent::ExpectCandidate(vote) => self.handle_expect_candidate_event(vote)?,
-                NetworkEvent::ProvingSections(ps, sec_info) => {
-                    self.handle_proving_sections_event(ps, sec_info)?;
-                }
-            }
-
-            our_pfx = *self.chain.our_prefix();
-        }
-
-        Ok(())
-    }
-
-    /// Handles an accumulated `Online` event.
-    fn handle_online_event(
-        &mut self,
-        new_pub_id: PublicId,
-        new_client_auth: Authority<XorName>,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        let should_act = self.chain.is_member();
-        let to_vote_infos = self.chain.add_member(new_pub_id)?;
-        if should_act {
-            let _ = self.handle_candidate_approval(new_pub_id, new_client_auth, outbox);
-            to_vote_infos
-                .into_iter()
-                .map(NetworkEvent::SectionInfo)
-                .for_each(|sec_info| self.vote_for_event(sec_info));
-        }
-
-        Ok(())
-    }
-
-    /// Handles an accumulated `Offline` event.
-    fn handle_offline_event(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        let should_act = self.chain.is_member();
-        let self_info = self.chain.remove_member(pub_id)?;
-        if should_act {
-            self.vote_for_event(NetworkEvent::SectionInfo(self_info));
-            if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
-                let _ = self.dropped_peer(&pub_id, outbox, false);
-                self.disconnect_peer(&pub_id);
-            }
-        }
-        Ok(())
-    }
-
-    /// Handles an accumulated `OurMerge` event.
-    fn handle_our_merge_event(&mut self) -> Result<(), RoutingError> {
-        self.merge_if_necessary()
-    }
-
-    /// Handles an accumulated `NeighbourMerge` event.
-    fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
-        self.merge_if_necessary()
     }
 
     /// Votes for `Merge` if necessary, or for the merged `SectionInfo` if both siblings have
@@ -503,96 +373,6 @@ impl Node {
             self.vote_for_event(NetworkEvent::SectionInfo(merged_info));
         } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
             self.vote_for_event(NetworkEvent::OurMerge);
-        }
-        Ok(())
-    }
-
-    /// Handles an accumulated `SectionInfo` event.
-    fn handle_section_info_event(
-        &mut self,
-        sec_info: &SectionInfo,
-        old_pfx: Prefix<XorName>,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        if !self.peer_mgr.is_established() && self.chain.is_member() {
-            // We have just found a `SectionInfo` block that contains us. Now we can supply our
-            // votes for all latest neighbour infos that have accumulated so far.
-            let ni_events = self
-                .chain
-                .neighbour_infos()
-                .map(|ni| ni.clone().into_network_event())
-                .collect_vec();
-
-            ni_events.into_iter().for_each(|ni_event| {
-                self.vote_for_event(ni_event);
-            });
-
-            self.node_established(outbox);
-        }
-
-        if sec_info.prefix().is_extension_of(&old_pfx) {
-            self.finalise_prefix_change()?;
-
-            outbox.send_event(Event::SectionSplit(*sec_info.prefix()));
-            self.send_neighbour_infos();
-        } else if old_pfx.is_extension_of(sec_info.prefix()) {
-            self.finalise_prefix_change()?;
-            outbox.send_event(Event::SectionMerged(*sec_info.prefix()));
-        }
-
-        let our_name = *self.full_id.public_id().name();
-        let self_sec_update = sec_info.prefix().matches(&our_name);
-
-        if self.chain.is_member() {
-            self.update_peer_states(outbox);
-
-            if self_sec_update {
-                self.send_neighbour_infos();
-            } else {
-                // Vote for neighbour update if we haven't done so already.
-                // vote_for_event is expected to only generate a new vote if required.
-                self.vote_for_event(sec_info.clone().into_network_event());
-            }
-        }
-
-        let _ = self.merge_if_necessary();
-
-        Ok(())
-    }
-
-    /// Handles an accumulated `ProvingSections` event.
-    ///
-    /// Votes for all sections that it can verify using the the chain of proving sections.
-    fn handle_proving_sections_event(
-        &mut self,
-        proving_secs: Vec<ProvingSection>,
-        sec_info: SectionInfo,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_new_neighbour(&sec_info)
-            && !proving_secs
-                .iter()
-                .any(|ps| self.chain.is_new_neighbour(&ps.sec_info))
-        {
-            return Ok(()); // Nothing new to learn here.
-        }
-        let validates = |trusted: &Option<ProvingSection>, si: &SectionInfo| {
-            trusted.as_ref().map_or(false, |tps| {
-                let valid = tps.validate(&si);
-                if !valid {
-                    log_or_panic!(LogLevel::Info, "Received invalid proving section: {:?}", si);
-                }
-                valid
-            })
-        };
-        let mut trusted: Option<ProvingSection> = None;
-        for ps in proving_secs.into_iter().rev() {
-            if validates(&trusted, &ps.sec_info) || self.is_trusted(&ps.sec_info)? {
-                let _ = self.add_new_section(&ps.sec_info);
-                trusted = Some(ps);
-            }
-        }
-        if validates(&trusted, &sec_info) || self.is_trusted(&sec_info)? {
-            let _ = self.add_new_section(&sec_info);
         }
         Ok(())
     }
@@ -1363,13 +1143,13 @@ impl Node {
         }
 
         if (peer_kind == CrustUser::Client || !self.is_first_node)
-            && self.chain().len() < self.min_section_size() - 1
+            && self.chain.len() < self.min_section_size() - 1
         {
             debug!(
                 "{} Client {:?} rejected: Routing table has {} entries. {} required.",
                 self,
                 pub_id,
-                self.chain().len(),
+                self.chain.len(),
                 self.min_section_size() - 1
             );
             self.send_direct_message(
@@ -1428,7 +1208,7 @@ impl Node {
         } else {
             (
                 RESOURCE_PROOF_DIFFICULTY,
-                RESOURCE_PROOF_TARGET_SIZE / (self.chain().our_section().len() + 1),
+                RESOURCE_PROOF_TARGET_SIZE / (self.chain.our_section().len() + 1),
             )
         };
         let seed: Vec<u8> = if cfg!(feature = "mock_base") {
@@ -1533,7 +1313,7 @@ impl Node {
         }
 
         let close_section = self
-            .chain()
+            .chain
             .close_names(&dst_name)
             .ok_or(RoutingError::InvalidDestination)?;
 
@@ -1575,30 +1355,6 @@ impl Node {
             dst_name,
             message_id,
         }));
-        Ok(())
-    }
-
-    // Handles an accumulated `ExpectCandidate` event.
-    // Context: a node is joining our section. Send the node our section. If the
-    // network is unbalanced, send `ExpectCandidate` on to a section with a shorter prefix.
-    fn handle_expect_candidate_event(
-        &mut self,
-        vote: ExpectCandidatePayload,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_member() {
-            return Ok(());
-        }
-
-        if let Some(prefix) = self.need_to_forward_expect_candidate_to_prefix() {
-            return self.forward_expect_candidate_to_prefix(vote, prefix);
-        }
-
-        if let Some(target_interval) = self.accept_candidate_with_interval(&vote) {
-            self.candidate_timer_token = Some(self.timer.schedule(RESOURCE_PROOF_DURATION));
-            return self.send_relocate_response(vote, target_interval);
-        }
-
-        // Nothing to do with this event.
         Ok(())
     }
 
@@ -1648,7 +1404,7 @@ impl Node {
         }
 
         let target_interval = self.next_relocation_interval.take().unwrap_or_else(|| {
-            utils::calculate_relocation_interval(&self.our_prefix(), &self.chain().our_section())
+            utils::calculate_relocation_interval(&self.our_prefix(), &self.chain.our_section())
         });
         self.peer_mgr
             .accept_as_candidate(vote.old_public_id, target_interval);
@@ -1966,7 +1722,7 @@ impl Node {
         let list: Vec<XorName> = match *src {
             ClientManager(_) | NaeManager(_) | NodeManager(_) => {
                 let mut v = self
-                    .chain()
+                    .chain
                     .our_section()
                     .into_iter()
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs));
@@ -1974,7 +1730,7 @@ impl Node {
                 v
             }
             Section(_) => self
-                .chain()
+                .chain
                 .our_section()
                 .into_iter()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
@@ -1983,7 +1739,7 @@ impl Node {
             // as by ack-failure, the new node would have been accepted to the RT.
             // Need a better network startup separation.
             PrefixSection(_) => {
-                Iterator::flatten(self.chain().all_sections().map(|(_, si)| si.member_names()))
+                Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
             }
             ManagedNode(_) | Client { .. } => return Some(*self.name()),
@@ -2019,7 +1775,7 @@ impl Node {
             // chaining us to conn_peer list here?
             let conn_peers = self.connected_peers();
             let targets: BTreeSet<_> = self
-                .chain()
+                .chain
                 .targets(&routing_msg.dst, *exclude, route as usize, &conn_peers)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
@@ -2096,7 +1852,7 @@ impl Node {
             info!("{} Dropped {} from the routing table.", self, pub_id.name());
             outbox.send_event(Event::NodeLost(*pub_id.name()));
 
-            if self.chain().our_info().members().contains(pub_id) {
+            if self.chain.our_info().members().contains(pub_id) {
                 self.vote_for_event(NetworkEvent::Offline(*pub_id));
             }
         }
@@ -2161,7 +1917,7 @@ impl Node {
     }
 
     fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain().our_prefix()
+        self.chain.our_prefix()
     }
 
     // While this can theoretically be called as a result of a misbehaving client or node, we're
@@ -2230,11 +1986,7 @@ impl Base for Node {
                 self.update_peer_states(outbox);
                 outbox.send_event(Event::TimerTicked);
             }
-
-            return Transition::Stay;
-        }
-
-        if self.candidate_timer_token == Some(token) {
+        } else if self.candidate_timer_token == Some(token) {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
         } else if self.candidate_status_token == Some(token) {
@@ -2253,7 +2005,7 @@ impl Base for Node {
 
             // If we're the only node then invoke parsec_poll directly
             if self.chain.is_member() && self.chain.our_info().members().len() == 1 {
-                let _ = self.parsec_poll(outbox);
+                let _ = self.parsec_poll_all(outbox);
             }
 
             self.send_parsec_gossip(None);
@@ -2319,10 +2071,7 @@ impl Base for Node {
     }
 
     fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
-        {
-            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
-        }
+        self.log_connect_failure(&pub_id);
         let _ = self.dropped_peer(&pub_id, outbox, true);
         if self.chain.is_member() && self.chain.our_info().members().contains(&pub_id) {
             self.vote_for_event(NetworkEvent::Offline(pub_id));
@@ -2441,10 +2190,10 @@ impl Base for Node {
             }
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
-                self.handle_parsec_request(version, par_request, pub_id, outbox)?;
+                return self.handle_parsec_request(version, par_request, pub_id, outbox);
             }
             ParsecResponse(version, par_response) => {
-                self.handle_parsec_response(version, par_response, pub_id, outbox)?;
+                return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
             BootstrapResponse(_)
             | ProxyRateLimitExceeded { .. }
@@ -2726,6 +2475,169 @@ impl Relocated for Node {
 
     fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
         self.notified_nodes.remove(pub_id)
+    }
+}
+
+impl Approved for Node {
+    fn parsec_poll_one(&mut self) -> Option<Block> {
+        self.parsec_map.poll()
+    }
+
+    fn chain_mut(&mut self) -> &mut Chain {
+        &mut self.chain
+    }
+
+    fn handle_online_event(
+        &mut self,
+        new_pub_id: PublicId,
+        new_client_auth: Authority<XorName>,
+        outbox: &mut EventBox,
+    ) -> Result<(), RoutingError> {
+        let should_act = self.chain.is_member();
+        let to_vote_infos = self.chain.add_member(new_pub_id)?;
+        if should_act {
+            let _ = self.handle_candidate_approval(new_pub_id, new_client_auth, outbox);
+            to_vote_infos
+                .into_iter()
+                .map(NetworkEvent::SectionInfo)
+                .for_each(|sec_info| self.vote_for_event(sec_info));
+        }
+
+        Ok(())
+    }
+
+    fn handle_offline_event(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<(), RoutingError> {
+        let should_act = self.chain.is_member();
+        let self_info = self.chain.remove_member(pub_id)?;
+        if should_act {
+            self.vote_for_event(NetworkEvent::SectionInfo(self_info));
+            if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
+                let _ = self.dropped_peer(&pub_id, outbox, false);
+                self.disconnect_peer(&pub_id);
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_our_merge_event(&mut self) -> Result<(), RoutingError> {
+        self.merge_if_necessary()
+    }
+
+    fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
+        self.merge_if_necessary()
+    }
+
+    fn handle_expect_candidate_event(
+        &mut self,
+        vote: ExpectCandidatePayload,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_member() {
+            return Ok(());
+        }
+
+        if let Some(prefix) = self.need_to_forward_expect_candidate_to_prefix() {
+            return self.forward_expect_candidate_to_prefix(vote, prefix);
+        }
+
+        if let Some(target_interval) = self.accept_candidate_with_interval(&vote) {
+            self.candidate_timer_token = Some(self.timer.schedule(RESOURCE_PROOF_DURATION));
+            return self.send_relocate_response(vote, target_interval);
+        }
+
+        // Nothing to do with this event.
+        Ok(())
+    }
+
+    fn handle_section_info_event(
+        &mut self,
+        sec_info: SectionInfo,
+        old_pfx: Prefix<XorName>,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        if !self.peer_mgr.is_established() && self.chain.is_member() {
+            // We have just found a `SectionInfo` block that contains us. Now we can supply our
+            // votes for all latest neighbour infos that have accumulated so far.
+            let ni_events = self
+                .chain
+                .neighbour_infos()
+                .map(|ni| ni.clone().into_network_event())
+                .collect_vec();
+
+            ni_events.into_iter().for_each(|ni_event| {
+                self.vote_for_event(ni_event);
+            });
+
+            self.node_established(outbox);
+        }
+
+        if sec_info.prefix().is_extension_of(&old_pfx) {
+            self.finalise_prefix_change()?;
+            outbox.send_event(Event::SectionSplit(*sec_info.prefix()));
+            self.send_neighbour_infos();
+        } else if old_pfx.is_extension_of(sec_info.prefix()) {
+            self.finalise_prefix_change()?;
+            outbox.send_event(Event::SectionMerged(*sec_info.prefix()));
+        }
+
+        let our_name = *self.full_id.public_id().name();
+        let self_sec_update = sec_info.prefix().matches(&our_name);
+
+        if self.chain.is_member() {
+            self.update_peer_states(outbox);
+
+            if self_sec_update {
+                self.send_neighbour_infos();
+            } else {
+                // Vote for neighbour update if we haven't done so already.
+                // vote_for_event is expected to only generate a new vote if required.
+                self.vote_for_event(sec_info.into_network_event());
+            }
+        }
+
+        let _ = self.merge_if_necessary();
+
+        Ok(Transition::Stay)
+    }
+
+    /// Handles an accumulated `ProvingSections` event.
+    ///
+    /// Votes for all sections that it can verify using the the chain of proving sections.
+    fn handle_proving_sections_event(
+        &mut self,
+        proving_secs: Vec<ProvingSection>,
+        sec_info: SectionInfo,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_new_neighbour(&sec_info)
+            && !proving_secs
+                .iter()
+                .any(|ps| self.chain.is_new_neighbour(&ps.sec_info))
+        {
+            return Ok(()); // Nothing new to learn here.
+        }
+        let validates = |trusted: &Option<ProvingSection>, si: &SectionInfo| {
+            trusted.as_ref().map_or(false, |tps| {
+                let valid = tps.validate(&si);
+                if !valid {
+                    log_or_panic!(LogLevel::Info, "Received invalid proving section: {:?}", si);
+                }
+                valid
+            })
+        };
+        let mut trusted: Option<ProvingSection> = None;
+        for ps in proving_secs.into_iter().rev() {
+            if validates(&trusted, &ps.sec_info) || self.is_trusted(&ps.sec_info)? {
+                let _ = self.add_new_section(&ps.sec_info);
+                trusted = Some(ps);
+            }
+        }
+        if validates(&trusted, &sec_info) || self.is_trusted(&sec_info)? {
+            let _ = self.add_new_section(&sec_info);
+        }
+        Ok(())
     }
 }
 
