@@ -193,49 +193,58 @@ impl State {
 
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
-            State::Node(ref mut state) => state.get_timed_out_tokens(),
+            State::Bootstrapping(_) | State::Terminated => vec![],
             State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
-            _ => vec![],
+            State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
+            State::Node(ref mut state) => state.get_timed_out_tokens(),
         }
     }
 
     pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
-        match *self {
-            State::Node(ref state) => Some(state.get_clients_usage()),
-            _ => None,
+        if let State::Node(ref state) = *self {
+            Some(state.get_clients_usage())
+        } else {
+            None
         }
     }
 
     pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
         match *self {
+            State::Terminated
+            | State::Bootstrapping(_)
+            | State::Client(_)
+            | State::RelocatingNode(_)
+            | State::ProvingNode(_) => false,
             State::Node(ref state) => state.has_unconsensused_observations(filter_opaque),
-            _ => false,
         }
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
-        match *self {
-            State::Node(ref state) => state.is_routing_peer(pub_id),
-            _ => false,
+        if let State::Node(ref state) = *self {
+            state.is_routing_peer(pub_id)
+        } else {
+            false
         }
     }
 
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *self {
-            State::Node(ref state) => state.in_authority(auth),
+            State::Terminated | State::Bootstrapping(_) => false,
             State::Client(ref state) => state.in_authority(auth),
             State::RelocatingNode(ref state) => state.in_authority(auth),
-            _ => false,
+            State::ProvingNode(ref state) => state.in_authority(auth),
+            State::Node(ref state) => state.in_authority(auth),
         }
     }
 
     pub fn has_unacked_msg(&self) -> bool {
         match *self {
-            State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::Terminated | State::Bootstrapping(_) => false,
             State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
             State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
-            _ => false,
+            State::ProvingNode(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
         }
     }
 }

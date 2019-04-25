@@ -342,6 +342,11 @@ impl ProvingNode {
             true
         }
     }
+
+    #[cfg(feature = "mock")]
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
+    }
 }
 
 impl Base for ProvingNode {
