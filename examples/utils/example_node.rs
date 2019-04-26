@@ -47,8 +47,12 @@ impl ExampleNode {
     pub fn run(&mut self) {
         while let Ok(event) = self.node.next_ev() {
             match event {
-                Event::Request { request, src, dst } => self.handle_request(request, src, dst),
-                Event::Response { response, src, dst } => self.handle_response(response, src, dst),
+                Event::RequestReceived { request, src, dst } => {
+                    self.handle_request(request, src, dst)
+                }
+                Event::ResponseReceived { response, src, dst } => {
+                    self.handle_response(response, src, dst)
+                }
                 Event::NodeAdded(name) => {
                     trace!(
                         "{} Received NodeAdded event {:?}",
@@ -72,8 +76,8 @@ impl ExampleNode {
                             .expect("Could not create file"),
                     );
                 }
-                Event::Terminate => {
-                    info!("{} Received Terminate event", self.get_debug_name());
+                Event::Terminated => {
+                    info!("{} Received Terminated event", self.get_debug_name());
                     break;
                 }
                 Event::RestartRequired => {
@@ -88,9 +92,9 @@ impl ExampleNode {
                     );
                     self.handle_split(prefix);
                 }
-                Event::SectionMerge(prefix) => {
+                Event::SectionMerged(prefix) => {
                     trace!(
-                        "{} Received SectionMerge event {:?}",
+                        "{} Received SectionMerged event {:?}",
                         self.get_debug_name(),
                         prefix
                     );

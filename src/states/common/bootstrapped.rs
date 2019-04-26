@@ -7,22 +7,18 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::Base;
-use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT_SECS};
+use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT};
 use crate::chain::SectionInfo;
 use crate::error::Result;
 use crate::id::PublicId;
 use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::Authority;
+use crate::time::Instant;
 use crate::timer::Timer;
 use crate::xor_name::XorName;
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
 use std::collections::BTreeSet;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).
@@ -70,7 +66,7 @@ pub trait Bootstrapped: Base {
             return false;
         }
 
-        let token = self.timer().schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
+        let token = self.timer().schedule(ACK_TIMEOUT);
         let unacked_msg = UnacknowledgedMessage {
             routing_msg: routing_msg.clone(),
             src_section,
@@ -94,14 +90,8 @@ pub trait Bootstrapped: Base {
         pub_id: &PublicId,
         route: u8,
     ) -> bool {
-        if self
-            .routing_msg_filter()
+        self.routing_msg_filter()
             .filter_outgoing(msg, pub_id, route)
-        {
-            return true;
-        }
-
-        false
     }
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {

@@ -6,8 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::Base;
-use super::{Client, JoiningNode, Node};
+use super::{common::Base, Client, JoiningNode, ProvingNode};
 use crate::action::Action;
 use crate::cache::Cache;
 use crate::crust::CrustUser;
@@ -29,7 +28,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
+const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // State to transition into after bootstrap process is complete.
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -39,7 +38,7 @@ pub enum TargetState {
         msg_expiry_dur: Duration,
     },
     JoiningNode,
-    Node {
+    ProvingNode {
         old_full_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
@@ -73,7 +72,7 @@ impl Bootstrapping {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
-            TargetState::JoiningNode | TargetState::Node { .. } => {
+            TargetState::JoiningNode | TargetState::ProvingNode { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
                     return None;
@@ -102,11 +101,11 @@ impl Bootstrapping {
                 // preserve the pre-refactor behaviour.
                 let _ = result_tx.send(Ok(()));
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => self.handle_timeout(token),
-            Action::ResourceProofResult(..) => {
+            Action::HandleTimeout(token) => self.handle_timeout(token),
+            Action::TakeResourceProofResult(..) => {
                 warn!("{} Cannot handle {:?} - not bootstrapped.", self, action);
             }
             Action::Terminate => {
@@ -143,7 +142,7 @@ impl Bootstrapping {
             CrustEvent::ListenerStarted(port) => {
                 if self.client_restriction() {
                     error!("{} A client must not run a crust listener.", self);
-                    outbox.send_event(Event::Terminate);
+                    outbox.send_event(Event::Terminated);
                     return Transition::Terminate;
                 }
                 trace!("{} Listener started on port {}.", self, port);
@@ -158,7 +157,7 @@ impl Bootstrapping {
                 } else {
                     error!("{} Failed to start listening.", self);
                 }
-                outbox.send_event(Event::Terminate);
+                outbox.send_event(Event::Terminated);
                 Transition::Terminate
             }
             _ => {
@@ -195,11 +194,11 @@ impl Bootstrapping {
                     State::Terminated
                 }
             }
-            TargetState::Node {
+            TargetState::ProvingNode {
                 old_full_id,
                 our_section,
                 ..
-            } => State::Node(Node::from_bootstrapping(
+            } => State::ProvingNode(ProvingNode::from_bootstrapping(
                 our_section,
                 self.action_sender,
                 self.cache,
@@ -216,7 +215,7 @@ impl Bootstrapping {
     fn client_restriction(&self) -> bool {
         match self.target_state {
             TargetState::Client { .. } => true,
-            TargetState::JoiningNode | TargetState::Node { .. } => false,
+            TargetState::JoiningNode | TargetState::ProvingNode { .. } => false,
         }
     }
 
@@ -261,7 +260,7 @@ impl Bootstrapping {
 
     fn handle_bootstrap_failed(&mut self, outbox: &mut EventBox) -> Transition {
         info!("{} Failed to bootstrap. Terminating.", self);
-        outbox.send_event(Event::Terminate);
+        outbox.send_event(Event::Terminated);
         Transition::Terminate
     }
 
@@ -301,9 +300,7 @@ impl Bootstrapping {
     fn send_bootstrap_request(&mut self, pub_id: PublicId) {
         debug!("{} Sending BootstrapRequest to {}.", self, pub_id);
 
-        let token = self
-            .timer
-            .schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
+        let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
         self.bootstrap_connection = Some((pub_id, token));
 
         let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
@@ -489,6 +486,6 @@ mod tests {
         unwrap!(state_machine.step(&mut outbox));
         let events = outbox.take_all();
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0], Event::Terminate);
+        assert_eq!(events[0], Event::Terminated);
     }
 }

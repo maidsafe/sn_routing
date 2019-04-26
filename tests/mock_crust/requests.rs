@@ -37,7 +37,7 @@ fn successful_put_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request {
+                Ok(Event::RequestReceived {
                     request:
                         Request::PutIData {
                             data: ref req_data,
@@ -51,7 +51,7 @@ fn successful_put_request() {
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request not received"),
+                _ => panic!("Event::RequestReceived not received"),
             }
         }
     }
@@ -84,7 +84,7 @@ fn successful_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request {
+                Ok(Event::RequestReceived {
                     request:
                         Request::GetIData {
                             name: ref req_name,
@@ -107,7 +107,7 @@ fn successful_get_request() {
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request not received"),
+                _ => panic!("Event::RequestReceived not received"),
             }
         }
     }
@@ -122,7 +122,7 @@ fn successful_get_request() {
     for client in &mut clients {
         loop {
             match client.inner.try_next_ev() {
-                Ok(Event::Response {
+                Ok(Event::ResponseReceived {
                     response:
                         Response::GetIData {
                             res: Ok(ref res_data),
@@ -136,7 +136,7 @@ fn successful_get_request() {
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Response not received"),
+                _ => panic!("Event::ResponseReceived not received"),
             }
         }
     }
@@ -168,7 +168,7 @@ fn failed_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request {
+                Ok(Event::RequestReceived {
                     request:
                         Request::GetIData {
                             name: ref req_name,
@@ -191,7 +191,7 @@ fn failed_get_request() {
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request not received"),
+                _ => panic!("Event::RequestReceived not received"),
             }
         }
     }
@@ -206,7 +206,7 @@ fn failed_get_request() {
     for client in &mut clients {
         loop {
             match client.inner.try_next_ev() {
-                Ok(Event::Response {
+                Ok(Event::ResponseReceived {
                     response:
                         Response::GetIData {
                             res: Err(_),
@@ -220,7 +220,7 @@ fn failed_get_request() {
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Response not received"),
+                _ => panic!("Event::ResponseReceived not received"),
             }
         }
     }
@@ -252,7 +252,7 @@ fn disconnect_on_get_request() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request {
+                Ok(Event::RequestReceived {
                     request:
                         Request::GetIData {
                             name: ref req_name,
@@ -297,8 +297,8 @@ fn disconnect_on_get_request() {
     let _ = poll_all(&mut nodes, &mut clients);
 
     for client in &mut clients {
-        if let Ok(Event::Response { .. }) = client.inner.try_next_ev() {
-            panic!("Unexpected Event::Response received");
+        if let Ok(Event::ResponseReceived { .. }) = client.inner.try_next_ev() {
+            panic!("Unexpected Event::ResponseReceived");
         }
     }
 }

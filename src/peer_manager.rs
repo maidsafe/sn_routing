@@ -9,23 +9,19 @@
 use crate::crust::CrustUser;
 use crate::error::RoutingError;
 use crate::id::PublicId;
-use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
+use crate::resource_prover::RESOURCE_PROOF_DURATION;
 use crate::routing_table::Authority;
-use crate::signature_accumulator::ACCUMULATION_TIMEOUT_SECS;
+use crate::signature_accumulator::ACCUMULATION_TIMEOUT;
+use crate::time::{Duration, Instant};
 use crate::types::MessageId;
 use crate::xor_name::XorName;
 use crate::{PrivConnectionInfo, PubConnectionInfo};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use log::LogLevel;
 use rand;
 use resource_proof::ResourceProof;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::net::IpAddr;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 use std::{error, fmt, mem};
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
@@ -41,14 +37,14 @@ const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 120;
 #[cfg(feature = "mock")]
 #[doc(hidden)]
 pub mod test_consts {
-    pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT_SECS;
-    pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT_SECS;
+    pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT.as_secs();
+    pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT.as_secs();
     pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
-    pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION_SECS;
+    pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION.as_secs();
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
-    pub const RATE_EXCEED_RETRY_MS: u64 = crate::states::RATE_EXCEED_RETRY_MS;
+    pub const RATE_EXCEED_RETRY_MS: u64 = crate::states::RATE_EXCEED_RETRY.as_millis() as u64;
 }
 
 #[derive(Debug)]
@@ -298,10 +294,7 @@ impl Candidate {
             } => {
                 // TODO: need better fix. Using a larger timeout to allow Online to accumulate via gossip
                 // than the prev timeout for grp-msg accumulation.
-                res_proof_start.elapsed()
-                    > Duration::from_secs(
-                        RESOURCE_PROOF_DURATION_SECS + (ACCUMULATION_TIMEOUT_SECS * 3),
-                    )
+                res_proof_start.elapsed() > RESOURCE_PROOF_DURATION + ACCUMULATION_TIMEOUT * 3
             }
         }
     }

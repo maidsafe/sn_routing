@@ -37,7 +37,7 @@ fn ban_malicious_client() {
         2,
     );
     let _ = poll_all(&mut nodes, &mut clients);
-    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
     let banned_client_ips = nodes[0].inner.get_banned_client_ips();
     assert_eq!(banned_client_ips.len(), 1);
     let ip_addr = clients[0].ip();
@@ -56,7 +56,7 @@ fn ban_malicious_client() {
     );
     clients.push(client);
     let _ = poll_all(&mut nodes, &mut clients);
-    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
 }
 
 /// Connects two clients to the network using the same ip address and via the same proxy.
@@ -77,7 +77,7 @@ fn only_one_client_per_ip() {
     );
     clients.push(client);
     let _ = poll_all(&mut nodes, &mut clients);
-    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
 }
 
 /// Reconnect a client (disconnected as network not having enough nodes) with the same id.
@@ -100,7 +100,7 @@ fn reconnect_disconnected_client() {
     )];
     poll_and_resend(&mut nodes, &mut clients);
 
-    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminate);
+    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
 
     let _ = clients.remove(0);
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);

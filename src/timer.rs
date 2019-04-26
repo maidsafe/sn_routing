@@ -10,15 +10,17 @@ pub use self::implementation::Timer;
 
 #[cfg(not(feature = "mock"))]
 mod implementation {
-    use crate::action::Action;
-    use crate::types::RoutingActionSender;
+    use crate::{
+        action::Action,
+        time::{Duration, Instant},
+        types::RoutingActionSender,
+    };
     use itertools::Itertools;
     use maidsafe_utilities::thread::{self, Joiner};
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
     use std::sync::mpsc::{self, Receiver, RecvError, RecvTimeoutError, SyncSender};
-    use std::time::{Duration, Instant};
 
     struct Detail {
         expiry: Instant,
@@ -111,7 +113,7 @@ mod implementation {
                     // `deadlines`.
                     let tokens = deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
                     for token in tokens {
-                        let _ = sender.send(Action::Timeout(token));
+                        let _ = sender.send(Action::HandleTimeout(token));
                     }
                 }
             }
@@ -184,10 +186,10 @@ mod implementation {
                     }
                     let action = action_receiver.try_recv();
                     match action.expect("Should have received an action.") {
-                        Action::Timeout(token) => assert_eq!(token, u64::from(count - i - 1)),
+                        Action::HandleTimeout(token) => assert_eq!(token, u64::from(count - i - 1)),
                         unexpected_action => {
                             panic!(
-                                "Expected `Action::Timeout`, but received {:?}",
+                                "Expected `Action::HandleTimeout`, but received {:?}",
                                 unexpected_action
                             );
                         }
@@ -229,13 +231,14 @@ mod implementation {
 
 #[cfg(feature = "mock")]
 mod implementation {
-    use crate::types::RoutingActionSender;
-    use fake_clock::FakeClock as Instant;
+    use crate::{
+        time::{Duration, Instant},
+        types::RoutingActionSender,
+    };
     use itertools::Itertools;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
-    use std::time::Duration;
 
     struct Inner {
         next_token: u64,

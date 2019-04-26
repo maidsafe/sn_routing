@@ -51,7 +51,7 @@ fn disconnect_on_rebootstrap() {
     let _ = poll_all(&mut nodes, &mut []);
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
     assert!(!unwrap!(nodes.last()).handle.is_connected(&nodes[1].handle));
-    expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminate);
+    expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminated);
 }
 
 #[test]

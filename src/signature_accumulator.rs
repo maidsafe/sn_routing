@@ -9,19 +9,16 @@
 use crate::chain::Proof;
 use crate::messages::SignedMessage;
 use crate::sha3::Digest256;
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
+use crate::time::{Duration, Instant};
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use safe_crypto;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
 /// accumulate.
-pub const ACCUMULATION_TIMEOUT_SECS: u64 = 30;
+pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
@@ -95,7 +92,7 @@ impl SignatureAccumulator {
         let expired_sigs = self
             .proofs
             .iter()
-            .filter(|&(_, &(_, ref time))| time.elapsed().as_secs() > ACCUMULATION_TIMEOUT_SECS)
+            .filter(|&(_, &(_, ref time))| time.elapsed() > ACCUMULATION_TIMEOUT)
             .map(|(hash, _)| *hash)
             .collect_vec();
         for hash in expired_sigs {
@@ -104,7 +101,7 @@ impl SignatureAccumulator {
         let expired_msgs = self
             .msgs
             .iter()
-            .filter(|&(_, &(_, _, ref time))| time.elapsed().as_secs() > ACCUMULATION_TIMEOUT_SECS)
+            .filter(|&(_, &(_, _, ref time))| time.elapsed() > ACCUMULATION_TIMEOUT)
             .map(|(hash, _)| *hash)
             .collect_vec();
         for hash in expired_msgs {

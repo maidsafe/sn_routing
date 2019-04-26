@@ -1,4 +1,4 @@
-// Copyright 2018 MaidSafe.net limited.
+// Copyright 2019 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -6,17 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod bootstrapping;
-mod client;
-pub mod common;
-mod joining_node;
-mod node;
-mod proving_node;
-
-pub use self::{
-    bootstrapping::{Bootstrapping, TargetState as BootstrappingTargetState},
-    client::{Client, RATE_EXCEED_RETRY},
-    joining_node::JoiningNode,
-    node::Node,
-    proving_node::ProvingNode,
-};
+#[cfg(feature = "mock")]
+pub use fake_clock::FakeClock as Instant;
+pub use std::time::Duration;
+#[cfg(not(feature = "mock"))]
+pub use std::time::Instant;

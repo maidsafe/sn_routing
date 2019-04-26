@@ -25,7 +25,7 @@ macro_rules! recv_response {
                 .receiver
                 .recv_timeout(Duration::from_secs(RESPONSE_TIMEOUT_SECS))
             {
-                Ok(Event::Response {
+                Ok(Event::ResponseReceived {
                     response: Response::$resp { res, msg_id },
                     ..
                 }) => {
@@ -54,7 +54,7 @@ macro_rules! recv_response {
 
                     return res;
                 }
-                Ok(Event::Terminate) | Ok(Event::RestartRequired) => $client.disconnected(),
+                Ok(Event::Terminated) | Ok(Event::RestartRequired) => $client.disconnected(),
                 Ok(_) => (),
                 Err(_) => return Err(ClientError::from("No response")),
             }
@@ -101,7 +101,7 @@ impl ExampleClient {
                         println!("Client Connected to the network");
                         break 'outer;
                     }
-                    Event::Terminate => {
+                    Event::Terminated => {
                         println!("Client failed to connect to the network. Restarting.");
                         thread::sleep(Duration::from_secs(5));
                         break;

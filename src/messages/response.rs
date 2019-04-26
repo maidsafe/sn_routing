@@ -135,7 +135,7 @@ pub enum Response {
     },
     /// Returns a success or failure status of deleting permissions for a particular
     /// User in MutableData.
-    DelMDataUserPermissions {
+    DeleteMDataUserPermissions {
         /// Result of deleting a list of user permissions in MutableData
         res: Result<(), ClientError>,
         /// Unique message identifier
@@ -161,14 +161,14 @@ pub enum Response {
         msg_id: MsgId,
     },
     /// Returns a success or failure status of inserting an authorised key into MaidManager.
-    InsAuthKey {
+    InsertAuthKey {
         /// Result of inserting an authorised key
         res: Result<(), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
     /// Returns a success or failure status of deleting an authorised key from MaidManager.
-    DelAuthKey {
+    DeleteAuthKey {
         /// Result of deleting an authorised key
         res: Result<(), ClientError>,
         /// Unique message identifier
@@ -206,11 +206,11 @@ impl Response {
             | ListMDataPermissions { ref msg_id, .. }
             | ListMDataUserPermissions { ref msg_id, .. }
             | SetMDataUserPermissions { ref msg_id, .. }
-            | DelMDataUserPermissions { ref msg_id, .. }
+            | DeleteMDataUserPermissions { ref msg_id, .. }
             | ChangeMDataOwner { ref msg_id, .. }
             | ListAuthKeysAndVersion { ref msg_id, .. }
-            | InsAuthKey { ref msg_id, .. }
-            | DelAuthKey { ref msg_id, .. } => msg_id,
+            | InsertAuthKey { ref msg_id, .. }
+            | DeleteAuthKey { ref msg_id, .. } => msg_id,
         }
     }
 

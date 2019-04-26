@@ -8,8 +8,13 @@
 
 mod base;
 mod bootstrapped;
+mod relocated;
+mod unapproved;
+pub mod unrelocated;
 
-pub use self::base::Base;
-pub use self::bootstrapped::Bootstrapped;
+pub use self::{
+    base::Base, bootstrapped::Bootstrapped, relocated::Relocated, unapproved::Unapproved,
+};
+use crate::time::Duration;
 
-pub const USER_MSG_CACHE_EXPIRY_DURATION_SECS: u64 = 120;
+pub const USER_MSG_CACHE_EXPIRY_DURATION: Duration = Duration::from_secs(120);

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped};
+use super::common::{unrelocated, Base, Bootstrapped, Unapproved};
 use super::{Bootstrapping, BootstrappingTargetState};
 use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
@@ -15,30 +15,26 @@ use crate::chain::SectionInfo;
 use crate::error::{InterfaceError, Result, RoutingError};
 use crate::event::Event;
 use crate::id::{FullId, PublicId};
-use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
+use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage};
 use crate::outbox::EventBox;
-use crate::resource_prover::RESOURCE_PROOF_DURATION_SECS;
-use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::resource_prover::RESOURCE_PROOF_DURATION;
+use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::{Authority, Prefix};
 use crate::state_machine::{State, Transition};
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
 use crate::{CrustEvent, CrustEventSender, Service};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
-/// Total time (in seconds) to wait for `RelocateResponse`.
-const RELOCATE_TIMEOUT_SECS: u64 = 60 + RESOURCE_PROOF_DURATION_SECS;
+/// Total time to wait for `RelocateResponse`.
+const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
 
 pub struct JoiningNode {
     action_sender: RoutingActionSender,
@@ -67,8 +63,7 @@ impl JoiningNode {
         proxy_pub_id: PublicId,
         timer: Timer,
     ) -> Option<Self> {
-        let duration = Duration::from_secs(RELOCATE_TIMEOUT_SECS);
-        let relocation_timer_token = timer.schedule(duration);
+        let relocation_timer_token = timer.schedule(RELOCATE_TIMEOUT);
         let mut joining_node = JoiningNode {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),
@@ -81,11 +76,12 @@ impl JoiningNode {
             relocation_timer_token: relocation_timer_token,
             timer: timer,
         };
+
         if let Err(error) = joining_node.relocate() {
             error!("{} Failed to start relocation: {:?}", joining_node, error);
             None
         } else {
-            debug!("{} State changed to joining node.", joining_node);
+            debug!("{} State changed to JoiningNode.", joining_node);
             Some(joining_node)
         }
     }
@@ -97,15 +93,15 @@ impl JoiningNode {
                 warn!("{} Cannot handle {:?} - not joined.", self, action);
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => {
+            Action::HandleTimeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
             }
-            Action::ResourceProofResult(..) => {
+            Action::TakeResourceProofResult(..) => {
                 warn!("{} Cannot handle {:?} - not joined.", self, action);
             }
             Action::Terminate => {
@@ -144,7 +140,7 @@ impl JoiningNode {
             crust_rx,
             crust_sender,
         );
-        let target_state = BootstrappingTargetState::Node {
+        let target_state = BootstrappingTargetState::ProvingNode {
             old_full_id: self.full_id,
             our_section: our_section,
         };
@@ -215,37 +211,15 @@ impl JoiningNode {
     }
 
     fn handle_hop_message(&mut self, hop_msg: HopMessage, pub_id: PublicId) -> Result<Transition> {
-        if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
-        } else {
+        if self.proxy_pub_id != pub_id {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
-
-        let routing_msg = signed_msg.routing_message();
-        let in_authority = self.in_authority(&routing_msg.dst);
-        if in_authority {
-            self.send_ack(routing_msg, 0);
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            Ok(self.dispatch_routing_message(routing_msg))
+        } else {
+            Ok(Transition::Stay)
         }
-
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self
-            .routing_msg_filter
-            .filter_incoming(routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            FilteringResult::NewMessage => (),
-        }
-
-        if !in_authority {
-            return Ok(Transition::Stay);
-        }
-
-        Ok(self.dispatch_routing_message(routing_msg.clone()))
     }
 
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
@@ -362,7 +336,7 @@ impl Base for JoiningNode {
 
         if self.proxy_pub_id == pub_id {
             debug!("{} Lost bootstrap connection to {}.", self, pub_id);
-            outbox.send_event(Event::Terminate);
+            outbox.send_event(Event::Terminated);
             Transition::Terminate
         } else {
             Transition::Stay
@@ -393,41 +367,7 @@ impl Bootstrapped for JoiningNode {
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()> {
-        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
-            return Ok(()); // Message is for us.
-        }
-
-        // Get PublicId of the proxy node
-        match routing_msg.src {
-            Authority::Client {
-                ref proxy_node_name,
-                ..
-            } => {
-                if *self.proxy_pub_id.name() != *proxy_node_name {
-                    error!(
-                        "{} Unable to find connection to proxy node in proxy map",
-                        self
-                    );
-                    return Err(RoutingError::ProxyConnectionNotFound);
-                }
-            }
-            _ => {
-                error!("{} Source should be client if our state is a Client", self);
-                return Err(RoutingError::InvalidSource);
-            }
-        };
-
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), None)?;
-
-        let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), src_section, route, expires_at)
-            && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
-        {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
-            self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
-        }
-
-        Ok(())
+        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -436,6 +376,14 @@ impl Bootstrapped for JoiningNode {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+}
+
+impl Unapproved for JoiningNode {
+    const SEND_ACK: bool = true;
+
+    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
+        unrelocated::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }
 }
 

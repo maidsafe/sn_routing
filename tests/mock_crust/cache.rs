@@ -69,7 +69,7 @@ fn response_caching() {
     for node in &mut *nodes {
         loop {
             match node.try_next_ev() {
-                Ok(Event::Request {
+                Ok(Event::RequestReceived {
                     request:
                         Request::GetIData {
                             name: req_data_id,
@@ -98,7 +98,7 @@ fn response_caching() {
 
     expect_any_event!(
         clients[0],
-        Event::Response {
+        Event::ResponseReceived {
             response: Response::GetIData { res: Ok(ref res_data), msg_id: res_message_id },
             src: Authority::NaeManager(ref src_name),
             ..
@@ -124,7 +124,7 @@ fn response_caching() {
     // The client should receive the response...
     expect_any_event!(
         clients[0],
-        Event::Response {
+        Event::ResponseReceived {
             response: Response::GetIData { res: Ok(ref res_data), msg_id: res_message_id },
             src: Authority::ManagedNode(src_name),
             ..
@@ -137,7 +137,7 @@ fn response_caching() {
     expect_no_event!(clients[0]);
 
     // The request should not be relayed to any other node, so no node should
-    // raise Event::Request.
+    // raise Event::RequestReceived.
     for node in nodes.iter_mut().take(min_section_size) {
         expect_no_event!(node);
     }

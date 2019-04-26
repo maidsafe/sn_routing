@@ -10,9 +10,8 @@ use crate::data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_SIZE_IN_BYT
 use crate::error::{Result, RoutingError};
 use crate::messages::{UserMessage, MAX_PART_LEN};
 use crate::sha3::Digest256;
+use crate::time::{Duration, Instant};
 use crate::types::MessageId;
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
@@ -20,9 +19,6 @@ use std::cmp;
 use std::collections::BTreeMap;
 use std::mem;
 use std::net::IpAddr;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// The number of bytes per second the `RateLimiter` will "leak".
 const RATE: f64 = 8.0 * 1024.0 * 1024.0;
@@ -122,10 +118,10 @@ impl RateLimiter {
                         | PutMData { .. }
                         | MutateMDataEntries { .. }
                         | SetMDataUserPermissions { .. }
-                        | DelMDataUserPermissions { .. }
+                        | DeleteMDataUserPermissions { .. }
                         | ChangeMDataOwner { .. }
-                        | InsAuthKey { .. }
-                        | DelAuthKey { .. } => (payload.len() as u64, false),
+                        | InsertAuthKey { .. }
+                        | DeleteAuthKey { .. } => (payload.len() as u64, false),
                         Refresh(..) => return Err(RoutingError::InvalidMessage),
                     }
                 }
@@ -224,10 +220,10 @@ impl RateLimiter {
                         | PutMData { .. }
                         | MutateMDataEntries { .. }
                         | SetMDataUserPermissions { .. }
-                        | DelMDataUserPermissions { .. }
+                        | DeleteMDataUserPermissions { .. }
                         | ChangeMDataOwner { .. }
-                        | InsAuthKey { .. }
-                        | DelAuthKey { .. } => return None,
+                        | InsertAuthKey { .. }
+                        | DeleteAuthKey { .. } => return None,
                     }
                 }
                 _ => return None,

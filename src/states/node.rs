@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
 use crate::cache::Cache;
@@ -15,7 +15,7 @@ use crate::chain::{
     ProvingSection, SectionInfo,
 };
 use crate::config_handler;
-use crate::crust::{ConnectionInfoResult, CrustError, CrustUser};
+use crate::crust::{ConnectionInfoResult, CrustUser};
 use crate::error::{BootstrapResponseError, InterfaceError, RoutingError};
 use crate::event::Event;
 use crate::id::{FullId, PublicId};
@@ -23,63 +23,56 @@ use crate::messages::{
     DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
     UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
 };
-use crate::outbox::{EventBox, EventBuf};
-use crate::parsec::{self, Parsec};
-use crate::peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState};
+use crate::outbox::EventBox;
+use crate::parsec::{self, ConsensusMode, Parsec};
+use crate::peer_manager::{Peer, PeerManager, PeerState};
 use crate::rate_limiter::RateLimiter;
-use crate::resource_prover::{ResourceProver, RESOURCE_PROOF_DURATION_SECS};
+use crate::resource_prover::RESOURCE_PROOF_DURATION;
 use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
 use crate::routing_table::Error as RoutingTableError;
 use crate::routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX};
 use crate::sha3::Digest256;
 use crate::signature_accumulator::SignatureAccumulator;
 use crate::state_machine::Transition;
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
-use crate::types::{MessageId, RoutingActionSender};
+use crate::types::MessageId;
 use crate::utils::{self, DisplayDuration};
 use crate::xor_name::XorName;
-use crate::{CrustEvent, PrivConnectionInfo, PubConnectionInfo, Service};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
+use crate::{CrustEvent, Service};
 use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
-use safe_crypto::{SharedSecretKey, Signature};
-use std::collections::BTreeMap;
-use std::collections::{BTreeSet, VecDeque};
+use safe_crypto::Signature;
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::net::IpAddr;
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 use std::{cmp, fmt, iter, mem};
 
-/// Time (in seconds) after which a `Tick` event is sent.
-const TICK_TIMEOUT_SECS: u64 = 15;
-const POKE_TIMEOUT_SECS: u64 = 60;
-const GOSSIP_TIMEOUT_SECS: u64 = 2;
-const RECONNECT_PEER_TIMEOUT_SECS: u64 = 20;
+/// Time after which a `Ticked` event is sent.
+const TICK_TIMEOUT: Duration = Duration::from_secs(15);
+const POKE_TIMEOUT: Duration = Duration::from_secs(60);
+const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+const RECONNECT_PEER_TIMEOUT: Duration = Duration::from_secs(20);
 //const MAX_IDLE_ROUNDS: u64 = 100;
 //const TICK_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
 const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
 /// The total size of the resource proof data.
 const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
-/// Interval between displaying info about current candidate, in seconds.
-const CANDIDATE_STATUS_INTERVAL_SECS: u64 = 60;
-/// Duration for which all clients on a given IP will be blocked from joining this node, in seconds.
-const CLIENT_BAN_SECS: u64 = 2 * 60 * 60;
-/// Duration for which clients' IDs we disconnected from are retained, in seconds.
-const DROPPED_CLIENT_TIMEOUT_SECS: u64 = 2 * 60 * 60;
+/// Interval between displaying info about current candidate.
+const CANDIDATE_STATUS_INTERVAL: Duration = Duration::from_secs(60);
+/// Duration for which all clients on a given IP will be blocked from joining this node.
+const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
+/// Duration for which clients' IDs we disconnected from are retained.
+const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
 pub struct Node {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
-    /// ID from before relocating.
-    old_full_id: FullId,
     full_id: FullId,
     is_first_node: bool,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
@@ -103,8 +96,6 @@ pub struct Node {
     candidate_timer_token: Option<u64>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: Option<u64>,
-    resource_prover: ResourceProver,
-    joining_prefix: Prefix<XorName>,
     /// Limits the rate at which clients can pass messages through this node when it acts as their
     /// proxy.
     clients_rate_limiter: RateLimiter,
@@ -120,9 +111,9 @@ pub struct Node {
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
     parsec_map: BTreeMap<u64, Parsec<NetworkEvent, FullId>>,
-    gen_pfx_info: Option<GenesisPfxInfo>,
-    poke_timer_token: Option<u64>,
-    gossip_timer_token: Option<u64>,
+    gen_pfx_info: GenesisPfxInfo,
+    poke_timer_token: u64,
+    gossip_timer_token: u64,
     chain: Chain,
     // Peers we want to try reconnecting to
     reconnect_peers: Vec<PublicId>,
@@ -133,161 +124,140 @@ pub struct Node {
 
 impl Node {
     pub fn first(
-        action_sender: RoutingActionSender,
         cache: Box<Cache>,
         crust_service: Service,
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
     ) -> Option<Self> {
-        // old_id is useless for first node
-        let old_id = FullId::new();
+        let dev_config = config_handler::get_config().dev.unwrap_or_default();
+
+        let public_id = *full_id.public_id();
+        let gen_pfx_info = GenesisPfxInfo {
+            first_info: create_first_section_info(public_id).ok()?,
+            latest_info: SectionInfo::default(),
+        };
+
         let mut node = Self::new(
-            action_sender,
+            AckManager::new(),
             cache,
             crust_service,
-            true,
-            old_id,
             full_id,
+            gen_pfx_info,
+            true,
             min_section_size,
+            Default::default(),
+            Default::default(),
+            PeerManager::new(public_id, dev_config.disable_client_rate_limiter),
+            RoutingMessageFilter::new(),
             timer,
-            0,
         );
 
         if let Err(error) = node.crust_service.start_listening_tcp() {
             error!("{} Failed to start listening: {:?}", node, error);
             None
         } else {
-            debug!("{} State changed to node.", node);
+            debug!("{} State changed to Node.", node);
             info!("{} Started a new network as a seed node.", node);
             Some(node)
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn from_bootstrapping(
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-        action_sender: RoutingActionSender,
+    pub fn from_proving_node(
+        ack_mgr: AckManager,
         cache: Box<Cache>,
         crust_service: Service,
-        old_full_id: FullId,
-        new_full_id: FullId,
+        full_id: FullId,
+        gen_pfx_info: GenesisPfxInfo,
         min_section_size: usize,
-        proxy_pub_id: PublicId,
+        msg_queue: VecDeque<RoutingMessage>,
+        notified_nodes: BTreeSet<PublicId>,
+        peer_mgr: PeerManager,
+        routing_msg_filter: RoutingMessageFilter,
         timer: Timer,
     ) -> Self {
-        let mut node = Self::new(
-            action_sender,
+        let node = Self::new(
+            ack_mgr,
             cache,
             crust_service,
+            full_id,
+            gen_pfx_info,
             false,
-            old_full_id,
-            new_full_id,
             min_section_size,
+            msg_queue,
+            notified_nodes,
+            peer_mgr,
+            routing_msg_filter,
             timer,
-            our_section.1.len(),
         );
-        node.joining_prefix = our_section.0;
-        node.peer_mgr
-            .insert_peer(Peer::new(proxy_pub_id, PeerState::Proxy));
-        node.join(our_section.1, &proxy_pub_id);
+
+        debug!("{} State changed to Node.", node);
         node
     }
 
     #[allow(clippy::too_many_arguments)]
     fn new(
-        action_sender: RoutingActionSender,
+        ack_mgr: AckManager,
         cache: Box<Cache>,
         crust_service: Service,
-        first_node: bool,
-        old_full_id: FullId,
-        new_full_id: FullId,
+        full_id: FullId,
+        gen_pfx_info: GenesisPfxInfo,
+        is_first_node: bool,
         min_section_size: usize,
+        msg_queue: VecDeque<RoutingMessage>,
+        notified_nodes: BTreeSet<PublicId>,
+        peer_mgr: PeerManager,
+        routing_msg_filter: RoutingMessageFilter,
         timer: Timer,
-        challenger_count: usize,
     ) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
-        let public_id = *new_full_id.public_id();
-        let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
-        let tick_timer_token = timer.schedule(tick_period);
-        let gossip_timer_token = Some(timer.schedule(Duration::from_secs(GOSSIP_TIMEOUT_SECS)));
-        let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
-        let reconnect_peers_token =
-            timer.schedule(Duration::from_secs(RECONNECT_PEER_TIMEOUT_SECS));
 
-        Node {
-            ack_mgr: AckManager::new(),
+        let public_id = *full_id.public_id();
+
+        let tick_timer_token = timer.schedule(TICK_TIMEOUT);
+        let poke_timer_token = timer.schedule(POKE_TIMEOUT);
+        let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
+        let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
+
+        let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
+        let mut parsec_map = BTreeMap::new();
+        let _ = parsec_map.insert(*gen_pfx_info.first_info.version(), parsec);
+
+        Self {
+            ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
-                user_msg_cache_duration,
+                USER_MSG_CACHE_EXPIRY_DURATION,
             ),
             crust_service: crust_service,
-            old_full_id: old_full_id,
-            full_id: new_full_id,
-            is_first_node: first_node,
-            msg_queue: VecDeque::new(),
-            peer_mgr: PeerManager::new(public_id, dev_config.disable_client_rate_limiter),
+            full_id: full_id,
+            is_first_node,
+            msg_queue,
+            peer_mgr,
             response_cache: cache,
-            routing_msg_filter: RoutingMessageFilter::new(),
+            routing_msg_filter,
             sig_accumulator: Default::default(),
             tick_timer_token: tick_timer_token,
-            timer: timer.clone(),
-            user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            timer: timer,
+            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             next_relocation_dst: None,
             next_relocation_interval: None,
             routing_msg_backlog: vec![],
             candidate_timer_token: None,
             candidate_status_token: None,
-            resource_prover: ResourceProver::new(action_sender, timer, challenger_count),
-            joining_prefix: Default::default(),
             clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
-            banned_client_ips: LruCache::with_expiry_duration(Duration::from_secs(CLIENT_BAN_SECS)),
-            dropped_clients: LruCache::with_expiry_duration(Duration::from_secs(
-                DROPPED_CLIENT_TIMEOUT_SECS,
-            )),
+            banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
+            dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
-            parsec_map: Default::default(),
-            gen_pfx_info: None,
-            poke_timer_token: None,
+            parsec_map,
+            gen_pfx_info: gen_pfx_info.clone(),
+            poke_timer_token,
             gossip_timer_token,
-            chain: Chain::with_id_and_min_sec_size(public_id, min_section_size),
+            chain: Chain::new(min_section_size, public_id, gen_pfx_info),
             reconnect_peers: Default::default(),
             reconnect_peers_token,
-            notified_nodes: Default::default(),
-        }
-    }
-
-    /// Called immediately after bootstrapping. Sends `ConnectionInfoRequest`s to all members of
-    /// `our_section` to then start the candidate approval process.
-    fn join(&mut self, our_section: BTreeSet<PublicId>, proxy_public_id: &PublicId) {
-        self.resource_prover.start(self.disable_resource_proof);
-
-        trace!("{} Relocation completed.", self);
-        info!(
-            "{} Received relocation section. Establishing connections to {} peers.",
-            self,
-            our_section.len()
-        );
-
-        let src = Authority::Client {
-            client_id: *self.full_id.public_id(),
-            proxy_node_name: *proxy_public_id.name(),
-        };
-        // There will be no events raised as a result of these calls, so safe to just use a
-        // throwaway `EventBox` here.
-        let mut outbox = EventBuf::new();
-        for pub_id in &our_section {
-            debug!(
-                "{} Sending connection info to {:?} on Relocation response.",
-                self, pub_id
-            );
-            let dst = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, &mut outbox) {
-                debug!(
-                    "{} - Failed to send connection info to {:?}: {:?}",
-                    self, pub_id, error
-                );
-            }
+            notified_nodes,
         }
     }
 
@@ -331,22 +301,19 @@ impl Node {
 
                 let _ = result_tx.send(result);
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => {
+            Action::HandleTimeout(token) => {
                 if let Transition::Terminate = self.handle_timeout(token, outbox) {
                     return Transition::Terminate;
                 }
             }
-            Action::ResourceProofResult(pub_id, messages) => {
-                let msg = self
-                    .resource_prover
-                    .handle_action_res_proof(pub_id, messages);
-                self.send_direct_message(pub_id, msg);
-            }
             Action::Terminate => {
                 return Transition::Terminate;
+            }
+            Action::TakeResourceProofResult(..) => {
+                error!("Action::TakeResourceProofResult received by Node state");
             }
         }
 
@@ -384,14 +351,14 @@ impl Node {
             CrustEvent::ListenerStarted(port) => {
                 trace!("{} Listener started on port {}.", self, port);
                 if self.is_first_node && self.init_first_node(outbox).is_err() {
-                    outbox.send_event(Event::Terminate);
+                    outbox.send_event(Event::Terminated);
                     return Transition::Terminate;
                 }
                 return Transition::Stay;
             }
             CrustEvent::ListenerFailed => {
                 error!("{} Failed to start listening.", self);
-                outbox.send_event(Event::Terminate);
+                outbox.send_event(Event::Terminated);
                 return Transition::Terminate;
             }
             CrustEvent::WriteMsgSizeProhibitive(pub_id, msg) => {
@@ -415,21 +382,7 @@ impl Node {
     fn init_first_node(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
         outbox.send_event(Event::Connected);
 
-        let first_info = SectionInfo::new(
-            iter::once(*self.full_id.public_id()).collect(),
-            *DEFAULT_PREFIX,
-            None,
-        )?;
-        self.gen_pfx_info = Some(GenesisPfxInfo {
-            first_info,
-            latest_info: Default::default(),
-        });
-
-        if self.init_parsec()? {
-            self.init_chain();
-        }
         self.peer_mgr.set_established();
-
         self.crust_service.set_accept_bootstrap(true)?;
         self.crust_service.set_service_discovery_listen(true);
 
@@ -488,36 +441,6 @@ impl Node {
     fn handle_bootstrap_connect(&mut self, pub_id: PublicId) {
         // A mature node doesn't need a bootstrap connection
         self.disconnect_peer(&pub_id)
-    }
-
-    fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if self
-            .peer_mgr
-            .get_peer(&pub_id)
-            .map_or(false, Peer::is_routing)
-        {
-            warn!(
-                "{} Received ConnectSuccess from {:?}, but node is already in routing \
-                 state in peer_map.",
-                self, pub_id
-            );
-            return;
-        }
-
-        self.peer_mgr.connected_to(&pub_id);
-        debug!("{} Received ConnectSuccess from {}.", self, pub_id);
-        self.process_connection(pub_id, outbox);
-    }
-
-    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
-        {
-            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
-        }
-        let _ = self.dropped_peer(&pub_id, outbox, true);
-        if self.chain.is_member() && self.chain.our_info().members().contains(&pub_id) {
-            self.vote_for_event(NetworkEvent::Offline(pub_id));
-        }
     }
 
     fn handle_new_message(
@@ -586,25 +509,6 @@ impl Node {
                     outbox,
                 );
             }
-            ResourceProof {
-                seed,
-                target_size,
-                difficulty,
-            } => {
-                let log_ident = format!("{}", self);
-                self.resource_prover.handle_request(
-                    pub_id,
-                    seed,
-                    target_size,
-                    difficulty,
-                    log_ident,
-                );
-            }
-            ResourceProofResponseReceipt => {
-                if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
-                    self.send_direct_message(pub_id, msg);
-                }
-            }
             ResourceProofResponse {
                 part_index,
                 part_count,
@@ -619,15 +523,18 @@ impl Node {
                     leading_zero_bytes,
                 );
             }
-            msg @ BootstrapResponse(_) | msg @ ProxyRateLimitExceeded { .. } => {
-                debug!("{} Unhandled direct message: {:?}", self, msg);
-            }
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 self.handle_parsec_request(version, par_request, pub_id, outbox)?;
             }
             ParsecResponse(version, par_response) => {
                 self.handle_parsec_response(version, par_response, pub_id, outbox)?;
+            }
+            BootstrapResponse(_)
+            | ProxyRateLimitExceeded { .. }
+            | ResourceProof { .. }
+            | ResourceProofResponseReceipt => {
+                debug!("{} Unhandled direct message: {:?}", self, direct_message);
             }
         }
         Ok(())
@@ -864,7 +771,7 @@ impl Node {
             self.send_neighbour_infos();
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
-            outbox.send_event(Event::SectionMerge(*sec_info.prefix()));
+            outbox.send_event(Event::SectionMerged(*sec_info.prefix()));
         }
 
         let our_name = *self.full_id.public_id().name();
@@ -988,8 +895,8 @@ impl Node {
             mut cached_events,
             completed_events,
         } = self.chain.finalise_prefix_change()?;
-        self.gen_pfx_info = Some(gen_pfx_info);
-        let _ = self.init_parsec()?; // We don't reset the chain on prefix change.
+        self.gen_pfx_info = gen_pfx_info;
+        self.init_parsec(); // We don't reset the chain on prefix change.
 
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
         for ni in neighbour_infos {
@@ -1279,7 +1186,7 @@ impl Node {
         use crate::messages::MessageContent::*;
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
-        if !self.chain.is_member() && !self.is_first_node {
+        if !self.chain.is_member() {
             match routing_msg.content {
                 ExpectCandidate { .. }
                 | AcceptAsCandidate { .. }
@@ -1287,24 +1194,13 @@ impl Node {
                 | NeighbourConfirm(..)
                 | Merge(..)
                 | UserMessagePart { .. } => {
-                    // These messages should not be handled before node approval
-                    trace!(
-                        "{} Not approved yet. Delaying message handling: {:?}",
-                        self,
-                        routing_msg
-                    );
-                    self.routing_msg_backlog.push(routing_msg);
+                    // These messages should not be handled before node becomes established
+                    self.add_routing_message_to_backlog(routing_msg);
                     return Ok(());
                 }
                 ConnectionInfoRequest { .. } => {
-                    if !self.joining_prefix.matches(&routing_msg.src.name()) {
-                        // Doesn't allow other node connect to us before node approval
-                        trace!(
-                            "{} Not approved yet. Delaying message handling: {:?}",
-                            self,
-                            routing_msg
-                        );
-                        self.routing_msg_backlog.push(routing_msg);
+                    if !self.chain.our_prefix().matches(&routing_msg.src.name()) {
+                        self.add_routing_message_to_backlog(routing_msg);
                         return Ok(());
                     }
                 }
@@ -1420,9 +1316,6 @@ impl Node {
                 src_name,
                 dst,
             ),
-            (NodeApproval(gen_info), PrefixSection(_), Client { .. }) => {
-                self.handle_node_approval(gen_info)
-            }
             (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
             (
                 NeighbourConfirm(digest, proofs, sec_infos_and_proofs),
@@ -1458,6 +1351,16 @@ impl Node {
                 Err(RoutingError::BadAuthority)
             }
         }
+    }
+
+    // Backlog the message to be processed once we are approved.
+    fn add_routing_message_to_backlog(&mut self, msg: RoutingMessage) {
+        trace!(
+            "{} Not approved yet. Delaying message handling: {:?}",
+            self,
+            msg
+        );
+        self.routing_msg_backlog.push(msg);
     }
 
     fn handle_candidate_approval(
@@ -1497,20 +1400,18 @@ impl Node {
             new_pub_id
         );
 
-        if let Some(gen_info) = self.gen_pfx_info.clone() {
-            let trimmed_info = GenesisPfxInfo {
-                first_info: gen_info.first_info.clone(),
-                latest_info: self.chain.our_info().clone(),
-            };
+        let trimmed_info = GenesisPfxInfo {
+            first_info: self.gen_pfx_info.first_info.clone(),
+            latest_info: self.chain.our_info().clone(),
+        };
 
-            let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
-            let content = MessageContent::NodeApproval(trimmed_info);
-            if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
-                debug!(
-                    "{} Failed sending NodeApproval to {}: {:?}",
-                    self, new_pub_id, error
-                );
-            }
+        let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
+        let content = MessageContent::NodeApproval(trimmed_info);
+        if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
+            debug!(
+                "{} Failed sending NodeApproval to {}: {:?}",
+                self, new_pub_id, error
+            );
         }
 
         if is_connected {
@@ -1519,96 +1420,17 @@ impl Node {
         Ok(())
     }
 
-    fn init_parsec(&mut self) -> Result<bool, RoutingError> {
-        let genesis_info = if let Some(ref genesis_info) = self.gen_pfx_info {
-            genesis_info.clone()
-        } else {
-            return Ok(false);
-        };
-
-        if self
+    fn init_parsec(&mut self) {
+        if let Entry::Vacant(entry) = self
             .parsec_map
-            .get(genesis_info.first_info.version())
-            .is_none()
+            .entry(*self.gen_pfx_info.first_info.version())
         {
-            info!("{}: Init new Parsec, genesis = {:?}", self, genesis_info);
-
-            let full_id = self.full_id.clone();
-            let genesis_ver = *genesis_info.first_info.version();
-            let consensus_mode = parsec::ConsensusMode::Single;
-
-            #[cfg(not(feature = "mock_parsec"))]
-            let parsec = if genesis_info.first_info.members().contains(self.id()) {
-                Parsec::from_genesis(full_id, &genesis_info.first_info.members(), consensus_mode)
-            } else {
-                Parsec::from_existing(
-                    full_id,
-                    &genesis_info.first_info.members(),
-                    &genesis_info.latest_info.members(),
-                    consensus_mode,
-                )
-            };
-
-            #[cfg(feature = "mock_parsec")]
-            let parsec = {
-                let section_hash = *genesis_info.first_info.hash();
-
-                if genesis_info.first_info.members().contains(self.id()) {
-                    Parsec::from_genesis(
-                        section_hash,
-                        full_id,
-                        &genesis_info.first_info.members(),
-                        consensus_mode,
-                    )
-                } else {
-                    Parsec::from_existing(
-                        section_hash,
-                        full_id,
-                        &genesis_info.first_info.members(),
-                        &genesis_info.latest_info.members(),
-                        consensus_mode,
-                    )
-                }
-            };
-
-            let _ = self.parsec_map.insert(genesis_ver, parsec);
-
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    fn init_chain(&mut self) {
-        if let Some(ref genesis_info) = self.gen_pfx_info {
-            self.chain = Chain::with_gen_info(
-                self.chain.min_sec_size(),
-                *self.full_id.public_id(),
-                genesis_info.clone(),
+            let _ = entry.insert(create_parsec(self.full_id.clone(), &self.gen_pfx_info));
+            info!(
+                "{}: Init new Parsec, genesis = {:?}",
+                self, self.gen_pfx_info
             );
         }
-    }
-
-    fn handle_node_approval(&mut self, gen_info: GenesisPfxInfo) -> Result<(), RoutingError> {
-        if self.gen_pfx_info.is_some() {
-            log_or_panic!(LogLevel::Warn, "{} Received duplicate NodeApproval.", self);
-            return Ok(());
-        }
-
-        self.resource_prover.handle_approval();
-        info!(
-            "{} Resource proof challenges completed. This node has been approved to join the \
-             network!",
-            self
-        );
-
-        self.gen_pfx_info = Some(gen_info.clone());
-        if self.init_parsec()? {
-            self.init_chain();
-        }
-
-        self.poke_timer_token = Some(self.timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS)));
-
-        Ok(())
     }
 
     // Completes a Node startup process and allows a node to behave as a `ManagedNode`.
@@ -1637,10 +1459,7 @@ impl Node {
             .into_iter()
             .rev()
             .foreach(|msg| self.msg_queue.push_front(msg));
-        self.candidate_status_token = Some(
-            self.timer
-                .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)),
-        );
+        self.candidate_status_token = Some(self.timer.schedule(CANDIDATE_STATUS_INTERVAL));
     }
 
     fn handle_resource_proof_response(
@@ -1867,7 +1686,7 @@ impl Node {
             return Err(RoutingError::FailedSignature);
         }
 
-        if !self.chain.is_member() && !self.is_first_node {
+        if !self.chain.is_member() {
             debug!(
                 "{} Client {:?} rejected: We are not an established node yet.",
                 self, pub_id
@@ -2037,297 +1856,6 @@ impl Node {
         true
     }
 
-    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
-        match self.peer_mgr.add_to_routing_table(pub_id) {
-            Err(error) => {
-                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
-                if !self.chain.is_peer_valid(pub_id) {
-                    self.disconnect_peer(pub_id);
-                }
-                return;
-            }
-            Ok(()) => (),
-        }
-
-        if self.notified_nodes.insert(*pub_id) {
-            info!("{} Added {} to routing table.", self, pub_id);
-            outbox.send_event(Event::NodeAdded(*pub_id.name()));
-            self.print_rt_size();
-        }
-    }
-
-    // If `msg_id` is `Some` this is sent as a response, otherwise as a request.
-    fn send_connection_info(
-        &mut self,
-        our_pub_info: PubConnectionInfo,
-        their_pub_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        msg_id: Option<MessageId>,
-    ) {
-        let shared_secret = self
-            .full_id
-            .encrypting_private_key()
-            .shared_secret(&their_pub_id.encrypting_public_key());
-        let encrypted_conn_info = match shared_secret.encrypt(&our_pub_info) {
-            Ok(encrypted_conn_info) => encrypted_conn_info,
-            Err(err) => {
-                debug!(
-                    "{} Failed to serialise connection info for {:?}: {:?}.",
-                    self, their_pub_id, err
-                );
-                return;
-            }
-        };
-        let msg_content = if let Some(msg_id) = msg_id {
-            MessageContent::ConnectionInfoResponse {
-                encrypted_conn_info,
-                pub_id: *self.full_id.public_id(),
-                msg_id,
-            }
-        } else {
-            MessageContent::ConnectionInfoRequest {
-                encrypted_conn_info,
-                pub_id: *self.full_id.public_id(),
-                msg_id: MessageId::new(),
-            }
-        };
-
-        if let Err(err) = self.send_routing_message(src, dst, msg_content) {
-            debug!(
-                "{} Failed to send connection info for {:?}: {:?}.",
-                self, their_pub_id, err
-            );
-        }
-    }
-
-    fn handle_connection_info_prepared(
-        &mut self,
-        result_token: u32,
-        result: Result<PrivConnectionInfo, CrustError>,
-    ) {
-        let our_connection_info = match result {
-            Err(err) => {
-                error!(
-                    "{} Failed to prepare connection info: {:?}. Retrying.",
-                    self, err
-                );
-                let new_token = match self.peer_mgr.get_new_connection_info_token(result_token) {
-                    Err(error) => {
-                        debug!(
-                            "{} Failed to prepare connection info, but no entry found in \
-                             token map: {:?}",
-                            self, error
-                        );
-                        return;
-                    }
-                    Ok(new_token) => new_token,
-                };
-                self.crust_service.prepare_connection_info(new_token);
-                return;
-            }
-            Ok(connection_info) => connection_info,
-        };
-
-        let our_pub_info = our_connection_info.to_pub_connection_info();
-        match self
-            .peer_mgr
-            .connection_info_prepared(result_token, our_connection_info)
-        {
-            Err(error) => {
-                // This usually means we have already connected.
-                debug!(
-                    "{} Prepared connection info, but no entry found in token map: {:?}",
-                    self, error
-                );
-                return;
-            }
-            Ok(ConnectionInfoPreparedResult {
-                pub_id,
-                src,
-                dst,
-                infos,
-            }) => match infos {
-                None => {
-                    debug!("{} Prepared connection info for {:?}.", self, pub_id);
-                    self.send_connection_info(our_pub_info, pub_id, src, dst, None);
-                }
-                Some((our_info, their_info, msg_id)) => {
-                    debug!(
-                        "{} Trying to connect to {:?} as {:?}.",
-                        self,
-                        their_info.id(),
-                        pub_id
-                    );
-                    self.send_connection_info(our_pub_info, pub_id, src, dst, Some(msg_id));
-                    if let Err(error) = self.crust_service.connect(our_info, their_info) {
-                        trace!("{} Unable to connect to {:?} - {:?}", self, pub_id, error);
-                    }
-                }
-            },
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn handle_connection_info_request(
-        &mut self,
-        encrypted_connection_info: Vec<u8>,
-        pub_id: PublicId,
-        message_id: MessageId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        let shared_secret = self
-            .full_id
-            .encrypting_private_key()
-            .shared_secret(&pub_id.encrypting_public_key());
-        let their_connection_info =
-            self.decrypt_connection_info(&encrypted_connection_info, &shared_secret)?;
-        if pub_id != their_connection_info.id() {
-            debug!(
-                "{} PublicId of the sender {} does not match the id mentioned in the message \
-                 {}.",
-                self,
-                pub_id,
-                their_connection_info.id()
-            );
-            return Err(RoutingError::InvalidPeer);
-        }
-
-        use crate::peer_manager::ConnectionInfoReceivedResult::*;
-        match self.peer_mgr.connection_info_received(
-            src,
-            dst,
-            their_connection_info,
-            message_id,
-            true,
-        ) {
-            Ok(Ready(our_info, their_info)) => {
-                debug!(
-                    "{} Already sent a connection info request to {}; resending \
-                     our same details as a response.",
-                    self, pub_id
-                );
-                self.send_connection_info(
-                    our_info.to_pub_connection_info(),
-                    pub_id,
-                    dst,
-                    src,
-                    Some(message_id),
-                );
-                if let Err(error) = self.crust_service.connect(our_info, their_info) {
-                    trace!("{} Unable to connect to {:?} - {:?}", self, src, error);
-                }
-            }
-            Ok(Prepare(token)) => {
-                self.crust_service.prepare_connection_info(token);
-            }
-            Ok(IsProxy) | Ok(IsClient) | Ok(IsJoiningNode) => {
-                // TODO: we should not be getting conn info req from Proxy/JoiningNode
-
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Received ConnectionInfoRequest from peer {} \
-                     with invalid state.",
-                    self,
-                    pub_id
-                );
-                if self.peer_mgr.is_connected(&pub_id) {
-                    self.process_connection(pub_id, outbox);
-                }
-            }
-            Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
-        }
-        Ok(())
-    }
-
-    fn handle_connection_info_response(
-        &mut self,
-        encrypted_connection_info: Vec<u8>,
-        public_id: PublicId,
-        message_id: MessageId,
-        src: XorName,
-        dst: Authority<XorName>,
-    ) -> Result<(), RoutingError> {
-        if self.peer_mgr.get_peer(&public_id).is_none() {
-            return Err(RoutingError::InvalidDestination);
-        }
-
-        let shared_secret = self
-            .full_id
-            .encrypting_private_key()
-            .shared_secret(&public_id.encrypting_public_key());
-        let their_connection_info =
-            self.decrypt_connection_info(&encrypted_connection_info, &shared_secret)?;
-        if public_id != their_connection_info.id() {
-            debug!(
-                "{} PublicId of the sender {} does not match the id mentioned in the message \
-                 {}.",
-                self,
-                public_id,
-                their_connection_info.id()
-            );
-            return Err(RoutingError::InvalidPeer);
-        }
-
-        use crate::peer_manager::ConnectionInfoReceivedResult::*;
-        match self.peer_mgr.connection_info_received(
-            Authority::ManagedNode(src),
-            dst,
-            their_connection_info,
-            message_id,
-            false,
-        ) {
-            Ok(Ready(our_info, their_info)) => {
-                trace!(
-                    "{} Received connection info response. Trying to connect to {}.",
-                    self,
-                    public_id
-                );
-                if let Err(error) = self.crust_service.connect(our_info, their_info) {
-                    trace!(
-                        "{} Unable to connect to {:?} - {:?}",
-                        self,
-                        public_id,
-                        error
-                    );
-                }
-            }
-            Ok(Prepare(_)) | Ok(IsProxy) | Ok(IsClient) | Ok(IsJoiningNode) => {
-                debug!(
-                    "{} Received connection info response from {} when we haven't \
-                     sent a corresponding request",
-                    self, public_id
-                );
-            }
-            Ok(Waiting) | Ok(IsConnected) | Err(_) => (),
-        }
-        Ok(())
-    }
-
-    /// Disconnects if the peer is not a proxy, client or routing table entry.
-    fn disconnect_peer(&mut self, pub_id: &PublicId) {
-        if self
-            .peer_mgr
-            .get_peer(pub_id)
-            .map_or(false, Peer::is_routing)
-        {
-            debug!("{} Not disconnecting routing table entry {}.", self, pub_id);
-        } else if self.peer_mgr.is_proxy(pub_id) {
-            debug!("{} Not disconnecting proxy node {}.", self, pub_id);
-        } else if self.peer_mgr.is_joining_node(pub_id) {
-            debug!("{} Not disconnecting joining node {:?}.", self, pub_id);
-        } else {
-            debug!(
-                "{} Disconnecting {}. Calling crust::Service::disconnect.",
-                self, pub_id
-            );
-            let _ = self.crust_service.disconnect(pub_id);
-            let _ = self.peer_mgr.remove_peer(pub_id);
-        }
-    }
-
     // Received by X; From A -> X
     fn handle_relocate_request(
         &mut self,
@@ -2341,13 +1869,10 @@ impl Node {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let close_section = if self.is_first_node && !self.chain.is_member() {
-            vec![*self.name()]
-        } else {
-            self.chain()
-                .close_names(&dst_name)
-                .ok_or(RoutingError::InvalidDestination)?
-        };
+        let close_section = self
+            .chain()
+            .close_names(&dst_name)
+            .ok_or(RoutingError::InvalidDestination)?;
 
         let relocation_dst = self
             .next_relocation_dst
@@ -2441,10 +1966,7 @@ impl Node {
             return Ok(());
         }
 
-        self.candidate_timer_token = Some(
-            self.timer
-                .schedule(Duration::from_secs(RESOURCE_PROOF_DURATION_SECS)),
-        );
+        self.candidate_timer_token = Some(self.timer.schedule(RESOURCE_PROOF_DURATION));
 
         self.peer_mgr
             .accept_as_candidate(old_pub_id, target_interval);
@@ -2557,22 +2079,13 @@ impl Node {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        let log_ident = format!("{}", self);
-        if let Some(transition) = self
-            .resource_prover
-            .handle_timeout(token, log_ident, outbox)
-        {
-            return transition;
-        }
-
         if self.tick_timer_token == token {
-            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
-            self.tick_timer_token = self.timer.schedule(tick_period);
+            self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
             self.remove_expired_peers();
             self.proxy_load_amount = 0;
 
             if self.chain.is_member() {
-                outbox.send_event(Event::Tick);
+                outbox.send_event(Event::TimerTicked);
             }
 
             return Transition::Stay;
@@ -2582,36 +2095,25 @@ impl Node {
             self.candidate_timer_token = None;
             self.send_candidate_approval();
         } else if self.candidate_status_token == Some(token) {
-            self.candidate_status_token = Some(
-                self.timer
-                    .schedule(Duration::from_secs(CANDIDATE_STATUS_INTERVAL_SECS)),
-            );
+            self.candidate_status_token = Some(self.timer.schedule(CANDIDATE_STATUS_INTERVAL));
             self.peer_mgr.show_candidate_status();
         } else if self.reconnect_peers_token == token {
-            self.reconnect_peers_token = self
-                .timer
-                .schedule(Duration::from_secs(RECONNECT_PEER_TIMEOUT_SECS));
+            self.reconnect_peers_token = self.timer.schedule(RECONNECT_PEER_TIMEOUT);
             self.reconnect_peers(outbox);
-        } else if self.poke_timer_token == Some(token) {
+        } else if self.poke_timer_token == token {
             if !self.peer_mgr.is_established() {
                 self.send_parsec_poke();
-                self.poke_timer_token =
-                    Some(self.timer.schedule(Duration::from_secs(POKE_TIMEOUT_SECS)));
+                self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
             }
-        } else if self.gossip_timer_token == Some(token) {
-            self.gossip_timer_token = Some(
-                self.timer
-                    .schedule(Duration::from_secs(GOSSIP_TIMEOUT_SECS)),
-            );
+        } else if self.gossip_timer_token == token {
+            self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
             // If we're the only node then invoke parsec_poll directly
-            if self.is_first_node && self.chain().our_info().members().len() == 1 {
+            if self.chain.is_member() && self.chain.our_info().members().len() == 1 {
                 let _ = self.parsec_poll(outbox);
             }
 
-            if self.gen_pfx_info.is_some() {
-                self.send_parsec_gossip(None);
-            }
+            self.send_parsec_gossip(None);
         } else {
             // Each token has only one purpose, so we only need to call this if none of the above
             // matched:
@@ -2663,22 +2165,15 @@ impl Node {
     // Can also just be a single target once node-ageing makes Offline votes Opaque which should
     // remove invalid test failures for unaccumulated parsec::Remove blocks.
     fn send_parsec_poke(&mut self) {
-        let (version, recipients) = if let Some(gen_pfx_info) = self.gen_pfx_info.as_ref() {
-            let recipients = gen_pfx_info
-                .latest_info
-                .members()
-                .iter()
-                .cloned()
-                .collect_vec();
-            (*gen_pfx_info.first_info.version(), recipients)
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} can't send ParsecPoke: not approved yet.",
-                self
-            );
-            return;
-        };
+        let version = *self.gen_pfx_info.first_info.version();
+        let recipients = self
+            .gen_pfx_info
+            .latest_info
+            .members()
+            .iter()
+            .cloned()
+            .collect_vec();
+
         for recipient in recipients {
             self.send_message(
                 &recipient,
@@ -2732,16 +2227,6 @@ impl Node {
                 trace!("{} Parsec vote error: {:?}", self_disp, e);
             }
         }
-    }
-
-    fn decrypt_connection_info(
-        &self,
-        encrypted_connection_info: &[u8],
-        shared_secret: &SharedSecretKey,
-    ) -> Result<PubConnectionInfo, RoutingError> {
-        shared_secret
-            .decrypt(encrypted_connection_info)
-            .map_err(RoutingError::Crypto)
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -2802,38 +2287,12 @@ impl Node {
             self.get_targets(signed_msg.routing_message(), route, hop, sent_to)?;
 
         for target_pub_id in target_pub_ids {
-            self.send_signed_msg_to_peer(
+            self.send_signed_message_to_peer(
                 signed_msg.clone(),
-                target_pub_id,
+                &target_pub_id,
                 route,
                 new_sent_to.clone(),
             )?;
-        }
-        Ok(())
-    }
-
-    // Filter, then convert the message to a `Hop` and serialise.
-    // Send this byte string.
-    fn send_signed_msg_to_peer(
-        &mut self,
-        signed_msg: SignedMessage,
-        target: PublicId,
-        route: u8,
-        sent_to: BTreeSet<XorName>,
-    ) -> Result<(), RoutingError> {
-        let priority = signed_msg.priority();
-        let routing_msg = signed_msg.routing_message().clone();
-
-        let (pub_id, bytes) = if self.crust_service.is_connected(&target) {
-            let serialised = self.to_hop_bytes(signed_msg, route, sent_to)?;
-            (target, serialised)
-        } else {
-            trace!("{} Not connected to {:?}. Dropping peer.", self, target);
-            self.disconnect_peer(&target);
-            return Ok(());
-        };
-        if !self.filter_outgoing_routing_msg(&routing_msg, &target, route) {
-            self.send_or_drop(&pub_id, bytes, priority);
         }
         Ok(())
     }
@@ -2945,7 +2404,7 @@ impl Node {
             _ => false,
         };
 
-        if (self.is_first_node || self.chain.is_member()) && !force_via_proxy {
+        if self.chain.is_member() && !force_via_proxy {
             // TODO: even if having chain reply based on connected_state,
             // we remove self in targets info and can do same by not
             // chaining us to conn_peer list here?
@@ -3012,124 +2471,6 @@ impl Node {
             .map(Peer::name)
             .chain(iter::once(self.name()))
             .collect()
-    }
-
-    /// Adds a newly connected peer to the routing table. Must only be called for connected peers.
-    /// If we are the joining node, sends the `CandidateInfo`.
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if self.chain.is_peer_valid(&pub_id) {
-            self.add_to_routing_table(&pub_id, outbox);
-        }
-
-        if self.gen_pfx_info.is_some() {
-            return;
-        }
-
-        // If we're not approved yet, we need to identify ourselves with our old and new IDs via
-        // `CandidateInfo`. Serialise the old and new `PublicId`s and sign this using the old key.
-        let msg = {
-            let old_and_new_pub_ids = (self.old_full_id.public_id(), self.full_id.public_id());
-            let mut to_sign = match serialisation::serialise(&old_and_new_pub_ids) {
-                Ok(result) => result,
-                Err(error) => {
-                    error!("Failed to serialise public IDs: {:?}", error);
-                    return;
-                }
-            };
-            let signature_using_old = self
-                .old_full_id
-                .signing_private_key()
-                .sign_detached(&to_sign);
-            // Append this signature onto the serialised IDs and sign that using the new key.
-            to_sign.extend_from_slice(&signature_using_old.into_bytes());
-            let signature_using_new = self.full_id.signing_private_key().sign_detached(&to_sign);
-            let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
-                *proxy_node_name
-            } else {
-                warn!("{} No proxy found, so unable to send CandidateInfo.", self);
-                return;
-            };
-            let new_client_auth = Authority::Client {
-                client_id: *self.full_id.public_id(),
-                proxy_node_name: proxy_node_name,
-            };
-
-            DirectMessage::CandidateInfo {
-                old_public_id: *self.old_full_id.public_id(),
-                new_public_id: *self.full_id.public_id(),
-                signature_using_old: signature_using_old,
-                signature_using_new: signature_using_new,
-                new_client_auth: new_client_auth,
-            }
-        };
-
-        self.send_direct_message(pub_id, msg);
-    }
-
-    // Note: This fn assumes `their_public_id` is a valid node in the network
-    // Do not call this to respond to ConnectionInfo requests which are not yet validated.
-    fn send_connection_info_request(
-        &mut self,
-        their_public_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        let their_name = *their_public_id.name();
-        if self.chain.is_member() && !self.chain.is_peer_valid(&their_public_id) {
-            trace!(
-                "{} Not sending ConnectionInfoRequest to Invalid peer {}.",
-                self,
-                their_name
-            );
-            return Err(RoutingError::InvalidPeer);
-        }
-
-        if self.peer_mgr.is_client(&their_public_id)
-            || self.peer_mgr.is_joining_node(&their_public_id)
-            || self.peer_mgr.is_proxy(&their_public_id)
-        {
-            // we use peer_name here instead of their_name since the peer can be
-            // a joining node with its client name as far as proxy node is concerned
-            self.process_connection(their_public_id, outbox);
-            return Ok(());
-        }
-
-        if self.peer_mgr.is_connected(&their_public_id) {
-            self.add_to_routing_table(&their_public_id, outbox);
-            return Ok(());
-        }
-
-        // This will insert the peer if peer is not in peer_mgr and flag them to `valid`
-        if let Some(token) = self
-            .peer_mgr
-            .get_connection_token(src, dst, their_public_id)
-        {
-            self.crust_service.prepare_connection_info(token);
-            return Ok(());
-        }
-
-        let our_pub_info = match self.peer_mgr.get_peer(&their_public_id).map(Peer::state) {
-            Some(&PeerState::ConnectionInfoReady(ref our_priv_info)) => {
-                our_priv_info.to_pub_connection_info()
-            }
-            state => {
-                trace!(
-                    "{} Not sending connection info request to {:?}. State: {:?}",
-                    self,
-                    their_name,
-                    state
-                );
-                return Ok(());
-            }
-        };
-        trace!(
-            "{} Resending connection info request to {:?}",
-            self,
-            their_name
-        );
-        self.send_connection_info(our_pub_info, their_public_id, src, dst, None);
-        Ok(())
     }
 
     /// Handles dropped peer with the given ID. Returns true if we should keep running, false if
@@ -3210,10 +2551,6 @@ impl Node {
         }
     }
 
-    fn send_direct_message(&mut self, dst_id: PublicId, direct_message: DirectMessage) {
-        self.send_message(&dst_id, Message::Direct(direct_message));
-    }
-
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain().our_prefix()
     }
@@ -3248,8 +2585,7 @@ impl Base for Node {
             client_id == self.full_id.public_id()
         } else {
             let conn_peers = self.connected_peers();
-            (self.is_first_node || self.chain.is_member())
-                && self.chain().in_authority(auth, &conn_peers)
+            self.chain.is_member() && self.chain().in_authority(auth, &conn_peers)
         }
     }
 
@@ -3438,8 +2774,92 @@ impl Bootstrapped for Node {
     }
 }
 
+impl Relocated for Node {
+    fn peer_mgr(&mut self) -> &mut PeerManager {
+        &mut self.peer_mgr
+    }
+
+    /// Adds a newly connected peer to the routing table. Must only be called for connected peers.
+    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+        if self.chain.is_peer_valid(&pub_id) {
+            self.add_to_routing_table(&pub_id, outbox);
+        }
+    }
+
+    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
+        {
+            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
+        }
+        let _ = self.dropped_peer(&pub_id, outbox, true);
+        if self.chain.is_member() && self.chain.our_info().members().contains(&pub_id) {
+            self.vote_for_event(NetworkEvent::Offline(pub_id));
+        }
+    }
+
+    fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
+        !self.chain.is_member() || self.chain.is_peer_valid(pub_id)
+    }
+
+    fn add_to_routing_table_success(&mut self, _: &PublicId) {
+        self.print_rt_size();
+    }
+
+    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId) {
+        if !self.chain.is_peer_valid(pub_id) {
+            self.disconnect_peer(pub_id);
+        }
+    }
+
+    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
+        self.notified_nodes.insert(pub_id)
+    }
+}
+
 impl Display for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
+    }
+}
+
+// Create `SectionInfo` for the first node.
+fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, RoutingError> {
+    SectionInfo::new(
+        iter::once(public_id).collect(),
+        *DEFAULT_PREFIX,
+        iter::empty(),
+    )
+    .map_err(|err| {
+        error!(
+            "FirstNode({:?}) - Failed to create first SectionInfo: {:?}",
+            public_id.name(),
+            err
+        );
+        err
+    })
+}
+
+fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
+    if gen_pfx_info
+        .first_info
+        .members()
+        .contains(full_id.public_id())
+    {
+        Parsec::from_genesis(
+            #[cfg(feature = "mock_parsec")]
+            *gen_pfx_info.first_info.hash(),
+            full_id,
+            &gen_pfx_info.first_info.members(),
+            ConsensusMode::Single,
+        )
+    } else {
+        Parsec::from_existing(
+            #[cfg(feature = "mock_parsec")]
+            *gen_pfx_info.first_info.hash(),
+            full_id,
+            &gen_pfx_info.first_info.members(),
+            &gen_pfx_info.latest_info.members(),
+            ConsensusMode::Single,
+        )
     }
 }

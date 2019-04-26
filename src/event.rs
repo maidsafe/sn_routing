@@ -24,7 +24,7 @@ use std::fmt::{self, Debug, Formatter};
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
     /// Received a request message.
-    Request {
+    RequestReceived {
         /// The request message.
         request: Request,
         /// The source authority that sent the request.
@@ -33,7 +33,7 @@ pub enum Event {
         dst: Authority<XorName>,
     },
     /// Received a response message.
-    Response {
+    ResponseReceived {
         /// The response message.
         response: Response,
         /// The source authority that sent the response.
@@ -49,37 +49,37 @@ pub enum Event {
     SectionSplit(Prefix<XorName>),
     /// Our own section requires merged with others, resulting in the included `Prefix` for our new
     /// section.
-    SectionMerge(Prefix<XorName>),
+    SectionMerged(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
-    Terminate,
+    Terminated,
     // TODO: Find a better solution for periodic tasks.
     /// This event is sent periodically every time Routing sends the `Heartbeat` messages.
-    Tick,
+    TimerTicked,
 }
 
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::Request {
+            Event::RequestReceived {
                 ref request,
                 ref src,
                 ref dst,
             } => write!(
                 formatter,
-                "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
+                "Event::RequestReceived {{ request: {:?}, src: {:?}, dst: {:?} }}",
                 request, src, dst
             ),
-            Event::Response {
+            Event::ResponseReceived {
                 ref response,
                 ref src,
                 ref dst,
             } => write!(
                 formatter,
-                "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
+                "Event::ResponseReceived {{ response: {:?}, src: {:?}, dst: {:?} }}",
                 response, src, dst
             ),
             Event::NodeAdded(ref node_name) => {
@@ -89,13 +89,13 @@ impl Debug for Event {
             Event::SectionSplit(ref prefix) => {
                 write!(formatter, "Event::SectionSplit({:?})", prefix)
             }
-            Event::SectionMerge(ref prefix) => {
-                write!(formatter, "Event::SectionMerge({:?})", prefix)
+            Event::SectionMerged(ref prefix) => {
+                write!(formatter, "Event::SectionMerged({:?})", prefix)
             }
             Event::Connected => write!(formatter, "Event::Connected"),
             Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
-            Event::Terminate => write!(formatter, "Event::Terminate"),
-            Event::Tick => write!(formatter, "Event::Tick"),
+            Event::Terminated => write!(formatter, "Event::Terminated"),
+            Event::TimerTicked => write!(formatter, "Event::TimerTicked"),
         }
     }
 }

@@ -67,7 +67,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
     },
-    /// Fetches the shell (everthing except the entries).
+    /// Fetches the shell (everything except the entries).
     GetMDataShell {
         /// Network identifier of MutableData
         name: XorName,
@@ -173,7 +173,7 @@ pub enum Request {
         requester: PublicSignKey,
     },
     /// Deletes a list of permissions for a particular User in the given MutableData.
-    DelMDataUserPermissions {
+    DeleteMDataUserPermissions {
         /// Network identifier of MutableData
         name: XorName,
         /// Type tag
@@ -207,8 +207,8 @@ pub enum Request {
     // ==========================
     /// Lists authorised keys and version stored in MaidManager.
     ListAuthKeysAndVersion(MsgId),
-    /// Inserts an autorised key (for an app, user, etc.) to MaidManager.
-    InsAuthKey {
+    /// Inserts an authorised key (for an app, user, etc.) to MaidManager.
+    InsertAuthKey {
         /// Authorised key to be inserted
         key: PublicSignKey,
         /// Incremented version
@@ -217,7 +217,7 @@ pub enum Request {
         msg_id: MsgId,
     },
     /// Deletes an authorised key from MaidManager.
-    DelAuthKey {
+    DeleteAuthKey {
         /// Authorised key to be deleted
         key: PublicSignKey,
         /// Incremented version
@@ -248,11 +248,11 @@ impl Request {
             | ListMDataPermissions { ref msg_id, .. }
             | ListMDataUserPermissions { ref msg_id, .. }
             | SetMDataUserPermissions { ref msg_id, .. }
-            | DelMDataUserPermissions { ref msg_id, .. }
+            | DeleteMDataUserPermissions { ref msg_id, .. }
             | ChangeMDataOwner { ref msg_id, .. }
             | ListAuthKeysAndVersion(ref msg_id)
-            | InsAuthKey { ref msg_id, .. }
-            | DelAuthKey { ref msg_id, .. } => msg_id,
+            | InsertAuthKey { ref msg_id, .. }
+            | DeleteAuthKey { ref msg_id, .. } => msg_id,
         }
     }
 

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{unrelocated, Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage};
 use crate::action::Action;
 use crate::chain::SectionInfo;
@@ -14,27 +14,23 @@ use crate::error::{InterfaceError, Result, RoutingError};
 use crate::event::Event;
 use crate::id::{FullId, PublicId};
 use crate::messages::{
-    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
+    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, UserMessage,
     UserMessageCache,
 };
 use crate::outbox::EventBox;
-use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
+use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::Authority;
 use crate::state_machine::Transition;
+use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::xor_name::XorName;
 use crate::{CrustEvent, Service};
-#[cfg(feature = "mock")]
-use fake_clock::FakeClock as Instant;
 use maidsafe_utilities::serialisation;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
-use std::time::Duration;
-#[cfg(not(feature = "mock"))]
-use std::time::Instant;
 
 /// Duration to wait before sending rate limit exceeded messages.
-pub const RATE_EXCEED_RETRY_MS: u64 = 800;
+pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
 ///
@@ -71,14 +67,12 @@ impl Client {
             proxy_pub_id: proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(Duration::from_secs(
-                USER_MSG_CACHE_EXPIRY_DURATION_SECS,
-            )),
+            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             resend_buf: Default::default(),
             msg_expiry_dur: msg_expiry_dur,
         };
 
-        debug!("{} State changed to client.", client);
+        debug!("{} State changed to Client.", client);
 
         outbox.send_event(Event::Connected);
         client
@@ -108,12 +102,12 @@ impl Client {
             Action::NodeSendMessage { result_tx, .. } => {
                 let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::Id { result_tx } => {
+            Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::Timeout(token) => self.handle_timeout(token),
-            Action::ResourceProofResult(..) => {
-                error!("Action::ResourceProofResult received by Client state");
+            Action::HandleTimeout(token) => self.handle_timeout(token),
+            Action::TakeResourceProofResult(..) => {
+                error!("Action::TakeResourceProofResult received by Client state");
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -202,42 +196,21 @@ impl Client {
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition> {
-        if self.proxy_pub_id == pub_id {
-            hop_msg.verify(self.proxy_pub_id.signing_public_key())?;
-        } else {
+        if self.proxy_pub_id != pub_id {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
-
-        let routing_msg = signed_msg.into_routing_message();
-        let in_authority = self.in_authority(&routing_msg.dst);
-
-        // Prevents us repeatedly handling identical messages sent by a malicious peer.
-        match self
-            .routing_msg_filter
-            .filter_incoming(&routing_msg, hop_msg.route)
-        {
-            FilteringResult::KnownMessage | FilteringResult::KnownMessageAndRoute => {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            FilteringResult::NewMessage => (),
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            Ok(self.dispatch_routing_message(routing_msg, outbox))
+        } else {
+            Ok(Transition::Stay)
         }
-
-        if !in_authority {
-            return Ok(Transition::Stay);
-        }
-
-        Ok(self.dispatch_routing_message(routing_msg, outbox))
     }
 
     fn handle_direct_message(&mut self, direct_msg: DirectMessage) -> Result<Transition> {
         if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
             if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
-                let token = self
-                    .timer()
-                    .schedule(Duration::from_millis(RATE_EXCEED_RETRY_MS));
+                let token = self.timer().schedule(RATE_EXCEED_RETRY);
                 let _ = self.resend_buf.insert(token, unack_msg);
             } else {
                 debug!(
@@ -339,7 +312,7 @@ impl Base for Client {
 
         if self.proxy_pub_id == pub_id {
             debug!("{} Lost bootstrap connection to {}.", self, pub_id);
-            outbox.send_event(Event::Terminate);
+            outbox.send_event(Event::Terminated);
             Transition::Terminate
         } else {
             Transition::Stay
@@ -393,41 +366,7 @@ impl Bootstrapped for Client {
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()> {
-        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
-            return Ok(()); // Message is for us.
-        }
-
-        // Get PublicId of the proxy node
-        match routing_msg.src {
-            Authority::Client {
-                ref proxy_node_name,
-                ..
-            } => {
-                if *self.proxy_pub_id.name() != *proxy_node_name {
-                    error!(
-                        "{} Unable to find connection to proxy node in proxy map",
-                        self
-                    );
-                    return Err(RoutingError::ProxyConnectionNotFound);
-                }
-            }
-            _ => {
-                error!("{} Source should be client if our state is a Client", self);
-                return Err(RoutingError::InvalidSource);
-            }
-        };
-
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), None)?;
-
-        let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), src_section, route, expires_at)
-            && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
-        {
-            let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
-            self.send_or_drop(&proxy_pub_id, bytes, signed_msg.priority());
-        }
-
-        Ok(())
+        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -436,6 +375,14 @@ impl Bootstrapped for Client {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+}
+
+impl Unapproved for Client {
+    const SEND_ACK: bool = false;
+
+    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
+        unrelocated::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }
 }
 
