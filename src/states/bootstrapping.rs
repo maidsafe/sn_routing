@@ -49,19 +49,18 @@ pub enum TargetState {
 
 // State of Client or Node while bootstrapping.
 pub struct Bootstrapping {
-    action_sender: RoutingActionSender,
+    pub(super) action_sender: RoutingActionSender,
+    pub(super) cache: Box<Cache>,
+    pub(super) crust_service: Service,
+    pub(super) full_id: FullId,
+    pub(super) min_section_size: usize,
+    pub(super) timer: Timer,
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
-    cache: Box<Cache>,
     target_state: TargetState,
-    crust_service: Service,
-    full_id: FullId,
-    min_section_size: usize,
-    timer: Timer,
 }
 
 impl Bootstrapping {
-    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -83,39 +82,28 @@ impl Bootstrapping {
             }
         }
         Some(Bootstrapping {
-            action_sender: action_sender,
+            action_sender,
+            cache: cache,
+            crust_service,
+            full_id,
+            min_section_size,
+            timer: timer,
             bootstrap_blacklist: HashSet::new(),
             bootstrap_connection: None,
-            cache: cache,
-            target_state: target_state,
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            timer: timer,
+            target_state,
         })
     }
 
     pub fn into_target_state(self, proxy_public_id: PublicId, outbox: &mut EventBox) -> State {
         match self.target_state {
             TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
-                self.crust_service,
-                self.full_id,
-                self.min_section_size,
+                self,
                 proxy_public_id,
-                self.timer,
                 msg_expiry_dur,
                 outbox,
             )),
             TargetState::RelocatingNode => {
-                if let Some(node) = RelocatingNode::from_bootstrapping(
-                    self.action_sender,
-                    self.cache,
-                    self.crust_service,
-                    self.full_id,
-                    self.min_section_size,
-                    proxy_public_id,
-                    self.timer,
-                ) {
+                if let Some(node) = RelocatingNode::from_bootstrapping(self, proxy_public_id) {
                     State::RelocatingNode(node)
                 } else {
                     outbox.send_event(Event::RestartRequired);
@@ -123,21 +111,20 @@ impl Bootstrapping {
                 }
             }
             TargetState::ProvingNode {
-                old_full_id,
-                our_section,
+                ref old_full_id,
+                ref our_section,
                 ..
-            } => State::ProvingNode(ProvingNode::from_bootstrapping(
-                our_section,
-                self.action_sender,
-                self.cache,
-                self.crust_service,
-                old_full_id,
-                self.full_id,
-                self.min_section_size,
-                proxy_public_id,
-                self.timer,
-                outbox,
-            )),
+            } => {
+                let old_full_id = old_full_id.clone();
+                let our_section = our_section.clone();
+                State::ProvingNode(ProvingNode::from_bootstrapping(
+                    self,
+                    proxy_public_id,
+                    old_full_id,
+                    our_section,
+                    outbox,
+                ))
+            }
         }
     }
 

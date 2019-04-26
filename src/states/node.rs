@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
+use super::{
+    common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION},
+    establishing_node::EstablishingNode,
+};
 use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
@@ -164,38 +167,26 @@ impl Node {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn from_establishing_node(
-        ack_mgr: AckManager,
-        cache: Box<Cache>,
-        chain: Chain,
-        crust_service: Service,
-        full_id: FullId,
-        gen_pfx_info: GenesisPfxInfo,
-        msg_queue: VecDeque<RoutingMessage>,
-        notified_nodes: BTreeSet<PublicId>,
-        old_pfx: Prefix<XorName>,
-        parsec_map: ParsecMap,
-        peer_mgr: PeerManager,
-        routing_msg_filter: RoutingMessageFilter,
+        source: EstablishingNode,
         sec_info: SectionInfo,
-        timer: Timer,
+        old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
         let mut node = Self::new(
-            ack_mgr,
-            cache,
-            chain,
-            crust_service,
-            full_id,
-            gen_pfx_info,
+            source.ack_mgr,
+            source.cache,
+            source.chain,
+            source.crust_service,
+            source.full_id,
+            source.gen_pfx_info,
             false,
-            msg_queue,
-            notified_nodes,
-            parsec_map,
-            peer_mgr,
-            routing_msg_filter,
-            timer,
+            source.msg_backlog.into_iter().collect(),
+            source.notified_nodes,
+            source.parsec_map,
+            source.peer_mgr,
+            source.routing_msg_filter,
+            source.timer,
         );
         node.init(sec_info, old_pfx, outbox)?;
         Ok(node)
@@ -249,7 +240,7 @@ impl Node {
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
             parsec_map,
-            gen_pfx_info: gen_pfx_info.clone(),
+            gen_pfx_info,
             gossip_timer_token,
             chain,
             notified_nodes,

@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
+    bootstrapping::Bootstrapping,
     common::{proxied, Base, Bootstrapped, NotEstablished, Relocated, RelocatedNotEstablished},
     establishing_node::EstablishingNode,
 };
@@ -29,7 +30,6 @@ use crate::{
     state_machine::Transition,
     time::Instant,
     timer::Timer,
-    types::RoutingActionSender,
     xor_name::XorName,
     Service,
 };
@@ -40,64 +40,59 @@ use std::{
 };
 
 pub struct ProvingNode {
-    crust_service: Service,
-    ack_mgr: AckManager,
-    /// ID from before relocating.
-    old_full_id: FullId,
-    full_id: FullId,
+    pub(super) ack_mgr: AckManager,
+    pub(super) cache: Box<Cache>,
+    pub(super) crust_service: Service,
+    pub(super) full_id: FullId,
+    pub(super) min_section_size: usize,
     /// Routing messages addressed to us that we cannot handle until we are approved.
-    msg_backlog: Vec<RoutingMessage>,
-    min_section_size: usize,
-    peer_mgr: PeerManager,
-    cache: Box<Cache>,
-    routing_msg_filter: RoutingMessageFilter,
-    timer: Timer,
-    resource_prover: ResourceProver,
+    pub(super) msg_backlog: Vec<RoutingMessage>,
+    // TODO: notify without local state
+    pub(super) notified_nodes: BTreeSet<PublicId>,
+    pub(super) peer_mgr: PeerManager,
+    pub(super) routing_msg_filter: RoutingMessageFilter,
+    pub(super) timer: Timer,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
     joining_prefix: Prefix<XorName>,
-    // TODO: notify without local state
-    notified_nodes: BTreeSet<PublicId>,
+    /// ID from before relocating.
+    old_full_id: FullId,
+    resource_prover: ResourceProver,
 }
 
 impl ProvingNode {
-    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-        action_sender: RoutingActionSender,
-        cache: Box<Cache>,
-        crust_service: Service,
-        old_full_id: FullId,
-        new_full_id: FullId,
-        min_section_size: usize,
+        source: Bootstrapping,
         proxy_pub_id: PublicId,
-        timer: Timer,
+        old_full_id: FullId,
+        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
         outbox: &mut EventBox,
     ) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
-        let public_id = *new_full_id.public_id();
+        let public_id = *source.full_id.public_id();
 
         let mut peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
         peer_mgr.insert_peer(Peer::new(proxy_pub_id, PeerState::Proxy));
 
         let challenger_count = our_section.1.len();
-        let resource_prover = ResourceProver::new(action_sender, timer.clone(), challenger_count);
+        let resource_prover =
+            ResourceProver::new(source.action_sender, source.timer.clone(), challenger_count);
 
         let mut node = Self {
-            crust_service,
             ack_mgr: AckManager::new(),
-            old_full_id,
-            full_id: new_full_id,
+            cache: source.cache,
+            crust_service: source.crust_service,
+            full_id: source.full_id,
+            min_section_size: source.min_section_size,
             msg_backlog: Vec::new(),
-            min_section_size,
+            notified_nodes: Default::default(),
             peer_mgr,
-            cache,
             routing_msg_filter: RoutingMessageFilter::new(),
-            timer,
-            resource_prover,
+            timer: source.timer,
             disable_resource_proof: dev_config.disable_resource_proof,
             joining_prefix: our_section.0,
-            notified_nodes: Default::default(),
+            old_full_id,
+            resource_prover,
         };
         node.init(our_section.1, &proxy_pub_id, outbox);
         node
@@ -145,22 +140,7 @@ impl ProvingNode {
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut EventBox,
     ) -> State {
-        let node = EstablishingNode::from_proving_node(
-            self.ack_mgr,
-            self.cache,
-            self.crust_service,
-            self.full_id,
-            gen_pfx_info,
-            self.min_section_size,
-            self.msg_backlog,
-            self.notified_nodes,
-            self.peer_mgr,
-            self.routing_msg_filter,
-            self.timer,
-            outbox,
-        );
-
-        match node {
+        match EstablishingNode::from_proving_node(self, gen_pfx_info, outbox) {
             Ok(node) => State::EstablishingNode(node),
             Err(_) => State::Terminated,
         }

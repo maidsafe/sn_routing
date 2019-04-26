@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{proxied, Base, Bootstrapped, NotEstablished, USER_MSG_CACHE_EXPIRY_DURATION};
+use super::{
+    bootstrapping::Bootstrapping,
+    common::{proxied, Base, Bootstrapped, NotEstablished, USER_MSG_CACHE_EXPIRY_DURATION},
+};
 use crate::{
     ack_manager::{Ack, AckManager, UnacknowledgedMessage},
     chain::SectionInfo,
@@ -51,27 +54,23 @@ pub struct Client {
 }
 
 impl Client {
-    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
-        crust_service: Service,
-        full_id: FullId,
-        min_section_size: usize,
+        source: Bootstrapping,
         proxy_pub_id: PublicId,
-        timer: Timer,
         msg_expiry_dur: Duration,
         outbox: &mut EventBox,
     ) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            proxy_pub_id: proxy_pub_id,
+            crust_service: source.crust_service,
+            full_id: source.full_id,
+            min_section_size: source.min_section_size,
+            proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            timer: timer,
+            timer: source.timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             resend_buf: Default::default(),
-            msg_expiry_dur: msg_expiry_dur,
+            msg_expiry_dur,
         };
 
         debug!("{} State changed to Client.", client);

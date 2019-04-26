@@ -56,28 +56,19 @@ pub struct RelocatingNode {
 }
 
 impl RelocatingNode {
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_bootstrapping(
-        action_sender: RoutingActionSender,
-        cache: Box<Cache>,
-        crust_service: Service,
-        full_id: FullId,
-        min_section_size: usize,
-        proxy_pub_id: PublicId,
-        timer: Timer,
-    ) -> Option<Self> {
-        let relocation_timer_token = timer.schedule(RELOCATE_TIMEOUT);
+    pub fn from_bootstrapping(source: Bootstrapping, proxy_pub_id: PublicId) -> Option<Self> {
+        let relocation_timer_token = source.timer.schedule(RELOCATE_TIMEOUT);
         let mut node = Self {
-            action_sender: action_sender,
+            action_sender: source.action_sender,
             ack_mgr: AckManager::new(),
-            crust_service: crust_service,
-            full_id: full_id,
-            cache: cache,
-            min_section_size: min_section_size,
-            proxy_pub_id: proxy_pub_id,
+            crust_service: source.crust_service,
+            full_id: source.full_id,
+            cache: source.cache,
+            min_section_size: source.min_section_size,
+            proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            relocation_timer_token: relocation_timer_token,
-            timer: timer,
+            relocation_timer_token,
+            timer: source.timer,
         };
 
         if let Err(error) = node.relocate() {

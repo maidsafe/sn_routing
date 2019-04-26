@@ -11,6 +11,7 @@ use super::{
         proxied, Approved, Base, Bootstrapped, NotEstablished, Relocated, RelocatedNotEstablished,
     },
     node::Node,
+    proving_node::ProvingNode,
 };
 use crate::{
     ack_manager::AckManager,
@@ -39,61 +40,51 @@ use std::{
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct EstablishingNode {
-    ack_mgr: AckManager,
-    cache: Box<Cache>,
-    chain: Chain,
-    crust_service: Service,
-    full_id: FullId,
-    gen_pfx_info: GenesisPfxInfo,
+    pub(super) ack_mgr: AckManager,
+    pub(super) cache: Box<Cache>,
+    pub(super) chain: Chain,
+    pub(super) crust_service: Service,
+    pub(super) full_id: FullId,
+    pub(super) gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
-    msg_backlog: Vec<RoutingMessage>,
-    notified_nodes: BTreeSet<PublicId>,
-    parsec_map: ParsecMap,
-    peer_mgr: PeerManager,
+    pub(super) msg_backlog: Vec<RoutingMessage>,
+    pub(super) notified_nodes: BTreeSet<PublicId>,
+    pub(super) parsec_map: ParsecMap,
+    pub(super) peer_mgr: PeerManager,
+    pub(super) routing_msg_filter: RoutingMessageFilter,
+    pub(super) timer: Timer,
     poke_timer_token: u64,
-    routing_msg_filter: RoutingMessageFilter,
-    timer: Timer,
 }
 
 impl EstablishingNode {
-    #[allow(clippy::too_many_arguments)]
     pub fn from_proving_node(
-        ack_mgr: AckManager,
-        cache: Box<Cache>,
-        crust_service: Service,
-        full_id: FullId,
+        source: ProvingNode,
         gen_pfx_info: GenesisPfxInfo,
-        min_section_size: usize,
-        msg_backlog: Vec<RoutingMessage>,
-        notified_nodes: BTreeSet<PublicId>,
-        peer_mgr: PeerManager,
-        routing_msg_filter: RoutingMessageFilter,
-        timer: Timer,
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
-        let public_id = *full_id.public_id();
-        let poke_timer_token = timer.schedule(POKE_TIMEOUT);
+        let public_id = *source.full_id.public_id();
+        let poke_timer_token = source.timer.schedule(POKE_TIMEOUT);
 
-        let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
-        let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+        let parsec_map = ParsecMap::new(source.full_id.clone(), &gen_pfx_info);
+        let chain = Chain::new(source.min_section_size, public_id, gen_pfx_info.clone());
 
         let mut node = Self {
-            ack_mgr,
-            cache,
+            ack_mgr: source.ack_mgr,
+            cache: source.cache,
             chain,
-            crust_service,
-            full_id,
+            crust_service: source.crust_service,
+            full_id: source.full_id,
             gen_pfx_info,
             msg_backlog: vec![],
-            notified_nodes,
+            notified_nodes: source.notified_nodes,
             parsec_map,
-            peer_mgr,
+            peer_mgr: source.peer_mgr,
+            routing_msg_filter: source.routing_msg_filter,
+            timer: source.timer,
             poke_timer_token,
-            routing_msg_filter,
-            timer,
         };
 
-        node.init(msg_backlog, outbox)?;
+        node.init(source.msg_backlog, outbox)?;
         Ok(node)
     }
 
@@ -117,25 +108,7 @@ impl EstablishingNode {
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> State {
-        let node = Node::from_establishing_node(
-            self.ack_mgr,
-            self.cache,
-            self.chain,
-            self.crust_service,
-            self.full_id,
-            self.gen_pfx_info,
-            self.msg_backlog.into_iter().collect(),
-            self.notified_nodes,
-            old_pfx,
-            self.parsec_map,
-            self.peer_mgr,
-            self.routing_msg_filter,
-            sec_info,
-            self.timer,
-            outbox,
-        );
-
-        match node {
+        match Node::from_establishing_node(self, sec_info, old_pfx, outbox) {
             Ok(node) => State::Node(node),
             Err(_) => State::Terminated,
         }
