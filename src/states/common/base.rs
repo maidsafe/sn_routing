@@ -102,7 +102,7 @@ fn to_crust_bytes(
     let result = serialisation::serialise(&message).map_err(|err| (err, message));
 
     #[cfg(feature = "mock_serialise")]
-    let result = Ok(message);
+    let result = Ok(Box::new(message));
 
     result
 }
@@ -112,7 +112,7 @@ pub fn from_crust_bytes(data: CrustBytes) -> Result<Message, RoutingError> {
     let result = serialisation::deserialise(&data).map_err(RoutingError::SerialisationError);
 
     #[cfg(feature = "mock_serialise")]
-    let result = Ok(data);
+    let result = Ok(*data);
 
     result
 }

@@ -732,8 +732,11 @@ impl<UID: Uid> Packet<UID> {
     #[cfg(feature = "mock_serialise")]
     fn is_parsec_req_resp(&self) -> bool {
         match self {
-            Packet::Message(Message::Direct(DirectMessage::ParsecRequest(_, _)))
-            | Packet::Message(Message::Direct(DirectMessage::ParsecResponse(_, _))) => true,
+            Packet::Message(msg) => match **msg {
+                Message::Direct(DirectMessage::ParsecRequest(_, _))
+                | Message::Direct(DirectMessage::ParsecResponse(_, _)) => true,
+                _ => false,
+            },
             _ => false,
         }
     }

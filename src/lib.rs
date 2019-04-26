@@ -277,7 +277,7 @@ type CrustBytes = Vec<u8>;
 #[cfg(feature = "mock_serialise")]
 use crate::messages::Message;
 #[cfg(feature = "mock_serialise")]
-type CrustBytes = Message;
+type CrustBytes = Box<Message>;
 
 #[cfg(test)]
 mod tests {
