@@ -246,6 +246,10 @@ impl Base for EstablishingNode {
             ParsecResponse(version, par_response) => {
                 self.handle_parsec_response(version, par_response, pub_id, outbox)
             }
+            BootstrapRequest(_) => {
+                self.handle_bootstrap_request(pub_id);
+                Ok(Transition::Stay)
+            }
             _ => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
                 Ok(Transition::Stay)

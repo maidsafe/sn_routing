@@ -8,7 +8,7 @@
 
 use super::Relocated;
 use crate::{
-    error::RoutingError,
+    error::{BootstrapResponseError, RoutingError},
     id::PublicId,
     messages::{DirectMessage, RoutingMessage},
     outbox::EventBox,
@@ -124,6 +124,18 @@ pub trait RelocatedNotEstablished: Relocated {
         self.log_connect_failure(&pub_id);
         let _ = self.dropped_peer(&pub_id);
         Transition::Stay
+    }
+
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
+        debug!(
+            "{} - Client {:?} rejected: We are not an established node yet.",
+            self, pub_id
+        );
+        self.send_direct_message(
+            pub_id,
+            DirectMessage::BootstrapResponse(Err(BootstrapResponseError::NotApproved)),
+        );
+        self.disconnect_peer(&pub_id);
     }
 
     fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {

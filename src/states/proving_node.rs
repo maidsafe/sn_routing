@@ -311,6 +311,7 @@ impl Base for ProvingNode {
                     self.send_direct_message(pub_id, msg);
                 }
             }
+            BootstrapRequest(_) => self.handle_bootstrap_request(pub_id),
             _ => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
