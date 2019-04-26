@@ -362,9 +362,14 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     let mut fired_connecting_peer_timeout = false;
-    for _ in 0..MAX_POLL_CALLS {
+    for i in 0..MAX_POLL_CALLS {
         let node_busy = |node: &TestNode| {
-            node.inner.has_unconsensused_observations() || node.inner.has_unacked_msg()
+            // after MAX_POLL_CALLS / 2 only filter for opaque events
+            // to avoid stalling the test due to lack of parsec voters.
+            node.inner.has_unacked_msg()
+                || node
+                    .inner
+                    .has_unconsensused_observations(i > MAX_POLL_CALLS / 2)
         };
         let client_busy = |client: &TestClient| client.inner.has_unacked_msg();
         if poll_all(nodes, clients)

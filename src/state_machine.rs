@@ -196,9 +196,9 @@ impl State {
         }
     }
 
-    pub fn has_unconsensused_observations(&self) -> bool {
+    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
         match *self {
-            State::Node(ref state) => state.has_unconsensused_observations(),
+            State::Node(ref state) => state.has_unconsensused_observations(filter_opaque),
             _ => false,
         }
     }

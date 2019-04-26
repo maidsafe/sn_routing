@@ -11,8 +11,8 @@ use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
 use crate::cache::Cache;
 use crate::chain::{
-    Chain, GenesisPfxInfo, NetworkEvent, PrefixChangeOutcome, Proof, ProofSet, ProvingSection,
-    SectionInfo,
+    Chain, ChainState, GenesisPfxInfo, NetworkEvent, PrefixChangeOutcome, Proof, ProofSet,
+    ProvingSection, SectionInfo,
 };
 use crate::config_handler;
 use crate::crust::{ConnectionInfoResult, CrustError, CrustUser};
@@ -940,10 +940,7 @@ impl Node {
             let pub_id = peer.pub_id();
             if self.chain.is_peer_valid(pub_id) {
                 peers_to_add.push(*pub_id);
-            } else if peer.is_routing()
-                && !self.peer_mgr.is_proxy(pub_id)
-                && !self.peer_mgr.is_joining_node(pub_id)
-            {
+            } else if peer.is_routing() && self.chain.state() == &ChainState::Normal {
                 peers_to_remove.push(*peer.pub_id());
             }
         }
@@ -1024,10 +1021,7 @@ impl Node {
         cached_events
             .iter()
             .filter(|event| match **event {
-                // FIXME: once has_unconsensused_observations only considers votes than Obs
-                // can enable this similar to Offline event
-                NetworkEvent::Online(_pub_id, _) => false,
-                NetworkEvent::Offline(pub_id) => {
+                NetworkEvent::Online(pub_id, _) | NetworkEvent::Offline(pub_id) => {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(event)
                 }
                 NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
@@ -1385,6 +1379,15 @@ impl Node {
                 },
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
+            )
+            | (
+                ConnectionInfoRequest {
+                    encrypted_conn_info,
+                    pub_id,
+                    msg_id,
+                },
+                src @ ManagedNode(_),
+                dst @ Client { .. },
             ) => self.handle_connection_info_request(
                 encrypted_conn_info,
                 pub_id,
@@ -3299,11 +3302,24 @@ impl Node {
         self.clients_rate_limiter.usage_map().clone()
     }
 
-    pub fn has_unconsensused_observations(&self) -> bool {
-        self.parsec_map
-            .values()
-            .last()
-            .map_or(false, Parsec::has_unconsensused_observations)
+    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
+        if filter_opaque {
+            match self.parsec_map.values().last() {
+                None => false,
+                Some(par) => par.our_unpolled_observations().any(|obs| {
+                    if let parsec::Observation::OpaquePayload(_) = obs {
+                        true
+                    } else {
+                        false
+                    }
+                }),
+            }
+        } else {
+            self.parsec_map
+                .values()
+                .last()
+                .map_or(false, Parsec::has_unconsensused_observations)
+        }
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
@@ -3328,6 +3344,7 @@ impl Bootstrapped for Node {
     fn send_routing_message_via_route(
         &mut self,
         routing_msg: RoutingMessage,
+        src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
@@ -3342,36 +3359,33 @@ impl Bootstrapped for Node {
             }
             return Ok(());
         }
-        if !self.add_to_pending_acks(&routing_msg, route, expires_at) {
+
+        use crate::routing_table::Authority::*;
+        let sending_sec = if route == 0 {
+            match routing_msg.src {
+                ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
+                | PrefixSection(_)
+                    if self.chain.is_member() =>
+                {
+                    Some(self.chain.our_info().clone())
+                }
+                Client { .. } => None,
+                _ => {
+                    // Cannot send routing msgs as a Node until established.
+                    return Ok(());
+                }
+            }
+        } else {
+            src_section
+        };
+
+        if !self.add_to_pending_acks(&routing_msg, sending_sec.clone(), route, expires_at) {
             debug!(
                 "{} already received an ack for {:?} - so not resending it.",
                 self, routing_msg
             );
             return Ok(());
         }
-        use crate::routing_table::Authority::*;
-        let sending_sec = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-                if self.chain.is_member() =>
-            {
-                Some(self.chain.our_info().clone())
-            }
-            PrefixSection(ref pfx) if self.chain.is_member() => {
-                let src_section = match self.chain.our_info_for_prefix(pfx) {
-                    Some(a) => a.clone(),
-                    None => {
-                        // Can no longer represent sending Pfx.
-                        return Ok(());
-                    }
-                };
-                Some(src_section)
-            }
-            Client { .. } => None,
-            _ => {
-                // Cannot send routing msgs as a Node until established.
-                return Ok(());
-            }
-        };
 
         if route > 0 {
             trace!(

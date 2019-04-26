@@ -11,6 +11,7 @@ use super::{Bootstrapping, BootstrappingTargetState};
 use crate::ack_manager::{Ack, AckManager};
 use crate::action::Action;
 use crate::cache::Cache;
+use crate::chain::SectionInfo;
 use crate::error::{InterfaceError, Result, RoutingError};
 use crate::event::Event;
 use crate::id::{FullId, PublicId};
@@ -388,6 +389,7 @@ impl Bootstrapped for JoiningNode {
     fn send_routing_message_via_route(
         &mut self,
         routing_msg: RoutingMessage,
+        src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
     ) -> Result<()> {
@@ -418,7 +420,7 @@ impl Bootstrapped for JoiningNode {
         let signed_msg = SignedMessage::new(routing_msg, self.full_id(), None)?;
 
         let proxy_pub_id = self.proxy_pub_id;
-        if self.add_to_pending_acks(signed_msg.routing_message(), route, expires_at)
+        if self.add_to_pending_acks(signed_msg.routing_message(), src_section, route, expires_at)
             && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
             let bytes = self.to_hop_bytes(signed_msg.clone(), route, BTreeSet::new())?;
