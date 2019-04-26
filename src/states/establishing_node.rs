@@ -69,21 +69,22 @@ impl EstablishingNode {
         peer_mgr: PeerManager,
         routing_msg_filter: RoutingMessageFilter,
         timer: Timer,
-    ) -> Self {
+        outbox: &mut EventBox,
+    ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
         let poke_timer_token = timer.schedule(POKE_TIMEOUT);
 
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
 
-        let node = Self {
+        let mut node = Self {
             ack_mgr,
             cache,
             chain,
             crust_service,
             full_id,
             gen_pfx_info,
-            msg_backlog,
+            msg_backlog: vec![],
             notified_nodes,
             parsec_map,
             peer_mgr,
@@ -92,8 +93,22 @@ impl EstablishingNode {
             timer,
         };
 
-        debug!("{} - State changed to EstablishingNode.", node);
-        node
+        node.init(msg_backlog, outbox)?;
+        Ok(node)
+    }
+
+    fn init(
+        &mut self,
+        msg_backlog: Vec<RoutingMessage>,
+        outbox: &mut EventBox,
+    ) -> Result<(), RoutingError> {
+        debug!("{} - State changed to EstablishingNode.", self);
+
+        for msg in msg_backlog {
+            let _ = self.dispatch_routing_message(msg, outbox)?;
+        }
+
+        Ok(())
     }
 
     pub fn into_node(

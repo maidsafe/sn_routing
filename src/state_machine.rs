@@ -432,12 +432,10 @@ impl StateMachine {
                     _ => unreachable!(),
                 })
             }
-            IntoEstablishingNode { gen_pfx_info } => {
-                self.state.replace_with(|state| match state {
-                    State::ProvingNode(src) => src.into_establishing_node(gen_pfx_info),
-                    _ => unreachable!(),
-                });
-            }
+            IntoEstablishingNode { gen_pfx_info } => self.state.replace_with(|state| match state {
+                State::ProvingNode(src) => src.into_establishing_node(gen_pfx_info, outbox),
+                _ => unreachable!(),
+            }),
             IntoNode { sec_info, old_pfx } => self.state.replace_with(|state| match state {
                 State::EstablishingNode(src) => src.into_node(sec_info, old_pfx, outbox),
                 _ => unreachable!(),

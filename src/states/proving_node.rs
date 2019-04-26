@@ -99,13 +99,13 @@ impl ProvingNode {
             joining_prefix: our_section.0,
             notified_nodes: Default::default(),
         };
-        node.start(our_section.1, &proxy_pub_id, outbox);
+        node.init(our_section.1, &proxy_pub_id, outbox);
         node
     }
 
     /// Called immediately after construction. Sends `ConnectionInfoRequest`s to all members of
     /// `our_section` to then start the candidate approval process.
-    fn start(
+    fn init(
         &mut self,
         our_section: BTreeSet<PublicId>,
         proxy_pub_id: &PublicId,
@@ -140,8 +140,12 @@ impl ProvingNode {
         }
     }
 
-    pub fn into_establishing_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
-        State::EstablishingNode(EstablishingNode::from_proving_node(
+    pub fn into_establishing_node(
+        self,
+        gen_pfx_info: GenesisPfxInfo,
+        outbox: &mut EventBox,
+    ) -> State {
+        let node = EstablishingNode::from_proving_node(
             self.ack_mgr,
             self.cache,
             self.crust_service,
@@ -153,7 +157,13 @@ impl ProvingNode {
             self.peer_mgr,
             self.routing_msg_filter,
             self.timer,
-        ))
+            outbox,
+        );
+
+        match node {
+            Ok(node) => State::EstablishingNode(node),
+            Err(_) => State::Terminated,
+        }
     }
 
     fn dispatch_routing_message(
