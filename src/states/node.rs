@@ -1528,6 +1528,31 @@ impl Node {
         Ok(())
     }
 
+    // Filter, then convert the message to a `Hop` and serialise.
+    // Send this byte string.
+    fn send_signed_message_to_peer(
+        &mut self,
+        signed_msg: SignedMessage,
+        target: &PublicId,
+        route: u8,
+        sent_to: BTreeSet<XorName>,
+    ) -> Result<(), RoutingError> {
+        if !self.crust_service().is_connected(target) {
+            trace!("{} Not connected to {:?}. Dropping peer.", self, target);
+            self.disconnect_peer(target);
+            return Ok(());
+        }
+
+        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), target, route) {
+            return Ok(());
+        }
+
+        let priority = signed_msg.priority();
+        let bytes = self.to_hop_bytes(signed_msg, route, sent_to)?;
+        self.send_or_drop(target, bytes, priority);
+        Ok(())
+    }
+
     // Wraps the signed message in a `HopMessage` and sends it on.
     //
     // In the case that the `pub_id` is unknown, an ack is sent and the message dropped.

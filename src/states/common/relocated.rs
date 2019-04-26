@@ -13,7 +13,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::PublicId,
-    messages::{MessageContent, SignedMessage},
+    messages::MessageContent,
     outbox::EventBox,
     peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState},
     routing_table::Authority,
@@ -24,7 +24,6 @@ use crate::{
 };
 use log::LogLevel;
 use safe_crypto::SharedSecretKey;
-use std::collections::BTreeSet;
 
 /// Common functionality for node states post-relocation.
 pub trait Relocated: Bootstrapped {
@@ -422,31 +421,6 @@ pub trait Relocated: Bootstrapped {
             let _ = self.crust_service().disconnect(pub_id);
             let _ = self.peer_mgr_mut().remove_peer(pub_id);
         }
-    }
-
-    // Filter, then convert the message to a `Hop` and serialise.
-    // Send this byte string.
-    fn send_signed_message_to_peer(
-        &mut self,
-        signed_msg: SignedMessage,
-        target: &PublicId,
-        route: u8,
-        sent_to: BTreeSet<XorName>,
-    ) -> Result<(), RoutingError> {
-        if !self.crust_service().is_connected(target) {
-            trace!("{} Not connected to {:?}. Dropping peer.", self, target);
-            self.disconnect_peer(target);
-            return Ok(());
-        }
-
-        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), target, route) {
-            return Ok(());
-        }
-
-        let priority = signed_msg.priority();
-        let bytes = self.to_hop_bytes(signed_msg, route, sent_to)?;
-        self.send_or_drop(target, bytes, priority);
-        Ok(())
     }
 
     fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {

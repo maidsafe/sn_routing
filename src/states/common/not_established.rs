@@ -73,11 +73,17 @@ pub trait NotEstablished: Bootstrapped {
         // Get PublicId of the proxy node
         let proxy_pub_id = match routing_msg.src {
             Authority::Client {
+                ref client_id,
                 ref proxy_node_name,
-                ..
-            } => *self.get_proxy_public_id(proxy_node_name)?,
+            } => {
+                if self.name() != client_id.name() {
+                    return Ok(());
+                }
+
+                *self.get_proxy_public_id(proxy_node_name)?
+            }
             _ => {
-                error!("{} Source should be client if our state is Client", self);
+                error!("{} - Source should be client in this state", self);
                 return Err(RoutingError::InvalidSource);
             }
         };
