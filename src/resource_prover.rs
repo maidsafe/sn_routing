@@ -174,7 +174,7 @@ impl ResourceProver {
             }
         });
         // If using mock_crust we want the joiner to drop and join immediately
-        if cfg!(feature = "mock") {
+        if cfg!(feature = "mock_base") {
             let _ = joiner;
         } else {
             let old = self.workers.insert(pub_id, (atomic_cancel, joiner));

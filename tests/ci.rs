@@ -52,7 +52,7 @@
     missing_copy_implementations,
     missing_debug_implementations
 )]
-#![cfg(not(feature = "mock"))]
+#![cfg(not(feature = "mock_base"))]
 
 #[cfg(target_os = "macos")]
 extern crate libc;

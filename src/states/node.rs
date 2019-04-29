@@ -1766,7 +1766,7 @@ impl Node {
                 RESOURCE_PROOF_TARGET_SIZE / (self.chain().our_section().len() + 1),
             )
         };
-        let seed: Vec<u8> = if cfg!(feature = "mock") {
+        let seed: Vec<u8> = if cfg!(feature = "mock_base") {
             vec![5u8; 4]
         } else {
             rand::thread_rng().gen_iter().take(10).collect()
@@ -1913,7 +1913,7 @@ impl Node {
 
         // If we're running in mock-crust mode, and we have relocation interval, don't try to do
         // section balancing, as it will break things.
-        let forbid_join_balancing = if cfg!(feature = "mock") {
+        let forbid_join_balancing = if cfg!(feature = "mock_base") {
             self.next_relocation_interval.is_some()
         } else {
             false
@@ -2605,7 +2605,7 @@ impl Base for Node {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl Node {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()

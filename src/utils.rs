@@ -91,7 +91,7 @@ pub fn calculate_relocation_interval(
     (new_end - third_of_distance, new_end)
 }
 
-#[cfg(any(test, feature = "mock"))]
+#[cfg(any(test, feature = "mock_base"))]
 pub fn rand_index(exclusive_max: usize) -> usize {
     use maidsafe_utilities::SeededRng;
     use rand::Rng;
@@ -100,7 +100,7 @@ pub fn rand_index(exclusive_max: usize) -> usize {
     rng.gen::<usize>() % exclusive_max
 }
 
-#[cfg(all(not(test), not(feature = "mock")))]
+#[cfg(all(not(test), not(feature = "mock_base")))]
 pub fn rand_index(exclusive_max: usize) -> usize {
     ::rand::random::<usize>() % exclusive_max
 }

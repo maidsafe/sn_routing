@@ -34,7 +34,7 @@ const CONNECTED_PEER_TIMEOUT_SECS: u64 = 120;
 /// Time (in seconds) after which a `VotedFor` candidate will be removed.
 const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 120;
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod test_consts {
     pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT.as_secs();
@@ -1021,7 +1021,7 @@ impl fmt::Display for PeerManager {
     }
 }
 
-#[cfg(all(test, feature = "mock"))]
+#[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
     use crate::id::FullId;

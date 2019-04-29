@@ -12,7 +12,7 @@ use crate::config_handler::{self, Config};
 use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use crate::error::{InterfaceError, RoutingError};
 use crate::event::Event;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use crate::event_stream::{EventStepper, EventStream};
 use crate::id::{FullId, PublicId};
 use crate::messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
@@ -23,16 +23,16 @@ use crate::states::{Bootstrapping, BootstrappingTargetState};
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
 use crate::{BootstrapConfig, MIN_SECTION_SIZE};
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 use crust::read_config_file as read_bootstrap_config_file;
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 use maidsafe_utilities::thread::{self, Joiner};
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 use safe_crypto;
 use safe_crypto::PublicSignKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
 
@@ -45,14 +45,14 @@ pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
 
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(feature = "mock_base"))]
     action_sender: RoutingActionSender,
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(feature = "mock_base"))]
     _joiner: Joiner,
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     machine: StateMachine,
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     event_buffer: EventBuf,
 }
 
@@ -443,7 +443,7 @@ impl Client {
     }
 }
 
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 impl Client {
     /// Create a new `Client`.
     ///
@@ -540,7 +540,7 @@ impl Client {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl Client {
     /// Create a new `Client` for testing with mock crust.
     #[allow(clippy::new_ret_no_self)]
@@ -606,7 +606,7 @@ impl Client {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl EventStepper for Client {
     type Item = Event;
 
@@ -623,7 +623,7 @@ impl EventStepper for Client {
     }
 }
 
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 impl Drop for Client {
     fn drop(&mut self) {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
@@ -632,7 +632,7 @@ impl Drop for Client {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl Drop for Client {
     fn drop(&mut self) {
         let _ = self.poll();

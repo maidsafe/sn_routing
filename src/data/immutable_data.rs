@@ -82,12 +82,12 @@ impl Debug for ImmutableData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(feature = "mock_base"))]
     use hex::ToHex;
     use maidsafe_utilities::{serialisation, SeededRng};
     use rand::Rng;
 
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(feature = "mock_base"))]
     #[test]
     fn deterministic_test() {
         let value = "immutable data value".to_owned().into_bytes();

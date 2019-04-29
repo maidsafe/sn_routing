@@ -38,9 +38,10 @@ libc = "~0.2.29"
 serde_json = "~1.0.8"
 
 [features]
-mock = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "parsec/malice-detection"]
-mock_parsec = ["mock"]
-mock_serialise = ["mock"]
+mock_base = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "parsec/malice-detection"]
+mock_parsec = ["mock_base"]
+mock_serialise = ["mock_base"]
+mock = ["mock_parsec", "mock_serialise"]
 
 [[example]]
 bench = false

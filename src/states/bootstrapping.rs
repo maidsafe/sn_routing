@@ -371,7 +371,7 @@ impl Display for Bootstrapping {
     }
 }
 
-#[cfg(all(test, feature = "mock"))]
+#[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
     use crate::cache::NullCache;

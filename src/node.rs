@@ -25,16 +25,16 @@ use crate::state_machine::{State, StateMachine};
 use crate::states::{self, Bootstrapping, BootstrappingTargetState};
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use crate::Chain;
 use crate::MIN_SECTION_SIZE;
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 use safe_crypto;
 use safe_crypto::PublicSignKey;
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use std::net::IpAddr;
 use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
 
@@ -114,7 +114,7 @@ impl NodeBuilder {
     pub fn create(self) -> Result<Node, RoutingError> {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
-        #[cfg(not(feature = "mock"))]
+        #[cfg(not(feature = "mock_base"))]
         safe_crypto::init()?;
 
         let mut ev_buffer = EventBuf::new();
@@ -528,7 +528,7 @@ impl Node {
     }
 
     /// Returns the chain for this node.
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     pub fn chain(&self) -> Result<&Chain, RoutingError> {
         self.machine.chain().ok_or(RoutingError::Terminated)
     }
@@ -582,7 +582,7 @@ impl EventStepper for Node {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl Node {
     /// Returns the list of banned clients' IPs held by this node.
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
@@ -638,7 +638,7 @@ impl Node {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl Display for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         self.machine.fmt(formatter)
