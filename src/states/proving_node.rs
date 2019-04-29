@@ -10,6 +10,7 @@ use super::{
     common::{Base, Bootstrapped, Relocated, Unapproved},
     node::Node,
 };
+use crate::states::common::from_crust_bytes;
 use crate::{
     ack_manager::{Ack, AckManager},
     action::Action,
@@ -32,7 +33,7 @@ use crate::{
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
-    CrustEvent, Service,
+    CrustBytes, CrustEvent, Service,
 };
 use maidsafe_utilities::serialisation;
 use std::{
@@ -225,16 +226,15 @@ impl ProvingNode {
     fn handle_new_message(
         &mut self,
         pub_id: PublicId,
-        bytes: Vec<u8>,
+        bytes: CrustBytes,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        match serialisation::deserialise(&bytes) {
-            Ok(Message::Direct(msg)) => {
+        match from_crust_bytes(bytes)? {
+            Message::Direct(msg) => {
                 self.handle_direct_message(msg, pub_id, outbox)?;
                 Ok(Transition::Stay)
             }
-            Ok(Message::Hop(msg)) => self.handle_hop_message(msg, pub_id, outbox),
-            Err(error) => Err(RoutingError::SerialisationError(error)),
+            Message::Hop(msg) => self.handle_hop_message(msg, pub_id, outbox),
         }
     }
 

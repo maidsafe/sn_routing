@@ -21,11 +21,12 @@ use crate::outbox::EventBox;
 use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::Authority;
 use crate::state_machine::Transition;
+use crate::states::common::from_crust_bytes;
 use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::xor_name::XorName;
+use crate::CrustBytes;
 use crate::{CrustEvent, Service};
-use maidsafe_utilities::serialisation;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
@@ -171,13 +172,13 @@ impl Client {
     fn handle_new_message(
         &mut self,
         pub_id: PublicId,
-        bytes: Vec<u8>,
+        bytes: CrustBytes,
         outbox: &mut EventBox,
     ) -> Transition {
-        let transition = match serialisation::deserialise(&bytes) {
+        let transition = match from_crust_bytes(bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg),
-            Err(error) => Err(RoutingError::SerialisationError(error)),
+            Err(error) => Err(error),
         };
 
         match transition {

@@ -17,9 +17,11 @@ use crate::messages::{DirectMessage, Message};
 use crate::outbox::EventBox;
 use crate::routing_table::{Authority, Prefix};
 use crate::state_machine::{State, Transition};
+use crate::states::common::from_crust_bytes;
 use crate::timer::Timer;
 use crate::types::RoutingActionSender;
 use crate::xor_name::XorName;
+use crate::CrustBytes;
 use crate::{CrustEvent, Service};
 use maidsafe_utilities::serialisation;
 use std::collections::{BTreeSet, HashSet};
@@ -264,14 +266,13 @@ impl Bootstrapping {
         Transition::Terminate
     }
 
-    fn handle_new_message(&mut self, pub_id: PublicId, bytes: Vec<u8>) -> Result<Transition> {
-        match serialisation::deserialise(&bytes) {
-            Ok(Message::Direct(direct_msg)) => Ok(self.handle_direct_message(direct_msg, pub_id)),
-            Ok(message) => {
+    fn handle_new_message(&mut self, pub_id: PublicId, bytes: CrustBytes) -> Result<Transition> {
+        match from_crust_bytes(bytes)? {
+            Message::Direct(direct_msg) => Ok(self.handle_direct_message(direct_msg, pub_id)),
+            message => {
                 debug!("{} Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
             }
-            Err(error) => Err(From::from(error)),
         }
     }
 
@@ -379,6 +380,7 @@ mod tests {
     use crate::mock_crust::{self, Network};
     use crate::outbox::EventBuf;
     use crate::state_machine::StateMachine;
+    use crate::states::common::from_crust_bytes;
     use crate::CrustEvent;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
     use std::sync::mpsc;
@@ -467,7 +469,7 @@ mod tests {
         // `LostPeer` event in the state machine.
         network.deliver_messages();
         if let CrustEvent::NewMessage::<_>(_, _, serialised_msg) = unwrap!(event_rx.try_recv()) {
-            match unwrap!(serialisation::deserialise(&serialised_msg)) {
+            match unwrap!(from_crust_bytes(serialised_msg)) {
                 Message::Direct(DirectMessage::BootstrapRequest(_)) => (),
                 _ => panic!("Should have received a `BootstrapRequest`."),
             }

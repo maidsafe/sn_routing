@@ -13,7 +13,8 @@ mod unapproved;
 pub mod unrelocated;
 
 pub use self::{
-    base::Base, bootstrapped::Bootstrapped, relocated::Relocated, unapproved::Unapproved,
+    base::from_crust_bytes, base::Base, bootstrapped::Bootstrapped, relocated::Relocated,
+    unapproved::Unapproved,
 };
 use crate::time::Duration;
 

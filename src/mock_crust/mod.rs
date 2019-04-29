@@ -12,6 +12,7 @@ pub mod crust;
 mod support;
 
 #[cfg(test)]
+#[cfg(not(feature = "mock_serialise"))]
 mod tests;
 
 pub use self::support::{

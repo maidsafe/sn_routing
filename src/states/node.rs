@@ -34,12 +34,13 @@ use crate::routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX};
 use crate::sha3::Digest256;
 use crate::signature_accumulator::SignatureAccumulator;
 use crate::state_machine::Transition;
+use crate::states::common::from_crust_bytes;
 use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::types::MessageId;
 use crate::utils::{self, DisplayDuration};
 use crate::xor_name::XorName;
-use crate::{CrustEvent, Service};
+use crate::{CrustBytes, CrustEvent, Service};
 use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
@@ -446,15 +447,12 @@ impl Node {
     fn handle_new_message(
         &mut self,
         pub_id: PublicId,
-        bytes: Vec<u8>,
+        bytes: CrustBytes,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        match serialisation::deserialise(&bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
-            Ok(Message::Direct(direct_msg)) => {
-                self.handle_direct_message(direct_msg, pub_id, outbox)
-            }
-            Err(error) => Err(RoutingError::SerialisationError(error)),
+        match from_crust_bytes(bytes)? {
+            Message::Hop(hop_msg) => self.handle_hop_message(hop_msg, pub_id),
+            Message::Direct(direct_msg) => self.handle_direct_message(direct_msg, pub_id, outbox),
         }
     }
 
@@ -2320,15 +2318,9 @@ impl Node {
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id, 0) {
                 return Ok(());
             }
-            let hop_msg = HopMessage::new(
-                signed_msg.clone(),
-                0,
-                BTreeSet::new(),
-                self.full_id.signing_private_key(),
-            )?;
-            let message = Message::Hop(hop_msg);
-            let raw_bytes = serialisation::serialise(&message)?;
-            self.send_or_drop(pub_id, raw_bytes, priority);
+
+            let data = self.to_hop_bytes(signed_msg.clone(), 0, BTreeSet::new())?;
+            self.send_or_drop(pub_id, data, priority);
             Ok(())
         } else {
             debug!(
