@@ -21,7 +21,7 @@ use crate::{
     event::Event,
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, Message, RoutingMessage},
-    outbox::{EventBox, EventBuf},
+    outbox::EventBox,
     peer_manager::{Peer, PeerManager, PeerState},
     resource_prover::ResourceProver,
     routing_message_filter::RoutingMessageFilter,
@@ -73,6 +73,7 @@ impl ProvingNode {
         min_section_size: usize,
         proxy_pub_id: PublicId,
         timer: Timer,
+        outbox: &mut EventBox,
     ) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
         let public_id = *new_full_id.public_id();
@@ -99,13 +100,18 @@ impl ProvingNode {
             joining_prefix: our_section.0,
             notified_nodes: Default::default(),
         };
-        node.start(our_section.1, &proxy_pub_id);
+        node.start(our_section.1, &proxy_pub_id, outbox);
         node
     }
 
     /// Called immediately after construction. Sends `ConnectionInfoRequest`s to all members of
     /// `our_section` to then start the candidate approval process.
-    fn start(&mut self, our_section: BTreeSet<PublicId>, proxy_pub_id: &PublicId) {
+    fn start(
+        &mut self,
+        our_section: BTreeSet<PublicId>,
+        proxy_pub_id: &PublicId,
+        outbox: &mut EventBox,
+    ) {
         self.resource_prover.start(self.disable_resource_proof);
 
         trace!("{} Relocation completed.", self);
@@ -119,16 +125,14 @@ impl ProvingNode {
             client_id: *self.full_id.public_id(),
             proxy_node_name: *proxy_pub_id.name(),
         };
-        // There will be no events raised as a result of these calls, so safe to just use a
-        // throwaway `EventBox` here.
-        let mut outbox = EventBuf::new();
+
         for pub_id in &our_section {
             debug!(
                 "{} Sending connection info request to {:?} on Relocation response.",
                 self, pub_id
             );
             let dst = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, &mut outbox) {
+            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, outbox) {
                 debug!(
                     "{} - Failed to send connection info request to {:?}: {:?}",
                     self, pub_id, error

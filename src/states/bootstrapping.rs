@@ -139,6 +139,7 @@ impl Bootstrapping {
                 self.min_section_size,
                 proxy_public_id,
                 self.timer,
+                outbox,
             )),
         }
     }
