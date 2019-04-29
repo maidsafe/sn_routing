@@ -24,6 +24,7 @@ configuration:
   - Release
 
 build_script:
+  - cargo update
   - cargo check --verbose --release --lib --tests
 
 test_script:
