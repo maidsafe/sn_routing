@@ -178,7 +178,7 @@ impl HopMessage {
         sent_to: BTreeSet<XorName>,
         signing_key: &SecretSignKey,
     ) -> Result<HopMessage> {
-        let bytes_to_sign = serialise(&content)?;
+        let bytes_to_sign = serialise(HopMessage::content_to_serialise(&content))?;
         Ok(HopMessage {
             content: content,
             route: route,
@@ -192,12 +192,22 @@ impl HopMessage {
     /// This does not imply that the message came from a known node. That requires a check against
     /// the routing table to identify the name associated with the `verification_key`.
     pub fn verify(&self, verification_key: &PublicSignKey) -> Result<()> {
-        let signed_bytes = serialise(&self.content)?;
+        let signed_bytes = serialise(HopMessage::content_to_serialise(&self.content))?;
         if verification_key.verify_detached(&self.signature, &signed_bytes) {
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
         }
+    }
+
+    #[cfg(not(feature = "mock_serialise"))]
+    fn content_to_serialise(content: &SignedMessage) -> &SignedMessage {
+        content
+    }
+
+    #[cfg(feature = "mock_serialise")]
+    fn content_to_serialise(_content: &SignedMessage) -> &[u8; 18] {
+        b"HopMessage.content"
     }
 }
 
