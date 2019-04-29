@@ -270,6 +270,15 @@ type CrustEventSender = crust::CrustEventSender<PublicId>;
 type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
 type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
 
+// Format that can be sent between peers
+#[cfg(not(feature = "mock_serialise"))]
+type CrustBytes = Vec<u8>;
+
+#[cfg(feature = "mock_serialise")]
+use crate::messages::Message;
+#[cfg(feature = "mock_serialise")]
+type CrustBytes = Message;
+
 #[cfg(test)]
 mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};

@@ -11,14 +11,12 @@ use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT};
 use crate::chain::SectionInfo;
 use crate::error::Result;
 use crate::id::PublicId;
-use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
+use crate::messages::{MessageContent, RoutingMessage};
 use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::Authority;
 use crate::time::Instant;
 use crate::timer::Timer;
 use crate::xor_name::XorName;
-use maidsafe_utilities::serialisation;
-use std::collections::BTreeSet;
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).
@@ -157,22 +155,5 @@ pub trait Bootstrapped: Base {
         if let Err(error) = self.send_routing_message_via_route(response, None, route, None) {
             debug!("{} Failed to send ack: {:?}", self, error);
         }
-    }
-
-    // Serialise HopMessage containing the given signed message.
-    fn to_hop_bytes(
-        &self,
-        signed_msg: SignedMessage,
-        route: u8,
-        sent_to: BTreeSet<XorName>,
-    ) -> Result<Vec<u8>> {
-        let hop_msg = HopMessage::new(
-            signed_msg,
-            route,
-            sent_to,
-            self.full_id().signing_private_key(),
-        )?;
-        let message = Message::Hop(hop_msg);
-        Ok(serialisation::serialise(&message)?)
     }
 }

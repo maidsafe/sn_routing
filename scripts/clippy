@@ -7,3 +7,4 @@ cargo fmt -- --check
 cargo clippy $@ --all-targets
 cargo clippy $@ --all-targets --features=mock
 cargo clippy $@ --all-targets --features=mock_parsec
+cargo clippy $@ --all-targets --features=mock_serialise

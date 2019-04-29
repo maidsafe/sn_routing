@@ -21,13 +21,14 @@ use crate::resource_prover::RESOURCE_PROOF_DURATION;
 use crate::routing_message_filter::RoutingMessageFilter;
 use crate::routing_table::{Authority, Prefix};
 use crate::state_machine::{State, Transition};
+use crate::states::common::from_crust_bytes;
 use crate::time::{Duration, Instant};
 use crate::timer::Timer;
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
+use crate::CrustBytes;
 use crate::{CrustEvent, CrustEventSender, Service};
 use log::LogLevel;
-use maidsafe_utilities::serialisation;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -190,14 +191,14 @@ impl JoiningNode {
         old_crust_service
     }
 
-    fn handle_new_message(&mut self, pub_id: PublicId, bytes: Vec<u8>) -> Transition {
-        let transition = match serialisation::deserialise(&bytes) {
+    fn handle_new_message(&mut self, pub_id: PublicId, bytes: CrustBytes) -> Transition {
+        let transition = match from_crust_bytes(bytes) {
             Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
             Ok(message) => {
                 debug!("{} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
             }
-            Err(error) => Err(RoutingError::SerialisationError(error)),
+            Err(error) => Err(error),
         };
 
         match transition {
