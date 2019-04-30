@@ -32,16 +32,16 @@ const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10_240;
 /// it can be exceeded if there are enough client entries: each client will be allowed a
 /// hard-minimum of `MIN_CLIENT_CAPACITY` even if this means the `RateLimiter`'s total capacity
 /// exceeds the `SOFT_CAPACITY`.
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 const SOFT_CAPACITY: u64 = 8 * 1024 * 1024;
 /// For the mock-crust tests, we want a small `SOFT_CAPACITY` in order to trigger more rate-limited
 /// rejections. This must be at least `2 * MIN_CLIENT_CAPACITY` for the multi-client tests to work.
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;
 /// Duration for which entries are kept in the `overcharged` cache, in seconds.
 const OVERCHARGED_TIMEOUT_SECS: u64 = 300;
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod rate_limiter_consts {
     pub const SOFT_CAPACITY: u64 = super::SOFT_CAPACITY;
@@ -274,13 +274,13 @@ impl RateLimiter {
         }
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     pub fn usage_map(&self) -> &BTreeMap<IpAddr, u64> {
         &self.used
     }
 }
 
-#[cfg(all(test, feature = "mock"))]
+#[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
     use crate::data::ImmutableData;

@@ -100,7 +100,7 @@ impl AckManager {
         self.pending.remove(ack)
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     pub fn has_unacked_msg(&self) -> bool {
         !self.pending.is_empty()
     }

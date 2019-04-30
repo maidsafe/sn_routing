@@ -9,31 +9,31 @@
 use crate::action::Action;
 use crate::chain::GenesisPfxInfo;
 use crate::id::{FullId, PublicId};
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use crate::mock_crust;
 use crate::outbox::EventBox;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use crate::routing_table::Authority;
 use crate::routing_table::Prefix;
 use crate::states::common::Base;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use crate::states::common::Bootstrapped;
 use crate::states::{Bootstrapping, Client, JoiningNode, Node, ProvingNode};
 use crate::timer::Timer;
 use crate::types::RoutingActionSender;
 use crate::xor_name::XorName;
 use crate::BootstrapConfig;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use crate::Chain;
 use crate::{CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
 use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::mem;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 use std::net::IpAddr;
 use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
 
@@ -46,7 +46,7 @@ pub struct StateMachine {
     crust_tx: Sender<CrustEvent<PublicId>>,
     action_rx: Receiver<Action>,
     is_running: bool,
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     events: Vec<EventType>,
 }
 
@@ -61,13 +61,13 @@ pub enum State {
     Terminated,
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 enum EventType {
     CrustEvent(CrustEvent<PublicId>),
     Action(Box<Action>),
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 // TODO: remove this
 #[allow(unused)]
 impl EventType {
@@ -114,7 +114,7 @@ impl State {
         self.base_state().map(|state| *state.id())
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     fn chain(&self) -> Option<&Chain> {
         match *self {
             State::Node(ref state) => Some(state.chain()),
@@ -165,7 +165,7 @@ impl Debug for State {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl State {
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         match *self {
@@ -285,13 +285,13 @@ impl StateMachine {
         );
 
         let res = match bootstrap_config {
-            #[cfg(feature = "mock")]
+            #[cfg(feature = "mock_base")]
             Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
-            #[cfg(not(feature = "mock"))]
+            #[cfg(not(feature = "mock_base"))]
             Some(c) => Service::with_config(crust_sender, c, pub_id),
-            #[cfg(feature = "mock")]
+            #[cfg(feature = "mock_base")]
             None => Service::new(mock_crust::take_current(), crust_sender, pub_id),
-            #[cfg(not(feature = "mock"))]
+            #[cfg(not(feature = "mock_base"))]
             None => Service::new(crust_sender, pub_id),
         };
 
@@ -306,7 +306,7 @@ impl StateMachine {
             State::Terminated => false,
             _ => true,
         };
-        #[cfg(feature = "mock")]
+        #[cfg(feature = "mock_base")]
         let machine = StateMachine {
             category_rx: category_rx,
             category_tx: category_tx,
@@ -317,7 +317,7 @@ impl StateMachine {
             is_running: is_running,
             events: Vec::new(),
         };
-        #[cfg(not(feature = "mock"))]
+        #[cfg(not(feature = "mock_base"))]
         let machine = StateMachine {
             category_rx: category_rx,
             category_tx: category_tx,
@@ -360,7 +360,7 @@ impl StateMachine {
     }
 
     // Handle an event from the list and send any events produced for higher layers.
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     fn handle_event_from_list(&mut self, outbox: &mut EventBox) {
         assert!(!self.events.is_empty());
         let event = self.events.remove(0);
@@ -441,7 +441,7 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(feature = "mock_base"))]
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
         if self.is_running {
             let category = self.category_rx.try_recv()?;
@@ -453,7 +453,7 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
         use itertools::Itertools;
         use maidsafe_utilities::SeededRng;
@@ -525,7 +525,7 @@ impl StateMachine {
         self.state.id()
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     pub fn chain(&self) -> Option<&Chain> {
         self.state.chain()
     }
@@ -538,7 +538,7 @@ impl StateMachine {
         self.state.min_section_size()
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     /// Get reference to the current state.
     pub fn current(&self) -> &State {
         &self.state

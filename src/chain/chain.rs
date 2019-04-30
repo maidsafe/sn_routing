@@ -1354,7 +1354,7 @@ impl Display for Chain {
     }
 }
 
-#[cfg(any(test, feature = "mock"))]
+#[cfg(any(test, feature = "mock_base"))]
 impl Chain {
     /// Returns the members of the section with the given prefix (if it exists)
     pub fn get_section(&self, pfx: &Prefix<XorName>) -> Option<&SectionInfo> {

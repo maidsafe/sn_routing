@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#![cfg(not(feature = "mock"))]
+#![cfg(not(feature = "mock_base"))]
 
 mod example_client;
 mod example_node;

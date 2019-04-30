@@ -55,7 +55,7 @@
 //!
 //! let (sender, receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! # #[cfg(not(feature = "mock"))]
+//! # #[cfg(not(feature = "mock_base"))]
 //! let client = Client::new(sender, Some(full_id), None).unwrap();
 //! ```
 //!
@@ -153,7 +153,7 @@ extern crate log;
 extern crate quick_error;
 #[macro_use]
 extern crate unwrap;
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 extern crate crust;
 #[macro_use]
 extern crate lazy_static;
@@ -203,7 +203,7 @@ mod xor_name;
 pub type BootstrapConfig = crust::Config;
 
 /// Mock crust
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 pub mod mock_crust;
 
 /// SHA-3 type alias.
@@ -229,7 +229,7 @@ pub const MIN_SECTION_SIZE: usize = 3;
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
 pub use crate::cache::{Cache, NullCache};
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 pub use crate::chain::verify_chain_invariant;
 pub use crate::chain::Chain;
 pub use crate::client::Client;
@@ -246,16 +246,16 @@ pub use crate::event::Event;
 pub use crate::event_stream::EventStream;
 pub use crate::id::{FullId, PublicId};
 pub use crate::messages::{AccountInfo, Request, Response};
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 pub use crate::mock_crust::crust;
 #[cfg(feature = "mock_parsec")]
 pub(crate) use crate::mock_parsec as parsec;
 pub use crate::node::{Node, NodeBuilder};
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 pub use crate::peer_manager::test_consts;
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 pub use crate::rate_limiter::rate_limiter_consts;
-#[cfg(any(test, feature = "mock"))]
+#[cfg(any(test, feature = "mock_base"))]
 pub use crate::routing_table::verify_network_invariant;
 pub use crate::routing_table::Error as RoutingTableError;
 pub use crate::routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};

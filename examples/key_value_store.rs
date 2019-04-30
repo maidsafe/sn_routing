@@ -55,7 +55,7 @@
     variant_size_differences,
     non_camel_case_types
 )]
-#![cfg_attr(feature = "mock", allow(unused_extern_crates, unused_imports))]
+#![cfg_attr(feature = "mock_base", allow(unused_extern_crates, unused_imports))]
 
 #[macro_use]
 extern crate log;
@@ -63,19 +63,19 @@ extern crate log;
 extern crate unwrap;
 #[macro_use]
 extern crate serde_derive;
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 extern crate safe_crypto;
 
 mod utils;
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 fn main() {
     println!("This example should be built without `--features=mock`.");
     // Return Linux sysexit code for "configuration error"
     ::std::process::exit(78);
 }
 
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 mod unnamed {
     use crate::utils::{ExampleClient, ExampleNode};
     use docopt::Docopt;
@@ -274,7 +274,7 @@ Options:
     }
 }
 
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 fn main() {
     unnamed::run_main()
 }

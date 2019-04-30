@@ -102,13 +102,13 @@ mod tests {
     use rand::{self, Rng};
     use std::time::Duration;
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     fn sleep(time: u64) {
         use fake_clock::FakeClock;
         FakeClock::advance_time(time);
     }
 
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(feature = "mock_base"))]
     fn sleep(time: u64) {
         use std::thread;
         thread::sleep(Duration::from_millis(time));

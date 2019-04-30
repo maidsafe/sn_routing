@@ -8,7 +8,7 @@
 
 // This is used two ways: inline tests, and integration tests (with mock).
 // There's no point configuring each item which is only used in one of these.
-#![cfg(any(test, feature = "mock"))]
+#![cfg(any(test, feature = "mock_base"))]
 #![allow(dead_code, missing_docs)]
 
 use super::authority::Authority;

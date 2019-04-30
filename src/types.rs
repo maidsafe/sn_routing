@@ -8,11 +8,11 @@
 
 use crate::xor_name::XorName;
 use maidsafe_utilities::event_sender::MaidSafeObserver;
-#[cfg(any(test, feature = "mock"))]
+#[cfg(any(test, feature = "mock_base"))]
 use maidsafe_utilities::SeededRng;
-#[cfg(all(not(test), not(feature = "mock")))]
+#[cfg(all(not(test), not(feature = "mock_base")))]
 use rand;
-#[cfg(any(test, feature = "mock"))]
+#[cfg(any(test, feature = "mock_base"))]
 use rand::Rng;
 
 pub type RoutingActionSender = MaidSafeObserver<crate::action::Action>;
@@ -27,14 +27,14 @@ pub struct MessageId(XorName);
 
 impl MessageId {
     /// Generate a new `MessageId` with random content.
-    #[cfg(any(test, feature = "mock"))]
+    #[cfg(any(test, feature = "mock_base"))]
     pub fn new() -> MessageId {
         let mut rng = SeededRng::thread_rng();
         MessageId(rng.gen())
     }
 
     /// Generate a new `MessageId` with random content.
-    #[cfg(all(not(test), not(feature = "mock")))]
+    #[cfg(all(not(test), not(feature = "mock_base")))]
     pub fn new() -> MessageId {
         MessageId(rand::random())
     }

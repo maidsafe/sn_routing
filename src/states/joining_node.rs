@@ -161,7 +161,7 @@ impl JoiningNode {
         }
     }
 
-    #[cfg(not(feature = "mock"))]
+    #[cfg(not(feature = "mock_base"))]
     fn start_new_crust_service(
         old_crust_service: Service,
         pub_id: PublicId,
@@ -180,7 +180,7 @@ impl JoiningNode {
         crust_service
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     fn start_new_crust_service(
         old_crust_service: Service,
         pub_id: PublicId,
@@ -309,7 +309,7 @@ impl JoiningNode {
         Transition::Stay
     }
 
-    #[cfg(feature = "mock")]
+    #[cfg(feature = "mock_base")]
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }

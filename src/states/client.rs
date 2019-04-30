@@ -387,7 +387,7 @@ impl Unapproved for Client {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 impl Client {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()

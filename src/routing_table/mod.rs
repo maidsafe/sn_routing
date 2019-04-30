@@ -105,7 +105,7 @@ mod xorable;
 
 pub use self::authority::Authority;
 pub use self::error::Error;
-#[cfg(any(test, feature = "mock"))]
+#[cfg(any(test, feature = "mock_base"))]
 pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::{Prefix, VersionedPrefix, DEFAULT_PREFIX};
 pub use self::xorable::Xorable;
@@ -1176,7 +1176,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Runs the built-in invariant checker
-    #[cfg(any(test, feature = "mock"))]
+    #[cfg(any(test, feature = "mock_base"))]
     pub fn verify_invariant(&self) {
         unwrap!(
             self.check_invariant(false, true),

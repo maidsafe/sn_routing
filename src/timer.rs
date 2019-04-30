@@ -8,7 +8,7 @@
 
 pub use self::implementation::Timer;
 
-#[cfg(not(feature = "mock"))]
+#[cfg(not(feature = "mock_base"))]
 mod implementation {
     use crate::{
         action::Action,
@@ -229,7 +229,7 @@ mod implementation {
     }
 }
 
-#[cfg(feature = "mock")]
+#[cfg(feature = "mock_base")]
 mod implementation {
     use crate::{
         time::{Duration, Instant},
