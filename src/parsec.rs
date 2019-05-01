@@ -167,13 +167,9 @@ impl ParsecMap {
         };
 
         if filter_opaque {
-            parsec.our_unpolled_observations().any(|obs| {
-                if let Observation::OpaquePayload(_) = obs {
-                    true
-                } else {
-                    false
-                }
-            })
+            parsec
+                .our_unpolled_observations()
+                .any(parsec::Observation::is_opaque)
         } else {
             parsec.has_unconsensused_observations()
         }
