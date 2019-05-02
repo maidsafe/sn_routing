@@ -107,10 +107,10 @@ fn add_nodes<R: Rng>(
         }
     }
 
-    added_nodes.drain(..).for_each(|added_node| {
+    for added_node in added_nodes {
         let index = gen_range(rng, 1, nodes.len() + 1);
         nodes.insert(index, added_node);
-    });
+    }
 
     nodes
         .iter()
@@ -122,17 +122,15 @@ fn add_nodes<R: Rng>(
                 None
             }
         })
-        .collect::<BTreeSet<_>>()
+        .collect()
 }
 
 /// Checks if the given indices have been accepted to the network.
-/// allow_add_failure: Allows nodes to fail getting accepted.
-fn check_added_indices<R: Rng>(
-    rng: &mut R,
-    mut nodes: &mut Vec<TestNode>,
+/// Returns the names of added nodes and indices of failed nodes.
+fn check_added_indices(
+    nodes: &mut Vec<TestNode>,
     new_indices: BTreeSet<usize>,
-    allow_add_failure: bool,
-) -> BTreeSet<XorName> {
+) -> (BTreeSet<XorName>, Vec<usize>) {
     let mut added = BTreeSet::new();
     let mut failed = Vec::new();
     for (index, node) in nodes.iter_mut().enumerate() {
@@ -155,28 +153,23 @@ fn check_added_indices<R: Rng>(
         }
     }
 
-    if !allow_add_failure && !failed.is_empty() {
-        panic!("Unable to add new node. {} failed.", failed.len());
-    }
+    (added, failed)
+}
 
-    // Drop failed node and poll remaining nodes so any node which may have added failed node
-    // to their RT will now purge this entry as part of poll_and_resend -> clear_state.
-    for index in failed.into_iter().rev() {
-        drop(nodes.remove(index));
-    }
+// Shuffle nodes excluding the first node
+fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) {
+    rng.shuffle(&mut nodes[1..]);
+}
 
-    // Clear relocation overrides
+// Clear relocation overrides for all nodes.
+fn clear_relocation_overrides(nodes: &mut Vec<TestNode>) {
     for node in nodes.iter_mut() {
         node.inner.set_next_relocation_dst(None);
         node.inner.set_next_relocation_interval(None);
     }
-
-    poll_and_resend(&mut nodes, &mut []);
-    rng.shuffle(&mut nodes[1..]);
-    added
 }
 
-/// Adds node per existing prefix. Returns new node indices if successfully added.
+/// Adds node per existing prefix. Returns new node names if successfully added.
 /// allow_add_failure: Allows nodes to fail getting accepted. It would also
 /// skip adding to prefixes randomly to allowing sections to merge when this is executed
 /// in the same iteration as `drop_random_nodes`.
@@ -190,7 +183,22 @@ fn add_nodes_and_poll<R: Rng>(
 ) -> BTreeSet<XorName> {
     let new_indices = add_nodes(rng, &network, nodes, allow_add_failure);
     poll_and_resend(&mut nodes, &mut []);
-    check_added_indices(rng, nodes, new_indices, allow_add_failure)
+    let (added_names, failed_indices) = check_added_indices(nodes, new_indices);
+
+    if !allow_add_failure && !failed_indices.is_empty() {
+        panic!("Unable to add new nodes. {} failed.", failed_indices.len());
+    }
+
+    // Drop failed_indices and poll remaining nodes to clear pending states.
+    for index in failed_indices.into_iter().rev() {
+        drop(nodes.remove(index));
+    }
+
+    clear_relocation_overrides(nodes);
+    poll_and_resend(&mut nodes, &mut []);
+    shuffle_nodes(rng, nodes);
+
+    added_names
 }
 
 // Churns the given network randomly. Returns any newly added indices.
@@ -527,6 +535,7 @@ fn aggressive_churn() {
         verify_invariant_for_all_nodes(&mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
         client_puts(&mut network, &mut nodes, min_section_size);
+        shuffle_nodes(&mut rng, &mut nodes);
         warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
 
@@ -594,9 +603,13 @@ fn messages_during_churn() {
         expected_puts.send_and_expect(&data, auth_g1, cl_auth, &mut nodes, min_section_size);
 
         poll_and_resend(&mut nodes, &mut clients);
-        let added_nodes = check_added_indices(&mut rng, &mut nodes, new_indices, false);
-        if !added_nodes.is_empty() {
-            warn!("Added nodes: {:?}", added_nodes);
+        let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);
+        assert!(failed_indices.is_empty());
+        clear_relocation_overrides(&mut nodes);
+        shuffle_nodes(&mut rng, &mut nodes);
+
+        if !added_names.is_empty() {
+            warn!("Added nodes: {:?}", added_names);
         }
         expected_puts.verify(&mut nodes, &mut clients);
         verify_invariant_for_all_nodes(&mut nodes);
