@@ -1759,45 +1759,79 @@ impl Node {
 
         self.remove_expired_peers();
 
-        let relocation_dst = Authority::Section(vote.dst_name);
+        if let Some(prefix) = self.need_to_forward_expect_candidate_to_prefix() {
+            return self.forward_expect_candidate_to_prefix(vote, prefix);
+        }
 
-        // Check that our section is one of the ones with a minimum length prefix, and if it's not,
-        // forward it to one that is.
+        if let Some(target_interval) = self.accept_candidate_with_interval(&vote) {
+            self.candidate_timer_token = Some(self.timer.schedule(RESOURCE_PROOF_DURATION));
+            return self.send_relocate_response(vote, target_interval);
+        }
+
+        // Nothing to do with this event.
+        Ok(())
+    }
+
+    // Return Prefix of section with shorter prefix to resend the `ExpectCandidate` to.
+    // Return None if we are the best section.
+    fn need_to_forward_expect_candidate_to_prefix(&self) -> Option<Prefix<XorName>> {
+        if cfg!(feature = "mock_base") && self.next_relocation_interval.is_some() {
+            // Forbid section balancing: It Breaks things in this case.
+            return None;
+        }
+
         let min_len_prefix = self.chain().min_len_prefix();
+        if min_len_prefix == *self.our_prefix() {
+            // Our section is the best destination.
+            return None;
+        }
 
-        // If we're running in mock-crust mode, and we have relocation interval, don't try to do
-        // section balancing, as it will break things.
-        let forbid_join_balancing = if cfg!(feature = "mock_base") {
-            self.next_relocation_interval.is_some()
-        } else {
-            false
+        Some(min_len_prefix)
+    }
+
+    // Forward ExpectCandidate to section with given prefix.
+    fn forward_expect_candidate_to_prefix(
+        &mut self,
+        vote: ExpectCandidatePayload,
+        prefix: Prefix<XorName>,
+    ) -> Result<(), RoutingError> {
+        let src = Authority::Section(vote.dst_name);
+        let dst = Authority::Section(prefix.substituted_in(vote.dst_name));
+        let content = MessageContent::ExpectCandidate {
+            old_public_id: vote.old_public_id,
+            old_client_auth: vote.old_client_auth,
+            message_id: vote.message_id,
         };
-        if min_len_prefix != *self.our_prefix() && !forbid_join_balancing {
-            let request_content = MessageContent::ExpectCandidate {
-                old_public_id: vote.old_public_id,
-                old_client_auth: vote.old_client_auth,
-                message_id: vote.message_id,
-            };
 
-            let dst = Authority::Section(min_len_prefix.substituted_in(vote.dst_name));
-            return self.send_routing_message(relocation_dst, dst, request_content);
+        self.send_routing_message(src, dst, content)
+    }
+
+    // Reject candidate without a response as one is already processed: return None.
+    // Otherwise, store the candidate for resource proof: return the target interval.
+    // Take next_relocation_interval if available.
+    fn accept_candidate_with_interval(
+        &mut self,
+        vote: &ExpectCandidatePayload,
+    ) -> Option<(XorName, XorName)> {
+        if self.peer_mgr.has_candidate() {
+            return None;
         }
 
         let target_interval = self.next_relocation_interval.take().unwrap_or_else(|| {
             utils::calculate_relocation_interval(&self.our_prefix(), &self.chain().our_section())
         });
-
-        if self.peer_mgr.has_candidate() {
-            // Reject candidate without a response as one is already processed.
-            // Do it only after self.next_relocation_interval was taken.
-            return Ok(());
-        }
-
-        self.candidate_timer_token = Some(self.timer.schedule(RESOURCE_PROOF_DURATION));
-
         self.peer_mgr
             .accept_as_candidate(vote.old_public_id, target_interval);
 
+        Some(target_interval)
+    }
+
+    // Send RelocateResponse to the candidate using the target_interval.
+    fn send_relocate_response(
+        &mut self,
+        vote: ExpectCandidatePayload,
+        target_interval: (XorName, XorName),
+    ) -> Result<(), RoutingError> {
         let own_section = if self.chain().is_member() {
             let our_info = self.chain().our_info();
             (*our_info.prefix(), our_info.members().clone())
@@ -1808,7 +1842,10 @@ impl Node {
                 iter::once(*self.full_id().public_id()).collect::<BTreeSet<PublicId>>(),
             )
         };
-        let response_content = MessageContent::RelocateResponse {
+
+        let src = Authority::Section(vote.dst_name);
+        let dst = vote.old_client_auth;
+        let content = MessageContent::RelocateResponse {
             target_interval: target_interval,
             section: own_section,
             message_id: vote.message_id,
@@ -1820,14 +1857,9 @@ impl Node {
             self.our_prefix(),
             vote.old_public_id
         );
-        trace!(
-            "{} Sending {:?} to {:?}",
-            self,
-            response_content,
-            vote.old_client_auth
-        );
+        trace!("{} Sending {:?} to {:?}", self, content, dst);
 
-        self.send_routing_message(relocation_dst, vote.old_client_auth, response_content)
+        self.send_routing_message(src, dst, content)
     }
 
     /// Votes for all of the proving sections that are new to us.
