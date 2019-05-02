@@ -16,6 +16,7 @@ use crate::{
     outbox::EventBox,
     peer_manager::{ConnectionInfoPreparedResult, Peer, PeerManager, PeerState},
     routing_table::Authority,
+    state_machine::Transition,
     types::MessageId,
     xor_name::XorName,
     PrivConnectionInfo, PubConnectionInfo,
@@ -28,7 +29,6 @@ use std::collections::BTreeSet;
 pub trait Relocated: Bootstrapped {
     fn peer_mgr(&mut self) -> &mut PeerManager;
     fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox);
-    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox);
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
     fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool;
     fn add_to_routing_table_success(&mut self, pub_id: &PublicId);
@@ -38,7 +38,7 @@ pub trait Relocated: Bootstrapped {
         &mut self,
         result_token: u32,
         result: Result<PrivConnectionInfo, CrustError>,
-    ) {
+    ) -> Transition {
         let our_connection_info = match result {
             Err(err) => {
                 error!(
@@ -52,12 +52,12 @@ pub trait Relocated: Bootstrapped {
                              token map: {:?}",
                             self, error
                         );
-                        return;
+                        return Transition::Stay;
                     }
                     Ok(new_token) => new_token,
                 };
                 self.crust_service().prepare_connection_info(new_token);
-                return;
+                return Transition::Stay;
             }
             Ok(connection_info) => connection_info,
         };
@@ -73,7 +73,7 @@ pub trait Relocated: Bootstrapped {
                     "{} Prepared connection info, but no entry found in token map: {:?}",
                     self, error
                 );
-                return;
+                return Transition::Stay;
             }
             Ok(ConnectionInfoPreparedResult {
                 pub_id,
@@ -99,6 +99,8 @@ pub trait Relocated: Bootstrapped {
                 }
             },
         }
+
+        Transition::Stay
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -239,7 +241,7 @@ pub trait Relocated: Bootstrapped {
         Ok(())
     }
 
-    fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+    fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         if self
             .peer_mgr()
             .get_peer(&pub_id)
@@ -250,12 +252,14 @@ pub trait Relocated: Bootstrapped {
                  state in peer_map.",
                 self, pub_id
             );
-            return;
+            return Transition::Stay;
         }
 
         self.peer_mgr().connected_to(&pub_id);
         debug!("{} Received ConnectSuccess from {}.", self, pub_id);
         self.process_connection(pub_id, outbox);
+
+        Transition::Stay
     }
 
     fn decrypt_connection_info(

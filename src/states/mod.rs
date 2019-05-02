@@ -9,14 +9,37 @@
 mod bootstrapping;
 mod client;
 pub mod common;
-mod joining_node;
 mod node;
 mod proving_node;
+mod relocating_node;
 
 pub use self::{
     bootstrapping::{Bootstrapping, TargetState as BootstrappingTargetState},
     client::{Client, RATE_EXCEED_RETRY},
-    joining_node::JoiningNode,
     node::Node,
     proving_node::ProvingNode,
+    relocating_node::RelocatingNode,
 };
+
+//
+// # The state machine
+//
+//            START
+//              │
+//              ▼
+//      ┌───────────────┐
+//      │ Bootstrapping │──────────┐
+//      └───────────────┘          │
+//        │     │     ▲            │
+//        │     │     │            │
+//        │     ▼     │            ▼
+//        │   ┌────────────────┐ ┌─────────────┐
+//        │   │ RelocatingNode │ │ ProvingNode │
+//        │   └────────────────┘ └─────────────┘
+//        │                        │
+//        │                        │
+//        ▼                        ▼
+// ┌────────┐                    ┌──────┐
+// │ Client │                    │ Node │
+// └────────┘                    └──────┘
+//

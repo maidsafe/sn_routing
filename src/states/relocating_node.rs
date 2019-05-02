@@ -6,38 +6,40 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{unrelocated, Base, Bootstrapped, Unapproved};
-use super::{Bootstrapping, BootstrappingTargetState};
-use crate::ack_manager::{Ack, AckManager};
-use crate::action::Action;
-use crate::cache::Cache;
-use crate::chain::SectionInfo;
-use crate::error::{InterfaceError, Result, RoutingError};
-use crate::event::Event;
-use crate::id::{FullId, PublicId};
-use crate::messages::{HopMessage, Message, MessageContent, RoutingMessage};
-use crate::outbox::EventBox;
-use crate::resource_prover::RESOURCE_PROOF_DURATION;
-use crate::routing_message_filter::RoutingMessageFilter;
-use crate::routing_table::{Authority, Prefix};
-use crate::state_machine::{State, Transition};
-use crate::states::common::from_crust_bytes;
-use crate::time::{Duration, Instant};
-use crate::timer::Timer;
-use crate::types::{MessageId, RoutingActionSender};
-use crate::xor_name::XorName;
-use crate::CrustBytes;
-use crate::{CrustEvent, CrustEventSender, Service};
+use super::{
+    common::{from_crust_bytes, unrelocated, Base, Bootstrapped, Unapproved},
+    Bootstrapping, BootstrappingTargetState,
+};
+use crate::{
+    ack_manager::{Ack, AckManager},
+    cache::Cache,
+    chain::SectionInfo,
+    error::{Result, RoutingError},
+    event::Event,
+    id::{FullId, PublicId},
+    messages::{HopMessage, Message, MessageContent, RoutingMessage},
+    outbox::EventBox,
+    resource_prover::RESOURCE_PROOF_DURATION,
+    routing_message_filter::RoutingMessageFilter,
+    routing_table::{Authority, Prefix},
+    state_machine::{State, Transition},
+    time::{Duration, Instant},
+    timer::Timer,
+    types::{MessageId, RoutingActionSender},
+    xor_name::XorName,
+    CrustBytes, CrustEvent, CrustEventSender, Service,
+};
 use log::LogLevel;
-use std::collections::BTreeSet;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::sync::mpsc::Receiver;
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Display, Formatter},
+    sync::mpsc::Receiver,
+};
 
 /// Total time to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
 
-pub struct JoiningNode {
+pub struct RelocatingNode {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
     crust_service: Service,
@@ -53,7 +55,7 @@ pub struct JoiningNode {
     timer: Timer,
 }
 
-impl JoiningNode {
+impl RelocatingNode {
     #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         action_sender: RoutingActionSender,
@@ -65,7 +67,7 @@ impl JoiningNode {
         timer: Timer,
     ) -> Option<Self> {
         let relocation_timer_token = timer.schedule(RELOCATE_TIMEOUT);
-        let mut joining_node = JoiningNode {
+        let mut node = Self {
             action_sender: action_sender,
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
@@ -78,52 +80,12 @@ impl JoiningNode {
             timer: timer,
         };
 
-        if let Err(error) = joining_node.relocate() {
-            error!("{} Failed to start relocation: {:?}", joining_node, error);
+        if let Err(error) = node.relocate() {
+            error!("{} Failed to start relocation: {:?}", node, error);
             None
         } else {
-            debug!("{} State changed to JoiningNode.", joining_node);
-            Some(joining_node)
-        }
-    }
-
-    pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
-        match action {
-            Action::ClientSendRequest { ref result_tx, .. }
-            | Action::NodeSendMessage { ref result_tx, .. } => {
-                warn!("{} Cannot handle {:?} - not joined.", self, action);
-                let _ = result_tx.send(Err(InterfaceError::InvalidState));
-            }
-            Action::GetId { result_tx } => {
-                let _ = result_tx.send(*self.id());
-            }
-            Action::HandleTimeout(token) => {
-                if let Transition::Terminate = self.handle_timeout(token, outbox) {
-                    return Transition::Terminate;
-                }
-            }
-            Action::TakeResourceProofResult(..) => {
-                warn!("{} Cannot handle {:?} - not joined.", self, action);
-            }
-            Action::Terminate => {
-                return Transition::Terminate;
-            }
-        }
-        Transition::Stay
-    }
-
-    pub fn handle_crust_event(
-        &mut self,
-        crust_event: CrustEvent<PublicId>,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        match crust_event {
-            CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
-            CrustEvent::NewMessage(pub_id, _, bytes) => self.handle_new_message(pub_id, bytes),
-            _ => {
-                debug!("{} - Unhandled crust event: {:?}", self, crust_event);
-                Transition::Stay
-            }
+            debug!("{} State changed to RelocatingNode.", node);
+            Some(node)
         }
     }
 
@@ -189,26 +151,6 @@ impl JoiningNode {
     ) -> Service {
         old_crust_service.restart(crust_sender, pub_id);
         old_crust_service
-    }
-
-    fn handle_new_message(&mut self, pub_id: PublicId, bytes: CrustBytes) -> Transition {
-        let transition = match from_crust_bytes(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
-            Ok(message) => {
-                debug!("{} - Unhandled new message: {:?}", self, message);
-                Ok(Transition::Stay)
-            }
-            Err(error) => Err(error),
-        };
-
-        match transition {
-            Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
-            Err(error) => {
-                debug!("{} - {:?}", self, error);
-                Transition::Stay
-            }
-        }
     }
 
     fn handle_hop_message(&mut self, hop_msg: HopMessage, pub_id: PublicId) -> Result<Transition> {
@@ -296,26 +238,13 @@ impl JoiningNode {
         self.ack_mgr.receive(ack);
     }
 
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        if self.relocation_timer_token == token {
-            info!(
-                "{} Failed to get relocated name from the network, so restarting.",
-                self
-            );
-            outbox.send_event(Event::RestartRequired);
-            return Transition::Terminate;
-        }
-        self.resend_unacknowledged_timed_out_msgs(token);
-        Transition::Stay
-    }
-
     #[cfg(feature = "mock_base")]
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
 }
 
-impl Base for JoiningNode {
+impl Base for RelocatingNode {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -332,6 +261,19 @@ impl Base for JoiningNode {
         }
     }
 
+    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
+        if self.relocation_timer_token == token {
+            info!(
+                "{} - Failed to get relocated name from the network - restarting.",
+                self
+            );
+            outbox.send_event(Event::RestartRequired);
+            return Transition::Terminate;
+        }
+        self.resend_unacknowledged_timed_out_msgs(token);
+        Transition::Stay
+    }
+
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         debug!("{} Received LostPeer - {}", self, pub_id);
 
@@ -344,12 +286,37 @@ impl Base for JoiningNode {
         }
     }
 
+    fn handle_new_message(
+        &mut self,
+        pub_id: PublicId,
+        bytes: CrustBytes,
+        _: &mut EventBox,
+    ) -> Transition {
+        let result = match from_crust_bytes(bytes) {
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
+            Ok(message) => {
+                debug!("{} - Unhandled new message: {:?}", self, message);
+                Ok(Transition::Stay)
+            }
+            Err(error) => Err(error),
+        };
+
+        match result {
+            Ok(transition) => transition,
+            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
+            Err(error) => {
+                debug!("{} - {:?}", self, error);
+                Transition::Stay
+            }
+        }
+    }
+
     fn min_section_size(&self) -> usize {
         self.min_section_size
     }
 }
 
-impl Bootstrapped for JoiningNode {
+impl Bootstrapped for RelocatingNode {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -380,7 +347,7 @@ impl Bootstrapped for JoiningNode {
     }
 }
 
-impl Unapproved for JoiningNode {
+impl Unapproved for RelocatingNode {
     const SEND_ACK: bool = true;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
@@ -388,8 +355,8 @@ impl Unapproved for JoiningNode {
     }
 }
 
-impl Display for JoiningNode {
+impl Display for RelocatingNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "JoiningNode({}())", self.name())
+        write!(formatter, "RelocatingNode({}())", self.name())
     }
 }

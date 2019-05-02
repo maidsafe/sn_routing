@@ -7,16 +7,18 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::Base;
-use crate::ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT};
-use crate::chain::SectionInfo;
-use crate::error::Result;
-use crate::id::PublicId;
-use crate::messages::{MessageContent, RoutingMessage};
-use crate::routing_message_filter::RoutingMessageFilter;
-use crate::routing_table::Authority;
-use crate::time::Instant;
-use crate::timer::Timer;
-use crate::xor_name::XorName;
+use crate::{
+    ack_manager::{Ack, AckManager, UnacknowledgedMessage, ACK_TIMEOUT},
+    chain::SectionInfo,
+    error::Result,
+    id::PublicId,
+    messages::{MessageContent, RoutingMessage},
+    routing_message_filter::RoutingMessageFilter,
+    routing_table::Authority,
+    time::Instant,
+    timer::Timer,
+    xor_name::XorName,
+};
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).

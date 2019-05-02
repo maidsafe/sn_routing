@@ -6,51 +6,58 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
-use crate::ack_manager::{Ack, AckManager};
-use crate::action::Action;
-use crate::cache::Cache;
-use crate::chain::{
-    Chain, ChainState, GenesisPfxInfo, NetworkEvent, PrefixChangeOutcome, Proof, ProofSet,
-    ProvingSection, SectionInfo,
+use super::common::{
+    from_crust_bytes, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION,
 };
-use crate::config_handler;
-use crate::crust::{ConnectionInfoResult, CrustUser};
-use crate::error::{BootstrapResponseError, InterfaceError, RoutingError};
-use crate::event::Event;
-use crate::id::{FullId, PublicId};
-use crate::messages::{
-    DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
-    UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
+use crate::{
+    ack_manager::{Ack, AckManager},
+    cache::Cache,
+    chain::{
+        Chain, ChainState, GenesisPfxInfo, NetworkEvent, PrefixChangeOutcome, Proof, ProofSet,
+        ProvingSection, SectionInfo,
+    },
+    config_handler,
+    crust::{CrustError, CrustUser, PrivConnectionInfo},
+    error::{BootstrapResponseError, InterfaceError, RoutingError},
+    event::Event,
+    id::{FullId, PublicId},
+    messages::{
+        DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
+        UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
+    },
+    outbox::EventBox,
+    parsec::{self, ParsecMap},
+    peer_manager::{Peer, PeerManager, PeerState},
+    rate_limiter::RateLimiter,
+    resource_prover::RESOURCE_PROOF_DURATION,
+    routing_message_filter::{FilteringResult, RoutingMessageFilter},
+    routing_table::Error as RoutingTableError,
+    routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
+    sha3::Digest256,
+    signature_accumulator::SignatureAccumulator,
+    state_machine::Transition,
+    time::{Duration, Instant},
+    timer::Timer,
+    types::MessageId,
+    utils::{self, DisplayDuration},
+    xor_name::XorName,
+    CrustBytes, Service,
 };
-use crate::outbox::EventBox;
-use crate::parsec::{self, ConsensusMode, Parsec};
-use crate::peer_manager::{Peer, PeerManager, PeerState};
-use crate::rate_limiter::RateLimiter;
-use crate::resource_prover::RESOURCE_PROOF_DURATION;
-use crate::routing_message_filter::{FilteringResult, RoutingMessageFilter};
-use crate::routing_table::Error as RoutingTableError;
-use crate::routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX};
-use crate::sha3::Digest256;
-use crate::signature_accumulator::SignatureAccumulator;
-use crate::state_machine::Transition;
-use crate::states::common::from_crust_bytes;
-use crate::time::{Duration, Instant};
-use crate::timer::Timer;
-use crate::types::MessageId;
-use crate::utils::{self, DisplayDuration};
-use crate::xor_name::XorName;
-use crate::{CrustBytes, CrustEvent, Service};
 use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
 use safe_crypto::Signature;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque};
-use std::fmt::{Display, Formatter};
-use std::net::IpAddr;
-use std::{cmp, fmt, iter, mem};
+#[cfg(feature = "mock_base")]
+use std::collections::BTreeMap;
+use std::{
+    cmp,
+    collections::{BTreeSet, VecDeque},
+    fmt::{self, Display, Formatter},
+    iter, mem,
+    net::{IpAddr, SocketAddr},
+};
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -111,7 +118,7 @@ pub struct Node {
     proxy_load_amount: u64,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
-    parsec_map: BTreeMap<u64, Parsec<NetworkEvent, FullId>>,
+    parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     poke_timer_token: u64,
     gossip_timer_token: u64,
@@ -221,17 +228,13 @@ impl Node {
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
         let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
 
-        let parsec = create_parsec(full_id.clone(), &gen_pfx_info);
-        let mut parsec_map = BTreeMap::new();
-        let _ = parsec_map.insert(*gen_pfx_info.first_info.version(), parsec);
-
         Self {
             ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 USER_MSG_CACHE_EXPIRY_DURATION,
             ),
             crust_service: crust_service,
-            full_id: full_id,
+            full_id: full_id.clone(),
             is_first_node,
             msg_queue,
             peer_mgr,
@@ -251,7 +254,7 @@ impl Node {
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
-            parsec_map,
+            parsec_map: ParsecMap::new(full_id, &gen_pfx_info),
             gen_pfx_info: gen_pfx_info.clone(),
             poke_timer_token,
             gossip_timer_token,
@@ -283,102 +286,6 @@ impl Node {
         }
     }
 
-    pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
-        match action {
-            Action::ClientSendRequest { result_tx, .. } => {
-                let _ = result_tx.send(Err(InterfaceError::InvalidState));
-            }
-            Action::NodeSendMessage {
-                src,
-                dst,
-                content,
-                priority,
-                result_tx,
-            } => {
-                let result = match self.send_user_message(src, dst, content, priority) {
-                    Err(RoutingError::Interface(err)) => Err(err),
-                    Err(_) | Ok(()) => Ok(()),
-                };
-
-                let _ = result_tx.send(result);
-            }
-            Action::GetId { result_tx } => {
-                let _ = result_tx.send(*self.id());
-            }
-            Action::HandleTimeout(token) => {
-                if let Transition::Terminate = self.handle_timeout(token, outbox) {
-                    return Transition::Terminate;
-                }
-            }
-            Action::Terminate => {
-                return Transition::Terminate;
-            }
-            Action::TakeResourceProofResult(..) => {
-                error!("Action::TakeResourceProofResult received by Node state");
-            }
-        }
-
-        self.handle_routing_messages(outbox);
-        Transition::Stay
-    }
-
-    pub fn handle_crust_event(
-        &mut self,
-        crust_event: CrustEvent<PublicId>,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        match crust_event {
-            CrustEvent::BootstrapAccept(pub_id, peer_kind) => {
-                self.handle_bootstrap_accept(pub_id, peer_kind)
-            }
-            CrustEvent::BootstrapConnect(pub_id, _) => self.handle_bootstrap_connect(pub_id),
-            CrustEvent::ConnectSuccess(pub_id) => self.handle_connect_success(pub_id, outbox),
-            CrustEvent::ConnectFailure(pub_id) => self.handle_connect_failure(pub_id, outbox),
-            CrustEvent::LostPeer(pub_id) => {
-                if let Transition::Terminate = self.handle_lost_peer(pub_id, outbox) {
-                    return Transition::Terminate;
-                }
-            }
-            CrustEvent::NewMessage(pub_id, _peer_kind, bytes) => {
-                match self.handle_new_message(pub_id, bytes, outbox) {
-                    Err(RoutingError::FilterCheckFailed) | Ok(_) => (),
-                    Err(err) => debug!("{} - {:?}", self, err),
-                }
-            }
-            CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult {
-                result_token,
-                result,
-            }) => self.handle_connection_info_prepared(result_token, result),
-            CrustEvent::ListenerStarted(port) => {
-                trace!("{} Listener started on port {}.", self, port);
-                if self.is_first_node && self.init_first_node(outbox).is_err() {
-                    outbox.send_event(Event::Terminated);
-                    return Transition::Terminate;
-                }
-                return Transition::Stay;
-            }
-            CrustEvent::ListenerFailed => {
-                error!("{} Failed to start listening.", self);
-                outbox.send_event(Event::Terminated);
-                return Transition::Terminate;
-            }
-            CrustEvent::WriteMsgSizeProhibitive(pub_id, msg) => {
-                error!(
-                    "{} Failed to send {}-byte message to {:?}. Message too large.",
-                    self,
-                    msg.len(),
-                    pub_id
-                );
-            }
-            _ => {
-                debug!("{} - Unhandled crust event: {:?}", self, crust_event);
-            }
-        }
-
-        self.handle_routing_messages(outbox);
-        Transition::Stay
-    }
-
     // Initialises the first node of the network
     fn init_first_node(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
         outbox.send_event(Event::Connected);
@@ -403,56 +310,6 @@ impl Node {
                     debug!("{} Routing message dispatch failed: {:?}", self, err);
                 }
             }
-        }
-    }
-
-    fn handle_bootstrap_accept(&mut self, pub_id: PublicId, peer_kind: CrustUser) {
-        trace!(
-            "{} Received BootstrapAccept from {:?} as {:?}.",
-            self,
-            pub_id,
-            peer_kind
-        );
-        let ip = if let Ok(ip) = self.crust_service.get_peer_ip_addr(&pub_id) {
-            ip
-        } else {
-            debug!(
-                "{} Can't get IP address of bootstrapper {:?}.",
-                self, pub_id
-            );
-            self.disconnect_peer(&pub_id);
-            if peer_kind == CrustUser::Client {
-                let _ = self.dropped_clients.insert(pub_id, ());
-            }
-            return;
-        };
-
-        if peer_kind == CrustUser::Client && self.banned_client_ips.contains_key(&ip) {
-            warn!(
-                "{} Client {:?} is trying to bootstrap on banned IP {}.",
-                self, pub_id, ip
-            );
-            self.ban_and_disconnect_peer(&pub_id);
-            return;
-        }
-        self.peer_mgr
-            .insert_peer(Peer::new(pub_id, PeerState::Bootstrapper { peer_kind, ip }));
-    }
-
-    fn handle_bootstrap_connect(&mut self, pub_id: PublicId) {
-        // A mature node doesn't need a bootstrap connection
-        self.disconnect_peer(&pub_id)
-    }
-
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        match from_crust_bytes(bytes)? {
-            Message::Hop(hop_msg) => self.handle_hop_message(hop_msg, pub_id),
-            Message::Direct(direct_msg) => self.handle_direct_message(direct_msg, pub_id, outbox),
         }
     }
 
@@ -545,52 +402,46 @@ impl Node {
     fn handle_parsec_request(
         &mut self,
         msg_version: u64,
-        par_request: parsec::Request<NetworkEvent, PublicId>,
+        par_request: parsec::Request,
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        match self
-            .parsec_map
-            .get_mut(&msg_version)
-            .map(|par| par.handle_request(&pub_id, par_request))
-        {
-            Some(Ok(rsp)) => {
-                let direct_msg = Message::Direct(DirectMessage::ParsecResponse(msg_version, rsp));
-                self.send_message(&pub_id, direct_msg);
-            }
-            Some(Err(err)) => debug!("{} Error handling parsec request: {:?}", self, err),
-            None => return Ok(()), // No such parsec version yet.
+        let log_ident = format!("{}", self);
+        let (response, poll) =
+            self.parsec_map
+                .handle_request(msg_version, par_request, pub_id, &log_ident);
+
+        if let Some(response) = response {
+            self.send_message(&pub_id, response);
         }
-        if Some(&msg_version) == self.parsec_map.keys().last() {
-            self.parsec_poll(outbox)?;
+
+        if poll {
+            self.parsec_poll(outbox)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn handle_parsec_response(
         &mut self,
         msg_version: u64,
-        par_response: parsec::Response<NetworkEvent, PublicId>,
+        par_response: parsec::Response,
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        match self
+        let log_ident = format!("{}", self);
+        if self
             .parsec_map
-            .get_mut(&msg_version)
-            .map(|par| par.handle_response(&pub_id, par_response))
+            .handle_response(msg_version, par_response, pub_id, &log_ident)
         {
-            Some(Ok(_)) => {}
-            Some(Err(err)) => trace!("{} Error handling parsec response: {:?}", self, err),
-            None => return Ok(()), // No such parsec version yet.
+            self.parsec_poll(outbox)
+        } else {
+            Ok(())
         }
-        if Some(&msg_version) == self.parsec_map.keys().last() {
-            self.parsec_poll(outbox)?;
-        }
-        Ok(())
     }
 
     fn parsec_poll(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
-        while let Some(block) = self.parsec_map.values_mut().last().and_then(Parsec::poll) {
+        while let Some(block) = self.parsec_map.poll() {
             match block.payload() {
                 parsec::Observation::Accusation { .. } => {
                     // FIXME: Handle properly
@@ -881,11 +732,11 @@ impl Node {
     }
 
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
-        let drained_obs = if let Some(par) = self.parsec_map.values().last() {
-            par.our_unpolled_observations().cloned().collect()
-        } else {
-            vec![]
-        };
+        let drained_obs: Vec<_> = self
+            .parsec_map
+            .our_unpolled_observations()
+            .cloned()
+            .collect();
         let sibling_pfx = self.chain.our_prefix().sibling();
 
         let PrefixChangeOutcome {
@@ -1419,16 +1270,9 @@ impl Node {
     }
 
     fn init_parsec(&mut self) {
-        if let Entry::Vacant(entry) = self
-            .parsec_map
-            .entry(*self.gen_pfx_info.first_info.version())
-        {
-            let _ = entry.insert(create_parsec(self.full_id.clone(), &self.gen_pfx_info));
-            info!(
-                "{}: Init new Parsec, genesis = {:?}",
-                self, self.gen_pfx_info
-            );
-        }
+        let log_ident = format!("{}", self);
+        self.parsec_map
+            .init(self.full_id.clone(), &self.gen_pfx_info, &log_ident)
     }
 
     // Completes a Node startup process and allows a node to behave as a `ManagedNode`.
@@ -2030,9 +1874,6 @@ impl Node {
             |si: &SectionInfo| si == sec_info || si.prev_hash().contains(sec_info.hash());
         Ok(self
             .parsec_map
-            .values()
-            .last()
-            .ok_or(RoutingError::InvalidStateForOperation)?
             .our_unpolled_observations()
             .filter_map(|obs| match obs {
                 parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(sec_info)) => {
@@ -2076,83 +1917,30 @@ impl Node {
         Ok(())
     }
 
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        if self.tick_timer_token == token {
-            self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
-            self.remove_expired_peers();
-            self.proxy_load_amount = 0;
-
-            if self.chain.is_member() {
-                outbox.send_event(Event::TimerTicked);
-            }
-
-            return Transition::Stay;
-        }
-
-        if self.candidate_timer_token == Some(token) {
-            self.candidate_timer_token = None;
-            self.send_candidate_approval();
-        } else if self.candidate_status_token == Some(token) {
-            self.candidate_status_token = Some(self.timer.schedule(CANDIDATE_STATUS_INTERVAL));
-            self.peer_mgr.show_candidate_status();
-        } else if self.reconnect_peers_token == token {
-            self.reconnect_peers_token = self.timer.schedule(RECONNECT_PEER_TIMEOUT);
-            self.reconnect_peers(outbox);
-        } else if self.poke_timer_token == token {
-            if !self.peer_mgr.is_established() {
-                self.send_parsec_poke();
-                self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
-            }
-        } else if self.gossip_timer_token == token {
-            self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-
-            // If we're the only node then invoke parsec_poll directly
-            if self.chain.is_member() && self.chain.our_info().members().len() == 1 {
-                let _ = self.parsec_poll(outbox);
-            }
-
-            self.send_parsec_gossip(None);
-        } else {
-            // Each token has only one purpose, so we only need to call this if none of the above
-            // matched:
-            self.resend_unacknowledged_timed_out_msgs(token);
-        }
-
-        Transition::Stay
-    }
-
     fn send_parsec_gossip(&mut self, target: Option<(u64, PublicId)>) {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
             None => {
-                let (v, mut recipients) = match self.parsec_map.iter().last() {
-                    Some((v, par)) => (*v, par.gossip_recipients().collect_vec()),
-                    None => return, // We haven't joined a section yet.
-                };
+                let version = self.parsec_map.last_version();
+                let mut recipients = self.parsec_map.gossip_recipients();
                 if recipients.is_empty() {
-                    return; // Parsec hasn't caught up with the event of us joining yet.
+                    // Parsec hasn't caught up with the event of us joining yet.
+                    return;
                 }
-                recipients.retain(|pub_id| self.peer_mgr.is_connected(pub_id));
 
+                recipients.retain(|pub_id| self.peer_mgr.is_connected(pub_id));
                 if recipients.is_empty() {
                     log_or_panic!(LogLevel::Error, "Not connected to any gossip recipient.");
                     return;
                 }
 
                 let rand_index = utils::rand_index(recipients.len());
-                (v, *recipients[rand_index])
+                (version, *recipients[rand_index])
             }
         };
 
-        let par_req = self
-            .parsec_map
-            .get_mut(&version)
-            .and_then(|par| par.create_gossip(&gossip_target).ok());
-        if let Some(par_req) = par_req {
-            self.send_message(
-                &gossip_target,
-                Message::Direct(DirectMessage::ParsecRequest(version, par_req)),
-            );
+        if let Some(msg) = self.parsec_map.create_gossip(version, &gossip_target) {
+            self.send_message(&gossip_target, msg);
         }
     }
 
@@ -2209,22 +1997,8 @@ impl Node {
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
         trace!("{} Vote for Event {:?}", self, event);
-        let self_disp = format!("{}", self);
-        if let Some(ref mut par) = self.parsec_map.values_mut().last() {
-            let obs = match event.into_obs() {
-                Err(_) => {
-                    warn!(
-                        "{} Failed to convert NetworkEvent to Parsec Observation.",
-                        self_disp
-                    );
-                    return;
-                }
-                Ok(obs) => obs,
-            };
-            if let Err(e) = par.vote_for(obs) {
-                trace!("{} Parsec vote error: {:?}", self_disp, e);
-            }
-        }
+        let log_ident = format!("{}", self);
+        self.parsec_map.vote_for(event, &log_ident)
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -2586,6 +2360,129 @@ impl Base for Node {
         self.chain().closest_names(&name, count, &conn_peers)
     }
 
+    fn handle_node_send_message(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        content: UserMessage,
+        priority: u8,
+    ) -> Result<(), InterfaceError> {
+        match self.send_user_message(src, dst, content, priority) {
+            Err(RoutingError::Interface(err)) => Err(err),
+            Err(_) | Ok(()) => Ok(()),
+        }
+    }
+
+    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
+        if self.tick_timer_token == token {
+            self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
+            self.remove_expired_peers();
+            self.proxy_load_amount = 0;
+
+            if self.chain.is_member() {
+                outbox.send_event(Event::TimerTicked);
+            }
+
+            return Transition::Stay;
+        }
+
+        if self.candidate_timer_token == Some(token) {
+            self.candidate_timer_token = None;
+            self.send_candidate_approval();
+        } else if self.candidate_status_token == Some(token) {
+            self.candidate_status_token = Some(self.timer.schedule(CANDIDATE_STATUS_INTERVAL));
+            self.peer_mgr.show_candidate_status();
+        } else if self.reconnect_peers_token == token {
+            self.reconnect_peers_token = self.timer.schedule(RECONNECT_PEER_TIMEOUT);
+            self.reconnect_peers(outbox);
+        } else if self.poke_timer_token == token {
+            if !self.peer_mgr.is_established() {
+                self.send_parsec_poke();
+                self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
+            }
+        } else if self.gossip_timer_token == token {
+            self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
+
+            // If we're the only node then invoke parsec_poll directly
+            if self.chain.is_member() && self.chain.our_info().members().len() == 1 {
+                let _ = self.parsec_poll(outbox);
+            }
+
+            self.send_parsec_gossip(None);
+        } else {
+            // Each token has only one purpose, so we only need to call this if none of the above
+            // matched:
+            self.resend_unacknowledged_timed_out_msgs(token);
+        }
+
+        Transition::Stay
+    }
+
+    fn finish_handle_action(&mut self, outbox: &mut EventBox) -> Transition {
+        self.handle_routing_messages(outbox);
+        Transition::Stay
+    }
+
+    fn handle_bootstrap_accept(&mut self, pub_id: PublicId, peer_kind: CrustUser) -> Transition {
+        trace!(
+            "{} Received BootstrapAccept from {:?} as {:?}.",
+            self,
+            pub_id,
+            peer_kind
+        );
+
+        let ip = if let Ok(ip) = self.crust_service.get_peer_ip_addr(&pub_id) {
+            ip
+        } else {
+            debug!(
+                "{} Can't get IP address of bootstrapper {:?}.",
+                self, pub_id
+            );
+            self.disconnect_peer(&pub_id);
+            if peer_kind == CrustUser::Client {
+                let _ = self.dropped_clients.insert(pub_id, ());
+            }
+            return Transition::Stay;
+        };
+
+        if peer_kind == CrustUser::Client && self.banned_client_ips.contains_key(&ip) {
+            warn!(
+                "{} Client {:?} is trying to bootstrap on banned IP {}.",
+                self, pub_id, ip
+            );
+            self.ban_and_disconnect_peer(&pub_id);
+            return Transition::Stay;
+        }
+
+        self.peer_mgr
+            .insert_peer(Peer::new(pub_id, PeerState::Bootstrapper { peer_kind, ip }));
+
+        Transition::Stay
+    }
+
+    fn handle_bootstrap_connect(&mut self, pub_id: PublicId, _: SocketAddr) -> Transition {
+        // A mature node doesn't need a bootstrap connection
+        self.disconnect_peer(&pub_id);
+        Transition::Stay
+    }
+
+    fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        Relocated::handle_connect_success(self, pub_id, outbox)
+    }
+
+    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
+        {
+            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
+        }
+        let _ = self.dropped_peer(&pub_id, outbox, true);
+        if self.chain.is_member() && self.chain.our_info().members().contains(&pub_id) {
+            self.vote_for_event(NetworkEvent::Offline(pub_id));
+        }
+
+        Transition::Stay
+    }
+
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         if self.peer_mgr.get_peer(&pub_id).is_none() {
             return Transition::Stay;
@@ -2598,6 +2495,57 @@ impl Base for Node {
         } else {
             Transition::Terminate
         }
+    }
+
+    fn handle_new_message(
+        &mut self,
+        pub_id: PublicId,
+        bytes: CrustBytes,
+        outbox: &mut EventBox,
+    ) -> Transition {
+        let result = match from_crust_bytes(bytes) {
+            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
+            Ok(Message::Direct(direct_msg)) => {
+                self.handle_direct_message(direct_msg, pub_id, outbox)
+            }
+            Err(error) => Err(error),
+        };
+
+        match result {
+            Err(RoutingError::FilterCheckFailed) | Ok(_) => (),
+            Err(err) => debug!("{} - {:?}", self, err),
+        }
+
+        Transition::Stay
+    }
+
+    fn handle_connection_info_prepared(
+        &mut self,
+        result_token: u32,
+        result: Result<PrivConnectionInfo<PublicId>, CrustError>,
+    ) -> Transition {
+        Relocated::handle_connection_info_prepared(self, result_token, result)
+    }
+
+    fn handle_listener_started(&mut self, port: u16, outbox: &mut EventBox) -> Transition {
+        trace!("{} - Listener started on port {}.", self, port);
+        if self.is_first_node && self.init_first_node(outbox).is_err() {
+            outbox.send_event(Event::Terminated);
+            Transition::Terminate
+        } else {
+            Transition::Stay
+        }
+    }
+
+    fn handle_listener_failed(&mut self, outbox: &mut EventBox) -> Transition {
+        error!("{} - Failed to start listening.", self);
+        outbox.send_event(Event::Terminated);
+        Transition::Terminate
+    }
+
+    fn finish_handle_crust_event(&mut self, outbox: &mut EventBox) -> Transition {
+        self.handle_routing_messages(outbox);
+        Transition::Stay
     }
 
     fn min_section_size(&self) -> usize {
@@ -2631,23 +2579,8 @@ impl Node {
     }
 
     pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
-        if filter_opaque {
-            match self.parsec_map.values().last() {
-                None => false,
-                Some(par) => par.our_unpolled_observations().any(|obs| {
-                    if let parsec::Observation::OpaquePayload(_) = obs {
-                        true
-                    } else {
-                        false
-                    }
-                }),
-            }
-        } else {
-            self.parsec_map
-                .values()
-                .last()
-                .map_or(false, Parsec::has_unconsensused_observations)
-        }
+        self.parsec_map
+            .has_unconsensused_observations(filter_opaque)
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
@@ -2778,17 +2711,6 @@ impl Relocated for Node {
         }
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
-        {
-            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
-        }
-        let _ = self.dropped_peer(&pub_id, outbox, true);
-        if self.chain.is_member() && self.chain.our_info().members().contains(&pub_id) {
-            self.vote_for_event(NetworkEvent::Offline(pub_id));
-        }
-    }
-
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
         !self.chain.is_member() || self.chain.is_peer_valid(pub_id)
     }
@@ -2829,29 +2751,4 @@ fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, Routing
         );
         err
     })
-}
-
-fn create_parsec(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec<NetworkEvent, FullId> {
-    if gen_pfx_info
-        .first_info
-        .members()
-        .contains(full_id.public_id())
-    {
-        Parsec::from_genesis(
-            #[cfg(feature = "mock_parsec")]
-            *gen_pfx_info.first_info.hash(),
-            full_id,
-            &gen_pfx_info.first_info.members(),
-            ConsensusMode::Single,
-        )
-    } else {
-        Parsec::from_existing(
-            #[cfg(feature = "mock_parsec")]
-            *gen_pfx_info.first_info.hash(),
-            full_id,
-            &gen_pfx_info.first_info.members(),
-            &gen_pfx_info.latest_info.members(),
-            ConsensusMode::Single,
-        )
-    }
 }

@@ -13,16 +13,15 @@ use super::{
 use crate::states::common::from_crust_bytes;
 use crate::{
     ack_manager::{Ack, AckManager},
-    action::Action,
     cache::Cache,
     chain::{GenesisPfxInfo, SectionInfo},
     config_handler,
-    crust::ConnectionInfoResult,
-    error::{InterfaceError, RoutingError},
+    crust::{CrustError, PrivConnectionInfo},
+    error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, Message, RoutingMessage},
-    outbox::{EventBox, EventBuf},
+    outbox::EventBox,
     peer_manager::{Peer, PeerManager, PeerState},
     resource_prover::ResourceProver,
     routing_message_filter::RoutingMessageFilter,
@@ -33,11 +32,11 @@ use crate::{
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
-    CrustBytes, CrustEvent, Service,
+    CrustBytes, Service,
 };
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::BTreeSet,
     fmt::{self, Display, Formatter},
 };
 
@@ -47,8 +46,6 @@ pub struct ProvingNode {
     /// ID from before relocating.
     old_full_id: FullId,
     full_id: FullId,
-    /// The queue of routing messages to be processed by us.
-    msg_queue: VecDeque<RoutingMessage>,
     /// Routing messages addressed to us that we cannot handle until we are approved.
     msg_backlog: Vec<RoutingMessage>,
     min_section_size: usize,
@@ -76,6 +73,7 @@ impl ProvingNode {
         min_section_size: usize,
         proxy_pub_id: PublicId,
         timer: Timer,
+        outbox: &mut EventBox,
     ) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
         let public_id = *new_full_id.public_id();
@@ -91,7 +89,6 @@ impl ProvingNode {
             ack_mgr: AckManager::new(),
             old_full_id,
             full_id: new_full_id,
-            msg_queue: VecDeque::new(),
             msg_backlog: Vec::new(),
             min_section_size,
             peer_mgr,
@@ -103,13 +100,18 @@ impl ProvingNode {
             joining_prefix: our_section.0,
             notified_nodes: Default::default(),
         };
-        node.start(our_section.1, &proxy_pub_id);
+        node.start(our_section.1, &proxy_pub_id, outbox);
         node
     }
 
     /// Called immediately after construction. Sends `ConnectionInfoRequest`s to all members of
     /// `our_section` to then start the candidate approval process.
-    fn start(&mut self, our_section: BTreeSet<PublicId>, proxy_pub_id: &PublicId) {
+    fn start(
+        &mut self,
+        our_section: BTreeSet<PublicId>,
+        proxy_pub_id: &PublicId,
+        outbox: &mut EventBox,
+    ) {
         self.resource_prover.start(self.disable_resource_proof);
 
         trace!("{} Relocation completed.", self);
@@ -123,16 +125,14 @@ impl ProvingNode {
             client_id: *self.full_id.public_id(),
             proxy_node_name: *proxy_pub_id.name(),
         };
-        // There will be no events raised as a result of these calls, so safe to just use a
-        // throwaway `EventBox` here.
-        let mut outbox = EventBuf::new();
+
         for pub_id in &our_section {
             debug!(
                 "{} Sending connection info request to {:?} on Relocation response.",
                 self, pub_id
             );
             let dst = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, &mut outbox) {
+            if let Err(error) = self.send_connection_info_request(*pub_id, src, dst, outbox) {
                 debug!(
                     "{} - Failed to send connection info request to {:?}: {:?}",
                     self, pub_id, error
@@ -141,71 +141,7 @@ impl ProvingNode {
         }
     }
 
-    pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
-        match action {
-            Action::ClientSendRequest { result_tx, .. }
-            | Action::NodeSendMessage { result_tx, .. } => {
-                // TODO (adam): should we backlog `NodeSendMessage`s and handle them once we are
-                //              approved?
-                let _ = result_tx.send(Err(InterfaceError::InvalidState));
-            }
-            Action::GetId { result_tx } => {
-                let _ = result_tx.send(*self.id());
-            }
-            Action::HandleTimeout(token) => {
-                if let Transition::Terminate = self.handle_timeout(token, outbox) {
-                    return Transition::Terminate;
-                }
-            }
-            Action::TakeResourceProofResult(pub_id, messages) => {
-                let msg = self
-                    .resource_prover
-                    .handle_action_res_proof(pub_id, messages);
-                self.send_direct_message(pub_id, msg);
-            }
-            Action::Terminate => {
-                return Transition::Terminate;
-            }
-        }
-
-        Transition::Stay
-    }
-
-    pub fn handle_crust_event(
-        &mut self,
-        event: CrustEvent<PublicId>,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        match event {
-            CrustEvent::ConnectSuccess(pub_id) => self.handle_connect_success(pub_id, outbox),
-            CrustEvent::ConnectFailure(pub_id) => self.handle_connect_failure(pub_id, outbox),
-            CrustEvent::LostPeer(pub_id) => {
-                if let Transition::Terminate = self.handle_lost_peer(pub_id, outbox) {
-                    return Transition::Terminate;
-                }
-            }
-            CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult {
-                result_token,
-                result,
-            }) => self.handle_connection_info_prepared(result_token, result),
-            CrustEvent::NewMessage(pub_id, _peer_kind, bytes) => {
-                match self.handle_new_message(pub_id, bytes, outbox) {
-                    Ok(transition) => return transition,
-                    Err(RoutingError::FilterCheckFailed) => (),
-                    Err(err) => debug!("{} - {:?}", self, err),
-                }
-            }
-            _ => {
-                debug!("{} - Unhandled crust event: {:?}", self, event);
-            }
-        }
-
-        Transition::Stay
-    }
-
     pub fn into_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
-        let msg_queue = self.msg_queue.into_iter().chain(self.msg_backlog).collect();
-
         let node = Node::from_proving_node(
             self.ack_mgr,
             self.cache,
@@ -213,7 +149,7 @@ impl ProvingNode {
             self.full_id,
             gen_pfx_info,
             self.min_section_size,
-            msg_queue,
+            self.msg_backlog.into_iter().collect(),
             self.notified_nodes,
             self.peer_mgr,
             self.routing_msg_filter,
@@ -221,21 +157,6 @@ impl ProvingNode {
         );
 
         State::Node(node)
-    }
-
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
-        outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
-        match from_crust_bytes(bytes)? {
-            Message::Direct(msg) => {
-                self.handle_direct_message(msg, pub_id, outbox)?;
-                Ok(Transition::Stay)
-            }
-            Message::Hop(msg) => self.handle_hop_message(msg, pub_id, outbox),
-        }
     }
 
     fn handle_direct_message(
@@ -409,19 +330,6 @@ impl ProvingNode {
         self.ack_mgr.receive(ack)
     }
 
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        let log_ident = format!("{}", self);
-        if let Some(transition) = self
-            .resource_prover
-            .handle_timeout(token, log_ident, outbox)
-        {
-            transition
-        } else {
-            self.resend_unacknowledged_timed_out_msgs(token);
-            Transition::Stay
-        }
-    }
-
     fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
         let was_proxy = self.peer_mgr.is_proxy(pub_id);
         let _ = self.peer_mgr.remove_peer(pub_id);
@@ -453,6 +361,40 @@ impl Base for ProvingNode {
         }
     }
 
+    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
+        let log_ident = format!("{}", self);
+        if let Some(transition) = self
+            .resource_prover
+            .handle_timeout(token, log_ident, outbox)
+        {
+            transition
+        } else {
+            self.resend_unacknowledged_timed_out_msgs(token);
+            Transition::Stay
+        }
+    }
+
+    fn handle_resource_proof_result(&mut self, pub_id: PublicId, messages: Vec<DirectMessage>) {
+        let msg = self
+            .resource_prover
+            .handle_action_res_proof(pub_id, messages);
+        self.send_direct_message(pub_id, msg);
+    }
+
+    fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        Relocated::handle_connect_success(self, pub_id, outbox)
+    }
+
+    fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) -> Transition {
+        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
+        {
+            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
+        }
+
+        let _ = self.dropped_peer(&pub_id);
+        Transition::Stay
+    }
+
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         debug!("{} Received LostPeer - {}", self, pub_id);
 
@@ -461,6 +403,38 @@ impl Base for ProvingNode {
         } else {
             outbox.send_event(Event::Terminated);
             Transition::Terminate
+        }
+    }
+
+    fn handle_connection_info_prepared(
+        &mut self,
+        result_token: u32,
+        result: Result<PrivConnectionInfo<PublicId>, CrustError>,
+    ) -> Transition {
+        Relocated::handle_connection_info_prepared(self, result_token, result)
+    }
+
+    fn handle_new_message(
+        &mut self,
+        pub_id: PublicId,
+        bytes: CrustBytes,
+        outbox: &mut EventBox,
+    ) -> Transition {
+        let result = match from_crust_bytes(bytes) {
+            Ok(Message::Direct(msg)) => self
+                .handle_direct_message(msg, pub_id, outbox)
+                .map(|_| Transition::Stay),
+            Ok(Message::Hop(msg)) => self.handle_hop_message(msg, pub_id, outbox),
+            Err(error) => Err(error),
+        };
+
+        match result {
+            Ok(transition) => transition,
+            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
+            Err(err) => {
+                debug!("{} - {:?}", self, err);
+                Transition::Stay
+            }
         }
     }
 
@@ -542,15 +516,6 @@ impl Relocated for ProvingNode {
         };
 
         self.send_direct_message(pub_id, msg);
-    }
-
-    fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) {
-        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
-        {
-            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
-        }
-
-        let _ = self.dropped_peer(&pub_id);
     }
 
     fn is_peer_valid(&self, _: &PublicId) -> bool {

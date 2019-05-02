@@ -6,36 +6,46 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::action::Action;
-use crate::chain::GenesisPfxInfo;
-use crate::id::{FullId, PublicId};
+use crate::{
+    action::Action,
+    chain::GenesisPfxInfo,
+    id::{FullId, PublicId},
+    outbox::EventBox,
+    routing_table::Prefix,
+    states::common::Base,
+    states::{Bootstrapping, Client, Node, ProvingNode, RelocatingNode},
+    timer::Timer,
+    types::RoutingActionSender,
+    xor_name::XorName,
+    BootstrapConfig, {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE},
+};
 #[cfg(feature = "mock_base")]
-use crate::mock_crust;
-use crate::outbox::EventBox;
-#[cfg(feature = "mock_base")]
-use crate::routing_table::Authority;
-use crate::routing_table::Prefix;
-use crate::states::common::Base;
-#[cfg(feature = "mock_base")]
-use crate::states::common::Bootstrapped;
-use crate::states::{Bootstrapping, Client, JoiningNode, Node, ProvingNode};
-use crate::timer::Timer;
-use crate::types::RoutingActionSender;
-use crate::xor_name::XorName;
-use crate::BootstrapConfig;
-#[cfg(feature = "mock_base")]
-use crate::Chain;
-use crate::{CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE};
+use crate::{mock_crust, routing_table::Authority, states::common::Bootstrapped, Chain};
 use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "mock_base")]
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
-use std::fmt::{self, Debug, Display, Formatter};
-use std::mem;
-#[cfg(feature = "mock_base")]
-use std::net::IpAddr;
-use std::sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError};
+use std::{collections::BTreeMap, net::IpAddr};
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Debug, Display, Formatter},
+    mem,
+    sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError},
+};
+
+// Execute $expr on the current variant of $self. Execute $term_expr if the current variant is
+// `Terminated`.
+macro_rules! state_dispatch {
+    ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
+        match $self {
+            State::Bootstrapping($state) => $expr,
+            State::Client($state) => $expr,
+            State::RelocatingNode($state) => $expr,
+            State::ProvingNode($state) => $expr,
+            State::Node($state) => $expr,
+            State::Terminated => $term_expr,
+        }
+    };
+}
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
@@ -55,7 +65,7 @@ pub struct StateMachine {
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
-    JoiningNode(JoiningNode),
+    RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
     Node(Node),
     Terminated,
@@ -68,8 +78,6 @@ enum EventType {
 }
 
 #[cfg(feature = "mock_base")]
-// TODO: remove this
-#[allow(unused)]
 impl EventType {
     fn is_not_a_timeout(&self) -> bool {
         use std::borrow::Borrow;
@@ -85,14 +93,11 @@ impl EventType {
 
 impl State {
     pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_action(action),
-            State::Client(ref mut state) => state.handle_action(action),
-            State::JoiningNode(ref mut state) => state.handle_action(action, outbox),
-            State::ProvingNode(ref mut state) => state.handle_action(action, outbox),
-            State::Node(ref mut state) => state.handle_action(action, outbox),
-            State::Terminated => Transition::Terminate,
-        }
+        state_dispatch!(
+            *self,
+            ref mut state => state.handle_action(action, outbox),
+            Terminated => Transition::Terminate
+        )
     }
 
     fn handle_crust_event(
@@ -100,18 +105,19 @@ impl State {
         event: CrustEvent<PublicId>,
         outbox: &mut EventBox,
     ) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_crust_event(event, outbox),
-            State::Client(ref mut state) => state.handle_crust_event(event, outbox),
-            State::JoiningNode(ref mut state) => state.handle_crust_event(event, outbox),
-            State::ProvingNode(ref mut state) => state.handle_crust_event(event, outbox),
-            State::Node(ref mut state) => state.handle_crust_event(event, outbox),
-            State::Terminated => Transition::Terminate,
-        }
+        state_dispatch!(
+            *self,
+            ref mut state => state.handle_crust_event(event, outbox),
+            Terminated => Transition::Terminate
+        )
     }
 
     fn id(&self) -> Option<PublicId> {
-        self.base_state().map(|state| *state.id())
+        state_dispatch!(
+            *self,
+            ref state => Some(*state.id()),
+            Terminated => None
+        )
     }
 
     #[cfg(feature = "mock_base")]
@@ -123,45 +129,44 @@ impl State {
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.base_state()
-            .and_then(|state| state.close_group(name, count))
+        state_dispatch!(
+            *self,
+            ref state => state.close_group(name, count),
+            Terminated => None
+        )
     }
 
     fn min_section_size(&self) -> usize {
-        self.base_state().map_or_else(
-            || {
+        state_dispatch!(
+            *self,
+            ref state => state.min_section_size(),
+            Terminated => {
                 log_or_panic!(
                     LogLevel::Error,
                     "Can't get min_section_size when Terminated."
                 );
                 MIN_SECTION_SIZE
-            },
-            Base::min_section_size,
+            }
         )
     }
 
-    fn base_state(&self) -> Option<&Base> {
-        match *self {
-            State::Bootstrapping(ref bootstrapping) => Some(bootstrapping),
-            State::Client(ref client) => Some(client),
-            State::JoiningNode(ref joining_node) => Some(joining_node),
-            State::ProvingNode(ref proving_node) => Some(proving_node),
-            State::Node(ref node) => Some(node),
-            State::Terminated => None,
-        }
+    fn replace_with<F>(&mut self, f: F)
+    where
+        F: FnOnce(Self) -> Self,
+    {
+        let old_state = mem::replace(self, State::Terminated);
+        let new_state = f(old_state);
+        *self = new_state;
     }
 }
 
 impl Debug for State {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            State::Bootstrapping(ref inner) => write!(formatter, "State::{}", inner),
-            State::Client(ref inner) => write!(formatter, "State::{}", inner),
-            State::JoiningNode(ref inner) => write!(formatter, "State::{}", inner),
-            State::ProvingNode(ref inner) => write!(formatter, "State::{}", inner),
-            State::Node(ref inner) => write!(formatter, "State::{}", inner),
-            State::Terminated => write!(formatter, "State::Terminated"),
-        }
+        state_dispatch!(
+            *self,
+            ref state => write!(formatter, "State::{}", state),
+            Terminated => write!(formatter, "State::Terminated")
+        )
     }
 }
 
@@ -190,7 +195,7 @@ impl State {
         match *self {
             State::Node(ref mut state) => state.get_timed_out_tokens(),
             State::Client(ref mut state) => state.get_timed_out_tokens(),
-            State::JoiningNode(ref mut state) => state.get_timed_out_tokens(),
+            State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
             _ => vec![],
         }
     }
@@ -220,7 +225,7 @@ impl State {
         match *self {
             State::Node(ref state) => state.in_authority(auth),
             State::Client(ref state) => state.in_authority(auth),
-            State::JoiningNode(ref state) => state.in_authority(auth),
+            State::RelocatingNode(ref state) => state.in_authority(auth),
             _ => false,
         }
     }
@@ -229,7 +234,7 @@ impl State {
         match *self {
             State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
             State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::JoiningNode(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
             _ => false,
         }
     }
@@ -240,11 +245,11 @@ impl State {
 #[allow(clippy::large_enum_variant)]
 pub enum Transition {
     Stay,
-    // `Bootstrapping` state transitioning to `Client`, `JoiningNode`, or `ProvingNode`.
+    // `Bootstrapping` state transitioning to `Client`, `RelocatingNode`, or `ProvingNode`.
     IntoBootstrapped {
         proxy_public_id: PublicId,
     },
-    // `JoiningNode` state transitioning back to `Bootstrapping`.
+    // `RelocatingNode` state transitioning back to `Bootstrapping`.
     IntoBootstrapping {
         new_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
@@ -378,45 +383,34 @@ impl StateMachine {
         use self::Transition::*;
         match transition {
             Stay => (),
-            IntoBootstrapped { proxy_public_id } => {
-                let new_state = match mem::replace(&mut self.state, State::Terminated) {
-                    State::Bootstrapping(bootstrapping) => {
-                        bootstrapping.into_target_state(proxy_public_id, outbox)
-                    }
-                    _ => unreachable!(),
-                };
-                self.state = new_state;
-            }
+            IntoBootstrapped { proxy_public_id } => self.state.replace_with(|state| match state {
+                State::Bootstrapping(src) => src.into_target_state(proxy_public_id, outbox),
+                _ => unreachable!(),
+            }),
             IntoBootstrapping {
                 new_id,
                 our_section,
             } => {
-                let new_state = match mem::replace(&mut self.state, State::Terminated) {
-                    State::JoiningNode(joining_node) => {
+                let category_tx = self.category_tx.clone();
+                let crust_tx = self.crust_tx.clone();
+                let crust_rx = &mut self.crust_rx;
+
+                self.state.replace_with(|state| match state {
+                    State::RelocatingNode(src) => {
                         let crust_sender = CrustEventSender::new(
-                            self.crust_tx.clone(),
+                            crust_tx,
                             MaidSafeEventCategory::Crust,
-                            self.category_tx.clone(),
+                            category_tx,
                         );
-                        joining_node.into_bootstrapping(
-                            &mut self.crust_rx,
-                            crust_sender,
-                            new_id,
-                            our_section,
-                            outbox,
-                        )
+                        src.into_bootstrapping(crust_rx, crust_sender, new_id, our_section, outbox)
                     }
                     _ => unreachable!(),
-                };
-                self.state = new_state;
+                })
             }
-            IntoNode { gen_pfx_info } => {
-                let new_state = match mem::replace(&mut self.state, State::Terminated) {
-                    State::ProvingNode(proving_node) => proving_node.into_node(gen_pfx_info),
-                    _ => unreachable!(),
-                };
-                self.state = new_state
-            }
+            IntoNode { gen_pfx_info } => self.state.replace_with(|state| match state {
+                State::ProvingNode(src) => src.into_node(gen_pfx_info),
+                _ => unreachable!(),
+            }),
             Terminate => self.terminate(),
         }
     }
