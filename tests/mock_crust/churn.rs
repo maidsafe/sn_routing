@@ -20,7 +20,6 @@ use routing::{
 };
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::iter;
 
 /// Randomly removes some nodes, but <1/3 from each section and never node 0.
 /// max_per_pfx: limits dropping to the specified count per pfx. It would also
@@ -65,21 +64,17 @@ fn drop_random_nodes<R: Rng>(
     dropped_nodes
 }
 
-/// Adds node per existing prefix. Returns new node indexes if successfully added.
-/// allow_add_failure: Allows nodes to fail getting accepted. It would also
-/// skip adding to prefixes randomly to allowing sections to merge when this is executed
-/// in the same iteration as `drop_random_nodes`.
+/// Adds node per existing prefix using a random proxy. Returns new node indices.
+/// skip_some_prefixes: skip adding to prefixes randomly to allowing sections to merge
+/// when this is executed in the same iteration as `drop_random_nodes`.
 ///
-/// Note: This fn will call `poll_and_resend` itself
-fn add_nodes_and_poll<R: Rng>(
+/// Note: This does not clear relocation overrides. Should be cleared after polling.
+fn add_nodes<R: Rng>(
     rng: &mut R,
     network: &Network<PublicId>,
-    mut nodes: &mut Vec<TestNode>,
-    allow_add_failure: bool,
-) -> BTreeSet<XorName> {
-    let len = nodes.len();
-    // TODO: If `nodes.len() >= min_section_size`, allow bootstrapping from other nodes.
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    nodes: &mut Vec<TestNode>,
+    skip_some_prefixes: bool,
+) -> BTreeSet<usize> {
     let mut prefixes: BTreeSet<_> = nodes
         .iter_mut()
         .map(|node| {
@@ -90,24 +85,59 @@ fn add_nodes_and_poll<R: Rng>(
             pfx
         })
         .collect();
+
+    let mut added_nodes = Vec::new();
     while !prefixes.is_empty() {
+        let proxy_index = if nodes.len() > nodes[0].chain().min_sec_size() {
+            gen_range(rng, 0, nodes.len())
+        } else {
+            0
+        };
+        let bootstrap_config =
+            BootstrapConfig::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
         let node = TestNode::builder(&network)
             .bootstrap_config(bootstrap_config.clone())
             .create();
         if let Some(&pfx) = prefixes.iter().find(|pfx| pfx.matches(&node.name())) {
             assert!(prefixes.remove(&pfx));
-            if allow_add_failure && !rng.gen_weighted_bool(prefixes.len() as u32) {
+            if skip_some_prefixes && !rng.gen_weighted_bool(prefixes.len() as u32) {
                 continue;
             }
-            nodes.push(node);
+            added_nodes.push(node);
         }
     }
 
-    poll_and_resend(&mut nodes, &mut []);
+    for added_node in added_nodes {
+        let index = gen_range(rng, 1, nodes.len() + 1);
+        nodes.insert(index, added_node);
+    }
 
+    nodes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, node)| {
+            if !node.inner.is_node() {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Checks if the given indices have been accepted to the network.
+/// Returns the names of added nodes and indices of failed nodes.
+fn check_added_indices(
+    nodes: &mut Vec<TestNode>,
+    new_indices: BTreeSet<usize>,
+) -> (BTreeSet<XorName>, Vec<usize>) {
     let mut added = BTreeSet::new();
     let mut failed = Vec::new();
-    for (index, node) in nodes.iter_mut().enumerate().skip(len) {
+    for (index, node) in nodes.iter_mut().enumerate() {
+        if !new_indices.contains(&index) {
+            continue;
+        }
+
         loop {
             match node.inner.try_next_ev() {
                 Err(_) => {
@@ -123,62 +153,79 @@ fn add_nodes_and_poll<R: Rng>(
         }
     }
 
-    if !allow_add_failure && !failed.is_empty() {
-        panic!("Unable to add new node. {} failed.", failed.len());
-    }
+    (added, failed)
+}
 
-    // Drop failed node and poll remaining nodes so any node which may have added failed node
-    // to their RT will now purge this entry as part of poll_and_resend -> clear_state.
-    for index in failed.into_iter().rev() {
-        drop(nodes.remove(index));
-    }
+// Shuffle nodes excluding the first node
+fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) {
+    rng.shuffle(&mut nodes[1..]);
+}
 
-    // Clear relocation overrides
+// Clear relocation overrides for all nodes.
+fn clear_relocation_overrides(nodes: &mut Vec<TestNode>) {
     for node in nodes.iter_mut() {
         node.inner.set_next_relocation_dst(None);
         node.inner.set_next_relocation_interval(None);
     }
-
-    poll_and_resend(&mut nodes, &mut []);
-    rng.shuffle(&mut nodes[1..]);
-    added
 }
 
-// Randomly adds or removes some nodes, causing churn.
-// If a new node was added, returns the index of this node. Otherwise
-// returns `None` (it never adds more than one node).
+/// Adds node per existing prefix. Returns new node names if successfully added.
+/// allow_add_failure: Allows nodes to fail getting accepted. It would also
+/// skip adding to prefixes randomly to allowing sections to merge when this is executed
+/// in the same iteration as `drop_random_nodes`.
+///
+/// Note: This fn will call `poll_and_resend` itself
+fn add_nodes_and_poll<R: Rng>(
+    rng: &mut R,
+    network: &Network<PublicId>,
+    mut nodes: &mut Vec<TestNode>,
+    allow_add_failure: bool,
+) -> BTreeSet<XorName> {
+    let new_indices = add_nodes(rng, &network, nodes, allow_add_failure);
+    poll_and_resend(&mut nodes, &mut []);
+    let (added_names, failed_indices) = check_added_indices(nodes, new_indices);
+
+    if !allow_add_failure && !failed_indices.is_empty() {
+        panic!("Unable to add new nodes. {} failed.", failed_indices.len());
+    }
+
+    // Drop failed_indices and poll remaining nodes to clear pending states.
+    for index in failed_indices.into_iter().rev() {
+        drop(nodes.remove(index));
+    }
+
+    clear_relocation_overrides(nodes);
+    poll_and_resend(&mut nodes, &mut []);
+    shuffle_nodes(rng, nodes);
+
+    added_names
+}
+
+// Churns the given network randomly. Returns any newly added indices.
+// If introducing churn, would either drop/add nodes in each prefix.
 fn random_churn<R: Rng>(
     rng: &mut R,
     network: &Network<PublicId>,
     nodes: &mut Vec<TestNode>,
-) -> Option<usize> {
-    let len = nodes.len();
-    let section_count = count_sections(nodes);
-    if section_count > 1 && !rng.gen_weighted_bool(section_count as u32) {
-        // Use min_sec_size rather than section size to prevent collapsing any groups.
-        let max_drop = (nodes[0].chain().min_sec_size() - 1)
-            * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
-            / QUORUM_DENOMINATOR;
-        assert!(max_drop > 0);
-        let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
-        warn!("Dropping nodes: {:?}", dropped_nodes);
-        return None;
+    max_prefixes_len: usize,
+) -> BTreeSet<usize> {
+    // 20% chance to not churn.
+    if rng.gen_weighted_bool(5) {
+        return BTreeSet::new();
     }
 
-    let proxy = gen_range(rng, 0, len);
-    let index = gen_range(rng, 1, len + 1);
+    let section_count = count_sections(nodes);
+    if section_count < max_prefixes_len {
+        return add_nodes(rng, &network, nodes, false);
+    }
 
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[proxy].handle.endpoint()]);
-    nodes.insert(
-        index,
-        TestNode::builder(network)
-            .bootstrap_config(bootstrap_config)
-            .create(),
-    );
-
-    warn!("Adding {}", nodes[index].name());
-
-    Some(index)
+    // Use min_sec_size rather than section size to prevent collapsing any groups.
+    let max_drop = (nodes[0].chain().min_sec_size() - 1) * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
+        / QUORUM_DENOMINATOR;
+    assert!(max_drop > 0);
+    let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
+    warn!("Dropping nodes: {:?}", dropped_nodes);
+    BTreeSet::new()
 }
 
 /// The entries of a Put request: the data ID, message ID, source and destination authority.
@@ -260,12 +307,7 @@ impl ExpectedPuts {
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(
-        mut self,
-        nodes: &mut [TestNode],
-        clients: &mut [TestClient],
-        new_node_name: Option<XorName>,
-    ) {
+    fn verify(mut self, nodes: &mut [TestNode], clients: &mut [TestClient]) {
         // The minimum of the section lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the smaller of the section sizes.
@@ -301,16 +343,6 @@ impl ExpectedPuts {
                             if let Authority::NaeManager(_) = dst {
                                 trace!(
                                     "Unexpected request for node {}: {:?} / {:?}",
-                                    node.name(),
-                                    key,
-                                    self.sections
-                                );
-                            } else if new_node_name == Some(node.name()) {
-                                // A new joined node may receive the message first, then receives
-                                // the section split it incurs, hence becomes non-recipient in this
-                                // call but received the request event.
-                                trace!(
-                                    "Unexpected request for new joined node {}: {:?} / {:?}",
                                     node.name(),
                                     key,
                                     self.sections
@@ -407,7 +439,7 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
 
     poll_and_resend(nodes, &mut []);
 
-    expected_puts.verify(nodes, &mut [], None);
+    expected_puts.verify(nodes, &mut []);
 }
 
 fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_section_size: usize) {
@@ -432,7 +464,7 @@ fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_sect
     expected_puts.send_and_expect(&data, auth_g1, cl_auth, nodes, min_section_size);
 
     poll_and_resend(nodes, &mut clients);
-    expected_puts.verify(nodes, &mut clients, None);
+    expected_puts.verify(nodes, &mut clients);
 }
 
 #[test]
@@ -503,6 +535,7 @@ fn aggressive_churn() {
         verify_invariant_for_all_nodes(&mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
         client_puts(&mut network, &mut nodes, min_section_size);
+        shuffle_nodes(&mut rng, &mut nodes);
         warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
 
@@ -518,7 +551,9 @@ fn messages_during_churn() {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
+    let prefixes = vec![2, 2, 2, 3, 3];
+    let prefixes_len = prefixes.len();
+    let mut nodes = create_connected_nodes_until_split(&network, prefixes, false);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let cl_auth = Authority::Client {
         client_id: *clients[0].full_id.public_id(),
@@ -527,17 +562,12 @@ fn messages_during_churn() {
 
     for i in 0..50 {
         warn!("Iteration {}. Prefixes: {:?}", i, current_sections(&nodes));
+        let new_indices = random_churn(&mut rng, &network, &mut nodes, prefixes_len);
 
-        let added_index = if !rng.gen_weighted_bool(3) {
-            random_churn(&mut rng, &network, &mut nodes)
-        } else {
-            None
-        };
         // Create random data and pick random sending and receiving nodes.
         let data = ImmutableData::new(rng.gen_iter().take(100).collect());
-        let exclude = added_index.map_or(BTreeSet::new(), |index| iter::once(index).collect());
-        let index0 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
-        let index1 = gen_range_except(&mut rng, 0, nodes.len(), &exclude);
+        let index0 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
+        let index1 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
         let auth_n0 = Authority::ManagedNode(nodes[index0].name());
         let auth_n1 = Authority::ManagedNode(nodes[index1].name());
         let auth_g0 = Authority::NaeManager(rng.gen());
@@ -573,8 +603,15 @@ fn messages_during_churn() {
         expected_puts.send_and_expect(&data, auth_g1, cl_auth, &mut nodes, min_section_size);
 
         poll_and_resend(&mut nodes, &mut clients);
-        let new_node_name = added_index.map(|index| nodes[index].name());
-        expected_puts.verify(&mut nodes, &mut clients, new_node_name);
+        let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);
+        assert!(failed_indices.is_empty());
+        clear_relocation_overrides(&mut nodes);
+        shuffle_nodes(&mut rng, &mut nodes);
+
+        if !added_names.is_empty() {
+            warn!("Added nodes: {:?}", added_names);
+        }
+        expected_puts.verify(&mut nodes, &mut clients);
         verify_invariant_for_all_nodes(&mut nodes);
     }
 }
