@@ -535,8 +535,8 @@ impl RoutingMessage {
 /// Once in `JoiningNode` state, A sends a `Relocate` request to the `NaeManager` section authority
 /// X of A's current name. X computes a target destination Y to which A should relocate and sends
 /// that section's `NaeManager`s an `ExpectCandidate` containing A's current public ID. Each member
-/// of Y caches A's public ID, and sends `AcceptAsCandidate` to self section. Once Y receives
-/// `AcceptAsCandidate`, sends a `RelocateResponse` back to A, which includes an address space range
+/// of Y votes for `ExpectCandidate`. Once Y accumulates votes for `ExpectCandidate`, send a
+/// `RelocateResponse` back to A, which includes an address space range
 /// into which A should relocate and also the public IDs of the members of Y. A then disconnects
 /// from the network and reconnects with a new ID which falls within the specified address range.
 /// After connecting to the members of Y, it begins the resource proof process. Upon successful
@@ -639,19 +639,6 @@ pub enum MessageContent {
         cacheable: bool,
         /// The `part_index`-th part of the serialised user message.
         payload: Vec<u8>,
-    },
-    /// Confirm with section that the candidate is about to resource prove.
-    ///
-    /// Sent from the `NaeManager` to the `NaeManager`.
-    AcceptAsCandidate {
-        /// The joining node's current public ID.
-        old_public_id: PublicId,
-        /// The joining node's current authority.
-        old_client_auth: Authority<XorName>,
-        /// The interval into which the joining node should join.
-        target_interval: (XorName, XorName),
-        /// The message's unique identifier.
-        message_id: MessageId,
     },
     /// Approves the joining node as a routing node.
     ///
@@ -807,16 +794,6 @@ impl Debug for MessageContent {
                 hash[0],
                 hash[1],
                 hash[2]
-            ),
-            AcceptAsCandidate {
-                ref old_public_id,
-                ref old_client_auth,
-                ref target_interval,
-                ref message_id,
-            } => write!(
-                formatter,
-                "AcceptAsCandidate {{ {:?}, {:?}, {:?}, {:?} }}",
-                old_public_id, old_client_auth, target_interval, message_id
             ),
             NodeApproval(ref gen_info) => write!(formatter, "NodeApproval {{ {:?} }}", gen_info),
         }

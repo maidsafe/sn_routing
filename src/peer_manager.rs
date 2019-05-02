@@ -31,15 +31,12 @@ const CONNECTING_PEER_TIMEOUT_SECS: u64 = 150;
 /// Time (in seconds) the node waits for a peer to either become valid once connected to it or to
 /// transition once bootstrapped to it.
 const CONNECTED_PEER_TIMEOUT_SECS: u64 = 120;
-/// Time (in seconds) after which a `VotedFor` candidate will be removed.
-const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = 120;
 
 #[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod test_consts {
     pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT.as_secs();
     pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT.as_secs();
-    pub const CANDIDATE_ACCEPT_TIMEOUT_SECS: u64 = super::CANDIDATE_ACCEPT_TIMEOUT_SECS;
     pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION.as_secs();
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
@@ -261,10 +258,6 @@ impl Peer {
 #[derive(Debug, Eq, PartialEq)]
 enum Candidate {
     None,
-    Expecting {
-        timestamp: Instant,
-        old_pub_id: PublicId,
-    },
     AcceptedForResourceProof {
         res_proof_start: Instant,
         target_interval: (XorName, XorName),
@@ -283,9 +276,6 @@ impl Candidate {
     fn is_expired(&self) -> bool {
         match *self {
             Candidate::None => false,
-            Candidate::Expecting { ref timestamp, .. } => {
-                timestamp.elapsed() > Duration::from_secs(CANDIDATE_ACCEPT_TIMEOUT_SECS)
-            }
             Candidate::AcceptedForResourceProof {
                 res_proof_start, ..
             }
@@ -353,23 +343,14 @@ impl PeerManager {
         );
     }
 
-    /// Adds a potential candidate to the candidate list setting its state to `VotedFor`.  If
-    /// another ongoing (i.e. unapproved) candidate exists, or if the candidate is unsuitable for
-    /// adding to our section, returns an error.
-    pub fn expect_candidate(&mut self, old_pub_id: PublicId) -> Result<(), RoutingError> {
-        if self.candidate != Candidate::None {
-            return Err(RoutingError::AlreadyHandlingJoinRequest);
-        }
-        self.candidate = Candidate::Expecting {
-            timestamp: Instant::now(),
-            old_pub_id: old_pub_id,
-        };
-        Ok(())
+    /// Return true if already has a candidate
+    pub fn has_candidate(&self) -> bool {
+        self.candidate != Candidate::None
     }
 
-    /// Our section has agreed that the candidate should be accepted pending proof of resource.
-    /// Replaces any other potential candidate we have previously voted for.  Sets the candidate
-    /// state to `AcceptedForResourceProof`.
+    /// Our section decided that the candidate should be selected next.
+    /// replace any ongoing (i.e. unapproved) candidate with the new state
+    /// `AcceptedForResourceProof` for the given candidate.
     pub fn accept_as_candidate(
         &mut self,
         old_pub_id: PublicId,
@@ -566,7 +547,6 @@ impl PeerManager {
         let mut log_msg = format!("{} Candidate Status - ", self);
         match self.candidate {
             Candidate::None => trace!("{}No candidate is currently being handled.", log_msg),
-            Candidate::Expecting { .. } => (),
             Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => trace!(
                 "{}{} has not sent CandidateInfo yet.",
                 log_msg,
@@ -662,8 +642,7 @@ impl PeerManager {
         let remove_candidate = if self.candidate.is_expired() {
             match self.candidate {
                 Candidate::None => None,
-                Candidate::Expecting { ref old_pub_id, .. }
-                | Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => Some(*old_pub_id),
+                Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => Some(*old_pub_id),
                 Candidate::ResourceProof { ref new_pub_id, .. } => Some(*new_pub_id),
             }
         } else {
@@ -986,8 +965,7 @@ impl PeerManager {
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
         let remove_candidate = match self.candidate {
             Candidate::None => false,
-            Candidate::Expecting { ref old_pub_id, .. }
-            | Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => {
+            Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => {
                 // only consider candidate cleanup via old_id if candidate is also expired.
                 // else candidate may simply be restarting.
                 old_pub_id == pub_id && self.candidate.is_expired()

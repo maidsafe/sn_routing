@@ -10,10 +10,23 @@ use super::{ProofSet, ProvingSection, SectionInfo};
 use crate::id::PublicId;
 use crate::parsec;
 use crate::sha3::Digest256;
+use crate::types::MessageId;
 use crate::{Authority, RoutingError, XorName};
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt::{self, Debug, Formatter};
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct ExpectCandidatePayload {
+    /// The joining node's current public ID.
+    pub old_public_id: PublicId,
+    /// The joining node's current authority.
+    pub old_client_auth: Authority<XorName>,
+    /// The message's unique identifier.
+    pub message_id: MessageId,
+    // The routing_msg.dst
+    pub dst_name: XorName,
+}
 
 /// Routing Network events
 // TODO: Box `SectionInfo`?
@@ -25,6 +38,10 @@ pub enum NetworkEvent {
     OurMerge,
     NeighbourMerge(Digest256),
     SectionInfo(SectionInfo),
+
+    /// Voted for received ExpectCandidate RPC.
+    ExpectCandidate(ExpectCandidatePayload),
+
     /// A list of proofs for a neighbour section, starting from the current section.
     ProvingSections(Vec<ProvingSection>, SectionInfo),
 }
@@ -76,6 +93,7 @@ impl Debug for NetworkEvent {
             NetworkEvent::SectionInfo(ref sec_info) => {
                 write!(formatter, "SectionInfo({:?})", sec_info)
             }
+            NetworkEvent::ExpectCandidate(ref vote) => write!(formatter, "SectionInfo({:?})", vote),
             NetworkEvent::ProvingSections(_, ref sec_info) => {
                 write!(formatter, "ProvingSections(_, {:?})", sec_info)
             }

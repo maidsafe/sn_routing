@@ -26,7 +26,7 @@ use std::iter::Iterator;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Time (in seconds) between accepting a new candidate (i.e. receiving an `AcceptAsCandidate` from
+/// Time (in seconds) between accepting a new candidate (i.e. accumulating an `ExpectCandidate` in
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot
 /// satisfy the proof of resource challenge within this time, no `CandidateApproval` is sent.
 pub const RESOURCE_PROOF_DURATION: Duration = Duration::from_secs(300);
