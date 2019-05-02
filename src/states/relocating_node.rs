@@ -39,6 +39,16 @@ use std::{
 /// Total time to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
 
+pub struct RelocatingNodeDetails {
+    pub action_sender: RoutingActionSender,
+    pub cache: Box<Cache>,
+    pub crust_service: Service,
+    pub full_id: FullId,
+    pub min_section_size: usize,
+    pub proxy_pub_id: PublicId,
+    pub timer: Timer,
+}
+
 pub struct RelocatingNode {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
@@ -56,19 +66,19 @@ pub struct RelocatingNode {
 }
 
 impl RelocatingNode {
-    pub fn from_bootstrapping(source: Bootstrapping, proxy_pub_id: PublicId) -> Option<Self> {
-        let relocation_timer_token = source.timer.schedule(RELOCATE_TIMEOUT);
+    pub fn from_bootstrapping(details: RelocatingNodeDetails) -> Option<Self> {
+        let relocation_timer_token = details.timer.schedule(RELOCATE_TIMEOUT);
         let mut node = Self {
-            action_sender: source.action_sender,
+            action_sender: details.action_sender,
             ack_mgr: AckManager::new(),
-            crust_service: source.crust_service,
-            full_id: source.full_id,
-            cache: source.cache,
-            min_section_size: source.min_section_size,
-            proxy_pub_id,
+            crust_service: details.crust_service,
+            full_id: details.full_id,
+            cache: details.cache,
+            min_section_size: details.min_section_size,
+            proxy_pub_id: details.proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             relocation_timer_token,
-            timer: source.timer,
+            timer: details.timer,
         };
 
         if let Err(error) = node.relocate() {

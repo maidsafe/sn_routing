@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION},
-    establishing_node::EstablishingNode,
-};
+use super::common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
@@ -76,6 +73,21 @@ const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 /// Duration for which clients' IDs we disconnected from are retained.
 const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
+pub struct NodeDetails {
+    pub ack_mgr: AckManager,
+    pub cache: Box<Cache>,
+    pub chain: Chain,
+    pub crust_service: Service,
+    pub full_id: FullId,
+    pub gen_pfx_info: GenesisPfxInfo,
+    pub msg_queue: VecDeque<RoutingMessage>,
+    pub notified_nodes: BTreeSet<PublicId>,
+    pub parsec_map: ParsecMap,
+    pub peer_mgr: PeerManager,
+    pub routing_msg_filter: RoutingMessageFilter,
+    pub timer: Timer,
+}
+
 pub struct Node {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
@@ -140,22 +152,24 @@ impl Node {
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+        let peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
 
-        let mut node = Self::new(
-            AckManager::new(),
+        let details = NodeDetails {
+            ack_mgr: AckManager::new(),
             cache,
             chain,
             crust_service,
             full_id,
             gen_pfx_info,
-            true,
-            Default::default(),
-            Default::default(),
+            msg_queue: VecDeque::new(),
+            notified_nodes: BTreeSet::new(),
             parsec_map,
-            PeerManager::new(public_id, dev_config.disable_client_rate_limiter),
-            RoutingMessageFilter::new(),
+            peer_mgr,
+            routing_msg_filter: RoutingMessageFilter::new(),
             timer,
-        );
+        };
+
+        let mut node = Self::new(details, true);
 
         if let Err(error) = node.crust_service.start_listening_tcp() {
             error!("{} - Failed to start listening: {:?}", node, error);
@@ -168,64 +182,36 @@ impl Node {
     }
 
     pub fn from_establishing_node(
-        source: EstablishingNode,
+        details: NodeDetails,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
-        let mut node = Self::new(
-            source.ack_mgr,
-            source.cache,
-            source.chain,
-            source.crust_service,
-            source.full_id,
-            source.gen_pfx_info,
-            false,
-            source.msg_backlog.into_iter().collect(),
-            source.notified_nodes,
-            source.parsec_map,
-            source.peer_mgr,
-            source.routing_msg_filter,
-            source.timer,
-        );
+        let mut node = Self::new(details, false);
         node.init(sec_info, old_pfx, outbox)?;
         Ok(node)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        ack_mgr: AckManager,
-        cache: Box<Cache>,
-        chain: Chain,
-        crust_service: Service,
-        full_id: FullId,
-        gen_pfx_info: GenesisPfxInfo,
-        is_first_node: bool,
-        msg_queue: VecDeque<RoutingMessage>,
-        notified_nodes: BTreeSet<PublicId>,
-        parsec_map: ParsecMap,
-        peer_mgr: PeerManager,
-        routing_msg_filter: RoutingMessageFilter,
-        timer: Timer,
-    ) -> Self {
+    fn new(details: NodeDetails, is_first_node: bool) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
 
+        let timer = details.timer;
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
         let candidate_status_token = timer.schedule(CANDIDATE_STATUS_INTERVAL);
 
         Self {
-            ack_mgr,
+            ack_mgr: details.ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 USER_MSG_CACHE_EXPIRY_DURATION,
             ),
-            crust_service: crust_service,
-            full_id: full_id.clone(),
+            crust_service: details.crust_service,
+            full_id: details.full_id.clone(),
             is_first_node,
-            msg_queue,
-            peer_mgr,
-            response_cache: cache,
-            routing_msg_filter,
+            msg_queue: details.msg_queue,
+            peer_mgr: details.peer_mgr,
+            response_cache: details.cache,
+            routing_msg_filter: details.routing_msg_filter,
             sig_accumulator: Default::default(),
             tick_timer_token: tick_timer_token,
             timer: timer,
@@ -239,11 +225,11 @@ impl Node {
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             disable_resource_proof: dev_config.disable_resource_proof,
-            parsec_map,
-            gen_pfx_info,
+            parsec_map: details.parsec_map,
+            gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
-            chain,
-            notified_nodes,
+            chain: details.chain,
+            notified_nodes: details.notified_nodes,
         }
     }
 

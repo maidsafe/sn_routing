@@ -6,7 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{common::Base, Client, ProvingNode, RelocatingNode};
+use super::{
+    client::{Client, ClientDetails},
+    common::Base,
+    proving_node::{ProvingNode, ProvingNodeDetails},
+    relocating_node::{RelocatingNode, RelocatingNodeDetails},
+};
 use crate::{
     cache::Cache,
     crust::CrustUser,
@@ -49,15 +54,15 @@ pub enum TargetState {
 
 // State of Client or Node while bootstrapping.
 pub struct Bootstrapping {
-    pub(super) action_sender: RoutingActionSender,
-    pub(super) cache: Box<Cache>,
-    pub(super) crust_service: Service,
-    pub(super) full_id: FullId,
-    pub(super) min_section_size: usize,
-    pub(super) timer: Timer,
+    action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
+    cache: Box<Cache>,
+    crust_service: Service,
+    full_id: FullId,
+    min_section_size: usize,
     target_state: TargetState,
+    timer: Timer,
 }
 
 impl Bootstrapping {
@@ -94,16 +99,31 @@ impl Bootstrapping {
         })
     }
 
-    pub fn into_target_state(self, proxy_public_id: PublicId, outbox: &mut EventBox) -> State {
+    pub fn into_target_state(self, proxy_pub_id: PublicId, outbox: &mut EventBox) -> State {
         match self.target_state {
             TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
-                self,
-                proxy_public_id,
-                msg_expiry_dur,
+                ClientDetails {
+                    crust_service: self.crust_service,
+                    full_id: self.full_id,
+                    min_section_size: self.min_section_size,
+                    msg_expiry_dur,
+                    proxy_pub_id,
+                    timer: self.timer,
+                },
                 outbox,
             )),
             TargetState::RelocatingNode => {
-                if let Some(node) = RelocatingNode::from_bootstrapping(self, proxy_public_id) {
+                let details = RelocatingNodeDetails {
+                    action_sender: self.action_sender,
+                    cache: self.cache,
+                    crust_service: self.crust_service,
+                    full_id: self.full_id,
+                    min_section_size: self.min_section_size,
+                    proxy_pub_id,
+                    timer: self.timer,
+                };
+
+                if let Some(node) = RelocatingNode::from_bootstrapping(details) {
                     State::RelocatingNode(node)
                 } else {
                     outbox.send_event(Event::RestartRequired);
@@ -111,19 +131,23 @@ impl Bootstrapping {
                 }
             }
             TargetState::ProvingNode {
-                ref old_full_id,
-                ref our_section,
+                old_full_id,
+                our_section,
                 ..
             } => {
-                let old_full_id = old_full_id.clone();
-                let our_section = our_section.clone();
-                State::ProvingNode(ProvingNode::from_bootstrapping(
-                    self,
-                    proxy_public_id,
+                let details = ProvingNodeDetails {
+                    action_sender: self.action_sender,
+                    cache: self.cache,
+                    crust_service: self.crust_service,
+                    full_id: self.full_id,
+                    min_section_size: self.min_section_size,
                     old_full_id,
                     our_section,
-                    outbox,
-                ))
+                    proxy_pub_id,
+                    timer: self.timer,
+                };
+
+                State::ProvingNode(ProvingNode::from_bootstrapping(details, outbox))
             }
         }
     }

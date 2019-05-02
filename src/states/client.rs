@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    bootstrapping::Bootstrapping,
-    common::{proxied, Base, Bootstrapped, NotEstablished, USER_MSG_CACHE_EXPIRY_DURATION},
-};
+use super::common::{proxied, Base, Bootstrapped, NotEstablished, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::{
     ack_manager::{Ack, AckManager, UnacknowledgedMessage},
     chain::SectionInfo,
@@ -37,6 +34,15 @@ use std::{
 /// Duration to wait before sending rate limit exceeded messages.
 pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
 
+pub struct ClientDetails {
+    pub crust_service: Service,
+    pub full_id: FullId,
+    pub min_section_size: usize,
+    pub msg_expiry_dur: Duration,
+    pub proxy_pub_id: PublicId,
+    pub timer: Timer,
+}
+
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
 ///
 /// Each client has a _proxy_: a node through which all requests are routed.
@@ -54,23 +60,18 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn from_bootstrapping(
-        source: Bootstrapping,
-        proxy_pub_id: PublicId,
-        msg_expiry_dur: Duration,
-        outbox: &mut EventBox,
-    ) -> Self {
+    pub fn from_bootstrapping(details: ClientDetails, outbox: &mut EventBox) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
-            crust_service: source.crust_service,
-            full_id: source.full_id,
-            min_section_size: source.min_section_size,
-            proxy_pub_id,
+            crust_service: details.crust_service,
+            full_id: details.full_id,
+            min_section_size: details.min_section_size,
+            proxy_pub_id: details.proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            timer: source.timer,
+            timer: details.timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             resend_buf: Default::default(),
-            msg_expiry_dur,
+            msg_expiry_dur: details.msg_expiry_dur,
         };
 
         debug!("{} State changed to Client.", client);

@@ -10,8 +10,7 @@ use super::{
     common::{
         proxied, Approved, Base, Bootstrapped, NotEstablished, Relocated, RelocatedNotEstablished,
     },
-    node::Node,
-    proving_node::ProvingNode,
+    node::{Node, NodeDetails},
 };
 use crate::{
     ack_manager::AckManager,
@@ -39,52 +38,69 @@ use std::{
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
+pub struct EstablishingNodeDetails {
+    pub ack_mgr: AckManager,
+    pub cache: Box<Cache>,
+    pub crust_service: Service,
+    pub full_id: FullId,
+    pub gen_pfx_info: GenesisPfxInfo,
+    pub min_section_size: usize,
+    pub msg_backlog: Vec<RoutingMessage>,
+    pub notified_nodes: BTreeSet<PublicId>,
+    pub peer_mgr: PeerManager,
+    pub routing_msg_filter: RoutingMessageFilter,
+    pub timer: Timer,
+}
+
 pub struct EstablishingNode {
-    pub(super) ack_mgr: AckManager,
-    pub(super) cache: Box<Cache>,
-    pub(super) chain: Chain,
-    pub(super) crust_service: Service,
-    pub(super) full_id: FullId,
-    pub(super) gen_pfx_info: GenesisPfxInfo,
+    ack_mgr: AckManager,
+    cache: Box<Cache>,
+    chain: Chain,
+    crust_service: Service,
+    full_id: FullId,
+    gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
-    pub(super) msg_backlog: Vec<RoutingMessage>,
-    pub(super) notified_nodes: BTreeSet<PublicId>,
-    pub(super) parsec_map: ParsecMap,
-    pub(super) peer_mgr: PeerManager,
-    pub(super) routing_msg_filter: RoutingMessageFilter,
-    pub(super) timer: Timer,
+    msg_backlog: Vec<RoutingMessage>,
+    notified_nodes: BTreeSet<PublicId>,
+    parsec_map: ParsecMap,
+    peer_mgr: PeerManager,
     poke_timer_token: u64,
+    routing_msg_filter: RoutingMessageFilter,
+    timer: Timer,
 }
 
 impl EstablishingNode {
     pub fn from_proving_node(
-        source: ProvingNode,
-        gen_pfx_info: GenesisPfxInfo,
+        details: EstablishingNodeDetails,
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
-        let public_id = *source.full_id.public_id();
-        let poke_timer_token = source.timer.schedule(POKE_TIMEOUT);
+        let public_id = *details.full_id.public_id();
+        let poke_timer_token = details.timer.schedule(POKE_TIMEOUT);
 
-        let parsec_map = ParsecMap::new(source.full_id.clone(), &gen_pfx_info);
-        let chain = Chain::new(source.min_section_size, public_id, gen_pfx_info.clone());
+        let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
+        let chain = Chain::new(
+            details.min_section_size,
+            public_id,
+            details.gen_pfx_info.clone(),
+        );
 
         let mut node = Self {
-            ack_mgr: source.ack_mgr,
-            cache: source.cache,
+            ack_mgr: details.ack_mgr,
+            cache: details.cache,
             chain,
-            crust_service: source.crust_service,
-            full_id: source.full_id,
-            gen_pfx_info,
+            crust_service: details.crust_service,
+            full_id: details.full_id,
+            gen_pfx_info: details.gen_pfx_info,
             msg_backlog: vec![],
-            notified_nodes: source.notified_nodes,
+            notified_nodes: details.notified_nodes,
             parsec_map,
-            peer_mgr: source.peer_mgr,
-            routing_msg_filter: source.routing_msg_filter,
-            timer: source.timer,
+            peer_mgr: details.peer_mgr,
+            routing_msg_filter: details.routing_msg_filter,
+            timer: details.timer,
             poke_timer_token,
         };
 
-        node.init(source.msg_backlog, outbox)?;
+        node.init(details.msg_backlog, outbox)?;
         Ok(node)
     }
 
@@ -108,7 +124,22 @@ impl EstablishingNode {
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> State {
-        match Node::from_establishing_node(self, sec_info, old_pfx, outbox) {
+        let details = NodeDetails {
+            ack_mgr: self.ack_mgr,
+            cache: self.cache,
+            chain: self.chain,
+            crust_service: self.crust_service,
+            full_id: self.full_id,
+            gen_pfx_info: self.gen_pfx_info,
+            msg_queue: self.msg_backlog.into_iter().collect(),
+            notified_nodes: self.notified_nodes,
+            parsec_map: self.parsec_map,
+            peer_mgr: self.peer_mgr,
+            routing_msg_filter: self.routing_msg_filter,
+            timer: self.timer,
+        };
+
+        match Node::from_establishing_node(details, sec_info, old_pfx, outbox) {
             Ok(node) => State::Node(node),
             Err(_) => State::Terminated,
         }
