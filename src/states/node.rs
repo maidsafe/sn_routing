@@ -1207,8 +1207,6 @@ impl Node {
         new_client_auth: Authority<XorName>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        self.remove_expired_peers();
-
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
         // If we are not connected to the candidate, we do not want to add them
@@ -1469,8 +1467,6 @@ impl Node {
         pub_id: PublicId,
         signature: Signature,
     ) -> Result<(), RoutingError> {
-        self.remove_expired_peers();
-
         let peer_kind = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             match *peer.state() {
                 PeerState::Bootstrapper { peer_kind, .. } => peer_kind,
@@ -1756,8 +1752,6 @@ impl Node {
         if !self.chain.is_member() {
             return Ok(());
         }
-
-        self.remove_expired_peers();
 
         if let Some(prefix) = self.need_to_forward_expect_candidate_to_prefix() {
             return self.forward_expect_candidate_to_prefix(vote, prefix);
