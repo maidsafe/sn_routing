@@ -130,6 +130,10 @@ fn multiple_joining_nodes() {
             .collect();
         info!("Added Nodes: {:?}", nodes_added);
         verify_invariant_for_all_nodes(&mut nodes);
+        assert!(
+            !nodes_added.is_empty(),
+            "Should always handle at least one node"
+        );
     }
 }
 

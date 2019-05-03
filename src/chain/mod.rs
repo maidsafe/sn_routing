@@ -18,7 +18,7 @@ mod test_utils;
 
 pub use self::chain::{Chain, PrefixChangeOutcome};
 pub use self::neighbour_sigs::NeighbourSigs;
-pub use self::network_event::NetworkEvent;
+pub use self::network_event::{ExpectCandidatePayload, NetworkEvent};
 pub use self::proof::{Proof, ProofSet, ProvingSection};
 pub use self::section_info::SectionInfo;
 #[cfg(any(test, feature = "mock_base"))]
