@@ -95,34 +95,30 @@ where
     }
 
     pub fn vote_for(&mut self, observation: Observation<T, S::PublicId>) -> Result<(), Error> {
-        let holder = ObservationHolder::new(
-            observation.clone(),
-            self.our_id.public_id(),
-            self.consensus_mode,
-        );
-
         state::with(self.section_hash, |state| {
-            if let Some(block) = state
-                .observations
-                .entry(holder.clone())
-                .or_insert_with(ObservationState::new)
-                .vote(
-                    &self.our_id,
-                    &self.peer_list,
-                    self.consensus_mode,
-                    observation,
-                )
-            {
+            let entry = state.observations.entry(ObservationHolder::new(
+                observation,
+                self.our_id.public_id(),
+                self.consensus_mode,
+            ));
+            let holder = entry.key().clone();
+
+            if let Some(block) = entry.or_insert_with(ObservationState::new).vote(
+                &self.our_id,
+                &self.peer_list,
+                self.consensus_mode,
+                &holder,
+            ) {
                 state.blocks.push((block, holder.clone()))
             }
+
+            self.observations
+                .entry(holder)
+                .or_insert_with(ObservationInfo::new)
+                .our = true;
         });
 
-        self.observations
-            .entry(holder)
-            .or_insert_with(ObservationInfo::new)
-            .our = true;
         self.update_blocks();
-
         Ok(())
     }
 
@@ -198,7 +194,7 @@ where
         self.observations
             .iter()
             .filter(|(_, info)| info.our && info.state != ConsensusState::Polled)
-            .map(|(holder, _)| &**holder)
+            .map(|(holder, _)| &***holder)
     }
 
     fn update_blocks(&mut self) {

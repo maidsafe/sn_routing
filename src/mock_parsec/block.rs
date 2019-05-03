@@ -8,16 +8,17 @@
 
 use super::{observation::Observation, NetworkEvent, Proof, PublicId};
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
 #[serde(bound = "")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]
 pub struct Block<T: NetworkEvent, P: PublicId> {
-    payload: Observation<T, P>,
+    payload: Rc<Observation<T, P>>,
     proofs: BTreeSet<Proof<P>>,
 }
 
 impl<T: NetworkEvent, P: PublicId> Block<T, P> {
-    pub(super) fn new<'a, I>(observation: Observation<T, P>, proofs: I) -> Self
+    pub(super) fn new<'a, I>(observation: Rc<Observation<T, P>>, proofs: I) -> Self
     where
         I: IntoIterator<Item = &'a Proof<P>>,
         P: 'a,
@@ -29,7 +30,7 @@ impl<T: NetworkEvent, P: PublicId> Block<T, P> {
     }
 
     pub fn payload(&self) -> &Observation<T, P> {
-        &self.payload
+        &*self.payload
     }
 
     pub fn proofs(&self) -> &BTreeSet<Proof<P>> {
