@@ -142,12 +142,12 @@ impl Node {
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
-    ) -> Option<Self> {
+    ) -> Result<Self, RoutingError> {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
 
         let public_id = *full_id.public_id();
         let gen_pfx_info = GenesisPfxInfo {
-            first_info: create_first_section_info(public_id).ok()?,
+            first_info: create_first_section_info(public_id)?,
             latest_info: SectionInfo::default(),
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
@@ -171,13 +171,16 @@ impl Node {
 
         let mut node = Self::new(details, true);
 
-        if let Err(error) = node.crust_service.start_listening_tcp() {
-            error!("{} - Failed to start listening: {:?}", node, error);
-            None
-        } else {
-            debug!("{} - State changed to Node.", node);
-            info!("{} - Started a new network as a seed node.", node);
-            Some(node)
+        match node.crust_service.start_listening_tcp() {
+            Ok(()) => {
+                debug!("{} - State changed to Node.", node);
+                info!("{} - Started a new network as a seed node.", node);
+                Ok(node)
+            }
+            Err(error) => {
+                error!("{} - Failed to start listening: {:?}", node, error);
+                Err(error.into())
+            }
         }
     }
 

@@ -81,7 +81,8 @@ impl Client {
                     min_section_size,
                     timer,
                 )
-                .map_or(State::Terminated, State::BootstrappingPeer)
+                .map(State::BootstrappingPeer)
+                .unwrap_or(State::Terminated)
             },
             pub_id,
             bootstrap_config,

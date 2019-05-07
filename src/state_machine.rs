@@ -157,13 +157,31 @@ impl State {
         )
     }
 
-    fn replace_with<F>(&mut self, f: F)
+    fn replace_with<F, E>(&mut self, f: F)
     where
-        F: FnOnce(Self) -> Self,
+        F: FnOnce(Self) -> Result<Self, E>,
+        E: Debug,
     {
         let old_state = mem::replace(self, State::Terminated);
-        let new_state = f(old_state);
-        *self = new_state;
+        let old_state_log_ident = format!("{}", old_state);
+
+        match f(old_state) {
+            Ok(new_state) => *self = new_state,
+            Err(error) => error!(
+                "{} - Failed state transition: {:?}",
+                old_state_log_ident, error
+            ),
+        }
+    }
+}
+
+impl Display for State {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        state_dispatch!(
+            *self,
+            ref state => write!(formatter, "{}", state),
+            Terminated => write!(formatter, "Terminated")
+        )
     }
 }
 
@@ -575,6 +593,6 @@ impl StateMachine {
 
 impl Display for StateMachine {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        self.state.fmt(formatter)
+        write!(formatter, "{:?}", self.state)
     }
 }

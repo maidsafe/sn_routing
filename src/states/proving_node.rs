@@ -150,7 +150,7 @@ impl ProvingNode {
         self,
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut EventBox,
-    ) -> State {
+    ) -> Result<State, RoutingError> {
         let details = EstablishingNodeDetails {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
@@ -165,10 +165,7 @@ impl ProvingNode {
             timer: self.timer,
         };
 
-        match EstablishingNode::from_proving_node(details, outbox) {
-            Ok(node) => State::EstablishingNode(node),
-            Err(_) => State::Terminated,
-        }
+        EstablishingNode::from_proving_node(details, outbox).map(State::EstablishingNode)
     }
 
     fn dispatch_routing_message(

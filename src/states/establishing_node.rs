@@ -92,7 +92,7 @@ impl EstablishingNode {
             crust_service: details.crust_service,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
-            msg_backlog: vec![],
+            msg_backlog: details.msg_backlog,
             notified_nodes: details.notified_nodes,
             parsec_map,
             peer_mgr: details.peer_mgr,
@@ -101,18 +101,14 @@ impl EstablishingNode {
             poke_timer_token,
         };
 
-        node.init(details.msg_backlog, outbox)?;
+        node.init(outbox)?;
         Ok(node)
     }
 
-    fn init(
-        &mut self,
-        msg_backlog: Vec<RoutingMessage>,
-        outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
+    fn init(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
         debug!("{} - State changed to EstablishingNode.", self);
 
-        for msg in msg_backlog {
+        for msg in self.msg_backlog.drain(..).collect_vec() {
             let _ = self.dispatch_routing_message(msg, outbox)?;
         }
 
@@ -124,7 +120,7 @@ impl EstablishingNode {
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
-    ) -> State {
+    ) -> Result<State, RoutingError> {
         let details = NodeDetails {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
@@ -140,10 +136,7 @@ impl EstablishingNode {
             timer: self.timer,
         };
 
-        match Node::from_establishing_node(details, sec_info, old_pfx, outbox) {
-            Ok(node) => State::Node(node),
-            Err(_) => State::Terminated,
-        }
+        Node::from_establishing_node(details, sec_info, old_pfx, outbox).map(State::Node)
     }
 
     fn dispatch_routing_message(

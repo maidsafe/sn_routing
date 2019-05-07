@@ -74,7 +74,7 @@ impl BootstrappingPeer {
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
-    ) -> Option<Self> {
+    ) -> Result<Self, RoutingError> {
         match target_state {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
@@ -82,11 +82,12 @@ impl BootstrappingPeer {
             TargetState::RelocatingNode | TargetState::ProvingNode { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
-                    return None;
+                    return Err(error.into());
                 }
             }
         }
-        Some(Self {
+
+        Ok(Self {
             action_sender,
             cache: cache,
             crust_service,
@@ -99,19 +100,25 @@ impl BootstrappingPeer {
         })
     }
 
-    pub fn into_target_state(self, proxy_pub_id: PublicId, outbox: &mut EventBox) -> State {
+    pub fn into_target_state(
+        self,
+        proxy_pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<State, RoutingError> {
         match self.target_state {
-            TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
-                ClientDetails {
-                    crust_service: self.crust_service,
-                    full_id: self.full_id,
-                    min_section_size: self.min_section_size,
-                    msg_expiry_dur,
-                    proxy_pub_id,
-                    timer: self.timer,
-                },
-                outbox,
-            )),
+            TargetState::Client { msg_expiry_dur } => {
+                Ok(State::Client(Client::from_bootstrapping(
+                    ClientDetails {
+                        crust_service: self.crust_service,
+                        full_id: self.full_id,
+                        min_section_size: self.min_section_size,
+                        msg_expiry_dur,
+                        proxy_pub_id,
+                        timer: self.timer,
+                    },
+                    outbox,
+                )))
+            }
             TargetState::RelocatingNode => {
                 let details = RelocatingNodeDetails {
                     action_sender: self.action_sender,
@@ -123,12 +130,12 @@ impl BootstrappingPeer {
                     timer: self.timer,
                 };
 
-                if let Some(node) = RelocatingNode::from_bootstrapping(details) {
-                    State::RelocatingNode(node)
-                } else {
-                    outbox.send_event(Event::RestartRequired);
-                    State::Terminated
-                }
+                RelocatingNode::from_bootstrapping(details)
+                    .map(State::RelocatingNode)
+                    .map_err(|err| {
+                        outbox.send_event(Event::RestartRequired);
+                        err
+                    })
             }
             TargetState::ProvingNode {
                 old_full_id,
@@ -147,7 +154,9 @@ impl BootstrappingPeer {
                     timer: self.timer,
                 };
 
-                State::ProvingNode(ProvingNode::from_bootstrapping(details, outbox))
+                Ok(State::ProvingNode(ProvingNode::from_bootstrapping(
+                    details, outbox,
+                )))
             }
         }
     }
@@ -434,7 +443,8 @@ mod tests {
                         min_section_size,
                         timer,
                     )
-                    .map_or(State::Terminated, State::BootstrappingPeer)
+                    .map(State::BootstrappingPeer)
+                    .unwrap_or(State::Terminated)
                 },
                 pub_id,
                 Some(config),

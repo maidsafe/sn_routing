@@ -141,17 +141,9 @@ impl NodeBuilder {
         StateMachine::new(
             move |action_sender, crust_service, timer, outbox2| {
                 if self.first {
-                    if let Some(state) = states::Node::first(
-                        self.cache,
-                        crust_service,
-                        full_id,
-                        min_section_size,
-                        timer,
-                    ) {
-                        State::Node(state)
-                    } else {
-                        State::Terminated
-                    }
+                    states::Node::first(self.cache, crust_service, full_id, min_section_size, timer)
+                        .map(State::Node)
+                        .unwrap_or(State::Terminated)
                 } else if !dev_config.allow_multiple_lan_nodes && crust_service.has_peers_on_lan() {
                     error!(
                         "More than one routing node found on LAN. Currently this is not supported."
@@ -168,7 +160,8 @@ impl NodeBuilder {
                         min_section_size,
                         timer,
                     )
-                    .map_or(State::Terminated, State::BootstrappingPeer)
+                    .map(State::BootstrappingPeer)
+                    .unwrap_or(State::Terminated)
                 }
             },
             pub_id,
