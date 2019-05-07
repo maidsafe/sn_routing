@@ -22,7 +22,7 @@ use crate::messages::{
 use crate::outbox::{EventBox, EventBuf};
 use crate::routing_table::Authority;
 use crate::state_machine::{State, StateMachine};
-use crate::states::{self, Bootstrapping, BootstrappingTargetState};
+use crate::states::{self, BootstrappingPeer, TargetState};
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
 #[cfg(feature = "mock_base")]
@@ -159,16 +159,16 @@ impl NodeBuilder {
                     outbox2.send_event(Event::Terminated);
                     State::Terminated
                 } else {
-                    Bootstrapping::new(
+                    BootstrappingPeer::new(
                         action_sender,
                         self.cache,
-                        BootstrappingTargetState::RelocatingNode,
+                        TargetState::RelocatingNode,
                         crust_service,
                         full_id,
                         min_section_size,
                         timer,
                     )
-                    .map_or(State::Terminated, State::Bootstrapping)
+                    .map_or(State::Terminated, State::BootstrappingPeer)
                 }
             },
             pub_id,

@@ -53,7 +53,7 @@ pub enum TargetState {
 }
 
 // State of Client or Node while bootstrapping.
-pub struct Bootstrapping {
+pub struct BootstrappingPeer {
     action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
@@ -65,7 +65,7 @@ pub struct Bootstrapping {
     timer: Timer,
 }
 
-impl Bootstrapping {
+impl BootstrappingPeer {
     pub fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -86,7 +86,7 @@ impl Bootstrapping {
                 }
             }
         }
-        Some(Bootstrapping {
+        Some(Self {
             action_sender,
             cache: cache,
             crust_service,
@@ -208,7 +208,7 @@ impl Bootstrapping {
     }
 }
 
-impl Base for Bootstrapping {
+impl Base for BootstrappingPeer {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -366,9 +366,9 @@ impl Base for Bootstrapping {
     }
 }
 
-impl Display for Bootstrapping {
+impl Display for BootstrappingPeer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Bootstrapping({})", self.name())
+        write!(formatter, "BootstrappingPeer({})", self.name())
     }
 }
 
@@ -423,7 +423,7 @@ mod tests {
             let pub_id = *full_id.public_id();
             StateMachine::new(
                 move |action_sender, crust_service, timer, _outbox2| {
-                    Bootstrapping::new(
+                    BootstrappingPeer::new(
                         action_sender,
                         Box::new(NullCache),
                         TargetState::Client {
@@ -434,7 +434,7 @@ mod tests {
                         min_section_size,
                         timer,
                     )
-                    .map_or(State::Terminated, State::Bootstrapping)
+                    .map_or(State::Terminated, State::BootstrappingPeer)
                 },
                 pub_id,
                 Some(config),
@@ -455,14 +455,14 @@ mod tests {
         // caused it to send a `BootstrapRequest` and add the Crust service to its
         // `bootstrap_blacklist`.
         match *state_machine.current() {
-            State::Bootstrapping(ref state) => assert!(state.bootstrap_blacklist.is_empty()),
+            State::BootstrappingPeer(ref state) => assert!(state.bootstrap_blacklist.is_empty()),
             _ => panic!("Should be in `Bootstrapping` state."),
         }
         network.deliver_messages();
         unwrap!(state_machine.step(&mut outbox));
         assert!(outbox.take_all().is_empty());
         match *state_machine.current() {
-            State::Bootstrapping(ref state) => assert_eq!(state.bootstrap_blacklist.len(), 1),
+            State::BootstrappingPeer(ref state) => assert_eq!(state.bootstrap_blacklist.len(), 1),
             _ => panic!("Should be in `Bootstrapping` state."),
         }
 

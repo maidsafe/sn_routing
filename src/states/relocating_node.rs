@@ -8,7 +8,7 @@
 
 use super::{
     common::{proxied, Base, Bootstrapped, BootstrappedNotEstablished},
-    Bootstrapping, BootstrappingTargetState,
+    BootstrappingPeer, TargetState,
 };
 use crate::{
     ack_manager::{Ack, AckManager},
@@ -104,11 +104,11 @@ impl RelocatingNode {
             crust_rx,
             crust_sender,
         );
-        let target_state = BootstrappingTargetState::ProvingNode {
+        let target_state = TargetState::ProvingNode {
             old_full_id: self.full_id,
             our_section: our_section,
         };
-        if let Some(bootstrapping) = Bootstrapping::new(
+        if let Some(peer) = BootstrappingPeer::new(
             self.action_sender,
             self.cache,
             target_state,
@@ -117,7 +117,7 @@ impl RelocatingNode {
             self.min_section_size,
             self.timer,
         ) {
-            State::Bootstrapping(bootstrapping)
+            State::BootstrappingPeer(peer)
         } else {
             outbox.send_event(Event::RestartRequired);
             State::Terminated

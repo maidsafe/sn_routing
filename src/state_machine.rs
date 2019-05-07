@@ -13,7 +13,7 @@ use crate::{
     outbox::EventBox,
     routing_table::Prefix,
     states::common::Base,
-    states::{Bootstrapping, Client, EstablishingNode, Node, ProvingNode, RelocatingNode},
+    states::{BootstrappingPeer, Client, EstablishingNode, Node, ProvingNode, RelocatingNode},
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
@@ -37,7 +37,7 @@ use std::{
 macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
-            State::Bootstrapping($state) => $expr,
+            State::BootstrappingPeer($state) => $expr,
             State::Client($state) => $expr,
             State::RelocatingNode($state) => $expr,
             State::ProvingNode($state) => $expr,
@@ -64,7 +64,7 @@ pub struct StateMachine {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum State {
-    Bootstrapping(Bootstrapping),
+    BootstrappingPeer(BootstrappingPeer),
     Client(Client),
     RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
@@ -127,7 +127,7 @@ impl State {
         match *self {
             State::EstablishingNode(ref state) => Some(state.chain()),
             State::Node(ref state) => Some(state.chain()),
-            State::Bootstrapping(_)
+            State::BootstrappingPeer(_)
             | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_)
@@ -200,7 +200,7 @@ impl State {
 
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
-            State::Bootstrapping(_) | State::Terminated => vec![],
+            State::BootstrappingPeer(_) | State::Terminated => vec![],
             State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
             State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
@@ -220,7 +220,7 @@ impl State {
     pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
         match *self {
             State::Terminated
-            | State::Bootstrapping(_)
+            | State::BootstrappingPeer(_)
             | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_) => false,
@@ -239,7 +239,7 @@ impl State {
 
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *self {
-            State::Terminated | State::Bootstrapping(_) => false,
+            State::Terminated | State::BootstrappingPeer(_) => false,
             State::Client(ref state) => state.in_authority(auth),
             State::RelocatingNode(ref state) => state.in_authority(auth),
             State::ProvingNode(ref state) => state.in_authority(auth),
@@ -250,7 +250,7 @@ impl State {
 
     pub fn has_unacked_msg(&self) -> bool {
         match *self {
-            State::Terminated | State::Bootstrapping(_) => false,
+            State::Terminated | State::BootstrappingPeer(_) => false,
             State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
             State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
             State::ProvingNode(ref state) => state.ack_mgr().has_unacked_msg(),
@@ -409,7 +409,7 @@ impl StateMachine {
         match transition {
             Stay => (),
             IntoBootstrapped { proxy_public_id } => self.state.replace_with(|state| match state {
-                State::Bootstrapping(src) => src.into_target_state(proxy_public_id, outbox),
+                State::BootstrappingPeer(src) => src.into_target_state(proxy_public_id, outbox),
                 _ => unreachable!(),
             }),
             IntoBootstrapping {
