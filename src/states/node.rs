@@ -994,7 +994,8 @@ impl Node {
                     // TODO: This is enabled for relayed messages only because it considerably
                     //       slows down the tests. Find out why, maybe enable it in more cases.
                     if self.add_new_sections(signed_msg.section_infos())
-                        && !self.in_authority(&signed_msg.routing_message().dst)
+                        && (!self.in_authority(&signed_msg.routing_message().dst)
+                            || signed_msg.routing_message().dst.is_single())
                     {
                         let ps = signed_msg.proving_sections().clone();
                         self.vote_for_event(NetworkEvent::ProvingSections(ps, si.clone()));
