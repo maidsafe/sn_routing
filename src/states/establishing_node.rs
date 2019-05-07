@@ -8,7 +8,8 @@
 
 use super::{
     common::{
-        proxied, Approved, Base, Bootstrapped, NotEstablished, Relocated, RelocatedNotEstablished,
+        proxied, Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
+        RelocatedNotEstablished,
     },
     node::{Node, NodeDetails},
 };
@@ -342,7 +343,7 @@ impl Relocated for EstablishingNode {
     }
 }
 
-impl NotEstablished for EstablishingNode {
+impl BootstrappedNotEstablished for EstablishingNode {
     const SEND_ACK: bool = true;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {

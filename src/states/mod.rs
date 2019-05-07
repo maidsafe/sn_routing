@@ -53,17 +53,17 @@ pub use self::{
 //
 //
 // # Common traits
-//                           Bootstrapping
-//                           │   Client
-//                           │   │   RelocatingNode
-//                           │   │   │   ProvingNode
-//                           │   │   │   │   EstablishingNode
-//                           │   │   │   │   │   Node
-//                           │   │   │   │   │   │
-// Base                      *   *   *   *   *   *
-// Bootstrapped                  *   *   *   *   *
-// NotEstablished                *   *   *   *
-// Relocated                             *   *   *
-// RelocatedNotEstablished               *   *
-// Approved                                  *   *
+//                              Bootstrapping
+//                              │   Client
+//                              │   │   RelocatingNode
+//                              │   │   │   ProvingNode
+//                              │   │   │   │   EstablishingNode
+//                              │   │   │   │   │   Node
+//                              │   │   │   │   │   │
+// Base                         *   *   *   *   *   *
+// Bootstrapped                     *   *   *   *   *
+// BootstrappedNotEstablished       *   *   *   *
+// Relocated                                *   *   *
+// RelocatedNotEstablished                  *   *
+// Approved                                     *   *
 //

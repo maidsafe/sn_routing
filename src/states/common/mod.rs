@@ -9,7 +9,7 @@
 mod approved;
 mod base;
 mod bootstrapped;
-mod not_established;
+mod bootstrapped_not_established;
 pub mod proxied;
 mod relocated;
 mod relocated_not_established;
@@ -18,7 +18,7 @@ pub use self::{
     approved::Approved,
     base::{from_crust_bytes, Base},
     bootstrapped::Bootstrapped,
-    not_established::NotEstablished,
+    bootstrapped_not_established::BootstrappedNotEstablished,
     relocated::Relocated,
     relocated_not_established::RelocatedNotEstablished,
 };

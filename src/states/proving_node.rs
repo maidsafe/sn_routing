@@ -7,7 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    common::{proxied, Base, Bootstrapped, NotEstablished, Relocated, RelocatedNotEstablished},
+    common::{
+        proxied, Base, Bootstrapped, BootstrappedNotEstablished, Relocated, RelocatedNotEstablished,
+    },
     establishing_node::{EstablishingNode, EstablishingNodeDetails},
 };
 use crate::{
@@ -440,7 +442,7 @@ impl Relocated for ProvingNode {
     }
 }
 
-impl NotEstablished for ProvingNode {
+impl BootstrappedNotEstablished for ProvingNode {
     const SEND_ACK: bool = true;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
