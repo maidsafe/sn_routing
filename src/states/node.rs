@@ -2392,6 +2392,7 @@ impl Base for Node {
             self.proxy_load_amount = 0;
 
             if self.chain.is_member() {
+                self.update_peer_states(outbox);
                 outbox.send_event(Event::TimerTicked);
             }
 
