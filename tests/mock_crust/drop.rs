@@ -9,8 +9,8 @@
 use super::{
     create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
-use routing::mock_crust::Network;
-use routing::{Event, EventStream};
+use rand::Rng;
+use routing::{mock_crust::Network, Event, EventStream};
 
 // Drop node at index and verify its own section receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
@@ -20,6 +20,8 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
     drop(node);
 
+    // Using poll_all instead of poll_and_resend here to specifically only detect
+    // the NodeLost event getting triggered by the remaining nodes.
     let _ = poll_all(nodes, &mut []);
 
     for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
@@ -39,8 +41,10 @@ fn node_drops() {
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes(&network, min_section_size + 2);
     drop_node(&mut nodes, 0);
-    poll_and_resend(&mut nodes, &mut []);
 
+    // Trigger poll_and_resend to allow remaining nodes to gossip and
+    // update their chain accordingly.
+    poll_and_resend(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
@@ -50,14 +54,14 @@ fn node_restart() {
     // (with the exception of the first node which is special).
     let min_section_size = 5;
     let network = Network::new(min_section_size, None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size);
 
-    // Drop all but last node:
+    // Drop all but last node in random order:
     while nodes.len() > 1 {
-        drop_node(&mut nodes, 0);
+        let index = rng.gen_range(0, nodes.len());
+        drop_node(&mut nodes, index);
     }
-
-    let _ = poll_all(&mut nodes, &mut []);
 
     expect_next_event!(nodes[0], Event::RestartRequired);
 }

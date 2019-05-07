@@ -53,14 +53,13 @@ use std::{
     cmp,
     collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
-    iter, mem,
+    iter,
     net::{IpAddr, SocketAddr},
 };
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
-const RECONNECT_PEER_TIMEOUT: Duration = Duration::from_secs(20);
 //const MAX_IDLE_ROUNDS: u64 = 100;
 //const TICK_TIMEOUT_SECS: u64 = 60;
 /// The number of required leading zero bits for the resource proof
@@ -117,9 +116,6 @@ pub struct Node {
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
     chain: Chain,
-    // Peers we want to try reconnecting to
-    reconnect_peers: Vec<PublicId>,
-    reconnect_peers_token: u64,
     // TODO: notify without local state
     notified_nodes: BTreeSet<PublicId>,
 }
@@ -226,7 +222,6 @@ impl Node {
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
         let candidate_status_token = timer.schedule(CANDIDATE_STATUS_INTERVAL);
-        let reconnect_peers_token = timer.schedule(RECONNECT_PEER_TIMEOUT);
 
         Self {
             ack_mgr,
@@ -257,8 +252,6 @@ impl Node {
             gen_pfx_info: gen_pfx_info.clone(),
             gossip_timer_token,
             chain,
-            reconnect_peers: Default::default(),
-            reconnect_peers_token,
             notified_nodes,
         }
     }
@@ -1707,18 +1700,18 @@ impl Node {
     /// we should terminate.
     fn dropped_peer(
         &mut self,
-        pub_id: &PublicId,
+        pub_id: PublicId,
         outbox: &mut EventBox,
         try_reconnect: bool,
     ) -> bool {
-        let _ = self.peer_mgr.remove_peer(pub_id);
+        let _ = self.peer_mgr.remove_peer(&pub_id);
 
-        if self.notified_nodes.remove(pub_id) {
+        if self.notified_nodes.remove(&pub_id) {
             info!("{} Dropped {} from the routing table.", self, pub_id.name());
             outbox.send_event(Event::NodeLost(*pub_id.name()));
 
-            if self.chain.our_info().members().contains(pub_id) {
-                self.vote_for_event(NetworkEvent::Offline(*pub_id));
+            if self.chain.our_info().members().contains(&pub_id) {
+                self.vote_for_event(NetworkEvent::Offline(pub_id));
             }
         }
 
@@ -1730,42 +1723,33 @@ impl Node {
             == 0
         {
             debug!("{} Lost all routing connections.", self);
-            if !self.is_first_node {
+            // Except network startup, restart in other cases.
+            if *self.chain.our_info().version() > 0 {
                 outbox.send_event(Event::RestartRequired);
                 return false;
             }
         }
 
-        if try_reconnect && self.chain.is_peer_valid(pub_id) {
-            debug!("{} Caching {:?} to reconnect.", self, pub_id);
-            self.reconnect_peers.push(*pub_id);
+        if try_reconnect && self.chain.is_peer_valid(&pub_id) {
+            debug!(
+                "{} - Sending connection info to {:?} due to dropped peer.",
+                self, pub_id
+            );
+            let own_name = *self.name();
+            if let Err(error) = self.send_connection_info_request(
+                pub_id,
+                Authority::ManagedNode(own_name),
+                Authority::ManagedNode(*pub_id.name()),
+                outbox,
+            ) {
+                debug!(
+                    "{} - Failed to send connection info to {:?}: {:?}",
+                    self, pub_id, error
+                );
+            }
         }
 
         true
-    }
-
-    // Reconnect to currently cached valid peers that are not connected
-    fn reconnect_peers(&mut self, outbox: &mut EventBox) {
-        for pub_id in mem::replace(&mut self.reconnect_peers, Default::default()) {
-            if self.chain.is_peer_valid(&pub_id) {
-                debug!(
-                    "{} Sending connection info to {:?} due to dropped peer.",
-                    self, pub_id
-                );
-                let own_name = *self.name();
-                if let Err(error) = self.send_connection_info_request(
-                    pub_id,
-                    Authority::ManagedNode(own_name),
-                    Authority::ManagedNode(*pub_id.name()),
-                    outbox,
-                ) {
-                    debug!(
-                        "{} - Failed to send connection info to {:?}: {:?}",
-                        self, pub_id, error
-                    );
-                }
-            }
-        }
     }
 
     fn remove_expired_peers(&mut self) {
@@ -1853,9 +1837,6 @@ impl Base for Node {
         } else if self.candidate_status_token == token {
             self.candidate_status_token = self.timer.schedule(CANDIDATE_STATUS_INTERVAL);
             self.peer_mgr.show_candidate_status();
-        } else if self.reconnect_peers_token == token {
-            self.reconnect_peers_token = self.timer.schedule(RECONNECT_PEER_TIMEOUT);
-            self.reconnect_peers(outbox);
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
@@ -1928,7 +1909,7 @@ impl Base for Node {
 
     fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         self.log_connect_failure(&pub_id);
-        let _ = self.dropped_peer(&pub_id, outbox, true);
+        let _ = self.dropped_peer(pub_id, outbox, true);
         if self.chain.our_info().members().contains(&pub_id) {
             self.vote_for_event(NetworkEvent::Offline(pub_id));
         }
@@ -1943,7 +1924,7 @@ impl Base for Node {
 
         debug!("{} Received LostPeer - {}", self, pub_id);
 
-        if self.dropped_peer(&pub_id, outbox, true) {
+        if self.dropped_peer(pub_id, outbox, true) {
             Transition::Stay
         } else {
             Transition::Terminate
@@ -2174,9 +2155,8 @@ impl Node {
         self.clients_rate_limiter.usage_map().clone()
     }
 
-    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
-        self.parsec_map
-            .has_unconsensused_observations(filter_opaque)
+    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
+        self.parsec_map.has_unpolled_observations(filter_opaque)
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
@@ -2358,7 +2338,7 @@ impl Approved for Node {
         let self_info = self.chain.remove_member(pub_id)?;
         self.vote_for_event(NetworkEvent::SectionInfo(self_info));
         if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
-            let _ = self.dropped_peer(&pub_id, outbox, false);
+            let _ = self.dropped_peer(pub_id, outbox, false);
             self.disconnect_peer(&pub_id);
         }
 

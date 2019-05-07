@@ -160,7 +160,7 @@ impl ParsecMap {
     }
 
     #[cfg(feature = "mock_base")]
-    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
+    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
         let parsec = if let Some(parsec) = self.map.values().last() {
             parsec
         } else {

@@ -217,17 +217,15 @@ impl State {
         }
     }
 
-    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
+    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
         match *self {
             State::Terminated
             | State::Bootstrapping(_)
             | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_) => false,
-            State::EstablishingNode(ref state) => {
-                state.has_unconsensused_observations(filter_opaque)
-            }
-            State::Node(ref state) => state.has_unconsensused_observations(filter_opaque),
+            State::EstablishingNode(ref state) => state.has_unpolled_observations(filter_opaque),
+            State::Node(ref state) => state.has_unpolled_observations(filter_opaque),
         }
     }
 
