@@ -186,19 +186,12 @@ where
 
     // TODO: rename this to `has_unpolled_observations`
     pub fn has_unconsensused_observations(&self) -> bool {
-        state::with(self.section_hash, |state| {
+        state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
             state
                 .observations
                 .iter()
-                .any(|(holder, observation_state)| {
-                    !observation_state.consensused()
-                        || self
-                            .observations
-                            .get(&*holder)
-                            .map(|info| info.state != ConsensusState::Polled)
-                            .unwrap_or(true)
-                })
-        })
+                .any(|(_, observation_state)| !observation_state.consensused())
+        }) || self.our_unpolled_observations().next().is_some()
     }
 
     pub fn our_unpolled_observations(&self) -> impl Iterator<Item = &Observation<T, S::PublicId>> {
