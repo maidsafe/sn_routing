@@ -10,6 +10,7 @@ use super::{
     count_sections, create_connected_nodes_until_split, current_sections, poll_and_resend,
     verify_invariant_for_all_nodes, TestNode,
 };
+use itertools::Itertools;
 use rand::Rng;
 use routing::mock_crust::Network;
 use routing::{Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
@@ -94,14 +95,34 @@ fn concurrent_merge() {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
     verify_invariant_for_all_nodes(&mut nodes);
     rng.shuffle(&mut nodes);
 
-    // Choose two sections to drop nodes from, one of `00`/`01` and the other one of `10`/`11`.
-    let prefix_0_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN])).pushed(rng.gen());
-    let prefix_1_to_drop_from = Prefix::new(1, XorName([255; XOR_NAME_LEN])).pushed(rng.gen());
-    let prefixes_to_drop_from = vec![prefix_0_to_drop_from, prefix_1_to_drop_from];
+    // Choose two random sections to drop nodes from:
+    // Not sibling sections as we would only merge 2 sections instead of 4.
+    // Not one without sibling as this section would merge with 2 other sections.
+    //
+    // This setup also allows testing concurrent merges where one of the merging section is not
+    // a neighbour of either of the other two merging sections.
+    let prefixes_to_drop_from = {
+        let mut sections = current_sections(&nodes).into_iter().collect_vec();
+        rng.shuffle(&mut sections);
+
+        let any_sibling = |others: &[Prefix<XorName>], prefix: &Prefix<XorName>| {
+            others.iter().any(|p| p.sibling() == *prefix)
+        };
+        sections
+            .iter()
+            .enumerate()
+            .filter(|(idx, prefix)| {
+                !any_sibling(&sections[0..*idx], prefix) && any_sibling(&sections[0..], prefix)
+            })
+            .map(|(_, prefix)| prefix)
+            .take(2)
+            .cloned()
+            .collect_vec()
+    };
 
     // Shrink the two sections to exactly `min_section_size`.
     for pfx in &prefixes_to_drop_from {
@@ -114,7 +135,7 @@ fn concurrent_merge() {
     }
 
     // No sections should have merged yet.
-    assert_eq!(count_sections(&nodes), 4);
+    assert_eq!(count_sections(&nodes), 5);
 
     // Drop one more node (without polling) from each of the two sections to take them just below
     // `min_section_size`.
@@ -123,10 +144,10 @@ fn concurrent_merge() {
         drop(nodes.remove(index));
     }
 
-    // Poll the nodes, check the invariant and ensure the network has merged to `0` and `1`.
+    // Poll the nodes, check the invariant and ensure the network has merged to 3 sections.
     poll_and_resend(&mut nodes, &mut []);
     verify_invariant_for_all_nodes(&mut nodes);
-    assert_eq!(count_sections(&nodes), 2);
+    assert_eq!(count_sections(&nodes), 3);
 }
 
 #[test]
