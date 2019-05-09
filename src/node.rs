@@ -595,17 +595,17 @@ impl Node {
         unwrap!(self.node_state(), "Should be State::Node")
     }
 
-    /// Returns whether the current state is `Node`.
-    pub fn is_node(&self) -> bool {
-        self.node_state().is_some()
-    }
-
     /// Returns whether the current state is `ProvingNode`.
     pub fn proving_node_state(&self) -> Option<&crate::states::ProvingNode> {
         match *self.machine.current() {
             State::ProvingNode(ref state) => Some(state),
             _ => None,
         }
+    }
+
+    /// Returns whether the current state is `Node`.
+    pub fn is_node(&self) -> bool {
+        self.node_state().is_some()
     }
 
     /// Returns whether the current state is `ProvingNode`.
@@ -634,10 +634,10 @@ impl Node {
             .has_unpolled_observations(filter_opaque)
     }
 
-    /// Indicates if a given `PublicId` is in the peer manager as a routing peer
-    pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
+    /// Indicates if a given `PublicId` is in the peer manager as a Node
+    pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
         self.node_state()
-            .map(|state| state.is_routing_peer(pub_id))
+            .map(|state| state.is_node_peer(pub_id))
             .unwrap_or(false)
     }
 

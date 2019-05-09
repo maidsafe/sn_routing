@@ -141,7 +141,6 @@ pub trait RelocatedNotEstablished: Relocated {
     fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
         let was_proxy = self.peer_mgr().is_proxy(pub_id);
         let _ = self.peer_mgr_mut().remove_peer(pub_id);
-        let _ = self.remove_from_notified_nodes(pub_id);
 
         if was_proxy {
             debug!("{} Lost connection to proxy {}.", self, pub_id);

@@ -79,7 +79,6 @@ pub struct NodeDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_queue: VecDeque<RoutingMessage>,
-    pub notified_nodes: BTreeSet<PublicId>,
     pub parsec_map: ParsecMap,
     pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -129,8 +128,6 @@ pub struct Node {
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
     chain: Chain,
-    // TODO: notify without local state
-    notified_nodes: BTreeSet<PublicId>,
 }
 
 impl Node {
@@ -160,7 +157,6 @@ impl Node {
             full_id,
             gen_pfx_info,
             msg_queue: VecDeque::new(),
-            notified_nodes: BTreeSet::new(),
             parsec_map,
             peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -230,7 +226,6 @@ impl Node {
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
             chain: details.chain,
-            notified_nodes: details.notified_nodes,
         }
     }
 
@@ -349,14 +344,14 @@ impl Node {
 
         for peer in self.peer_mgr.connected_peers() {
             let pub_id = peer.pub_id();
-            if self.chain.is_peer_valid(pub_id) {
+            if self.is_peer_valid(pub_id) {
                 peers_to_add.push(*pub_id);
-            } else if peer.is_routing() && self.chain.state() == &ChainState::Normal {
+            } else if peer.is_node() && self.chain.state() == &ChainState::Normal {
                 peers_to_remove.push(*peer.pub_id());
             }
         }
         for pub_id in peers_to_add {
-            self.add_to_routing_table(&pub_id, outbox);
+            self.add_node(&pub_id, outbox);
         }
         for pub_id in peers_to_remove {
             trace!("{} Removing {:?} from RT.", self, pub_id);
@@ -500,11 +495,7 @@ impl Node {
         sig: Signature,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
-        if !self
-            .peer_mgr
-            .get_peer(&pub_id)
-            .map_or(false, Peer::is_routing)
-        {
+        if !self.peer_mgr.get_peer(&pub_id).map_or(false, Peer::is_node) {
             debug!(
                 "{} Received message signature from unknown peer {}",
                 self, pub_id
@@ -788,7 +779,7 @@ impl Node {
         }
 
         if is_connected {
-            self.add_to_routing_table(&new_pub_id, outbox);
+            self.add_node(&new_pub_id, outbox);
         }
         Ok(())
     }
@@ -1074,7 +1065,7 @@ impl Node {
 
         // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateInfo, it
         // might have not yet handled its NodeApproval message. Check and handle accordingly here
-        if self.peer_mgr.is_connected(new_pub_id) && self.chain.is_peer_valid(new_pub_id) {
+        if self.peer_mgr.is_connected(new_pub_id) && self.is_peer_valid(new_pub_id) {
             self.process_connection(*new_pub_id, outbox);
             return;
         }
@@ -1116,7 +1107,7 @@ impl Node {
                 self.send_direct_message(*new_pub_id, direct_message);
             }
             Ok(false) => {
-                if !self.chain.is_peer_valid(new_pub_id) {
+                if !self.is_peer_valid(new_pub_id) {
                     debug!(
                         "{} Ignore CandidateInfo from invalid candidate {}->{}.",
                         self, old_pub_id, new_pub_id
@@ -1128,7 +1119,7 @@ impl Node {
                      proof challenge as section has already approved it.",
                     self, old_pub_id, new_pub_id
                 );
-                self.add_to_routing_table(new_pub_id, outbox);
+                self.add_node(new_pub_id, outbox);
             }
             Err(error) => {
                 debug!(
@@ -1702,9 +1693,7 @@ impl Node {
         outbox: &mut EventBox,
         try_reconnect: bool,
     ) -> bool {
-        let _ = self.peer_mgr.remove_peer(&pub_id);
-
-        if self.notified_nodes.remove(&pub_id) {
+        if self.peer_mgr.remove_peer(&pub_id) {
             info!("{} Dropped {} from the routing table.", self, pub_id.name());
             outbox.send_event(Event::NodeLost(*pub_id.name()));
 
@@ -1716,7 +1705,7 @@ impl Node {
         if self
             .peer_mgr
             .connected_peers()
-            .filter(|p| p.is_routing())
+            .filter(|p| p.is_node())
             .count()
             == 0
         {
@@ -1728,7 +1717,7 @@ impl Node {
             }
         }
 
-        if try_reconnect && self.chain.is_peer_valid(&pub_id) {
+        if try_reconnect && self.is_peer_valid(&pub_id) {
             debug!(
                 "{} - Sending connection info to {:?} due to dropped peer.",
                 self, pub_id
@@ -2062,7 +2051,7 @@ impl Base for Node {
                 Ok(*self.name())
             }
             Some(&PeerState::JoiningNode) => Ok(*self.name()),
-            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Routing) => {
+            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Node) => {
                 Ok(*pub_id.name())
             }
             Some(&PeerState::ConnectionInfoPreparing { .. })
@@ -2157,10 +2146,8 @@ impl Node {
         self.parsec_map.has_unpolled_observations(filter_opaque)
     }
 
-    pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
-        self.peer_mgr
-            .get_peer(pub_id)
-            .map_or(false, Peer::is_routing)
+    pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
+        self.peer_mgr.get_peer(pub_id).map_or(false, Peer::is_node)
     }
 
     pub fn has_resource_proof_candidate(&self) -> bool {
@@ -2279,8 +2266,8 @@ impl Relocated for Node {
     }
 
     fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if self.chain.is_peer_valid(&pub_id) {
-            self.add_to_routing_table(&pub_id, outbox);
+        if self.is_peer_valid(&pub_id) {
+            self.add_node(&pub_id, outbox);
         }
     }
 
@@ -2288,22 +2275,14 @@ impl Relocated for Node {
         self.chain.is_peer_valid(pub_id)
     }
 
-    fn add_to_routing_table_success(&mut self, _: &PublicId) {
+    fn add_node_success(&mut self, _: &PublicId) {
         self.print_rt_size();
     }
 
-    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId) {
-        if !self.chain.is_peer_valid(pub_id) {
+    fn add_node_failure(&mut self, pub_id: &PublicId) {
+        if !self.is_peer_valid(pub_id) {
             self.disconnect_peer(pub_id);
         }
-    }
-
-    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
-        self.notified_nodes.insert(pub_id)
-    }
-
-    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
-        self.notified_nodes.remove(pub_id)
     }
 }
 

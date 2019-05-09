@@ -64,8 +64,6 @@ pub struct ProvingNode {
     min_section_size: usize,
     /// Routing messages addressed to us that we cannot handle until we are approved.
     msg_backlog: Vec<RoutingMessage>,
-    // TODO: notify without local state
-    notified_nodes: BTreeSet<PublicId>,
     /// ID from before relocating.
     old_full_id: FullId,
     peer_mgr: PeerManager,
@@ -96,7 +94,6 @@ impl ProvingNode {
             full_id: details.full_id,
             min_section_size: details.min_section_size,
             msg_backlog: Vec::new(),
-            notified_nodes: Default::default(),
             peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: details.timer,
@@ -159,7 +156,6 @@ impl ProvingNode {
             gen_pfx_info,
             min_section_size: self.min_section_size,
             msg_backlog: self.msg_backlog,
-            notified_nodes: self.notified_nodes,
             peer_mgr: self.peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
@@ -195,19 +191,6 @@ impl ProvingNode {
         );
 
         Transition::IntoEstablishingNode { gen_pfx_info }
-    }
-
-    fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
-        let was_proxy = self.peer_mgr.is_proxy(pub_id);
-        let _ = self.peer_mgr.remove_peer(pub_id);
-        let _ = self.notified_nodes.remove(pub_id);
-
-        if was_proxy {
-            debug!("{} Lost connection to proxy {}.", self, pub_id);
-            false
-        } else {
-            true
-        }
     }
 
     #[cfg(feature = "mock_base")]
@@ -424,18 +407,10 @@ impl Relocated for ProvingNode {
         true
     }
 
-    fn add_to_routing_table_success(&mut self, _: &PublicId) {}
+    fn add_node_success(&mut self, _: &PublicId) {}
 
-    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId) {
+    fn add_node_failure(&mut self, pub_id: &PublicId) {
         self.disconnect_peer(pub_id)
-    }
-
-    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
-        self.notified_nodes.insert(pub_id)
-    }
-
-    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
-        self.notified_nodes.remove(pub_id)
     }
 }
 

@@ -685,7 +685,7 @@ pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
         let mut peers = node.chain().valid_peers();
         let _ = peers.remove(&node.chain().our_id());
         for pub_id in peers {
-            assert_eq!(true, node.inner.is_routing_peer(pub_id));
+            assert_eq!(true, node.inner.is_node_peer(pub_id));
         }
     }
 }

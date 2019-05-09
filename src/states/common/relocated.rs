@@ -31,10 +31,8 @@ pub trait Relocated: Bootstrapped {
     fn peer_mgr_mut(&mut self) -> &mut PeerManager;
     fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox);
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
-    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool;
-    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool;
-    fn add_to_routing_table_success(&mut self, pub_id: &PublicId);
-    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId);
+    fn add_node_success(&mut self, pub_id: &PublicId);
+    fn add_node_failure(&mut self, pub_id: &PublicId);
 
     fn handle_connection_info_prepared(
         &mut self,
@@ -250,17 +248,17 @@ pub trait Relocated: Bootstrapped {
         if self
             .peer_mgr()
             .get_peer(&pub_id)
-            .map_or(false, Peer::is_routing)
+            .map_or(false, Peer::is_node)
         {
             warn!(
-                "{} Received ConnectSuccess from {:?}, but node is already in routing \
-                 state in peer_map.",
+                "{} Received ConnectSuccess from {:?}, but peer is already in Node \
+                 state in peer manager.",
                 self, pub_id
             );
             return Transition::Stay;
         }
 
-        self.peer_mgr_mut().connected_to(&pub_id);
+        self.peer_mgr_mut().set_connected(&pub_id);
         debug!("{} Received ConnectSuccess from {}.", self, pub_id);
         self.process_connection(pub_id, outbox);
 
@@ -318,7 +316,7 @@ pub trait Relocated: Bootstrapped {
         }
 
         if self.peer_mgr().is_connected(&their_public_id) {
-            self.add_to_routing_table(&their_public_id, outbox);
+            self.add_node(&their_public_id, outbox);
             return Ok(());
         }
 
@@ -406,9 +404,9 @@ pub trait Relocated: Bootstrapped {
         if self
             .peer_mgr()
             .get_peer(pub_id)
-            .map_or(false, Peer::is_routing)
+            .map_or(false, Peer::is_node)
         {
-            debug!("{} Not disconnecting routing table entry {}.", self, pub_id);
+            debug!("{} Not disconnecting node {}.", self, pub_id);
         } else if self.peer_mgr().is_proxy(pub_id) {
             debug!("{} Not disconnecting proxy node {}.", self, pub_id);
         } else if self.peer_mgr().is_joining_node(pub_id) {
@@ -423,20 +421,19 @@ pub trait Relocated: Bootstrapped {
         }
     }
 
-    fn add_to_routing_table(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
-        match self.peer_mgr_mut().add_to_routing_table(pub_id) {
+    fn add_node(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
+        match self.peer_mgr_mut().set_node(pub_id) {
+            Ok(true) => {
+                info!("{} - Added peer {} as node.", self, pub_id);
+                outbox.send_event(Event::NodeAdded(*pub_id.name()));
+                self.add_node_success(pub_id);
+            }
+            Ok(false) => {}
             Err(error) => {
                 debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
-                self.add_to_routing_table_failure(pub_id);
+                self.add_node_failure(pub_id);
                 return;
             }
-            Ok(()) => (),
-        }
-
-        if self.add_to_notified_nodes(*pub_id) {
-            info!("{} Added {} to routing table.", self, pub_id);
-            outbox.send_event(Event::NodeAdded(*pub_id.name()));
-            self.add_to_routing_table_success(pub_id);
         }
     }
 }

@@ -109,10 +109,10 @@ pub enum PeerState {
     },
     /// We are the proxy for the joining node
     JoiningNode,
-    /// We are approved and routing to that peer.
-    Routing,
     /// Connected peer is a joining node and waiting for approval of routing.
     Candidate,
+    /// We are connected to the peer who is a full node.
+    Node,
     /// We are connected to the peer who is our proxy node.
     Proxy,
 }
@@ -198,7 +198,7 @@ impl Peer {
             | PeerState::Client { .. }
             | PeerState::Connected
             | PeerState::Candidate
-            | PeerState::Routing => true,
+            | PeerState::Node => true,
         }
     }
 
@@ -211,7 +211,7 @@ impl Peer {
             | PeerState::CrustConnecting => CONNECTING_PEER_TIMEOUT_SECS,
             PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Bootstrapper { .. } | PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
-            PeerState::Candidate | PeerState::Client { .. } | PeerState::Routing => {
+            PeerState::Candidate | PeerState::Client { .. } | PeerState::Node => {
                 return false;
             }
         };
@@ -219,10 +219,10 @@ impl Peer {
         self.timestamp.elapsed() >= Duration::from_secs(timeout)
     }
 
-    /// Returns whether the peer is in `Routing` state.
-    pub fn is_routing(&self) -> bool {
+    /// Returns whether the peer is a full node.
+    pub fn is_node(&self) -> bool {
         match self.state {
-            PeerState::Routing => true,
+            PeerState::Node => true,
             _ => false,
         }
     }
@@ -579,8 +579,9 @@ impl PeerManager {
         }
     }
 
-    /// Tries to add the given peer to the routing table.
-    pub fn add_to_routing_table(&mut self, pub_id: &PublicId) -> Result<(), RoutingError> {
+    /// Mark the given peer as node.
+    /// Returns `true` if the peer state changed, `false` if it was already node.
+    pub fn set_node(&mut self, pub_id: &PublicId) -> Result<bool, RoutingError> {
         let self_display = format!("{}", self);
 
         let peer = if let Some(peer) = self.peers.get_mut(pub_id) {
@@ -595,8 +596,12 @@ impl PeerManager {
             return Err(RoutingError::UnknownConnection(*pub_id));
         };
 
-        peer.state = PeerState::Routing;
-        Ok(())
+        if let PeerState::Node = peer.state {
+            Ok(false)
+        } else {
+            peer.state = PeerState::Node;
+            Ok(true)
+        }
     }
 
     /// Returns an iterator over all connected peers.
@@ -691,7 +696,7 @@ impl PeerManager {
     }
 
     /// Marks the given peer as direct-connected.
-    pub fn connected_to(&mut self, pub_id: &PublicId) {
+    pub fn set_connected(&mut self, pub_id: &PublicId) {
         if let Some(peer) = self.peers.get_mut(pub_id) {
             peer.timestamp = Instant::now();
             peer.state = PeerState::Connected;
@@ -884,7 +889,7 @@ impl PeerManager {
             }
             Some(
                 peer @ Peer {
-                    state: PeerState::Routing,
+                    state: PeerState::Node,
                     ..
                 },
             )
@@ -953,8 +958,7 @@ impl PeerManager {
         let _ = self.peers.insert(peer.pub_id, peer);
     }
 
-    /// Removes the given entry, returns the removed peer and if it was a routing node,
-    /// the removal details
+    /// Removes the given peer. Returns whether the peer was actually present.
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
         let remove_candidate = match self.candidate {
             Candidate::None => false,
