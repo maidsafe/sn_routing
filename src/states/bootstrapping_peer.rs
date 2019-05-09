@@ -7,23 +7,25 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    common::{from_crust_bytes, Base},
-    Client, ProvingNode, RelocatingNode,
+    client::{Client, ClientDetails},
+    common::Base,
+    proving_node::{ProvingNode, ProvingNodeDetails},
+    relocating_node::{RelocatingNode, RelocatingNodeDetails},
 };
 use crate::{
     cache::Cache,
     crust::CrustUser,
-    error::InterfaceError,
+    error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, Message, Request, UserMessage},
+    messages::{DirectMessage, HopMessage, Message, Request, UserMessage},
     outbox::EventBox,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
-    CrustBytes, Service,
+    Service,
 };
 use maidsafe_utilities::serialisation;
 use std::{
@@ -51,20 +53,19 @@ pub enum TargetState {
 }
 
 // State of Client or Node while bootstrapping.
-pub struct Bootstrapping {
+pub struct BootstrappingPeer {
     action_sender: RoutingActionSender,
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
     cache: Box<Cache>,
-    target_state: TargetState,
     crust_service: Service,
     full_id: FullId,
     min_section_size: usize,
+    target_state: TargetState,
     timer: Timer,
 }
 
-impl Bootstrapping {
-    #[allow(clippy::new_ret_no_self)]
+impl BootstrappingPeer {
     pub fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -73,7 +74,7 @@ impl Bootstrapping {
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
-    ) -> Option<Self> {
+    ) -> Result<Self, RoutingError> {
         match target_state {
             TargetState::Client { .. } => {
                 let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
@@ -81,66 +82,82 @@ impl Bootstrapping {
             TargetState::RelocatingNode | TargetState::ProvingNode { .. } => {
                 if let Err(error) = crust_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
-                    return None;
+                    return Err(error.into());
                 }
             }
         }
-        Some(Bootstrapping {
-            action_sender: action_sender,
+
+        Ok(Self {
+            action_sender,
+            cache: cache,
+            crust_service,
+            full_id,
+            min_section_size,
+            timer: timer,
             bootstrap_blacklist: HashSet::new(),
             bootstrap_connection: None,
-            cache: cache,
-            target_state: target_state,
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            timer: timer,
+            target_state,
         })
     }
 
-    pub fn into_target_state(self, proxy_public_id: PublicId, outbox: &mut EventBox) -> State {
+    pub fn into_target_state(
+        self,
+        proxy_pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<State, RoutingError> {
         match self.target_state {
-            TargetState::Client { msg_expiry_dur } => State::Client(Client::from_bootstrapping(
-                self.crust_service,
-                self.full_id,
-                self.min_section_size,
-                proxy_public_id,
-                self.timer,
-                msg_expiry_dur,
-                outbox,
-            )),
+            TargetState::Client { msg_expiry_dur } => {
+                Ok(State::Client(Client::from_bootstrapping(
+                    ClientDetails {
+                        crust_service: self.crust_service,
+                        full_id: self.full_id,
+                        min_section_size: self.min_section_size,
+                        msg_expiry_dur,
+                        proxy_pub_id,
+                        timer: self.timer,
+                    },
+                    outbox,
+                )))
+            }
             TargetState::RelocatingNode => {
-                if let Some(node) = RelocatingNode::from_bootstrapping(
-                    self.action_sender,
-                    self.cache,
-                    self.crust_service,
-                    self.full_id,
-                    self.min_section_size,
-                    proxy_public_id,
-                    self.timer,
-                ) {
-                    State::RelocatingNode(node)
-                } else {
-                    outbox.send_event(Event::RestartRequired);
-                    State::Terminated
-                }
+                let details = RelocatingNodeDetails {
+                    action_sender: self.action_sender,
+                    cache: self.cache,
+                    crust_service: self.crust_service,
+                    full_id: self.full_id,
+                    min_section_size: self.min_section_size,
+                    proxy_pub_id,
+                    timer: self.timer,
+                };
+
+                RelocatingNode::from_bootstrapping(details)
+                    .map(State::RelocatingNode)
+                    .map_err(|err| {
+                        outbox.send_event(Event::RestartRequired);
+                        err
+                    })
             }
             TargetState::ProvingNode {
                 old_full_id,
                 our_section,
                 ..
-            } => State::ProvingNode(ProvingNode::from_bootstrapping(
-                our_section,
-                self.action_sender,
-                self.cache,
-                self.crust_service,
-                old_full_id,
-                self.full_id,
-                self.min_section_size,
-                proxy_public_id,
-                self.timer,
-                outbox,
-            )),
+            } => {
+                let details = ProvingNodeDetails {
+                    action_sender: self.action_sender,
+                    cache: self.cache,
+                    crust_service: self.crust_service,
+                    full_id: self.full_id,
+                    min_section_size: self.min_section_size,
+                    old_full_id,
+                    our_section,
+                    proxy_pub_id,
+                    timer: self.timer,
+                };
+
+                Ok(State::ProvingNode(ProvingNode::from_bootstrapping(
+                    details, outbox,
+                )))
+            }
         }
     }
 
@@ -148,28 +165,6 @@ impl Bootstrapping {
         match self.target_state {
             TargetState::Client { .. } => true,
             TargetState::RelocatingNode | TargetState::ProvingNode { .. } => false,
-        }
-    }
-
-    fn handle_direct_message(
-        &mut self,
-        direct_message: DirectMessage,
-        pub_id: PublicId,
-    ) -> Transition {
-        use self::DirectMessage::*;
-        match direct_message {
-            BootstrapResponse(Ok(())) => Transition::IntoBootstrapped {
-                proxy_public_id: pub_id,
-            },
-            BootstrapResponse(Err(error)) => {
-                info!("{} Connection failed: {}", self, error);
-                self.rebootstrap();
-                Transition::Stay
-            }
-            _ => {
-                debug!("{} - Unhandled direct message: {:?}", self, direct_message);
-                Transition::Stay
-            }
         }
     }
 
@@ -222,7 +217,7 @@ impl Bootstrapping {
     }
 }
 
-impl Base for Bootstrapping {
+impl Base for BootstrappingPeer {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -323,25 +318,6 @@ impl Base for Bootstrapping {
         Transition::Stay
     }
 
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
-        _: &mut EventBox,
-    ) -> Transition {
-        match from_crust_bytes(bytes) {
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, pub_id),
-            Ok(message) => {
-                debug!("{} - Unhandled new message: {:?}", self, message);
-                Transition::Stay
-            }
-            Err(error) => {
-                debug!("{} - {:?}", self, error);
-                Transition::Stay
-            }
-        }
-    }
-
     fn handle_listener_started(&mut self, port: u16, outbox: &mut EventBox) -> Transition {
         if self.client_restriction() {
             error!("{} - A client must not run a crust listener.", self);
@@ -364,11 +340,44 @@ impl Base for Bootstrapping {
         outbox.send_event(Event::Terminated);
         Transition::Terminate
     }
+
+    fn handle_direct_message(
+        &mut self,
+        msg: DirectMessage,
+        pub_id: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        use self::DirectMessage::*;
+        match msg {
+            BootstrapResponse(Ok(())) => Ok(Transition::IntoBootstrapped {
+                proxy_public_id: pub_id,
+            }),
+            BootstrapResponse(Err(error)) => {
+                info!("{} Connection failed: {}", self, error);
+                self.rebootstrap();
+                Ok(Transition::Stay)
+            }
+            _ => {
+                debug!("{} - Unhandled direct message: {:?}", self, msg);
+                Ok(Transition::Stay)
+            }
+        }
+    }
+
+    fn handle_hop_message(
+        &mut self,
+        msg: HopMessage,
+        _: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        debug!("{} - Unhandled hop message: {:?}", self, msg);
+        Ok(Transition::Stay)
+    }
 }
 
-impl Display for Bootstrapping {
+impl Display for BootstrappingPeer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Bootstrapping({})", self.name())
+        write!(formatter, "BootstrappingPeer({})", self.name())
     }
 }
 
@@ -423,7 +432,7 @@ mod tests {
             let pub_id = *full_id.public_id();
             StateMachine::new(
                 move |action_sender, crust_service, timer, _outbox2| {
-                    Bootstrapping::new(
+                    BootstrappingPeer::new(
                         action_sender,
                         Box::new(NullCache),
                         TargetState::Client {
@@ -434,7 +443,8 @@ mod tests {
                         min_section_size,
                         timer,
                     )
-                    .map_or(State::Terminated, State::Bootstrapping)
+                    .map(State::BootstrappingPeer)
+                    .unwrap_or(State::Terminated)
                 },
                 pub_id,
                 Some(config),
@@ -455,14 +465,14 @@ mod tests {
         // caused it to send a `BootstrapRequest` and add the Crust service to its
         // `bootstrap_blacklist`.
         match *state_machine.current() {
-            State::Bootstrapping(ref state) => assert!(state.bootstrap_blacklist.is_empty()),
+            State::BootstrappingPeer(ref state) => assert!(state.bootstrap_blacklist.is_empty()),
             _ => panic!("Should be in `Bootstrapping` state."),
         }
         network.deliver_messages();
         unwrap!(state_machine.step(&mut outbox));
         assert!(outbox.take_all().is_empty());
         match *state_machine.current() {
-            State::Bootstrapping(ref state) => assert_eq!(state.bootstrap_blacklist.len(), 1),
+            State::BootstrappingPeer(ref state) => assert_eq!(state.bootstrap_blacklist.len(), 1),
             _ => panic!("Should be in `Bootstrapping` state."),
         }
 

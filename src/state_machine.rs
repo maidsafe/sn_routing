@@ -8,12 +8,12 @@
 
 use crate::{
     action::Action,
-    chain::GenesisPfxInfo,
+    chain::{GenesisPfxInfo, SectionInfo},
     id::{FullId, PublicId},
     outbox::EventBox,
     routing_table::Prefix,
     states::common::Base,
-    states::{Bootstrapping, Client, Node, ProvingNode, RelocatingNode},
+    states::{BootstrappingPeer, Client, EstablishingNode, Node, ProvingNode, RelocatingNode},
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
@@ -37,10 +37,11 @@ use std::{
 macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
-            State::Bootstrapping($state) => $expr,
+            State::BootstrappingPeer($state) => $expr,
             State::Client($state) => $expr,
             State::RelocatingNode($state) => $expr,
             State::ProvingNode($state) => $expr,
+            State::EstablishingNode($state) => $expr,
             State::Node($state) => $expr,
             State::Terminated => $term_expr,
         }
@@ -63,10 +64,11 @@ pub struct StateMachine {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum State {
-    Bootstrapping(Bootstrapping),
+    BootstrappingPeer(BootstrappingPeer),
     Client(Client),
     RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
+    EstablishingNode(EstablishingNode),
     Node(Node),
     Terminated,
 }
@@ -123,8 +125,13 @@ impl State {
     #[cfg(feature = "mock_base")]
     fn chain(&self) -> Option<&Chain> {
         match *self {
+            State::EstablishingNode(ref state) => Some(state.chain()),
             State::Node(ref state) => Some(state.chain()),
-            _ => None,
+            State::BootstrappingPeer(_)
+            | State::Client(_)
+            | State::RelocatingNode(_)
+            | State::ProvingNode(_)
+            | State::Terminated => None,
         }
     }
 
@@ -150,13 +157,31 @@ impl State {
         )
     }
 
-    fn replace_with<F>(&mut self, f: F)
+    fn replace_with<F, E>(&mut self, f: F)
     where
-        F: FnOnce(Self) -> Self,
+        F: FnOnce(Self) -> Result<Self, E>,
+        E: Debug,
     {
         let old_state = mem::replace(self, State::Terminated);
-        let new_state = f(old_state);
-        *self = new_state;
+        let old_state_log_ident = format!("{}", old_state);
+
+        match f(old_state) {
+            Ok(new_state) => *self = new_state,
+            Err(error) => error!(
+                "{} - Failed state transition: {:?}",
+                old_state_log_ident, error
+            ),
+        }
+    }
+}
+
+impl Display for State {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        state_dispatch!(
+            *self,
+            ref state => write!(formatter, "{}", state),
+            Terminated => write!(formatter, "Terminated")
+        )
     }
 }
 
@@ -193,49 +218,62 @@ impl State {
 
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
-            State::Node(ref mut state) => state.get_timed_out_tokens(),
+            State::BootstrappingPeer(_) | State::Terminated => vec![],
             State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
-            _ => vec![],
+            State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
+            State::EstablishingNode(ref mut state) => state.get_timed_out_tokens(),
+            State::Node(ref mut state) => state.get_timed_out_tokens(),
         }
     }
 
     pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
-        match *self {
-            State::Node(ref state) => Some(state.get_clients_usage()),
-            _ => None,
+        if let State::Node(ref state) = *self {
+            Some(state.get_clients_usage())
+        } else {
+            None
         }
     }
 
-    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
+    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
         match *self {
-            State::Node(ref state) => state.has_unconsensused_observations(filter_opaque),
-            _ => false,
+            State::Terminated
+            | State::BootstrappingPeer(_)
+            | State::Client(_)
+            | State::RelocatingNode(_)
+            | State::ProvingNode(_) => false,
+            State::EstablishingNode(ref state) => state.has_unpolled_observations(filter_opaque),
+            State::Node(ref state) => state.has_unpolled_observations(filter_opaque),
         }
     }
 
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
-        match *self {
-            State::Node(ref state) => state.is_routing_peer(pub_id),
-            _ => false,
+        if let State::Node(ref state) = *self {
+            state.is_routing_peer(pub_id)
+        } else {
+            false
         }
     }
 
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *self {
-            State::Node(ref state) => state.in_authority(auth),
+            State::Terminated | State::BootstrappingPeer(_) => false,
             State::Client(ref state) => state.in_authority(auth),
             State::RelocatingNode(ref state) => state.in_authority(auth),
-            _ => false,
+            State::ProvingNode(ref state) => state.in_authority(auth),
+            State::EstablishingNode(ref state) => state.in_authority(auth),
+            State::Node(ref state) => state.in_authority(auth),
         }
     }
 
     pub fn has_unacked_msg(&self) -> bool {
         match *self {
-            State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::Terminated | State::BootstrappingPeer(_) => false,
             State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
             State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
-            _ => false,
+            State::ProvingNode(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::EstablishingNode(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
         }
     }
 }
@@ -254,9 +292,14 @@ pub enum Transition {
         new_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
-    // `ProvingNode` state transitioning to `Node`.
-    IntoNode {
+    // `ProvingNode` state transitioning to `EstablishingNode`.
+    IntoEstablishingNode {
         gen_pfx_info: GenesisPfxInfo,
+    },
+    // `EstablishingNode` state transition to `Node`.
+    IntoNode {
+        sec_info: SectionInfo,
+        old_pfx: Prefix<XorName>,
     },
     Terminate,
 }
@@ -384,7 +427,7 @@ impl StateMachine {
         match transition {
             Stay => (),
             IntoBootstrapped { proxy_public_id } => self.state.replace_with(|state| match state {
-                State::Bootstrapping(src) => src.into_target_state(proxy_public_id, outbox),
+                State::BootstrappingPeer(src) => src.into_target_state(proxy_public_id, outbox),
                 _ => unreachable!(),
             }),
             IntoBootstrapping {
@@ -407,8 +450,12 @@ impl StateMachine {
                     _ => unreachable!(),
                 })
             }
-            IntoNode { gen_pfx_info } => self.state.replace_with(|state| match state {
-                State::ProvingNode(src) => src.into_node(gen_pfx_info),
+            IntoEstablishingNode { gen_pfx_info } => self.state.replace_with(|state| match state {
+                State::ProvingNode(src) => src.into_establishing_node(gen_pfx_info, outbox),
+                _ => unreachable!(),
+            }),
+            IntoNode { sec_info, old_pfx } => self.state.replace_with(|state| match state {
+                State::EstablishingNode(src) => src.into_node(sec_info, old_pfx, outbox),
                 _ => unreachable!(),
             }),
             Terminate => self.terminate(),
@@ -546,6 +593,6 @@ impl StateMachine {
 
 impl Display for StateMachine {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        self.state.fmt(formatter)
+        write!(formatter, "{:?}", self.state)
     }
 }

@@ -308,7 +308,6 @@ pub struct PeerManager {
     our_public_id: PublicId,
     candidate: Candidate,
     disable_client_rate_limiter: bool,
-    established: bool,
 }
 
 impl PeerManager {
@@ -320,7 +319,6 @@ impl PeerManager {
             our_public_id: our_public_id,
             candidate: Candidate::None,
             disable_client_rate_limiter: disable_client_rate_limiter,
-            established: false,
         }
     }
 
@@ -633,12 +631,7 @@ impl PeerManager {
     }
 
     /// Remove and return `PublicId`s of expired peers.
-    /// Will only be active once we are established.
     pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
-        if !self.established {
-            return vec![];
-        }
-
         let remove_candidate = if self.candidate.is_expired() {
             match self.candidate {
                 Candidate::None => None,
@@ -978,17 +971,6 @@ impl PeerManager {
         }
 
         self.peers.remove(pub_id).is_some() || remove_candidate
-    }
-
-    /// Sets this peer as established.
-    /// Expired peers will be purged once established.
-    pub fn set_established(&mut self) {
-        self.established = true;
-    }
-
-    /// Returns whether this peer is established.
-    pub fn is_established(&self) -> bool {
-        self.established
     }
 }
 

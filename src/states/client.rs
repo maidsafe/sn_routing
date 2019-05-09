@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::common::{
-    from_crust_bytes, unrelocated, Base, Bootstrapped, Unapproved, USER_MSG_CACHE_EXPIRY_DURATION,
+    proxied, Base, Bootstrapped, BootstrappedNotEstablished, USER_MSG_CACHE_EXPIRY_DURATION,
 };
 use crate::{
     ack_manager::{Ack, AckManager, UnacknowledgedMessage},
@@ -16,7 +16,7 @@ use crate::{
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        DirectMessage, HopMessage, Message, MessageContent, Request, RoutingMessage, UserMessage,
+        DirectMessage, HopMessage, MessageContent, Request, RoutingMessage, UserMessage,
         UserMessageCache,
     },
     outbox::EventBox,
@@ -26,7 +26,7 @@ use crate::{
     time::{Duration, Instant},
     timer::Timer,
     xor_name::XorName,
-    CrustBytes, Service,
+    Service,
 };
 use std::{
     collections::BTreeMap,
@@ -35,6 +35,15 @@ use std::{
 
 /// Duration to wait before sending rate limit exceeded messages.
 pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
+
+pub struct ClientDetails {
+    pub crust_service: Service,
+    pub full_id: FullId,
+    pub min_section_size: usize,
+    pub msg_expiry_dur: Duration,
+    pub proxy_pub_id: PublicId,
+    pub timer: Timer,
+}
 
 /// A node connecting a user to the network, as opposed to a routing / data storage node.
 ///
@@ -53,27 +62,18 @@ pub struct Client {
 }
 
 impl Client {
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_bootstrapping(
-        crust_service: Service,
-        full_id: FullId,
-        min_section_size: usize,
-        proxy_pub_id: PublicId,
-        timer: Timer,
-        msg_expiry_dur: Duration,
-        outbox: &mut EventBox,
-    ) -> Self {
+    pub fn from_bootstrapping(details: ClientDetails, outbox: &mut EventBox) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
-            crust_service: crust_service,
-            full_id: full_id,
-            min_section_size: min_section_size,
-            proxy_pub_id: proxy_pub_id,
+            crust_service: details.crust_service,
+            full_id: details.full_id,
+            min_section_size: details.min_section_size,
+            proxy_pub_id: details.proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            timer: timer,
+            timer: details.timer,
             user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             resend_buf: Default::default(),
-            msg_expiry_dur: msg_expiry_dur,
+            msg_expiry_dur: details.msg_expiry_dur,
         };
 
         debug!("{} State changed to Client.", client);
@@ -85,43 +85,6 @@ impl Client {
     fn handle_ack_response(&mut self, ack: Ack) -> Transition {
         self.ack_mgr.receive(ack);
         Transition::Stay
-    }
-
-    fn handle_hop_message(
-        &mut self,
-        hop_msg: HopMessage,
-        pub_id: PublicId,
-        outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
-        if self.proxy_pub_id != pub_id {
-            return Err(RoutingError::UnknownConnection(pub_id));
-        }
-
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
-            Ok(self.dispatch_routing_message(routing_msg, outbox))
-        } else {
-            Ok(Transition::Stay)
-        }
-    }
-
-    fn handle_direct_message(
-        &mut self,
-        direct_msg: DirectMessage,
-    ) -> Result<Transition, RoutingError> {
-        if let DirectMessage::ProxyRateLimitExceeded { ack } = direct_msg {
-            if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
-                let token = self.timer().schedule(RATE_EXCEED_RETRY);
-                let _ = self.resend_buf.insert(token, unack_msg);
-            } else {
-                debug!(
-                    "{} Got ProxyRateLimitExceeded, but no corresponding request found",
-                    self
-                );
-            }
-        } else {
-            debug!("{} Unhandled direct message: {:?}", self, direct_msg);
-        }
-        Ok(Transition::Stay)
     }
 
     fn dispatch_routing_message(
@@ -207,6 +170,10 @@ impl Base for Client {
         }
     }
 
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
+    }
+
     fn handle_client_send_request(
         &mut self,
         dst: Authority<XorName>,
@@ -256,28 +223,6 @@ impl Base for Client {
         Transition::Stay
     }
 
-    fn handle_new_message(
-        &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        let transition = match from_crust_bytes(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg),
-            Err(error) => Err(error),
-        };
-
-        match transition {
-            Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
-            Err(error) => {
-                debug!("{} - {:?}", self, error);
-                Transition::Stay
-            }
-        }
-    }
-
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         debug!("{} Received LostPeer - {:?}", self, pub_id);
 
@@ -290,8 +235,43 @@ impl Base for Client {
         }
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn handle_direct_message(
+        &mut self,
+        msg: DirectMessage,
+        _: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        if let DirectMessage::ProxyRateLimitExceeded { ack } = msg {
+            if let Some(unack_msg) = self.ack_mgr.remove(&ack) {
+                let token = self.timer().schedule(RATE_EXCEED_RETRY);
+                let _ = self.resend_buf.insert(token, unack_msg);
+            } else {
+                debug!(
+                    "{} Got ProxyRateLimitExceeded, but no corresponding request found",
+                    self
+                );
+            }
+        } else {
+            debug!("{} Unhandled direct message: {:?}", self, msg);
+        }
+        Ok(Transition::Stay)
+    }
+
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        if self.proxy_pub_id != pub_id {
+            return Err(RoutingError::UnknownConnection(pub_id));
+        }
+
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            Ok(self.dispatch_routing_message(routing_msg, outbox))
+        } else {
+            Ok(Transition::Stay)
+        }
     }
 }
 
@@ -349,11 +329,11 @@ impl Bootstrapped for Client {
     }
 }
 
-impl Unapproved for Client {
+impl BootstrappedNotEstablished for Client {
     const SEND_ACK: bool = false;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        unrelocated::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
+        proxied::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }
 }
 

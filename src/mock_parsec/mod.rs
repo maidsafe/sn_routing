@@ -184,10 +184,14 @@ where
         unimplemented!()
     }
 
+    // TODO: rename this to `has_unpolled_observations`
     pub fn has_unconsensused_observations(&self) -> bool {
-        self.observations
-            .iter()
-            .any(|(_, obs)| obs.state != ConsensusState::Polled)
+        state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
+            state
+                .observations
+                .iter()
+                .any(|(_, observation_state)| !observation_state.consensused())
+        }) || self.our_unpolled_observations().next().is_some()
     }
 
     pub fn our_unpolled_observations(&self) -> impl Iterator<Item = &Observation<T, S::PublicId>> {

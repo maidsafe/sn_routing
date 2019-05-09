@@ -6,15 +6,21 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod approved;
 mod base;
 mod bootstrapped;
+mod bootstrapped_not_established;
+pub mod proxied;
 mod relocated;
-mod unapproved;
-pub mod unrelocated;
+mod relocated_not_established;
 
 pub use self::{
-    base::from_crust_bytes, base::Base, bootstrapped::Bootstrapped, relocated::Relocated,
-    unapproved::Unapproved,
+    approved::Approved,
+    base::{from_crust_bytes, Base},
+    bootstrapped::Bootstrapped,
+    bootstrapped_not_established::BootstrappedNotEstablished,
+    relocated::Relocated,
+    relocated_not_established::RelocatedNotEstablished,
 };
 use crate::time::Duration;
 

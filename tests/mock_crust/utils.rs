@@ -367,9 +367,7 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
             // after MAX_POLL_CALLS / 2 only filter for opaque events
             // to avoid stalling the test due to lack of parsec voters.
             node.inner.has_unacked_msg()
-                || node
-                    .inner
-                    .has_unconsensused_observations(i > MAX_POLL_CALLS / 2)
+                || node.inner.has_unpolled_observations(i > MAX_POLL_CALLS / 2)
         };
         let client_busy = |client: &TestClient| client.inner.has_unacked_msg();
         if poll_all(nodes, clients)

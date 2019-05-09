@@ -7,12 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    common::{Base, Bootstrapped, Relocated, Unapproved},
-    node::Node,
+    common::{
+        proxied, Base, Bootstrapped, BootstrappedNotEstablished, Relocated, RelocatedNotEstablished,
+    },
+    establishing_node::{EstablishingNode, EstablishingNodeDetails},
 };
-use crate::states::common::from_crust_bytes;
 use crate::{
-    ack_manager::{Ack, AckManager},
+    ack_manager::AckManager,
     cache::Cache,
     chain::{GenesisPfxInfo, SectionInfo},
     config_handler,
@@ -20,7 +21,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, RoutingMessage},
+    messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     peer_manager::{Peer, PeerManager, PeerState},
     resource_prover::ResourceProver,
@@ -32,7 +33,7 @@ use crate::{
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
-    CrustBytes, Service,
+    Service,
 };
 use maidsafe_utilities::serialisation;
 use std::{
@@ -40,73 +41,77 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
+pub struct ProvingNodeDetails {
+    pub action_sender: RoutingActionSender,
+    pub cache: Box<Cache>,
+    pub crust_service: Service,
+    pub full_id: FullId,
+    pub min_section_size: usize,
+    pub old_full_id: FullId,
+    pub our_section: (Prefix<XorName>, BTreeSet<PublicId>),
+    pub proxy_pub_id: PublicId,
+    pub timer: Timer,
+}
+
 pub struct ProvingNode {
-    crust_service: Service,
     ack_mgr: AckManager,
-    /// ID from before relocating.
-    old_full_id: FullId,
-    full_id: FullId,
-    /// Routing messages addressed to us that we cannot handle until we are approved.
-    msg_backlog: Vec<RoutingMessage>,
-    min_section_size: usize,
-    peer_mgr: PeerManager,
     cache: Box<Cache>,
-    routing_msg_filter: RoutingMessageFilter,
-    timer: Timer,
-    resource_prover: ResourceProver,
+    crust_service: Service,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
+    full_id: FullId,
     joining_prefix: Prefix<XorName>,
+    min_section_size: usize,
+    /// Routing messages addressed to us that we cannot handle until we are approved.
+    msg_backlog: Vec<RoutingMessage>,
     // TODO: notify without local state
     notified_nodes: BTreeSet<PublicId>,
+    /// ID from before relocating.
+    old_full_id: FullId,
+    peer_mgr: PeerManager,
+    resource_prover: ResourceProver,
+    routing_msg_filter: RoutingMessageFilter,
+    timer: Timer,
 }
 
 impl ProvingNode {
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_bootstrapping(
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-        action_sender: RoutingActionSender,
-        cache: Box<Cache>,
-        crust_service: Service,
-        old_full_id: FullId,
-        new_full_id: FullId,
-        min_section_size: usize,
-        proxy_pub_id: PublicId,
-        timer: Timer,
-        outbox: &mut EventBox,
-    ) -> Self {
+    pub fn from_bootstrapping(details: ProvingNodeDetails, outbox: &mut EventBox) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
-        let public_id = *new_full_id.public_id();
+        let public_id = *details.full_id.public_id();
 
         let mut peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
-        peer_mgr.insert_peer(Peer::new(proxy_pub_id, PeerState::Proxy));
+        peer_mgr.insert_peer(Peer::new(details.proxy_pub_id, PeerState::Proxy));
 
-        let challenger_count = our_section.1.len();
-        let resource_prover = ResourceProver::new(action_sender, timer.clone(), challenger_count);
+        let challenger_count = details.our_section.1.len();
+        let resource_prover = ResourceProver::new(
+            details.action_sender,
+            details.timer.clone(),
+            challenger_count,
+        );
 
         let mut node = Self {
-            crust_service,
             ack_mgr: AckManager::new(),
-            old_full_id,
-            full_id: new_full_id,
+            cache: details.cache,
+            crust_service: details.crust_service,
+            full_id: details.full_id,
+            min_section_size: details.min_section_size,
             msg_backlog: Vec::new(),
-            min_section_size,
-            peer_mgr,
-            cache,
-            routing_msg_filter: RoutingMessageFilter::new(),
-            timer,
-            resource_prover,
-            disable_resource_proof: dev_config.disable_resource_proof,
-            joining_prefix: our_section.0,
             notified_nodes: Default::default(),
+            peer_mgr,
+            routing_msg_filter: RoutingMessageFilter::new(),
+            timer: details.timer,
+            disable_resource_proof: dev_config.disable_resource_proof,
+            joining_prefix: details.our_section.0,
+            old_full_id: details.old_full_id,
+            resource_prover,
         };
-        node.start(our_section.1, &proxy_pub_id, outbox);
+        node.init(details.our_section.1, &details.proxy_pub_id, outbox);
         node
     }
 
     /// Called immediately after construction. Sends `ConnectionInfoRequest`s to all members of
     /// `our_section` to then start the candidate approval process.
-    fn start(
+    fn init(
         &mut self,
         our_section: BTreeSet<PublicId>,
         proxy_pub_id: &PublicId,
@@ -141,95 +146,26 @@ impl ProvingNode {
         }
     }
 
-    pub fn into_node(self, gen_pfx_info: GenesisPfxInfo) -> State {
-        let node = Node::from_proving_node(
-            self.ack_mgr,
-            self.cache,
-            self.crust_service,
-            self.full_id,
-            gen_pfx_info,
-            self.min_section_size,
-            self.msg_backlog.into_iter().collect(),
-            self.notified_nodes,
-            self.peer_mgr,
-            self.routing_msg_filter,
-            self.timer,
-        );
-
-        State::Node(node)
-    }
-
-    fn handle_direct_message(
-        &mut self,
-        msg: DirectMessage,
-        pub_id: PublicId,
-        _outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
-        self.check_direct_message_sender(&msg, &pub_id)?;
-
-        use crate::messages::DirectMessage::*;
-        match msg {
-            ResourceProof {
-                seed,
-                target_size,
-                difficulty,
-            } => {
-                let log_ident = format!("{}", self);
-                self.resource_prover.handle_request(
-                    pub_id,
-                    seed,
-                    target_size,
-                    difficulty,
-                    log_ident,
-                );
-            }
-            ResourceProofResponseReceipt => {
-                if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
-                    self.send_direct_message(pub_id, msg);
-                }
-            }
-            _ => {
-                debug!("{} Unhandled direct message: {:?}", self, msg);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
-    fn check_direct_message_sender(
-        &self,
-        msg: &DirectMessage,
-        pub_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(&PeerState::Connected) | Some(&PeerState::Proxy) => Ok(()),
-            _ => {
-                debug!(
-                    "{} Illegitimate direct message {:?} from {:?}.",
-                    self, msg, pub_id
-                );
-                Err(RoutingError::InvalidStateForOperation)
-            }
-        }
-    }
-
-    fn handle_hop_message(
-        &mut self,
-        hop_msg: HopMessage,
-        pub_id: PublicId,
+    pub fn into_establishing_node(
+        self,
+        gen_pfx_info: GenesisPfxInfo,
         outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
-        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Connected) | Some(&PeerState::Proxy) => (),
-            _ => return Err(RoutingError::UnknownConnection(pub_id)),
-        }
+    ) -> Result<State, RoutingError> {
+        let details = EstablishingNodeDetails {
+            ack_mgr: self.ack_mgr,
+            cache: self.cache,
+            crust_service: self.crust_service,
+            full_id: self.full_id,
+            gen_pfx_info,
+            min_section_size: self.min_section_size,
+            msg_backlog: self.msg_backlog,
+            notified_nodes: self.notified_nodes,
+            peer_mgr: self.peer_mgr,
+            routing_msg_filter: self.routing_msg_filter,
+            timer: self.timer,
+        };
 
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
-            self.dispatch_routing_message(routing_msg, outbox)
-        } else {
-            Ok(Transition::Stay)
-        }
+        EstablishingNode::from_proving_node(details, outbox).map(State::EstablishingNode)
     }
 
     fn dispatch_routing_message(
@@ -238,81 +174,16 @@ impl ProvingNode {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
-
-        let src_name = msg.src.name();
-
         match msg {
-            RoutingMessage {
-                content:
-                    ConnectionInfoRequest {
-                        encrypted_conn_info,
-                        pub_id,
-                        msg_id,
-                    },
-                src: ManagedNode(_),
-                dst: ManagedNode(_),
-            } => {
-                if self.joining_prefix.matches(&src_name) {
-                    self.handle_connection_info_request(
-                        encrypted_conn_info,
-                        pub_id,
-                        msg_id,
-                        msg.src,
-                        msg.dst,
-                        outbox,
-                    )?
-                } else {
-                    self.add_message_to_backlog(RoutingMessage {
-                        content: ConnectionInfoRequest {
-                            encrypted_conn_info,
-                            pub_id,
-                            msg_id,
-                        },
-                        ..msg
-                    })
-                }
-            }
-            RoutingMessage {
-                content:
-                    ConnectionInfoResponse {
-                        encrypted_conn_info,
-                        pub_id,
-                        msg_id,
-                    },
-                src: ManagedNode(src_name),
-                dst: Client { .. },
-            } => self.handle_connection_info_response(
-                encrypted_conn_info,
-                pub_id,
-                msg_id,
-                src_name,
-                msg.dst,
-            )?,
             RoutingMessage {
                 content: NodeApproval(gen_info),
                 src: PrefixSection(_),
                 dst: Client { .. },
-            } => return Ok(self.handle_node_approval(gen_info)),
-            RoutingMessage {
-                content: Ack(ack, _),
-                ..
-            } => self.handle_ack_response(ack),
-            _ => {
-                self.add_message_to_backlog(msg);
-            }
+            } => Ok(self.handle_node_approval(gen_info)),
+            _ => self
+                .handle_routing_message(msg, outbox)
+                .map(|()| Transition::Stay),
         }
-
-        Ok(Transition::Stay)
-    }
-
-    // Backlog the message to be processed once we are approved.
-    fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
-        trace!(
-            "{} Not approved yet. Delaying message handling: {:?}",
-            self,
-            msg
-        );
-        self.msg_backlog.push(msg);
     }
 
     fn handle_node_approval(&mut self, gen_pfx_info: GenesisPfxInfo) -> Transition {
@@ -323,11 +194,7 @@ impl ProvingNode {
             self
         );
 
-        Transition::IntoNode { gen_pfx_info }
-    }
-
-    fn handle_ack_response(&mut self, ack: Ack) {
-        self.ack_mgr.receive(ack)
+        Transition::IntoEstablishingNode { gen_pfx_info }
     }
 
     fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
@@ -341,6 +208,11 @@ impl ProvingNode {
         } else {
             true
         }
+    }
+
+    #[cfg(feature = "mock_base")]
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
     }
 }
 
@@ -359,6 +231,10 @@ impl Base for ProvingNode {
         } else {
             false
         }
+    }
+
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
@@ -386,13 +262,7 @@ impl Base for ProvingNode {
     }
 
     fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) -> Transition {
-        if let Some(&PeerState::CrustConnecting) = self.peer_mgr.get_peer(&pub_id).map(Peer::state)
-        {
-            debug!("{} Failed to connect to peer {:?}.", self, pub_id);
-        }
-
-        let _ = self.dropped_peer(&pub_id);
-        Transition::Stay
+        RelocatedNotEstablished::handle_connect_failure(self, pub_id)
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
@@ -414,32 +284,60 @@ impl Base for ProvingNode {
         Relocated::handle_connection_info_prepared(self, result_token, result)
     }
 
-    fn handle_new_message(
+    fn handle_direct_message(
         &mut self,
+        msg: DirectMessage,
         pub_id: PublicId,
-        bytes: CrustBytes,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        let result = match from_crust_bytes(bytes) {
-            Ok(Message::Direct(msg)) => self
-                .handle_direct_message(msg, pub_id, outbox)
-                .map(|_| Transition::Stay),
-            Ok(Message::Hop(msg)) => self.handle_hop_message(msg, pub_id, outbox),
-            Err(error) => Err(error),
-        };
+        _outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        self.check_direct_message_sender(&msg, &pub_id)?;
 
-        match result {
-            Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
-            Err(err) => {
-                debug!("{} - {:?}", self, err);
-                Transition::Stay
+        use crate::messages::DirectMessage::*;
+        match msg {
+            ResourceProof {
+                seed,
+                target_size,
+                difficulty,
+            } => {
+                let log_ident = format!("{}", self);
+                self.resource_prover.handle_request(
+                    pub_id,
+                    seed,
+                    target_size,
+                    difficulty,
+                    log_ident,
+                );
+            }
+            ResourceProofResponseReceipt => {
+                if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
+                    self.send_direct_message(pub_id, msg);
+                }
+            }
+            BootstrapRequest(_) => self.handle_bootstrap_request(pub_id),
+            _ => {
+                debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }
+
+        Ok(Transition::Stay)
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
+            Some(&PeerState::Connected) | Some(&PeerState::Proxy) => (),
+            _ => return Err(RoutingError::UnknownConnection(pub_id)),
+        }
+
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            self.dispatch_routing_message(routing_msg, outbox)
+        } else {
+            Ok(Transition::Stay)
+        }
     }
 }
 
@@ -472,7 +370,11 @@ impl Bootstrapped for ProvingNode {
 }
 
 impl Relocated for ProvingNode {
-    fn peer_mgr(&mut self) -> &mut PeerManager {
+    fn peer_mgr(&self) -> &PeerManager {
+        &self.peer_mgr
+    }
+
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
         &mut self.peer_mgr
     }
 
@@ -531,26 +433,27 @@ impl Relocated for ProvingNode {
     fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
         self.notified_nodes.insert(pub_id)
     }
+
+    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
+        self.notified_nodes.remove(pub_id)
+    }
 }
 
-impl Unapproved for ProvingNode {
+impl BootstrappedNotEstablished for ProvingNode {
     const SEND_ACK: bool = true;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        if let Some(pub_id) = self.peer_mgr.get_peer_by_name(proxy_name).map(Peer::pub_id) {
-            if self.peer_mgr.is_connected(pub_id) {
-                Ok(pub_id)
-            } else {
-                error!(
-                    "{} Unable to find connection to proxy in PeerManager.",
-                    self
-                );
-                Err(RoutingError::ProxyConnectionNotFound)
-            }
-        } else {
-            error!("{} Unable to find proxy in PeerManager.", self);
-            Err(RoutingError::ProxyConnectionNotFound)
-        }
+        proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
+    }
+}
+
+impl RelocatedNotEstablished for ProvingNode {
+    fn our_prefix(&self) -> &Prefix<XorName> {
+        &self.joining_prefix
+    }
+
+    fn push_message_to_backlog(&mut self, msg: RoutingMessage) {
+        self.msg_backlog.push(msg)
     }
 }
 

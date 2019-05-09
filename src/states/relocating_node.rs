@@ -7,17 +7,17 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    common::{from_crust_bytes, unrelocated, Base, Bootstrapped, Unapproved},
-    Bootstrapping, BootstrappingTargetState,
+    common::{proxied, Base, Bootstrapped, BootstrappedNotEstablished},
+    BootstrappingPeer, TargetState,
 };
 use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
     chain::SectionInfo,
-    error::{Result, RoutingError},
+    error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
-    messages::{HopMessage, Message, MessageContent, RoutingMessage},
+    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     resource_prover::RESOURCE_PROOF_DURATION,
     routing_message_filter::RoutingMessageFilter,
@@ -27,7 +27,7 @@ use crate::{
     timer::Timer,
     types::{MessageId, RoutingActionSender},
     xor_name::XorName,
-    CrustBytes, CrustEvent, CrustEventSender, Service,
+    CrustEvent, CrustEventSender, Service,
 };
 use log::LogLevel;
 use std::{
@@ -38,6 +38,16 @@ use std::{
 
 /// Total time to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
+
+pub struct RelocatingNodeDetails {
+    pub action_sender: RoutingActionSender,
+    pub cache: Box<Cache>,
+    pub crust_service: Service,
+    pub full_id: FullId,
+    pub min_section_size: usize,
+    pub proxy_pub_id: PublicId,
+    pub timer: Timer,
+}
 
 pub struct RelocatingNode {
     action_sender: RoutingActionSender,
@@ -56,36 +66,30 @@ pub struct RelocatingNode {
 }
 
 impl RelocatingNode {
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_bootstrapping(
-        action_sender: RoutingActionSender,
-        cache: Box<Cache>,
-        crust_service: Service,
-        full_id: FullId,
-        min_section_size: usize,
-        proxy_pub_id: PublicId,
-        timer: Timer,
-    ) -> Option<Self> {
-        let relocation_timer_token = timer.schedule(RELOCATE_TIMEOUT);
+    pub fn from_bootstrapping(details: RelocatingNodeDetails) -> Result<Self, RoutingError> {
+        let relocation_timer_token = details.timer.schedule(RELOCATE_TIMEOUT);
         let mut node = Self {
-            action_sender: action_sender,
+            action_sender: details.action_sender,
             ack_mgr: AckManager::new(),
-            crust_service: crust_service,
-            full_id: full_id,
-            cache: cache,
-            min_section_size: min_section_size,
-            proxy_pub_id: proxy_pub_id,
+            crust_service: details.crust_service,
+            full_id: details.full_id,
+            cache: details.cache,
+            min_section_size: details.min_section_size,
+            proxy_pub_id: details.proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
-            relocation_timer_token: relocation_timer_token,
-            timer: timer,
+            relocation_timer_token,
+            timer: details.timer,
         };
 
-        if let Err(error) = node.relocate() {
-            error!("{} Failed to start relocation: {:?}", node, error);
-            None
-        } else {
-            debug!("{} State changed to RelocatingNode.", node);
-            Some(node)
+        match node.relocate() {
+            Ok(()) => {
+                debug!("{} State changed to RelocatingNode.", node);
+                Ok(node)
+            }
+            Err(error) => {
+                error!("{} Failed to start relocation: {:?}", node, error);
+                Err(error)
+            }
         }
     }
 
@@ -96,18 +100,19 @@ impl RelocatingNode {
         new_full_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
         outbox: &mut EventBox,
-    ) -> State {
+    ) -> Result<State, RoutingError> {
         let service = Self::start_new_crust_service(
             self.crust_service,
             *new_full_id.public_id(),
             crust_rx,
             crust_sender,
         );
-        let target_state = BootstrappingTargetState::ProvingNode {
+        let target_state = TargetState::ProvingNode {
             old_full_id: self.full_id,
             our_section: our_section,
         };
-        if let Some(bootstrapping) = Bootstrapping::new(
+
+        match BootstrappingPeer::new(
             self.action_sender,
             self.cache,
             target_state,
@@ -116,10 +121,11 @@ impl RelocatingNode {
             self.min_section_size,
             self.timer,
         ) {
-            State::Bootstrapping(bootstrapping)
-        } else {
-            outbox.send_event(Event::RestartRequired);
-            State::Terminated
+            Ok(peer) => Ok(State::BootstrappingPeer(peer)),
+            Err(error) => {
+                outbox.send_event(Event::RestartRequired);
+                Err(error)
+            }
         }
     }
 
@@ -153,18 +159,6 @@ impl RelocatingNode {
         old_crust_service
     }
 
-    fn handle_hop_message(&mut self, hop_msg: HopMessage, pub_id: PublicId) -> Result<Transition> {
-        if self.proxy_pub_id != pub_id {
-            return Err(RoutingError::UnknownConnection(pub_id));
-        }
-
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
-            Ok(self.dispatch_routing_message(routing_msg))
-        } else {
-            Ok(Transition::Stay)
-        }
-    }
-
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
         use crate::messages::MessageContent::*;
         match routing_msg.content {
@@ -194,7 +188,7 @@ impl RelocatingNode {
         Transition::Stay
     }
 
-    fn relocate(&mut self) -> Result<()> {
+    fn relocate(&mut self) -> Result<(), RoutingError> {
         let request_content = MessageContent::Relocate {
             message_id: MessageId::new(),
         };
@@ -260,6 +254,10 @@ impl Base for RelocatingNode {
         }
     }
 
+    fn min_section_size(&self) -> usize {
+        self.min_section_size
+    }
+
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.relocation_timer_token == token {
             info!(
@@ -285,33 +283,31 @@ impl Base for RelocatingNode {
         }
     }
 
-    fn handle_new_message(
+    fn handle_direct_message(
         &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
+        msg: DirectMessage,
+        _: PublicId,
         _: &mut EventBox,
-    ) -> Transition {
-        let result = match from_crust_bytes(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id),
-            Ok(message) => {
-                debug!("{} - Unhandled new message: {:?}", self, message);
-                Ok(Transition::Stay)
-            }
-            Err(error) => Err(error),
-        };
-
-        match result {
-            Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
-            Err(error) => {
-                debug!("{} - {:?}", self, error);
-                Transition::Stay
-            }
-        }
+    ) -> Result<Transition, RoutingError> {
+        debug!("{} - Unhandled direct message: {:?}", self, msg);
+        Ok(Transition::Stay)
     }
 
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
+    fn handle_hop_message(
+        &mut self,
+        hop_msg: HopMessage,
+        pub_id: PublicId,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        if self.proxy_pub_id != pub_id {
+            return Err(RoutingError::UnknownConnection(pub_id));
+        }
+
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+            Ok(self.dispatch_routing_message(routing_msg))
+        } else {
+            Ok(Transition::Stay)
+        }
     }
 }
 
@@ -333,7 +329,7 @@ impl Bootstrapped for RelocatingNode {
         src_section: Option<SectionInfo>,
         route: u8,
         expires_at: Option<Instant>,
-    ) -> Result<()> {
+    ) -> Result<(), RoutingError> {
         self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
     }
 
@@ -346,11 +342,11 @@ impl Bootstrapped for RelocatingNode {
     }
 }
 
-impl Unapproved for RelocatingNode {
+impl BootstrappedNotEstablished for RelocatingNode {
     const SEND_ACK: bool = true;
 
-    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId> {
-        unrelocated::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
+    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
+        proxied::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }
 }
 

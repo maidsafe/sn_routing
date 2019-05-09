@@ -19,7 +19,7 @@ use crate::messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
 use crate::outbox::{EventBox, EventBuf};
 use crate::routing_table::Authority;
 use crate::state_machine::{State, StateMachine};
-use crate::states::{Bootstrapping, BootstrappingTargetState};
+use crate::states::{BootstrappingPeer, TargetState};
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
 use crate::{BootstrapConfig, MIN_SECTION_SIZE};
@@ -72,16 +72,17 @@ impl Client {
 
         StateMachine::new(
             move |action_sender, crust_service, timer, _outbox2| {
-                Bootstrapping::new(
+                BootstrappingPeer::new(
                     action_sender,
                     Box::new(NullCache),
-                    BootstrappingTargetState::Client { msg_expiry_dur },
+                    TargetState::Client { msg_expiry_dur },
                     crust_service,
                     full_id,
                     min_section_size,
                     timer,
                 )
-                .map_or(State::Terminated, State::Bootstrapping)
+                .map(State::BootstrappingPeer)
+                .unwrap_or(State::Terminated)
             },
             pub_id,
             bootstrap_config,

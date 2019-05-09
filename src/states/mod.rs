@@ -6,16 +6,18 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod bootstrapping;
+mod bootstrapping_peer;
 mod client;
 pub mod common;
+mod establishing_node;
 mod node;
 mod proving_node;
 mod relocating_node;
 
 pub use self::{
-    bootstrapping::{Bootstrapping, TargetState as BootstrappingTargetState},
+    bootstrapping_peer::{BootstrappingPeer, TargetState},
     client::{Client, RATE_EXCEED_RETRY},
+    establishing_node::EstablishingNode,
     node::Node,
     proving_node::ProvingNode,
     relocating_node::RelocatingNode,
@@ -38,8 +40,30 @@ pub use self::{
 //        │   └────────────────┘ └─────────────┘
 //        │                        │
 //        │                        │
+//        │                        ▼
+//        │                      ┌──────────────────┐
+//        │                      │ EstablishingNode │
+//        │                      └──────────────────┘
+//        │                        │
+//        │                        │
 //        ▼                        ▼
 // ┌────────┐                    ┌──────┐
 // │ Client │                    │ Node │
 // └────────┘                    └──────┘
+//
+//
+// # Common traits
+//                              Bootstrapping
+//                              │   Client
+//                              │   │   RelocatingNode
+//                              │   │   │   ProvingNode
+//                              │   │   │   │   EstablishingNode
+//                              │   │   │   │   │   Node
+//                              │   │   │   │   │   │
+// Base                         *   *   *   *   *   *
+// Bootstrapped                     *   *   *   *   *
+// BootstrappedNotEstablished       *   *   *   *
+// Relocated                                *   *   *
+// RelocatedNotEstablished                  *   *
+// Approved                                     *   *
 //

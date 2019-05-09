@@ -22,7 +22,7 @@ use crate::messages::{
 use crate::outbox::{EventBox, EventBuf};
 use crate::routing_table::Authority;
 use crate::state_machine::{State, StateMachine};
-use crate::states::{self, Bootstrapping, BootstrappingTargetState};
+use crate::states::{self, BootstrappingPeer, TargetState};
 use crate::types::{MessageId, RoutingActionSender};
 use crate::xor_name::XorName;
 #[cfg(feature = "mock_base")]
@@ -141,17 +141,9 @@ impl NodeBuilder {
         StateMachine::new(
             move |action_sender, crust_service, timer, outbox2| {
                 if self.first {
-                    if let Some(state) = states::Node::first(
-                        self.cache,
-                        crust_service,
-                        full_id,
-                        min_section_size,
-                        timer,
-                    ) {
-                        State::Node(state)
-                    } else {
-                        State::Terminated
-                    }
+                    states::Node::first(self.cache, crust_service, full_id, min_section_size, timer)
+                        .map(State::Node)
+                        .unwrap_or(State::Terminated)
                 } else if !dev_config.allow_multiple_lan_nodes && crust_service.has_peers_on_lan() {
                     error!(
                         "More than one routing node found on LAN. Currently this is not supported."
@@ -159,16 +151,17 @@ impl NodeBuilder {
                     outbox2.send_event(Event::Terminated);
                     State::Terminated
                 } else {
-                    Bootstrapping::new(
+                    BootstrappingPeer::new(
                         action_sender,
                         self.cache,
-                        BootstrappingTargetState::RelocatingNode,
+                        TargetState::RelocatingNode,
                         crust_service,
                         full_id,
                         min_section_size,
                         timer,
                     )
-                    .map_or(State::Terminated, State::Bootstrapping)
+                    .map(State::BootstrappingPeer)
+                    .unwrap_or(State::Terminated)
                 }
             },
             pub_id,
@@ -616,10 +609,10 @@ impl Node {
     }
 
     /// Indicates if there are any pending observations in the parsec object
-    pub fn has_unconsensused_observations(&self, filter_opaque: bool) -> bool {
+    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
         self.machine
             .current()
-            .has_unconsensused_observations(filter_opaque)
+            .has_unpolled_observations(filter_opaque)
     }
 
     /// Indicates if a given `PublicId` is in the peer manager as a routing peer
