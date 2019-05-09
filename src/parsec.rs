@@ -172,7 +172,7 @@ impl ParsecMap {
                 .our_unpolled_observations()
                 .any(Observation::is_opaque)
         } else {
-            parsec.has_unconsensused_observations()
+            parsec.has_unpolled_observations()
         }
     }
 }
