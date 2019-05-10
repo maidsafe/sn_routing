@@ -434,6 +434,11 @@ impl RelocatedNotEstablished for ProvingNode {
 
 impl Display for ProvingNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "ProvingNode({}())", self.name())
+        write!(
+            formatter,
+            "ProvingNode({}({:b}))",
+            self.name(),
+            self.our_prefix()
+        )
     }
 }
