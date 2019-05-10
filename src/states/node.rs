@@ -748,7 +748,10 @@ impl Node {
         // to our RT.
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
-        let is_connected = match self.peer_mgr.handle_candidate_approval(&new_pub_id) {
+        let is_connected = match self
+            .peer_mgr
+            .handle_candidate_approval(&new_pub_id, &self.log_ident())
+        {
             Ok(is_connected) => is_connected,
             Err(_) => {
                 let src = Authority::ManagedNode(*self.name());
@@ -792,9 +795,8 @@ impl Node {
     }
 
     fn init_parsec(&mut self) {
-        let log_ident = format!("{}", self);
         self.parsec_map
-            .init(self.full_id.clone(), &self.gen_pfx_info, &log_ident)
+            .init(self.full_id.clone(), &self.gen_pfx_info, &self.log_ident())
     }
 
     fn handle_resource_proof_response(
@@ -1037,7 +1039,8 @@ impl Node {
             return Ok(());
         }
 
-        self.peer_mgr.handle_bootstrap_request(&pub_id);
+        self.peer_mgr
+            .handle_bootstrap_request(&pub_id, &self.log_ident());
         let _ = self.dropped_clients.remove(&pub_id);
         self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(Ok(())));
         Ok(())
@@ -1100,6 +1103,7 @@ impl Node {
             target_size,
             difficulty,
             seed.clone(),
+            &self.log_ident(),
         ) {
             Ok(true) => {
                 let direct_message = DirectMessage::ResourceProof {
@@ -1411,7 +1415,7 @@ impl Node {
     }
 
     fn send_candidate_approval(&mut self) {
-        let (new_id, client_auth) = match self.peer_mgr.verified_candidate_info() {
+        let (new_id, client_auth) = match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
             Err(_) => {
                 trace!("{} No candidate for which to send CandidateApproval.", self);
                 return;
@@ -1439,8 +1443,7 @@ impl Node {
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
         trace!("{} Vote for Event {:?}", self, event);
-        let log_ident = format!("{}", self);
-        self.parsec_map.vote_for(event, &log_ident)
+        self.parsec_map.vote_for(event, &self.log_ident())
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -1830,7 +1833,7 @@ impl Base for Node {
             self.send_candidate_approval();
         } else if self.candidate_status_token == token {
             self.candidate_status_token = self.timer.schedule(CANDIDATE_STATUS_INTERVAL);
-            self.peer_mgr.show_candidate_status();
+            self.peer_mgr.show_candidate_status(&self.log_ident());
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
@@ -2085,7 +2088,8 @@ impl Base for Node {
             match self.check_valid_client_message(&ip, hop_msg.content.routing_message()) {
                 Ok(added_bytes) => {
                     self.proxy_load_amount += added_bytes;
-                    self.peer_mgr.add_client_traffic(&pub_id, added_bytes);
+                    self.peer_mgr
+                        .add_client_traffic(&pub_id, added_bytes, &self.log_ident());
                 }
                 Err(e) => hop_name_result = Err(e),
             }

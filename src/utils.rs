@@ -6,15 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::routing_table::Xorable;
-use crate::xor_name::XorName;
-use crate::Prefix;
+use crate::{routing_table::Xorable, xor_name::XorName, Prefix};
 use itertools::Itertools;
 use safe_crypto;
-use std::collections::BTreeSet;
-use std::fmt::{self, Display};
-use std::iter;
-use std::time::Duration;
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Display, Formatter},
+    iter,
+    time::Duration,
+};
 
 /// Display a "number" to the given number of decimal places
 pub trait DisplayDuration {
@@ -34,12 +34,28 @@ pub struct DisplayDurObj {
 }
 
 impl Display for DisplayDurObj {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut secs = self.dur.as_secs();
         if self.dur.subsec_nanos() >= 500_000_000 {
             secs += 1;
         }
         write!(f, "{} seconds", secs)
+    }
+}
+
+/// Identified or node/client for logging purposes.
+#[derive(Clone)]
+pub struct LogIdent(String);
+
+impl LogIdent {
+    pub fn new<T: Display + ?Sized>(node: &T) -> Self {
+        LogIdent(format!("{}", node))
+    }
+}
+
+impl Display for LogIdent {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "{}", self.0)
     }
 }
 

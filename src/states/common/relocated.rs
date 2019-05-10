@@ -330,7 +330,7 @@ pub trait Relocated: Bootstrapped {
             return Ok(());
         }
 
-        let log_ident = format!("{}", self);
+        let log_ident = self.log_ident();
         let our_pub_info = match self.peer_mgr().get_peer(&their_public_id).map(Peer::state) {
             Some(PeerState::ConnectionInfoReady(our_priv_info)) => {
                 our_priv_info.to_pub_connection_info()
@@ -423,7 +423,8 @@ pub trait Relocated: Bootstrapped {
     }
 
     fn add_node(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
-        match self.peer_mgr_mut().set_node(pub_id) {
+        let log_ident = self.log_ident();
+        match self.peer_mgr_mut().set_node(pub_id, &log_ident) {
             Ok(true) => {
                 info!("{} - Added peer {} as node.", self, pub_id);
                 self.send_event(Event::NodeAdded(*pub_id.name()), outbox);

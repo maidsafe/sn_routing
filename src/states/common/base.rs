@@ -15,6 +15,7 @@ use crate::{
     outbox::EventBox,
     routing_table::Authority,
     state_machine::Transition,
+    utils::LogIdent,
     xor_name::XorName,
     CrustBytes, CrustEvent, Service,
 };
@@ -27,6 +28,10 @@ pub trait Base: Display {
     fn full_id(&self) -> &FullId;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
+
+    fn log_ident(&self) -> LogIdent {
+        LogIdent::new(self)
+    }
 
     fn handle_direct_message(
         &mut self,

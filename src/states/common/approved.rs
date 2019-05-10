@@ -77,7 +77,7 @@ pub trait Approved: Relocated {
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        let log_ident = format!("{}", self);
+        let log_ident = self.log_ident();
         let (response, poll) =
             self.parsec_map_mut()
                 .handle_request(msg_version, par_request, pub_id, &log_ident);
@@ -100,7 +100,7 @@ pub trait Approved: Relocated {
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        let log_ident = format!("{}", self);
+        let log_ident = self.log_ident();
         if self
             .parsec_map_mut()
             .handle_response(msg_version, par_response, pub_id, &log_ident)

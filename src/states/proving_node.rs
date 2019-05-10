@@ -224,7 +224,7 @@ impl Base for ProvingNode {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        let log_ident = format!("{}", self);
+        let log_ident = self.log_ident();
         if let Some(transition) = self
             .resource_prover
             .handle_timeout(token, log_ident, outbox)
@@ -285,7 +285,7 @@ impl Base for ProvingNode {
                 target_size,
                 difficulty,
             } => {
-                let log_ident = format!("{}", self);
+                let log_ident = self.log_ident();
                 self.resource_prover.handle_request(
                     pub_id,
                     seed,

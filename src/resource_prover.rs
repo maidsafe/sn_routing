@@ -6,25 +6,29 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::ack_manager::ACK_TIMEOUT;
-use crate::action::Action;
-use crate::event::Event;
-use crate::id::PublicId;
-use crate::messages::{DirectMessage, MAX_PART_LEN};
-use crate::outbox::EventBox;
-use crate::signature_accumulator::ACCUMULATION_TIMEOUT;
-use crate::state_machine::Transition;
-use crate::time::{Duration, Instant};
-use crate::timer::Timer;
-use crate::types::RoutingActionSender;
-use crate::utils::DisplayDuration;
+use crate::{
+    ack_manager::ACK_TIMEOUT,
+    action::Action,
+    event::Event,
+    id::PublicId,
+    messages::{DirectMessage, MAX_PART_LEN},
+    outbox::EventBox,
+    signature_accumulator::ACCUMULATION_TIMEOUT,
+    state_machine::Transition,
+    time::{Duration, Instant},
+    timer::Timer,
+    types::RoutingActionSender,
+    utils::{DisplayDuration, LogIdent},
+};
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use resource_proof::ResourceProof;
-use std::collections::HashMap;
-use std::iter::Iterator;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    iter::Iterator,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
+};
 
 /// Time (in seconds) between accepting a new candidate (i.e. accumulating an `ExpectCandidate` in
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot
@@ -93,7 +97,7 @@ impl ResourceProver {
         seed: Vec<u8>,
         target_size: usize,
         difficulty: u8,
-        log_ident: String,
+        log_ident: LogIdent,
     ) {
         if self.response_parts.is_empty() {
             info!(
@@ -218,7 +222,7 @@ impl ResourceProver {
     pub fn handle_timeout(
         &mut self,
         token: u64,
-        log_ident: String,
+        log_ident: LogIdent,
         outbox: &mut EventBox,
     ) -> Option<Transition> {
         if self.get_approval_timer_token == Some(token) {
@@ -248,7 +252,7 @@ impl ResourceProver {
         }
     }
 
-    fn handle_approval_timeout(&mut self, log_ident: String, outbox: &mut EventBox) {
+    fn handle_approval_timeout(&mut self, log_ident: LogIdent, outbox: &mut EventBox) {
         let completed = self
             .response_parts
             .values()

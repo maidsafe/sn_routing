@@ -12,6 +12,7 @@ use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
     messages::{DirectMessage, Message},
+    utils::LogIdent,
 };
 use log::LogLevel;
 #[cfg(not(feature = "mock_parsec"))]
@@ -45,7 +46,7 @@ impl ParsecMap {
         Self { map }
     }
 
-    pub fn init(&mut self, full_id: FullId, gen_pfx_info: &GenesisPfxInfo, log_ident: &str) {
+    pub fn init(&mut self, full_id: FullId, gen_pfx_info: &GenesisPfxInfo, log_ident: &LogIdent) {
         if let Entry::Vacant(entry) = self.map.entry(*gen_pfx_info.first_info.version()) {
             let _ = entry.insert(create(full_id, gen_pfx_info));
             info!(
@@ -60,7 +61,7 @@ impl ParsecMap {
         msg_version: u64,
         request: Request,
         pub_id: id::PublicId,
-        log_ident: &str,
+        log_ident: &LogIdent,
     ) -> (Option<Message>, bool) {
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
@@ -86,7 +87,7 @@ impl ParsecMap {
         msg_version: u64,
         response: Response,
         pub_id: id::PublicId,
-        log_ident: &str,
+        log_ident: &LogIdent,
     ) -> bool {
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
@@ -108,7 +109,7 @@ impl ParsecMap {
         )))
     }
 
-    pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &str) {
+    pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &LogIdent) {
         if let Some(ref mut parsec) = self.map.values_mut().last() {
             let obs = match event.into_obs() {
                 Err(_) => {
