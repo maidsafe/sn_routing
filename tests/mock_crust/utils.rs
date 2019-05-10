@@ -332,9 +332,24 @@ impl Cache for TestCache {
 
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
+    let dummy = |_nodes: &[TestNode]| false;
+    poll_all_until(nodes, clients, &dummy)
+}
+
+/// Process all events. Returns whether there were any events.
+/// should_stop: can be used for an early return from poll_all
+pub fn poll_all_until(
+    nodes: &mut [TestNode],
+    clients: &mut [TestClient],
+    should_stop: &Fn(&[TestNode]) -> bool,
+) -> bool {
     assert!(!nodes.is_empty());
     let mut result = false;
     for _ in 0..MAX_POLL_CALLS {
+        if should_stop(nodes) {
+            return result;
+        }
+
         let mut handled_message = false;
         nodes[0].handle.deliver_messages();
         if BALANCED_POLLING {
@@ -361,8 +376,23 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
+    let dummy = |_nodes: &[TestNode]| false;
+    poll_and_resend_until(nodes, clients, &dummy)
+}
+
+/// Polls and processes all events, until there are no unacknowledged messages left.
+/// should_stop: can be used for an early return from poll_and_resend
+pub fn poll_and_resend_until(
+    nodes: &mut [TestNode],
+    clients: &mut [TestClient],
+    should_stop: &Fn(&[TestNode]) -> bool,
+) {
     let mut fired_connecting_peer_timeout = false;
     for i in 0..MAX_POLL_CALLS {
+        if should_stop(nodes) {
+            return;
+        }
+
         let node_busy = |node: &TestNode| {
             // after MAX_POLL_CALLS / 2 only filter for opaque events
             // to avoid stalling the test due to lack of parsec voters.
@@ -370,7 +400,7 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
                 || node.inner.has_unpolled_observations(i > MAX_POLL_CALLS / 2)
         };
         let client_busy = |client: &TestClient| client.inner.has_unacked_msg();
-        if poll_all(nodes, clients)
+        if poll_all_until(nodes, clients, should_stop)
             || nodes.iter().any(node_busy)
             || clients.iter().any(client_busy)
         {

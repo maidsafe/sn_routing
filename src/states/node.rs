@@ -1274,7 +1274,7 @@ impl Node {
         &mut self,
         vote: &ExpectCandidatePayload,
     ) -> Option<(XorName, XorName)> {
-        if self.peer_mgr.has_candidate() {
+        if self.peer_mgr.has_resource_proof_candidate() {
             return None;
         }
 
@@ -2161,6 +2161,10 @@ impl Node {
         self.peer_mgr
             .get_peer(pub_id)
             .map_or(false, Peer::is_routing)
+    }
+
+    pub fn has_resource_proof_candidate(&self) -> bool {
+        self.peer_mgr.has_resource_proof_candidate()
     }
 }
 
