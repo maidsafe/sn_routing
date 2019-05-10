@@ -275,12 +275,15 @@ enum Candidate {
         challenge: Option<ResourceProofChallenge>,
         passed_our_challenge: bool,
     },
+    AcceptedWaitingSectionInfo {
+        new_pub_id: PublicId,
+    },
 }
 
 impl Candidate {
     fn is_expired(&self) -> bool {
         match *self {
-            Candidate::None => false,
+            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => false,
             Candidate::AcceptedForResourceProof {
                 res_proof_start, ..
             }
@@ -430,7 +433,11 @@ impl PeerManager {
                 );
                 return Err(RoutingError::UnknownCandidate);
             }
-            _ => return Err(RoutingError::UnknownCandidate),
+            Candidate::None
+            | Candidate::AcceptedForResourceProof { .. }
+            | Candidate::AcceptedWaitingSectionInfo { .. } => {
+                return Err(RoutingError::UnknownCandidate)
+            }
         };
 
         if !self.is_connected(new_pub_id) {
@@ -459,6 +466,11 @@ impl PeerManager {
             } if pub_id == *new_pub_id => (),
             _ => return Err(RoutingError::UnknownCandidate),
         }
+
+        // Do not accept candidate until we complete our current one.
+        self.candidate = Candidate::AcceptedWaitingSectionInfo {
+            new_pub_id: *new_pub_id,
+        };
 
         if let Some(peer) = self.peers.get_mut(new_pub_id) {
             let is_connected = peer.is_connected();
@@ -588,6 +600,11 @@ impl PeerManager {
                 }
                 trace!("{}and is not yet approved by our section.", log_prefix);
             }
+            Candidate::AcceptedWaitingSectionInfo { new_pub_id } => trace!(
+                "{}{} candidate waits for its SectionInfo.",
+                log_prefix,
+                new_pub_id
+            ),
         }
     }
 
@@ -648,7 +665,7 @@ impl PeerManager {
     pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
         let remove_candidate = if self.candidate.is_expired() {
             match self.candidate {
-                Candidate::None => None,
+                Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => None,
                 Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => Some(*old_pub_id),
                 Candidate::ResourceProof { ref new_pub_id, .. } => Some(*new_pub_id),
             }
@@ -972,14 +989,23 @@ impl PeerManager {
     }
 
     // Forget about the current candidate
-    pub fn remove_candidate(&mut self) {
+    pub fn reset_candidate(&mut self) {
         self.candidate = Candidate::None;
+    }
+
+    // Forget about the current candidate
+    pub fn reset_candidate_if_member(&mut self, members: &BTreeSet<PublicId>) {
+        if let Candidate::AcceptedWaitingSectionInfo { ref new_pub_id } = self.candidate {
+            if members.contains(new_pub_id) {
+                self.candidate = Candidate::None;
+            }
+        }
     }
 
     /// Removes the given peer. Returns whether the peer was actually present.
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
         let remove_candidate = match self.candidate {
-            Candidate::None => false,
+            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => false,
             Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => {
                 // only consider candidate cleanup via old_id if candidate is also expired.
                 // else candidate may simply be restarting.

@@ -402,7 +402,7 @@ impl Node {
             completed_events,
         } = self.chain.finalise_prefix_change()?;
         self.gen_pfx_info = gen_pfx_info;
-        self.peer_mgr.remove_candidate();
+        self.peer_mgr.reset_candidate();
         self.init_parsec(); // We don't reset the chain on prefix change.
 
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
@@ -2380,6 +2380,8 @@ impl Approved for Node {
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
+        } else {
+            self.peer_mgr.reset_candidate_if_member(sec_info.members());
         }
 
         let self_sec_update = sec_info.prefix().matches(self.name());
