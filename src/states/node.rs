@@ -51,7 +51,7 @@ use std::{
     cmp,
     collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
-    iter,
+    iter, mem,
     net::{IpAddr, SocketAddr},
 };
 
@@ -76,9 +76,10 @@ pub struct NodeDetails {
     pub cache: Box<Cache>,
     pub chain: Chain,
     pub crust_service: Service,
+    pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_queue: VecDeque<RoutingMessage>,
+    pub msg_backlog: Vec<RoutingMessage>,
     pub parsec_map: ParsecMap,
     pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -154,9 +155,10 @@ impl Node {
             cache,
             chain,
             crust_service,
+            event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
-            msg_queue: VecDeque::new(),
+            msg_backlog: Vec::new(),
             parsec_map,
             peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -179,13 +181,14 @@ impl Node {
     }
 
     pub fn from_establishing_node(
-        details: NodeDetails,
+        mut details: NodeDetails,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
+        let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
         let mut node = Self::new(details, false);
-        node.init(sec_info, old_pfx, outbox)?;
+        node.init(sec_info, old_pfx, event_backlog, outbox)?;
         Ok(node)
     }
 
@@ -205,7 +208,7 @@ impl Node {
             crust_service: details.crust_service,
             full_id: details.full_id.clone(),
             is_first_node,
-            msg_queue: details.msg_queue,
+            msg_queue: details.msg_backlog.into_iter().collect(),
             peer_mgr: details.peer_mgr,
             response_cache: details.cache,
             routing_msg_filter: details.routing_msg_filter,
@@ -255,6 +258,7 @@ impl Node {
         &mut self,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
+        event_backlog: Vec<Event>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         debug!("{} - State changed to Node.", self);
@@ -276,7 +280,10 @@ impl Node {
             self.vote_for_event(event);
         });
 
-        outbox.send_event(Event::Connected);
+        // Send `Event::Connected` first and then any backlogged events from previous states.
+        for event in iter::once(Event::Connected).chain(event_backlog) {
+            self.send_event(event, outbox);
+        }
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let _ = self.handle_section_info_event(sec_info, old_pfx, outbox)?;
@@ -2284,6 +2291,10 @@ impl Relocated for Node {
             self.disconnect_peer(pub_id);
         }
     }
+
+    fn send_event(&mut self, event: Event, outbox: &mut EventBox) {
+        outbox.send_event(event);
+    }
 }
 
 impl Approved for Node {
@@ -2359,11 +2370,11 @@ impl Approved for Node {
     ) -> Result<Transition, RoutingError> {
         if sec_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
-            outbox.send_event(Event::SectionSplit(*sec_info.prefix()));
+            self.send_event(Event::SectionSplit(*sec_info.prefix()), outbox);
             self.send_neighbour_infos();
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
-            outbox.send_event(Event::SectionMerged(*sec_info.prefix()));
+            self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
         }
 
         let self_sec_update = sec_info.prefix().matches(self.name());

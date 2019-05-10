@@ -9,6 +9,7 @@
 use super::Relocated;
 use crate::{
     error::{BootstrapResponseError, RoutingError},
+    event::Event,
     id::PublicId,
     messages::{DirectMessage, RoutingMessage},
     outbox::EventBox,
@@ -120,9 +121,9 @@ pub trait RelocatedNotEstablished: Relocated {
         self.push_message_to_backlog(msg);
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId) -> Transition {
+    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         self.log_connect_failure(&pub_id);
-        let _ = self.dropped_peer(&pub_id);
+        let _ = self.dropped_peer(&pub_id, outbox);
         Transition::Stay
     }
 
@@ -138,9 +139,12 @@ pub trait RelocatedNotEstablished: Relocated {
         self.disconnect_peer(&pub_id);
     }
 
-    fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
+    fn dropped_peer(&mut self, pub_id: &PublicId, outbox: &mut EventBox) -> bool {
         let was_proxy = self.peer_mgr().is_proxy(pub_id);
-        let _ = self.peer_mgr_mut().remove_peer(pub_id);
+
+        if self.peer_mgr_mut().remove_peer(pub_id) {
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        }
 
         if was_proxy {
             debug!("{} Lost connection to proxy {}.", self, pub_id);

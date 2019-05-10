@@ -33,6 +33,7 @@ pub trait Relocated: Bootstrapped {
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
     fn add_node_success(&mut self, pub_id: &PublicId);
     fn add_node_failure(&mut self, pub_id: &PublicId);
+    fn send_event(&mut self, event: Event, outbox: &mut EventBox);
 
     fn handle_connection_info_prepared(
         &mut self,
@@ -425,7 +426,7 @@ pub trait Relocated: Bootstrapped {
         match self.peer_mgr_mut().set_node(pub_id) {
             Ok(true) => {
                 info!("{} - Added peer {} as node.", self, pub_id);
-                outbox.send_event(Event::NodeAdded(*pub_id.name()));
+                self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
                 self.add_node_success(pub_id);
             }
             Ok(false) => {}

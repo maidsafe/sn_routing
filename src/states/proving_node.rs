@@ -59,6 +59,7 @@ pub struct ProvingNode {
     crust_service: Service,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
+    event_backlog: Vec<Event>,
     full_id: FullId,
     joining_prefix: Prefix<XorName>,
     min_section_size: usize,
@@ -91,6 +92,7 @@ impl ProvingNode {
             ack_mgr: AckManager::new(),
             cache: details.cache,
             crust_service: details.crust_service,
+            event_backlog: Vec::new(),
             full_id: details.full_id,
             min_section_size: details.min_section_size,
             msg_backlog: Vec::new(),
@@ -152,6 +154,7 @@ impl ProvingNode {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
             crust_service: self.crust_service,
+            event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info,
             min_section_size: self.min_section_size,
@@ -244,14 +247,14 @@ impl Base for ProvingNode {
         Relocated::handle_connect_success(self, pub_id, outbox)
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) -> Transition {
-        RelocatedNotEstablished::handle_connect_failure(self, pub_id)
+    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        RelocatedNotEstablished::handle_connect_failure(self, pub_id, outbox)
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         debug!("{} Received LostPeer - {}", self, pub_id);
 
-        if self.dropped_peer(&pub_id) {
+        if self.dropped_peer(&pub_id, outbox) {
             Transition::Stay
         } else {
             outbox.send_event(Event::Terminated);
@@ -411,6 +414,10 @@ impl Relocated for ProvingNode {
 
     fn add_node_failure(&mut self, pub_id: &PublicId) {
         self.disconnect_peer(pub_id)
+    }
+
+    fn send_event(&mut self, event: Event, _: &mut EventBox) {
+        self.event_backlog.push(event)
     }
 }
 

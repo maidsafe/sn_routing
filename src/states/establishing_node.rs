@@ -18,6 +18,7 @@ use crate::{
     cache::Cache,
     chain::{Chain, ExpectCandidatePayload, GenesisPfxInfo, ProvingSection, SectionInfo},
     error::RoutingError,
+    event::Event,
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, Message, RoutingMessage},
     outbox::EventBox,
@@ -40,6 +41,7 @@ pub struct EstablishingNodeDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub crust_service: Service,
+    pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub min_section_size: usize,
@@ -54,6 +56,7 @@ pub struct EstablishingNode {
     cache: Box<Cache>,
     chain: Chain,
     crust_service: Service,
+    event_backlog: Vec<Event>,
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
@@ -85,6 +88,7 @@ impl EstablishingNode {
             cache: details.cache,
             chain,
             crust_service: details.crust_service,
+            event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
             msg_backlog: details.msg_backlog,
@@ -120,9 +124,10 @@ impl EstablishingNode {
             cache: self.cache,
             chain: self.chain,
             crust_service: self.crust_service,
+            event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            msg_queue: self.msg_backlog.into_iter().collect(),
+            msg_backlog: self.msg_backlog,
             parsec_map: self.parsec_map,
             peer_mgr: self.peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
@@ -217,8 +222,8 @@ impl Base for EstablishingNode {
         Relocated::handle_connect_success(self, pub_id, outbox)
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) -> Transition {
-        RelocatedNotEstablished::handle_connect_failure(self, pub_id)
+    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        RelocatedNotEstablished::handle_connect_failure(self, pub_id, outbox)
     }
 
     fn handle_direct_message(
@@ -316,6 +321,10 @@ impl Relocated for EstablishingNode {
 
     fn add_node_failure(&mut self, pub_id: &PublicId) {
         self.disconnect_peer(pub_id)
+    }
+
+    fn send_event(&mut self, event: Event, _: &mut EventBox) {
+        self.event_backlog.push(event)
     }
 }
 
