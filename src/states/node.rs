@@ -47,8 +47,6 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
 use safe_crypto::Signature;
-#[cfg(feature = "mock_base")]
-use std::collections::BTreeMap;
 use std::{
     cmp,
     collections::{BTreeSet, VecDeque},
@@ -305,11 +303,6 @@ impl Node {
         self.crust_service.set_service_discovery_listen(true);
 
         Ok(())
-    }
-
-    #[cfg(feature = "mock_base")]
-    pub fn chain(&self) -> &Chain {
-        &self.chain
     }
 
     fn handle_routing_messages(&mut self, outbox: &mut EventBox) {
@@ -1281,7 +1274,7 @@ impl Node {
         &mut self,
         vote: &ExpectCandidatePayload,
     ) -> Option<(XorName, XorName)> {
-        if self.peer_mgr.has_candidate() {
+        if self.peer_mgr.has_resource_proof_candidate() {
             return None;
         }
 
@@ -2137,6 +2130,10 @@ impl Base for Node {
 
 #[cfg(feature = "mock_base")]
 impl Node {
+    pub fn chain(&self) -> &Chain {
+        &self.chain
+    }
+
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
@@ -2156,10 +2153,6 @@ impl Node {
         self.next_relocation_interval = interval;
     }
 
-    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
-        self.clients_rate_limiter.usage_map().clone()
-    }
-
     pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
         self.parsec_map.has_unpolled_observations(filter_opaque)
     }
@@ -2168,6 +2161,10 @@ impl Node {
         self.peer_mgr
             .get_peer(pub_id)
             .map_or(false, Peer::is_routing)
+    }
+
+    pub fn has_resource_proof_candidate(&self) -> bool {
+        self.peer_mgr.has_resource_proof_candidate()
     }
 }
 

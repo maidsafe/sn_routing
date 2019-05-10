@@ -273,11 +273,6 @@ impl RateLimiter {
             }
         }
     }
-
-    #[cfg(feature = "mock_base")]
-    pub fn usage_map(&self) -> &BTreeMap<IpAddr, u64> {
-        &self.used
-    }
 }
 
 #[cfg(all(test, feature = "mock_base"))]

@@ -342,7 +342,7 @@ impl PeerManager {
     }
 
     /// Return true if already has a candidate
-    pub fn has_candidate(&self) -> bool {
+    pub fn has_resource_proof_candidate(&self) -> bool {
         self.candidate != Candidate::None
     }
 

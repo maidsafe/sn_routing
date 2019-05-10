@@ -38,7 +38,10 @@ fn ban_malicious_client() {
     );
     let _ = poll_all(&mut nodes, &mut clients);
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
-    let banned_client_ips = nodes[0].inner.get_banned_client_ips();
+    let banned_client_ips = nodes[0]
+        .inner
+        .node_state_unchecked()
+        .get_banned_client_ips();
     assert_eq!(banned_client_ips.len(), 1);
     let ip_addr = clients[0].ip();
     assert_eq!(unwrap!(banned_client_ips.into_iter().next()), ip_addr);

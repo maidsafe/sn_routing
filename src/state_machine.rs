@@ -23,8 +23,6 @@ use crate::{
 use crate::{mock_crust, routing_table::Authority, states::common::Bootstrapped, Chain};
 use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-#[cfg(feature = "mock_base")]
-use std::{collections::BTreeMap, net::IpAddr};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Display, Formatter},
@@ -114,7 +112,7 @@ impl State {
         )
     }
 
-    fn id(&self) -> Option<PublicId> {
+    pub fn id(&self) -> Option<PublicId> {
         state_dispatch!(
             *self,
             ref state => Some(*state.id()),
@@ -122,20 +120,7 @@ impl State {
         )
     }
 
-    #[cfg(feature = "mock_base")]
-    fn chain(&self) -> Option<&Chain> {
-        match *self {
-            State::EstablishingNode(ref state) => Some(state.chain()),
-            State::Node(ref state) => Some(state.chain()),
-            State::BootstrappingPeer(_)
-            | State::Client(_)
-            | State::RelocatingNode(_)
-            | State::ProvingNode(_)
-            | State::Terminated => None,
-        }
-    }
-
-    fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         state_dispatch!(
             *self,
             ref state => state.close_group(name, count),
@@ -143,7 +128,7 @@ impl State {
         )
     }
 
-    fn min_section_size(&self) -> usize {
+    pub fn min_section_size(&self) -> usize {
         state_dispatch!(
             *self,
             ref state => state.min_section_size(),
@@ -197,22 +182,15 @@ impl Debug for State {
 
 #[cfg(feature = "mock_base")]
 impl State {
-    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
+    pub fn chain(&self) -> Option<&Chain> {
         match *self {
-            State::Node(ref state) => state.get_banned_client_ips(),
-            _ => panic!("Should be State::Node"),
-        }
-    }
-
-    pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        if let State::Node(ref mut node) = *self {
-            node.set_next_relocation_dst(dst);
-        }
-    }
-
-    pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
-        if let State::Node(ref mut node) = *self {
-            node.set_next_relocation_interval(interval);
+            State::EstablishingNode(ref state) => Some(state.chain()),
+            State::Node(ref state) => Some(state.chain()),
+            State::BootstrappingPeer(_)
+            | State::Client(_)
+            | State::RelocatingNode(_)
+            | State::ProvingNode(_)
+            | State::Terminated => None,
         }
     }
 
@@ -224,14 +202,6 @@ impl State {
             State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
             State::EstablishingNode(ref mut state) => state.get_timed_out_tokens(),
             State::Node(ref mut state) => state.get_timed_out_tokens(),
-        }
-    }
-
-    pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
-        if let State::Node(ref state) = *self {
-            Some(state.get_clients_usage())
-        } else {
-            None
         }
     }
 
@@ -247,23 +217,12 @@ impl State {
         }
     }
 
-    pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
-        if let State::Node(ref state) = *self {
-            state.is_routing_peer(pub_id)
-        } else {
-            false
-        }
-    }
-
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        match *self {
-            State::Terminated | State::BootstrappingPeer(_) => false,
-            State::Client(ref state) => state.in_authority(auth),
-            State::RelocatingNode(ref state) => state.in_authority(auth),
-            State::ProvingNode(ref state) => state.in_authority(auth),
-            State::EstablishingNode(ref state) => state.in_authority(auth),
-            State::Node(ref state) => state.in_authority(auth),
-        }
+        state_dispatch!(
+            *self,
+            ref state => state.in_authority(auth),
+            Terminated => false
+        )
     }
 
     pub fn has_unacked_msg(&self) -> bool {
@@ -562,24 +521,6 @@ impl StateMachine {
         Err(TryRecvError::Empty)
     }
 
-    pub fn id(&self) -> Option<PublicId> {
-        self.state.id()
-    }
-
-    #[cfg(feature = "mock_base")]
-    pub fn chain(&self) -> Option<&Chain> {
-        self.state.chain()
-    }
-
-    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.state.close_group(name, count)
-    }
-
-    pub fn min_section_size(&self) -> usize {
-        self.state.min_section_size()
-    }
-
-    #[cfg(feature = "mock_base")]
     /// Get reference to the current state.
     pub fn current(&self) -> &State {
         &self.state

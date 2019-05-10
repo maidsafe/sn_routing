@@ -106,6 +106,12 @@ impl AckManager {
     }
 }
 
+impl Default for AckManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ack {
     /// Compute an `Ack` from a message.
     pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {

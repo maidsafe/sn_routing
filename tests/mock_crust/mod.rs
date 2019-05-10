@@ -19,15 +19,29 @@ pub use self::utils::{
     add_connected_nodes_until_split, count_sections, create_connected_clients,
     create_connected_nodes, create_connected_nodes_until_split, current_sections, gen_bytes,
     gen_immutable_data, gen_range, gen_range_except, poll_all, poll_and_resend,
-    remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
+    poll_and_resend_until, remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
     verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
 };
+use fake_clock::FakeClock;
+use itertools::Itertools;
 use routing::mock_crust::{Endpoint, Network};
-use routing::{BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
+use routing::{test_consts, BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
 
 pub const MIN_SECTION_SIZE: usize = 3;
 
 // -----  Miscellaneous tests below  -----
+
+fn nodes_with_candidate(nodes: &[TestNode]) -> Vec<XorName> {
+    nodes
+        .iter()
+        .filter(|node| {
+            node.inner
+                .node_state_unchecked()
+                .has_resource_proof_candidate()
+        })
+        .map(TestNode::name)
+        .collect()
+}
 
 fn test_nodes(percentage_size: usize) {
     let size = MIN_SECTION_SIZE * percentage_size / 100;
@@ -52,6 +66,54 @@ fn disconnect_on_rebootstrap() {
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
     assert!(!unwrap!(nodes.last()).handle.is_connected(&nodes[1].handle));
     expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminated);
+}
+
+#[test]
+fn candidate_timeout_resource_proof() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    nodes.insert(
+        0,
+        TestNode::builder(&network)
+            .bootstrap_config(bootstrap_config)
+            .create(),
+    );
+
+    // Initiate connection until the candidate switch to ProvingNode:
+    info!("Candidate joining name: {}", nodes[0].name());
+    poll_and_resend_until(&mut nodes, &mut [], &|nodes| {
+        nodes[0].inner.is_proving_node()
+    });
+    let proving_node = nodes.remove(0);
+
+    assert!(
+        proving_node.inner.is_proving_node(),
+        "Accepted as candidate"
+    );
+
+    // Continue without the joining node until all nodes idle:
+    info!("Candidate new name: {}", proving_node.name());
+    poll_and_resend(&mut nodes, &mut []);
+
+    assert_eq!(
+        nodes.iter().map(TestNode::name).collect_vec(),
+        nodes_with_candidate(&nodes),
+        "All members of destination section accepted node as candidate"
+    );
+
+    // Continue after candidate time out:
+    FakeClock::advance_time(
+        1000 * (test_consts::RESOURCE_PROOF_DURATION_SECS
+            + test_consts::ACCUMULATION_TIMEOUT_SECS * 3),
+    );
+    poll_and_resend(&mut nodes, &mut []);
+
+    assert_eq!(
+        Vec::<XorName>::new(),
+        nodes_with_candidate(&nodes),
+        "All members have rejected the candidate"
+    );
 }
 
 #[test]
