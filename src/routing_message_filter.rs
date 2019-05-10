@@ -90,6 +90,12 @@ impl RoutingMessageFilter {
     }
 }
 
+impl Default for RoutingMessageFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn hash<T: Serialize + Debug>(msg: &T) -> Option<Digest> {
     if let Ok(msg_bytes) = serialise(msg) {
         Some(safe_crypto::hash(&msg_bytes))
