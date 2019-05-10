@@ -34,8 +34,6 @@ use safe_crypto::PublicSignKey;
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
-#[cfg(feature = "mock_base")]
-use std::net::IpAddr;
 use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
 
 // Helper macro to implement request sending methods.
@@ -595,11 +593,6 @@ impl Node {
     /// Returns this node state unwraped: assume state is Node.
     pub fn node_state_unchecked(&self) -> &crate::states::Node {
         unwrap!(self.node_state(), "Should be State::Node")
-    }
-
-    /// Returns the list of banned clients' IPs held by this node.
-    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
-        self.node_state_unchecked().get_banned_client_ips()
     }
 
     /// Returns whether the current state is `Node`.
