@@ -971,6 +971,11 @@ impl PeerManager {
         let _ = self.peers.insert(peer.pub_id, peer);
     }
 
+    // Forget about the current candidate
+    pub fn remove_candidate(&mut self) {
+        self.candidate = Candidate::None;
+    }
+
     /// Removes the given peer. Returns whether the peer was actually present.
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
         let remove_candidate = match self.candidate {

@@ -402,6 +402,7 @@ impl Node {
             completed_events,
         } = self.chain.finalise_prefix_change()?;
         self.gen_pfx_info = gen_pfx_info;
+        self.peer_mgr.remove_candidate();
         self.init_parsec(); // We don't reset the chain on prefix change.
 
         let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
@@ -417,13 +418,12 @@ impl Node {
 
         for obs in drained_obs {
             let event = match obs {
-                parsec::Observation::Add {
-                    peer_id,
-                    related_info,
-                } => NetworkEvent::Online(peer_id, serialisation::deserialise(&related_info)?),
                 parsec::Observation::Remove { peer_id, .. } => NetworkEvent::Offline(peer_id),
                 parsec::Observation::OpaquePayload(event) => event.clone(),
-                _ => continue,
+
+                parsec::Observation::Genesis(_)
+                | parsec::Observation::Add { .. }
+                | parsec::Observation::Accusation { .. } => continue,
             };
             let _ = cached_events.insert(event);
         }
@@ -433,14 +433,15 @@ impl Node {
             .iter()
             .filter(|event| match **event {
                 // Only re-vote not yet accumulated events and still relevant to our new prefix.
-                NetworkEvent::Online(pub_id, _) | NetworkEvent::Offline(pub_id) => {
+                NetworkEvent::Offline(pub_id) => {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(event)
                 }
 
-                // Only re-vote not yet accumulated events and still relevant to our new prefix.
-                NetworkEvent::ExpectCandidate(ExpectCandidatePayload { ref dst_name, .. }) => {
-                    our_pfx.matches(dst_name) && !completed_events.contains(event)
-                }
+                // Drop candidates that have not completed:
+                // Called peer_manager.remove_candidate reset the candidate so it can be shared by
+                // all nodes: Because new node may not have voted for it, Forget the votes in
+                // flight as well.
+                NetworkEvent::Online(_, _) | NetworkEvent::ExpectCandidate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
