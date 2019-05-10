@@ -23,20 +23,13 @@ pub use self::utils::{
     verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
 };
 use fake_clock::FakeClock;
+use itertools::Itertools;
 use routing::mock_crust::{Endpoint, Network};
-use routing::{Authority, BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
+use routing::{test_consts, BootstrapConfig, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
 
 pub const MIN_SECTION_SIZE: usize = 3;
 
 // -----  Miscellaneous tests below  -----
-
-fn nodes_in_authority(nodes: &[TestNode], name: &XorName) -> Vec<XorName> {
-    nodes
-        .iter()
-        .filter(|node| node.inner.in_authority(&Authority::Section(*name)))
-        .map(TestNode::name)
-        .collect()
-}
 
 fn nodes_with_candidate(nodes: &[TestNode]) -> Vec<XorName> {
     nodes
@@ -78,7 +71,7 @@ fn disconnect_on_rebootstrap() {
 #[test]
 fn candidate_timeout_resource_proof() {
     let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(
         0,
@@ -104,13 +97,16 @@ fn candidate_timeout_resource_proof() {
     poll_and_resend(&mut nodes, &mut []);
 
     assert_eq!(
-        nodes_in_authority(&nodes, &proving_node.name()),
+        nodes.iter().map(TestNode::name).collect_vec(),
         nodes_with_candidate(&nodes),
         "All members of destination section accepted node as candidate"
     );
 
     // Continue after candidate time out:
-    FakeClock::advance_time(60 * 60 * 1000);
+    FakeClock::advance_time(
+        1000 * (test_consts::RESOURCE_PROOF_DURATION_SECS
+            + test_consts::ACCUMULATION_TIMEOUT_SECS * 3),
+    );
     poll_and_resend(&mut nodes, &mut []);
 
     assert_eq!(
