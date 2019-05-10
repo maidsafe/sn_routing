@@ -572,7 +572,7 @@ impl Client {
 
     /// Returns the name of this client.
     pub fn id(&self) -> Result<PublicId, RoutingError> {
-        self.machine.id().ok_or(RoutingError::Terminated)
+        self.machine.current().id().ok_or(RoutingError::Terminated)
     }
 
     /// FIXME: Review the usage poll here

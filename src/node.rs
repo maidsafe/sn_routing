@@ -512,17 +512,17 @@ impl Node {
     /// Returns the first `count` names of the nodes in the routing table which are closest
     /// to the given one.
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.machine.close_group(name, count)
+        self.machine.current().close_group(name, count)
     }
 
     /// Returns the `PublicId` of this node.
     pub fn id(&self) -> Result<PublicId, RoutingError> {
-        self.machine.id().ok_or(RoutingError::Terminated)
+        self.machine.current().id().ok_or(RoutingError::Terminated)
     }
 
     /// Returns the minimum section size this vault is using.
     pub fn min_section_size(&self) -> usize {
-        self.machine.min_section_size()
+        self.machine.current().min_section_size()
     }
 
     fn send_action(
@@ -573,33 +573,65 @@ impl EventStepper for Node {
 impl Node {
     /// Returns the chain for this node.
     pub fn chain(&self) -> Option<&Chain> {
-        self.machine.chain()
+        self.machine.current().chain()
+    }
+
+    /// Returns this node state.
+    pub fn node_state(&self) -> Option<&crate::states::Node> {
+        match *self.machine.current() {
+            State::Node(ref state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Returns this node mut state.
+    pub fn node_state_mut(&mut self) -> Option<&mut crate::states::Node> {
+        match *self.machine.current_mut() {
+            State::Node(ref mut state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Returns this node state unwraped: assume state is Node.
+    pub fn node_state_unchecked(&self) -> &crate::states::Node {
+        unwrap!(self.node_state(), "Should be State::Node")
     }
 
     /// Returns the list of banned clients' IPs held by this node.
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
-        self.machine.current().get_banned_client_ips()
+        self.node_state_unchecked().get_banned_client_ips()
     }
 
     /// Returns whether the current state is `Node`.
     pub fn is_node(&self) -> bool {
-        if let State::Node(..) = *self.machine.current() {
-            true
-        } else {
-            false
+        self.node_state().is_some()
+    }
+
+    /// Returns whether the current state is `ProvingNode`.
+    pub fn proving_node_state(&self) -> Option<&crate::states::ProvingNode> {
+        match *self.machine.current() {
+            State::ProvingNode(ref state) => Some(state),
+            _ => None,
         }
+    }
+
+    /// Returns whether the current state is `ProvingNode`.
+    pub fn is_proving_node(&self) -> bool {
+        self.proving_node_state().is_some()
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        self.machine.current_mut().set_next_relocation_dst(dst)
+        let _ = self
+            .node_state_mut()
+            .map(|state| state.set_next_relocation_dst(dst));
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
     pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
-        self.machine
-            .current_mut()
-            .set_next_relocation_interval(interval)
+        let _ = self
+            .node_state_mut()
+            .map(|state| state.set_next_relocation_interval(interval));
     }
 
     /// Indicates if there are any pending observations in the parsec object
@@ -611,7 +643,9 @@ impl Node {
 
     /// Indicates if a given `PublicId` is in the peer manager as a routing peer
     pub fn is_routing_peer(&self, pub_id: &PublicId) -> bool {
-        self.machine.current().is_routing_peer(pub_id)
+        self.node_state()
+            .map(|state| state.is_routing_peer(pub_id))
+            .unwrap_or(false)
     }
 
     /// Checks whether there is un-acked messages.
