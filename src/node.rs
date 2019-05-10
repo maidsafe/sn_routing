@@ -520,12 +520,6 @@ impl Node {
         self.machine.id().ok_or(RoutingError::Terminated)
     }
 
-    /// Returns the chain for this node.
-    #[cfg(feature = "mock_base")]
-    pub fn chain(&self) -> Result<&Chain, RoutingError> {
-        self.machine.chain().ok_or(RoutingError::Terminated)
-    }
-
     /// Returns the minimum section size this vault is using.
     pub fn min_section_size(&self) -> usize {
         self.machine.min_section_size()
@@ -577,6 +571,11 @@ impl EventStepper for Node {
 
 #[cfg(feature = "mock_base")]
 impl Node {
+    /// Returns the chain for this node.
+    pub fn chain(&self) -> Option<&Chain> {
+        self.machine.chain()
+    }
+
     /// Returns the list of banned clients' IPs held by this node.
     pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
         self.machine.current().get_banned_client_ips()
@@ -601,11 +600,6 @@ impl Node {
         self.machine
             .current_mut()
             .set_next_relocation_interval(interval)
-    }
-
-    /// Get the rate limiter's bandwidth usage map.
-    pub fn get_clients_usage(&self) -> BTreeMap<IpAddr, u64> {
-        unwrap!(self.machine.current().get_clients_usage())
     }
 
     /// Indicates if there are any pending observations in the parsec object

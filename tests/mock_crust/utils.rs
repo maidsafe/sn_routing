@@ -168,7 +168,7 @@ impl TestNode {
 pub fn count_sections(nodes: &[TestNode]) -> usize {
     nodes
         .iter()
-        .filter_map(|n| n.inner.chain().ok())
+        .filter_map(|n| n.inner.chain())
         .flat_map(Chain::prefixes)
         .unique()
         .count()
@@ -177,7 +177,7 @@ pub fn count_sections(nodes: &[TestNode]) -> usize {
 pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
     nodes
         .iter()
-        .filter_map(|n| n.inner.chain().ok())
+        .filter_map(|n| n.inner.chain())
         .flat_map(Chain::prefixes)
         .collect()
 }

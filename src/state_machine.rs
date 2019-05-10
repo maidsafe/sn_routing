@@ -24,7 +24,7 @@ use crate::{mock_crust, routing_table::Authority, states::common::Bootstrapped, 
 use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 #[cfg(feature = "mock_base")]
-use std::{collections::BTreeMap, net::IpAddr};
+use std::net::IpAddr;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Display, Formatter},
@@ -224,14 +224,6 @@ impl State {
             State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
             State::EstablishingNode(ref mut state) => state.get_timed_out_tokens(),
             State::Node(ref mut state) => state.get_timed_out_tokens(),
-        }
-    }
-
-    pub fn get_clients_usage(&self) -> Option<BTreeMap<IpAddr, u64>> {
-        if let State::Node(ref state) = *self {
-            Some(state.get_clients_usage())
-        } else {
-            None
         }
     }
 
