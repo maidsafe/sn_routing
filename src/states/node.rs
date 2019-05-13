@@ -2481,13 +2481,134 @@ fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, Routing
 mod tests {
     use super::*;
     use crate::cache::NullCache;
-    use crate::outbox::{EventBox, EventBuf};
-    use crate::state_machine::{State, StateMachine};
     use crate::mock_crust::crust::Config;
     use crate::mock_crust::{self, Network};
+    use crate::outbox::{EventBox, EventBuf};
+    use crate::state_machine::{State, StateMachine};
+    use crate::xor_name::XOR_NAME_LEN;
+    use utils::LogIdent;
+
+    const ACCUMULATE_VOTE_COUNT: usize = 3;
+
+    struct NoteUnderTest {
+        pub machine: StateMachine,
+        pub full_id: FullId,
+        pub other_full_ids: Vec<FullId>,
+        pub other_parsec_map: Vec<ParsecMap>,
+        pub ev_buffer: EventBuf,
+        pub section_info: SectionInfo,
+    }
+
+    impl NoteUnderTest {
+        fn make_node() -> NoteUnderTest {
+            let full_ids = (0..4).map(|_| FullId::new()).collect_vec();
+            let mut ev_buffer = EventBuf::new();
+
+            let prefix = Prefix::<XorName>::default();
+            let section_info = unwrap!(SectionInfo::new(
+                full_ids.iter().map(|id| *id.public_id()).collect(),
+                prefix,
+                iter::empty()
+            ));
+
+            let gen_pfx_info = GenesisPfxInfo {
+                first_info: section_info.clone(),
+                latest_info: SectionInfo::default(),
+            };
+
+            let full_id = full_ids[0].clone();
+            let machine = make_state_machine(&full_id, &gen_pfx_info, &mut ev_buffer);
+
+            let other_full_ids = full_ids[1..4].iter().cloned().collect_vec();
+            let other_parsec_map = other_full_ids
+                .iter()
+                .map(|full_id| ParsecMap::new(full_id.clone(), &gen_pfx_info))
+                .collect_vec();
+
+            NoteUnderTest {
+                machine,
+                full_id,
+                other_full_ids,
+                other_parsec_map,
+                ev_buffer,
+                section_info,
+            }
+        }
+
+        fn node_state(&self) -> &Node {
+            match *self.machine.current() {
+                State::Node(ref state) => state,
+                _ => panic!("only testing node"),
+            }
+        }
+
+        fn n_vote_for(&mut self, count: usize, events: &[&NetworkEvent]) {
+            for event in events {
+                self.other_parsec_map
+                    .iter_mut()
+                    .take(count)
+                    .for_each(|parsec| parsec.vote_for((*event).clone(), &LogIdent::new(&0)));
+            }
+        }
+
+        fn create_gossip(&mut self) -> Result<Transition, RoutingError> {
+            let other_pub_id = *self.other_full_ids[0].public_id();
+            let message =
+                unwrap!(self.other_parsec_map[0].create_gossip(0, self.full_id.public_id()));
+
+            unwrap!(self.machine.current_mut().node_state_mut()).handle_new_deserialized_message(
+                other_pub_id,
+                message,
+                &mut self.ev_buffer,
+            )
+        }
+
+        fn n_vote_for_gossipped(
+            &mut self,
+            count: usize,
+            events: &[&NetworkEvent],
+        ) -> Result<Transition, RoutingError> {
+            self.n_vote_for(count, events);
+            self.create_gossip()
+        }
+
+        fn n_vote_for_gossipped_for_expect_candidate(
+            &mut self,
+            count: usize,
+        ) -> ExpectCandidatePayload {
+            let payload_expect = expect_candidate_payload();
+            let _ = self.n_vote_for_gossipped(
+                count,
+                &[&NetworkEvent::ExpectCandidate(payload_expect.clone())],
+            );
+            payload_expect
+        }
+
+        fn new_section_info_with(&self, new_id: &PublicId) -> SectionInfo {
+            unwrap!(SectionInfo::new(
+                self.section_info
+                    .members()
+                    .iter()
+                    .chain(Some(new_id))
+                    .cloned()
+                    .collect(),
+                *self.section_info.prefix(),
+                Some(&self.section_info)
+            ))
+        }
+
+        fn has_resource_proof_candidate(&self) -> bool {
+            self.node_state().has_resource_proof_candidate()
+        }
+
+        fn is_peer_valid(&self, public_id: &PublicId) -> bool {
+            self.node_state().chain().is_peer_valid(public_id)
+        }
+    }
 
     fn new_node_state(
-        full_id: FullId,
+        full_id: &FullId,
+        gen_pfx_info: &GenesisPfxInfo,
         min_section_size: usize,
         crust_service: Service,
         timer: Timer,
@@ -2495,18 +2616,7 @@ mod tests {
     ) -> State {
         let public_id = *full_id.public_id();
 
-        let prefix = Prefix::<XorName>::default();
-        let section_info = unwrap!(SectionInfo::new(
-            [public_id].iter().cloned().collect(),
-            prefix,
-            iter::empty()
-        ));
-
-        let gen_pfx_info = GenesisPfxInfo {
-            first_info: section_info.clone(),
-            latest_info: SectionInfo::default(),
-        };
-        let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
+        let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
         let peer_mgr = PeerManager::new(public_id, true);
         let cache = Box::new(NullCache);
@@ -2517,8 +2627,8 @@ mod tests {
             chain,
             crust_service,
             event_backlog: Vec::new(),
-            full_id,
-            gen_pfx_info,
+            full_id: full_id.clone(),
+            gen_pfx_info: gen_pfx_info.clone(),
             msg_backlog: Vec::new(),
             parsec_map,
             peer_mgr,
@@ -2526,16 +2636,20 @@ mod tests {
             timer,
         };
 
+        let section_info = gen_pfx_info.first_info.clone();
+        let prefix = *section_info.prefix();
         Node::from_establishing_node(details, section_info, prefix, outbox)
             .map(State::Node)
             .unwrap_or(State::Terminated)
     }
 
-    fn make_state_machine(outbox: &mut EventBox) -> StateMachine {
+    fn make_state_machine(
+        full_id: &FullId,
+        gen_pfx_info: &GenesisPfxInfo,
+        outbox: &mut EventBox,
+    ) -> StateMachine {
         let min_section_size = 4;
         let network = Network::new(min_section_size, None);
-
-        let full_id = FullId::new();
         let public_id = *full_id.public_id();
 
         let handle0 = network.new_service_handle(None, None);
@@ -2545,7 +2659,14 @@ mod tests {
         mock_crust::make_current(&handle1, || {
             StateMachine::new(
                 move |_action_sender, crust_service, timer, outbox2| {
-                    new_node_state(full_id, min_section_size, crust_service, timer, outbox2)
+                    new_node_state(
+                        full_id,
+                        gen_pfx_info,
+                        min_section_size,
+                        crust_service,
+                        timer,
+                        outbox2,
+                    )
                 },
                 public_id,
                 None,
@@ -2555,9 +2676,138 @@ mod tests {
         })
     }
 
+    fn expect_candidate_payload() -> ExpectCandidatePayload {
+        let old_full_id = FullId::new();
+        let proxy_id = FullId::new();
+
+        ExpectCandidatePayload {
+            old_public_id: *old_full_id.public_id(),
+            old_client_auth: Authority::Client {
+                client_id: *old_full_id.public_id(),
+                proxy_node_name: *proxy_id.public_id().name(),
+            },
+            message_id: MessageId::new(),
+            dst_name: XorName([0; XOR_NAME_LEN]),
+        }
+    }
+
+    fn online_payload() -> (PublicId, Authority<XorName>) {
+        let new_full_id = FullId::new();
+        let proxy_id = FullId::new();
+        let authority = Authority::Client {
+            client_id: *new_full_id.public_id(),
+            proxy_node_name: *proxy_id.public_id().name(),
+        };
+        (*new_full_id.public_id(), authority)
+    }
+
     #[test]
     fn construct() {
-        let mut ev_buffer = EventBuf::new();
-        let _ = make_state_machine(&mut ev_buffer);
+        let node_test = NoteUnderTest::make_node();
+
+        assert!(!node_test.has_resource_proof_candidate());
+    }
+
+    #[test]
+    // ExpectCandidate is consensused: candidate is added
+    fn accumulate_expect_candidate() {
+        let mut node_test = NoteUnderTest::make_node();
+
+        let _ = node_test.n_vote_for_gossipped_for_expect_candidate(ACCUMULATE_VOTE_COUNT);
+
+        assert!(node_test.has_resource_proof_candidate());
+    }
+
+    #[test]
+    // PurgeCandidate is consensused first: candidate is removed
+    fn accumulate_purge_candidate() {
+        let mut node_test = NoteUnderTest::make_node();
+        let payload_expect = node_test.n_vote_for_gossipped_for_expect_candidate(3);
+
+        let purge_payload = payload_expect.old_public_id;
+        let _ = node_test.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            &[&NetworkEvent::PurgeCandidate(purge_payload)],
+        );
+
+        assert!(!node_test.has_resource_proof_candidate());
+    }
+
+    #[test]
+    // Candidate is only removed as candidate when its SectionInfo is consensused
+    fn accumulate_online_candidate_only_do_not_remove_candidate() {
+        let mut node_test = NoteUnderTest::make_node();
+        let _ = node_test.n_vote_for_gossipped_for_expect_candidate(3);
+
+        let online_payload = online_payload();
+        let _ = node_test.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            &[&NetworkEvent::Online(online_payload.0, online_payload.1)],
+        );
+
+        assert!(node_test.has_resource_proof_candidate());
+        assert!(node_test.is_peer_valid(&online_payload.0));
+    }
+
+    #[test]
+    // Candidate is only removed as candidate when its SectionInfo is consensused
+    fn accumulate_online_candidate_then_section_info_remove_candidate() {
+        let mut node_test = NoteUnderTest::make_node();
+        let _ = node_test.n_vote_for_gossipped_for_expect_candidate(3);
+
+        let online_payload = online_payload();
+        let new_section_info = node_test.new_section_info_with(&online_payload.0);
+        let _ = node_test.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            &[
+                &NetworkEvent::Online(online_payload.0, online_payload.1),
+                &NetworkEvent::SectionInfo(new_section_info),
+            ],
+        );
+
+        assert!(!node_test.has_resource_proof_candidate());
+        assert!(node_test.is_peer_valid(&online_payload.0));
+    }
+
+    #[test]
+    // When Online consensused first, PurgeCandidate has no effect
+    fn accumulate_online_then_purge_candidate() {
+        let mut node_test = NoteUnderTest::make_node();
+        let payload_expect = node_test.n_vote_for_gossipped_for_expect_candidate(3);
+
+        let online_payload = online_payload();
+        let purge_payload = payload_expect.old_public_id;
+        let _ = node_test.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            &[
+                &NetworkEvent::Online(online_payload.0, online_payload.1),
+                &NetworkEvent::PurgeCandidate(purge_payload),
+            ],
+        );
+
+        assert!(node_test.has_resource_proof_candidate());
+        assert!(node_test.is_peer_valid(&online_payload.0));
+    }
+
+    #[test]
+    // When Online consensused first, PurgeCandidate has no effect
+    fn accumulate_online_then_purge_then_section_info_for_candidate() {
+        let mut node_test = NoteUnderTest::make_node();
+        let payload_expect = node_test.n_vote_for_gossipped_for_expect_candidate(3);
+
+        let online_payload = online_payload();
+        let new_section_info = node_test.new_section_info_with(&online_payload.0);
+        let purge_payload = payload_expect.old_public_id;
+        let _ = node_test.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            &[
+                &NetworkEvent::Online(online_payload.0, online_payload.1),
+                &NetworkEvent::PurgeCandidate(purge_payload),
+                &NetworkEvent::SectionInfo(new_section_info),
+            ],
+        );
+
+        assert!(!node_test.has_resource_proof_candidate());
+        assert!(node_test.is_peer_valid(&online_payload.0));
     }
 }

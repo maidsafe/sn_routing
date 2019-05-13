@@ -227,13 +227,8 @@ pub trait Base: Display {
         bytes: CrustBytes,
         outbox: &mut EventBox,
     ) -> Transition {
-        let result = match from_crust_bytes(bytes) {
-            Ok(Message::Hop(hop_msg)) => self.handle_hop_message(hop_msg, pub_id, outbox),
-            Ok(Message::Direct(direct_msg)) => {
-                self.handle_direct_message(direct_msg, pub_id, outbox)
-            }
-            Err(error) => Err(error),
-        };
+        let result = from_crust_bytes(bytes)
+            .and_then(|message| self.handle_new_deserialized_message(pub_id, message, outbox));
 
         match result {
             Ok(transition) => transition,
@@ -242,6 +237,18 @@ pub trait Base: Display {
                 debug!("{} - {:?}", self, err);
                 Transition::Stay
             }
+        }
+    }
+
+    fn handle_new_deserialized_message(
+        &mut self,
+        pub_id: PublicId,
+        message: Message,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        match message {
+            Message::Hop(hop_msg) => self.handle_hop_message(hop_msg, pub_id, outbox),
+            Message::Direct(direct_msg) => self.handle_direct_message(direct_msg, pub_id, outbox),
         }
     }
 
