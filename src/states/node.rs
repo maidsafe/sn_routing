@@ -2476,3 +2476,88 @@ fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, Routing
         err
     })
 }
+
+#[cfg(all(test, feature = "mock_parsec"))]
+mod tests {
+    use super::*;
+    use crate::cache::NullCache;
+    use crate::outbox::{EventBox, EventBuf};
+    use crate::state_machine::{State, StateMachine};
+    use crate::mock_crust::crust::Config;
+    use crate::mock_crust::{self, Network};
+
+    fn new_node_state(
+        full_id: FullId,
+        min_section_size: usize,
+        crust_service: Service,
+        timer: Timer,
+        outbox: &mut EventBox,
+    ) -> State {
+        let public_id = *full_id.public_id();
+
+        let prefix = Prefix::<XorName>::default();
+        let section_info = unwrap!(SectionInfo::new(
+            [public_id].iter().cloned().collect(),
+            prefix,
+            iter::empty()
+        ));
+
+        let gen_pfx_info = GenesisPfxInfo {
+            first_info: section_info.clone(),
+            latest_info: SectionInfo::default(),
+        };
+        let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
+        let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+        let peer_mgr = PeerManager::new(public_id, true);
+        let cache = Box::new(NullCache);
+
+        let details = NodeDetails {
+            ack_mgr: AckManager::new(),
+            cache,
+            chain,
+            crust_service,
+            event_backlog: Vec::new(),
+            full_id,
+            gen_pfx_info,
+            msg_backlog: Vec::new(),
+            parsec_map,
+            peer_mgr,
+            routing_msg_filter: RoutingMessageFilter::new(),
+            timer,
+        };
+
+        Node::from_establishing_node(details, section_info, prefix, outbox)
+            .map(State::Node)
+            .unwrap_or(State::Terminated)
+    }
+
+    fn make_state_machine(outbox: &mut EventBox) -> StateMachine {
+        let min_section_size = 4;
+        let network = Network::new(min_section_size, None);
+
+        let full_id = FullId::new();
+        let public_id = *full_id.public_id();
+
+        let handle0 = network.new_service_handle(None, None);
+        let config = Config::with_contacts(&[handle0.endpoint()]);
+
+        let handle1 = network.new_service_handle(Some(config.clone()), None);
+        mock_crust::make_current(&handle1, || {
+            StateMachine::new(
+                move |_action_sender, crust_service, timer, outbox2| {
+                    new_node_state(full_id, min_section_size, crust_service, timer, outbox2)
+                },
+                public_id,
+                None,
+                outbox,
+            )
+            .1
+        })
+    }
+
+    #[test]
+    fn construct() {
+        let mut ev_buffer = EventBuf::new();
+        let _ = make_state_machine(&mut ev_buffer);
+    }
+}
