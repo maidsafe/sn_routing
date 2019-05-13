@@ -42,6 +42,9 @@ pub enum NetworkEvent {
     /// Voted for received ExpectCandidate RPC.
     ExpectCandidate(ExpectCandidatePayload),
 
+    // Voted for timeout expired for this candidate old_public_id.
+    PurgeCandidate(PublicId),
+
     /// A list of proofs for a neighbour section, starting from the current section.
     ProvingSections(Vec<ProvingSection>, SectionInfo),
 }
@@ -93,7 +96,10 @@ impl Debug for NetworkEvent {
             NetworkEvent::SectionInfo(ref sec_info) => {
                 write!(formatter, "SectionInfo({:?})", sec_info)
             }
-            NetworkEvent::ExpectCandidate(ref vote) => write!(formatter, "SectionInfo({:?})", vote),
+            NetworkEvent::ExpectCandidate(ref vote) => {
+                write!(formatter, "ExpectCandidate({:?})", vote)
+            }
+            NetworkEvent::PurgeCandidate(ref id) => write!(formatter, "PurgeCandidate({})", id),
             NetworkEvent::ProvingSections(_, ref sec_info) => {
                 write!(formatter, "ProvingSections(_, {:?})", sec_info)
             }

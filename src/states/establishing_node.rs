@@ -381,6 +381,10 @@ impl Approved for EstablishingNode {
         Ok(())
     }
 
+    fn handle_purge_candidate_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
     fn handle_section_info_event(
         &mut self,
         sec_info: SectionInfo,

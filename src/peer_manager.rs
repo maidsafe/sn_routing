@@ -258,42 +258,94 @@ impl Peer {
     }
 }
 
+/// A candidate (if any) may be in different stages of the resource proof process.
+/// As they are accepted for resource proof, a timer will start.
+/// On expiry of this timer, we will vote for `PurgeCandidate` and set expired_once, but the
+/// resource proof will continue until we reach consensus on either `PurgeCandidate` or `Online`.
+/// On termination of our part of the resource proof (When our challenge is completed, we will
+/// vote the candidate `Online`.
+/// Regardless of our own opinion (be it a vote for `Online`, a vote for PurgeCandidate or a
+/// vote for both) we will wait for consensus to be reached on either of these and take the
+/// first such event to reach consensus as the source of truth.
+/// Finally, if `Online` is consensused first, before allowing a new candidate, we wait for its
+/// SectionInfo to be consensused, so this new member will process `ExpectCandidate` the same way
+/// the other members will.
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Eq, PartialEq)]
 enum Candidate {
+    /// No-one is currently in the resource proof process.
+    /// We can take on a new candidate on consensus of an `ExpectCandidate` event.
     None,
+    /// We accepted a candidate to perform resource proof in this section. We are waiting for
+    /// them to send their `CandidateInfo` before starting the actual resource proof.
     AcceptedForResourceProof {
         res_proof_start: Instant,
+        expired_once: bool,
         target_interval: (XorName, XorName),
         old_pub_id: PublicId,
     },
+    /// We already received the `CandidateInfo` for this node and either:
+    /// They are ongoing resource proof with us
+    /// They have passed our challenge (and we voted them Online)
     ResourceProof {
         res_proof_start: Instant,
+        expired_once: bool,
+        old_pub_id: PublicId,
         new_pub_id: PublicId,
         new_client_auth: Authority<XorName>,
         challenge: Option<ResourceProofChallenge>,
         passed_our_challenge: bool,
     },
-    AcceptedWaitingSectionInfo {
-        new_pub_id: PublicId,
-    },
+    /// We consensused the candidate online. We are waiting for the SectionInfo to consensus
+    /// and this new node to start handling events before allowing a new candidate.
+    AcceptedWaitingSectionInfo { new_pub_id: PublicId },
 }
 
 impl Candidate {
     fn is_expired(&self) -> bool {
-        match *self {
+        match self {
             Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => false,
             Candidate::AcceptedForResourceProof {
-                res_proof_start, ..
+                res_proof_start,
+                expired_once,
+                ..
             }
             | Candidate::ResourceProof {
-                res_proof_start, ..
+                res_proof_start,
+                expired_once,
+                ..
             } => {
                 // TODO: need better fix. Using a larger timeout to allow Online to accumulate via gossip
                 // than the prev timeout for grp-msg accumulation.
-                res_proof_start.elapsed() > RESOURCE_PROOF_DURATION + ACCUMULATION_TIMEOUT * 3
+                !expired_once
+                    && res_proof_start.elapsed()
+                        > RESOURCE_PROOF_DURATION + ACCUMULATION_TIMEOUT * 3
             }
+        }
+    }
+
+    fn set_expired_once(&mut self) {
+        match self {
+            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => (),
+            Candidate::AcceptedForResourceProof {
+                ref mut expired_once,
+                ..
+            }
+            | Candidate::ResourceProof {
+                ref mut expired_once,
+                ..
+            } => {
+                *expired_once = true;
+            }
+        }
+    }
+
+    fn old_pub_id(&self) -> Option<&PublicId> {
+        match self {
+            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => None,
+            Candidate::AcceptedForResourceProof { old_pub_id, .. }
+            | Candidate::ResourceProof { old_pub_id, .. } => Some(old_pub_id),
         }
     }
 }
@@ -364,6 +416,7 @@ impl PeerManager {
     ) {
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
+            expired_once: false,
             old_pub_id: old_pub_id,
             target_interval: target_interval,
         };
@@ -460,13 +513,6 @@ impl PeerManager {
         new_pub_id: &PublicId,
         log_ident: &LogIdent,
     ) -> Result<bool, RoutingError> {
-        match mem::replace(&mut self.candidate, Candidate::None) {
-            Candidate::ResourceProof {
-                new_pub_id: pub_id, ..
-            } if pub_id == *new_pub_id => (),
-            _ => return Err(RoutingError::UnknownCandidate),
-        }
-
         // Do not accept candidate until we complete our current one.
         self.candidate = Candidate::AcceptedWaitingSectionInfo {
             new_pub_id: *new_pub_id,
@@ -514,12 +560,13 @@ impl PeerManager {
             new_pub_id.name()
         );
         let candidate = mem::replace(&mut self.candidate, Candidate::None);
-        let (res_proof_start, target_interval) = match candidate {
+        let (res_proof_start, expired_once, target_interval) = match candidate {
             Candidate::AcceptedForResourceProof {
-                old_pub_id: old_id,
                 res_proof_start,
+                expired_once,
+                old_pub_id: old_id,
                 target_interval,
-            } if old_id == *old_pub_id => (res_proof_start, target_interval),
+            } if old_id == *old_pub_id => (res_proof_start, expired_once, target_interval),
             candidate => {
                 self.candidate = candidate;
                 return Ok(false);
@@ -551,8 +598,10 @@ impl PeerManager {
         });
 
         self.candidate = Candidate::ResourceProof {
-            res_proof_start: res_proof_start,
+            res_proof_start,
+            expired_once,
             new_pub_id: *new_pub_id,
+            old_pub_id: *old_pub_id,
             new_client_auth: *new_client_auth,
             challenge: challenge,
             passed_our_challenge: false,
@@ -661,24 +710,23 @@ impl PeerManager {
             .map(Peer::name)
     }
 
-    /// Remove and return `PublicId`s of expired peers.
-    pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
-        let remove_candidate = if self.candidate.is_expired() {
-            match self.candidate {
-                Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => None,
-                Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => Some(*old_pub_id),
-                Candidate::ResourceProof { ref new_pub_id, .. } => Some(*new_pub_id),
-            }
+    /// Return old public id of expired candidate only once
+    pub fn expired_candidate_old_public_id_once(&mut self) -> Option<PublicId> {
+        if self.candidate.is_expired() {
+            self.candidate.set_expired_once();
+            self.candidate.old_pub_id().cloned()
         } else {
             None
-        };
+        }
+    }
 
+    /// Remove and return `PublicId`s of expired peers.
+    pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
         let expired_peers = self
             .peers
             .values()
             .filter(|peer| peer.is_expired())
             .map(|peer| *peer.pub_id())
-            .chain(remove_candidate)
             .collect_vec();
 
         for id in &expired_peers {
@@ -988,13 +1036,13 @@ impl PeerManager {
         let _ = self.peers.insert(peer.pub_id, peer);
     }
 
-    // Forget about the current candidate
+    /// Forget about the current candidate.
     pub fn reset_candidate(&mut self) {
         self.candidate = Candidate::None;
     }
 
-    // Forget about the current candidate
-    pub fn reset_candidate_if_member(&mut self, members: &BTreeSet<PublicId>) {
+    /// Forget about the current candidate if it is a member of the given section.
+    pub fn reset_candidate_member_of(&mut self, members: &BTreeSet<PublicId>) {
         if let Candidate::AcceptedWaitingSectionInfo { ref new_pub_id } = self.candidate {
             if members.contains(new_pub_id) {
                 self.candidate = Candidate::None;
@@ -1002,23 +1050,16 @@ impl PeerManager {
         }
     }
 
-    /// Removes the given peer. Returns whether the peer was actually present.
-    pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
-        let remove_candidate = match self.candidate {
-            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => false,
-            Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => {
-                // only consider candidate cleanup via old_id if candidate is also expired.
-                // else candidate may simply be restarting.
-                old_pub_id == pub_id && self.candidate.is_expired()
-            }
-            Candidate::ResourceProof { new_pub_id, .. } => new_pub_id == *pub_id,
-        };
-
-        if remove_candidate {
+    /// Forget about the current candidate if it matches the purged old public id.
+    pub fn reset_candidate_with_old_public_id(&mut self, old_pub_id: &PublicId) {
+        if Some(old_pub_id) == self.candidate.old_pub_id() {
             self.candidate = Candidate::None;
         }
+    }
 
-        self.peers.remove(pub_id).is_some() || remove_candidate
+    /// Removes the given peer. Returns whether the peer was actually present.
+    pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
+        self.peers.remove(pub_id).is_some()
     }
 }
 

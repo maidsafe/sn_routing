@@ -441,7 +441,9 @@ impl Node {
                 // Called peer_manager.remove_candidate reset the candidate so it can be shared by
                 // all nodes: Because new node may not have voted for it, Forget the votes in
                 // flight as well.
-                NetworkEvent::Online(_, _) | NetworkEvent::ExpectCandidate(_) => false,
+                NetworkEvent::Online(_, _)
+                | NetworkEvent::ExpectCandidate(_)
+                | NetworkEvent::PurgeCandidate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
@@ -1751,6 +1753,10 @@ impl Node {
     }
 
     fn remove_expired_peers(&mut self) {
+        if let Some(expired_id) = self.peer_mgr.expired_candidate_old_public_id_once() {
+            self.vote_for_event(NetworkEvent::PurgeCandidate(expired_id));
+        }
+
         for pub_id in self.peer_mgr.remove_expired_peers() {
             debug!("{} Disconnecting from timed out peer {:?}", self, pub_id);
             // We've already removed from peer manager but this helps clean out connections to
@@ -2367,6 +2373,15 @@ impl Approved for Node {
         Ok(())
     }
 
+    fn handle_purge_candidate_event(
+        &mut self,
+        old_public_id: PublicId,
+    ) -> Result<(), RoutingError> {
+        self.peer_mgr
+            .reset_candidate_with_old_public_id(&old_public_id);
+        Ok(())
+    }
+
     fn handle_section_info_event(
         &mut self,
         sec_info: SectionInfo,
@@ -2381,7 +2396,7 @@ impl Approved for Node {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
         } else {
-            self.peer_mgr.reset_candidate_if_member(sec_info.members());
+            self.peer_mgr.reset_candidate_member_of(sec_info.members());
         }
 
         let self_sec_update = sec_info.prefix().matches(self.name());

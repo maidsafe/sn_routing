@@ -707,7 +707,8 @@ impl Chain {
             }
             NetworkEvent::Online(_, _)
             | NetworkEvent::Offline(_)
-            | NetworkEvent::ExpectCandidate(_) => {
+            | NetworkEvent::ExpectCandidate(_)
+            | NetworkEvent::PurgeCandidate(_) => {
                 self.state() == &ChainState::Normal && self.our_info().is_quorum(proofs)
             }
             NetworkEvent::ProvingSections(_, _) => true,
