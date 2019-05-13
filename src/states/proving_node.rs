@@ -59,13 +59,12 @@ pub struct ProvingNode {
     crust_service: Service,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
+    event_backlog: Vec<Event>,
     full_id: FullId,
     joining_prefix: Prefix<XorName>,
     min_section_size: usize,
     /// Routing messages addressed to us that we cannot handle until we are approved.
     msg_backlog: Vec<RoutingMessage>,
-    // TODO: notify without local state
-    notified_nodes: BTreeSet<PublicId>,
     /// ID from before relocating.
     old_full_id: FullId,
     peer_mgr: PeerManager,
@@ -93,10 +92,10 @@ impl ProvingNode {
             ack_mgr: AckManager::new(),
             cache: details.cache,
             crust_service: details.crust_service,
+            event_backlog: Vec::new(),
             full_id: details.full_id,
             min_section_size: details.min_section_size,
             msg_backlog: Vec::new(),
-            notified_nodes: Default::default(),
             peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: details.timer,
@@ -155,11 +154,11 @@ impl ProvingNode {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
             crust_service: self.crust_service,
+            event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info,
             min_section_size: self.min_section_size,
             msg_backlog: self.msg_backlog,
-            notified_nodes: self.notified_nodes,
             peer_mgr: self.peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
@@ -197,19 +196,6 @@ impl ProvingNode {
         Transition::IntoEstablishingNode { gen_pfx_info }
     }
 
-    fn dropped_peer(&mut self, pub_id: &PublicId) -> bool {
-        let was_proxy = self.peer_mgr.is_proxy(pub_id);
-        let _ = self.peer_mgr.remove_peer(pub_id);
-        let _ = self.notified_nodes.remove(pub_id);
-
-        if was_proxy {
-            debug!("{} Lost connection to proxy {}.", self, pub_id);
-            false
-        } else {
-            true
-        }
-    }
-
     #[cfg(feature = "mock_base")]
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
@@ -238,7 +224,7 @@ impl Base for ProvingNode {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
-        let log_ident = format!("{}", self);
+        let log_ident = self.log_ident();
         if let Some(transition) = self
             .resource_prover
             .handle_timeout(token, log_ident, outbox)
@@ -261,14 +247,14 @@ impl Base for ProvingNode {
         Relocated::handle_connect_success(self, pub_id, outbox)
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) -> Transition {
-        RelocatedNotEstablished::handle_connect_failure(self, pub_id)
+    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        RelocatedNotEstablished::handle_connect_failure(self, pub_id, outbox)
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         debug!("{} Received LostPeer - {}", self, pub_id);
 
-        if self.dropped_peer(&pub_id) {
+        if self.dropped_peer(&pub_id, outbox) {
             Transition::Stay
         } else {
             outbox.send_event(Event::Terminated);
@@ -299,7 +285,7 @@ impl Base for ProvingNode {
                 target_size,
                 difficulty,
             } => {
-                let log_ident = format!("{}", self);
+                let log_ident = self.log_ident();
                 self.resource_prover.handle_request(
                     pub_id,
                     seed,
@@ -424,18 +410,14 @@ impl Relocated for ProvingNode {
         true
     }
 
-    fn add_to_routing_table_success(&mut self, _: &PublicId) {}
+    fn add_node_success(&mut self, _: &PublicId) {}
 
-    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId) {
+    fn add_node_failure(&mut self, pub_id: &PublicId) {
         self.disconnect_peer(pub_id)
     }
 
-    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
-        self.notified_nodes.insert(pub_id)
-    }
-
-    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
-        self.notified_nodes.remove(pub_id)
+    fn send_event(&mut self, event: Event, _: &mut EventBox) {
+        self.event_backlog.push(event)
     }
 }
 
@@ -459,6 +441,11 @@ impl RelocatedNotEstablished for ProvingNode {
 
 impl Display for ProvingNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "ProvingNode({}())", self.name())
+        write!(
+            formatter,
+            "ProvingNode({}({:b}))",
+            self.name(),
+            self.our_prefix()
+        )
     }
 }

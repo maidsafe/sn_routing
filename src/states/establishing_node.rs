@@ -18,6 +18,7 @@ use crate::{
     cache::Cache,
     chain::{Chain, ExpectCandidatePayload, GenesisPfxInfo, ProvingSection, SectionInfo},
     error::RoutingError,
+    event::Event,
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, Message, RoutingMessage},
     outbox::EventBox,
@@ -32,10 +33,7 @@ use crate::{
     Service,
 };
 use itertools::Itertools;
-use std::{
-    collections::BTreeSet,
-    fmt::{self, Display, Formatter},
-};
+use std::fmt::{self, Display, Formatter};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -43,11 +41,11 @@ pub struct EstablishingNodeDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub crust_service: Service,
+    pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub min_section_size: usize,
     pub msg_backlog: Vec<RoutingMessage>,
-    pub notified_nodes: BTreeSet<PublicId>,
     pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -58,11 +56,11 @@ pub struct EstablishingNode {
     cache: Box<Cache>,
     chain: Chain,
     crust_service: Service,
+    event_backlog: Vec<Event>,
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
     msg_backlog: Vec<RoutingMessage>,
-    notified_nodes: BTreeSet<PublicId>,
     parsec_map: ParsecMap,
     peer_mgr: PeerManager,
     poke_timer_token: u64,
@@ -90,10 +88,10 @@ impl EstablishingNode {
             cache: details.cache,
             chain,
             crust_service: details.crust_service,
+            event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
             msg_backlog: details.msg_backlog,
-            notified_nodes: details.notified_nodes,
             parsec_map,
             peer_mgr: details.peer_mgr,
             routing_msg_filter: details.routing_msg_filter,
@@ -126,10 +124,10 @@ impl EstablishingNode {
             cache: self.cache,
             chain: self.chain,
             crust_service: self.crust_service,
+            event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            msg_queue: self.msg_backlog.into_iter().collect(),
-            notified_nodes: self.notified_nodes,
+            msg_backlog: self.msg_backlog,
             parsec_map: self.parsec_map,
             peer_mgr: self.peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
@@ -224,8 +222,8 @@ impl Base for EstablishingNode {
         Relocated::handle_connect_success(self, pub_id, outbox)
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId, _: &mut EventBox) -> Transition {
-        RelocatedNotEstablished::handle_connect_failure(self, pub_id)
+    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        RelocatedNotEstablished::handle_connect_failure(self, pub_id, outbox)
     }
 
     fn handle_direct_message(
@@ -312,27 +310,21 @@ impl Relocated for EstablishingNode {
     }
 
     fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
-        if self.chain.is_peer_valid(&pub_id) {
-            self.add_to_routing_table(&pub_id, outbox);
-        }
+        self.add_node(&pub_id, outbox);
     }
 
     fn is_peer_valid(&self, _pub_id: &PublicId) -> bool {
         true
     }
 
-    fn add_to_notified_nodes(&mut self, pub_id: PublicId) -> bool {
-        self.notified_nodes.insert(pub_id)
-    }
+    fn add_node_success(&mut self, _: &PublicId) {}
 
-    fn remove_from_notified_nodes(&mut self, pub_id: &PublicId) -> bool {
-        self.notified_nodes.remove(pub_id)
-    }
-
-    fn add_to_routing_table_success(&mut self, _: &PublicId) {}
-
-    fn add_to_routing_table_failure(&mut self, pub_id: &PublicId) {
+    fn add_node_failure(&mut self, pub_id: &PublicId) {
         self.disconnect_peer(pub_id)
+    }
+
+    fn send_event(&mut self, event: Event, _: &mut EventBox) {
+        self.event_backlog.push(event)
     }
 }
 

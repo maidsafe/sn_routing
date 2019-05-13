@@ -184,8 +184,7 @@ where
         unimplemented!()
     }
 
-    // TODO: rename this to `has_unpolled_observations`
-    pub fn has_unconsensused_observations(&self) -> bool {
+    pub fn has_unpolled_observations(&self) -> bool {
         state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
             state
                 .observations

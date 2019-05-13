@@ -6,23 +6,28 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::crust::CrustUser;
-use crate::error::RoutingError;
-use crate::id::PublicId;
-use crate::resource_prover::RESOURCE_PROOF_DURATION;
-use crate::routing_table::Authority;
-use crate::signature_accumulator::ACCUMULATION_TIMEOUT;
-use crate::time::{Duration, Instant};
-use crate::types::MessageId;
-use crate::xor_name::XorName;
-use crate::{PrivConnectionInfo, PubConnectionInfo};
+use crate::{
+    crust::CrustUser,
+    error::RoutingError,
+    id::PublicId,
+    resource_prover::RESOURCE_PROOF_DURATION,
+    routing_table::Authority,
+    signature_accumulator::ACCUMULATION_TIMEOUT,
+    time::{Duration, Instant},
+    types::MessageId,
+    utils::LogIdent,
+    xor_name::XorName,
+    {PrivConnectionInfo, PubConnectionInfo},
+};
 use itertools::Itertools;
 use log::LogLevel;
 use rand;
 use resource_proof::ResourceProof;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::net::IpAddr;
-use std::{error, fmt, mem};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    error, fmt, mem,
+    net::IpAddr,
+};
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
@@ -109,10 +114,10 @@ pub enum PeerState {
     },
     /// We are the proxy for the joining node
     JoiningNode,
-    /// We are approved and routing to that peer.
-    Routing,
     /// Connected peer is a joining node and waiting for approval of routing.
     Candidate,
+    /// We are connected to the peer who is a full node.
+    Node,
     /// We are connected to the peer who is our proxy node.
     Proxy,
 }
@@ -198,7 +203,7 @@ impl Peer {
             | PeerState::Client { .. }
             | PeerState::Connected
             | PeerState::Candidate
-            | PeerState::Routing => true,
+            | PeerState::Node => true,
         }
     }
 
@@ -211,7 +216,7 @@ impl Peer {
             | PeerState::CrustConnecting => CONNECTING_PEER_TIMEOUT_SECS,
             PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Bootstrapper { .. } | PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
-            PeerState::Candidate | PeerState::Client { .. } | PeerState::Routing => {
+            PeerState::Candidate | PeerState::Client { .. } | PeerState::Node => {
                 return false;
             }
         };
@@ -219,10 +224,10 @@ impl Peer {
         self.timestamp.elapsed() >= Duration::from_secs(timeout)
     }
 
-    /// Returns whether the peer is in `Routing` state.
-    pub fn is_routing(&self) -> bool {
+    /// Returns whether the peer is a full node.
+    pub fn is_node(&self) -> bool {
         match self.state {
-            PeerState::Routing => true,
+            PeerState::Node => true,
             _ => false,
         }
     }
@@ -323,7 +328,7 @@ impl PeerManager {
     }
 
     /// Upgrades a `Bootstrapper` to a `Client` or `JoiningNode`.
-    pub fn handle_bootstrap_request(&mut self, pub_id: &PublicId) {
+    pub fn handle_bootstrap_request(&mut self, pub_id: &PublicId, log_ident: &LogIdent) {
         if let Some(peer) = self.peers.get_mut(pub_id) {
             if let PeerState::Bootstrapper { peer_kind, ip } = peer.state {
                 match peer_kind {
@@ -336,7 +341,7 @@ impl PeerManager {
         log_or_panic!(
             LogLevel::Error,
             "{} does not have {:?} as a bootstrapper.",
-            self,
+            log_ident,
             pub_id
         );
     }
@@ -401,7 +406,10 @@ impl PeerManager {
     }
 
     /// Returns a (public ID, new name) tuple completed using the verified candidate's details.
-    pub fn verified_candidate_info(&self) -> Result<(PublicId, Authority<XorName>), RoutingError> {
+    pub fn verified_candidate_info(
+        &self,
+        log_ident: &LogIdent,
+    ) -> Result<(PublicId, Authority<XorName>), RoutingError> {
         let (new_pub_id, new_client_auth) = match self.candidate {
             Candidate::ResourceProof {
                 ref new_pub_id,
@@ -417,7 +425,7 @@ impl PeerManager {
                 info!(
                     "{} Candidate {} has not passed our resource proof challenge in time. Not \
                      sending approval vote to our section.",
-                    self,
+                    log_ident,
                     new_pub_id.name()
                 );
                 return Err(RoutingError::UnknownCandidate);
@@ -429,7 +437,7 @@ impl PeerManager {
             log_or_panic!(
                 LogLevel::Error,
                 "{} Not connected to {}.",
-                self,
+                log_ident,
                 new_pub_id.name()
             );
             return Err(RoutingError::UnknownCandidate);
@@ -443,6 +451,7 @@ impl PeerManager {
     pub fn handle_candidate_approval(
         &mut self,
         new_pub_id: &PublicId,
+        log_ident: &LogIdent,
     ) -> Result<bool, RoutingError> {
         match mem::replace(&mut self.candidate, Candidate::None) {
             Candidate::ResourceProof {
@@ -451,19 +460,18 @@ impl PeerManager {
             _ => return Err(RoutingError::UnknownCandidate),
         }
 
-        let debug_id = format!("{}", self);
         if let Some(peer) = self.peers.get_mut(new_pub_id) {
             let is_connected = peer.is_connected();
             if !is_connected {
                 trace!(
                     "{} Candidate {} not yet connected to us.",
-                    debug_id,
+                    log_ident,
                     new_pub_id.name()
                 );
             }
             Ok(is_connected)
         } else {
-            trace!("{} No peer with name {}", debug_id, new_pub_id.name());
+            trace!("{} No peer with name {}", log_ident, new_pub_id.name());
             Err(RoutingError::InvalidStateForOperation)
         }
     }
@@ -485,10 +493,11 @@ impl PeerManager {
         target_size: usize,
         difficulty: u8,
         seed: Vec<u8>,
+        log_ident: &LogIdent,
     ) -> Result<bool, RoutingError> {
-        let debug_prefix = format!(
+        let log_prefix = format!(
             "{} Candidate {}->{}",
-            self,
+            log_ident,
             old_pub_id.name(),
             new_pub_id.name()
         );
@@ -507,7 +516,7 @@ impl PeerManager {
         if *new_pub_id.name() < target_interval.0 || *new_pub_id.name() > target_interval.1 {
             warn!(
                 "{} has used a new ID which is not within the required target range.",
-                debug_prefix
+                log_prefix
             );
             return Err(RoutingError::InvalidRelocationTargetRange);
         }
@@ -515,7 +524,7 @@ impl PeerManager {
         let peer = match self.peers.get_mut(new_pub_id) {
             Some(peer) => peer,
             None => {
-                log_or_panic!(LogLevel::Error, "{} is not connected to us.", debug_prefix);
+                log_or_panic!(LogLevel::Error, "{} is not connected to us.", log_prefix);
                 return Err(RoutingError::UnknownConnection(*new_pub_id));
             }
         };
@@ -541,13 +550,13 @@ impl PeerManager {
     }
 
     /// Logs info about ongoing candidate state, if any.
-    pub fn show_candidate_status(&self) {
-        let mut log_msg = format!("{} Candidate Status - ", self);
+    pub fn show_candidate_status(&self, log_ident: &LogIdent) {
+        let mut log_prefix = format!("{} Candidate Status - ", log_ident);
         match self.candidate {
-            Candidate::None => trace!("{}No candidate is currently being handled.", log_msg),
+            Candidate::None => trace!("{}No candidate is currently being handled.", log_prefix),
             Candidate::AcceptedForResourceProof { ref old_pub_id, .. } => trace!(
                 "{}{} has not sent CandidateInfo yet.",
-                log_msg,
+                log_prefix,
                 old_pub_id.name()
             ),
             Candidate::ResourceProof {
@@ -556,7 +565,7 @@ impl PeerManager {
                 ..
             } => trace!(
                 "{}{} is performing resource proof.",
-                log_msg,
+                log_prefix,
                 new_pub_id.name()
             ),
             Candidate::ResourceProof {
@@ -565,38 +574,43 @@ impl PeerManager {
                 passed_our_challenge,
                 ..
             } => {
-                log_msg = format!("{}{}", log_msg, new_pub_id.name());
+                log_prefix = format!("{}{}", log_prefix, new_pub_id.name());
                 if passed_our_challenge {
-                    log_msg = format!("{}has passed our challenge ", log_msg);
+                    log_prefix = format!("{}has passed our challenge ", log_prefix);
                 } else if challenge.proof.is_empty() {
-                    log_msg = format!("{}hasn't responded to our challenge yet ", log_msg);
+                    log_prefix = format!("{}hasn't responded to our challenge yet ", log_prefix);
                 } else {
                     let percent_done = challenge.proof.len() * 100 / challenge.target_size;
-                    log_msg = format!("{}has sent {}% of resource proof ", log_msg, percent_done);
+                    log_prefix = format!(
+                        "{}has sent {}% of resource proof ",
+                        log_prefix, percent_done
+                    );
                 }
-                trace!("{}and is not yet approved by our section.", log_msg);
+                trace!("{}and is not yet approved by our section.", log_prefix);
             }
         }
     }
 
-    /// Tries to add the given peer to the routing table.
-    pub fn add_to_routing_table(&mut self, pub_id: &PublicId) -> Result<(), RoutingError> {
-        let self_display = format!("{}", self);
-
+    /// Mark the given peer as node.
+    /// Returns `true` if the peer state changed, `false` if it was already node.
+    pub fn set_node(
+        &mut self,
+        pub_id: &PublicId,
+        log_ident: &LogIdent,
+    ) -> Result<bool, RoutingError> {
         let peer = if let Some(peer) = self.peers.get_mut(pub_id) {
             peer
         } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} Peer {} not found.",
-                self_display,
-                pub_id
-            );
+            log_or_panic!(LogLevel::Error, "{} Peer {} not found.", log_ident, pub_id);
             return Err(RoutingError::UnknownConnection(*pub_id));
         };
 
-        peer.state = PeerState::Routing;
-        Ok(())
+        if let PeerState::Node = peer.state {
+            Ok(false)
+        } else {
+            peer.state = PeerState::Node;
+            Ok(true)
+        }
     }
 
     /// Returns an iterator over all connected peers.
@@ -658,8 +672,12 @@ impl PeerManager {
     }
 
     /// Updates the given clients total traffic amount.
-    pub fn add_client_traffic(&mut self, pub_id: &PublicId, added_bytes: u64) {
-        let self_display = format!("{}", self);
+    pub fn add_client_traffic(
+        &mut self,
+        pub_id: &PublicId,
+        added_bytes: u64,
+        log_ident: &LogIdent,
+    ) {
         let _ = self.peers.get_mut(pub_id).map(|peer| {
             if let PeerState::Client {
                 ip,
@@ -670,7 +688,7 @@ impl PeerManager {
                 if new_traffic % (100 * 1024 * 1024) < added_bytes {
                     info!(
                         "{} Stats - Client current session traffic from {:?} - {:?}",
-                        self_display, ip, new_traffic
+                        log_ident, ip, new_traffic
                     );
                 }
                 peer.state = PeerState::Client {
@@ -691,7 +709,7 @@ impl PeerManager {
     }
 
     /// Marks the given peer as direct-connected.
-    pub fn connected_to(&mut self, pub_id: &PublicId) {
+    pub fn set_connected(&mut self, pub_id: &PublicId) {
         if let Some(peer) = self.peers.get_mut(pub_id) {
             peer.timestamp = Instant::now();
             peer.state = PeerState::Connected;
@@ -884,7 +902,7 @@ impl PeerManager {
             }
             Some(
                 peer @ Peer {
-                    state: PeerState::Routing,
+                    state: PeerState::Node,
                     ..
                 },
             )
@@ -953,8 +971,7 @@ impl PeerManager {
         let _ = self.peers.insert(peer.pub_id, peer);
     }
 
-    /// Removes the given entry, returns the removed peer and if it was a routing node,
-    /// the removal details
+    /// Removes the given peer. Returns whether the peer was actually present.
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
         let remove_candidate = match self.candidate {
             Candidate::None => false,
@@ -971,13 +988,6 @@ impl PeerManager {
         }
 
         self.peers.remove(pub_id).is_some() || remove_candidate
-    }
-}
-
-impl fmt::Display for PeerManager {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        // FIXME: needs Prefix from Chain
-        write!(formatter, "Node({})", self.our_public_id.name())
     }
 }
 
