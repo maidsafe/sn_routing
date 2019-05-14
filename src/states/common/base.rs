@@ -228,7 +228,7 @@ pub trait Base: Display {
         outbox: &mut EventBox,
     ) -> Transition {
         let result = from_crust_bytes(bytes)
-            .and_then(|message| self.handle_new_deserialized_message(pub_id, message, outbox));
+            .and_then(|message| self.handle_new_deserialised_message(pub_id, message, outbox));
 
         match result {
             Ok(transition) => transition,
@@ -240,7 +240,7 @@ pub trait Base: Display {
         }
     }
 
-    fn handle_new_deserialized_message(
+    fn handle_new_deserialised_message(
         &mut self,
         pub_id: PublicId,
         message: Message,

@@ -299,35 +299,37 @@ enum Candidate {
     },
     /// We consensused the candidate online. We are waiting for the SectionInfo to consensus
     /// and this new node to start handling events before allowing a new candidate.
-    AcceptedWaitingSectionInfo { new_pub_id: PublicId },
+    ApprovedWaitingSectionInfo { new_pub_id: PublicId },
 }
 
 impl Candidate {
     fn is_expired(&self) -> bool {
         match self {
-            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => false,
+            Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => false,
             Candidate::AcceptedForResourceProof {
-                res_proof_start,
-                expired_once,
-                ..
+                res_proof_start, ..
             }
             | Candidate::ResourceProof {
-                res_proof_start,
-                expired_once,
-                ..
+                res_proof_start, ..
             } => {
                 // TODO: need better fix. Using a larger timeout to allow Online to accumulate via gossip
                 // than the prev timeout for grp-msg accumulation.
-                !expired_once
-                    && res_proof_start.elapsed()
-                        > RESOURCE_PROOF_DURATION + ACCUMULATION_TIMEOUT * 3
+                res_proof_start.elapsed() > RESOURCE_PROOF_DURATION + ACCUMULATION_TIMEOUT * 3
             }
+        }
+    }
+
+    fn has_expired_once(&self) -> bool {
+        match self {
+            Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => false,
+            Candidate::AcceptedForResourceProof { expired_once, .. }
+            | Candidate::ResourceProof { expired_once, .. } => *expired_once,
         }
     }
 
     fn set_expired_once(&mut self) {
         match self {
-            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => (),
+            Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => (),
             Candidate::AcceptedForResourceProof {
                 ref mut expired_once,
                 ..
@@ -343,7 +345,7 @@ impl Candidate {
 
     fn old_pub_id(&self) -> Option<&PublicId> {
         match self {
-            Candidate::None | Candidate::AcceptedWaitingSectionInfo { .. } => None,
+            Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => None,
             Candidate::AcceptedForResourceProof { old_pub_id, .. }
             | Candidate::ResourceProof { old_pub_id, .. } => Some(old_pub_id),
         }
@@ -488,7 +490,7 @@ impl PeerManager {
             }
             Candidate::None
             | Candidate::AcceptedForResourceProof { .. }
-            | Candidate::AcceptedWaitingSectionInfo { .. } => {
+            | Candidate::ApprovedWaitingSectionInfo { .. } => {
                 return Err(RoutingError::UnknownCandidate)
             }
         };
@@ -514,7 +516,7 @@ impl PeerManager {
         log_ident: &LogIdent,
     ) -> Result<bool, RoutingError> {
         // Do not accept candidate until we complete our current one.
-        self.candidate = Candidate::AcceptedWaitingSectionInfo {
+        self.candidate = Candidate::ApprovedWaitingSectionInfo {
             new_pub_id: *new_pub_id,
         };
 
@@ -649,8 +651,8 @@ impl PeerManager {
                 }
                 trace!("{}and is not yet approved by our section.", log_prefix);
             }
-            Candidate::AcceptedWaitingSectionInfo { new_pub_id } => trace!(
-                "{}{} candidate waits for its SectionInfo.",
+            Candidate::ApprovedWaitingSectionInfo { new_pub_id } => trace!(
+                "{}{} has not been included in our SectionInfo yet.",
                 log_prefix,
                 new_pub_id
             ),
@@ -712,7 +714,7 @@ impl PeerManager {
 
     /// Return old public id of expired candidate only once
     pub fn expired_candidate_old_public_id_once(&mut self) -> Option<PublicId> {
-        if self.candidate.is_expired() {
+        if !self.candidate.has_expired_once() && self.candidate.is_expired() {
             self.candidate.set_expired_once();
             self.candidate.old_pub_id().cloned()
         } else {
@@ -1042,8 +1044,8 @@ impl PeerManager {
     }
 
     /// Forget about the current candidate if it is a member of the given section.
-    pub fn reset_candidate_member_of(&mut self, members: &BTreeSet<PublicId>) {
-        if let Candidate::AcceptedWaitingSectionInfo { ref new_pub_id } = self.candidate {
+    pub fn reset_candidate_if_member_of(&mut self, members: &BTreeSet<PublicId>) {
+        if let Candidate::ApprovedWaitingSectionInfo { ref new_pub_id } = self.candidate {
             if members.contains(new_pub_id) {
                 self.candidate = Candidate::None;
             }

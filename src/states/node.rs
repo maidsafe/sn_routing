@@ -2395,8 +2395,6 @@ impl Approved for Node {
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
-        } else {
-            self.peer_mgr.reset_candidate_member_of(sec_info.members());
         }
 
         let self_sec_update = sec_info.prefix().matches(self.name());
@@ -2404,6 +2402,8 @@ impl Approved for Node {
         self.update_peer_states(outbox);
 
         if self_sec_update {
+            self.peer_mgr
+                .reset_candidate_if_member_of(sec_info.members());
             self.send_neighbour_infos();
         } else {
             // Vote for neighbour update if we haven't done so already.
@@ -2488,6 +2488,7 @@ mod tests {
     use crate::xor_name::XOR_NAME_LEN;
     use utils::LogIdent;
 
+    const NO_SINGLE_VETO_VOTE_COUNT: usize = 4;
     const ACCUMULATE_VOTE_COUNT: usize = 3;
     const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 2;
 
@@ -2501,8 +2502,10 @@ mod tests {
     }
 
     impl NoteUnderTest {
-        fn make_node() -> NoteUnderTest {
-            let full_ids = (0..4).map(|_| FullId::new()).collect_vec();
+        fn new() -> Self {
+            let full_ids = (0..NO_SINGLE_VETO_VOTE_COUNT)
+                .map(|_| FullId::new())
+                .collect_vec();
             let mut ev_buffer = EventBuf::new();
 
             let prefix = Prefix::<XorName>::default();
@@ -2526,7 +2529,7 @@ mod tests {
                 .map(|full_id| ParsecMap::new(full_id.clone(), &gen_pfx_info))
                 .collect_vec();
 
-            NoteUnderTest {
+            Self {
                 machine,
                 full_id,
                 other_full_ids,
@@ -2537,10 +2540,7 @@ mod tests {
         }
 
         fn node_state(&self) -> &Node {
-            match *self.machine.current() {
-                State::Node(ref state) => state,
-                _ => panic!("only testing node"),
-            }
+            unwrap!(self.machine.current().node_state())
         }
 
         fn n_vote_for(&mut self, count: usize, events: &[&NetworkEvent]) {
@@ -2557,7 +2557,7 @@ mod tests {
             let message =
                 unwrap!(self.other_parsec_map[0].create_gossip(0, self.full_id.public_id()));
 
-            unwrap!(self.machine.current_mut().node_state_mut()).handle_new_deserialized_message(
+            unwrap!(self.machine.current_mut().node_state_mut()).handle_new_deserialised_message(
                 other_pub_id,
                 message,
                 &mut self.ev_buffer,
@@ -2722,7 +2722,7 @@ mod tests {
 
     #[test]
     fn construct() {
-        let node_test = NoteUnderTest::make_node();
+        let node_test = NoteUnderTest::new();
 
         assert!(!node_test.has_resource_proof_candidate());
     }
@@ -2730,7 +2730,7 @@ mod tests {
     #[test]
     // ExpectCandidate is consensused: candidate is added
     fn accumulate_expect_candidate() {
-        let mut node_test = NoteUnderTest::make_node();
+        let mut node_test = NoteUnderTest::new();
 
         let _ = node_test.accumulate_expect_candidate();
 
@@ -2740,7 +2740,7 @@ mod tests {
     #[test]
     // PurgeCandidate is consensused first: candidate is removed
     fn accumulate_purge_candidate() {
-        let mut node_test = NoteUnderTest::make_node();
+        let mut node_test = NoteUnderTest::new();
         let payload_expect = node_test.accumulate_expect_candidate();
 
         let purge_payload = payload_expect.old_public_id;
@@ -2752,7 +2752,7 @@ mod tests {
     #[test]
     // Candidate is only removed as candidate when its SectionInfo is consensused
     fn accumulate_online_candidate_only_do_not_remove_candidate() {
-        let mut node_test = NoteUnderTest::make_node();
+        let mut node_test = NoteUnderTest::new();
         let _ = node_test.accumulate_expect_candidate();
 
         let online_payload = online_payload();
@@ -2765,7 +2765,7 @@ mod tests {
     #[test]
     // Candidate is only removed as candidate when its SectionInfo is consensused
     fn accumulate_online_candidate_then_section_info_remove_candidate() {
-        let mut node_test = NoteUnderTest::make_node();
+        let mut node_test = NoteUnderTest::new();
         let _ = node_test.accumulate_expect_candidate();
         let online_payload = online_payload();
         node_test.accumulate_online(online_payload);
@@ -2780,7 +2780,7 @@ mod tests {
     #[test]
     // When Online consensused first, PurgeCandidate has no effect
     fn accumulate_online_then_purge_candidate() {
-        let mut node_test = NoteUnderTest::make_node();
+        let mut node_test = NoteUnderTest::new();
         let payload_expect = node_test.accumulate_expect_candidate();
         let online_payload = online_payload();
         node_test.accumulate_online(online_payload);
@@ -2795,7 +2795,7 @@ mod tests {
     #[test]
     // When Online consensused first, PurgeCandidate has no effect
     fn accumulate_online_then_purge_then_section_info_for_candidate() {
-        let mut node_test = NoteUnderTest::make_node();
+        let mut node_test = NoteUnderTest::new();
         let payload_expect = node_test.accumulate_expect_candidate();
         let online_payload = online_payload();
         node_test.accumulate_online(online_payload);
