@@ -2489,6 +2489,7 @@ mod tests {
     use utils::LogIdent;
 
     const ACCUMULATE_VOTE_COUNT: usize = 3;
+    const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 2;
 
     struct NoteUnderTest {
         pub machine: StateMachine,
@@ -2572,16 +2573,34 @@ mod tests {
             self.create_gossip()
         }
 
-        fn n_vote_for_gossipped_for_expect_candidate(
-            &mut self,
-            count: usize,
-        ) -> ExpectCandidatePayload {
+        fn accumulate_expect_candidate(&mut self) -> ExpectCandidatePayload {
             let payload_expect = expect_candidate_payload();
             let _ = self.n_vote_for_gossipped(
-                count,
+                ACCUMULATE_VOTE_COUNT,
                 &[&NetworkEvent::ExpectCandidate(payload_expect.clone())],
             );
             payload_expect
+        }
+
+        fn accumulate_purge_candidate(&mut self, purge_payload: PublicId) {
+            let _ = self.n_vote_for_gossipped(
+                ACCUMULATE_VOTE_COUNT,
+                &[&NetworkEvent::PurgeCandidate(purge_payload)],
+            );
+        }
+
+        fn accumulate_online(&mut self, online_payload: (PublicId, Authority<XorName>)) {
+            let _ = self.n_vote_for_gossipped(
+                ACCUMULATE_VOTE_COUNT,
+                &[&NetworkEvent::Online(online_payload.0, online_payload.1)],
+            );
+        }
+
+        fn accumulate_section_info_if_vote(&mut self, section_info_payload: SectionInfo) {
+            let _ = self.n_vote_for_gossipped(
+                NOT_ACCUMULATE_ALONE_VOTE_COUNT,
+                &[&NetworkEvent::SectionInfo(section_info_payload)],
+            );
         }
 
         fn new_section_info_with(&self, new_id: &PublicId) -> SectionInfo {
@@ -2713,7 +2732,7 @@ mod tests {
     fn accumulate_expect_candidate() {
         let mut node_test = NoteUnderTest::make_node();
 
-        let _ = node_test.n_vote_for_gossipped_for_expect_candidate(ACCUMULATE_VOTE_COUNT);
+        let _ = node_test.accumulate_expect_candidate();
 
         assert!(node_test.has_resource_proof_candidate());
     }
@@ -2722,13 +2741,10 @@ mod tests {
     // PurgeCandidate is consensused first: candidate is removed
     fn accumulate_purge_candidate() {
         let mut node_test = NoteUnderTest::make_node();
-        let payload_expect = node_test.n_vote_for_gossipped_for_expect_candidate(3);
+        let payload_expect = node_test.accumulate_expect_candidate();
 
         let purge_payload = payload_expect.old_public_id;
-        let _ = node_test.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
-            &[&NetworkEvent::PurgeCandidate(purge_payload)],
-        );
+        node_test.accumulate_purge_candidate(purge_payload);
 
         assert!(!node_test.has_resource_proof_candidate());
     }
@@ -2737,13 +2753,10 @@ mod tests {
     // Candidate is only removed as candidate when its SectionInfo is consensused
     fn accumulate_online_candidate_only_do_not_remove_candidate() {
         let mut node_test = NoteUnderTest::make_node();
-        let _ = node_test.n_vote_for_gossipped_for_expect_candidate(3);
+        let _ = node_test.accumulate_expect_candidate();
 
         let online_payload = online_payload();
-        let _ = node_test.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
-            &[&NetworkEvent::Online(online_payload.0, online_payload.1)],
-        );
+        node_test.accumulate_online(online_payload);
 
         assert!(node_test.has_resource_proof_candidate());
         assert!(node_test.is_peer_valid(&online_payload.0));
@@ -2753,17 +2766,12 @@ mod tests {
     // Candidate is only removed as candidate when its SectionInfo is consensused
     fn accumulate_online_candidate_then_section_info_remove_candidate() {
         let mut node_test = NoteUnderTest::make_node();
-        let _ = node_test.n_vote_for_gossipped_for_expect_candidate(3);
-
+        let _ = node_test.accumulate_expect_candidate();
         let online_payload = online_payload();
+        node_test.accumulate_online(online_payload);
+
         let new_section_info = node_test.new_section_info_with(&online_payload.0);
-        let _ = node_test.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
-            &[
-                &NetworkEvent::Online(online_payload.0, online_payload.1),
-                &NetworkEvent::SectionInfo(new_section_info),
-            ],
-        );
+        node_test.accumulate_section_info_if_vote(new_section_info);
 
         assert!(!node_test.has_resource_proof_candidate());
         assert!(node_test.is_peer_valid(&online_payload.0));
@@ -2773,17 +2781,12 @@ mod tests {
     // When Online consensused first, PurgeCandidate has no effect
     fn accumulate_online_then_purge_candidate() {
         let mut node_test = NoteUnderTest::make_node();
-        let payload_expect = node_test.n_vote_for_gossipped_for_expect_candidate(3);
-
+        let payload_expect = node_test.accumulate_expect_candidate();
         let online_payload = online_payload();
+        node_test.accumulate_online(online_payload);
+
         let purge_payload = payload_expect.old_public_id;
-        let _ = node_test.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
-            &[
-                &NetworkEvent::Online(online_payload.0, online_payload.1),
-                &NetworkEvent::PurgeCandidate(purge_payload),
-            ],
-        );
+        node_test.accumulate_purge_candidate(purge_payload);
 
         assert!(node_test.has_resource_proof_candidate());
         assert!(node_test.is_peer_valid(&online_payload.0));
@@ -2793,19 +2796,14 @@ mod tests {
     // When Online consensused first, PurgeCandidate has no effect
     fn accumulate_online_then_purge_then_section_info_for_candidate() {
         let mut node_test = NoteUnderTest::make_node();
-        let payload_expect = node_test.n_vote_for_gossipped_for_expect_candidate(3);
-
+        let payload_expect = node_test.accumulate_expect_candidate();
         let online_payload = online_payload();
-        let new_section_info = node_test.new_section_info_with(&online_payload.0);
+        node_test.accumulate_online(online_payload);
         let purge_payload = payload_expect.old_public_id;
-        let _ = node_test.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
-            &[
-                &NetworkEvent::Online(online_payload.0, online_payload.1),
-                &NetworkEvent::PurgeCandidate(purge_payload),
-                &NetworkEvent::SectionInfo(new_section_info),
-            ],
-        );
+        node_test.accumulate_purge_candidate(purge_payload);
+
+        let new_section_info = node_test.new_section_info_with(&online_payload.0);
+        node_test.accumulate_section_info_if_vote(new_section_info);
 
         assert!(!node_test.has_resource_proof_candidate());
         assert!(node_test.is_peer_valid(&online_payload.0));
