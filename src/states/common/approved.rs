@@ -63,6 +63,10 @@ pub trait Approved: Relocated {
         vote: ExpectCandidatePayload,
     ) -> Result<(), RoutingError>;
 
+    /// Handles an accumulated `PurgeCandidate` event.
+    fn handle_purge_candidate_event(&mut self, old_public_id: PublicId)
+        -> Result<(), RoutingError>;
+
     /// Handles an accumulated `ProvingSections` event.
     fn handle_proving_sections_event(
         &mut self,
@@ -184,6 +188,10 @@ pub trait Approved: Relocated {
                     }
                 }
                 NetworkEvent::ExpectCandidate(vote) => self.handle_expect_candidate_event(vote)?,
+                NetworkEvent::PurgeCandidate(old_public_id) => {
+                    self.handle_purge_candidate_event(old_public_id)?
+                }
+
                 NetworkEvent::ProvingSections(proving_secs, sec_info) => {
                     self.handle_proving_sections_event(proving_secs, sec_info)?;
                 }

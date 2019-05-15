@@ -576,18 +576,12 @@ impl Node {
 
     /// Returns this node state.
     pub fn node_state(&self) -> Option<&crate::states::Node> {
-        match *self.machine.current() {
-            State::Node(ref state) => Some(state),
-            _ => None,
-        }
+        self.machine.current().node_state()
     }
 
     /// Returns this node mut state.
     pub fn node_state_mut(&mut self) -> Option<&mut crate::states::Node> {
-        match *self.machine.current_mut() {
-            State::Node(ref mut state) => Some(state),
-            _ => None,
-        }
+        self.machine.current_mut().node_state_mut()
     }
 
     /// Returns this node state unwraped: assume state is Node.

@@ -705,11 +705,17 @@ impl Chain {
 
                 self.our_info().is_quorum(proofs)
             }
-            NetworkEvent::Online(_, _) | NetworkEvent::Offline(_) => {
+            NetworkEvent::Online(_, _)
+            | NetworkEvent::Offline(_)
+            | NetworkEvent::ExpectCandidate(_)
+            | NetworkEvent::PurgeCandidate(_) => {
                 self.state() == &ChainState::Normal && self.our_info().is_quorum(proofs)
             }
             NetworkEvent::ProvingSections(_, _) => true,
-            _ => self.our_info().is_quorum(proofs),
+
+            NetworkEvent::OurMerge | NetworkEvent::NeighbourMerge(_) => {
+                self.our_info().is_quorum(proofs)
+            }
         }
     }
 

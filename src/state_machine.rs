@@ -194,6 +194,22 @@ impl State {
         }
     }
 
+    /// Returns this node state.
+    pub fn node_state(&self) -> Option<&Node> {
+        match *self {
+            State::Node(ref state) => Some(state),
+            _ => None,
+        }
+    }
+
+    /// Returns this node mut state.
+    pub fn node_state_mut(&mut self) -> Option<&mut Node> {
+        match *self {
+            State::Node(ref mut state) => Some(state),
+            _ => None,
+        }
+    }
+
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
             State::BootstrappingPeer(_) | State::Terminated => vec![],
