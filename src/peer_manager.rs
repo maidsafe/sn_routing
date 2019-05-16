@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    chain::OnlinePayload,
     crust::CrustUser,
     error::RoutingError,
     id::PublicId,
@@ -25,7 +26,7 @@ use rand;
 use resource_proof::ResourceProof;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
-    error, fmt, mem,
+    error, fmt,
     net::IpAddr,
 };
 
@@ -416,6 +417,13 @@ impl PeerManager {
         old_pub_id: PublicId,
         target_interval: (XorName, XorName),
     ) {
+        if self.has_resource_proof_candidate() {
+            log_or_panic!(
+                LogLevel::Error,
+                "accept_as_candidate when processing one already"
+            );
+        }
+
         self.candidate = Candidate::AcceptedForResourceProof {
             res_proof_start: Instant::now(),
             expired_once: false,
@@ -463,18 +471,19 @@ impl PeerManager {
         }
     }
 
-    /// Returns a (public ID, new name) tuple completed using the verified candidate's details.
+    /// Returns a tuple completed using the verified candidate's details.
     pub fn verified_candidate_info(
         &self,
         log_ident: &LogIdent,
-    ) -> Result<(PublicId, Authority<XorName>), RoutingError> {
-        let (new_pub_id, new_client_auth) = match self.candidate {
+    ) -> Result<(PublicId, OnlinePayload), RoutingError> {
+        let (new_pub_id, new_client_auth, old_pub_id) = match self.candidate {
             Candidate::ResourceProof {
                 ref new_pub_id,
                 ref new_client_auth,
+                ref old_pub_id,
                 passed_our_challenge: true,
                 ..
-            } => (new_pub_id, new_client_auth),
+            } => (new_pub_id, new_client_auth, old_pub_id),
             Candidate::ResourceProof {
                 ref new_pub_id,
                 passed_our_challenge: false,
@@ -505,21 +514,43 @@ impl PeerManager {
             return Err(RoutingError::UnknownCandidate);
         }
 
-        Ok((*new_pub_id, *new_client_auth))
+        Ok((
+            *new_pub_id,
+            OnlinePayload {
+                client_auth: *new_client_auth,
+                old_public_id: *old_pub_id,
+            },
+        ))
     }
 
-    /// Handles accumulated candidate approval. Marks the candidate as `Approved` and returns if the
-    /// candidate is connected or `Err` if the peer is not the candidate or we're missing its info.
+    /// Handles accumulated candidate approval. Marks the candidate as `Approved`.
+    /// If the candidate was already purged or is unexpected, return false.
+    pub fn handle_candidate_online_event(
+        &mut self,
+        new_pub_id: &PublicId,
+        old_pub_id: &PublicId,
+    ) -> bool {
+        if self.candidate.old_pub_id() == Some(old_pub_id) {
+            // Known candidate was accepted.
+            // Ignore any information that could be different stored in candidate.
+            // Do not accept candidate until we complete our current one.
+            self.candidate = Candidate::ApprovedWaitingSectionInfo {
+                new_pub_id: *new_pub_id,
+            };
+            true
+        } else {
+            // Unkwown candidate, Candidate was purged before: refuse it.
+            false
+        }
+    }
+
+    /// Handles approved accumulated candidate. Returns if the candidate is connected or
+    /// `Err` if the peer is not the candidate or we're missing its info.
     pub fn handle_candidate_approval(
         &mut self,
         new_pub_id: &PublicId,
         log_ident: &LogIdent,
     ) -> Result<bool, RoutingError> {
-        // Do not accept candidate until we complete our current one.
-        self.candidate = Candidate::ApprovedWaitingSectionInfo {
-            new_pub_id: *new_pub_id,
-        };
-
         if let Some(peer) = self.peers.get_mut(new_pub_id) {
             let is_connected = peer.is_connected();
             if !is_connected {
@@ -561,19 +592,19 @@ impl PeerManager {
             old_pub_id.name(),
             new_pub_id.name()
         );
-        let candidate = mem::replace(&mut self.candidate, Candidate::None);
-        let (res_proof_start, expired_once, target_interval) = match candidate {
+
+        let (res_proof_start, expired_once, target_interval) = match &self.candidate {
             Candidate::AcceptedForResourceProof {
                 res_proof_start,
                 expired_once,
                 old_pub_id: old_id,
                 target_interval,
-            } if old_id == *old_pub_id => (res_proof_start, expired_once, target_interval),
-            candidate => {
-                self.candidate = candidate;
+            } if old_id == old_pub_id => (*res_proof_start, *expired_once, *target_interval),
+            _ => {
                 return Ok(false);
             }
         };
+
         if *new_pub_id.name() < target_interval.0 || *new_pub_id.name() > target_interval.1 {
             warn!(
                 "{} has used a new ID which is not within the required target range.",

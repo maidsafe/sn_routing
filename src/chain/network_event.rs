@@ -28,12 +28,20 @@ pub struct ExpectCandidatePayload {
     pub dst_name: XorName,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct OnlinePayload {
+    /// The joining node's previous public ID.
+    pub old_public_id: PublicId,
+    /// The joining node's current authority.
+    pub client_auth: Authority<XorName>,
+}
+
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum NetworkEvent {
-    Online(PublicId, Authority<XorName>),
+    Online(PublicId, OnlinePayload),
     Offline(PublicId),
     OurMerge,
     NeighbourMerge(Digest256),

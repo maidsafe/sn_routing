@@ -11,7 +11,7 @@ use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
     chain::{
-        Chain, ChainState, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent,
+        Chain, ChainState, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload,
         PrefixChangeOutcome, Proof, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
@@ -1418,13 +1418,14 @@ impl Node {
     }
 
     fn send_candidate_approval(&mut self) {
-        let (new_id, client_auth) = match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
-            Err(_) => {
-                trace!("{} No candidate for which to send CandidateApproval.", self);
-                return;
-            }
-            Ok(result) => result,
-        };
+        let (new_id, online_payload) =
+            match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
+                Err(_) => {
+                    trace!("{} No candidate for which to send CandidateApproval.", self);
+                    return;
+                }
+                Ok(result) => result,
+            };
 
         info!(
             "{} Resource proof duration has finished. Voting to approve candidate {}.",
@@ -1441,7 +1442,7 @@ impl Node {
                 self.our_prefix()
             );
         }
-        self.vote_for_event(NetworkEvent::Online(new_id, client_auth));
+        self.vote_for_event(NetworkEvent::Online(new_id, online_payload));
     }
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
@@ -2320,11 +2321,19 @@ impl Approved for Node {
     fn handle_online_event(
         &mut self,
         new_pub_id: PublicId,
-        new_client_auth: Authority<XorName>,
+        online_payload: OnlinePayload,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         let to_vote_infos = self.chain.add_member(new_pub_id)?;
-        let _ = self.handle_candidate_approval(new_pub_id, new_client_auth, outbox);
+
+        if !self
+            .peer_mgr
+            .handle_candidate_online_event(&new_pub_id, &online_payload.old_public_id)
+        {
+            self.vote_for_event(NetworkEvent::Offline(new_pub_id));
+        }
+
+        let _ = self.handle_candidate_approval(new_pub_id, online_payload.client_auth, outbox);
         to_vote_infos
             .into_iter()
             .map(NetworkEvent::SectionInfo)
@@ -2589,7 +2598,7 @@ mod tests {
             );
         }
 
-        fn accumulate_online(&mut self, online_payload: (PublicId, Authority<XorName>)) {
+        fn accumulate_online(&mut self, online_payload: (PublicId, OnlinePayload)) {
             let _ = self.n_vote_for_gossipped(
                 ACCUMULATE_VOTE_COUNT,
                 &[&NetworkEvent::Online(online_payload.0, online_payload.1)],
@@ -2600,6 +2609,13 @@ mod tests {
             let _ = self.n_vote_for_gossipped(
                 NOT_ACCUMULATE_ALONE_VOTE_COUNT,
                 &[&NetworkEvent::SectionInfo(section_info_payload)],
+            );
+        }
+
+        fn accumulate_offline_if_vote(&mut self, offline_payload: PublicId) {
+            let _ = self.n_vote_for_gossipped(
+                NOT_ACCUMULATE_ALONE_VOTE_COUNT,
+                &[&NetworkEvent::Offline(offline_payload)],
             );
         }
 
@@ -2614,6 +2630,10 @@ mod tests {
                 *self.section_info.prefix(),
                 Some(&self.section_info)
             ))
+        }
+
+        fn has_unpolled_observations(&self) -> bool {
+            self.node_state().has_unpolled_observations(false)
         }
 
         fn has_resource_proof_candidate(&self) -> bool {
@@ -2710,14 +2730,20 @@ mod tests {
         }
     }
 
-    fn online_payload() -> (PublicId, Authority<XorName>) {
+    fn online_payload(old_public_id: PublicId) -> (PublicId, OnlinePayload) {
         let new_full_id = FullId::new();
         let proxy_id = FullId::new();
-        let authority = Authority::Client {
+        let client_auth = Authority::Client {
             client_id: *new_full_id.public_id(),
             proxy_node_name: *proxy_id.public_id().name(),
         };
-        (*new_full_id.public_id(), authority)
+        (
+            *new_full_id.public_id(),
+            OnlinePayload {
+                client_auth,
+                old_public_id,
+            },
+        )
     }
 
     #[test]
@@ -2753,10 +2779,10 @@ mod tests {
     // Candidate is only removed as candidate when its SectionInfo is consensused
     fn accumulate_online_candidate_only_do_not_remove_candidate() {
         let mut node_test = NoteUnderTest::new();
-        let _ = node_test.accumulate_expect_candidate();
+        let payload_expect = node_test.accumulate_expect_candidate();
 
-        let online_payload = online_payload();
-        node_test.accumulate_online(online_payload);
+        let online_payload = online_payload(payload_expect.old_public_id);
+        node_test.accumulate_online(online_payload.clone());
 
         assert!(node_test.has_resource_proof_candidate());
         assert!(node_test.is_peer_valid(&online_payload.0));
@@ -2766,9 +2792,9 @@ mod tests {
     // Candidate is only removed as candidate when its SectionInfo is consensused
     fn accumulate_online_candidate_then_section_info_remove_candidate() {
         let mut node_test = NoteUnderTest::new();
-        let _ = node_test.accumulate_expect_candidate();
-        let online_payload = online_payload();
-        node_test.accumulate_online(online_payload);
+        let payload_expect = node_test.accumulate_expect_candidate();
+        let online_payload = online_payload(payload_expect.old_public_id);
+        node_test.accumulate_online(online_payload.clone());
 
         let new_section_info = node_test.new_section_info_with(&online_payload.0);
         node_test.accumulate_section_info_if_vote(new_section_info);
@@ -2782,8 +2808,8 @@ mod tests {
     fn accumulate_online_then_purge_candidate() {
         let mut node_test = NoteUnderTest::new();
         let payload_expect = node_test.accumulate_expect_candidate();
-        let online_payload = online_payload();
-        node_test.accumulate_online(online_payload);
+        let online_payload = online_payload(payload_expect.old_public_id);
+        node_test.accumulate_online(online_payload.clone());
 
         let purge_payload = payload_expect.old_public_id;
         node_test.accumulate_purge_candidate(purge_payload);
@@ -2797,8 +2823,8 @@ mod tests {
     fn accumulate_online_then_purge_then_section_info_for_candidate() {
         let mut node_test = NoteUnderTest::new();
         let payload_expect = node_test.accumulate_expect_candidate();
-        let online_payload = online_payload();
-        node_test.accumulate_online(online_payload);
+        let online_payload = online_payload(payload_expect.old_public_id);
+        node_test.accumulate_online(online_payload.clone());
         let purge_payload = payload_expect.old_public_id;
         node_test.accumulate_purge_candidate(purge_payload);
 
@@ -2807,5 +2833,38 @@ mod tests {
 
         assert!(!node_test.has_resource_proof_candidate());
         assert!(node_test.is_peer_valid(&online_payload.0));
+    }
+
+    #[test]
+    // When PurgeCandidate consensused first, When Online consensused peer not added.
+    fn accumulate_purge_then_online_for_candidate() {
+        let mut node_test = NoteUnderTest::new();
+        let payload_expect = node_test.accumulate_expect_candidate();
+        let purge_payload = payload_expect.old_public_id;
+        node_test.accumulate_purge_candidate(purge_payload);
+
+        let online_payload = online_payload(payload_expect.old_public_id);
+        node_test.accumulate_online(online_payload.clone());
+
+        assert!(node_test.has_unpolled_observations());
+        assert!(!node_test.has_resource_proof_candidate());
+        assert!(node_test.is_peer_valid(&online_payload.0));
+    }
+
+    #[test]
+    // When PurgeCandidate consensused first, When Online consensused, Offline is voted.
+    fn accumulate_purge_then_online_then_offline_for_candidate() {
+        let mut node_test = NoteUnderTest::new();
+        let payload_expect = node_test.accumulate_expect_candidate();
+        let purge_payload = payload_expect.old_public_id;
+        node_test.accumulate_purge_candidate(purge_payload);
+        let online_payload = online_payload(payload_expect.old_public_id);
+        node_test.accumulate_online(online_payload.clone());
+
+        node_test.accumulate_offline_if_vote(online_payload.0);
+
+        assert!(!node_test.has_unpolled_observations());
+        assert!(!node_test.has_resource_proof_candidate());
+        assert!(!node_test.is_peer_valid(&online_payload.0));
     }
 }
