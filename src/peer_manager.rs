@@ -409,6 +409,16 @@ impl PeerManager {
         self.candidate != Candidate::None
     }
 
+    /// Return true if received CandidateInfo
+    #[cfg(all(test, feature = "mock_parsec"))]
+    pub fn has_candidate_info(&self) -> bool {
+        if let Candidate::ResourceProof { .. } = self.candidate {
+            true
+        } else {
+            false
+        }
+    }
+
     /// Our section decided that the candidate should be selected next.
     /// replace any ongoing (i.e. unapproved) candidate with the new state
     /// `AcceptedForResourceProof` for the given candidate.
