@@ -1074,6 +1074,7 @@ impl Node {
                 self, new_pub_id
             );
             self.disconnect_peer(new_pub_id);
+            return;
         }
 
         // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateInfo, it
@@ -3067,6 +3068,22 @@ mod tests {
 
         let _ = node_test.dispatch_routing_message(node_test.connection_info_request_rpc());
         let _ = node_test.handle_direct_message(node_test.candidate_info_rpc());
+
+        assert!(!node_test.has_candidate_info());
+        assert!(node_test.has_resource_proof_candidate());
+        assert!(!node_test.is_candidate_a_valid_peer());
+    }
+
+    #[test]
+    // Candidate info that is not trustworthy is not trusted.
+    fn candidate_info_rpc_bad_signature() {
+        let mut node_test = NoteUnderTest::new();
+        node_test.set_interval_to_match_candidate(true);
+        node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+
+        let _ = node_test.dispatch_routing_message(node_test.connection_info_request_rpc());
+        let _ = node_test
+            .handle_direct_message(node_test.candidate_info_rpc_use_wrong_old_signature(true));
 
         assert!(!node_test.has_candidate_info());
         assert!(node_test.has_resource_proof_candidate());
