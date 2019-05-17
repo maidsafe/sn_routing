@@ -389,6 +389,10 @@ impl Node {
     }
 
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
+        // Clear any relocation overrides
+        self.next_relocation_dst = None;
+        self.next_relocation_interval = None;
+
         let drained_obs: Vec<_> = self
             .parsec_map
             .our_unpolled_observations()
