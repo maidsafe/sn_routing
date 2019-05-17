@@ -680,14 +680,31 @@ pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
     let min_section_size = nodes[0].handle.0.borrow().network.min_section_size();
     verify_chain_invariant(nodes.iter().map(TestNode::chain), min_section_size);
 
+    let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
         // Confirm valid peers from chain are connected according to PeerMgr
         let mut peers = node.chain().valid_peers();
-        let _ = peers.remove(&node.chain().our_id());
-        for pub_id in peers {
-            assert_eq!(true, node.inner.is_node_peer(pub_id));
+        let our_id = node.chain().our_id();
+        let _ = peers.remove(&our_id);
+        let missing_peers = peers
+            .iter()
+            .filter(|pub_id| !node.inner.is_node_peer(pub_id))
+            .cloned()
+            .collect_vec();
+        if !missing_peers.is_empty() {
+            error!(
+                "verify_invariant_for_all_nodes: node {}: missing: {:?}",
+                our_id, &missing_peers
+            );
+            all_missing_peers.extend(missing_peers);
         }
     }
+
+    assert!(
+        all_missing_peers.is_empty(),
+        "verify_invariant_for_all_nodes - all_missing_peers: {:?}",
+        all_missing_peers
+    );
 }
 
 // Generate a vector of random bytes of the given length.

@@ -9,13 +9,14 @@
 use super::Relocated;
 use crate::{
     chain::{
-        Chain, ExpectCandidatePayload, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo,
+        Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet,
+        ProvingSection, SectionInfo,
     },
     error::RoutingError,
     id::PublicId,
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
-    routing_table::{Authority, Prefix},
+    routing_table::Prefix,
     state_machine::Transition,
     xor_name::XorName,
 };
@@ -30,7 +31,7 @@ pub trait Approved: Relocated {
     fn handle_online_event(
         &mut self,
         new_pub_id: PublicId,
-        new_client_auth: Authority<XorName>,
+        online_payload: OnlinePayload,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -173,8 +174,8 @@ pub trait Approved: Relocated {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
-                NetworkEvent::Online(pub_id, client_auth) => {
-                    self.handle_online_event(pub_id, client_auth, outbox)?;
+                NetworkEvent::Online(pub_id, info) => {
+                    self.handle_online_event(pub_id, info, outbox)?;
                 }
                 NetworkEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id, outbox)?;

@@ -16,7 +16,9 @@ use super::{
 use crate::{
     ack_manager::AckManager,
     cache::Cache,
-    chain::{Chain, ExpectCandidatePayload, GenesisPfxInfo, ProvingSection, SectionInfo},
+    chain::{
+        Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, ProvingSection, SectionInfo,
+    },
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
@@ -358,7 +360,7 @@ impl Approved for EstablishingNode {
     fn handle_online_event(
         &mut self,
         new_pub_id: PublicId,
-        _: Authority<XorName>,
+        _: OnlinePayload,
         _: &mut EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.chain.add_member(new_pub_id)?;
