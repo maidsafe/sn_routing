@@ -696,7 +696,7 @@ pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
                 "verify_invariant_for_all_nodes: node {}: missing: {:?}",
                 our_id, &missing_peers
             );
-            all_missing_peers.extend(missing_peers.into_iter());
+            all_missing_peers.extend(missing_peers);
         }
     }
 

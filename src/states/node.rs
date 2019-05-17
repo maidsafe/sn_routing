@@ -755,12 +755,22 @@ impl Node {
         // to our RT.
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
-        let is_connected = match self
-            .peer_mgr
-            .handle_candidate_approval(&new_pub_id, &self.log_ident())
-        {
-            Ok(is_connected) => is_connected,
-            Err(_) => {
+        let is_connected = match self.peer_mgr.get_peer(&new_pub_id).map(Peer::is_connected) {
+            Some(true) => true,
+            Some(false) => {
+                trace!(
+                    "{} Candidate {} not yet connected to us.",
+                    self.log_ident(),
+                    new_pub_id.name()
+                );
+                false
+            }
+            None => {
+                trace!(
+                    "{} No peer with name {}",
+                    self.log_ident(),
+                    new_pub_id.name()
+                );
                 let src = Authority::ManagedNode(*self.name());
                 if let Err(error) =
                     self.send_connection_info_request(new_pub_id, src, new_client_auth, outbox)
@@ -2752,7 +2762,7 @@ mod tests {
             *self.candidate_info.old_full_id.public_id()
         }
 
-        fn expect_candidate_rpc(&self) -> RoutingMessage {
+        fn expect_candidate_message(&self) -> RoutingMessage {
             let payload = self.expect_candidate_payload();
 
             RoutingMessage {
@@ -2766,7 +2776,7 @@ mod tests {
             }
         }
 
-        fn connection_info_request_rpc(&self) -> RoutingMessage {
+        fn connection_info_request_message(&self) -> RoutingMessage {
             use crate::mock_crust::Endpoint;
             use crate::PubConnectionInfo;
 
@@ -2800,11 +2810,11 @@ mod tests {
             RoutingMessage { src, dst, content }
         }
 
-        fn candidate_info_rpc(&self) -> (DirectMessage, PublicId) {
-            self.candidate_info_rpc_use_wrong_old_signature(false)
+        fn candidate_info_message(&self) -> (DirectMessage, PublicId) {
+            self.candidate_info_message_use_wrong_old_signature(false)
         }
 
-        fn candidate_info_rpc_use_wrong_old_signature(
+        fn candidate_info_message_use_wrong_old_signature(
             &self,
             use_bad_sig: bool,
         ) -> (DirectMessage, PublicId) {
@@ -2931,11 +2941,11 @@ mod tests {
     }
 
     #[test]
-    // ExpectCandidate not consensused but node received RPC: candidate is not added
-    fn not_accumulate_expect_candidate_with_rpc() {
+    // ExpectCandidate not consensused but node received Message: candidate is not added
+    fn not_accumulate_expect_candidate_with_message() {
         let mut node_test = NoteUnderTest::new();
 
-        let _ = node_test.dispatch_routing_message(node_test.expect_candidate_rpc());
+        let _ = node_test.dispatch_routing_message(node_test.expect_candidate_message());
 
         assert!(!node_test.has_resource_proof_candidate());
         assert!(!node_test.is_candidate_a_valid_peer());
@@ -2943,9 +2953,9 @@ mod tests {
 
     #[test]
     // ExpectCandidate is consensused with the vote of node under test: candidate is added
-    fn accumulate_expect_candidate_with_rpc() {
+    fn accumulate_expect_candidate_with_message() {
         let mut node_test = NoteUnderTest::new();
-        let _ = node_test.dispatch_routing_message(node_test.expect_candidate_rpc());
+        let _ = node_test.dispatch_routing_message(node_test.expect_candidate_message());
 
         node_test.accumulate_expect_candidate_if_vote(node_test.expect_candidate_payload());
 
@@ -3050,13 +3060,13 @@ mod tests {
 
     #[test]
     // Candidate now show info
-    fn candidate_info_rpc_in_interval() {
+    fn candidate_info_message_in_interval() {
         let mut node_test = NoteUnderTest::new();
         node_test.set_interval_to_match_candidate(true);
         node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
 
-        let _ = node_test.dispatch_routing_message(node_test.connection_info_request_rpc());
-        let _ = node_test.handle_direct_message(node_test.candidate_info_rpc());
+        let _ = node_test.dispatch_routing_message(node_test.connection_info_request_message());
+        let _ = node_test.handle_direct_message(node_test.candidate_info_message());
 
         assert!(node_test.has_candidate_info());
         assert!(node_test.has_resource_proof_candidate());
@@ -3065,13 +3075,13 @@ mod tests {
 
     #[test]
     // Candidate info in wrong interval: Candidate not modifed - require purge event to remove
-    fn candidate_info_rpc_not_in_interval() {
+    fn candidate_info_message_not_in_interval() {
         let mut node_test = NoteUnderTest::new();
         node_test.set_interval_to_match_candidate(false);
         node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
 
-        let _ = node_test.dispatch_routing_message(node_test.connection_info_request_rpc());
-        let _ = node_test.handle_direct_message(node_test.candidate_info_rpc());
+        let _ = node_test.dispatch_routing_message(node_test.connection_info_request_message());
+        let _ = node_test.handle_direct_message(node_test.candidate_info_message());
 
         assert!(!node_test.has_candidate_info());
         assert!(node_test.has_resource_proof_candidate());
@@ -3080,14 +3090,14 @@ mod tests {
 
     #[test]
     // Candidate info that is not trustworthy is not trusted.
-    fn candidate_info_rpc_bad_signature() {
+    fn candidate_info_message_bad_signature() {
         let mut node_test = NoteUnderTest::new();
         node_test.set_interval_to_match_candidate(true);
         node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
 
-        let _ = node_test.dispatch_routing_message(node_test.connection_info_request_rpc());
+        let _ = node_test.dispatch_routing_message(node_test.connection_info_request_message());
         let _ = node_test
-            .handle_direct_message(node_test.candidate_info_rpc_use_wrong_old_signature(true));
+            .handle_direct_message(node_test.candidate_info_message_use_wrong_old_signature(true));
 
         assert!(!node_test.has_candidate_info());
         assert!(node_test.has_resource_proof_candidate());

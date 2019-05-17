@@ -554,29 +554,6 @@ impl PeerManager {
         }
     }
 
-    /// Handles approved accumulated candidate. Returns if the candidate is connected or
-    /// `Err` if the peer is not the candidate or we're missing its info.
-    pub fn handle_candidate_approval(
-        &mut self,
-        new_pub_id: &PublicId,
-        log_ident: &LogIdent,
-    ) -> Result<bool, RoutingError> {
-        if let Some(peer) = self.peers.get_mut(new_pub_id) {
-            let is_connected = peer.is_connected();
-            if !is_connected {
-                trace!(
-                    "{} Candidate {} not yet connected to us.",
-                    log_ident,
-                    new_pub_id.name()
-                );
-            }
-            Ok(is_connected)
-        } else {
-            trace!("{} No peer with name {}", log_ident, new_pub_id.name());
-            Err(RoutingError::InvalidStateForOperation)
-        }
-    }
-
     /// Updates peer's state to `Candidate` in the peer map if it is an unapproved candidate and
     /// returns the whether the candidate needs to perform the resource proof.
     ///
