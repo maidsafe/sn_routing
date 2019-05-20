@@ -376,7 +376,7 @@ impl Approved for EstablishingNode {
         Ok(())
     }
 
-    fn handle_online_event(&mut self, _: PublicId, _: OnlinePayload) -> Result<(), RoutingError> {
+    fn handle_online_event(&mut self, _: OnlinePayload) -> Result<(), RoutingError> {
         Ok(())
     }
 

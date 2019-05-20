@@ -450,7 +450,7 @@ impl Node {
                 // flight as well.
                 NetworkEvent::AddElder(_, _)
                 | NetworkEvent::RemoveElder(_)
-                | NetworkEvent::Online(_, _)
+                | NetworkEvent::Online(_)
                 | NetworkEvent::ExpectCandidate(_)
                 | NetworkEvent::PurgeCandidate(_) => false,
 
@@ -1438,31 +1438,33 @@ impl Node {
     }
 
     fn send_candidate_approval(&mut self) {
-        let (new_id, online_payload) =
-            match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
-                Err(_) => {
-                    trace!("{} No candidate for which to send CandidateApproval.", self);
-                    return;
-                }
-                Ok(result) => result,
-            };
+        let online_payload = match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
+            Err(_) => {
+                trace!("{} No candidate for which to send CandidateApproval.", self);
+                return;
+            }
+            Ok(result) => result,
+        };
 
         info!(
             "{} Resource proof duration has finished. Voting to approve candidate {}.",
             self,
-            new_id.name()
+            online_payload.new_public_id.name()
         );
 
-        if !self.our_prefix().matches(new_id.name()) {
+        if !self
+            .our_prefix()
+            .matches(online_payload.new_public_id.name())
+        {
             log_or_panic!(
                 LogLevel::Error,
                 "{} About to vote for {} which does not match self pfx: {:?}",
                 self,
-                new_id.name(),
+                online_payload.new_public_id.name(),
                 self.our_prefix()
             );
         }
-        self.vote_for_event(NetworkEvent::Online(new_id, online_payload));
+        self.vote_for_event(NetworkEvent::Online(online_payload));
     }
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
@@ -2369,17 +2371,10 @@ impl Approved for Node {
         Ok(())
     }
 
-    fn handle_online_event(
-        &mut self,
-        new_pub_id: PublicId,
-        online_payload: OnlinePayload,
-    ) -> Result<(), RoutingError> {
-        if self
-            .peer_mgr
-            .handle_candidate_online_event(&new_pub_id, &online_payload.old_public_id)
-        {
+    fn handle_online_event(&mut self, online_payload: OnlinePayload) -> Result<(), RoutingError> {
+        if self.peer_mgr.handle_candidate_online_event(&online_payload) {
             self.vote_for_event(NetworkEvent::AddElder(
-                new_pub_id,
+                online_payload.new_public_id,
                 online_payload.client_auth,
             ));
         }

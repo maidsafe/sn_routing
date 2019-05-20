@@ -171,19 +171,19 @@ impl NoteUnderTest {
         );
     }
 
-    fn accumulate_online(&mut self, online_payload: (PublicId, OnlinePayload)) {
+    fn accumulate_online(&mut self, online_payload: OnlinePayload) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&NetworkEvent::Online(online_payload.0, online_payload.1)],
+            &[&NetworkEvent::Online(online_payload)],
         );
     }
 
-    fn accumulate_add_elder_if_vote(&mut self, online_payload: (PublicId, OnlinePayload)) {
+    fn accumulate_add_elder_if_vote(&mut self, online_payload: OnlinePayload) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
             &[&NetworkEvent::AddElder(
-                online_payload.0,
-                online_payload.1.client_auth,
+                online_payload.new_public_id,
+                online_payload.client_auth,
             )],
         );
     }
@@ -281,18 +281,16 @@ impl NoteUnderTest {
         }
     }
 
-    fn online_payload(&self) -> (PublicId, OnlinePayload) {
+    fn online_payload(&self) -> OnlinePayload {
         let client_auth = Authority::Client {
             client_id: *self.candidate_info.new_full_id.public_id(),
             proxy_node_name: *self.candidate_info.new_proxy_id.public_id().name(),
         };
-        (
-            *self.candidate_info.new_full_id.public_id(),
-            OnlinePayload {
-                client_auth,
-                old_public_id: *self.candidate_info.old_full_id.public_id(),
-            },
-        )
+        OnlinePayload {
+            new_public_id: *self.candidate_info.new_full_id.public_id(),
+            client_auth,
+            old_public_id: *self.candidate_info.old_full_id.public_id(),
+        }
     }
 
     fn offline_payload(&self) -> PublicId {

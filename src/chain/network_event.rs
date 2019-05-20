@@ -30,6 +30,8 @@ pub struct ExpectCandidatePayload {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct OnlinePayload {
+    /// The joining node's new public ID.
+    pub new_public_id: PublicId,
     /// The joining node's previous public ID.
     pub old_public_id: PublicId,
     /// The joining node's current authority.
@@ -47,7 +49,7 @@ pub enum NetworkEvent {
     RemoveElder(PublicId),
 
     /// Voted for candidate that pass resource proof
-    Online(PublicId, OnlinePayload),
+    Online(OnlinePayload),
     /// Voted for candidate we no longer consider online.
     Offline(PublicId),
 
@@ -105,7 +107,11 @@ impl Debug for NetworkEvent {
         match self {
             NetworkEvent::AddElder(ref id, _) => write!(formatter, "AddElder({}, _)", id),
             NetworkEvent::RemoveElder(ref id) => write!(formatter, "RemoveElder({})", id),
-            NetworkEvent::Online(ref id, _) => write!(formatter, "Online({}, _)", id),
+            NetworkEvent::Online(ref payload) => write!(
+                formatter,
+                "Online(new:{}, old:{})",
+                payload.new_public_id, payload.old_public_id
+            ),
             NetworkEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
             NetworkEvent::OurMerge => write!(formatter, "OurMerge"),
             NetworkEvent::NeighbourMerge(ref digest) => {

@@ -708,7 +708,7 @@ impl Chain {
 
             NetworkEvent::AddElder(_, _)
             | NetworkEvent::RemoveElder(_)
-            | NetworkEvent::Online(_, _)
+            | NetworkEvent::Online(_)
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_) => {

@@ -485,7 +485,7 @@ impl PeerManager {
     pub fn verified_candidate_info(
         &self,
         log_ident: &LogIdent,
-    ) -> Result<(PublicId, OnlinePayload), RoutingError> {
+    ) -> Result<OnlinePayload, RoutingError> {
         let (new_pub_id, new_client_auth, old_pub_id) = match self.candidate {
             Candidate::ResourceProof {
                 ref new_pub_id,
@@ -524,28 +524,22 @@ impl PeerManager {
             return Err(RoutingError::UnknownCandidate);
         }
 
-        Ok((
-            *new_pub_id,
-            OnlinePayload {
-                client_auth: *new_client_auth,
-                old_public_id: *old_pub_id,
-            },
-        ))
+        Ok(OnlinePayload {
+            new_public_id: *new_pub_id,
+            client_auth: *new_client_auth,
+            old_public_id: *old_pub_id,
+        })
     }
 
     /// Handles accumulated candidate approval. Marks the candidate as `Approved`.
     /// If the candidate was already purged or is unexpected, return false.
-    pub fn handle_candidate_online_event(
-        &mut self,
-        new_pub_id: &PublicId,
-        old_pub_id: &PublicId,
-    ) -> bool {
-        if self.candidate.old_pub_id() == Some(old_pub_id) {
+    pub fn handle_candidate_online_event(&mut self, online_payload: &OnlinePayload) -> bool {
+        if self.candidate.old_pub_id() == Some(&online_payload.old_public_id) {
             // Known candidate was accepted.
             // Ignore any information that could be different stored in candidate.
             // Do not accept candidate until we complete our current one.
             self.candidate = Candidate::ApprovedWaitingSectionInfo {
-                new_pub_id: *new_pub_id,
+                new_pub_id: online_payload.new_public_id,
             };
             true
         } else {
