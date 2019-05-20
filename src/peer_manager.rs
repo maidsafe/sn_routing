@@ -118,7 +118,7 @@ pub enum PeerState {
     /// Connected peer is a joining node and waiting for approval of routing.
     Candidate,
     /// We are connected to the peer who is a full node.
-    Node,
+    Node(bool),
     /// We are connected to the peer who is our proxy node.
     Proxy,
 }
@@ -204,7 +204,7 @@ impl Peer {
             | PeerState::Client { .. }
             | PeerState::Connected
             | PeerState::Candidate
-            | PeerState::Node => true,
+            | PeerState::Node(_) => true,
         }
     }
 
@@ -217,7 +217,7 @@ impl Peer {
             | PeerState::CrustConnecting => CONNECTING_PEER_TIMEOUT_SECS,
             PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Bootstrapper { .. } | PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
-            PeerState::Candidate | PeerState::Client { .. } | PeerState::Node => {
+            PeerState::Candidate | PeerState::Client { .. } | PeerState::Node(_) => {
                 return false;
             }
         };
@@ -228,7 +228,7 @@ impl Peer {
     /// Returns whether the peer is a full node.
     pub fn is_node(&self) -> bool {
         match self.state {
-            PeerState::Node => true,
+            PeerState::Node(_) => true,
             _ => false,
         }
     }
@@ -254,6 +254,7 @@ impl Peer {
     fn is_joining_node(&self) -> bool {
         match self.state {
             PeerState::JoiningNode => true,
+            PeerState::Node(val) => val,
             _ => false,
         }
     }
@@ -684,11 +685,10 @@ impl PeerManager {
             log_or_panic!(LogLevel::Error, "{} Peer {} not found.", log_ident, pub_id);
             return Err(RoutingError::UnknownConnection(*pub_id));
         };
-
-        if let PeerState::Node = peer.state {
+        if peer.is_node() {
             Ok(false)
         } else {
-            peer.state = PeerState::Node;
+            peer.state = PeerState::Node(peer.is_joining_node());
             Ok(true)
         }
     }
@@ -981,7 +981,7 @@ impl PeerManager {
             }
             Some(
                 peer @ Peer {
-                    state: PeerState::Node,
+                    state: PeerState::Node(_),
                     ..
                 },
             )
@@ -1073,7 +1073,17 @@ impl PeerManager {
 
     /// Removes the given peer. Returns whether the peer was actually present.
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
-        self.peers.remove(pub_id).is_some()
+        if let Some(mut peer) = self.peers.remove(pub_id) {
+            if peer.is_joining_node() && peer.is_node() {
+                peer.state = PeerState::JoiningNode;
+                self.insert_peer(peer);
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        true
     }
 }
 

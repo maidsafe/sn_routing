@@ -235,7 +235,16 @@ impl<UID: Uid> Network<UID> {
     // Drops any pending messages on a specific route (does not automatically
     // drop packets going the other way).
     fn drop_pending(&self, sender: Endpoint, receiver: Endpoint) {
-        let _ = self.0.borrow_mut().queue.remove(&(sender, receiver));
+        if let Some(dropped) = self.0.borrow_mut().queue.remove(&(sender, receiver)) {
+            for packet in dropped {
+                trace!(
+                    "drop_pending {:?} ->  {:?} : {:?}",
+                    sender,
+                    receiver,
+                    &packet
+                );
+            }
+        }
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet<UID>)> {

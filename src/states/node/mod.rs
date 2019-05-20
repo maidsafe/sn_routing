@@ -2091,7 +2091,7 @@ impl Base for Node {
                 Ok(*self.name())
             }
             Some(&PeerState::JoiningNode) => Ok(*self.name()),
-            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Node) => {
+            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Node(_)) => {
                 Ok(*pub_id.name())
             }
             Some(&PeerState::ConnectionInfoPreparing { .. })
