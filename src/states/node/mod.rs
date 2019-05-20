@@ -448,7 +448,9 @@ impl Node {
                 // Called peer_manager.remove_candidate reset the candidate so it can be shared by
                 // all nodes: Because new node may not have voted for it, Forget the votes in
                 // flight as well.
-                NetworkEvent::Online(_, _)
+                NetworkEvent::AddElder(_, _)
+                | NetworkEvent::RemoveElder(_)
+                | NetworkEvent::Online(_, _)
                 | NetworkEvent::ExpectCandidate(_)
                 | NetworkEvent::PurgeCandidate(_) => false,
 
@@ -2336,22 +2338,14 @@ impl Approved for Node {
         &mut self.chain
     }
 
-    fn handle_online_event(
+    fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        online_payload: OnlinePayload,
+        client_auth: Authority<XorName>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         let to_vote_infos = self.chain.add_member(new_pub_id)?;
-
-        if !self
-            .peer_mgr
-            .handle_candidate_online_event(&new_pub_id, &online_payload.old_public_id)
-        {
-            self.vote_for_event(NetworkEvent::Offline(new_pub_id));
-        }
-
-        let _ = self.handle_candidate_approval(new_pub_id, online_payload.client_auth, outbox);
+        let _ = self.handle_candidate_approval(new_pub_id, client_auth, outbox);
         to_vote_infos
             .into_iter()
             .map(NetworkEvent::SectionInfo)
@@ -2360,7 +2354,7 @@ impl Approved for Node {
         Ok(())
     }
 
-    fn handle_offline_event(
+    fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
         outbox: &mut EventBox,
@@ -2372,6 +2366,28 @@ impl Approved for Node {
             self.disconnect_peer(&pub_id);
         }
 
+        Ok(())
+    }
+
+    fn handle_online_event(
+        &mut self,
+        new_pub_id: PublicId,
+        online_payload: OnlinePayload,
+    ) -> Result<(), RoutingError> {
+        if self
+            .peer_mgr
+            .handle_candidate_online_event(&new_pub_id, &online_payload.old_public_id)
+        {
+            self.vote_for_event(NetworkEvent::AddElder(
+                new_pub_id,
+                online_payload.client_auth,
+            ));
+        }
+        Ok(())
+    }
+
+    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+        self.vote_for_event(NetworkEvent::RemoveElder(pub_id));
         Ok(())
     }
 

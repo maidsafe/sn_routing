@@ -41,13 +41,21 @@ pub struct OnlinePayload {
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum NetworkEvent {
+    /// Add new elder once we agreed to add a candidate
+    AddElder(PublicId, Authority<XorName>),
+    /// Remove elder once we agreed to remove the peer
+    RemoveElder(PublicId),
+
+    /// Voted for candidate that pass resource proof
     Online(PublicId, OnlinePayload),
+    /// Voted for candidate we no longer consider online.
     Offline(PublicId),
+
     OurMerge,
     NeighbourMerge(Digest256),
     SectionInfo(SectionInfo),
 
-    /// Voted for received ExpectCandidate RPC.
+    /// Voted for received ExpectCandidate Message.
     ExpectCandidate(ExpectCandidatePayload),
 
     // Voted for timeout expired for this candidate old_public_id.
@@ -77,11 +85,11 @@ impl NetworkEvent {
     /// Convert `NetworkEvent` into a Parsec Observation
     pub fn into_obs(self) -> Result<parsec::Observation<NetworkEvent, PublicId>, RoutingError> {
         Ok(match self {
-            NetworkEvent::Online(id, auth) => parsec::Observation::Add {
+            NetworkEvent::AddElder(id, auth) => parsec::Observation::Add {
                 peer_id: id,
                 related_info: serialise(&auth)?,
             },
-            NetworkEvent::Offline(id) => parsec::Observation::Remove {
+            NetworkEvent::RemoveElder(id) => parsec::Observation::Remove {
                 peer_id: id,
                 related_info: Default::default(),
             },
@@ -95,6 +103,8 @@ impl parsec::NetworkEvent for NetworkEvent {}
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
+            NetworkEvent::AddElder(ref id, _) => write!(formatter, "AddElder({}, _)", id),
+            NetworkEvent::RemoveElder(ref id) => write!(formatter, "RemoveElder({})", id),
             NetworkEvent::Online(ref id, _) => write!(formatter, "Online({}, _)", id),
             NetworkEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
             NetworkEvent::OurMerge => write!(formatter, "OurMerge"),
