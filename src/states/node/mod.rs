@@ -1729,7 +1729,10 @@ impl Node {
         outbox: &mut EventBox,
         try_reconnect: bool,
     ) -> bool {
-        if self.peer_mgr.remove_peer(&pub_id) {
+        // Calling remove twice to remove a potential JoiningNode we have as a Node than purely
+        // demoting it
+        // TODO: Avoid calling this twice.
+        if self.peer_mgr.remove_peer(&pub_id) || self.peer_mgr.remove_peer(&pub_id) {
             info!("{} Dropped {} from the routing table.", self, pub_id.name());
             outbox.send_event(Event::NodeLost(*pub_id.name()));
 
