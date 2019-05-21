@@ -116,18 +116,15 @@ impl ResourceProver {
             let rp_object = ResourceProof::new(target_size, difficulty);
             let proof_data = rp_object.create_proof_data(&seed);
             let mut prover = rp_object.create_prover(proof_data.clone());
-            let leading_zero_bytes;
-            loop {
+            let leading_zero_bytes = loop {
                 if let Some(result) = prover.try_step() {
-                    // TODO: break with value when Rust #37339 becomes stable
-                    leading_zero_bytes = result;
-                    break;
+                    break result;
                 }
                 if atomic_cancel_clone.load(Ordering::Relaxed) {
                     info!("{} Approval process cancelled", log_ident);
                     return;
                 }
-            }
+            };
             let elapsed = start.elapsed();
 
             let parts = proof_data
