@@ -550,15 +550,13 @@ impl Node {
             }
         } else {
             // Remove any untrusted trailing section infos.
-            // TODO: remove wasted clone. Only useful when msg isnt trusted for log msg.
-            let msg_clone = signed_msg.clone();
             while match signed_msg.previous_hop() {
                 None => true,
                 Some(hop) => !self.is_trusted(hop)?,
             } {
                 // We don't know the last hop! Try the one before that.
                 if !signed_msg.pop_previous_hop() {
-                    debug!("{} Untrusted message: {:?}", self, msg_clone);
+                    debug!("{} Untrusted message: {:?}", self, signed_msg);
                     return Err(RoutingError::NotEnoughSignatures);
                 }
             }
