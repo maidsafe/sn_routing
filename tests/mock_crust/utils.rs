@@ -157,7 +157,7 @@ impl TestNode {
     }
 
     pub fn chain(&self) -> &Chain {
-        unwrap!(self.inner.chain())
+        unwrap!(self.inner.chain(), "no chain for {}", self.name())
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
@@ -640,6 +640,72 @@ pub fn add_connected_nodes_until_split(
     }
 
     trace!("Created testnet comprising {:?}", prefixes);
+}
+
+// This adds new nodes (all with `use_cache` set to `true`) until the specified disjoint sections
+// have formed.
+//
+// `prefix_lengths` is an array representing the required `bit_count`s of the section prefixes.  For
+// example passing [1, 2, 3, 3] could yield a network comprising sections [0, 100, 101, 11], or
+// passing [2, 2, 3, 3, 3, 3] could yield [000, 001, 01, 100, 101, 11], while passing [1, 1] will
+// always yield sections [0, 1].
+//
+// The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
+// least two elements, and every element must be no more than `8`.
+pub fn add_connected_nodes_until_sized(
+    network: &Network<PublicId>,
+    nodes: &mut Vec<TestNode>,
+    prefixes_new_count: &[(Prefix<XorName>, usize)],
+    use_cache: bool,
+) {
+    let mut rng = network.new_rng();
+
+    // Cleanup the previous event queue
+    for node in nodes.iter_mut() {
+        while let Ok(_) = node.try_next_ev() {}
+    }
+
+    // Start enough new nodes under each target prefix to trigger a split eventually.
+    for (prefix, target_count) in prefixes_new_count {
+        let num_in_section = nodes
+            .iter()
+            .filter(|node| prefix.matches(&node.name()))
+            .count();
+        // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
+        // `nodes` when calling this function.
+        assert!(
+            num_in_section <= *target_count,
+            "The existing nodes' names disallow creation of the requested prefixes. There \
+             are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
+            num_in_section,
+            prefix,
+            target_count
+        );
+        let to_add_count = target_count - num_in_section;
+        for _ in 0..to_add_count {
+            add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
+        }
+    }
+
+    // Clear all event queues and clear the `next_relocation_dst` values.
+    for node in nodes.iter_mut() {
+        while let Ok(event) = node.try_next_ev() {
+            match event {
+                Event::NodeAdded(..)
+                | Event::NodeLost(..)
+                | Event::TimerTicked
+                | Event::SectionSplit(..) => (),
+                event => panic!("Got unexpected event: {:?}", event),
+            }
+        }
+        node.inner.set_next_relocation_dst(None);
+        node.inner.set_next_relocation_interval(None);
+    }
+
+    trace!(
+        "Filled prefixes until ready to split {:?}",
+        prefixes_new_count
+    );
 }
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.
