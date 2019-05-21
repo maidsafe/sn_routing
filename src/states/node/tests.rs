@@ -232,7 +232,7 @@ impl NoteUnderTest {
     }
 
     fn has_unpolled_observations(&self) -> bool {
-        self.node_state().has_unpolled_observations(false)
+        self.node_state().has_unpolled_observations()
     }
 
     fn has_resource_proof_candidate(&self) -> bool {

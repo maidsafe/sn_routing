@@ -388,16 +388,13 @@ pub fn poll_and_resend_until(
     should_stop: &Fn(&[TestNode]) -> bool,
 ) {
     let mut fired_connecting_peer_timeout = false;
-    for i in 0..MAX_POLL_CALLS {
+    for _ in 0..MAX_POLL_CALLS {
         if should_stop(nodes) {
             return;
         }
 
         let node_busy = |node: &TestNode| {
-            // after MAX_POLL_CALLS / 2 only filter for opaque events
-            // to avoid stalling the test due to lack of parsec voters.
-            node.inner.has_unacked_msg()
-                || node.inner.has_unpolled_observations(i > MAX_POLL_CALLS / 2)
+            node.inner.has_unacked_msg() || node.inner.has_unpolled_observations()
         };
         let client_busy = |client: &TestClient| client.inner.has_unacked_msg();
         if poll_all_until(nodes, clients, should_stop)

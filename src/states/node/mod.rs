@@ -2186,8 +2186,8 @@ impl Node {
         self.next_relocation_interval = interval;
     }
 
-    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
-        self.parsec_map.has_unpolled_observations(filter_opaque)
+    pub fn has_unpolled_observations(&self) -> bool {
+        self.parsec_map.has_unpolled_observations()
     }
 
     pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {

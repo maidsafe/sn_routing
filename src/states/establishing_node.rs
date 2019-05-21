@@ -183,8 +183,8 @@ impl EstablishingNode {
         self.timer.get_timed_out_tokens()
     }
 
-    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
-        self.parsec_map.has_unpolled_observations(filter_opaque)
+    pub fn has_unpolled_observations(&self) -> bool {
+        self.parsec_map.has_unpolled_observations()
     }
 }
 
