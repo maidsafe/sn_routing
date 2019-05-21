@@ -27,19 +27,19 @@ fn smoke() {
     let bob_id = PeerId(1);
 
     let mut genesis_group = BTreeSet::new();
-    let _ = genesis_group.insert(alice_id.clone());
-    let _ = genesis_group.insert(bob_id.clone());
+    let _ = genesis_group.insert(alice_id);
+    let _ = genesis_group.insert(bob_id);
 
     let mut alice = Parsec::from_genesis(
         Default::default(),
-        alice_id.clone(),
+        alice_id,
         &genesis_group,
         ConsensusMode::Supermajority,
     );
 
     let mut bob = Parsec::from_genesis(
         Default::default(),
-        bob_id.clone(),
+        bob_id,
         &genesis_group,
         ConsensusMode::Supermajority,
     );
@@ -83,25 +83,25 @@ fn add_peer() {
     let carol_id = PeerId(2);
 
     let mut genesis_group = BTreeSet::new();
-    let _ = genesis_group.insert(bob_id.clone());
-    let _ = genesis_group.insert(carol_id.clone());
+    let _ = genesis_group.insert(bob_id);
+    let _ = genesis_group.insert(carol_id);
 
     let mut bob = Parsec::from_genesis(
         Default::default(),
-        bob_id.clone(),
+        bob_id,
         &genesis_group,
         ConsensusMode::Supermajority,
     );
     let mut carol = Parsec::from_genesis(
         Default::default(),
-        carol_id.clone(),
+        carol_id,
         &genesis_group,
         ConsensusMode::Supermajority,
     );
 
     let mut alice = Parsec::from_existing(
         Default::default(),
-        alice_id.clone(),
+        alice_id,
         &genesis_group,
         &genesis_group,
         ConsensusMode::Supermajority,
@@ -111,11 +111,11 @@ fn add_peer() {
     let mut bob_blocks = vec![];
     let mut carol_blocks = vec![];
 
-    assert!(!is_gossip_recipient(&bob, &alice_id));
-    assert!(!is_gossip_recipient(&carol, &alice_id));
+    assert!(!is_gossip_recipient(&bob, alice_id));
+    assert!(!is_gossip_recipient(&carol, alice_id));
 
     let add_alice = Observation::Add {
-        peer_id: alice_id.clone(),
+        peer_id: alice_id,
         related_info: vec![],
     };
 
@@ -129,8 +129,8 @@ fn add_peer() {
     bob_blocks.extend(poll_all(&mut bob));
     carol_blocks.extend(poll_all(&mut carol));
 
-    assert!(is_gossip_recipient(&bob, &alice_id));
-    assert!(is_gossip_recipient(&carol, &alice_id));
+    assert!(is_gossip_recipient(&bob, alice_id));
+    assert!(is_gossip_recipient(&carol, alice_id));
 
     bob.vote_for(payload0.clone()).unwrap();
     carol.vote_for(payload0.clone()).unwrap();
@@ -159,18 +159,18 @@ fn consensus_mode_single() {
     let bob_id = PeerId(1);
 
     let mut genesis_group = BTreeSet::new();
-    let _ = genesis_group.insert(alice_id.clone());
-    let _ = genesis_group.insert(bob_id.clone());
+    let _ = genesis_group.insert(alice_id);
+    let _ = genesis_group.insert(bob_id);
 
     let mut alice = Parsec::from_genesis(
         Default::default(),
-        alice_id.clone(),
+        alice_id,
         &genesis_group,
         ConsensusMode::Single,
     );
     let mut bob = Parsec::from_genesis(
         Default::default(),
-        bob_id.clone(),
+        bob_id,
         &genesis_group,
         ConsensusMode::Single,
     );
@@ -205,6 +205,39 @@ fn consensus_mode_single() {
 }
 
 #[test]
+fn reevaluate_previously_insufficient_votes() {
+    init_mock();
+
+    // Create 5 nodes (Alice, Bob, Carol, Dave, Eric). 3 of them vote to remove Dave, which is not
+    // enough to reach consensus. Then all vote to remove Eric which gets consensused and Eric is
+    // removed. The previous votes to remove Dave are now enough to reach consensus and so Dave
+    // should be removed too.
+    let mut nodes: Vec<_> = create_nodes(5, ConsensusMode::Single).collect();
+    let dave = PeerId(3);
+    let eric = PeerId(4);
+
+    // Drain the `Genesis` blocks.
+    gossip_all(&mut nodes);
+    for node in &mut nodes {
+        for _ in poll_all(node) {}
+    }
+
+    // 3 votes to Remove(Dave) - should not get consensus yet.
+    vote_for_remove(&mut nodes[..3], dave);
+    gossip_all(&mut nodes);
+    assert_no_consensus(&mut nodes);
+
+    // Remove Eric
+    vote_for_remove(&mut nodes, eric);
+    gossip_all(&mut nodes);
+    assert_consensus_on_remove(&mut nodes, eric);
+    let _ = nodes.remove(4);
+
+    // We should now get consensus on Remove(Dave) too.
+    assert_consensus_on_remove(&mut nodes, dave);
+}
+
+#[test]
 fn randomized_static_network() {
     init_mock();
 
@@ -214,21 +247,8 @@ fn randomized_static_network() {
     let max_steps = 1000;
 
     let mut rng = SeededRng::new();
-
-    let peer_ids: BTreeSet<_> = (0..num_peers).map(PeerId).collect();
-
-    let mut peers: BTreeMap<_, _> = peer_ids
-        .iter()
-        .map(|peer_id| {
-            let peer = Peer::from(Parsec::from_genesis(
-                Default::default(),
-                peer_id.clone(),
-                &peer_ids,
-                ConsensusMode::Supermajority,
-            ));
-
-            (peer_id.clone(), peer)
-        })
+    let mut peers: BTreeMap<_, _> = create_nodes(num_peers, ConsensusMode::Supermajority)
+        .map(|peer| (*peer.our_pub_id(), Peer::from(peer)))
         .collect();
 
     // Everybody votes for everything, but in random order.
@@ -250,7 +270,7 @@ fn randomized_static_network() {
         for (peer_id, peer) in &mut peers {
             if rng.gen::<f64>() < gossip_prob {
                 let dst = if let Some(dst) = pick_gossip_recipient(&mut rng, peer) {
-                    dst.clone()
+                    *dst
                 } else {
                     continue;
                 };
@@ -258,8 +278,8 @@ fn randomized_static_network() {
                 let request = peer.create_gossip(&dst).unwrap();
 
                 messages.push(Message {
-                    src: peer_id.clone(),
-                    dst: dst.clone(),
+                    src: *peer_id,
+                    dst,
                     content: MessageContent::Request(request),
                 });
             }
@@ -303,7 +323,7 @@ fn randomized_static_network() {
     panic!("Consensus hasn't been reached after {} steps.", max_steps);
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 struct PeerId(usize);
 
 impl SecretId for PeerId {
@@ -378,6 +398,16 @@ impl DerefMut for Peer {
     }
 }
 
+fn create_nodes(
+    count: usize,
+    consensus_mode: ConsensusMode,
+) -> impl Iterator<Item = Parsec<Payload, PeerId>> {
+    let genesis_group: BTreeSet<_> = (0..count).map(PeerId).collect();
+    genesis_group.clone().into_iter().map(move |peer_id| {
+        Parsec::from_genesis(Default::default(), peer_id, &genesis_group, consensus_mode)
+    })
+}
+
 fn pick_gossip_recipient<'a, R: Rng>(
     rng: &mut R,
     src: &'a Parsec<Payload, PeerId>,
@@ -386,10 +416,10 @@ fn pick_gossip_recipient<'a, R: Rng>(
     rng.choose(&recipients[..]).cloned()
 }
 
-fn is_gossip_recipient(parsec: &Parsec<Payload, PeerId>, peer_id: &PeerId) -> bool {
+fn is_gossip_recipient(parsec: &Parsec<Payload, PeerId>, peer_id: PeerId) -> bool {
     parsec
         .gossip_recipients()
-        .any(|recipient_id| recipient_id == peer_id)
+        .any(|recipient_id| *recipient_id == peer_id)
 }
 
 fn check_consensus(peers: &BTreeMap<PeerId, Peer>, expected_votes: usize) -> bool {
@@ -410,6 +440,75 @@ fn exchange_gossip(src: &mut Parsec<Payload, PeerId>, dst: &mut Parsec<Payload, 
     let request = src.create_gossip(dst.our_pub_id()).unwrap();
     let response = dst.handle_request(src.our_pub_id(), request).unwrap();
     src.handle_response(dst.our_pub_id(), response).unwrap();
+}
+
+fn gossip_all(nodes: &mut [Parsec<Payload, PeerId>]) {
+    for i in 0..nodes.len() {
+        let j = (i + 1) % nodes.len();
+        let (src, dst) = get_pair_mut(nodes, i, j);
+        exchange_gossip(src, dst);
+    }
+}
+fn get_pair_mut<T>(slice: &mut [T], i: usize, j: usize) -> (&mut T, &mut T) {
+    assert!(i != j);
+
+    if i < j {
+        let (start, end) = slice.split_at_mut(j);
+        (&mut start[i], &mut end[0])
+    } else {
+        let (start, end) = slice.split_at_mut(i);
+        (&mut end[0], &mut start[j])
+    }
+}
+
+fn vote_for<'a, I>(nodes: I, observation: Observation<Payload, PeerId>)
+where
+    I: IntoIterator<Item = &'a mut Parsec<Payload, PeerId>>,
+{
+    for node in nodes {
+        unwrap!(node.vote_for(observation.clone()))
+    }
+}
+
+fn vote_for_remove<'a, I>(nodes: I, peer_to_remove: PeerId)
+where
+    I: IntoIterator<Item = &'a mut Parsec<Payload, PeerId>>,
+{
+    vote_for(
+        nodes,
+        Observation::Remove {
+            peer_id: peer_to_remove,
+            related_info: vec![],
+        },
+    )
+}
+
+fn assert_no_consensus<'a, I>(nodes: I)
+where
+    I: IntoIterator<Item = &'a mut Parsec<Payload, PeerId>>,
+{
+    for node in nodes {
+        if let Some(block) = node.poll() {
+            panic!(
+                "{:?}: Unexpected consensus on {:?}.",
+                node.our_pub_id(),
+                block.payload()
+            )
+        }
+    }
+}
+
+fn assert_consensus_on_remove<'a, I>(nodes: I, removed_peer: PeerId)
+where
+    I: IntoIterator<Item = &'a mut Parsec<Payload, PeerId>>,
+{
+    for node in nodes {
+        let block = unwrap!(node.poll());
+        match block.payload() {
+            Observation::Remove { peer_id, .. } if *peer_id == removed_peer => (),
+            x => panic!("Unexpected block {:?}", x),
+        }
+    }
 }
 
 enum MessageContent {

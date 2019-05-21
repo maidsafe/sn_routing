@@ -20,7 +20,7 @@ pub use self::{
 };
 pub use parsec::{NetworkEvent, Proof, PublicId, SecretId};
 
-use self::observation::{ObservationHolder, ObservationState};
+use self::{observation::ObservationHolder, state::SectionState};
 use crate::sha3::Digest256;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -96,29 +96,16 @@ where
 
     pub fn vote_for(&mut self, observation: Observation<T, S::PublicId>) -> Result<(), Error> {
         state::with(self.section_hash, |state| {
-            let entry = state.observations.entry(ObservationHolder::new(
-                observation,
-                self.our_id.public_id(),
-                self.consensus_mode,
-            ));
-            let holder = entry.key().clone();
-
-            if let Some(block) = entry.or_insert_with(ObservationState::new).vote(
-                &self.our_id,
-                &self.peer_list,
-                self.consensus_mode,
-                &holder,
-            ) {
-                state.blocks.push((block, holder.clone()))
-            }
-
+            let holder =
+                ObservationHolder::new(observation, self.our_id.public_id(), self.consensus_mode);
+            state.vote(&self.our_id, holder.clone());
             self.observations
                 .entry(holder)
                 .or_insert_with(ObservationInfo::new)
                 .our = true;
+            self.compute_consensus(state)
         });
 
-        self.update_blocks();
         Ok(())
     }
 
@@ -145,7 +132,7 @@ where
         _src: &S::PublicId,
         _req: Request<T, S::PublicId>,
     ) -> Result<Response<T, S::PublicId>, Error> {
-        self.update_blocks();
+        state::with(self.section_hash, |state| self.compute_consensus(state));
         Ok(Response::new())
     }
 
@@ -154,13 +141,13 @@ where
         _src: &S::PublicId,
         _resp: Response<T, S::PublicId>,
     ) -> Result<(), Error> {
-        self.update_blocks();
+        state::with(self.section_hash, |state| self.compute_consensus(state));
         Ok(())
     }
 
     pub fn poll(&mut self) -> Option<Block<T, S::PublicId>> {
         state::with(self.section_hash, |state| {
-            if let Some((block, holder)) = state.blocks.get(self.first_unpolled) {
+            if let Some((block, holder)) = state.get_block(self.first_unpolled) {
                 self.first_unpolled += 1;
                 self.observations
                     .entry(holder.clone())
@@ -186,10 +173,7 @@ where
 
     pub fn has_unpolled_observations(&self) -> bool {
         state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
-            state
-                .observations
-                .iter()
-                .any(|(_, observation_state)| !observation_state.consensused())
+            state.has_unconsensused_observations()
         }) || self.our_unpolled_observations().next().is_some()
     }
 
@@ -200,31 +184,42 @@ where
             .map(|(holder, _)| &***holder)
     }
 
-    fn update_blocks(&mut self) {
-        state::with(self.section_hash, |state| {
-            while let Some((block, holder)) = state.blocks.get(self.first_unconsensused) {
-                self.handle_consensus(block.payload());
-                self.first_unconsensused += 1;
-                self.observations
-                    .entry(holder.clone())
-                    .or_insert_with(ObservationInfo::new)
-                    .set_consensused();
+    fn compute_consensus(&mut self, state: &mut SectionState<T, S::PublicId>) {
+        loop {
+            state.compute_consensus(&self.peer_list, self.consensus_mode);
+
+            if !self.update_blocks(state) {
+                break;
             }
-        })
+        }
     }
 
-    fn handle_consensus(&mut self, observation: &Observation<T, S::PublicId>) {
+    // Returns whether the membership list changed.
+    fn update_blocks(&mut self, state: &mut SectionState<T, S::PublicId>) -> bool {
+        let mut change = false;
+
+        while let Some((block, holder)) = state.get_block(self.first_unconsensused) {
+            if self.handle_consensus(block.payload()) {
+                change = true;
+            }
+
+            self.first_unconsensused += 1;
+            self.observations
+                .entry(holder.clone())
+                .or_insert_with(ObservationInfo::new)
+                .set_consensused();
+        }
+
+        change
+    }
+
+    // Returns whether the membership list changed.
+    fn handle_consensus(&mut self, observation: &Observation<T, S::PublicId>) -> bool {
         match *observation {
-            Observation::Add { ref peer_id, .. } => {
-                let _ = self.peer_list.insert(peer_id.clone());
-            }
-            Observation::Remove { ref peer_id, .. } => {
-                let _ = self.peer_list.remove(peer_id);
-            }
-            Observation::Accusation { ref offender, .. } => {
-                let _ = self.peer_list.remove(offender);
-            }
-            _ => (),
+            Observation::Add { ref peer_id, .. } => self.peer_list.insert(peer_id.clone()),
+            Observation::Remove { ref peer_id, .. } => self.peer_list.remove(peer_id),
+            Observation::Accusation { ref offender, .. } => self.peer_list.remove(offender),
+            _ => false,
         }
     }
 }

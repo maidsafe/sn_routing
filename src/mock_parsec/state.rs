@@ -10,28 +10,71 @@
 
 use super::{
     observation::{ObservationHolder, ObservationState},
-    Block, NetworkEvent, PublicId,
+    Block, ConsensusMode, NetworkEvent, PublicId, SecretId,
 };
 use crate::sha3::Digest256;
 use std::{
     any::Any,
     cell::RefCell,
-    collections::{BTreeMap, HashMap},
+    collections::{
+        btree_map::{BTreeMap, Entry},
+        BTreeSet, HashMap,
+    },
+    mem,
 };
 
 pub(super) struct SectionState<T: NetworkEvent, P: PublicId> {
-    pub observations: BTreeMap<ObservationHolder<T, P>, ObservationState<P>>,
-    pub blocks: Vec<(Block<T, P>, ObservationHolder<T, P>)>,
+    observations: BTreeMap<ObservationHolder<T, P>, ObservationState<P>>,
+    unconsensused_observations: BTreeSet<ObservationHolder<T, P>>,
+    blocks: Vec<(Block<T, P>, ObservationHolder<T, P>)>,
 }
 
 impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
     fn new() -> Self {
         Self {
             observations: BTreeMap::new(),
+            unconsensused_observations: BTreeSet::new(),
             blocks: Vec::new(),
         }
     }
+
+    pub fn vote<S>(&mut self, our_id: &S, holder: ObservationHolder<T, P>)
+    where
+        S: SecretId<PublicId = P>,
+    {
+        let state = match self.observations.entry(holder.clone()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let _ = self.unconsensused_observations.insert(holder.clone());
+                entry.insert(ObservationState::new())
+            }
+        };
+
+        state.vote(our_id, &holder)
+    }
+
+    pub fn compute_consensus(&mut self, peers: &BTreeSet<P>, consensus_mode: ConsensusMode) {
+        for holder in mem::replace(&mut self.unconsensused_observations, BTreeSet::new()) {
+            let state = unwrap!(self.observations.get_mut(&holder));
+            if let Some(block) = state.compute_consensus(peers, consensus_mode, &holder) {
+                self.blocks.push((block, holder));
+            } else {
+                let _ = self.unconsensused_observations.insert(holder);
+            }
+        }
+    }
+
+    pub fn get_block(&self, index: usize) -> Option<BlockInfo<T, P>> {
+        let (block, holder) = self.blocks.get(index)?;
+        Some((block, holder))
+    }
+
+    pub fn has_unconsensused_observations(&self) -> bool {
+        !self.unconsensused_observations.is_empty()
+    }
 }
+
+pub(super) type BlockInfo<'a, T, P> = (&'a Block<T, P>, &'a ObservationHolder<T, P>);
 
 type NetworkState<T, P> = HashMap<Digest256, SectionState<T, P>>;
 

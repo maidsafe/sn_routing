@@ -68,26 +68,13 @@ impl<P: PublicId> ObservationState<P> {
     pub fn vote<T: NetworkEvent, S: SecretId<PublicId = P>>(
         &mut self,
         our_secret_id: &S,
-        peers: &BTreeSet<P>,
-        consensus_mode: ConsensusMode,
         observation: &Rc<Observation<T, P>>,
-    ) -> Option<Block<T, P>> {
-        let proof = {
-            let observation: &Observation<T, P> = &*observation;
-            our_secret_id.create_proof(&serialise(observation))
-        };
-        if self.votes.insert(proof) {
-            self.compute_consensus(peers, consensus_mode, observation)
-        } else {
-            None
-        }
+    ) {
+        let proof = our_secret_id.create_proof(&serialise(&**observation));
+        let _ = self.votes.insert(proof);
     }
 
-    pub fn consensused(&self) -> bool {
-        self.consensused
-    }
-
-    fn compute_consensus<T: NetworkEvent>(
+    pub fn compute_consensus<T: NetworkEvent>(
         &mut self,
         peers: &BTreeSet<P>,
         consensus_mode: ConsensusMode,
