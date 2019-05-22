@@ -371,9 +371,11 @@ impl Chain {
         // Check the lowest version of our info that any neighbour has and remove everything less
         // than it
         let our_oldest_ver = self.their_knowledge.values().min().map_or(0, |&v| v);
-        // TODO since the list is sorted according to the version, choose something more efficient
-        self.our_infos
-            .retain(|&(ref si, _)| *si.version() >= our_oldest_ver);
+        let oldest_ver_index = self
+            .our_infos
+            .binary_search_by_key(&our_oldest_ver, |&(ref si, _)| *si.version())
+            .unwrap_or(0);
+        let _ = self.our_infos.drain(0..oldest_ver_index);
 
         self.check_and_clean_neighbour_infos(None);
         self.state = ChainState::Normal;
