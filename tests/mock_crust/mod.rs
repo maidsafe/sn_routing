@@ -264,6 +264,17 @@ fn simultaneous_joining_nodes(
     }
 
     poll_and_resend(&mut nodes, &mut []);
+    let non_full_nodes = nodes
+        .iter()
+        .filter(|node| node.inner.chain().is_none())
+        .map(|node| node.name())
+        .collect_vec();
+    assert!(
+        non_full_nodes.is_empty(),
+        "Should be full node: {:?}",
+        non_full_nodes
+    );
+
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
@@ -288,7 +299,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let _ = maidsafe_utilities::log::init(false);
 
     // Create a network with three sections:
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(MIN_SECTION_SIZE, Some([3548247126, 3307750840, 875564276, 1394064965]));
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2], false);
 
     let mut rng = network.new_rng();
