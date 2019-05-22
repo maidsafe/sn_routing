@@ -122,7 +122,7 @@ impl Chain {
         proof_set: ProofSet,
     ) -> Result<(), RoutingError> {
         match event {
-            NetworkEvent::Online(_, _) | NetworkEvent::Offline(_) => (),
+            NetworkEvent::AddElder(_, _) | NetworkEvent::RemoveElder(_) => (),
             _ => {
                 log_or_panic!(
                     LogLevel::Error,
@@ -705,7 +705,10 @@ impl Chain {
 
                 self.our_info().is_quorum(proofs)
             }
-            NetworkEvent::Online(_, _)
+
+            NetworkEvent::AddElder(_, _)
+            | NetworkEvent::RemoveElder(_)
+            | NetworkEvent::Online(_)
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_) => {

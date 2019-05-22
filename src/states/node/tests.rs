@@ -23,9 +23,10 @@ use crate::state_machine::{State, StateMachine};
 use crate::xor_name::XOR_NAME_LEN;
 use utils::LogIdent;
 
-const NO_SINGLE_VETO_VOTE_COUNT: usize = 4;
-const ACCUMULATE_VOTE_COUNT: usize = 3;
-const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 2;
+// Accumulate even if 1 old node and an additional new node do not vote.
+const NO_SINGLE_VETO_VOTE_COUNT: usize = 7;
+const ACCUMULATE_VOTE_COUNT: usize = 6;
+const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 5;
 
 struct CandidateInfo {
     old_full_id: FullId,
@@ -79,13 +80,13 @@ impl NoteUnderTest {
         let full_id = full_ids[0].clone();
         let machine = make_state_machine(&full_id, &gen_pfx_info, &mut ev_buffer);
 
-        let other_full_ids = full_ids[1..4].iter().cloned().collect_vec();
+        let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
         let other_parsec_map = other_full_ids
             .iter()
             .map(|full_id| ParsecMap::new(full_id.clone(), &gen_pfx_info))
             .collect_vec();
 
-        Self {
+        let mut node_test = Self {
             machine,
             full_id,
             other_full_ids,
@@ -93,7 +94,11 @@ impl NoteUnderTest {
             ev_buffer,
             section_info,
             candidate_info: CandidateInfo::new(),
-        }
+        };
+
+        // Process initial unpolled event
+        let _ = node_test.create_gossip();
+        node_test
     }
 
     fn node_state(&self) -> &Node {
@@ -166,10 +171,20 @@ impl NoteUnderTest {
         );
     }
 
-    fn accumulate_online(&mut self, online_payload: (PublicId, OnlinePayload)) {
+    fn accumulate_online(&mut self, online_payload: OnlinePayload) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&NetworkEvent::Online(online_payload.0, online_payload.1)],
+            &[&NetworkEvent::Online(online_payload)],
+        );
+    }
+
+    fn accumulate_add_elder_if_vote(&mut self, online_payload: OnlinePayload) {
+        let _ = self.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            &[&NetworkEvent::AddElder(
+                online_payload.new_public_id,
+                online_payload.client_auth,
+            )],
         );
     }
 
@@ -180,10 +195,17 @@ impl NoteUnderTest {
         );
     }
 
-    fn accumulate_offline_if_vote(&mut self, offline_payload: PublicId) {
+    fn accumulate_offline(&mut self, offline_payload: PublicId) {
+        let _ = self.n_vote_for_gossipped(
+            ACCUMULATE_VOTE_COUNT,
+            &[&NetworkEvent::Offline(offline_payload)],
+        );
+    }
+
+    fn accumulate_remove_elder_if_vote(&mut self, offline_payload: PublicId) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&NetworkEvent::Offline(offline_payload)],
+            &[&NetworkEvent::RemoveElder(offline_payload)],
         );
     }
 
@@ -200,8 +222,17 @@ impl NoteUnderTest {
         ))
     }
 
+    fn new_section_info_without_candidate(&self) -> SectionInfo {
+        let old_info = self.new_section_info_with_candidate();
+        unwrap!(SectionInfo::new(
+            self.section_info.members().clone(),
+            *old_info.prefix(),
+            Some(&old_info)
+        ))
+    }
+
     fn has_unpolled_observations(&self) -> bool {
-        self.node_state().has_unpolled_observations(false)
+        self.node_state().has_unpolled_observations()
     }
 
     fn has_resource_proof_candidate(&self) -> bool {
@@ -250,18 +281,16 @@ impl NoteUnderTest {
         }
     }
 
-    fn online_payload(&self) -> (PublicId, OnlinePayload) {
+    fn online_payload(&self) -> OnlinePayload {
         let client_auth = Authority::Client {
             client_id: *self.candidate_info.new_full_id.public_id(),
             proxy_node_name: *self.candidate_info.new_proxy_id.public_id().name(),
         };
-        (
-            *self.candidate_info.new_full_id.public_id(),
-            OnlinePayload {
-                client_auth,
-                old_public_id: *self.candidate_info.old_full_id.public_id(),
-            },
-        )
+        OnlinePayload {
+            new_public_id: *self.candidate_info.new_full_id.public_id(),
+            client_auth,
+            old_public_id: *self.candidate_info.old_full_id.public_id(),
+        }
     }
 
     fn offline_payload(&self) -> PublicId {
@@ -435,6 +464,7 @@ fn make_state_machine(
 fn construct() {
     let node_test = NoteUnderTest::new();
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(!node_test.has_resource_proof_candidate());
     assert!(!node_test.is_candidate_a_valid_peer());
 }
@@ -446,6 +476,7 @@ fn accumulate_expect_candidate() {
 
     node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(node_test.has_resource_proof_candidate());
     assert!(!node_test.is_candidate_a_valid_peer());
 }
@@ -456,7 +487,9 @@ fn not_accumulate_expect_candidate_with_message() {
     let mut node_test = NoteUnderTest::new();
 
     let _ = node_test.dispatch_routing_message(node_test.expect_candidate_message());
+    let _ = node_test.create_gossip();
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(!node_test.has_resource_proof_candidate());
     assert!(!node_test.is_candidate_a_valid_peer());
 }
@@ -466,9 +499,11 @@ fn not_accumulate_expect_candidate_with_message() {
 fn accumulate_expect_candidate_with_message() {
     let mut node_test = NoteUnderTest::new();
     let _ = node_test.dispatch_routing_message(node_test.expect_candidate_message());
+    let _ = node_test.create_gossip();
 
     node_test.accumulate_expect_candidate_if_vote(node_test.expect_candidate_payload());
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(node_test.has_resource_proof_candidate());
     assert!(!node_test.is_candidate_a_valid_peer());
 }
@@ -479,8 +514,10 @@ fn accumulate_purge_candidate() {
     let mut node_test = NoteUnderTest::new();
     node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
 
+    // Should probably add a test that the vote occured on timeout
     node_test.accumulate_purge_candidate(node_test.purge_payload());
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(!node_test.has_resource_proof_candidate());
     assert!(!node_test.is_candidate_a_valid_peer());
 }
@@ -493,54 +530,77 @@ fn accumulate_online_candidate_only_do_not_remove_candidate() {
 
     node_test.accumulate_online(node_test.online_payload());
 
+    assert!(node_test.has_unpolled_observations());
+    assert!(node_test.has_resource_proof_candidate());
+    assert!(!node_test.is_candidate_a_valid_peer());
+}
+
+#[test]
+// Candidate is only removed as candidate when its SectionInfo is consensused
+// Vote for `Online` trigger immediate vote for AddElder
+fn accumulate_online_candidate_then_add_elder_only_do_not_remove_candidate() {
+    let mut node_test = NoteUnderTest::new();
+    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    node_test.accumulate_online(node_test.online_payload());
+
+    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+
+    assert!(!node_test.has_unpolled_observations());
     assert!(node_test.has_resource_proof_candidate());
     assert!(node_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // Candidate is only removed as candidate when its SectionInfo is consensused
-fn accumulate_online_candidate_then_section_info_remove_candidate() {
+fn accumulate_online_candidate_then_add_elder_then_section_info_remove_candidate() {
     let mut node_test = NoteUnderTest::new();
     node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
     node_test.accumulate_online(node_test.online_payload());
+    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
 
     let new_section_info = node_test.new_section_info_with_candidate();
     node_test.accumulate_section_info_if_vote(new_section_info);
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(!node_test.has_resource_proof_candidate());
     assert!(node_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Online consensused first, PurgeCandidate has no effect
-fn accumulate_online_then_purge_candidate() {
+fn accumulate_online_then_purge_then_add_elder_for_candidate() {
     let mut node_test = NoteUnderTest::new();
     node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
     node_test.accumulate_online(node_test.online_payload());
 
     node_test.accumulate_purge_candidate(node_test.purge_payload());
+    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(node_test.has_resource_proof_candidate());
     assert!(node_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Online consensused first, PurgeCandidate has no effect
-fn accumulate_online_then_purge_then_section_info_for_candidate() {
+fn accumulate_online_then_purge_then_add_elder_then_section_info_for_candidate() {
     let mut node_test = NoteUnderTest::new();
     node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
     node_test.accumulate_online(node_test.online_payload());
     node_test.accumulate_purge_candidate(node_test.purge_payload());
+    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
 
     let new_section_info = node_test.new_section_info_with_candidate();
     node_test.accumulate_section_info_if_vote(new_section_info);
 
+    assert!(!node_test.has_unpolled_observations());
     assert!(!node_test.has_resource_proof_candidate());
     assert!(node_test.is_candidate_a_valid_peer());
 }
 
 #[test]
-// When PurgeCandidate consensused first, When Online consensused peer not added.
+// When PurgeCandidate consensused first, When Online consensused AddElder is not voted
+// and the peer is not added.
 fn accumulate_purge_then_online_for_candidate() {
     let mut node_test = NoteUnderTest::new();
     node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
@@ -548,23 +608,58 @@ fn accumulate_purge_then_online_for_candidate() {
 
     node_test.accumulate_online(node_test.online_payload());
 
-    assert!(node_test.has_unpolled_observations());
+    assert!(!node_test.has_unpolled_observations());
     assert!(!node_test.has_resource_proof_candidate());
+    assert!(!node_test.is_candidate_a_valid_peer());
+}
+
+#[test]
+// When Offline consensused, RemoveElder is voted.
+fn accumulate_offline_for_node() {
+    let mut node_test = NoteUnderTest::new();
+    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    node_test.accumulate_online(node_test.online_payload());
+    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+    node_test.accumulate_section_info_if_vote(node_test.new_section_info_with_candidate());
+
+    node_test.accumulate_offline(node_test.offline_payload());
+
+    assert!(node_test.has_unpolled_observations());
     assert!(node_test.is_candidate_a_valid_peer());
 }
 
 #[test]
-// When PurgeCandidate consensused first, When Online consensused, Offline is voted.
-fn accumulate_purge_then_online_then_offline_for_candidate() {
+// When Offline consensused, RemoveElder is voted. The peer only become invalid once
+// SectionInfo is consensused
+fn accumulate_offline_then_remove_elder_for_node() {
     let mut node_test = NoteUnderTest::new();
     node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_purge_candidate(node_test.purge_payload());
     node_test.accumulate_online(node_test.online_payload());
+    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+    node_test.accumulate_section_info_if_vote(node_test.new_section_info_with_candidate());
+    node_test.accumulate_offline(node_test.offline_payload());
 
-    node_test.accumulate_offline_if_vote(node_test.offline_payload());
+    node_test.accumulate_remove_elder_if_vote(node_test.offline_payload());
 
     assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.has_resource_proof_candidate());
+    assert!(node_test.is_candidate_a_valid_peer());
+}
+
+#[test]
+// When Offline consensused, RemoveElder is voted. The peer only become invalid once
+// SectionInfo is consensused
+fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
+    let mut node_test = NoteUnderTest::new();
+    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    node_test.accumulate_online(node_test.online_payload());
+    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+    node_test.accumulate_section_info_if_vote(node_test.new_section_info_with_candidate());
+    node_test.accumulate_offline(node_test.offline_payload());
+    node_test.accumulate_remove_elder_if_vote(node_test.offline_payload());
+
+    node_test.accumulate_section_info_if_vote(node_test.new_section_info_without_candidate());
+
+    assert!(!node_test.has_unpolled_observations());
     assert!(!node_test.is_candidate_a_valid_peer());
 }
 

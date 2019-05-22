@@ -183,8 +183,8 @@ impl EstablishingNode {
         self.timer.get_timed_out_tokens()
     }
 
-    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
-        self.parsec_map.has_unpolled_observations(filter_opaque)
+    pub fn has_unpolled_observations(&self) -> bool {
+        self.parsec_map.has_unpolled_observations()
     }
 }
 
@@ -357,22 +357,30 @@ impl Approved for EstablishingNode {
         &mut self.chain
     }
 
-    fn handle_online_event(
+    fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        _: OnlinePayload,
+        _: Authority<XorName>,
         _: &mut EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.chain.add_member(new_pub_id)?;
         Ok(())
     }
 
-    fn handle_offline_event(
+    fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
         _: &mut EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.chain.remove_member(pub_id)?;
+        Ok(())
+    }
+
+    fn handle_online_event(&mut self, _: OnlinePayload) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
+    fn handle_offline_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
         Ok(())
     }
 

@@ -448,7 +448,9 @@ impl Node {
                 // Called peer_manager.remove_candidate reset the candidate so it can be shared by
                 // all nodes: Because new node may not have voted for it, Forget the votes in
                 // flight as well.
-                NetworkEvent::Online(_, _)
+                NetworkEvent::AddElder(_, _)
+                | NetworkEvent::RemoveElder(_)
+                | NetworkEvent::Online(_)
                 | NetworkEvent::ExpectCandidate(_)
                 | NetworkEvent::PurgeCandidate(_) => false,
 
@@ -1103,7 +1105,7 @@ impl Node {
 
         let (difficulty, target_size) = if self.disable_resource_proof
             || self.crust_service.is_peer_hard_coded(new_pub_id)
-            || self.peer_mgr.is_joining_node(new_pub_id)
+            || self.peer_mgr.is_or_was_joining_node(new_pub_id)
         {
             (0, 1)
         } else {
@@ -1436,31 +1438,33 @@ impl Node {
     }
 
     fn send_candidate_approval(&mut self) {
-        let (new_id, online_payload) =
-            match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
-                Err(_) => {
-                    trace!("{} No candidate for which to send CandidateApproval.", self);
-                    return;
-                }
-                Ok(result) => result,
-            };
+        let online_payload = match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
+            Err(_) => {
+                trace!("{} No candidate for which to send CandidateApproval.", self);
+                return;
+            }
+            Ok(result) => result,
+        };
 
         info!(
             "{} Resource proof duration has finished. Voting to approve candidate {}.",
             self,
-            new_id.name()
+            online_payload.new_public_id.name()
         );
 
-        if !self.our_prefix().matches(new_id.name()) {
+        if !self
+            .our_prefix()
+            .matches(online_payload.new_public_id.name())
+        {
             log_or_panic!(
                 LogLevel::Error,
                 "{} About to vote for {} which does not match self pfx: {:?}",
                 self,
-                new_id.name(),
+                online_payload.new_public_id.name(),
                 self.our_prefix()
             );
         }
-        self.vote_for_event(NetworkEvent::Online(new_id, online_payload));
+        self.vote_for_event(NetworkEvent::Online(online_payload));
     }
 
     fn vote_for_event(&mut self, event: NetworkEvent) {
@@ -1725,7 +1729,7 @@ impl Node {
         outbox: &mut EventBox,
         try_reconnect: bool,
     ) -> bool {
-        if self.peer_mgr.remove_peer(&pub_id) {
+        if self.peer_mgr.remove_peer_no_joining_checks(&pub_id) {
             info!("{} Dropped {} from the routing table.", self, pub_id.name());
             outbox.send_event(Event::NodeLost(*pub_id.name()));
 
@@ -2087,9 +2091,9 @@ impl Base for Node {
                 Ok(*self.name())
             }
             Some(&PeerState::JoiningNode) => Ok(*self.name()),
-            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Node) => {
-                Ok(*pub_id.name())
-            }
+            Some(&PeerState::Candidate)
+            | Some(&PeerState::Proxy)
+            | Some(&PeerState::Node { .. }) => Ok(*pub_id.name()),
             Some(&PeerState::ConnectionInfoPreparing { .. })
             | Some(&PeerState::ConnectionInfoReady(_))
             | Some(&PeerState::CrustConnecting)
@@ -2179,8 +2183,8 @@ impl Node {
         self.next_relocation_interval = interval;
     }
 
-    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
-        self.parsec_map.has_unpolled_observations(filter_opaque)
+    pub fn has_unpolled_observations(&self) -> bool {
+        self.parsec_map.has_unpolled_observations()
     }
 
     pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
@@ -2336,22 +2340,14 @@ impl Approved for Node {
         &mut self.chain
     }
 
-    fn handle_online_event(
+    fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        online_payload: OnlinePayload,
+        client_auth: Authority<XorName>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
         let to_vote_infos = self.chain.add_member(new_pub_id)?;
-
-        if !self
-            .peer_mgr
-            .handle_candidate_online_event(&new_pub_id, &online_payload.old_public_id)
-        {
-            self.vote_for_event(NetworkEvent::Offline(new_pub_id));
-        }
-
-        let _ = self.handle_candidate_approval(new_pub_id, online_payload.client_auth, outbox);
+        let _ = self.handle_candidate_approval(new_pub_id, client_auth, outbox);
         to_vote_infos
             .into_iter()
             .map(NetworkEvent::SectionInfo)
@@ -2360,7 +2356,7 @@ impl Approved for Node {
         Ok(())
     }
 
-    fn handle_offline_event(
+    fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
         outbox: &mut EventBox,
@@ -2372,6 +2368,21 @@ impl Approved for Node {
             self.disconnect_peer(&pub_id);
         }
 
+        Ok(())
+    }
+
+    fn handle_online_event(&mut self, online_payload: OnlinePayload) -> Result<(), RoutingError> {
+        if self.peer_mgr.handle_candidate_online_event(&online_payload) {
+            self.vote_for_event(NetworkEvent::AddElder(
+                online_payload.new_public_id,
+                online_payload.client_auth,
+            ));
+        }
+        Ok(())
+    }
+
+    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+        self.vote_for_event(NetworkEvent::RemoveElder(pub_id));
         Ok(())
     }
 

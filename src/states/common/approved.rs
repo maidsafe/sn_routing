@@ -19,6 +19,7 @@ use crate::{
     routing_table::Prefix,
     state_machine::Transition,
     xor_name::XorName,
+    Authority,
 };
 use maidsafe_utilities::serialisation;
 
@@ -27,20 +28,26 @@ pub trait Approved: Relocated {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain_mut(&mut self) -> &mut Chain;
 
-    /// Handles an accumulated `Online` event.
-    fn handle_online_event(
+    /// Handles an accumulated `AddElder` event.
+    fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        online_payload: OnlinePayload,
+        client_auth: Authority<XorName>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError>;
 
-    /// Handles an accumulated `Offline` event.
-    fn handle_offline_event(
+    /// Handles an accumulated `RemoveElder` event.
+    fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError>;
+
+    /// Handles an accumulated `Online` event.
+    fn handle_online_event(&mut self, online_payload: OnlinePayload) -> Result<(), RoutingError>;
+
+    /// Handles an accumulated `Offline` event.
+    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `OurMerge` event.
     fn handle_our_merge_event(&mut self) -> Result<(), RoutingError>;
@@ -145,14 +152,16 @@ pub trait Approved: Relocated {
                     peer_id,
                     related_info,
                 } => {
-                    let event =
-                        NetworkEvent::Online(*peer_id, serialisation::deserialise(&related_info)?);
+                    let event = NetworkEvent::AddElder(
+                        *peer_id,
+                        serialisation::deserialise(&related_info)?,
+                    );
                     let proof_set = to_proof_set(&block);
                     trace!("{} Parsec Add: - {}", self, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;
                 }
                 Observation::Remove { peer_id, .. } => {
-                    let event = NetworkEvent::Offline(*peer_id);
+                    let event = NetworkEvent::RemoveElder(*peer_id);
                     let proof_set = to_proof_set(&block);
                     trace!("{} Parsec Remove: - {}", self, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;
@@ -174,11 +183,17 @@ pub trait Approved: Relocated {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
-                NetworkEvent::Online(pub_id, info) => {
-                    self.handle_online_event(pub_id, info, outbox)?;
+                NetworkEvent::AddElder(pub_id, client_auth) => {
+                    self.handle_add_elder_event(pub_id, client_auth, outbox)?;
+                }
+                NetworkEvent::RemoveElder(pub_id) => {
+                    self.handle_remove_elder_event(pub_id, outbox)?;
+                }
+                NetworkEvent::Online(info) => {
+                    self.handle_online_event(info)?;
                 }
                 NetworkEvent::Offline(pub_id) => {
-                    self.handle_offline_event(pub_id, outbox)?;
+                    self.handle_offline_event(pub_id)?;
                 }
                 NetworkEvent::OurMerge => self.handle_our_merge_event()?,
                 NetworkEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,

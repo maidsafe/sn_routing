@@ -622,10 +622,8 @@ impl Node {
     }
 
     /// Indicates if there are any pending observations in the parsec object
-    pub fn has_unpolled_observations(&self, filter_opaque: bool) -> bool {
-        self.machine
-            .current()
-            .has_unpolled_observations(filter_opaque)
+    pub fn has_unpolled_observations(&self) -> bool {
+        self.machine.current().has_unpolled_observations()
     }
 
     /// Indicates if a given `PublicId` is in the peer manager as a Node
