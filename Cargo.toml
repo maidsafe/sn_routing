@@ -22,7 +22,7 @@ log = "~0.3.8"
 lru_time_cache = "~0.8.1"
 maidsafe_utilities = "~0.16.0"
 num-bigint = "~0.1.40"
-parsec = { git = "https://github.com/maidsafe/parsec", rev = "f2860553c" }
+parsec = { git = "https://github.com/maidsafe/parsec", rev = "8c0d9d00e" }
 quick-error = "~1.2.0"
 rand = "~0.3.16"
 resource_proof = "~0.6.0"
