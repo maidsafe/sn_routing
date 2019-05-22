@@ -1105,7 +1105,7 @@ impl Node {
 
         let (difficulty, target_size) = if self.disable_resource_proof
             || self.crust_service.is_peer_hard_coded(new_pub_id)
-            || self.peer_mgr.is_joining_node(new_pub_id)
+            || self.peer_mgr.is_or_was_joining_node(new_pub_id)
         {
             (0, 1)
         } else {
@@ -1729,10 +1729,7 @@ impl Node {
         outbox: &mut EventBox,
         try_reconnect: bool,
     ) -> bool {
-        // Calling remove twice to remove a potential JoiningNode we have as a Node than purely
-        // demoting it
-        // TODO: Avoid calling this twice.
-        if self.peer_mgr.remove_peer(&pub_id) || self.peer_mgr.remove_peer(&pub_id) {
+        if self.peer_mgr.remove_peer_no_joining_checks(&pub_id) {
             info!("{} Dropped {} from the routing table.", self, pub_id.name());
             outbox.send_event(Event::NodeLost(*pub_id.name()));
 
@@ -2094,9 +2091,9 @@ impl Base for Node {
                 Ok(*self.name())
             }
             Some(&PeerState::JoiningNode) => Ok(*self.name()),
-            Some(&PeerState::Candidate) | Some(&PeerState::Proxy) | Some(&PeerState::Node(_)) => {
-                Ok(*pub_id.name())
-            }
+            Some(&PeerState::Candidate)
+            | Some(&PeerState::Proxy)
+            | Some(&PeerState::Node { .. }) => Ok(*pub_id.name()),
             Some(&PeerState::ConnectionInfoPreparing { .. })
             | Some(&PeerState::ConnectionInfoReady(_))
             | Some(&PeerState::CrustConnecting)

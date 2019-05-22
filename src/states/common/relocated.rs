@@ -307,7 +307,7 @@ pub trait Relocated: Bootstrapped {
         }
 
         if self.peer_mgr().is_client(&their_public_id)
-            || self.peer_mgr().is_joining_node(&their_public_id)
+            || self.peer_mgr().is_or_was_joining_node(&their_public_id)
             || self.peer_mgr().is_proxy(&their_public_id)
         {
             // we use peer_name here instead of their_name since the peer can be
@@ -410,7 +410,7 @@ pub trait Relocated: Bootstrapped {
             debug!("{} Not disconnecting node {}.", self, pub_id);
         } else if self.peer_mgr().is_proxy(pub_id) {
             debug!("{} Not disconnecting proxy node {}.", self, pub_id);
-        } else if self.peer_mgr().is_joining_node(pub_id) {
+        } else if self.peer_mgr().is_or_was_joining_node(pub_id) {
             debug!("{} Not disconnecting joining node {:?}.", self, pub_id);
         } else {
             debug!(

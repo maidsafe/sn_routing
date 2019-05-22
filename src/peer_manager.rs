@@ -118,7 +118,7 @@ pub enum PeerState {
     /// Connected peer is a joining node and waiting for approval of routing.
     Candidate,
     /// We are connected to the peer who is a full node.
-    Node(bool),
+    Node { was_joining: bool },
     /// We are connected to the peer who is our proxy node.
     Proxy,
 }
@@ -204,7 +204,7 @@ impl Peer {
             | PeerState::Client { .. }
             | PeerState::Connected
             | PeerState::Candidate
-            | PeerState::Node(_) => true,
+            | PeerState::Node { .. } => true,
         }
     }
 
@@ -217,7 +217,7 @@ impl Peer {
             | PeerState::CrustConnecting => CONNECTING_PEER_TIMEOUT_SECS,
             PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Bootstrapper { .. } | PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
-            PeerState::Candidate | PeerState::Client { .. } | PeerState::Node(_) => {
+            PeerState::Candidate | PeerState::Client { .. } | PeerState::Node { .. } => {
                 return false;
             }
         };
@@ -228,7 +228,7 @@ impl Peer {
     /// Returns whether the peer is a full node.
     pub fn is_node(&self) -> bool {
         match self.state {
-            PeerState::Node(_) => true,
+            PeerState::Node { .. } => true,
             _ => false,
         }
     }
@@ -250,11 +250,11 @@ impl Peer {
         }
     }
 
-    /// Returns whether the peer is a joining node and we are their proxy.
-    fn is_joining_node(&self) -> bool {
+    /// Returns whether the peer is or was a joining node and we are their proxy.
+    fn is_or_was_joining_node(&self) -> bool {
         match self.state {
             PeerState::JoiningNode => true,
-            PeerState::Node(val) => val,
+            PeerState::Node { was_joining } => was_joining,
             _ => false,
         }
     }
@@ -688,7 +688,9 @@ impl PeerManager {
         if peer.is_node() {
             Ok(false)
         } else {
-            peer.state = PeerState::Node(peer.is_joining_node());
+            peer.state = PeerState::Node {
+                was_joining: peer.is_or_was_joining_node(),
+            };
             Ok(true)
         }
     }
@@ -708,9 +710,11 @@ impl PeerManager {
         self.peers.get(pub_id).map_or(false, Peer::is_client)
     }
 
-    /// Returns if the given peer is our joining node.
-    pub fn is_joining_node(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, Peer::is_joining_node)
+    /// Returns if the given peer is or was a joining node.
+    pub fn is_or_was_joining_node(&self, pub_id: &PublicId) -> bool {
+        self.peers
+            .get(pub_id)
+            .map_or(false, Peer::is_or_was_joining_node)
     }
 
     /// Returns the proxy node's name if we have a proxy.
@@ -981,7 +985,7 @@ impl PeerManager {
             }
             Some(
                 peer @ Peer {
-                    state: PeerState::Node(_),
+                    state: PeerState::Node { .. },
                     ..
                 },
             )
@@ -1072,9 +1076,10 @@ impl PeerManager {
     }
 
     /// Removes the given peer. Returns whether the peer was actually present.
+    /// If the peer was joining before, it is demoted back to JoiningNode and false is returned.
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
         if let Some(mut peer) = self.peers.remove(pub_id) {
-            if peer.is_joining_node() && peer.is_node() {
+            if peer.is_or_was_joining_node() && peer.is_node() {
                 peer.state = PeerState::JoiningNode;
                 self.insert_peer(peer);
                 return false;
@@ -1084,6 +1089,11 @@ impl PeerManager {
         }
 
         true
+    }
+
+    /// Removes the given peer. Returns whether the peer was actually present.
+    pub fn remove_peer_no_joining_checks(&mut self, pub_id: &PublicId) -> bool {
+        self.peers.remove(pub_id).is_some()
     }
 }
 
