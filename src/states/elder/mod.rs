@@ -1539,7 +1539,12 @@ impl Elder {
         sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         if !self.crust_service().is_connected(target) {
-            trace!("{} Not connected to {:?}. Dropping peer.", self, target);
+            trace!(
+                "{} Not connected to {:?}. Dropping peer and message: {:?}",
+                self,
+                target,
+                signed_msg.routing_message()
+            );
             self.disconnect_peer(target);
             return Ok(());
         }

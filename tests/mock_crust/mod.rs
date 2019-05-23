@@ -293,8 +293,12 @@ fn simultaneous_joining_nodes_two_sections() {
 
 #[test]
 fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
+    // TODO: Use same section size once we have a reliable message relay that handle split.
+    // Allow for more route hops otherwise NodeApproaval get losts.
+    let min_section_size = MIN_SECTION_SIZE + 1;
+
     // Create a network with three sections:
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2], false);
 
     let mut rng = network.new_rng();
