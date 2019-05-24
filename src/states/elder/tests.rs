@@ -48,7 +48,7 @@ impl CandidateInfo {
     }
 }
 
-struct NoteUnderTest {
+struct ElderUnderTest {
     pub machine: StateMachine,
     pub full_id: FullId,
     pub other_full_ids: Vec<FullId>,
@@ -58,7 +58,7 @@ struct NoteUnderTest {
     pub candidate_info: CandidateInfo,
 }
 
-impl NoteUnderTest {
+impl ElderUnderTest {
     fn new() -> Self {
         let full_ids = (0..NO_SINGLE_VETO_VOTE_COUNT)
             .map(|_| FullId::new())
@@ -86,7 +86,7 @@ impl NoteUnderTest {
             .map(|full_id| ParsecMap::new(full_id.clone(), &gen_pfx_info))
             .collect_vec();
 
-        let mut node_test = Self {
+        let mut elder_test = Self {
             machine,
             full_id,
             other_full_ids,
@@ -97,12 +97,12 @@ impl NoteUnderTest {
         };
 
         // Process initial unpolled event
-        let _ = node_test.create_gossip();
-        node_test
+        let _ = elder_test.create_gossip();
+        elder_test
     }
 
-    fn node_state(&self) -> &Node {
-        unwrap!(self.machine.current().node_state())
+    fn elder_state(&self) -> &Elder {
+        unwrap!(self.machine.current().elder_state())
     }
 
     fn n_vote_for(&mut self, count: usize, events: &[&NetworkEvent]) {
@@ -141,7 +141,7 @@ impl NoteUnderTest {
             *self.full_id.public_id().name()
         };
 
-        unwrap!(self.machine.current_mut().node_state_mut())
+        unwrap!(self.machine.current_mut().elder_state_mut())
             .set_next_relocation_interval(Some((name, name)));
     }
 
@@ -232,19 +232,19 @@ impl NoteUnderTest {
     }
 
     fn has_unpolled_observations(&self) -> bool {
-        self.node_state().has_unpolled_observations()
+        self.elder_state().has_unpolled_observations()
     }
 
     fn has_resource_proof_candidate(&self) -> bool {
-        self.node_state().has_resource_proof_candidate()
+        self.elder_state().has_resource_proof_candidate()
     }
 
     fn has_candidate_info(&self) -> bool {
-        self.node_state().peer_mgr().has_candidate_info()
+        self.elder_state().peer_mgr().has_candidate_info()
     }
 
     fn is_candidate_a_valid_peer(&self) -> bool {
-        self.node_state()
+        self.elder_state()
             .chain()
             .is_peer_valid(self.candidate_info.new_full_id.public_id())
     }
@@ -253,7 +253,7 @@ impl NoteUnderTest {
         &mut self,
         routing_msg: RoutingMessage,
     ) -> Result<(), RoutingError> {
-        unwrap!(self.machine.current_mut().node_state_mut())
+        unwrap!(self.machine.current_mut().elder_state_mut())
             .dispatch_routing_message(routing_msg, &mut self.ev_buffer)
     }
 
@@ -261,7 +261,7 @@ impl NoteUnderTest {
         &mut self,
         msg: (DirectMessage, PublicId),
     ) -> Result<(), RoutingError> {
-        let _ = unwrap!(self.machine.current_mut().node_state_mut()).handle_direct_message(
+        let _ = unwrap!(self.machine.current_mut().elder_state_mut()).handle_direct_message(
             msg.0,
             msg.1,
             &mut self.ev_buffer,
@@ -390,7 +390,7 @@ impl NoteUnderTest {
     }
 }
 
-fn new_node_state(
+fn new_elder_state(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
     min_section_size: usize,
@@ -405,7 +405,7 @@ fn new_node_state(
     let peer_mgr = PeerManager::new(public_id, true);
     let cache = Box::new(NullCache);
 
-    let details = NodeDetails {
+    let details = ElderDetails {
         ack_mgr: AckManager::new(),
         cache,
         chain,
@@ -422,8 +422,8 @@ fn new_node_state(
 
     let section_info = gen_pfx_info.first_info.clone();
     let prefix = *section_info.prefix();
-    Node::from_establishing_node(details, section_info, prefix, outbox)
-        .map(State::Node)
+    Elder::from_adult(details, section_info, prefix, outbox)
+        .map(State::Elder)
         .unwrap_or(State::Terminated)
 }
 
@@ -443,7 +443,7 @@ fn make_state_machine(
     mock_crust::make_current(&handle1, || {
         StateMachine::new(
             move |_action_sender, crust_service, timer, outbox2| {
-                new_node_state(
+                new_elder_state(
                     full_id,
                     gen_pfx_info,
                     min_section_size,
@@ -462,249 +462,249 @@ fn make_state_machine(
 
 #[test]
 fn construct() {
-    let node_test = NoteUnderTest::new();
+    let elder_test = ElderUnderTest::new();
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // ExpectCandidate is consensused: candidate is added
 fn accumulate_expect_candidate() {
-    let mut node_test = NoteUnderTest::new();
+    let mut elder_test = ElderUnderTest::new();
 
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // ExpectCandidate not consensused but node received Message: candidate is not added
 fn not_accumulate_expect_candidate_with_message() {
-    let mut node_test = NoteUnderTest::new();
+    let mut elder_test = ElderUnderTest::new();
 
-    let _ = node_test.dispatch_routing_message(node_test.expect_candidate_message());
-    let _ = node_test.create_gossip();
+    let _ = elder_test.dispatch_routing_message(elder_test.expect_candidate_message());
+    let _ = elder_test.create_gossip();
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // ExpectCandidate is consensused with the vote of node under test: candidate is added
 fn accumulate_expect_candidate_with_message() {
-    let mut node_test = NoteUnderTest::new();
-    let _ = node_test.dispatch_routing_message(node_test.expect_candidate_message());
-    let _ = node_test.create_gossip();
+    let mut elder_test = ElderUnderTest::new();
+    let _ = elder_test.dispatch_routing_message(elder_test.expect_candidate_message());
+    let _ = elder_test.create_gossip();
 
-    node_test.accumulate_expect_candidate_if_vote(node_test.expect_candidate_payload());
+    elder_test.accumulate_expect_candidate_if_vote(elder_test.expect_candidate_payload());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // PurgeCandidate is consensused first: candidate is removed
 fn accumulate_purge_candidate() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     // Should probably add a test that the vote occured on timeout
-    node_test.accumulate_purge_candidate(node_test.purge_payload());
+    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // Candidate is only removed as candidate when its SectionInfo is consensused
 fn accumulate_online_candidate_only_do_not_remove_candidate() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    node_test.accumulate_online(node_test.online_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
 
-    assert!(node_test.has_unpolled_observations());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(elder_test.has_unpolled_observations());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // Candidate is only removed as candidate when its SectionInfo is consensused
 // Vote for `Online` trigger immediate vote for AddElder
 fn accumulate_online_candidate_then_add_elder_only_do_not_remove_candidate() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_online(node_test.online_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
 
-    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // Candidate is only removed as candidate when its SectionInfo is consensused
 fn accumulate_online_candidate_then_add_elder_then_section_info_remove_candidate() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_online(node_test.online_payload());
-    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
-    let new_section_info = node_test.new_section_info_with_candidate();
-    node_test.accumulate_section_info_if_vote(new_section_info);
+    let new_section_info = elder_test.new_section_info_with_candidate();
+    elder_test.accumulate_section_info_if_vote(new_section_info);
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.has_resource_proof_candidate());
-    assert!(node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Online consensused first, PurgeCandidate has no effect
 fn accumulate_online_then_purge_then_add_elder_for_candidate() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_online(node_test.online_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
 
-    node_test.accumulate_purge_candidate(node_test.purge_payload());
-    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Online consensused first, PurgeCandidate has no effect
 fn accumulate_online_then_purge_then_add_elder_then_section_info_for_candidate() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_online(node_test.online_payload());
-    node_test.accumulate_purge_candidate(node_test.purge_payload());
-    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
+    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
-    let new_section_info = node_test.new_section_info_with_candidate();
-    node_test.accumulate_section_info_if_vote(new_section_info);
+    let new_section_info = elder_test.new_section_info_with_candidate();
+    elder_test.accumulate_section_info_if_vote(new_section_info);
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.has_resource_proof_candidate());
-    assert!(node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When PurgeCandidate consensused first, When Online consensused AddElder is not voted
 // and the peer is not added.
 fn accumulate_purge_then_online_for_candidate() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_purge_candidate(node_test.purge_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
 
-    node_test.accumulate_online(node_test.online_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Offline consensused, RemoveElder is voted.
 fn accumulate_offline_for_node() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_online(node_test.online_payload());
-    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
-    node_test.accumulate_section_info_if_vote(node_test.new_section_info_with_candidate());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_section_info_if_vote(elder_test.new_section_info_with_candidate());
 
-    node_test.accumulate_offline(node_test.offline_payload());
+    elder_test.accumulate_offline(elder_test.offline_payload());
 
-    assert!(node_test.has_unpolled_observations());
-    assert!(node_test.is_candidate_a_valid_peer());
+    assert!(elder_test.has_unpolled_observations());
+    assert!(elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Offline consensused, RemoveElder is voted. The peer only become invalid once
 // SectionInfo is consensused
 fn accumulate_offline_then_remove_elder_for_node() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_online(node_test.online_payload());
-    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
-    node_test.accumulate_section_info_if_vote(node_test.new_section_info_with_candidate());
-    node_test.accumulate_offline(node_test.offline_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_section_info_if_vote(elder_test.new_section_info_with_candidate());
+    elder_test.accumulate_offline(elder_test.offline_payload());
 
-    node_test.accumulate_remove_elder_if_vote(node_test.offline_payload());
+    elder_test.accumulate_remove_elder_if_vote(elder_test.offline_payload());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Offline consensused, RemoveElder is voted. The peer only become invalid once
 // SectionInfo is consensused
 fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
-    node_test.accumulate_online(node_test.online_payload());
-    node_test.accumulate_add_elder_if_vote(node_test.online_payload());
-    node_test.accumulate_section_info_if_vote(node_test.new_section_info_with_candidate());
-    node_test.accumulate_offline(node_test.offline_payload());
-    node_test.accumulate_remove_elder_if_vote(node_test.offline_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_section_info_if_vote(elder_test.new_section_info_with_candidate());
+    elder_test.accumulate_offline(elder_test.offline_payload());
+    elder_test.accumulate_remove_elder_if_vote(elder_test.offline_payload());
 
-    node_test.accumulate_section_info_if_vote(node_test.new_section_info_without_candidate());
+    elder_test.accumulate_section_info_if_vote(elder_test.new_section_info_without_candidate());
 
-    assert!(!node_test.has_unpolled_observations());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // Candidate now show info
 fn candidate_info_message_in_interval() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.set_interval_to_match_candidate(true);
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.set_interval_to_match_candidate(true);
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = node_test.dispatch_routing_message(node_test.connection_info_request_message());
-    let _ = node_test.handle_direct_message(node_test.candidate_info_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connection_info_request_message());
+    let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
-    assert!(node_test.has_candidate_info());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(elder_test.has_candidate_info());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // Candidate info in wrong interval: Candidate not modifed - require purge event to remove
 fn candidate_info_message_not_in_interval() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.set_interval_to_match_candidate(false);
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.set_interval_to_match_candidate(false);
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = node_test.dispatch_routing_message(node_test.connection_info_request_message());
-    let _ = node_test.handle_direct_message(node_test.candidate_info_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connection_info_request_message());
+    let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
-    assert!(!node_test.has_candidate_info());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_candidate_info());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // Candidate info that is not trustworthy is not trusted.
 fn candidate_info_message_bad_signature() {
-    let mut node_test = NoteUnderTest::new();
-    node_test.set_interval_to_match_candidate(true);
-    node_test.accumulate_expect_candidate(node_test.expect_candidate_payload());
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.set_interval_to_match_candidate(true);
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = node_test.dispatch_routing_message(node_test.connection_info_request_message());
-    let _ = node_test
-        .handle_direct_message(node_test.candidate_info_message_use_wrong_old_signature(true));
+    let _ = elder_test.dispatch_routing_message(elder_test.connection_info_request_message());
+    let _ = elder_test
+        .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
 
-    assert!(!node_test.has_candidate_info());
-    assert!(node_test.has_resource_proof_candidate());
-    assert!(!node_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.has_candidate_info());
+    assert!(elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.is_candidate_a_valid_peer());
 }

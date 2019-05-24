@@ -11,7 +11,7 @@ use super::{
         proxied, Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
         RelocatedNotEstablished,
     },
-    node::{Node, NodeDetails},
+    elder::{Elder, ElderDetails},
 };
 use crate::{
     ack_manager::AckManager,
@@ -39,7 +39,7 @@ use std::fmt::{self, Display, Formatter};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
-pub struct EstablishingNodeDetails {
+pub struct AdultDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub crust_service: Service,
@@ -53,7 +53,7 @@ pub struct EstablishingNodeDetails {
     pub timer: Timer,
 }
 
-pub struct EstablishingNode {
+pub struct Adult {
     ack_mgr: AckManager,
     cache: Box<Cache>,
     chain: Chain,
@@ -70,9 +70,9 @@ pub struct EstablishingNode {
     timer: Timer,
 }
 
-impl EstablishingNode {
+impl Adult {
     pub fn from_proving_node(
-        details: EstablishingNodeDetails,
+        details: AdultDetails,
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
@@ -106,7 +106,7 @@ impl EstablishingNode {
     }
 
     fn init(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
-        debug!("{} - State changed to EstablishingNode.", self);
+        debug!("{} - State changed to Adult.", self);
 
         for msg in self.msg_backlog.drain(..).collect_vec() {
             let _ = self.dispatch_routing_message(msg, outbox)?;
@@ -115,13 +115,13 @@ impl EstablishingNode {
         Ok(())
     }
 
-    pub fn into_node(
+    pub fn into_elder(
         self,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<State, RoutingError> {
-        let details = NodeDetails {
+        let details = ElderDetails {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
             chain: self.chain,
@@ -136,7 +136,7 @@ impl EstablishingNode {
             timer: self.timer,
         };
 
-        Node::from_establishing_node(details, sec_info, old_pfx, outbox).map(State::Node)
+        Elder::from_adult(details, sec_info, old_pfx, outbox).map(State::Elder)
     }
 
     fn dispatch_routing_message(
@@ -174,7 +174,7 @@ impl EstablishingNode {
 }
 
 #[cfg(feature = "mock_base")]
-impl EstablishingNode {
+impl Adult {
     pub fn chain(&self) -> &Chain {
         &self.chain
     }
@@ -188,7 +188,7 @@ impl EstablishingNode {
     }
 }
 
-impl Base for EstablishingNode {
+impl Base for Adult {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -274,7 +274,7 @@ impl Base for EstablishingNode {
     }
 }
 
-impl Bootstrapped for EstablishingNode {
+impl Bootstrapped for Adult {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -302,7 +302,7 @@ impl Bootstrapped for EstablishingNode {
     }
 }
 
-impl Relocated for EstablishingNode {
+impl Relocated for Adult {
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
@@ -330,7 +330,7 @@ impl Relocated for EstablishingNode {
     }
 }
 
-impl BootstrappedNotEstablished for EstablishingNode {
+impl BootstrappedNotEstablished for Adult {
     const SEND_ACK: bool = true;
 
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
@@ -338,7 +338,7 @@ impl BootstrappedNotEstablished for EstablishingNode {
     }
 }
 
-impl RelocatedNotEstablished for EstablishingNode {
+impl RelocatedNotEstablished for Adult {
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
     }
@@ -348,7 +348,7 @@ impl RelocatedNotEstablished for EstablishingNode {
     }
 }
 
-impl Approved for EstablishingNode {
+impl Approved for Adult {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
     }
@@ -402,7 +402,7 @@ impl Approved for EstablishingNode {
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         if self.chain.is_member() {
-            Ok(Transition::IntoNode { sec_info, old_pfx })
+            Ok(Transition::IntoElder { sec_info, old_pfx })
         } else {
             debug!("{} - Unhandled SectionInfo event", self);
             Ok(Transition::Stay)
@@ -429,11 +429,11 @@ impl Approved for EstablishingNode {
     }
 }
 
-impl Display for EstablishingNode {
+impl Display for Adult {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "EstablishingNode({}({:b}))",
+            "Adult({}({:b}))",
             self.name(),
             self.chain.our_prefix()
         )

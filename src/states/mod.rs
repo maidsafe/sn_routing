@@ -6,19 +6,19 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod adult;
 mod bootstrapping_peer;
 mod client;
 pub mod common;
-mod establishing_node;
-mod node;
+mod elder;
 mod proving_node;
 mod relocating_node;
 
 pub use self::{
+    adult::Adult,
     bootstrapping_peer::{BootstrappingPeer, TargetState},
     client::{Client, RATE_EXCEED_RETRY},
-    establishing_node::EstablishingNode,
-    node::Node,
+    elder::Elder,
     proving_node::ProvingNode,
     relocating_node::RelocatingNode,
 };
@@ -41,15 +41,15 @@ pub use self::{
 //        │                        │
 //        │                        │
 //        │                        ▼
-//        │                      ┌──────────────────┐
-//        │                      │ EstablishingNode │
-//        │                      └──────────────────┘
+//        │                      ┌───────┐
+//        │                      │ Adult │
+//        │                      └───────┘
 //        │                        │
 //        │                        │
 //        ▼                        ▼
-// ┌────────┐                    ┌──────┐
-// │ Client │                    │ Node │
-// └────────┘                    └──────┘
+// ┌────────┐                    ┌───────┐
+// │ Client │                    │ Elder │
+// └────────┘                    └───────┘
 //
 //
 // # Common traits
@@ -57,8 +57,8 @@ pub use self::{
 //                              │   Client
 //                              │   │   RelocatingNode
 //                              │   │   │   ProvingNode
-//                              │   │   │   │   EstablishingNode
-//                              │   │   │   │   │   Node
+//                              │   │   │   │   Adult
+//                              │   │   │   │   │   Elder
 //                              │   │   │   │   │   │
 // Base                         *   *   *   *   *   *
 // Bootstrapped                     *   *   *   *   *

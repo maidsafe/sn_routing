@@ -139,9 +139,15 @@ impl NodeBuilder {
         StateMachine::new(
             move |action_sender, crust_service, timer, outbox2| {
                 if self.first {
-                    states::Node::first(self.cache, crust_service, full_id, min_section_size, timer)
-                        .map(State::Node)
-                        .unwrap_or(State::Terminated)
+                    states::Elder::first(
+                        self.cache,
+                        crust_service,
+                        full_id,
+                        min_section_size,
+                        timer,
+                    )
+                    .map(State::Elder)
+                    .unwrap_or(State::Terminated)
                 } else if !dev_config.allow_multiple_lan_nodes && crust_service.has_peers_on_lan() {
                     error!(
                         "More than one routing node found on LAN. Currently this is not supported."
@@ -575,18 +581,18 @@ impl Node {
     }
 
     /// Returns this node state.
-    pub fn node_state(&self) -> Option<&crate::states::Node> {
-        self.machine.current().node_state()
+    pub fn node_state(&self) -> Option<&crate::states::Elder> {
+        self.machine.current().elder_state()
     }
 
     /// Returns this node mut state.
-    pub fn node_state_mut(&mut self) -> Option<&mut crate::states::Node> {
-        self.machine.current_mut().node_state_mut()
+    pub fn node_state_mut(&mut self) -> Option<&mut crate::states::Elder> {
+        self.machine.current_mut().elder_state_mut()
     }
 
-    /// Returns this node state unwraped: assume state is Node.
-    pub fn node_state_unchecked(&self) -> &crate::states::Node {
-        unwrap!(self.node_state(), "Should be State::Node")
+    /// Returns this node state unwraped: assume state is Elder.
+    pub fn node_state_unchecked(&self) -> &crate::states::Elder {
+        unwrap!(self.node_state(), "Should be State::Elder")
     }
 
     /// Returns whether the current state is `ProvingNode`.

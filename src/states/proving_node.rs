@@ -7,10 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
+    adult::{Adult, AdultDetails},
     common::{
         proxied, Base, Bootstrapped, BootstrappedNotEstablished, Relocated, RelocatedNotEstablished,
     },
-    establishing_node::{EstablishingNode, EstablishingNodeDetails},
 };
 use crate::{
     ack_manager::AckManager,
@@ -150,7 +150,7 @@ impl ProvingNode {
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut EventBox,
     ) -> Result<State, RoutingError> {
-        let details = EstablishingNodeDetails {
+        let details = AdultDetails {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
             crust_service: self.crust_service,
@@ -164,7 +164,7 @@ impl ProvingNode {
             timer: self.timer,
         };
 
-        EstablishingNode::from_proving_node(details, outbox).map(State::EstablishingNode)
+        Adult::from_proving_node(details, outbox).map(State::Adult)
     }
 
     fn dispatch_routing_message(
@@ -193,7 +193,7 @@ impl ProvingNode {
             self
         );
 
-        Transition::IntoEstablishingNode { gen_pfx_info }
+        Transition::IntoAdult { gen_pfx_info }
     }
 
     #[cfg(feature = "mock_base")]

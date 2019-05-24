@@ -74,7 +74,7 @@ const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 /// Duration for which clients' IDs we disconnected from are retained.
 const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
-pub struct NodeDetails {
+pub struct ElderDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub chain: Chain,
@@ -89,7 +89,7 @@ pub struct NodeDetails {
     pub timer: Timer,
 }
 
-pub struct Node {
+pub struct Elder {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     crust_service: Service,
@@ -134,7 +134,7 @@ pub struct Node {
     chain: Chain,
 }
 
-impl Node {
+impl Elder {
     pub fn first(
         cache: Box<Cache>,
         crust_service: Service,
@@ -153,7 +153,7 @@ impl Node {
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
         let peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
 
-        let details = NodeDetails {
+        let details = ElderDetails {
             ack_mgr: AckManager::new(),
             cache,
             chain,
@@ -183,19 +183,19 @@ impl Node {
         }
     }
 
-    pub fn from_establishing_node(
-        mut details: NodeDetails,
+    pub fn from_adult(
+        mut details: ElderDetails,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
-        let mut node = Self::new(details, false);
-        node.init(sec_info, old_pfx, event_backlog, outbox)?;
-        Ok(node)
+        let mut elder = Self::new(details, false);
+        elder.init(sec_info, old_pfx, event_backlog, outbox)?;
+        Ok(elder)
     }
 
-    fn new(details: NodeDetails, is_first_node: bool) -> Self {
+    fn new(details: ElderDetails, is_first_node: bool) -> Self {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
 
         let timer = details.timer;
@@ -1812,7 +1812,7 @@ impl Node {
     }
 }
 
-impl Base for Node {
+impl Base for Elder {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -2160,7 +2160,7 @@ impl Base for Node {
 }
 
 #[cfg(feature = "mock_base")]
-impl Node {
+impl Elder {
     pub fn chain(&self) -> &Chain {
         &self.chain
     }
@@ -2197,7 +2197,7 @@ impl Node {
     }
 }
 
-impl Bootstrapped for Node {
+impl Bootstrapped for Elder {
     fn ack_mgr(&self) -> &AckManager {
         &self.ack_mgr
     }
@@ -2298,7 +2298,7 @@ impl Bootstrapped for Node {
     }
 }
 
-impl Relocated for Node {
+impl Relocated for Elder {
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
@@ -2332,7 +2332,7 @@ impl Relocated for Node {
     }
 }
 
-impl Approved for Node {
+impl Approved for Elder {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
     }
@@ -2498,9 +2498,9 @@ impl Approved for Node {
     }
 }
 
-impl Display for Node {
+impl Display for Elder {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Node({}({:b}))", self.name(), self.our_prefix())
+        write!(formatter, "Elder({}({:b}))", self.name(), self.our_prefix())
     }
 }
 
