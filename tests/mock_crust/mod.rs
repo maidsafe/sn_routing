@@ -16,11 +16,12 @@ mod requests;
 mod utils;
 
 pub use self::utils::{
-    add_connected_nodes_until_sized, add_connected_nodes_until_split, count_sections,
-    create_connected_clients, create_connected_nodes, create_connected_nodes_until_split,
-    current_sections, gen_bytes, gen_immutable_data, gen_range, gen_range_except, poll_all,
-    poll_and_resend, poll_and_resend_until, remove_nodes_which_failed_to_connect,
-    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
+    add_connected_nodes_until_one_away_from_split, add_connected_nodes_until_split,
+    clear_relocation_overrides, count_sections, create_connected_clients, create_connected_nodes,
+    create_connected_nodes_until_split, current_sections, gen_bytes, gen_immutable_data, gen_range,
+    gen_range_except, poll_all, poll_and_resend, poll_and_resend_until,
+    remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
+    verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
 };
 use fake_clock::FakeClock;
 use itertools::Itertools;
@@ -49,6 +50,15 @@ fn test_nodes(percentage_size: usize) {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, size);
     verify_invariant_for_all_nodes(&mut nodes);
+}
+
+fn nodes_with_prefix_mut<'a>(
+    nodes: &'a mut [TestNode],
+    prefix: &'a Prefix<XorName>,
+) -> impl Iterator<Item = &'a mut TestNode> {
+    nodes
+        .iter_mut()
+        .filter(move |node| prefix.matches(&node.name()))
 }
 
 #[test]
@@ -204,66 +214,82 @@ fn multi_split() {
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
+struct SimultaneousJoiningNode {
+    // relocation_dst to set for nodes in the section with src_section_prefix: Must match section.
+    dst_section_prefix: Prefix<XorName>,
+    // section prefix that will contain the new node to add: Must match section.
+    src_section_prefix: Prefix<XorName>,
+    // The relocation_interval to set for nodes in the section with dst_section_prefix:
+    // Must be within dst_section_prefix. If none let production code decide.
+    dst_relocation_interval_prefix: Option<Prefix<XorName>>,
+    // The prefix to find the proxy within.
+    proxy_prefix: Prefix<XorName>,
+}
+
+// Proceed with testing joining nodes at the same time with the given configuration.
 fn simultaneous_joining_nodes(
     network: Network<PublicId>,
     mut nodes: Nodes,
-    prefixes_to_add_to: &[Prefix<XorName>],
-    set_next_relocation_interval: bool,
+    nodes_to_add_setup: &[SimultaneousJoiningNode],
 ) {
+    //
+    // Arrange
+    //
     let mut rng = network.new_rng();
     rng.shuffle(&mut nodes);
 
-    let next_relocation_dsts = prefixes_to_add_to
-        .iter()
-        .map(|prefix| prefix.substituted_in(rng.gen()))
-        .collect_vec();
+    let mut nodes_to_add = Vec::new();
+    for setup in nodes_to_add_setup {
+        // Set the specified relocation destination on the nodes of the given prefixes
+        let relocation_dst = setup.dst_section_prefix.substituted_in(rng.gen());
+        nodes_with_prefix_mut(&mut nodes, &setup.src_section_prefix)
+            .for_each(|node| node.inner.set_next_relocation_dst(Some(relocation_dst)));
 
-    let prefix_and_dst_in_other_section = prefixes_to_add_to
-        .iter()
-        .zip(next_relocation_dsts.iter().rev());
+        // Set the specified relocation interval on the nodes of the given prefixes
+        let relocation_interval = setup
+            .dst_relocation_interval_prefix
+            .map(|prefix| (prefix.lower_bound(), prefix.upper_bound()));
+        nodes_with_prefix_mut(&mut nodes, &setup.dst_section_prefix)
+            .for_each(|node| node.inner.set_next_relocation_interval(relocation_interval));
 
-    for (prefix, dst_other) in prefix_and_dst_in_other_section {
-        let interval = if set_next_relocation_interval {
-            Some((prefix.lower_bound(), prefix.upper_bound()))
-        } else {
-            None
-        };
-        nodes
-            .iter_mut()
-            .filter(|node| prefix.is_compatible(&node.chain().our_prefix()))
-            .for_each(|node| {
-                trace!(
-                    "simultaneous_joining_nodes: set_next_relocation_dst {:?} -> {:?}",
-                    node.name(),
-                    dst_other
-                );
-                node.inner.set_next_relocation_dst(Some(*dst_other));
-                node.inner.set_next_relocation_interval(interval);
-            });
-    }
+        // Create nodes and find proxies from the given prefixes
+        let node_to_add = {
+            // Get random bootstrap node from within proxy_prefix
+            let bootstrap_config = {
+                let mut compatible_proxies =
+                    nodes_with_prefix_mut(&mut nodes, &setup.proxy_prefix).collect_vec();
+                rng.shuffle(&mut compatible_proxies);
 
-    for prefix in prefixes_to_add_to {
-        let bootstrap_config = BootstrapConfig::with_contacts(&[unwrap!(nodes
-            .iter()
-            .find(|node| prefix.is_compatible(&node.chain().our_prefix())))
-        .handle
-        .endpoint()]);
-        loop {
-            let node = TestNode::builder(&network)
-                .bootstrap_config(bootstrap_config.clone())
-                .create();
-            if prefix.matches(&node.name()) {
-                trace!("simultaneous_joining_nodes: new node {:?}", node.name());
-                nodes.push(node);
-                break;
+                BootstrapConfig::with_contacts(&[unwrap!(nodes.first()).handle.endpoint()])
+            };
+
+            // Get random new TestNode from within src_prefix
+            loop {
+                let node = TestNode::builder(&network)
+                    .bootstrap_config(bootstrap_config.clone())
+                    .create();
+                if setup.src_section_prefix.matches(&node.name()) {
+                    break node;
+                }
             }
-        }
+        };
+        nodes_to_add.push(node_to_add);
     }
 
+    //
+    // Arrange
+    // Add new nodes and process until complete
+    //
+    nodes.extend(nodes_to_add.into_iter());
     poll_and_resend(&mut nodes, &mut []);
+
+    //
+    // Assert
+    // Verify that the new nodes are now full nodes part of a section and other invariants.
+    //
     let non_full_nodes = nodes
         .iter()
-        .filter(|node| node.inner.chain().is_none())
+        .filter(|node| !node.inner.is_node())
         .map(TestNode::name)
         .collect_vec();
     assert!(
@@ -271,7 +297,6 @@ fn simultaneous_joining_nodes(
         "Should be full node: {:?}",
         non_full_nodes
     );
-
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
@@ -280,15 +305,26 @@ fn simultaneous_joining_nodes_two_sections() {
     // Create a network with two sections:
     let network = Network::new(MIN_SECTION_SIZE, None);
     let nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
-    let mut rng = network.new_rng();
 
-    let sections = {
-        let mut sections = current_sections(&nodes).into_iter().collect_vec();
-        rng.shuffle(&mut sections);
-        sections
-    };
+    let prefix_0 = Prefix::default().pushed(false);
+    let prefix_1 = Prefix::default().pushed(true);
 
-    simultaneous_joining_nodes(network, nodes, &sections, false);
+    // Relocate in section we were spawned to with a proxy from prefix_0
+    let nodes_to_add_setup = vec![
+        SimultaneousJoiningNode {
+            dst_section_prefix: prefix_0,
+            src_section_prefix: prefix_0,
+            dst_relocation_interval_prefix: None,
+            proxy_prefix: prefix_0,
+        },
+        SimultaneousJoiningNode {
+            dst_section_prefix: prefix_1,
+            src_section_prefix: prefix_1,
+            dst_relocation_interval_prefix: None,
+            proxy_prefix: prefix_0,
+        },
+    ];
+    simultaneous_joining_nodes(network, nodes, &nodes_to_add_setup);
 }
 
 #[test]
@@ -301,55 +337,45 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let network = Network::new(min_section_size, None);
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2], false);
 
-    let mut rng = network.new_rng();
-    let sections = {
-        let mut sections = current_sections(&nodes).into_iter().collect_vec();
-        rng.shuffle(&mut sections);
-        sections
-    };
+    // The created sections
+    let sections = current_sections(&nodes).into_iter().collect_vec();
+    let small_prefix = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 1));
+    let long_prefix_0 = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 2));
+    let long_prefix_1 = long_prefix_0.sibling();
 
-    // Identify prefixes to add node to for setup so the shorter prefix split with a single node.
-    // Identify 2 prefixes to add node to for the test: one trigger a split, one in other section.
-    let (prefixes_to_extend, small_prefix_to_add) = {
-        let small_prefix = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 1));
-        let small_prefix_0 = small_prefix.pushed(false);
-        let small_prefix_1 = small_prefix.pushed(true);
+    // Setup the network so the small_prefix will split with one more node in small_prefix_to_add.
+    let small_prefix_to_add = *unwrap!(add_connected_nodes_until_one_away_from_split(
+        &network,
+        &mut nodes,
+        &[small_prefix],
+        false
+    )
+    .first());
 
-        let num_in_section = |prefix: &Prefix<XorName>| {
-            nodes
-                .iter()
-                .filter(|node| prefix.matches(&node.name()))
-                .count()
-        };
-
-        // Keep the initially smaller half smaller as all node may already be in
-        // the bigger section
-        let small_prefix_to_add =
-            if num_in_section(&small_prefix_1) > num_in_section(&small_prefix_0) {
-                small_prefix_0
-            } else {
-                small_prefix_1
-            };
-        let split_size = nodes[0].chain().min_split_size();
-
-        (
-            vec![
-                (small_prefix_to_add, split_size - 1),
-                (small_prefix_to_add.sibling(), split_size),
-            ],
-            small_prefix_to_add,
-        )
-    };
-
-    add_connected_nodes_until_sized(&network, &mut nodes, &prefixes_to_extend, false);
-
-    let target_prefixes = sections
-        .iter()
-        .filter(|prefix| prefix.bit_count() == 2)
-        .chain(Some(&small_prefix_to_add))
-        .cloned()
-        .collect_vec();
-    simultaneous_joining_nodes(network, nodes, &target_prefixes, true);
+    // First node will trigger the split: src, destination and proxy together.
+    // Other nodes validate getting relocated to a section with a proxy from section splitting
+    // which will no longer be a neighbour after the split.
+    let nodes_to_add_setup = vec![
+        SimultaneousJoiningNode {
+            dst_section_prefix: small_prefix,
+            src_section_prefix: small_prefix,
+            dst_relocation_interval_prefix: Some(small_prefix_to_add),
+            proxy_prefix: small_prefix,
+        },
+        SimultaneousJoiningNode {
+            dst_section_prefix: long_prefix_0,
+            src_section_prefix: small_prefix,
+            dst_relocation_interval_prefix: Some(long_prefix_0),
+            proxy_prefix: long_prefix_0.with_flipped_bit(0).with_flipped_bit(1),
+        },
+        SimultaneousJoiningNode {
+            dst_section_prefix: long_prefix_1,
+            src_section_prefix: long_prefix_0,
+            dst_relocation_interval_prefix: Some(long_prefix_1),
+            proxy_prefix: long_prefix_1.with_flipped_bit(0).with_flipped_bit(1),
+        },
+    ];
+    simultaneous_joining_nodes(network, nodes, &nodes_to_add_setup);
 }
 
 #[test]
