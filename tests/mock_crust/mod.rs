@@ -328,6 +328,33 @@ fn simultaneous_joining_nodes_two_sections() {
 }
 
 #[test]
+fn simultaneous_joining_nodes_two_sections_switch_section() {
+    // Create a network with two sections:
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+
+    let prefix_0 = Prefix::default().pushed(false);
+    let prefix_1 = Prefix::default().pushed(true);
+
+    // Relocate in section we were not spawned to with a proxy from prefix_0
+    let nodes_to_add_setup = vec![
+        SimultaneousJoiningNode {
+            dst_section_prefix: prefix_0,
+            src_section_prefix: prefix_1,
+            dst_relocation_interval_prefix: None,
+            proxy_prefix: prefix_0,
+        },
+        SimultaneousJoiningNode {
+            dst_section_prefix: prefix_1,
+            src_section_prefix: prefix_0,
+            dst_relocation_interval_prefix: None,
+            proxy_prefix: prefix_0,
+        },
+    ];
+    simultaneous_joining_nodes(network, nodes, &nodes_to_add_setup);
+}
+
+#[test]
 fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     // TODO: Use same section size once we have a reliable message relay that handle split.
     // Allow for more route hops otherwise NodeApproaval get losts.
