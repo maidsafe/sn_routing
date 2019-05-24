@@ -2429,7 +2429,12 @@ impl Approved for Node {
         if sec_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*sec_info.prefix()), outbox);
-            self.send_neighbour_infos();
+            // After a section split, the normal `send_neighbour_infos` action for the neighbouring
+            // section will be triggered here (and only here).  Meanwhile own section's sending
+            // action will be triggered at the other place later on (`self_sec_update` is true).
+            if !sec_info.prefix().matches(self.name()) {
+                self.send_neighbour_infos();
+            }
         } else if old_pfx.is_extension_of(sec_info.prefix()) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);

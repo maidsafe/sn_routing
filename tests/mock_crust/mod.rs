@@ -103,10 +103,7 @@ fn candidate_timeout_resource_proof() {
     );
 
     // Continue after candidate time out:
-    FakeClock::advance_time(
-        1000 * (test_consts::RESOURCE_PROOF_DURATION_SECS
-            + test_consts::ACCUMULATION_TIMEOUT_SECS * 3),
-    );
+    FakeClock::advance_time(1000 * test_consts::CANDIDATE_EXPIRED_TIMEOUT_SECS);
     poll_and_resend(&mut nodes, &mut []);
 
     assert_eq!(

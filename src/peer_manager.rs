@@ -13,7 +13,6 @@ use crate::{
     id::PublicId,
     resource_prover::RESOURCE_PROOF_DURATION,
     routing_table::Authority,
-    signature_accumulator::ACCUMULATION_TIMEOUT,
     time::{Duration, Instant},
     types::MessageId,
     utils::LogIdent,
@@ -32,6 +31,10 @@ use std::{
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
+/// Duration after which a candidate is considered as expired.
+/// Using a larger timeout to allow Online to accumulate via gossip.
+const CANDIDATE_EXPIRED_TIMEOUT: Duration =
+    Duration::from_secs(RESOURCE_PROOF_DURATION.as_secs() + 90);
 /// Time (in seconds) after which the connection to a peer is considered failed.
 const CONNECTING_PEER_TIMEOUT_SECS: u64 = 150;
 /// Time (in seconds) the node waits for a peer to either become valid once connected to it or to
@@ -41,9 +44,8 @@ const CONNECTED_PEER_TIMEOUT_SECS: u64 = 120;
 #[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod test_consts {
-    pub const ACCUMULATION_TIMEOUT_SECS: u64 = super::ACCUMULATION_TIMEOUT.as_secs();
     pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT.as_secs();
-    pub const RESOURCE_PROOF_DURATION_SECS: u64 = super::RESOURCE_PROOF_DURATION.as_secs();
+    pub const CANDIDATE_EXPIRED_TIMEOUT_SECS: u64 = super::CANDIDATE_EXPIRED_TIMEOUT.as_secs();
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
@@ -313,11 +315,7 @@ impl Candidate {
             }
             | Candidate::ResourceProof {
                 res_proof_start, ..
-            } => {
-                // TODO: need better fix. Using a larger timeout to allow Online to accumulate via gossip
-                // than the prev timeout for grp-msg accumulation.
-                res_proof_start.elapsed() > RESOURCE_PROOF_DURATION + ACCUMULATION_TIMEOUT * 3
-            }
+            } => res_proof_start.elapsed() > CANDIDATE_EXPIRED_TIMEOUT,
         }
     }
 
