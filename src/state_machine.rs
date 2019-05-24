@@ -13,7 +13,7 @@ use crate::{
     outbox::EventBox,
     routing_table::Prefix,
     states::common::Base,
-    states::{BootstrappingPeer, Client, EstablishingNode, Node, ProvingNode, RelocatingNode},
+    states::{Adult, BootstrappingPeer, Client, Elder, ProvingNode, RelocatingNode},
     timer::Timer,
     types::RoutingActionSender,
     xor_name::XorName,
@@ -39,8 +39,8 @@ macro_rules! state_dispatch {
             State::Client($state) => $expr,
             State::RelocatingNode($state) => $expr,
             State::ProvingNode($state) => $expr,
-            State::EstablishingNode($state) => $expr,
-            State::Node($state) => $expr,
+            State::Adult($state) => $expr,
+            State::Elder($state) => $expr,
             State::Terminated => $term_expr,
         }
     };
@@ -66,8 +66,8 @@ pub enum State {
     Client(Client),
     RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
-    EstablishingNode(EstablishingNode),
-    Node(Node),
+    Adult(Adult),
+    Elder(Elder),
     Terminated,
 }
 
@@ -184,8 +184,8 @@ impl Debug for State {
 impl State {
     pub fn chain(&self) -> Option<&Chain> {
         match *self {
-            State::EstablishingNode(ref state) => Some(state.chain()),
-            State::Node(ref state) => Some(state.chain()),
+            State::Adult(ref state) => Some(state.chain()),
+            State::Elder(ref state) => Some(state.chain()),
             State::BootstrappingPeer(_)
             | State::Client(_)
             | State::RelocatingNode(_)
@@ -194,18 +194,18 @@ impl State {
         }
     }
 
-    /// Returns this node state.
-    pub fn node_state(&self) -> Option<&Node> {
+    /// Returns this elder state.
+    pub fn elder_state(&self) -> Option<&Elder> {
         match *self {
-            State::Node(ref state) => Some(state),
+            State::Elder(ref state) => Some(state),
             _ => None,
         }
     }
 
-    /// Returns this node mut state.
-    pub fn node_state_mut(&mut self) -> Option<&mut Node> {
+    /// Returns this elder mut state.
+    pub fn elder_state_mut(&mut self) -> Option<&mut Elder> {
         match *self {
-            State::Node(ref mut state) => Some(state),
+            State::Elder(ref mut state) => Some(state),
             _ => None,
         }
     }
@@ -216,8 +216,8 @@ impl State {
             State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
             State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
-            State::EstablishingNode(ref mut state) => state.get_timed_out_tokens(),
-            State::Node(ref mut state) => state.get_timed_out_tokens(),
+            State::Adult(ref mut state) => state.get_timed_out_tokens(),
+            State::Elder(ref mut state) => state.get_timed_out_tokens(),
         }
     }
 
@@ -228,8 +228,8 @@ impl State {
             | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_) => false,
-            State::EstablishingNode(ref state) => state.has_unpolled_observations(),
-            State::Node(ref state) => state.has_unpolled_observations(),
+            State::Adult(ref state) => state.has_unpolled_observations(),
+            State::Elder(ref state) => state.has_unpolled_observations(),
         }
     }
 
@@ -247,8 +247,8 @@ impl State {
             State::Client(ref state) => state.ack_mgr().has_unacked_msg(),
             State::RelocatingNode(ref state) => state.ack_mgr().has_unacked_msg(),
             State::ProvingNode(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::EstablishingNode(ref state) => state.ack_mgr().has_unacked_msg(),
-            State::Node(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::Adult(ref state) => state.ack_mgr().has_unacked_msg(),
+            State::Elder(ref state) => state.ack_mgr().has_unacked_msg(),
         }
     }
 }
@@ -267,12 +267,12 @@ pub enum Transition {
         new_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
     },
-    // `ProvingNode` state transitioning to `EstablishingNode`.
-    IntoEstablishingNode {
+    // `ProvingNode` state transitioning to `Adult`.
+    IntoAdult {
         gen_pfx_info: GenesisPfxInfo,
     },
-    // `EstablishingNode` state transition to `Node`.
-    IntoNode {
+    // `Adult` state transition to `Elder`.
+    IntoElder {
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
     },
@@ -425,12 +425,12 @@ impl StateMachine {
                     _ => unreachable!(),
                 })
             }
-            IntoEstablishingNode { gen_pfx_info } => self.state.replace_with(|state| match state {
+            IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {
                 State::ProvingNode(src) => src.into_establishing_node(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
-            IntoNode { sec_info, old_pfx } => self.state.replace_with(|state| match state {
-                State::EstablishingNode(src) => src.into_node(sec_info, old_pfx, outbox),
+            IntoElder { sec_info, old_pfx } => self.state.replace_with(|state| match state {
+                State::Adult(src) => src.into_elder(sec_info, old_pfx, outbox),
                 _ => unreachable!(),
             }),
             Terminate => self.terminate(),
