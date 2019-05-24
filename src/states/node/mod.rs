@@ -551,7 +551,8 @@ impl Node {
         } else {
             let mut num_trusted_hops = signed_msg.proving_sections().len();
             let mut trusted_hop_found = false;
-            for (index, hop) in signed_msg.proving_sections()
+            for (index, hop) in signed_msg
+                .proving_sections()
                 .iter()
                 .map(|ps| &ps.sec_info)
                 .enumerate()
@@ -565,10 +566,11 @@ impl Node {
             }
 
             // If none of the intermediate hops are trusted try the source.
-            if !trusted_hop_found && signed_msg.source_section().is_some() &&
-             self.is_trusted(signed_msg.source_section().unwrap())? {
-                 trusted_hop_found = true;
-                 num_trusted_hops = 0;
+            if let Some(src_section) = signed_msg.source_section() {
+                if !trusted_hop_found && self.is_trusted(src_section)? {
+                    trusted_hop_found = true;
+                    num_trusted_hops = 0;
+                }
             }
 
             if !trusted_hop_found {
