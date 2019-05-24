@@ -327,7 +327,7 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
 }
 
 // TODO: Extract the individual tests into their own functions.
-#[allow(clippy::cyclomatic_complexity)]
+#[allow(clippy::cognitive_complexity)]
 fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
     let mut nodes = create_connected_nodes(MIN_SECTION_SIZE + 1, &event_sender, &event_receiver);

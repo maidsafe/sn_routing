@@ -474,7 +474,7 @@ impl StateMachine {
         use itertools::Itertools;
         use maidsafe_utilities::SeededRng;
         use rand::Rng;
-        use std::iter::{self, Iterator};
+        use std::iter;
 
         if !self.is_running {
             return Err(TryRecvError::Disconnected);

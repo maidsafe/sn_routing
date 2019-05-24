@@ -1276,7 +1276,7 @@ mod tests {
     // `need_to_add()` while also implicitly testing `add()` and `split()`.
     #[test]
     #[ignore]
-    #[allow(clippy::cyclomatic_complexity, clippy::assertions_on_constants)]
+    #[allow(clippy::cognitive_complexity, clippy::assertions_on_constants)]
     fn test_routing_sections() {
         assert!(
             SPLIT_BUFFER < 3818,
