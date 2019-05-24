@@ -1480,6 +1480,7 @@ impl Node {
         user_msg: UserMessage,
         priority: u8,
     ) -> Result<(), RoutingError> {
+        #[allow(clippy::identity_conversion)]
         for part in user_msg.to_parts(priority)? {
             self.send_routing_message(src, dst, part)?;
         }
