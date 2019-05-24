@@ -287,6 +287,11 @@ impl SignedMessage {
         self.proving_sections.pop().is_some()
     }
 
+    /// Keeps the first `len` hops, dropping the rest.
+    pub fn truncate_hops(&mut self, len: usize) {
+        self.proving_sections.truncate(len)
+    }
+
     /// Appends the proving sections to this message.
     pub fn extend_proving_sections<I>(&mut self, proving_sections: I)
     where

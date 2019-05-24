@@ -549,17 +549,36 @@ impl Node {
                 return Err(RoutingError::InvalidProvingSection);
             }
         } else {
-            // Remove any untrusted trailing section infos.
-            while match signed_msg.previous_hop() {
-                None => true,
-                Some(hop) => !self.is_trusted(hop)?,
-            } {
-                // We don't know the last hop! Try the one before that.
-                if !signed_msg.pop_previous_hop() {
-                    debug!("{} Untrusted message: {:?}", self, signed_msg);
-                    return Err(RoutingError::NotEnoughSignatures);
+            let mut num_trusted_hops = signed_msg.proving_sections().len();
+            let mut trusted_hop_found = false;
+            for (index, hop) in signed_msg.proving_sections()
+                .iter()
+                .map(|ps| &ps.sec_info)
+                .enumerate()
+                .rev()
+            {
+                if self.is_trusted(hop)? {
+                    trusted_hop_found = true;
+                    num_trusted_hops = index + 1;
+                    break;
                 }
             }
+
+            // If none of the intermediate hops are trusted try the source.
+            if !trusted_hop_found && signed_msg.source_section().is_some() &&
+             self.is_trusted(signed_msg.source_section().unwrap())? {
+                 trusted_hop_found = true;
+                 num_trusted_hops = 0;
+            }
+
+            if !trusted_hop_found {
+                debug!("{} Untrusted message: {:?}", self, signed_msg);
+                return Err(RoutingError::NotEnoughSignatures);
+            }
+
+            // Remove any untrusted trailing section infos.
+            signed_msg.truncate_hops(num_trusted_hops);
+
             // Now that we validated the sections, inform our peers about any new ones.
             if signed_msg
                 .section_infos()
