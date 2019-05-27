@@ -620,8 +620,8 @@ pub fn add_connected_nodes_until_split(
     trace!("Created testnet comprising {:?}", prefixes);
 }
 
-// Add connected nodes to the given prefixes, so adding one extra node in any of the
-// returned sub-prefixes, will trigger a split in the parent prefix.
+// Add connected nodes to the given prefixes until adding one extra node in any of the
+// returned sub-prefixes would trigger a split in the parent prefix.
 pub fn add_connected_nodes_until_one_away_from_split(
     network: &Network<PublicId>,
     nodes: &mut Vec<TestNode>,
@@ -635,7 +635,7 @@ pub fn add_connected_nodes_until_one_away_from_split(
     prefixes_to_add_to_split
 }
 
-// This adds new nodes until we reach the requested size for each prefix. No split expected.
+// Add connected nodes until reaching the requested size for each prefix. No split expected.
 fn add_connected_nodes_until_sized(
     network: &Network<PublicId>,
     nodes: &mut Vec<TestNode>,
@@ -703,8 +703,8 @@ pub fn clear_relocation_overrides(nodes: &mut Vec<TestNode>) {
     }
 }
 
-// Returns how many nodes to add to each sub-prefixes to reach split with one extra node.
-// The second field of the return value contain the sub-prefixes to add the final node to split.
+// Returns sub-prefixes target size to reach so we would split with one extra node.
+// The second returned field contains the sub-prefixes to add the final node to trigger the splits.
 fn prefixes_and_count_to_split_with_only_one_extra_node(
     nodes: &[TestNode],
     prefixes: &[Prefix<XorName>],

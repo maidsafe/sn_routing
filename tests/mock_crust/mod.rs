@@ -215,9 +215,9 @@ fn multi_split() {
 }
 
 struct SimultaneousJoiningNode {
-    // relocation_dst to set for nodes in the section with src_section_prefix: Must match section.
+    // Destination section prefix: Use as relocation_dst for nodes in src_section_prefix.
     dst_section_prefix: Prefix<XorName>,
-    // section prefix that will contain the new node to add: Must match section.
+    // Section prefix that will match the initial id of the node to add.
     src_section_prefix: Prefix<XorName>,
     // The relocation_interval to set for nodes in the section with dst_section_prefix:
     // Must be within dst_section_prefix. If none let production code decide.
@@ -234,6 +234,7 @@ fn simultaneous_joining_nodes(
 ) {
     //
     // Arrange
+    // Setup nodes so relocation will happen as specified by nodes_to_add_setup.
     //
     let mut rng = network.new_rng();
     rng.shuffle(&mut nodes);
@@ -277,7 +278,7 @@ fn simultaneous_joining_nodes(
     }
 
     //
-    // Arrange
+    // Act
     // Add new nodes and process until complete
     //
     nodes.extend(nodes_to_add.into_iter());
@@ -309,7 +310,7 @@ fn simultaneous_joining_nodes_two_sections() {
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
 
-    // Relocate in section we were spawned to with a proxy from prefix_0
+    // Relocate nodes to the section they were spawned in with a proxy from prefix_0
     let nodes_to_add_setup = vec![
         SimultaneousJoiningNode {
             dst_section_prefix: prefix_0,
@@ -336,7 +337,7 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
 
-    // Relocate in section we were not spawned to with a proxy from prefix_0
+    // Relocate nodes to the section they were not spawned in with a proxy from prefix_0
     let nodes_to_add_setup = vec![
         SimultaneousJoiningNode {
             dst_section_prefix: prefix_0,
@@ -357,7 +358,7 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
 #[test]
 fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     // TODO: Use same section size once we have a reliable message relay that handle split.
-    // Allow for more route hops otherwise NodeApproaval get losts.
+    // Allow for more routes otherwise NodeApproval get losts during soak test.
     let min_section_size = MIN_SECTION_SIZE + 1;
 
     // Create a network with three sections:
