@@ -838,19 +838,25 @@ impl Elder {
                     self, pub_id, error
                 );
             }
-            Ok(None) => {
+            Ok((None, elapsed)) => {
+                trace!(
+                    "{} Candidate {} provided part for challenge in {}.",
+                    self,
+                    &pub_id,
+                    elapsed.display_secs(),
+                );
                 self.send_direct_message(pub_id, DirectMessage::ResourceProofResponseReceipt);
             }
-            Ok(Some((_, _, elapsed))) => {
+            Ok((Some(online_payload), elapsed)) => {
                 info!(
-                    "{} Candidate {} passed our challenge in {}. Sending approval \
+                    "{} Candidate {} passed our challenge in {}. Voting approval \
                      to our section with {:?}.",
                     self,
                     pub_id,
                     elapsed.display_secs(),
                     self.our_prefix()
                 );
-                self.send_candidate_approval();
+                self.vote_candidate_approval(online_payload);
             }
         }
     }
@@ -1409,20 +1415,16 @@ impl Elder {
         }
     }
 
-    fn send_candidate_approval(&mut self) {
-        let online_payload = match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
-            Err(_) => {
-                trace!("{} No candidate for which to send CandidateApproval.", self);
-                return;
-            }
-            Ok(result) => result,
-        };
-
-        info!(
-            "{} Resource proof duration has finished. Voting to approve candidate {}.",
-            self,
-            online_payload.new_public_id.name()
-        );
+    fn vote_candidate_approval(&mut self, online_payload: OnlinePayload) {
+        if !self.peer_mgr.is_connected(&online_payload.new_public_id) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Not connected to {}: Not voting candidate Online.",
+                self.log_ident(),
+                online_payload.new_public_id.name()
+            );
+            return;
+        }
 
         if !self
             .our_prefix()
