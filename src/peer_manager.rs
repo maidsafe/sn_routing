@@ -459,7 +459,9 @@ impl PeerManager {
                 ref mut passed_our_challenge,
                 ref res_proof_start,
                 ..
-            } if new_pub_id == pub_id => (challenge, passed_our_challenge, res_proof_start),
+            } if *passed_our_challenge || new_pub_id == pub_id => {
+                (challenge, passed_our_challenge, res_proof_start)
+            }
             _ => return Err(RoutingError::UnknownCandidate),
         };
 
