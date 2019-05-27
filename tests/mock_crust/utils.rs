@@ -34,6 +34,9 @@ const MAX_POLL_CALLS: usize = 1000;
 // Duration clients expect a response by.
 const CLIENT_MSG_EXPIRY_DUR_SECS: u64 = 90;
 
+// ----- Typs -----
+type PrefixAndSize = (Prefix<XorName>, usize);
+
 // -----  Random number generation  -----
 
 pub fn gen_range<T: Rng>(rng: &mut T, low: usize, high: usize) -> usize {
@@ -157,7 +160,7 @@ impl TestNode {
     }
 
     pub fn chain(&self) -> &Chain {
-        unwrap!(self.inner.chain())
+        unwrap!(self.inner.chain(), "no chain for {}", self.name())
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
@@ -545,31 +548,15 @@ pub fn add_connected_nodes_until_split(
     let prefixes = prefixes(&prefix_lengths, &mut rng);
 
     // Cleanup the previous event queue
-    for node in nodes.iter_mut() {
-        while let Ok(_) = node.try_next_ev() {}
-    }
+    clear_all_event_queues(nodes, |_| {});
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
-    for prefix in &prefixes {
-        let num_in_section = nodes
-            .iter()
-            .filter(|node| prefix.matches(&node.name()))
-            .count();
-        // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
-        // `nodes` when calling this function.
-        assert!(
-            num_in_section <= nodes[0].chain().min_split_size(),
-            "The existing nodes' names disallow creation of the requested prefixes. There \
-             are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
-            num_in_section,
-            prefix,
-            nodes[0].chain().min_split_size()
-        );
-        let min_split_size = nodes[0].chain().min_split_size() - num_in_section;
-        for _ in 0..min_split_size {
-            add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
-        }
-    }
+    let min_split_size = nodes[0].chain().min_split_size();
+    let prefixes_new_count = prefixes
+        .iter()
+        .map(|prefix| (*prefix, min_split_size))
+        .collect_vec();
+    add_nodes_to_prefixes(network, nodes, &prefixes_new_count, use_cache);
 
     // If recursive splits are added to Routing (https://maidsafe.atlassian.net/browse/MAID-1861)
     // this next step can be removed.
@@ -621,22 +608,134 @@ pub fn add_connected_nodes_until_split(
         prefixes.iter().map(Prefix::bit_count).collect::<Vec<_>>()
     );
 
-    // Clear all event queues and clear the `next_relocation_dst` values.
+    clear_all_event_queues(nodes, |event| match event {
+        Event::NodeAdded(..)
+        | Event::NodeLost(..)
+        | Event::TimerTicked
+        | Event::SectionSplit(..) => (),
+        event => panic!("Got unexpected event: {:?}", event),
+    });
+    clear_relocation_overrides(nodes);
+
+    trace!("Created testnet comprising {:?}", prefixes);
+}
+
+// Add connected nodes to the given prefixes until adding one extra node in any of the
+// returned sub-prefixes would trigger a split in the parent prefix.
+pub fn add_connected_nodes_until_one_away_from_split(
+    network: &Network<PublicId>,
+    nodes: &mut Vec<TestNode>,
+    prefixes_to_nearly_split: &[Prefix<XorName>],
+    use_cache: bool,
+) -> Vec<Prefix<XorName>> {
+    let (prefixes_and_counts, prefixes_to_add_to_split) =
+        prefixes_and_count_to_split_with_only_one_extra_node(nodes, prefixes_to_nearly_split);
+
+    add_connected_nodes_until_sized(network, nodes, &prefixes_and_counts, use_cache);
+    prefixes_to_add_to_split
+}
+
+// Add connected nodes until reaching the requested size for each prefix. No split expected.
+fn add_connected_nodes_until_sized(
+    network: &Network<PublicId>,
+    nodes: &mut Vec<TestNode>,
+    prefixes_new_count: &[PrefixAndSize],
+    use_cache: bool,
+) {
+    clear_all_event_queues(nodes, |_| {});
+
+    add_nodes_to_prefixes(network, nodes, prefixes_new_count, use_cache);
+
+    clear_all_event_queues(nodes, |_| {});
+    clear_relocation_overrides(nodes);
+
+    trace!(
+        "Filled prefixes until ready to split {:?}",
+        prefixes_new_count
+    );
+}
+
+// Start the target number of new nodes under each target prefix.
+fn add_nodes_to_prefixes(
+    network: &Network<PublicId>,
+    nodes: &mut Vec<TestNode>,
+    prefixes_new_count: &[PrefixAndSize],
+    use_cache: bool,
+) {
+    let mut rng = network.new_rng();
+
+    for (prefix, target_count) in prefixes_new_count {
+        let num_in_section = nodes
+            .iter()
+            .filter(|node| prefix.matches(&node.name()))
+            .count();
+        // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
+        // `nodes` when calling this function.
+        assert!(
+            num_in_section <= *target_count,
+            "The existing nodes' names disallow creation of the requested prefixes. There \
+             are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
+            num_in_section,
+            prefix,
+            target_count
+        );
+        let to_add_count = target_count - num_in_section;
+        for _ in 0..to_add_count {
+            add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
+        }
+    }
+}
+
+// Clear all event queues applying check_event to them.
+fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(Event)) {
     for node in nodes.iter_mut() {
         while let Ok(event) = node.try_next_ev() {
-            match event {
-                Event::NodeAdded(..)
-                | Event::NodeLost(..)
-                | Event::TimerTicked
-                | Event::SectionSplit(..) => (),
-                event => panic!("Got unexpected event: {:?}", event),
-            }
+            check_event(event)
         }
+    }
+}
+
+// Clear all `next_relocation_dst` / `next_relocation_interval` values.
+pub fn clear_relocation_overrides(nodes: &mut Vec<TestNode>) {
+    for node in nodes.iter_mut() {
         node.inner.set_next_relocation_dst(None);
         node.inner.set_next_relocation_interval(None);
     }
+}
 
-    trace!("Created testnet comprising {:?}", prefixes);
+// Returns sub-prefixes target size to reach so we would split with one extra node.
+// The second returned field contains the sub-prefixes to add the final node to trigger the splits.
+fn prefixes_and_count_to_split_with_only_one_extra_node(
+    nodes: &[TestNode],
+    prefixes: &[Prefix<XorName>],
+) -> (Vec<PrefixAndSize>, Vec<Prefix<XorName>>) {
+    let prefixes_to_add_to_split = prefixes
+        .iter()
+        .map(|prefix| prefix_half_with_fewer_nodes(nodes, prefix))
+        .collect_vec();
+
+    let min_split_size = nodes[0].chain().min_split_size();
+
+    let mut prefixes_and_counts = Vec::new();
+    for small_prefix in &prefixes_to_add_to_split {
+        prefixes_and_counts.push((*small_prefix, min_split_size - 1));
+        prefixes_and_counts.push((small_prefix.sibling(), min_split_size));
+    }
+
+    (prefixes_and_counts, prefixes_to_add_to_split)
+}
+
+// Return the sub-prefix with fewer nodes.
+fn prefix_half_with_fewer_nodes(nodes: &[TestNode], prefix: &Prefix<XorName>) -> Prefix<XorName> {
+    let sub_prefixes = [prefix.pushed(false), prefix.pushed(true)];
+
+    let smaller_prefix = sub_prefixes.iter().min_by_key(|prefix| {
+        nodes
+            .iter()
+            .filter(|node| prefix.matches(&node.name()))
+            .count()
+    });
+    *unwrap!(smaller_prefix)
 }
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.

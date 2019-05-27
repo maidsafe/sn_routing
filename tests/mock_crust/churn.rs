@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    count_sections, create_connected_clients, create_connected_nodes,
+    clear_relocation_overrides, count_sections, create_connected_clients, create_connected_nodes,
     create_connected_nodes_until_split, current_sections, gen_range, gen_range_except,
     poll_and_resend, verify_invariant_for_all_nodes, TestClient, TestNode,
 };
@@ -159,14 +159,6 @@ fn check_added_indices(
 // Shuffle nodes excluding the first node
 fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) {
     rng.shuffle(&mut nodes[1..]);
-}
-
-// Clear relocation overrides for all nodes.
-fn clear_relocation_overrides(nodes: &mut Vec<TestNode>) {
-    for node in nodes.iter_mut() {
-        node.inner.set_next_relocation_dst(None);
-        node.inner.set_next_relocation_interval(None);
-    }
 }
 
 /// Adds node per existing prefix. Returns new node names if successfully added.
