@@ -93,7 +93,6 @@ mod unnamed {
     use std::time::Duration;
 
     // ==========================   Program Options   =================================
-    #[cfg_attr(rustfmt, rustfmt_skip)]
     static USAGE: &str = "
 Usage:
   key_value_store
@@ -173,8 +172,8 @@ Options:
             let example_client = ExampleClient::new();
             let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
             KeyValueStore {
-                example_client: example_client,
-                command_receiver: command_receiver,
+                example_client,
+                command_receiver,
                 exit: false,
                 _joiner: thread::named("Command reader", move || {
                     read_user_commands(&command_sender)

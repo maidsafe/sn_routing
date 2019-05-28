@@ -112,7 +112,7 @@ impl Network {
     }
 
     // TODO: remove this when https://github.com/Manishearth/rust-clippy/issues/1279 is resolved
-    #[cfg_attr(feature = "cargo-clippy", allow(for_kv_map))]
+    #[allow(clippy::for_kv_map)]
     /// Drops a node and, if necessary, merges sections to restore the section requirement.
     fn drop_node(&mut self) {
         let keys = self.keys();

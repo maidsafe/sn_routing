@@ -175,7 +175,7 @@ impl Node {
         }
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
         action_sender: RoutingActionSender,
@@ -211,7 +211,7 @@ impl Node {
         node
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
@@ -1720,7 +1720,7 @@ impl Node {
         Ok(())
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn handle_candidate_info(
         &mut self,
         old_pub_id: &PublicId,
@@ -2107,7 +2107,7 @@ impl Node {
         }
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     fn handle_connection_info_request(
         &mut self,
         encrypted_connection_info: Vec<u8>,
@@ -3096,6 +3096,8 @@ impl Node {
         priority: u8,
     ) -> Result<(), RoutingError> {
         self.stats.count_user_message(&user_msg);
+        // TODO: Remove this allowance at a later date. Prevents a (hopefully) temporary clippy bug.
+        #[allow(clippy::identity_conversion)]
         for part in user_msg.to_parts(priority)? {
             self.stats.increase_user_msg_part();
             self.send_routing_message(src, dst, part)?;

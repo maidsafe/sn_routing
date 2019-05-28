@@ -119,7 +119,7 @@ impl RoutingConnection {
 /// Our relationship status with a known peer.
 #[derive(Debug)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum PeerState {
     /// The peer has bootstrapped to us with the indicated `CrustUser` type (i.e. client or node).
     Bootstrapper {
@@ -176,7 +176,7 @@ impl PeerState {
 
 /// The result of adding a peer's `PubConnectionInfo`.
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum ConnectionInfoReceivedResult {
     /// Our own connection info has already been prepared: The peer was switched to
@@ -358,7 +358,7 @@ impl Peer {
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Eq, PartialEq)]
 enum Candidate {
     None,
@@ -637,7 +637,7 @@ impl PeerManager {
     /// * Ok(false)                     if the peer has already been approved
     /// * Err(CandidateIsTunnelling)    if the peer is tunnelling
     /// * Err(UnknownCandidate)         if the peer is not in the candidate list
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn handle_candidate_info(
         &mut self,
         old_pub_id: &PublicId,

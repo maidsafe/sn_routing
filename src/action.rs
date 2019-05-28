@@ -22,7 +22,7 @@ use std::sync::mpsc::Sender;
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum Action {
     NodeSendMessage {
         src: Authority<XorName>,

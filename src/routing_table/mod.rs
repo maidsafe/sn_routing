@@ -135,7 +135,7 @@ pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
 impl<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
-    #[cfg_attr(feature = "cargo-clippy", allow(while_let_on_iterator))]
+    #[allow(clippy::while_let_on_iterator)]
     fn next(&mut self) -> Option<&'a T> {
         while let Some(name) = self.inner.next() {
             if *name != self.our_name {
@@ -1290,13 +1290,12 @@ mod tests {
     // Test explicitly covers `close_names()`, `other_close_names()`, `is_in_our_section()` and
     // `need_to_add()` while also implicitly testing `add()` and `split()`.
     #[test]
-    #[allow(clippy::cyclomatic_complexity)]
+    #[allow(clippy::cognitive_complexity)]
     fn test_routing_sections() {
-        assert!(
-            SPLIT_BUFFER < 3818,
-            "Given the chosen values for 'our_name' and RT type (u16), this requires the \
-             SPLIT_BUFFER to be less than 3818."
-        );
+        if SPLIT_BUFFER >= 3818 {
+            panic!("Given the chosen values for 'our_name' and RT type (u16), this requires the \
+             SPLIT_BUFFER to be less than 3818.");
+        };
         let our_name = 0b_0001_0001_0001_0001u16;
         let mut table = RoutingTable::new(our_name, 5);
         table.verify_invariant();

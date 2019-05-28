@@ -43,7 +43,7 @@ use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
 macro_rules! impl_request {
     ($method:ident, $message:ident { $($pname:ident : $ptype:ty),*, }, $priority:expr) => {
         #[allow(missing_docs)]
-        #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+        #[allow(clippy::too_many_arguments)]
         pub fn $method(&mut self,
                        src: Authority<XorName>,
                        dst: Authority<XorName>,

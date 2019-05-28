@@ -53,8 +53,7 @@
 
 #[macro_use]
 extern crate log;
-#[cfg_attr(feature = "cargo-clippy", allow(useless_attribute))]
-#[allow(unused_extern_crates)]
+#[allow(unused_extern_crates, clippy::useless_attribute)]
 extern crate maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;

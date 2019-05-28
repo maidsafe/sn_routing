@@ -21,7 +21,7 @@ use std::fmt::{self, Debug, Formatter};
 /// been reached, i.e. enough members of the section have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum Event {
     /// Received a request message.
     Request {

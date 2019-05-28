@@ -54,7 +54,7 @@ pub struct Client {
 }
 
 impl Client {
-    #[cfg_attr(feature = "cargo-clippy", allow(too_many_arguments))]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_bootstrapping(
         crust_service: Service,
         full_id: FullId,

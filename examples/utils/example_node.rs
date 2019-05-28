@@ -32,7 +32,7 @@ impl ExampleNode {
         let node = unwrap!(Node::builder().first(first).create());
 
         ExampleNode {
-            node: node,
+            node,
             idata_store: HashMap::new(),
             mdata_store: HashMap::new(),
             client_accounts: HashMap::new(),

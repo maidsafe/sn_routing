@@ -326,7 +326,7 @@ mod unnamed {
             let _ = entries.insert(
                 key,
                 Value {
-                    content: content,
+                    content,
                     entry_version: 0,
                 },
             );
@@ -344,7 +344,6 @@ mod unnamed {
     }
 
     // ==========================   Program Options   =================================
-    #[cfg_attr(rustfmt, rustfmt_skip)]
     static USAGE: &'static str = "
 Usage:
   ci_test -h
@@ -372,7 +371,7 @@ Options:
         flag_help: Option<bool>,
     }
 
-    #[cfg_attr(feature = "cargo-clippy", allow(mutex_atomic))]
+    #[allow(clippy::mutex_atomic)]
     pub fn run_main() {
         let args: Args = Docopt::new(USAGE)
             .and_then(|docopt| docopt.deserialize())

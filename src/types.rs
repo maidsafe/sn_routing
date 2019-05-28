@@ -86,7 +86,7 @@ impl Default for MessageId {
 }
 
 #[cfg(test)]
-#[cfg_attr(feature = "cargo-clippy", allow(indexing_slicing))]
+#[allow(clippy::indexing_slicing)]
 mod tests {
     use super::MessageId;
     use crate::xor_name::{XorName, XOR_NAME_LEN};

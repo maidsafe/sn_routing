@@ -52,7 +52,7 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 /// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(DirectMessage),
@@ -96,7 +96,7 @@ impl Message {
 /// Allows routing to directly send specific messages between nodes.
 #[derive(Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
@@ -543,7 +543,7 @@ impl RoutingMessage {
 ///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[cfg_attr(feature = "cargo-clippy", allow(large_enum_variant))]
+#[allow(clippy::large_enum_variant)]
 pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to relocate you.

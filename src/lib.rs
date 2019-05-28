@@ -122,7 +122,10 @@
     unused_comparisons,
     unused_features,
     unused_parens,
-    while_true
+    while_true,
+    clippy::option_unwrap_used,
+    clippy::unicode_not_nfc,
+    clippy::wrong_pub_self_convention
 )]
 #![warn(
     trivial_casts,
@@ -140,14 +143,11 @@
     missing_debug_implementations,
     variant_size_differences,
     non_camel_case_types,
-    renamed_and_removed_lints
+    renamed_and_removed_lints,
+
+    // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
+    clippy::needless_pass_by_value
 )]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    deny(unicode_not_nfc, wrong_pub_self_convention, option_unwrap_used)
-)]
-// FIXME: allow `needless_pass_by_value` until it's OK to change the public API
-#![cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 
 #[macro_use]
 extern crate log;
@@ -275,15 +275,13 @@ mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 
     #[test]
-    #[cfg_attr(feature = "cargo-clippy", allow(eq_op))]
+    #[allow(clippy::eq_op)]
     fn quorum_check() {
-        assert!(
-            QUORUM_NUMERATOR < QUORUM_DENOMINATOR,
-            "Quorum impossible to achieve"
-        );
-        assert!(
-            QUORUM_NUMERATOR * 2 >= QUORUM_DENOMINATOR,
-            "Quorum does not guarantee agreement"
-        );
+        if QUORUM_NUMERATOR >= QUORUM_DENOMINATOR {
+            panic!("Quorum impossible to achieve");
+        }
+        if QUORUM_NUMERATOR * 2 < QUORUM_DENOMINATOR {
+            panic!("Quorum does not guarantee agreement");
+        };
     }
 }

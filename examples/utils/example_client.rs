@@ -112,9 +112,9 @@ impl ExampleClient {
         }
 
         ExampleClient {
-            client: client,
-            receiver: receiver,
-            full_id: full_id,
+            client,
+            receiver,
+            full_id,
         }
     }
 
