@@ -25,6 +25,6 @@ pub use self::mpid_message_wrapper::MpidMessageWrapper;
 
 #[cfg(test)]
 fn generate_random_bytes(size: usize) -> Vec<u8> {
-    use rand::{self, Rng};
+    use rand::Rng;
     rand::thread_rng().gen_iter().take(size).collect()
 }

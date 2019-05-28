@@ -10,7 +10,7 @@ use crate::action::Action;
 use crate::cache::{Cache, NullCache};
 use crate::client_error::ClientError;
 use crate::config_handler::{self, Config};
-use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
+use crate::data::{EntryAction, MutableData, PermissionSet, User, Value};
 use crate::error::{InterfaceError, RoutingError};
 use crate::event::Event;
 use crate::event_stream::{EventStepper, EventStream};
@@ -31,6 +31,7 @@ use crate::xor_name::XorName;
 use crate::MIN_SECTION_SIZE;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
+use safe_nd::ImmutableData;
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "use-mock-crust")]
 use std::fmt::{self, Debug, Formatter};

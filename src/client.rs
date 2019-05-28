@@ -9,7 +9,7 @@
 use crate::action::Action;
 use crate::cache::NullCache;
 use crate::config_handler::{self, Config};
-use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
+use crate::data::{EntryAction, MutableData, PermissionSet, User};
 use crate::error::{InterfaceError, RoutingError};
 use crate::event::Event;
 #[cfg(feature = "use-mock-crust")]
@@ -30,6 +30,7 @@ use crust::read_config_file as read_bootstrap_config_file;
 use maidsafe_utilities::thread::{self, Joiner};
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
+use safe_nd::ImmutableData;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
 #[cfg(feature = "use-mock-crust")]

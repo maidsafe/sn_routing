@@ -13,7 +13,6 @@ pub use self::request::Request;
 pub use self::response::{AccountInfo, Response};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::ack_manager::Ack;
-use crate::data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 use crate::error::{BootstrapResponseError, RoutingError};
 use crate::event::Event;
 use crate::id::{FullId, PublicId};
@@ -28,6 +27,7 @@ use crate::xor_name::XorName;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
+use safe_nd::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::iter;
@@ -981,7 +981,6 @@ impl UserMessageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::ImmutableData;
     use crate::id::FullId;
     use crate::routing_table::{Authority, Prefix};
     use crate::rust_sodium::crypto::sign;
@@ -989,6 +988,7 @@ mod tests {
     use crate::xor_name::XorName;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
+    use safe_nd::ImmutableData;
     use std::collections::BTreeSet;
     use std::iter;
     use tiny_keccak::sha3_256;
@@ -1041,7 +1041,7 @@ mod tests {
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
         let irrelevant_full_id = FullId::new();
-        let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
+        let data_bytes: Vec<u8> = (0..10).map(|i| i).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
             data,

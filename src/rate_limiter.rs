@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_SIZE_IN_BYTES};
+use safe_nd::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
+use crate::data::MAX_MUTABLE_DATA_SIZE_IN_BYTES;
 use crate::error::RoutingError;
 use crate::messages::{UserMessage, MAX_PART_LEN};
 use crate::sha3::Digest256;

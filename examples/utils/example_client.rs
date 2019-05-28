@@ -7,10 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use routing::{
-    Authority, Client, ClientError, Event, FullId, ImmutableData, MessageId, MutableData, Response,
-    Value, XorName,
+    Authority, Client, ClientError, Event, FullId, MessageId, MutableData, Response, Value, XorName,
 };
 use rust_sodium::crypto;
+use safe_nd::ImmutableData;
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;

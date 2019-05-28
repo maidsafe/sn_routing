@@ -6,10 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
+use crate::data::{EntryAction, MutableData, PermissionSet, User};
 use crate::rust_sodium::crypto::sign;
 use crate::types::MessageId as MsgId;
 use crate::xor_name::XorName;
+use safe_nd::ImmutableData;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Request message types

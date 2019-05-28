@@ -242,9 +242,8 @@ pub use crate::client_error::{ClientError, EntryError};
 pub use crate::common_types::AccountPacket;
 pub use crate::config_handler::{Config, DevConfig};
 pub use crate::data::{
-    Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
-    MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-    NO_OWNER_PUB_KEY,
+    Action, EntryAction, EntryActions, MutableData, PermissionSet, User, Value,
+    MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES, NO_OWNER_PUB_KEY,
 };
 pub use crate::error::{InterfaceError, RoutingError};
 pub use crate::event::Event;
