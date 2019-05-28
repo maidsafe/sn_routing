@@ -30,7 +30,6 @@ use crate::{
     parsec::{self, ParsecMap},
     peer_manager::{Peer, PeerManager, PeerState},
     rate_limiter::RateLimiter,
-    resource_prover::RESOURCE_PROOF_DURATION,
     routing_message_filter::{FilteringResult, RoutingMessageFilter},
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
@@ -110,8 +109,6 @@ pub struct Elder {
     next_relocation_dst: Option<XorName>,
     /// Interval used for relocation in mock crust tests.
     next_relocation_interval: Option<(XorName, XorName)>,
-    /// The timer token for accepting a new candidate.
-    candidate_timer_token: Option<u64>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: u64,
     /// Limits the rate at which clients can pass messages through this node when it acts as their
@@ -221,7 +218,6 @@ impl Elder {
             user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             next_relocation_dst: None,
             next_relocation_interval: None,
-            candidate_timer_token: None,
             candidate_status_token,
             clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
             banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
@@ -829,14 +825,6 @@ impl Elder {
         proof: Vec<u8>,
         leading_zero_bytes: u64,
     ) {
-        if self.candidate_timer_token.is_none() {
-            debug!(
-                "{} Won't handle resource proof response from {:?} - not currently waiting.",
-                self, pub_id
-            );
-            return;
-        }
-
         match self.peer_mgr.verify_candidate(
             &pub_id,
             part_index,
@@ -850,35 +838,25 @@ impl Elder {
                     self, pub_id, error
                 );
             }
-            Ok(None) => {
+            Ok((None, elapsed)) => {
+                trace!(
+                    "{} Candidate {} provided part for challenge in {}.",
+                    self,
+                    &pub_id,
+                    elapsed.display_secs(),
+                );
                 self.send_direct_message(pub_id, DirectMessage::ResourceProofResponseReceipt);
             }
-            Ok(Some((target_size, difficulty, elapsed)))
-                if difficulty == 0 && target_size < 1000 =>
-            {
-                // Small tests don't require waiting for synchronisation. Send approval now.
+            Ok((Some(online_payload), elapsed)) => {
                 info!(
-                    "{} Candidate {} passed our challenge in {}. Sending approval \
+                    "{} Candidate {} passed our challenge in {}. Voting approval \
                      to our section with {:?}.",
                     self,
                     pub_id,
                     elapsed.display_secs(),
                     self.our_prefix()
                 );
-                // We set the timer token to None so we do not send another
-                // CandidateApproval when the token fires
-                self.candidate_timer_token = None;
-                self.send_candidate_approval();
-            }
-            Ok(Some((_, _, elapsed))) => {
-                info!(
-                    "{} Candidate {} passed our challenge in {}. Waiting to send approval to \
-                     our section with {:?}.",
-                    self,
-                    pub_id,
-                    elapsed.display_secs(),
-                    self.our_prefix()
-                );
+                self.vote_candidate_approval(online_payload);
             }
         }
     }
@@ -1437,20 +1415,16 @@ impl Elder {
         }
     }
 
-    fn send_candidate_approval(&mut self) {
-        let online_payload = match self.peer_mgr.verified_candidate_info(&self.log_ident()) {
-            Err(_) => {
-                trace!("{} No candidate for which to send CandidateApproval.", self);
-                return;
-            }
-            Ok(result) => result,
-        };
-
-        info!(
-            "{} Resource proof duration has finished. Voting to approve candidate {}.",
-            self,
-            online_payload.new_public_id.name()
-        );
+    fn vote_candidate_approval(&mut self, online_payload: OnlinePayload) {
+        if !self.peer_mgr.is_connected(&online_payload.new_public_id) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Not connected to {}: Not voting candidate Online.",
+                self.log_ident(),
+                online_payload.new_public_id.name()
+            );
+            return;
+        }
 
         if !self
             .our_prefix()
@@ -1864,9 +1838,6 @@ impl Base for Elder {
             self.proxy_load_amount = 0;
             self.update_peer_states(outbox);
             outbox.send_event(Event::TimerTicked);
-        } else if self.candidate_timer_token == Some(token) {
-            self.candidate_timer_token = None;
-            self.send_candidate_approval();
         } else if self.candidate_status_token == token {
             self.candidate_status_token = self.timer.schedule(CANDIDATE_STATUS_INTERVAL);
             self.peer_mgr.show_candidate_status(&self.log_ident());
@@ -2409,7 +2380,6 @@ impl Approved for Elder {
         }
 
         if let Some(target_interval) = self.accept_candidate_with_interval(&vote) {
-            self.candidate_timer_token = Some(self.timer.schedule(RESOURCE_PROOF_DURATION));
             return self.send_relocate_response(vote, target_interval);
         }
 

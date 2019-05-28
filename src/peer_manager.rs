@@ -446,88 +446,48 @@ impl PeerManager {
     /// elapsed since the candidate was inserted.
     pub fn verify_candidate(
         &mut self,
-        new_pub_id: &PublicId,
+        new_public_id: &PublicId,
         part_index: usize,
         part_count: usize,
         proof_part: Vec<u8>,
         leading_zero_bytes: u64,
-    ) -> Result<Option<(usize, u8, Duration)>, RoutingError> {
-        let (challenge, passed_our_challenge, res_proof_start) = match self.candidate {
-            Candidate::ResourceProof {
-                new_pub_id: ref pub_id,
-                challenge: Some(ref mut challenge),
-                ref mut passed_our_challenge,
-                ref res_proof_start,
-                ..
-            } if new_pub_id == pub_id => (challenge, passed_our_challenge, res_proof_start),
-            _ => return Err(RoutingError::UnknownCandidate),
-        };
+    ) -> Result<(Option<OnlinePayload>, Duration), RoutingError> {
+        let (challenge, passed_our_challenge, res_proof_start, online_payload) =
+            match self.candidate {
+                Candidate::ResourceProof {
+                    ref old_pub_id,
+                    ref new_pub_id,
+                    ref new_client_auth,
+                    challenge: Some(ref mut challenge),
+                    ref mut passed_our_challenge,
+                    ref res_proof_start,
+                    ..
+                } if !*passed_our_challenge && new_public_id == new_pub_id => (
+                    challenge,
+                    passed_our_challenge,
+                    res_proof_start,
+                    OnlinePayload {
+                        new_public_id: *new_pub_id,
+                        client_auth: *new_client_auth,
+                        old_public_id: *old_pub_id,
+                    },
+                ),
+                _ => return Err(RoutingError::UnknownCandidate),
+            };
 
         challenge.proof.extend(proof_part);
         if part_index + 1 != part_count {
-            return Ok(None);
+            return Ok((None, res_proof_start.elapsed()));
         }
         let rp_object = ResourceProof::new(challenge.target_size, challenge.difficulty);
         if rp_object.validate_all(&challenge.seed, &challenge.proof, leading_zero_bytes) {
+            // Only succeed once:
             *passed_our_challenge = true;
-            Ok(Some((
-                challenge.target_size,
-                challenge.difficulty,
-                res_proof_start.elapsed(),
-            )))
+
+            Ok((Some(online_payload), res_proof_start.elapsed()))
         } else {
             Err(RoutingError::FailedResourceProofValidation)
         }
-    }
-
-    /// Returns a tuple completed using the verified candidate's details.
-    pub fn verified_candidate_info(
-        &self,
-        log_ident: &LogIdent,
-    ) -> Result<OnlinePayload, RoutingError> {
-        let (new_pub_id, new_client_auth, old_pub_id) = match self.candidate {
-            Candidate::ResourceProof {
-                ref new_pub_id,
-                ref new_client_auth,
-                ref old_pub_id,
-                passed_our_challenge: true,
-                ..
-            } => (new_pub_id, new_client_auth, old_pub_id),
-            Candidate::ResourceProof {
-                ref new_pub_id,
-                passed_our_challenge: false,
-                ..
-            } => {
-                info!(
-                    "{} Candidate {} has not passed our resource proof challenge in time. Not \
-                     sending approval vote to our section.",
-                    log_ident,
-                    new_pub_id.name()
-                );
-                return Err(RoutingError::UnknownCandidate);
-            }
-            Candidate::None
-            | Candidate::AcceptedForResourceProof { .. }
-            | Candidate::ApprovedWaitingSectionInfo { .. } => {
-                return Err(RoutingError::UnknownCandidate)
-            }
-        };
-
-        if !self.is_connected(new_pub_id) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} Not connected to {}.",
-                log_ident,
-                new_pub_id.name()
-            );
-            return Err(RoutingError::UnknownCandidate);
-        }
-
-        Ok(OnlinePayload {
-            new_public_id: *new_pub_id,
-            client_auth: *new_client_auth,
-            old_public_id: *old_pub_id,
-        })
     }
 
     /// Handles accumulated candidate approval. Marks the candidate as `Approved`.
