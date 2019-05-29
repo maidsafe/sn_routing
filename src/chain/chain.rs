@@ -7,14 +7,18 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
+    candidate::Candidate,
     shared_state::{PrefixChange, SharedState},
-    GenesisPfxInfo, NeighbourSigs, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo,
+    GenesisPfxInfo, NeighbourSigs, NetworkEvent, OnlinePayload, Proof, ProofSet, ProvingSection,
+    SectionInfo,
 };
 use crate::error::RoutingError;
 use crate::id::PublicId;
 use crate::messages::SignedMessage;
 use crate::routing_table::{Authority, Error};
 use crate::sha3::Digest256;
+use crate::utils::LogIdent;
+use crate::utils::XorTargetInterval;
 use crate::{Prefix, XorName, Xorable};
 use itertools::Itertools;
 use log::LogLevel;
@@ -55,6 +59,8 @@ pub struct Chain {
     completed_events: BTreeSet<NetworkEvent>,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
     event_cache: BTreeSet<NetworkEvent>,
+    /// Current consensused candidate.
+    candidate: Candidate,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -93,6 +99,7 @@ impl Chain {
             chain_accumulator: Default::default(),
             completed_events: Default::default(),
             event_cache: Default::default(),
+            candidate: Candidate::None,
         }
     }
 
@@ -1241,6 +1248,56 @@ impl Chain {
             .chain(self.neighbour_infos.keys())
             .min_by_key(|prefix| prefix.bit_count())
             .unwrap_or(&self.our_prefix())
+    }
+
+    /// Return true if already has a candidate
+    pub fn has_resource_proof_candidate(&self) -> bool {
+        self.candidate.has_resource_proof_candidate()
+    }
+
+    /// Forget about the current candidate.
+    pub fn reset_candidate(&mut self) {
+        self.candidate.reset_candidate()
+    }
+
+    /// Forget about the current candidate if it is a member of the given section.
+    pub fn reset_candidate_if_member_of(&mut self, members: &BTreeSet<PublicId>) {
+        self.candidate.reset_candidate_if_member_of(members)
+    }
+
+    /// Return true if we are waiting for candidate info for that PublicId.
+    pub fn waiting_for_candidate_interval(
+        &self,
+        old_pub_id: &PublicId,
+    ) -> Option<&XorTargetInterval> {
+        self.candidate.waiting_for_candidate_interval(old_pub_id)
+    }
+
+    /// Our section decided that the candidate should be selected next.
+    /// Pre-condition: !has_resource_proof_candidate.
+    pub fn accept_as_candidate(
+        &mut self,
+        old_pub_id: PublicId,
+        target_interval: XorTargetInterval,
+    ) {
+        self.candidate
+            .accept_as_candidate(old_pub_id, target_interval)
+    }
+
+    /// Handle consensus on `Online`. Marks the candidate as `ApprovedWaitingSectionInfo`.
+    /// If the candidate was already purged or is unexpected, return false.
+    pub fn handle_candidate_online_event(&mut self, online_payload: &OnlinePayload) -> bool {
+        self.candidate.handle_candidate_online_event(online_payload)
+    }
+
+    /// The public id of the candidate we are waiting to approve.
+    pub fn waiting_candidate_old_public_id(&self) -> Option<&PublicId> {
+        self.candidate.waiting_candidate_old_public_id()
+    }
+
+    /// Logs info about ongoing candidate state, if any.
+    pub fn show_candidate_status(&self, log_ident: &LogIdent) {
+        self.candidate.show_candidate_status(log_ident)
     }
 }
 

@@ -59,6 +59,9 @@ impl Display for LogIdent {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct XorTargetInterval(pub XorName, pub XorName);
+
 /// Compute the target destination for a joining node with the given name.
 ///
 /// This is used by each member of a joining node's section to choose a location for the node to
@@ -88,7 +91,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
 pub fn calculate_relocation_interval(
     prefix: &Prefix<XorName>,
     section: &BTreeSet<XorName>,
-) -> (XorName, XorName) {
+) -> XorTargetInterval {
     let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());
 
     let (start, end) = iter::once(&lower_bound)
@@ -104,7 +107,7 @@ pub fn calculate_relocation_interval(
 
     let third_of_distance = (*end - *start) / 3;
     let new_end = *end - third_of_distance;
-    (new_end - third_of_distance, new_end)
+    XorTargetInterval(new_end - third_of_distance, new_end)
 }
 
 #[cfg(any(test, feature = "mock_base"))]
