@@ -7,13 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    ChainState, GenesisPfxInfo, NeighbourSigs, NetworkEvent, Proof, ProofSet, ProvingSection,
-    SectionInfo,
+    shared_state::{SectionChange, SharedState},
+    GenesisPfxInfo, NeighbourSigs, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo,
 };
 use crate::error::RoutingError;
 use crate::id::PublicId;
 use crate::messages::SignedMessage;
-use crate::routing_table::DEFAULT_PREFIX;
 use crate::routing_table::{Authority, Error};
 use crate::sha3::Digest256;
 use crate::{Prefix, XorName, Xorable};
@@ -35,13 +34,8 @@ pub struct Chain {
     min_sec_size: usize,
     /// This node's public ID.
     our_id: PublicId,
-    /// The new self section info, that doesn't necessarily have a full set of signatures yet.
-    new_info: SectionInfo,
-    /// The latest few fully signed infos of our own sections, each with signatures by the previous
-    /// one. This is included in every message we relay.
-    /// This is not a `BTreeSet` just now as it is ordered according to the sequence of pushes into
-    /// it.
-    our_infos: Vec<(SectionInfo, ProofSet)>,
+    /// The shared state of the section.
+    state: SharedState,
     /// If we're a member of the section yet. This will be toggled once we get a `SectionInfo`
     /// block accumulated which bears `our_id` as one of the members
     is_member: bool,
@@ -61,12 +55,6 @@ pub struct Chain {
     completed_events: BTreeSet<NetworkEvent>,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
     event_cache: BTreeSet<NetworkEvent>,
-    /// The current state of the chain: whether a split or merge is currently in progress.
-    state: ChainState,
-    // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
-    split_cache: Option<(SectionInfo, ProofSet)>,
-    /// The set of section info hashes that are currently merging.
-    merging: BTreeSet<Digest256>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -86,7 +74,7 @@ impl Chain {
     pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         self.other_prefixes()
             .iter()
-            .chain(self.our_infos.last().map(|(si, _)| si.prefix()))
+            .chain(iter::once(self.state.our_info().prefix()))
             .cloned()
             .collect()
     }
@@ -98,23 +86,19 @@ impl Chain {
         Self {
             min_sec_size,
             our_id,
-            new_info: gen_info.first_info.clone(),
-            our_infos: vec![(gen_info.first_info, Default::default())],
+            state: SharedState::new(gen_info.first_info),
             is_member,
             neighbour_infos: Default::default(),
             their_knowledge: Default::default(),
             chain_accumulator: Default::default(),
             completed_events: Default::default(),
             event_cache: Default::default(),
-            state: ChainState::Normal,
-            split_cache: None,
-            merging: Default::default(),
         }
     }
 
     /// Handles an accumulated parsec Observation for membership mutation.
     ///
-    /// The provided proofs wouldnt be validated against the mapped NetworkEvent as they're
+    /// The provided proofs wouldn't be validated against the mapped NetworkEvent as they're
     /// for parsec::Observation::Add/Remove.
     pub fn handle_churn_event(
         &mut self,
@@ -225,7 +209,7 @@ impl Chain {
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
                 self.add_section_info(sec_info.clone(), proofs)?;
-                if let Some((ref cached_sec_info, _)) = self.split_cache {
+                if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
                         return Ok(None);
                     }
@@ -234,13 +218,13 @@ impl Chain {
             NetworkEvent::OurMerge => {
                 // use new_info here as our_info might still be accumulating signatures
                 // and we'd want to perform the merge eventually with our current latest state.
-                let our_hash = *self.new_info.hash();
-                let _ = self.merging.insert(our_hash);
-                self.state = ChainState::Merging;
+                let our_hash = *self.state.new_info.hash();
+                let _ = self.state.merging.insert(our_hash);
+                self.state.change = SectionChange::Merging;
             }
             NetworkEvent::NeighbourMerge(digest) => {
                 // TODO: Check that the section is known and not already merged.
-                let _ = self.merging.insert(digest);
+                let _ = self.state.merging.insert(digest);
             }
             _ => (),
         }
@@ -251,7 +235,7 @@ impl Chain {
     /// If we need to split also returns an additional sibling `SectionInfo`.
     /// Should not be called while a pfx change is in progress.
     pub fn add_member(&mut self, pub_id: PublicId) -> Result<Vec<SectionInfo>, RoutingError> {
-        if self.state() != &ChainState::Normal {
+        if self.state.change != SectionChange::None {
             log_or_panic!(
                 LogLevel::Warn,
                 "Adding {:?} to chain during pfx change.",
@@ -267,23 +251,28 @@ impl Chain {
             );
         }
 
-        let mut members = self.new_info.members().clone();
+        let mut members = self.state.new_info.members().clone();
         let _ = members.insert(pub_id);
 
         if self.should_split(&members)? {
             let (our_info, other_info) = self.split_self(members.clone())?;
-            self.state = ChainState::Splitting;
+            self.state.change = SectionChange::Splitting;
             return Ok(vec![our_info, other_info]);
         }
 
-        self.new_info = SectionInfo::new(members, *self.new_info.prefix(), Some(&self.new_info))?;
-        Ok(vec![self.new_info.clone()])
+        self.state.new_info = SectionInfo::new(
+            members,
+            *self.state.new_info.prefix(),
+            Some(&self.state.new_info),
+        )?;
+
+        Ok(vec![self.state.new_info.clone()])
     }
 
     /// Removes a member from our section, creating a new `our_info` in the process.
     /// Should not be called while a pfx change is in progress.
     pub fn remove_member(&mut self, pub_id: PublicId) -> Result<SectionInfo, RoutingError> {
-        if self.state() != &ChainState::Normal {
+        if self.state.change != SectionChange::None {
             log_or_panic!(
                 LogLevel::Warn,
                 "Removing {:?} from chain during pfx change.",
@@ -299,17 +288,22 @@ impl Chain {
             );
         }
 
-        let mut members = self.new_info.members().clone();
+        let mut members = self.state.new_info.members().clone();
         let _ = members.remove(&pub_id);
-        self.new_info = SectionInfo::new(members, *self.new_info.prefix(), Some(&self.new_info))?;
 
-        if self.new_info.members().len() < self.min_sec_size {
+        self.state.new_info = SectionInfo::new(
+            members,
+            *self.state.new_info.prefix(),
+            Some(&self.state.new_info),
+        )?;
+
+        if self.state.new_info.members().len() < self.min_sec_size {
             // set to merge state to prevent extending chain any further.
             // We'd still not Vote for OurMerge until we've updated our_infos
-            self.state = ChainState::Merging;
+            self.state.change = SectionChange::Merging;
         }
 
-        Ok(self.new_info.clone())
+        Ok(self.state.new_info.clone())
     }
 
     /// Returns the next section info if both we and our sibling have signalled for merging.
@@ -318,39 +312,21 @@ impl Chain {
             Some(ni) => ni.sec_info(),
             None => return Ok(None),
         };
-        let our_hash = *self.our_info().hash();
-        let their_hash = their_info.hash();
-        if self.merging.contains(their_hash) && self.merging.contains(&our_hash) {
-            let _ = self.merging.remove(their_hash);
-            let _ = self.merging.remove(&our_hash);
-            self.new_info = self.our_info().merge(their_info)?;
-            Ok(Some(self.new_info.clone()))
-        } else {
-            Ok(None)
-        }
+
+        self.state.try_merge(their_info)
     }
 
     /// Returns `true` if we have accumulated self `NetworkEvent::OurMerge`.
     pub fn is_self_merge_ready(&self) -> bool {
-        self.merging.contains(self.our_info().hash())
+        self.state.is_self_merge_ready()
     }
 
     /// Returns `true` if we should merge.
     pub fn should_vote_for_merge(&self) -> bool {
-        let pfx = self.our_prefix();
-        if pfx.is_empty() || self.state() == &ChainState::Splitting {
-            return false;
-        }
-
-        if self.our_info().members().len() < self.min_sec_size {
-            return true;
-        }
-        let needs_merge = |n_sigs: &NeighbourSigs| {
-            let si = n_sigs.sec_info();
-            pfx.is_compatible(&si.prefix().sibling())
-                && (si.members().len() < self.min_sec_size || self.merging.contains(si.hash()))
-        };
-        self.neighbour_infos.values().any(needs_merge)
+        self.state.should_vote_for_merge(
+            self.min_sec_size,
+            self.neighbour_infos.values().map(NeighbourSigs::sec_info),
+        )
     }
 
     /// Check inside the `neighbour_infos` failing which inside the chain accumulator if we have a
@@ -371,27 +347,14 @@ impl Chain {
         // Check the lowest version of our info that any neighbour has and remove everything less
         // than it
         let our_oldest_ver = self.their_knowledge.values().min().map_or(0, |&v| v);
-        let version_retention_threshold_index = self
-            .our_infos
-            .binary_search_by_key(&our_oldest_ver, |(si, _)| *si.version())
-            .unwrap_or_else(|_index| {
-                if our_oldest_ver > 0 {
-                    log_or_panic!(
-                        LogLevel::Warn,
-                        "Oldest version indicated by neighbours not found in our infos"
-                    );
-                }
-                usize::min_value()
-            });
-        let _ = self.our_infos.drain(0..version_retention_threshold_index);
-
+        self.state.clean_our_infos(our_oldest_ver);
         self.check_and_clean_neighbour_infos(None);
-        self.state = ChainState::Normal;
+        self.state.change = SectionChange::None;
 
         let completed_events = mem::replace(&mut self.completed_events, Default::default());
         let chain_acc = mem::replace(&mut self.chain_accumulator, Default::default());
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
-        let merges = mem::replace(&mut self.merging, Default::default())
+        let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
             .map(NetworkEvent::NeighbourMerge);
 
@@ -418,35 +381,24 @@ impl Chain {
         &self.our_id
     }
 
-    /// Returns our own current section info, or `None`, if not available.
-    pub fn opt_our_info(&self) -> Option<&SectionInfo> {
-        self.our_infos.last().map(|&(ref si, _)| si)
-    }
-
     /// Returns our own current section info.
     pub fn our_info(&self) -> &SectionInfo {
-        // TODO: Replace `our_infos` with a new `NonemptyVec` type that statically guarantees that
-        // it's never empty.
-        &unwrap!(self.opt_our_info())
+        self.state.our_info()
     }
 
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.opt_our_info()
-            .map_or(&DEFAULT_PREFIX, SectionInfo::prefix)
+        self.state.our_prefix()
     }
 
-    /// Returns our current chain state.
-    pub fn state(&self) -> &ChainState {
-        &self.state
+    /// Returns whether our section is in the process of changing (splitting or merging).
+    pub fn change(&self) -> SectionChange {
+        self.state.change
     }
 
     /// Returns our section info with the given hash, if it exists.
     pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&SectionInfo> {
-        self.our_infos
-            .iter()
-            .find(|&&(ref sec_info, _)| sec_info.hash() == hash)
-            .map(|&(ref sec_info, _)| sec_info)
+        self.state.our_info_by_hash(hash)
     }
 
     /// If we are a member of the section yet. We consider ourselves to be one after we receive a
@@ -476,17 +428,17 @@ impl Chain {
     /// section or neighbours.
     pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
         self.neighbour_infos()
-            .chain(self.opt_our_info())
-            .chain(iter::once(&self.new_info))
+            .chain(self.state.opt_our_info())
+            .chain(iter::once(&self.state.new_info))
             .any(|si| si.members().contains(pub_id))
     }
 
     /// Returns a set of valid peers we should be connected to.
     pub fn valid_peers(&self) -> BTreeSet<&PublicId> {
         self.neighbour_infos()
-            .chain(self.opt_our_info())
+            .chain(self.state.opt_our_info())
             .flat_map(SectionInfo::members)
-            .chain(self.new_info.members())
+            .chain(self.state.new_info.members())
             .collect()
     }
 
@@ -501,7 +453,7 @@ impl Chain {
             return true;
         }
         if sec_info.prefix().matches(self.our_id.name()) {
-            self.our_infos.iter().any(|(si, _)| is_proof(si))
+            self.state.our_infos().any(is_proof)
         } else {
             self.neighbour_infos().any(is_proof)
         }
@@ -517,7 +469,7 @@ impl Chain {
             return false;
         }
         if sec_info.prefix().matches(self.our_id.name()) {
-            !self.our_infos.iter().any(|(si, _)| is_newer(si))
+            !self.state.our_infos().any(is_newer)
         } else {
             !self.neighbour_infos().any(is_newer)
         }
@@ -531,7 +483,7 @@ impl Chain {
     /// Appends a list of `ProvingSection`s that authenticates the message, if possible. The last
     /// section will then belong to the next hop.
     pub fn extend_proving_sections(&self, msg: &mut SignedMessage) -> Result<(), RoutingError> {
-        if self.our_infos.is_empty() {
+        if self.state.our_infos.is_empty() {
             return Ok(()); // Nothing to append yet.
         }
 
@@ -580,13 +532,16 @@ impl Chain {
             }
 
             // Now insert our own proof of the neighbour section.
-            let our_info = self.our_info_by_version(ns.our_version()).ok_or_else(|| {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "No matching own section info for signed neighbour section."
-                );
-                RoutingError::InvalidStateForOperation
-            })?;
+            let our_info = self
+                .state
+                .our_info_by_version(ns.our_version())
+                .ok_or_else(|| {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "No matching own section info for signed neighbour section."
+                    );
+                    RoutingError::InvalidStateForOperation
+                })?;
             result.push(ProvingSection::signatures(our_info, ns.proofs()));
         }
 
@@ -598,57 +553,29 @@ impl Chain {
             .version();
         let our_ver = *self.our_info().version();
         if self.our_prefix().matches(&dst_name) {
-            result.extend(self.proving_sections_to_own(from_ver, our_ver));
+            result.extend(self.state.proving_sections_to_own(from_ver, our_ver));
         } else {
-            let si_to_version = |&(ref sec_info, _): &(SectionInfo, _)| *sec_info.version();
             let to_version = |(_, version): (_, &u64)| *version;
             let is_closer = |&(pfx, _): &(&Prefix<_>, _)| {
                 pfx.common_prefix(&dst_name) > self.our_prefix().common_prefix(&dst_name)
             };
             let known_version = self.their_knowledge.iter().find(is_closer).map(to_version);
-            let to_ver =
-                known_version.unwrap_or_else(|| self.our_infos.first().map_or(0, si_to_version));
-            result.extend(self.proving_sections_to_own(from_ver, to_ver));
-            result.extend(self.proving_sections_to_own(to_ver, our_ver));
+            let to_ver = known_version.unwrap_or_else(|| {
+                self.state
+                    .our_infos()
+                    .nth(0)
+                    .map(SectionInfo::version)
+                    .cloned()
+                    .unwrap_or(0)
+            });
+            result.extend(self.state.proving_sections_to_own(from_ver, to_ver));
+            result.extend(self.state.proving_sections_to_own(to_ver, our_ver));
         }
         Ok(result)
     }
 
-    /// Returns the section info matching our own name with the given version number.
-    fn our_info_by_version(&self, version: u64) -> Option<&SectionInfo> {
-        // TODO: Binary search? Reverse order? Benchmark which one is fastest in practice.
-        self.our_infos
-            .iter()
-            .find(|&&(ref sec_info, _)| *sec_info.version() == version)
-            .map(|&(ref sec_info, _)| sec_info)
-    }
-
-    /// Returns a list of `ProvingSection`s whose first element proves `from` and whose last
-    /// element is `to`.
-    fn proving_sections_to_own(&self, from: u64, to: u64) -> Vec<ProvingSection> {
-        if from < to {
-            self.our_infos
-                .iter()
-                .skip_while(|&(ref sec_info, _)| *sec_info.version() <= from)
-                .take_while(|&(ref sec_info, _)| *sec_info.version() <= to)
-                .map(|&(ref sec_info, _)| ProvingSection::successor(sec_info))
-                .collect()
-        } else {
-            self.our_infos
-                .iter()
-                .rev()
-                .skip_while(|&(ref sec_info, _)| *sec_info.version() != from)
-                .take_while(|&(ref sec_info, _)| *sec_info.version() >= to)
-                .tuple_windows()
-                .map(|(&(_, ref proofs), &(ref sec_info, _))| {
-                    ProvingSection::signatures(sec_info, proofs)
-                })
-                .collect()
-        }
-    }
-
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
-    fn should_skip_accumulator(&mut self, event: &NetworkEvent) -> bool {
+    fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
         let si = match *event {
             NetworkEvent::SectionInfo(ref si) => si,
@@ -722,7 +649,7 @@ impl Chain {
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_) => {
-                self.state() == &ChainState::Normal && self.our_info().is_quorum(proofs)
+                self.state.change == SectionChange::None && self.our_info().is_quorum(proofs)
             }
             NetworkEvent::ProvingSections(_, _) => true,
 
@@ -745,13 +672,13 @@ impl Chain {
     fn can_handle_vote(&self, event: &NetworkEvent) -> bool {
         // TODO: is the merge state check even needed in the following match?
         // we only seem to set self.state = Merging after accumulation of OurMerge
-        match (self.state, event) {
-            (ChainState::Normal, _)
-            | (ChainState::Merging, NetworkEvent::OurMerge)
-            | (ChainState::Merging, NetworkEvent::NeighbourMerge(_)) => true,
+        match (self.state.change, event) {
+            (SectionChange::None, _)
+            | (SectionChange::Merging, NetworkEvent::OurMerge)
+            | (SectionChange::Merging, NetworkEvent::NeighbourMerge(_)) => true,
             (_, NetworkEvent::SectionInfo(sec_info)) => {
                 if sec_info.prefix().is_compatible(self.our_prefix())
-                    && sec_info.version() > self.new_info.version()
+                    && sec_info.version() > self.state.new_info.version()
                 {
                     log_or_panic!(
                         LogLevel::Error,
@@ -771,7 +698,7 @@ impl Chain {
         net_event: &NetworkEvent,
         sender_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        if let ChainState::Normal = self.state {
+        if self.state.change == SectionChange::None {
             log_or_panic!(
                 LogLevel::Error,
                 "Shouldn't be caching events while not splitting or merging."
@@ -791,9 +718,9 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         // Split handling alone. wouldn't cater to merge
         if sec_info.prefix().is_extension_of(self.our_prefix()) {
-            match self.split_cache.take() {
+            match self.state.split_cache.take() {
                 None => {
-                    self.split_cache = Some((sec_info, proofs));
+                    self.state.split_cache = Some((sec_info, proofs));
                     return Ok(());
                 }
                 Some((cache_info, cache_proofs)) => {
@@ -823,7 +750,7 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let pfx = *sec_info.prefix();
         if pfx.matches(self.our_id.name()) {
-            self.our_infos.push((sec_info.clone(), proofs));
+            self.state.our_infos.push((sec_info.clone(), proofs));
             if !self.is_member && sec_info.members().contains(&self.our_id) {
                 self.is_member = true;
             }
@@ -833,12 +760,13 @@ impl Chain {
             let spfx = sec_info.prefix().sibling();
             let new_nsigs_version = *sec_info.version();
             let nsigs = self
-                .our_infos
-                .iter()
+                .state
+                .our_infos()
                 .rev()
-                .find(|&&(ref our_info, _)| our_info.is_quorum(&proofs))
-                .map(|&(ref our_info, _)| NeighbourSigs::new(sec_info, proofs, our_info))
+                .find(|our_info| our_info.is_quorum(&proofs))
+                .map(|our_info| NeighbourSigs::new(sec_info, proofs, our_info))
                 .ok_or(RoutingError::InvalidMessage)?;
+
             if let Some(old_nsigs) = self.neighbour_infos.insert(pfx, nsigs) {
                 if *old_nsigs.sec_info().version() > new_nsigs_version {
                     log_or_panic!(
@@ -872,9 +800,10 @@ impl Chain {
 
     /// Returns whether we should split into two sections.
     fn should_split(&self, members: &BTreeSet<PublicId>) -> Result<bool, RoutingError> {
-        if self.state != ChainState::Normal || self.should_vote_for_merge() {
+        if self.state.change != SectionChange::None || self.should_vote_for_merge() {
             return Ok(false);
         }
+
         let new_size = members
             .iter()
             .filter(|id| {
@@ -892,14 +821,20 @@ impl Chain {
         members: BTreeSet<PublicId>,
     ) -> Result<(SectionInfo, SectionInfo), RoutingError> {
         let next_bit = self.our_id.name().bit(self.our_prefix().bit_count());
+
         let our_prefix = self.our_prefix().pushed(next_bit);
         let other_prefix = self.our_prefix().pushed(!next_bit);
-        let (our_new_section, other_section) = members
-            .iter()
-            .partition::<BTreeSet<_>, _>(|id| our_prefix.matches(id.name()));
-        let other_info = SectionInfo::new(other_section, other_prefix, Some(&self.new_info))?;
-        self.new_info = SectionInfo::new(our_new_section, our_prefix, Some(&self.new_info))?;
-        Ok((self.new_info.clone(), other_info))
+
+        let (our_new_section, other_section) =
+            members.iter().partition(|id| our_prefix.matches(id.name()));
+
+        let our_new_info =
+            SectionInfo::new(our_new_section, our_prefix, Some(&self.state.new_info))?;
+        let other_info = SectionInfo::new(other_section, other_prefix, Some(&self.state.new_info))?;
+
+        self.state.new_info = our_new_info.clone();
+
+        Ok((our_new_info, other_info))
     }
 
     /// Update our version which has signed the neighbour infos to whichever latest version
@@ -909,7 +844,7 @@ impl Chain {
     /// entire list.
     fn check_and_clean_neighbour_infos(&mut self, for_pfx: Option<&Prefix<XorName>>) {
         // Update neighbour version signed by self section
-        let our_infos: Vec<_> = self.our_infos.iter().map(|&(ref si, _)| si).collect();
+        let our_infos: Vec<_> = self.state.our_infos().collect();
 
         let update_version = |nsigs: &mut NeighbourSigs| {
             for our_info in our_infos.iter().rev() {
@@ -970,7 +905,7 @@ impl Chain {
         self.neighbour_infos
             .iter()
             .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info()))
-            .chain(self.opt_our_info().map(|si| (*si.prefix(), si)))
+            .chain(self.state.opt_our_info().map(|si| (*si.prefix(), si)))
     }
 
     /// Finds the `count` names closest to `name` in the whole routing table.
@@ -1239,7 +1174,8 @@ impl Chain {
 
     /// Returns our own section, including our own name.
     pub fn our_section(&self) -> BTreeSet<XorName> {
-        self.opt_our_info()
+        self.state
+            .opt_our_info()
             .map_or_else(BTreeSet::new, SectionInfo::member_names)
     }
 
@@ -1270,7 +1206,10 @@ impl Chain {
             .values()
             .map(|ni| ni.sec_info().members().len())
             .sum::<usize>()
-            + self.opt_our_info().map_or(0, |si| si.members().len() - 1)
+            + self
+                .state
+                .opt_our_info()
+                .map_or(0, |si| si.members().len() - 1)
     }
 
     /// Compute an estimate of the size of the network from the size of our routing table.
@@ -1296,7 +1235,7 @@ impl Chain {
 
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
     pub fn min_len_prefix(&self) -> Prefix<XorName> {
-        if self.our_infos.is_empty() {
+        if self.state.our_infos.is_empty() {
             Default::default()
         } else {
             *iter::once(self.our_prefix())
@@ -1320,19 +1259,15 @@ pub struct PrefixChangeOutcome {
 impl Debug for Chain {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         writeln!(formatter, "Chain {{")?;
-        writeln!(formatter, "\tstate: {:?},", self.state)?;
+        writeln!(formatter, "\tchange: {:?},", self.state.change)?;
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
-        writeln!(
-            formatter,
-            "\tour_version: {}",
-            self.our_infos.last().map_or(0, |info| *info.0.version())
-        )?;
+        writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
         writeln!(formatter, "\tis_member: {},", self.is_member)?;
-        writeln!(formatter, "\tnew_info: {}", self.new_info)?;
-        writeln!(formatter, "\tmerging: {:?}", self.merging)?;
+        writeln!(formatter, "\tnew_info: {}", self.state.new_info)?;
+        writeln!(formatter, "\tmerging: {:?}", self.state.merging)?;
 
-        writeln!(formatter, "\tour_infos: len {}", self.our_infos.len())?;
-        for (sec_info, _) in &self.our_infos {
+        writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
+        for sec_info in self.state.our_infos() {
             writeln!(formatter, "\t{}", sec_info)?;
         }
 
@@ -1362,14 +1297,7 @@ impl Debug for Chain {
 
 impl Display for Chain {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Node({}({:b}))",
-            self.our_id(),
-            self.our_infos
-                .last()
-                .map_or(Default::default(), |info| *info.0.prefix())
-        )
+        write!(f, "Node({}({:b}))", self.our_id(), self.state.our_prefix())
     }
 }
 

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Chain, ChainState, SectionInfo};
+use super::{Chain, SectionChange, SectionInfo};
 use crate::{Prefix, XorName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter;
@@ -20,11 +20,11 @@ fn verify_single_chain(chain: &Chain, min_section_size: usize) {
     );
 
     assert_eq!(
-        chain.state(),
-        &ChainState::Normal,
-        "{} has an invalid chain state: {:?}",
+        chain.change(),
+        SectionChange::None,
+        "{} has an unexpected section change: {:?}",
         chain.our_id(),
-        chain.state()
+        chain.change()
     );
 
     if !chain.our_info().prefix().is_empty() {

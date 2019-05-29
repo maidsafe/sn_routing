@@ -168,7 +168,7 @@ pub trait Approved: Relocated {
                 }
             }
 
-            match self.chain_poll_all(outbox)? {
+            match self.chain_poll(outbox)? {
                 Transition::Stay => (),
                 transition => return Ok(transition),
             }
@@ -177,7 +177,7 @@ pub trait Approved: Relocated {
         Ok(Transition::Stay)
     }
 
-    fn chain_poll_all(&mut self, outbox: &mut EventBox) -> Result<Transition, RoutingError> {
+    fn chain_poll(&mut self, outbox: &mut EventBox) -> Result<Transition, RoutingError> {
         let mut our_pfx = *self.chain_mut().our_prefix();
         while let Some(event) = self.chain_mut().poll()? {
             trace!("{} Handle accumulated event: {:?}", self, event);
