@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    shared_state::{SectionChange, SharedState},
+    shared_state::{PrefixChange, SharedState},
     GenesisPfxInfo, NeighbourSigs, NetworkEvent, Proof, ProofSet, ProvingSection, SectionInfo,
 };
 use crate::error::RoutingError;
@@ -220,7 +220,7 @@ impl Chain {
                 // and we'd want to perform the merge eventually with our current latest state.
                 let our_hash = *self.state.new_info.hash();
                 let _ = self.state.merging.insert(our_hash);
-                self.state.change = SectionChange::Merging;
+                self.state.change = PrefixChange::Merging;
             }
             NetworkEvent::NeighbourMerge(digest) => {
                 // TODO: Check that the section is known and not already merged.
@@ -235,7 +235,7 @@ impl Chain {
     /// If we need to split also returns an additional sibling `SectionInfo`.
     /// Should not be called while a pfx change is in progress.
     pub fn add_member(&mut self, pub_id: PublicId) -> Result<Vec<SectionInfo>, RoutingError> {
-        if self.state.change != SectionChange::None {
+        if self.state.change != PrefixChange::None {
             log_or_panic!(
                 LogLevel::Warn,
                 "Adding {:?} to chain during pfx change.",
@@ -256,7 +256,7 @@ impl Chain {
 
         if self.should_split(&members)? {
             let (our_info, other_info) = self.split_self(members.clone())?;
-            self.state.change = SectionChange::Splitting;
+            self.state.change = PrefixChange::Splitting;
             return Ok(vec![our_info, other_info]);
         }
 
@@ -272,7 +272,7 @@ impl Chain {
     /// Removes a member from our section, creating a new `our_info` in the process.
     /// Should not be called while a pfx change is in progress.
     pub fn remove_member(&mut self, pub_id: PublicId) -> Result<SectionInfo, RoutingError> {
-        if self.state.change != SectionChange::None {
+        if self.state.change != PrefixChange::None {
             log_or_panic!(
                 LogLevel::Warn,
                 "Removing {:?} from chain during pfx change.",
@@ -300,7 +300,7 @@ impl Chain {
         if self.state.new_info.members().len() < self.min_sec_size {
             // set to merge state to prevent extending chain any further.
             // We'd still not Vote for OurMerge until we've updated our_infos
-            self.state.change = SectionChange::Merging;
+            self.state.change = PrefixChange::Merging;
         }
 
         Ok(self.state.new_info.clone())
@@ -356,7 +356,7 @@ impl Chain {
         }
 
         self.check_and_clean_neighbour_infos(None);
-        self.state.change = SectionChange::None;
+        self.state.change = PrefixChange::None;
 
         let completed_events = mem::replace(&mut self.completed_events, Default::default());
         let chain_acc = mem::replace(&mut self.chain_accumulator, Default::default());
@@ -399,7 +399,7 @@ impl Chain {
     }
 
     /// Returns whether our section is in the process of changing (splitting or merging).
-    pub fn change(&self) -> SectionChange {
+    pub fn prefix_change(&self) -> PrefixChange {
         self.state.change
     }
 
@@ -652,7 +652,7 @@ impl Chain {
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_) => {
-                self.state.change == SectionChange::None && self.our_info().is_quorum(proofs)
+                self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
             NetworkEvent::ProvingSections(_, _) => true,
 
@@ -676,9 +676,9 @@ impl Chain {
         // TODO: is the merge state check even needed in the following match?
         // we only seem to set self.state = Merging after accumulation of OurMerge
         match (self.state.change, event) {
-            (SectionChange::None, _)
-            | (SectionChange::Merging, NetworkEvent::OurMerge)
-            | (SectionChange::Merging, NetworkEvent::NeighbourMerge(_)) => true,
+            (PrefixChange::None, _)
+            | (PrefixChange::Merging, NetworkEvent::OurMerge)
+            | (PrefixChange::Merging, NetworkEvent::NeighbourMerge(_)) => true,
             (_, NetworkEvent::SectionInfo(sec_info)) => {
                 if sec_info.prefix().is_compatible(self.our_prefix())
                     && sec_info.version() > self.state.new_info.version()
@@ -701,7 +701,7 @@ impl Chain {
         net_event: &NetworkEvent,
         sender_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        if self.state.change == SectionChange::None {
+        if self.state.change == PrefixChange::None {
             log_or_panic!(
                 LogLevel::Error,
                 "Shouldn't be caching events while not splitting or merging."
@@ -803,7 +803,7 @@ impl Chain {
 
     /// Returns whether we should split into two sections.
     fn should_split(&self, members: &BTreeSet<PublicId>) -> Result<bool, RoutingError> {
-        if self.state.change != SectionChange::None || self.should_vote_for_merge() {
+        if self.state.change != PrefixChange::None || self.should_vote_for_merge() {
             return Ok(false);
         }
 

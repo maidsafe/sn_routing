@@ -26,7 +26,7 @@ pub struct SharedState {
     /// it.
     pub our_infos: NonEmptyList<(SectionInfo, ProofSet)>,
     /// Any change (split or merge) to the section that is currently in progress.
-    pub change: SectionChange,
+    pub change: PrefixChange,
     // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
     pub split_cache: Option<(SectionInfo, ProofSet)>,
     /// The set of section info hashes that are currently merging.
@@ -38,7 +38,7 @@ impl SharedState {
         Self {
             new_info: section_info.clone(),
             our_infos: NonEmptyList::new((section_info, Default::default())),
-            change: SectionChange::None,
+            change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
         }
@@ -110,7 +110,7 @@ impl SharedState {
         I: IntoIterator<Item = &'a SectionInfo>,
     {
         let pfx = self.our_prefix();
-        if pfx.is_empty() || self.change == SectionChange::Splitting {
+        if pfx.is_empty() || self.change == PrefixChange::Splitting {
             return false;
         }
 
@@ -149,9 +149,9 @@ impl SharedState {
     }
 }
 
-/// The change to our own section that is currently in progress.
+/// The prefix-affecting change (split or merge) to our own section that is currently in progress.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum SectionChange {
+pub enum PrefixChange {
     None,
     Splitting,
     Merging,
