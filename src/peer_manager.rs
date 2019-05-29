@@ -294,7 +294,7 @@ enum Candidate {
         res_proof_start: Instant,
         expired_once: bool,
         online_payload: OnlinePayload,
-        challenge: Option<ResourceProofChallenge>,
+        challenge: ResourceProofChallenge,
         passed_our_challenge: bool,
     },
 }
@@ -422,7 +422,7 @@ impl PeerManager {
             match self.candidate {
                 Candidate::ResourceProof {
                     ref online_payload,
-                    challenge: Some(ref mut challenge),
+                    ref mut challenge,
                     ref mut passed_our_challenge,
                     ref res_proof_start,
                     ..
@@ -506,12 +506,12 @@ impl PeerManager {
 
         peer.state = PeerState::Candidate;
 
-        let challenge = Some(ResourceProofChallenge {
+        let challenge = ResourceProofChallenge {
             target_size: target_size,
             difficulty: difficulty,
             seed: seed,
             proof: VecDeque::new(),
-        });
+        };
 
         self.candidate = Candidate::ResourceProof {
             res_proof_start,
@@ -533,16 +533,7 @@ impl PeerManager {
             }
             Candidate::ResourceProof {
                 ref online_payload,
-                challenge: None,
-                ..
-            } => trace!(
-                "{}{} is performing resource proof.",
-                log_prefix,
-                online_payload.new_public_id.name()
-            ),
-            Candidate::ResourceProof {
-                ref online_payload,
-                challenge: Some(ref challenge),
+                ref challenge,
                 passed_our_challenge,
                 ..
             } => {
