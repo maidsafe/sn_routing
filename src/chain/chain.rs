@@ -347,7 +347,14 @@ impl Chain {
         // Check the lowest version of our info that any neighbour has and remove everything less
         // than it
         let our_oldest_ver = self.their_knowledge.values().min().map_or(0, |&v| v);
-        self.state.clean_our_infos(our_oldest_ver);
+
+        if !self.state.our_infos.clean_older(our_oldest_ver) {
+            log_or_panic!(
+                LogLevel::Warn,
+                "Oldest version indicated by neighbours not found in our infos"
+            );
+        }
+
         self.check_and_clean_neighbour_infos(None);
         self.state.change = SectionChange::None;
 
@@ -428,7 +435,7 @@ impl Chain {
     /// section or neighbours.
     pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
         self.neighbour_infos()
-            .chain(self.state.opt_our_info())
+            .chain(iter::once(self.state.our_info()))
             .chain(iter::once(&self.state.new_info))
             .any(|si| si.members().contains(pub_id))
     }
@@ -436,7 +443,7 @@ impl Chain {
     /// Returns a set of valid peers we should be connected to.
     pub fn valid_peers(&self) -> BTreeSet<&PublicId> {
         self.neighbour_infos()
-            .chain(self.state.opt_our_info())
+            .chain(iter::once(self.state.our_info()))
             .flat_map(SectionInfo::members)
             .chain(self.state.new_info.members())
             .collect()
@@ -483,10 +490,6 @@ impl Chain {
     /// Appends a list of `ProvingSection`s that authenticates the message, if possible. The last
     /// section will then belong to the next hop.
     pub fn extend_proving_sections(&self, msg: &mut SignedMessage) -> Result<(), RoutingError> {
-        if self.state.our_infos.is_empty() {
-            return Ok(()); // Nothing to append yet.
-        }
-
         let dst_name = msg.routing_message().dst.name();
 
         while (msg.previous_hop()).map_or(false, |hop| !self.is_trusted(hop, false)) {
@@ -905,7 +908,10 @@ impl Chain {
         self.neighbour_infos
             .iter()
             .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info()))
-            .chain(self.state.opt_our_info().map(|si| (*si.prefix(), si)))
+            .chain(iter::once((
+                *self.state.our_info().prefix(),
+                self.state.our_info(),
+            )))
     }
 
     /// Finds the `count` names closest to `name` in the whole routing table.
@@ -1174,9 +1180,7 @@ impl Chain {
 
     /// Returns our own section, including our own name.
     pub fn our_section(&self) -> BTreeSet<XorName> {
-        self.state
-            .opt_our_info()
-            .map_or_else(BTreeSet::new, SectionInfo::member_names)
+        self.state.our_info().member_names()
     }
 
     /// Are we among the `count` closest nodes to `name`?
@@ -1206,10 +1210,8 @@ impl Chain {
             .values()
             .map(|ni| ni.sec_info().members().len())
             .sum::<usize>()
-            + self
-                .state
-                .opt_our_info()
-                .map_or(0, |si| si.members().len() - 1)
+            + self.state.our_info().members().len()
+            - 1
     }
 
     /// Compute an estimate of the size of the network from the size of our routing table.
@@ -1235,14 +1237,10 @@ impl Chain {
 
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
     pub fn min_len_prefix(&self) -> Prefix<XorName> {
-        if self.state.our_infos.is_empty() {
-            Default::default()
-        } else {
-            *iter::once(self.our_prefix())
-                .chain(self.neighbour_infos.keys())
-                .min_by_key(|prefix| prefix.bit_count())
-                .unwrap_or(&self.our_prefix())
-        }
+        *iter::once(self.our_prefix())
+            .chain(self.neighbour_infos.keys())
+            .min_by_key(|prefix| prefix.bit_count())
+            .unwrap_or(&self.our_prefix())
     }
 }
 

@@ -7,10 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{ProofSet, ProvingSection, SectionInfo};
-use crate::{error::RoutingError, routing_table::DEFAULT_PREFIX, sha3::Digest256, Prefix, XorName};
+use crate::{error::RoutingError, sha3::Digest256, Prefix, XorName};
 use itertools::Itertools;
-use log::LogLevel;
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Debug, Formatter},
+    iter, mem,
+};
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
@@ -21,7 +24,7 @@ pub struct SharedState {
     /// one. This is included in every message we relay.
     /// This is not a `BTreeSet` just now as it is ordered according to the sequence of pushes into
     /// it.
-    pub our_infos: Vec<(SectionInfo, ProofSet)>,
+    pub our_infos: NonEmptyList<(SectionInfo, ProofSet)>,
     /// Any change (split or merge) to the section that is currently in progress.
     pub change: SectionChange,
     // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
@@ -34,37 +37,28 @@ impl SharedState {
     pub fn new(section_info: SectionInfo) -> Self {
         Self {
             new_info: section_info.clone(),
-            our_infos: vec![(section_info, Default::default())],
+            our_infos: NonEmptyList::new((section_info, Default::default())),
             change: SectionChange::None,
             split_cache: None,
             merging: Default::default(),
         }
     }
 
-    pub fn our_infos(
-        &self,
-    ) -> impl Iterator<Item = &SectionInfo> + ExactSizeIterator + DoubleEndedIterator {
+    pub fn our_infos(&self) -> impl Iterator<Item = &SectionInfo> + DoubleEndedIterator {
         self.our_infos.iter().map(|(si, _)| si)
-    }
-
-    pub fn opt_our_info(&self) -> Option<&SectionInfo> {
-        self.our_infos.last().map(|(si, _)| si)
     }
 
     /// Returns our own current section info.
     pub fn our_info(&self) -> &SectionInfo {
-        // TODO: Replace `our_infos` with a new `NonemptyVec` type that statically guarantees that
-        // it's never empty.
-        unwrap!(self.opt_our_info())
+        &self.our_infos.last().0
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.opt_our_info()
-            .map_or(&DEFAULT_PREFIX, SectionInfo::prefix)
+        self.our_info().prefix()
     }
 
     pub fn our_version(&self) -> u64 {
-        self.opt_our_info().map_or(0, |si| *si.version())
+        *self.our_info().version()
     }
 
     /// Returns our section info with the given hash, if it exists.
@@ -81,23 +75,6 @@ impl SharedState {
             .iter()
             .find(|(sec_info, _)| *sec_info.version() == version)
             .map(|(sec_info, _)| sec_info)
-    }
-
-    /// Remove our infos that are older than the given version.
-    pub(super) fn clean_our_infos(&mut self, oldest_version: u64) {
-        let version_retention_threshold_index = self
-            .our_infos
-            .binary_search_by_key(&oldest_version, |(si, _)| *si.version())
-            .unwrap_or_else(|_index| {
-                if oldest_version > 0 {
-                    log_or_panic!(
-                        LogLevel::Warn,
-                        "Oldest version indicated by neighbours not found in our infos"
-                    );
-                }
-                usize::min_value()
-            });
-        let _ = self.our_infos.drain(0..version_retention_threshold_index);
     }
 
     /// Returns `true` if we have accumulated self `NetworkEvent::OurMerge`.
@@ -178,4 +155,68 @@ pub enum SectionChange {
     None,
     Splitting,
     Merging,
+}
+
+/// Vec-like container that is guaranteed to contain at least one element.
+#[derive(PartialEq, Eq)]
+pub struct NonEmptyList<T> {
+    head: Vec<T>,
+    tail: T,
+}
+
+impl<T> NonEmptyList<T> {
+    pub fn new(first: T) -> Self {
+        Self {
+            head: Vec::new(),
+            tail: first,
+        }
+    }
+
+    pub fn push(&mut self, item: T) {
+        self.head.push(mem::replace(&mut self.tail, item))
+    }
+
+    pub fn len(&self) -> usize {
+        self.head.len() + 1
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> + DoubleEndedIterator {
+        self.head.iter().chain(iter::once(&self.tail))
+    }
+
+    pub fn last(&self) -> &T {
+        &self.tail
+    }
+}
+
+impl<T> Debug for NonEmptyList<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "[{:?}]", self.iter().format(", "))
+    }
+}
+
+impl NonEmptyList<(SectionInfo, ProofSet)> {
+    /// Remove infos that are sorted before the info with version equal to `oldest_version`.
+    /// If no info has that version, do not remove anything and return 'false'.
+    /// Otherwise return `true`
+    pub fn clean_older(&mut self, oldest_version: u64) -> bool {
+        if *self.tail.0.version() == oldest_version {
+            self.head.clear();
+            return true;
+        }
+
+        match self
+            .head
+            .binary_search_by_key(&oldest_version, |(si, _)| *si.version())
+        {
+            Ok(index) => {
+                let _ = self.head.drain(0..index);
+                true
+            }
+            Err(_) => oldest_version == 0,
+        }
+    }
 }
