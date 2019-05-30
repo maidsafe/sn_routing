@@ -873,10 +873,7 @@ fn add_node_to_section<T: Rng>(
     nodes.iter_mut().for_each(|node| {
         node.inner.set_next_relocation_dst(Some(relocation_name));
         node.inner
-            .set_next_relocation_interval(Some(XorTargetInterval(
-                prefix.lower_bound(),
-                prefix.upper_bound(),
-            )));
+            .set_next_relocation_interval(Some(XorTargetInterval::new(prefix.range_inclusive())));
     });
 
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);

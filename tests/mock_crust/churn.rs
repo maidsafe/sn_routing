@@ -81,10 +81,7 @@ fn add_nodes<R: Rng>(
             let pfx = *node.our_prefix();
             node.inner.set_next_relocation_dst(Some(pfx.lower_bound()));
             node.inner
-                .set_next_relocation_interval(Some(XorTargetInterval(
-                    pfx.lower_bound(),
-                    pfx.upper_bound(),
-                )));
+                .set_next_relocation_interval(Some(XorTargetInterval::new(pfx.range_inclusive())));
             pfx
         })
         .collect();

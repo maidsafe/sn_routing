@@ -484,9 +484,7 @@ impl PeerManager {
             }
         };
 
-        if *online_payload.new_public_id.name() < target_interval.0
-            || *online_payload.new_public_id.name() > target_interval.1
-        {
+        if !target_interval.contains(online_payload.new_public_id.name()) {
             warn!(
                 "{} has used a new ID which is not within the required target range.",
                 log_prefix

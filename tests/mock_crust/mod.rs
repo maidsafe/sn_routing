@@ -251,7 +251,7 @@ fn simultaneous_joining_nodes(
         // Set the specified relocation interval on the nodes of the given prefixes
         let relocation_interval = setup
             .dst_relocation_interval_prefix
-            .map(|prefix| XorTargetInterval(prefix.lower_bound(), prefix.upper_bound()));
+            .map(|prefix| XorTargetInterval::new(prefix.range_inclusive()));
         nodes_with_prefix_mut(&mut nodes, &setup.dst_section_prefix).for_each(|node| {
             node.inner
                 .set_next_relocation_interval(relocation_interval.clone())

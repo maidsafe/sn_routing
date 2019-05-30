@@ -13,6 +13,7 @@ use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
     iter,
+    ops::RangeInclusive,
     time::Duration,
 };
 
@@ -62,6 +63,25 @@ impl Display for LogIdent {
 /// Target Xor interval
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct XorTargetInterval(pub XorName, pub XorName);
+
+impl XorTargetInterval {
+    /// Create a XorTargetInterval from the equivalent RangeInclusive
+    pub fn new(range: RangeInclusive<XorName>) -> Self {
+        let (start, end) = range.into_inner();
+        Self(start, end)
+    }
+
+    /// check if the inclusive range contains the value
+    pub fn contains(&self, value: &XorName) -> bool {
+        RangeInclusive::new(self.0, self.1).contains(value)
+    }
+}
+
+impl Into<RangeInclusive<XorName>> for XorTargetInterval {
+    fn into(self) -> RangeInclusive<XorName> {
+        RangeInclusive::new(self.0, self.1)
+    }
+}
 
 /// Compute the target destination for a joining node with the given name.
 ///

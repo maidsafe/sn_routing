@@ -211,14 +211,15 @@ impl RelocatingNode {
         target_interval: XorTargetInterval,
         section: (Prefix<XorName>, BTreeSet<PublicId>),
     ) -> Transition {
-        let new_id = FullId::within_range(&target_interval.0, &target_interval.1);
+        let target_interval = target_interval.into();
+        let new_id = FullId::within_range(&target_interval);
         if !section.0.matches(new_id.public_id().name()) {
             log_or_panic!(
                 LogLevel::Error,
                 "{} Invalid name chosen for {:?}. Range provided: {:?}",
                 self,
                 section.0,
-                target_interval
+                XorTargetInterval::new(target_interval)
             );
         }
         Transition::IntoBootstrapping {

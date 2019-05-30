@@ -1391,7 +1391,7 @@ mod tests {
                 let mut full_ids = HashMap::new();
                 let mut members = BTreeSet::new();
                 for _ in 0..n {
-                    let some_id = FullId::within_range(&pfx.lower_bound(), &pfx.upper_bound());
+                    let some_id = FullId::within_range(&pfx.range_inclusive());
                     let _ = members.insert(*some_id.public_id());
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
@@ -1399,10 +1399,7 @@ mod tests {
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.members().clone();
-                let some_id = FullId::within_range(
-                    &info.prefix().lower_bound(),
-                    &info.prefix().upper_bound(),
-                );
+                let some_id = FullId::within_range(&info.prefix().range_inclusive());
                 let _ = members.insert(*some_id.public_id());
                 let mut full_ids = HashMap::new();
                 let _ = full_ids.insert(*some_id.public_id(), some_id);
