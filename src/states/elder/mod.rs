@@ -14,7 +14,7 @@ use crate::{
     ack_manager::{Ack, AckManager},
     cache::Cache,
     chain::{
-        Chain, ChainState, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload,
+        Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
         PrefixChangeOutcome, Proof, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
@@ -352,7 +352,7 @@ impl Elder {
             let pub_id = peer.pub_id();
             if self.is_peer_valid(pub_id) {
                 peers_to_add.push(*pub_id);
-            } else if peer.is_node() && self.chain.state() == &ChainState::Normal {
+            } else if peer.is_node() && self.chain.prefix_change() == PrefixChange::None {
                 peers_to_remove.push(*peer.pub_id());
             }
         }

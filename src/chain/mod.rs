@@ -13,16 +13,20 @@ mod neighbour_sigs;
 mod network_event;
 mod proof;
 mod section_info;
+mod shared_state;
 #[cfg(any(test, feature = "mock_base"))]
 mod test_utils;
 
-pub use self::chain::{Chain, PrefixChangeOutcome};
-pub use self::neighbour_sigs::NeighbourSigs;
-pub use self::network_event::{ExpectCandidatePayload, NetworkEvent, OnlinePayload};
-pub use self::proof::{Proof, ProofSet, ProvingSection};
-pub use self::section_info::SectionInfo;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test_utils::verify_chain_invariant;
+pub use self::{
+    chain::{Chain, PrefixChangeOutcome},
+    neighbour_sigs::NeighbourSigs,
+    network_event::{ExpectCandidatePayload, NetworkEvent, OnlinePayload},
+    proof::{Proof, ProofSet, ProvingSection},
+    section_info::SectionInfo,
+    shared_state::PrefixChange,
+};
 use std::fmt::{self, Debug, Formatter};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -41,12 +45,4 @@ impl Debug for GenesisPfxInfo {
             self.latest_info.version(),
         )
     }
-}
-
-/// The change to our own section that is currently in progress.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ChainState {
-    Normal,
-    Splitting,
-    Merging,
 }
