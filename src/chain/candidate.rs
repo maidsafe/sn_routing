@@ -34,18 +34,18 @@ pub enum Candidate {
 }
 
 impl Candidate {
-    /// Return true if already has a candidate
-    pub fn has_resource_proof_candidate(&self) -> bool {
-        *self != Candidate::None
+    /// Return true if no candidate info
+    pub fn is_none(&self) -> bool {
+        *self == Candidate::None
     }
 
     /// Forget about the current candidate.
-    pub fn reset_candidate(&mut self) {
+    pub fn reset(&mut self) {
         *self = Candidate::None;
     }
 
     /// Forget about the current candidate if it is a member of the given section.
-    pub fn reset_candidate_if_member_of(&mut self, members: &BTreeSet<PublicId>) {
+    pub fn reset_if_member_of(&mut self, members: &BTreeSet<PublicId>) {
         if let Candidate::ApprovedWaitingSectionInfo { ref new_pub_id } = self {
             if members.contains(new_pub_id) {
                 *self = Candidate::None;
@@ -53,14 +53,14 @@ impl Candidate {
         }
     }
 
-    /// Our section decided that the candidate should be selected next.
-    /// Pre-condition: !has_resource_proof_candidate.
-    pub fn accept_as_candidate(
+    /// Our section decided that the candidate should be resource proofed next.
+    /// Pre-condition: is_none.
+    pub fn accept_for_resource_proof(
         &mut self,
         old_public_id: PublicId,
         target_interval: XorTargetInterval,
     ) {
-        if self.has_resource_proof_candidate() {
+        if !self.is_none() {
             log_or_panic!(
                 LogLevel::Error,
                 "accept_as_candidate when processing one already"
@@ -73,22 +73,11 @@ impl Candidate {
         };
     }
 
-    /// Return the target interval if we are waiting for candidate info for that PublicId.
-    pub fn waiting_for_candidate_interval(
-        &self,
-        old_public_id: &PublicId,
-    ) -> Option<&XorTargetInterval> {
-        if self.waiting_candidate_old_public_id() == Some(old_public_id) {
-            self.target_interval()
-        } else {
-            None
-        }
-    }
-
-    /// Handle consensus on `Online`. Marks the candidate as `ApprovedWaitingSectionInfo`.
+    /// Try to accept as memeber.
     /// If the candidate was already purged or is unexpected, return false.
-    pub fn handle_candidate_online_event(&mut self, online_payload: &OnlinePayload) -> bool {
-        if self.waiting_candidate_old_public_id() == Some(&online_payload.old_public_id) {
+    /// Otherwise marks the candidate as `ApprovedWaitingSectionInfo`.
+    pub fn try_accept_as_member(&mut self, online_payload: &OnlinePayload) -> bool {
+        if self.old_public_id() == Some(&online_payload.old_public_id) {
             // Known candidate was accepted.
             // Ignore any information that could be different stored in candidate.
             // Do not accept candidate until we complete our current one.
@@ -102,14 +91,24 @@ impl Candidate {
         }
     }
 
-    /// The public id of the candidate we are waiting to approve.
-    pub fn waiting_candidate_old_public_id(&self) -> Option<&PublicId> {
+    /// Return the target interval if we are resource proofing for that old PublicId.
+    pub fn matching_target_interval(&self, old_public_id: &PublicId) -> Option<&XorTargetInterval> {
+        if self.old_public_id() == Some(old_public_id) {
+            self.target_interval()
+        } else {
+            None
+        }
+    }
+
+    /// The public id of the candidate we are resource proofing.
+    pub fn old_public_id(&self) -> Option<&PublicId> {
         match self {
             Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => None,
             Candidate::AcceptedForResourceProof { old_public_id, .. } => Some(old_public_id),
         }
     }
 
+    /// The target interval of the candidate we are resource proofing.
     fn target_interval(&self) -> Option<&XorTargetInterval> {
         match self {
             Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => None,
@@ -120,7 +119,7 @@ impl Candidate {
     }
 
     /// Logs info about ongoing candidate state, if any.
-    pub fn show_candidate_status(&self, log_ident: &LogIdent) {
+    pub fn show_status(&self, log_ident: &LogIdent) {
         let log_prefix = format!("{} Shared Candidate Status - ", log_ident);
         match self {
             Candidate::None => trace!("{}No candidate is currently being handled.", log_prefix),

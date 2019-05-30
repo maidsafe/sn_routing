@@ -1252,25 +1252,25 @@ impl Chain {
 
     /// Return true if already has a candidate
     pub fn has_resource_proof_candidate(&self) -> bool {
-        self.candidate.has_resource_proof_candidate()
+        !self.candidate.is_none()
     }
 
     /// Forget about the current candidate.
     pub fn reset_candidate(&mut self) {
-        self.candidate.reset_candidate()
+        self.candidate.reset()
     }
 
     /// Forget about the current candidate if it is a member of the given section.
     pub fn reset_candidate_if_member_of(&mut self, members: &BTreeSet<PublicId>) {
-        self.candidate.reset_candidate_if_member_of(members)
+        self.candidate.reset_if_member_of(members)
     }
 
     /// Return true if we are waiting for candidate info for that PublicId.
-    pub fn waiting_for_candidate_interval(
+    pub fn matching_candidate_target_interval(
         &self,
         old_pub_id: &PublicId,
     ) -> Option<&XorTargetInterval> {
-        self.candidate.waiting_for_candidate_interval(old_pub_id)
+        self.candidate.matching_target_interval(old_pub_id)
     }
 
     /// Our section decided that the candidate should be selected next.
@@ -1281,23 +1281,23 @@ impl Chain {
         target_interval: XorTargetInterval,
     ) {
         self.candidate
-            .accept_as_candidate(old_pub_id, target_interval)
+            .accept_for_resource_proof(old_pub_id, target_interval)
     }
 
     /// Handle consensus on `Online`. Marks the candidate as `ApprovedWaitingSectionInfo`.
     /// If the candidate was already purged or is unexpected, return false.
-    pub fn handle_candidate_online_event(&mut self, online_payload: &OnlinePayload) -> bool {
-        self.candidate.handle_candidate_online_event(online_payload)
+    pub fn try_accept_candidate_as_member(&mut self, online_payload: &OnlinePayload) -> bool {
+        self.candidate.try_accept_as_member(online_payload)
     }
 
     /// The public id of the candidate we are waiting to approve.
-    pub fn waiting_candidate_old_public_id(&self) -> Option<&PublicId> {
-        self.candidate.waiting_candidate_old_public_id()
+    pub fn candidate_old_public_id(&self) -> Option<&PublicId> {
+        self.candidate.old_public_id()
     }
 
     /// Logs info about ongoing candidate state, if any.
     pub fn show_candidate_status(&self, log_ident: &LogIdent) {
-        self.candidate.show_candidate_status(log_ident)
+        self.candidate.show_status(log_ident)
     }
 }
 

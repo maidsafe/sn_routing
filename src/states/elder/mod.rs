@@ -1101,7 +1101,7 @@ impl Elder {
         };
 
         let target_interval =
-            if let Some(interval) = self.chain.waiting_for_candidate_interval(old_pub_id) {
+            if let Some(interval) = self.chain.matching_candidate_target_interval(old_pub_id) {
                 interval
             } else {
                 debug!(
@@ -1776,7 +1776,7 @@ impl Elder {
 
     fn remove_expired_peers(&mut self) {
         if self.peer_mgr.expired_candidate_once() {
-            if let Some(expired_id) = self.chain.waiting_candidate_old_public_id().cloned() {
+            if let Some(expired_id) = self.chain.candidate_old_public_id().cloned() {
                 self.vote_for_event(NetworkEvent::PurgeCandidate(expired_id));
             }
         }
@@ -2371,7 +2371,7 @@ impl Approved for Elder {
     }
 
     fn handle_online_event(&mut self, online_payload: OnlinePayload) -> Result<(), RoutingError> {
-        if self.chain.handle_candidate_online_event(&online_payload) {
+        if self.chain.try_accept_candidate_as_member(&online_payload) {
             self.peer_mgr.reset_candidate();
             self.vote_for_event(NetworkEvent::AddElder(
                 online_payload.new_public_id,
@@ -2416,7 +2416,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         if self
             .chain
-            .waiting_for_candidate_interval(&old_public_id)
+            .matching_candidate_target_interval(&old_public_id)
             .is_some()
         {
             self.chain.reset_candidate();
