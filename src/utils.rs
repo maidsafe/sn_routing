@@ -59,6 +59,7 @@ impl Display for LogIdent {
     }
 }
 
+/// Target Xor interval
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct XorTargetInterval(pub XorName, pub XorName);
 

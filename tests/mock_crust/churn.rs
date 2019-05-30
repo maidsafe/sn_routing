@@ -16,7 +16,7 @@ use rand::Rng;
 use routing::mock_crust::Network;
 use routing::{
     Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, PublicId, Request,
-    Response, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    Response, XorName, XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::cmp;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -81,7 +81,10 @@ fn add_nodes<R: Rng>(
             let pfx = *node.our_prefix();
             node.inner.set_next_relocation_dst(Some(pfx.lower_bound()));
             node.inner
-                .set_next_relocation_interval(Some((pfx.lower_bound(), pfx.upper_bound())));
+                .set_next_relocation_interval(Some(XorTargetInterval(
+                    pfx.lower_bound(),
+                    pfx.upper_bound(),
+                )));
             pfx
         })
         .collect();

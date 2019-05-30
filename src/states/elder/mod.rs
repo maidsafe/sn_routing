@@ -2178,8 +2178,8 @@ impl Elder {
         self.next_relocation_dst = dst;
     }
 
-    pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
-        self.next_relocation_interval = interval.map(|(start, end)| XorTargetInterval(start, end));
+    pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
+        self.next_relocation_interval = interval;
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
