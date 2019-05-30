@@ -60,7 +60,7 @@ impl Display for LogIdent {
 }
 
 /// Target Xor interval
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct XorTargetInterval(pub XorName, pub XorName);
 
 /// Compute the target destination for a joining node with the given name.

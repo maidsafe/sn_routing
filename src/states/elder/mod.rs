@@ -1323,7 +1323,7 @@ impl Elder {
         let src = Authority::Section(vote.dst_name);
         let dst = vote.old_client_auth;
         let content = MessageContent::RelocateResponse {
-            target_interval: (target_interval.0, target_interval.1),
+            target_interval: target_interval,
             section: own_section,
             message_id: vote.message_id,
         };
