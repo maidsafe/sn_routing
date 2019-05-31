@@ -36,10 +36,14 @@ use crate::{
     Service,
 };
 use maidsafe_utilities::serialisation;
+use std::collections::btree_map::BTreeMap;
+use std::time::Duration;
 use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
 };
+
+const RESEND_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct ProvingNodeDetails {
     pub action_sender: RoutingActionSender,
@@ -71,6 +75,8 @@ pub struct ProvingNode {
     resource_prover: ResourceProver,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
+    resource_proofing_status: BTreeMap<PublicId, bool>,
+    resend_token: Option<u64>,
 }
 
 impl ProvingNode {
@@ -103,6 +109,8 @@ impl ProvingNode {
             joining_prefix: details.our_section.0,
             old_full_id: details.old_full_id,
             resource_prover,
+            resource_proofing_status: BTreeMap::new(),
+            resend_token: None,
         };
         node.init(details.our_section.1, &details.proxy_pub_id, outbox);
         node
@@ -143,6 +151,7 @@ impl ProvingNode {
                 );
             }
         }
+        self.resend_token = Some(self.timer.schedule(RESEND_TIMEOUT));
     }
 
     pub fn into_establishing_node(
@@ -196,6 +205,74 @@ impl ProvingNode {
         Transition::IntoAdult { gen_pfx_info }
     }
 
+    fn send_candidate_info(&mut self, pub_id: PublicId) {
+        // We're not approved yet - we need to identify ourselves with our old and new IDs via
+        // `CandidateInfo`. Serialise the old and new `PublicId`s and sign this using the old key.
+        let msg = {
+            let old_and_new_pub_ids = (self.old_full_id.public_id(), self.full_id.public_id());
+            let mut to_sign = match serialisation::serialise(&old_and_new_pub_ids) {
+                Ok(result) => result,
+                Err(error) => {
+                    error!("Failed to serialise public IDs: {:?}", error);
+                    return;
+                }
+            };
+            let signature_using_old = self
+                .old_full_id
+                .signing_private_key()
+                .sign_detached(&to_sign);
+            // Append this signature onto the serialised IDs and sign that using the new key.
+            to_sign.extend_from_slice(&signature_using_old.into_bytes());
+            let signature_using_new = self.full_id.signing_private_key().sign_detached(&to_sign);
+            let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
+                *proxy_node_name
+            } else {
+                warn!("{} No proxy found, so unable to send CandidateInfo.", self);
+                return;
+            };
+            let new_client_auth = Authority::Client {
+                client_id: *self.full_id.public_id(),
+                proxy_node_name: proxy_node_name,
+            };
+
+            DirectMessage::CandidateInfo {
+                old_public_id: *self.old_full_id.public_id(),
+                new_public_id: *self.full_id.public_id(),
+                signature_using_old: signature_using_old,
+                signature_using_new: signature_using_new,
+                new_client_auth: new_client_auth,
+            }
+        };
+
+        let _ = self.resource_proofing_status.insert(pub_id, false);
+
+        self.send_direct_message(pub_id, msg);
+    }
+
+    fn resend_info(&mut self, outbox: &mut EventBox) -> Transition {
+        let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
+            *proxy_node_name
+        } else {
+            warn!("{} No proxy found, cannot resend info.", self);
+            return Transition::Stay;
+        };
+        let src = Authority::Client {
+            client_id: *self.full_id.public_id(),
+            proxy_node_name,
+        };
+
+        for (peer_id, resource_proofing) in self.resource_proofing_status.clone().iter() {
+            if !self.peer_mgr.is_connected(peer_id) {
+                let dst = Authority::ManagedNode(*peer_id.name());
+                let _ = self.send_connection_info_request(*peer_id, src, dst, outbox);
+            } else if !resource_proofing {
+                self.send_candidate_info(*peer_id);
+            }
+        }
+        self.resend_token = Some(self.timer.schedule(RESEND_TIMEOUT));
+        Transition::Stay
+    }
+
     #[cfg(feature = "mock_base")]
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
@@ -224,6 +301,10 @@ impl Base for ProvingNode {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
+        if self.resend_token == Some(token) {
+            return self.resend_info(outbox);
+        }
+
         let log_ident = self.log_ident();
         if let Some(transition) = self
             .resource_prover
@@ -248,11 +329,14 @@ impl Base for ProvingNode {
     }
 
     fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} received connection failure from {:?}", self, pub_id);
+        let _ = self.resource_proofing_status.remove(&pub_id);
         RelocatedNotEstablished::handle_connect_failure(self, pub_id, outbox)
     }
 
     fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         debug!("{} Received LostPeer - {}", self, pub_id);
+        let _ = self.resource_proofing_status.remove(&pub_id);
 
         if self.dropped_peer(&pub_id, outbox) {
             Transition::Stay
@@ -293,6 +377,9 @@ impl Base for ProvingNode {
                     difficulty,
                     log_ident,
                 );
+                if let Some(status) = self.resource_proofing_status.get_mut(&pub_id) {
+                    *status = true;
+                }
             }
             ResourceProofResponseReceipt => {
                 if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
@@ -365,45 +452,7 @@ impl Relocated for ProvingNode {
     }
 
     fn process_connection(&mut self, pub_id: PublicId, _outbox: &mut EventBox) {
-        // We're not approved yet - we need to identify ourselves with our old and new IDs via
-        // `CandidateInfo`. Serialise the old and new `PublicId`s and sign this using the old key.
-        let msg = {
-            let old_and_new_pub_ids = (self.old_full_id.public_id(), self.full_id.public_id());
-            let mut to_sign = match serialisation::serialise(&old_and_new_pub_ids) {
-                Ok(result) => result,
-                Err(error) => {
-                    error!("Failed to serialise public IDs: {:?}", error);
-                    return;
-                }
-            };
-            let signature_using_old = self
-                .old_full_id
-                .signing_private_key()
-                .sign_detached(&to_sign);
-            // Append this signature onto the serialised IDs and sign that using the new key.
-            to_sign.extend_from_slice(&signature_using_old.into_bytes());
-            let signature_using_new = self.full_id.signing_private_key().sign_detached(&to_sign);
-            let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
-                *proxy_node_name
-            } else {
-                warn!("{} No proxy found, so unable to send CandidateInfo.", self);
-                return;
-            };
-            let new_client_auth = Authority::Client {
-                client_id: *self.full_id.public_id(),
-                proxy_node_name: proxy_node_name,
-            };
-
-            DirectMessage::CandidateInfo {
-                old_public_id: *self.old_full_id.public_id(),
-                new_public_id: *self.full_id.public_id(),
-                signature_using_old: signature_using_old,
-                signature_using_new: signature_using_new,
-                new_client_auth: new_client_auth,
-            }
-        };
-
-        self.send_direct_message(pub_id, msg);
+        self.send_candidate_info(pub_id);
     }
 
     fn is_peer_valid(&self, _: &PublicId) -> bool {
