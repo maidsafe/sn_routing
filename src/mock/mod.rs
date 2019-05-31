@@ -7,9 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 /// Mock version of Crust.
-#[cfg(feature = "mock_base")]
 pub mod crust;
 
 /// Mock version of Parsec.
 #[cfg(feature = "mock_parsec")]
-pub mod parsec;
+pub(crate) mod parsec;
+
+/// Mock version of Quick-P2P
+// TODO: remove this `allow(unused)`
+#[allow(unused)]
+pub(crate) mod quick_p2p;

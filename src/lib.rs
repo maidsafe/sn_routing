@@ -181,7 +181,6 @@ mod event_stream;
 mod id;
 mod message_filter;
 mod messages;
-mod mock;
 mod node;
 mod outbox;
 mod peer_manager;
@@ -198,6 +197,9 @@ mod types;
 mod utils;
 mod xor_name;
 
+/// Mocking utilities.
+#[cfg(feature = "mock_base")]
+pub mod mock;
 pub(crate) mod parsec;
 
 /// Reexports `crust::Config`

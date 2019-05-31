@@ -11,9 +11,11 @@ version = "0.37.0"
 edition = "2018"
 
 [dependencies]
+bytes = "~0.4.12"
 config_file_handler = "~0.11.0"
 crust = { git = "https://github.com/maidsafe/crust", rev = "028de4ea8" }
 fake_clock = "~0.3.0"
+fxhash = { version = "~0.2.1", optional = true }
 hex = "~0.2.0"
 hex_fmt = "~0.1.0"
 itertools = "~0.6.1"
@@ -38,7 +40,7 @@ libc = "~0.2.29"
 serde_json = "~1.0.8"
 
 [features]
-mock_base = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "parsec/malice-detection"]
+mock_base = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "parsec/malice-detection", "fxhash"]
 mock_parsec = ["mock_base"]
 mock_serialise = ["mock_base"]
 mock = ["mock_parsec", "mock_serialise"]
