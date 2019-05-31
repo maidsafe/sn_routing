@@ -24,6 +24,8 @@ use crate::routing_table::Authority;
 use crate::state_machine::{State, StateMachine};
 use crate::states::{self, BootstrappingPeer, TargetState};
 use crate::types::{MessageId, RoutingActionSender};
+#[cfg(feature = "mock_base")]
+use crate::utils::XorTargetInterval;
 use crate::xor_name::XorName;
 #[cfg(feature = "mock_base")]
 use crate::Chain;
@@ -621,7 +623,7 @@ impl Node {
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
-    pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
+    pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
         let _ = self
             .node_state_mut()
             .map(|state| state.set_next_relocation_interval(interval));

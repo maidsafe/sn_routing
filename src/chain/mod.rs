@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 // The `chain` submodule contains the `Chain` implementation, which we reexport here.
+mod candidate;
 #[allow(clippy::module_inception)]
 mod chain;
 mod neighbour_sigs;

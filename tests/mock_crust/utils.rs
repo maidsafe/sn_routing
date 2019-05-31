@@ -14,7 +14,8 @@ use routing::test_consts::CONNECTING_PEER_TIMEOUT_SECS;
 use routing::{verify_chain_invariant, Chain};
 use routing::{
     Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream, FullId,
-    ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, XorName, Xorable,
+    ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, XorName,
+    XorTargetInterval, Xorable,
 };
 use std::cell::RefCell;
 use std::cmp;
@@ -872,7 +873,7 @@ fn add_node_to_section<T: Rng>(
     nodes.iter_mut().for_each(|node| {
         node.inner.set_next_relocation_dst(Some(relocation_name));
         node.inner
-            .set_next_relocation_interval(Some((prefix.lower_bound(), prefix.upper_bound())));
+            .set_next_relocation_interval(Some(XorTargetInterval::new(prefix.range_inclusive())));
     });
 
     let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);

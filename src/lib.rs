@@ -260,6 +260,7 @@ pub use crate::routing_table::verify_network_invariant;
 pub use crate::routing_table::Error as RoutingTableError;
 pub use crate::routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};
 pub use crate::types::MessageId;
+pub use crate::utils::XorTargetInterval;
 pub use crate::xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
 
 type Service = crust::Service<PublicId>;

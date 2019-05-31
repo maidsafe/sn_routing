@@ -20,6 +20,7 @@ use crate::mock_crust::crust::Config;
 use crate::mock_crust::{self, Network};
 use crate::outbox::{EventBox, EventBuf};
 use crate::state_machine::{State, StateMachine};
+use crate::utils::XorTargetInterval;
 use crate::xor_name::XOR_NAME_LEN;
 use utils::LogIdent;
 
@@ -142,7 +143,7 @@ impl ElderUnderTest {
         };
 
         unwrap!(self.machine.current_mut().elder_state_mut())
-            .set_next_relocation_interval(Some((name, name)));
+            .set_next_relocation_interval(Some(XorTargetInterval(name, name)));
     }
 
     fn accumulate_expect_candidate(&mut self, payload_expect: ExpectCandidatePayload) {

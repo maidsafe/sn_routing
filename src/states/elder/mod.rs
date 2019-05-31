@@ -39,7 +39,7 @@ use crate::{
     time::{Duration, Instant},
     timer::Timer,
     types::MessageId,
-    utils::{self, DisplayDuration},
+    utils::{self, DisplayDuration, XorTargetInterval},
     xor_name::XorName,
     Service,
 };
@@ -108,7 +108,7 @@ pub struct Elder {
     /// relocation request received by this node.
     next_relocation_dst: Option<XorName>,
     /// Interval used for relocation in mock crust tests.
-    next_relocation_interval: Option<(XorName, XorName)>,
+    next_relocation_interval: Option<XorTargetInterval>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: u64,
     /// Limits the rate at which clients can pass messages through this node when it acts as their
@@ -405,6 +405,7 @@ impl Elder {
             completed_events,
         } = self.chain.finalise_prefix_change()?;
         self.gen_pfx_info = gen_pfx_info;
+        self.chain.reset_candidate();
         self.peer_mgr.reset_candidate();
         self.init_parsec(); // We don't reset the chain on prefix change.
 
@@ -1060,6 +1061,7 @@ impl Elder {
             "{} Handling CandidateInfo from {}->{}.",
             self, old_pub_id, new_pub_id
         );
+
         if !self.is_candidate_info_valid(
             old_pub_id,
             new_pub_id,
@@ -1097,10 +1099,25 @@ impl Elder {
         } else {
             rand::thread_rng().gen_iter().take(10).collect()
         };
+
+        let target_interval =
+            if let Some(interval) = self.chain.matching_candidate_target_interval(old_pub_id) {
+                interval
+            } else {
+                debug!(
+                    "{} Ignore CandidateInfo: we are not waiting for candidate {}->{}.",
+                    self, old_pub_id, new_pub_id
+                );
+                return;
+            };
+
         match self.peer_mgr.handle_candidate_info(
-            old_pub_id,
-            new_pub_id,
-            new_client_auth,
+            OnlinePayload {
+                old_public_id: *old_pub_id,
+                new_public_id: *new_pub_id,
+                client_auth: *new_client_auth,
+            },
+            target_interval,
             target_size,
             difficulty,
             seed.clone(),
@@ -1276,16 +1293,18 @@ impl Elder {
     fn accept_candidate_with_interval(
         &mut self,
         vote: &ExpectCandidatePayload,
-    ) -> Option<(XorName, XorName)> {
-        if self.peer_mgr.has_resource_proof_candidate() {
+    ) -> Option<XorTargetInterval> {
+        if self.chain.has_resource_proof_candidate() {
             return None;
         }
 
         let target_interval = self.next_relocation_interval.take().unwrap_or_else(|| {
             utils::calculate_relocation_interval(&self.our_prefix(), &self.chain.our_section())
         });
-        self.peer_mgr
-            .accept_as_candidate(vote.old_public_id, target_interval);
+
+        self.chain
+            .accept_as_candidate(vote.old_public_id, target_interval.clone());
+        self.peer_mgr.accept_as_candidate();
 
         Some(target_interval)
     }
@@ -1294,7 +1313,7 @@ impl Elder {
     fn send_relocate_response(
         &mut self,
         vote: ExpectCandidatePayload,
-        target_interval: (XorName, XorName),
+        target_interval: XorTargetInterval,
     ) -> Result<(), RoutingError> {
         let own_section = {
             let our_info = self.chain.our_info();
@@ -1756,8 +1775,10 @@ impl Elder {
     }
 
     fn remove_expired_peers(&mut self) {
-        if let Some(expired_id) = self.peer_mgr.expired_candidate_old_public_id_once() {
-            self.vote_for_event(NetworkEvent::PurgeCandidate(expired_id));
+        if self.peer_mgr.expired_candidate_once() {
+            if let Some(expired_id) = self.chain.candidate_old_public_id().cloned() {
+                self.vote_for_event(NetworkEvent::PurgeCandidate(expired_id));
+            }
         }
 
         for pub_id in self.peer_mgr.remove_expired_peers() {
@@ -1840,6 +1861,7 @@ impl Base for Elder {
             outbox.send_event(Event::TimerTicked);
         } else if self.candidate_status_token == token {
             self.candidate_status_token = self.timer.schedule(CANDIDATE_STATUS_INTERVAL);
+            self.chain.show_candidate_status(&self.log_ident());
             self.peer_mgr.show_candidate_status(&self.log_ident());
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
@@ -2156,7 +2178,7 @@ impl Elder {
         self.next_relocation_dst = dst;
     }
 
-    pub fn set_next_relocation_interval(&mut self, interval: Option<(XorName, XorName)>) {
+    pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
         self.next_relocation_interval = interval;
     }
 
@@ -2169,7 +2191,7 @@ impl Elder {
     }
 
     pub fn has_resource_proof_candidate(&self) -> bool {
-        self.peer_mgr.has_resource_proof_candidate()
+        self.chain.has_resource_proof_candidate()
     }
 }
 
@@ -2349,7 +2371,8 @@ impl Approved for Elder {
     }
 
     fn handle_online_event(&mut self, online_payload: OnlinePayload) -> Result<(), RoutingError> {
-        if self.peer_mgr.handle_candidate_online_event(&online_payload) {
+        if self.chain.try_accept_candidate_as_member(&online_payload) {
+            self.peer_mgr.reset_candidate();
             self.vote_for_event(NetworkEvent::AddElder(
                 online_payload.new_public_id,
                 online_payload.client_auth,
@@ -2391,8 +2414,14 @@ impl Approved for Elder {
         &mut self,
         old_public_id: PublicId,
     ) -> Result<(), RoutingError> {
-        self.peer_mgr
-            .reset_candidate_with_old_public_id(&old_public_id);
+        if self
+            .chain
+            .matching_candidate_target_interval(&old_public_id)
+            .is_some()
+        {
+            self.chain.reset_candidate();
+            self.peer_mgr.reset_candidate();
+        }
         Ok(())
     }
 
@@ -2421,8 +2450,7 @@ impl Approved for Elder {
         self.update_peer_states(outbox);
 
         if self_sec_update {
-            self.peer_mgr
-                .reset_candidate_if_member_of(sec_info.members());
+            self.chain.reset_candidate_if_member_of(sec_info.members());
             self.send_neighbour_infos();
         } else {
             // Vote for neighbour update if we haven't done so already.

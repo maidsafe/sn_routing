@@ -12,6 +12,7 @@ use std::cmp::{self, Ordering};
 use std::fmt::Result as FmtResult;
 use std::fmt::{Binary, Debug, Formatter};
 use std::hash::{Hash, Hasher};
+use std::ops::RangeInclusive;
 #[cfg(test)]
 use std::str::FromStr;
 
@@ -161,6 +162,11 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Returns the largest name matching the prefix
     pub fn upper_bound(&self) -> T {
         self.name.set_remaining(self.bit_count(), true)
+    }
+
+    /// Inclusive range from lower_bound to upper_bound
+    pub fn range_inclusive(&self) -> RangeInclusive<T> {
+        RangeInclusive::new(self.lower_bound(), self.upper_bound())
     }
 
     /// Returns whether the namespace defined by `self` is covered by prefixes in the `prefixes`

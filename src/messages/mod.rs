@@ -24,6 +24,7 @@ use crate::routing_table::{Prefix, Xorable};
 use crate::sha3::Digest256;
 use crate::types::MessageId;
 use crate::xor_name::XorName;
+use crate::XorTargetInterval;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
@@ -607,7 +608,7 @@ pub enum MessageContent {
     /// Reply with the address range into which the joining node should move.
     RelocateResponse {
         /// The interval into which the joining node should join.
-        target_interval: (XorName, XorName),
+        target_interval: XorTargetInterval,
         /// The section that the joining node shall connect to.
         section: (Prefix<XorName>, BTreeSet<PublicId>),
         /// The message's unique identifier.

@@ -13,6 +13,7 @@ use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
     iter,
+    ops::RangeInclusive,
     time::Duration,
 };
 
@@ -59,6 +60,29 @@ impl Display for LogIdent {
     }
 }
 
+/// Target Xor interval
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct XorTargetInterval(pub XorName, pub XorName);
+
+impl XorTargetInterval {
+    /// Create a XorTargetInterval from the equivalent RangeInclusive
+    pub fn new(range: RangeInclusive<XorName>) -> Self {
+        let (start, end) = range.into_inner();
+        Self(start, end)
+    }
+
+    /// check if the inclusive range contains the value
+    pub fn contains(&self, value: &XorName) -> bool {
+        RangeInclusive::new(self.0, self.1).contains(value)
+    }
+}
+
+impl Into<RangeInclusive<XorName>> for XorTargetInterval {
+    fn into(self) -> RangeInclusive<XorName> {
+        RangeInclusive::new(self.0, self.1)
+    }
+}
+
 /// Compute the target destination for a joining node with the given name.
 ///
 /// This is used by each member of a joining node's section to choose a location for the node to
@@ -88,7 +112,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
 pub fn calculate_relocation_interval(
     prefix: &Prefix<XorName>,
     section: &BTreeSet<XorName>,
-) -> (XorName, XorName) {
+) -> XorTargetInterval {
     let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());
 
     let (start, end) = iter::once(&lower_bound)
@@ -104,7 +128,7 @@ pub fn calculate_relocation_interval(
 
     let third_of_distance = (*end - *start) / 3;
     let new_end = *end - third_of_distance;
-    (new_end - third_of_distance, new_end)
+    XorTargetInterval(new_end - third_of_distance, new_end)
 }
 
 #[cfg(any(test, feature = "mock_base"))]

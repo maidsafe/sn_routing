@@ -17,6 +17,7 @@ use safe_crypto::{
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Display, Formatter};
+use std::ops::RangeInclusive;
 
 /// Network identity component containing name, and public and private keys.
 // FIXME Remove the Clone-ability
@@ -54,11 +55,11 @@ impl FullId {
 
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
     /// FIXME(Fraser) - time limit this function? Document behaviour
-    pub fn within_range(start: &XorName, end: &XorName) -> FullId {
+    pub fn within_range(range: &RangeInclusive<XorName>) -> FullId {
         let mut sign_keys = gen_sign_keypair();
         loop {
             let name = PublicId::name_from_key(&sign_keys.0);
-            if name >= *start && name <= *end {
+            if range.contains(&name) {
                 let encrypt_keys = gen_encrypt_keypair();
                 let full_id = FullId::with_keys(encrypt_keys, sign_keys);
                 return full_id;

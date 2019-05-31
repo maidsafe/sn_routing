@@ -27,7 +27,9 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::mock_crust::{Endpoint, Network};
-use routing::{test_consts, BootstrapConfig, Event, EventStream, Prefix, PublicId, XorName};
+use routing::{
+    test_consts, BootstrapConfig, Event, EventStream, Prefix, PublicId, XorName, XorTargetInterval,
+};
 
 pub const MIN_SECTION_SIZE: usize = 3;
 
@@ -249,9 +251,11 @@ fn simultaneous_joining_nodes(
         // Set the specified relocation interval on the nodes of the given prefixes
         let relocation_interval = setup
             .dst_relocation_interval_prefix
-            .map(|prefix| (prefix.lower_bound(), prefix.upper_bound()));
-        nodes_with_prefix_mut(&mut nodes, &setup.dst_section_prefix)
-            .for_each(|node| node.inner.set_next_relocation_interval(relocation_interval));
+            .map(|prefix| XorTargetInterval::new(prefix.range_inclusive()));
+        nodes_with_prefix_mut(&mut nodes, &setup.dst_section_prefix).for_each(|node| {
+            node.inner
+                .set_next_relocation_interval(relocation_interval.clone())
+        });
 
         // Create nodes and find proxies from the given prefixes
         let node_to_add = {
