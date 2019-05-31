@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 pub use super::support::Config;
-use super::support::{Endpoint, Network, ServiceHandle, ServiceImpl};
-use crate::CrustBytes;
+use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
+use crate::{id::PublicId, CrustBytes};
 use maidsafe_utilities::event_sender;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -31,32 +31,20 @@ pub fn read_config_file() -> Result<Config, CrustError> {
 pub struct Service<UID: Uid>(Rc<RefCell<ServiceImpl<UID>>>, Network<UID>);
 
 impl<UID: Uid> Service<UID> {
-    /// Create new mock `Service` using the make_current/get_current mechanism to get the associated
-    /// `ServiceHandle`.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(
-        handle: ServiceHandle<UID>,
-        event_sender: CrustEventSender<UID>,
-        uid: UID,
-    ) -> Result<Self, CrustError> {
-        Self::with_handle(&handle, event_sender, uid)
-    }
-
-    /// Create a new mock `Service` using the make_current/get_current mechanism to get the
-    /// associated `ServiceHandle`. Ignores configuration.
-    pub fn with_config(
-        handle: ServiceHandle<UID>,
-        event_sender: CrustEventSender<UID>,
-        _config: Config,
-        uid: UID,
-    ) -> Result<Self, CrustError> {
-        Self::with_handle(&handle, event_sender, uid)
-    }
-
     /// Create new mock `Service` by explicitly passing the mock device to associate with.
     pub fn with_handle(
         handle: &ServiceHandle<UID>,
         event_sender: CrustEventSender<UID>,
+        uid: UID,
+    ) -> Result<Self, CrustError> {
+        Self::with_handle_and_config(handle, event_sender, Config::default(), uid)
+    }
+
+    /// Create new mock `Service` by explicitly passing the mock device to associate with.
+    pub fn with_handle_and_config(
+        handle: &ServiceHandle<UID>,
+        event_sender: CrustEventSender<UID>,
+        _config: Config,
         uid: UID,
     ) -> Result<Self, CrustError> {
         let network = handle.0.borrow().network.clone();
@@ -180,6 +168,28 @@ impl<UID: Uid> Service<UID> {
 
     fn lock(&self) -> RefMut<ServiceImpl<UID>> {
         self.0.borrow_mut()
+    }
+}
+
+impl Service<PublicId> {
+    /// Create new mock `Service` using the make_current/get_current mechanism to get the associated
+    /// `ServiceHandle`.
+    pub fn new(
+        event_sender: CrustEventSender<PublicId>,
+        uid: PublicId,
+    ) -> Result<Self, CrustError> {
+        Self::with_config(event_sender, Config::default(), uid)
+    }
+
+    /// Create a new mock `Service` using the make_current/get_current mechanism to get the
+    /// associated `ServiceHandle`. Ignores configuration.
+    pub fn with_config(
+        event_sender: CrustEventSender<PublicId>,
+        config: Config,
+        uid: PublicId,
+    ) -> Result<Self, CrustError> {
+        let handle = support::take_current();
+        Self::with_handle_and_config(&handle, event_sender, config, uid)
     }
 }
 

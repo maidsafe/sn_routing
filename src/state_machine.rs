@@ -20,9 +20,7 @@ use crate::{
     BootstrapConfig, {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE},
 };
 #[cfg(feature = "mock_base")]
-use crate::{
-    mock::crust as mock_crust, routing_table::Authority, states::common::Bootstrapped, Chain,
-};
+use crate::{routing_table::Authority, states::common::Bootstrapped, Chain};
 use log::LogLevel;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use std::{
@@ -310,13 +308,7 @@ impl StateMachine {
         );
 
         let res = match bootstrap_config {
-            #[cfg(feature = "mock_base")]
-            Some(c) => Service::with_config(mock_crust::take_current(), crust_sender, c, pub_id),
-            #[cfg(not(feature = "mock_base"))]
-            Some(c) => Service::with_config(crust_sender, c, pub_id),
-            #[cfg(feature = "mock_base")]
-            None => Service::new(mock_crust::take_current(), crust_sender, pub_id),
-            #[cfg(not(feature = "mock_base"))]
+            Some(config) => Service::with_config(crust_sender, config, pub_id),
             None => Service::new(crust_sender, pub_id),
         };
 
