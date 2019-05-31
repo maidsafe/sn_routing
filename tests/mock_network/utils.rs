@@ -381,15 +381,17 @@ pub fn poll_all_until(
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     let dummy = |_nodes: &[TestNode]| false;
-    poll_and_resend_until(nodes, clients, &dummy)
+    poll_and_resend_until(nodes, clients, &dummy, None)
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 /// should_stop: can be used for an early return from poll_and_resend
+/// extra_advance: this is so far only used for the ignoring candidate_info test.
 pub fn poll_and_resend_until(
     nodes: &mut [TestNode],
     clients: &mut [TestClient],
     should_stop: &Fn(&[TestNode]) -> bool,
+    mut extra_advance: Option<u64>,
 ) {
     let mut fired_connecting_peer_timeout = false;
     for _ in 0..MAX_POLL_CALLS {
@@ -407,6 +409,9 @@ pub fn poll_and_resend_until(
         {
             // Advance time for next route/gossip iter.
             FakeClock::advance_time(1001);
+        } else if let Some(step) = extra_advance {
+            FakeClock::advance_time(step * 1000 + 1);
+            extra_advance = None;
         } else if !fired_connecting_peer_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
             FakeClock::advance_time(CONNECTING_PEER_TIMEOUT_SECS * 1000 + 1);

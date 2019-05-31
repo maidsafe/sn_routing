@@ -650,6 +650,13 @@ impl Node {
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
     }
+
+    /// Sets a counter to be used ignoring certain number of `CandidateInfo`.
+    pub fn set_ignore_candidate_info_counter(&mut self, counter: u8) {
+        let _ = self
+            .node_state_mut()
+            .map(|state| state.set_ignore_candidate_info_counter(counter));
+    }
 }
 
 #[cfg(feature = "mock_base")]
