@@ -386,8 +386,11 @@ mod tests {
     use super::*;
     use crate::cache::NullCache;
     use crate::id::FullId;
-    use crate::mock_crust::crust::{Config, Service};
-    use crate::mock_crust::{self, Network};
+    use crate::mock::crust::{
+        self as mock_crust,
+        crust::{Config, Service},
+        Network,
+    };
     use crate::outbox::EventBuf;
     use crate::state_machine::StateMachine;
     use crate::states::common::from_crust_bytes;

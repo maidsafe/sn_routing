@@ -965,8 +965,10 @@ impl PeerManager {
 mod tests {
     use super::*;
     use crate::id::FullId;
-    use crate::mock_crust::crust::{PrivConnectionInfo, PubConnectionInfo};
-    use crate::mock_crust::Endpoint;
+    use crate::mock::crust::{
+        crust::{PrivConnectionInfo, PubConnectionInfo},
+        Endpoint,
+    };
     use crate::routing_table::Authority;
     use crate::types::MessageId;
     use crate::xor_name::{XorName, XOR_NAME_LEN};

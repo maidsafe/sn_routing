@@ -1,4 +1,4 @@
-// Copyright 2018 MaidSafe.net limited.
+// Copyright 2019 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -6,15 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/// Mock crust main module. This module provides mock version of all public
-/// types and methods of crust.
+/// Mock version of Crust.
 pub mod crust;
-mod support;
 
-#[cfg(test)]
-#[cfg(not(feature = "mock_serialise"))]
-mod tests;
+/// Mock version of Parsec.
+#[cfg(feature = "mock_parsec")]
+pub(crate) mod parsec;
 
-pub use self::support::{
-    make_current, take_current, to_socket_addr, with_current, Endpoint, Network, ServiceHandle,
-};
+/// Mock version of Quick-P2P
+// TODO: remove this `allow(unused)`
+#[allow(unused)]
+pub(crate) mod quick_p2p;

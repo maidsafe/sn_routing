@@ -181,8 +181,6 @@ mod event_stream;
 mod id;
 mod message_filter;
 mod messages;
-#[cfg(feature = "mock_parsec")]
-mod mock_parsec;
 mod node;
 mod outbox;
 mod peer_manager;
@@ -199,14 +197,13 @@ mod types;
 mod utils;
 mod xor_name;
 
+/// Mocking utilities.
+#[cfg(feature = "mock_base")]
+pub mod mock;
 pub(crate) mod parsec;
 
 /// Reexports `crust::Config`
 pub type BootstrapConfig = crust::Config;
-
-/// Mock crust
-#[cfg(feature = "mock_base")]
-pub mod mock_crust;
 
 /// SHA-3 type alias.
 pub mod sha3;
@@ -248,8 +245,11 @@ pub use crate::event::Event;
 pub use crate::event_stream::EventStream;
 pub use crate::id::{FullId, PublicId};
 pub use crate::messages::{AccountInfo, Request, Response};
+/// Mock crust
 #[cfg(feature = "mock_base")]
-pub use crate::mock_crust::crust;
+pub use crate::mock::crust as mock_crust;
+#[cfg(feature = "mock_base")]
+pub use crate::mock::crust::crust;
 pub use crate::node::{Node, NodeBuilder};
 #[cfg(feature = "mock_base")]
 pub use crate::peer_manager::test_consts;

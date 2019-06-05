@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 #[cfg(feature = "mock_parsec")]
-use crate::mock_parsec as inner;
+use crate::mock::parsec as inner;
 use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
@@ -20,7 +20,7 @@ use parsec as inner;
 use std::collections::{btree_map::Entry, BTreeMap};
 
 #[cfg(feature = "mock_parsec")]
-pub use crate::mock_parsec::{
+pub use crate::mock::parsec::{
     init_mock, ConsensusMode, NetworkEvent, Observation, Proof, PublicId, SecretId,
 };
 #[cfg(not(feature = "mock_parsec"))]
