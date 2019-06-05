@@ -227,41 +227,39 @@ pub const MIN_SECTION_SIZE: usize = 3;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
-pub use crate::cache::{Cache, NullCache};
-#[cfg(feature = "mock_base")]
-pub use crate::chain::verify_chain_invariant;
-pub use crate::chain::Chain;
-pub use crate::client::Client;
-pub use crate::client_error::{ClientError, EntryError};
-pub use crate::common_types::AccountPacket;
-pub use crate::config_handler::{Config, DevConfig};
-pub use crate::data::{
-    Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
-    MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-    NO_OWNER_PUB_KEY,
-};
-pub use crate::error::{InterfaceError, RoutingError};
-pub use crate::event::Event;
-pub use crate::event_stream::EventStream;
-pub use crate::id::{FullId, PublicId};
-pub use crate::messages::{AccountInfo, Request, Response};
-/// Mock crust
-#[cfg(feature = "mock_base")]
-pub use crate::mock::crust as mock_crust;
-#[cfg(feature = "mock_base")]
-pub use crate::mock::crust::crust;
-pub use crate::node::{Node, NodeBuilder};
-#[cfg(feature = "mock_base")]
-pub use crate::peer_manager::test_consts;
-#[cfg(feature = "mock_base")]
-pub use crate::rate_limiter::rate_limiter_consts;
 #[cfg(any(test, feature = "mock_base"))]
 pub use crate::routing_table::verify_network_invariant;
-pub use crate::routing_table::Error as RoutingTableError;
-pub use crate::routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable};
-pub use crate::types::MessageId;
-pub use crate::utils::XorTargetInterval;
-pub use crate::xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN};
+pub use crate::{
+    cache::{Cache, NullCache},
+    chain::Chain,
+    client::Client,
+    client_error::{ClientError, EntryError},
+    common_types::AccountPacket,
+    config_handler::{Config, DevConfig},
+    data::{
+        Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
+        MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
+        NO_OWNER_PUB_KEY,
+    },
+    error::{InterfaceError, RoutingError},
+    event::Event,
+    event_stream::EventStream,
+    id::{FullId, PublicId},
+    messages::{AccountInfo, Request, Response},
+    node::{Node, NodeBuilder},
+    routing_table::Error as RoutingTableError,
+    routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable},
+    types::MessageId,
+    utils::XorTargetInterval,
+    xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN},
+};
+#[cfg(feature = "mock_base")]
+pub use crate::{
+    chain::verify_chain_invariant,
+    mock::crust::{self as mock_crust, crust},
+    peer_manager::test_consts,
+    rate_limiter::rate_limiter_consts,
+};
 
 type Service = crust::Service<PublicId>;
 use crate::crust::Event as CrustEvent;
