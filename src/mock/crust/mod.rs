@@ -8,6 +8,7 @@
 
 /// Mock crust main module. This module provides mock version of all public
 /// types and methods of crust.
+#[allow(clippy::module_inception)]
 pub mod crust;
 mod support;
 

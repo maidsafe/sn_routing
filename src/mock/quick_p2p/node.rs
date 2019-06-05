@@ -51,7 +51,12 @@ impl Node {
     }
 
     pub fn bootstrap(&mut self) {
-        if self.peers.values().any(ConnectionType::is_bootstrap) {
+        if self
+            .peers
+            .values()
+            .cloned()
+            .any(ConnectionType::is_bootstrap)
+        {
             return;
         }
 
@@ -116,7 +121,12 @@ impl Node {
                 }
             }
             Packet::BootstrapSuccess => {
-                if !self.peers.values().any(ConnectionType::is_bootstrap) {
+                if !self
+                    .peers
+                    .values()
+                    .cloned()
+                    .any(ConnectionType::is_bootstrap)
+                {
                     let _ = self.peers.insert(src, ConnectionType::Bootstrap);
                     self.pending_bootstraps.clear();
 
@@ -130,7 +140,12 @@ impl Node {
                 }
             }
             Packet::BootstrapFailure => {
-                if !self.peers.values().any(ConnectionType::is_bootstrap) {
+                if !self
+                    .peers
+                    .values()
+                    .cloned()
+                    .any(ConnectionType::is_bootstrap)
+                {
                     let _ = self.pending_bootstraps.remove(&src);
 
                     if self.pending_bootstraps.is_empty() {
@@ -268,8 +283,8 @@ enum ConnectionType {
 }
 
 impl ConnectionType {
-    fn is_bootstrap(&self) -> bool {
-        match *self {
+    fn is_bootstrap(self) -> bool {
+        match self {
             ConnectionType::Normal => false,
             ConnectionType::Bootstrap => true,
         }

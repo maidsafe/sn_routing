@@ -58,10 +58,10 @@ impl Network {
             .nodes
             .keys()
             .filter_map(|addr| match addr {
-                SocketAddr::V4(addr) => Some(addr.ip()),
+                SocketAddr::V4(addr) => Some(*addr.ip()),
                 SocketAddr::V6(_) => None,
             })
-            .chain(&inner.used_ips)
+            .chain(inner.used_ips.iter().cloned())
             .max()
             .map(next_ip)
             .unwrap_or(IP_BASE);
@@ -246,13 +246,13 @@ pub(super) struct NodeDetails {
     pub addr: SocketAddr,
 }
 
-fn next_ip(ip_addr: &Ipv4Addr) -> Ipv4Addr {
+fn next_ip(ip_addr: Ipv4Addr) -> Ipv4Addr {
     Ipv4Addr::from(u32_from_be_bytes(ip_addr.octets()) + 1)
 }
 
 fn u32_from_be_bytes(bytes: [u8; 4]) -> u32 {
-    ((bytes[0] as u32) << 24)
-        + ((bytes[1] as u32) << 16)
-        + ((bytes[2] as u32) << 8)
-        + ((bytes[3] as u32) << 0)
+    (u32::from(bytes[0]) << 24)
+        | (u32::from(bytes[1]) << 16)
+        | (u32::from(bytes[2]) << 8)
+        | u32::from(bytes[3])
 }
