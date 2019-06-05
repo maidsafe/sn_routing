@@ -42,7 +42,7 @@ const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct AdultDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
-    pub crust_service: Service,
+    pub network_service: Service,
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
@@ -57,7 +57,7 @@ pub struct Adult {
     ack_mgr: AckManager,
     cache: Box<Cache>,
     chain: Chain,
-    crust_service: Service,
+    network_service: Service,
     event_backlog: Vec<Event>,
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
@@ -89,7 +89,7 @@ impl Adult {
             ack_mgr: details.ack_mgr,
             cache: details.cache,
             chain,
-            crust_service: details.crust_service,
+            network_service: details.network_service,
             event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
@@ -125,7 +125,7 @@ impl Adult {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
             chain: self.chain,
-            crust_service: self.crust_service,
+            network_service: self.network_service,
             event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
@@ -189,8 +189,8 @@ impl Adult {
 }
 
 impl Base for Adult {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
+    fn network_service(&self) -> &Service {
+        &self.network_service
     }
 
     fn full_id(&self) -> &FullId {

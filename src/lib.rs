@@ -269,12 +269,12 @@ type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
 
 // Format that can be sent between peers
 #[cfg(not(feature = "mock_serialise"))]
-type CrustBytes = Vec<u8>;
+type NetworkBytes = Vec<u8>;
 
 #[cfg(feature = "mock_serialise")]
 use crate::messages::Message;
 #[cfg(feature = "mock_serialise")]
-type CrustBytes = Box<Message>;
+type NetworkBytes = Box<Message>;
 
 #[cfg(test)]
 mod tests {

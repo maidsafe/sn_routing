@@ -395,7 +395,7 @@ fn new_elder_state(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
     min_section_size: usize,
-    crust_service: Service,
+    network_service: Service,
     timer: Timer,
     outbox: &mut EventBox,
 ) -> State {
@@ -410,7 +410,7 @@ fn new_elder_state(
         ack_mgr: AckManager::new(),
         cache,
         chain,
-        crust_service,
+        network_service,
         event_backlog: Vec::new(),
         full_id: full_id.clone(),
         gen_pfx_info: gen_pfx_info.clone(),
@@ -443,12 +443,12 @@ fn make_state_machine(
     let handle1 = network.new_service_handle(Some(config.clone()), None);
     mock_crust::make_current(&handle1, || {
         StateMachine::new(
-            move |_action_sender, crust_service, timer, outbox2| {
+            move |_action_sender, network_service, timer, outbox2| {
                 new_elder_state(
                     full_id,
                     gen_pfx_info,
                     min_section_size,
-                    crust_service,
+                    network_service,
                     timer,
                     outbox2,
                 )

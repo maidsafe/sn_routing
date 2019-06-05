@@ -42,7 +42,7 @@ const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURAT
 pub struct RelocatingNodeDetails {
     pub action_sender: RoutingActionSender,
     pub cache: Box<Cache>,
-    pub crust_service: Service,
+    pub network_service: Service,
     pub full_id: FullId,
     pub min_section_size: usize,
     pub proxy_pub_id: PublicId,
@@ -52,7 +52,7 @@ pub struct RelocatingNodeDetails {
 pub struct RelocatingNode {
     action_sender: RoutingActionSender,
     ack_mgr: AckManager,
-    crust_service: Service,
+    network_service: Service,
     full_id: FullId,
     /// Only held here to be passed eventually to the `Node` state.
     cache: Box<Cache>,
@@ -71,7 +71,7 @@ impl RelocatingNode {
         let mut node = Self {
             action_sender: details.action_sender,
             ack_mgr: AckManager::new(),
-            crust_service: details.crust_service,
+            network_service: details.network_service,
             full_id: details.full_id,
             cache: details.cache,
             min_section_size: details.min_section_size,
@@ -102,7 +102,7 @@ impl RelocatingNode {
         outbox: &mut EventBox,
     ) -> Result<State, RoutingError> {
         let service = Self::start_new_crust_service(
-            self.crust_service,
+            self.network_service,
             *new_full_id.public_id(),
             crust_rx,
             crust_sender,
@@ -140,12 +140,12 @@ impl RelocatingNode {
         drop(old_crust_service);
         while let Ok(_crust_event) = crust_rx.try_recv() {}
 
-        let mut crust_service = match Service::new(crust_sender, pub_id) {
+        let mut network_service = match Service::new(crust_sender, pub_id) {
             Ok(service) => service,
             Err(error) => panic!("Unable to start crust::Service {:?}", error),
         };
-        crust_service.start_service_discovery();
-        crust_service
+        network_service.start_service_discovery();
+        network_service
     }
 
     #[cfg(feature = "mock_base")]
@@ -239,8 +239,8 @@ impl RelocatingNode {
 }
 
 impl Base for RelocatingNode {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
+    fn network_service(&self) -> &Service {
+        &self.network_service
     }
 
     fn full_id(&self) -> &FullId {

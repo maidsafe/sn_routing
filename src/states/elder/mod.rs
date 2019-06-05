@@ -78,7 +78,7 @@ pub struct ElderDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub chain: Chain,
-    pub crust_service: Service,
+    pub network_service: Service,
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
@@ -92,7 +92,7 @@ pub struct ElderDetails {
 pub struct Elder {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
-    crust_service: Service,
+    network_service: Service,
     full_id: FullId,
     is_first_node: bool,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
@@ -141,7 +141,7 @@ pub struct Elder {
 impl Elder {
     pub fn first(
         cache: Box<Cache>,
-        crust_service: Service,
+        network_service: Service,
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
@@ -161,7 +161,7 @@ impl Elder {
             ack_mgr: AckManager::new(),
             cache,
             chain,
-            crust_service,
+            network_service,
             event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
@@ -174,7 +174,7 @@ impl Elder {
 
         let mut node = Self::new(details, true);
 
-        match node.crust_service.start_listening_tcp() {
+        match node.network_service.start_listening_tcp() {
             Ok(()) => {
                 debug!("{} - State changed to Node.", node);
                 info!("{} - Started a new network as a seed node.", node);
@@ -212,7 +212,7 @@ impl Elder {
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 USER_MSG_CACHE_EXPIRY_DURATION,
             ),
-            crust_service: details.crust_service,
+            network_service: details.network_service,
             full_id: details.full_id.clone(),
             is_first_node,
             msg_queue: details.msg_backlog.into_iter().collect(),
@@ -299,10 +299,10 @@ impl Elder {
         let _ = self.handle_section_info_event(sec_info, old_pfx, outbox)?;
 
         // Allow other peers to bootstrap via us.
-        if let Err(err) = self.crust_service.set_accept_bootstrap(true) {
+        if let Err(err) = self.network_service.set_accept_bootstrap(true) {
             warn!("{} Unable to accept bootstrap connections. {:?}", self, err);
         }
-        self.crust_service.set_service_discovery_listen(true);
+        self.network_service.set_service_discovery_listen(true);
 
         Ok(())
     }
@@ -311,8 +311,8 @@ impl Elder {
     fn init_first_node(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
         outbox.send_event(Event::Connected);
 
-        self.crust_service.set_accept_bootstrap(true)?;
-        self.crust_service.set_service_discovery_listen(true);
+        self.network_service.set_accept_bootstrap(true)?;
+        self.network_service.set_service_discovery_listen(true);
 
         Ok(())
     }
@@ -1023,7 +1023,7 @@ impl Elder {
 
         if peer_kind == CrustUser::Client {
             let ip = self
-                .crust_service
+                .network_service
                 .get_peer_ip_addr(&pub_id)
                 .map_err(|err| {
                     debug!(
@@ -1125,7 +1125,7 @@ impl Elder {
         }
 
         let (difficulty, target_size) = if self.disable_resource_proof
-            || self.crust_service.is_peer_hard_coded(new_pub_id)
+            || self.network_service.is_peer_hard_coded(new_pub_id)
             || self.peer_mgr.is_or_was_joining_node(new_pub_id)
         {
             (0, 1)
@@ -1572,7 +1572,7 @@ impl Elder {
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
-        if !self.crust_service().is_connected(target) {
+        if !self.network_service().is_connected(target) {
             trace!(
                 "{} Not connected to {:?}. Dropping peer and message: {:?}",
                 self,
@@ -1842,7 +1842,7 @@ impl Elder {
     // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
     // handle malicious nodes more fully.
     fn ban_and_disconnect_peer(&mut self, pub_id: &PublicId) {
-        if let Ok(ip_addr) = self.crust_service.get_peer_ip_addr(pub_id) {
+        if let Ok(ip_addr) = self.network_service.get_peer_ip_addr(pub_id) {
             let _ = self.banned_client_ips.insert(ip_addr, ());
             debug!("{} Banned client {:?} on IP {}", self, pub_id, ip_addr);
         } else {
@@ -1854,8 +1854,8 @@ impl Elder {
 }
 
 impl Base for Elder {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
+    fn network_service(&self) -> &Service {
+        &self.network_service
     }
 
     fn full_id(&self) -> &FullId {
@@ -1935,7 +1935,7 @@ impl Base for Elder {
             peer_kind
         );
 
-        let ip = if let Ok(ip) = self.crust_service.get_peer_ip_addr(&pub_id) {
+        let ip = if let Ok(ip) = self.network_service.get_peer_ip_addr(&pub_id) {
             ip
         } else {
             debug!(

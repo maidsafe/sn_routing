@@ -48,7 +48,7 @@ const RESEND_TIMEOUT: Duration = Duration::from_secs(20);
 pub struct ProvingNodeDetails {
     pub action_sender: RoutingActionSender,
     pub cache: Box<Cache>,
-    pub crust_service: Service,
+    pub network_service: Service,
     pub full_id: FullId,
     pub min_section_size: usize,
     pub old_full_id: FullId,
@@ -60,7 +60,7 @@ pub struct ProvingNodeDetails {
 pub struct ProvingNode {
     ack_mgr: AckManager,
     cache: Box<Cache>,
-    crust_service: Service,
+    network_service: Service,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
     event_backlog: Vec<Event>,
@@ -97,7 +97,7 @@ impl ProvingNode {
         let mut node = Self {
             ack_mgr: AckManager::new(),
             cache: details.cache,
-            crust_service: details.crust_service,
+            network_service: details.network_service,
             event_backlog: Vec::new(),
             full_id: details.full_id,
             min_section_size: details.min_section_size,
@@ -162,7 +162,7 @@ impl ProvingNode {
         let details = AdultDetails {
             ack_mgr: self.ack_mgr,
             cache: self.cache,
-            crust_service: self.crust_service,
+            network_service: self.network_service,
             event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info,
@@ -280,8 +280,8 @@ impl ProvingNode {
 }
 
 impl Base for ProvingNode {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
+    fn network_service(&self) -> &Service {
+        &self.network_service
     }
 
     fn full_id(&self) -> &FullId {

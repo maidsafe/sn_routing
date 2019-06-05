@@ -37,7 +37,7 @@ use std::{
 pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
 
 pub struct ClientDetails {
-    pub crust_service: Service,
+    pub network_service: Service,
     pub full_id: FullId,
     pub min_section_size: usize,
     pub msg_expiry_dur: Duration,
@@ -50,7 +50,7 @@ pub struct ClientDetails {
 /// Each client has a _proxy_: a node through which all requests are routed.
 pub struct Client {
     ack_mgr: AckManager,
-    crust_service: Service,
+    network_service: Service,
     full_id: FullId,
     min_section_size: usize,
     proxy_pub_id: PublicId,
@@ -65,7 +65,7 @@ impl Client {
     pub fn from_bootstrapping(details: ClientDetails, outbox: &mut EventBox) -> Self {
         let client = Client {
             ack_mgr: AckManager::new(),
-            crust_service: details.crust_service,
+            network_service: details.network_service,
             full_id: details.full_id,
             min_section_size: details.min_section_size,
             proxy_pub_id: details.proxy_pub_id,
@@ -153,8 +153,8 @@ impl Client {
 }
 
 impl Base for Client {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
+    fn network_service(&self) -> &Service {
+        &self.network_service
     }
 
     fn full_id(&self) -> &FullId {

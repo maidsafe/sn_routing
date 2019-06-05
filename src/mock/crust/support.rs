@@ -18,10 +18,10 @@ use crate::id::PublicId;
 use crate::messages::DirectMessage;
 #[cfg(any(all(test, not(feature = "mock_serialise")), feature = "mock_parsec"))]
 use crate::parsec;
-use crate::CrustBytes;
 use crate::CrustEvent;
 #[cfg(feature = "mock_serialise")]
 use crate::Message;
+use crate::NetworkBytes;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use safe_crypto;
@@ -415,7 +415,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
     }
 
-    pub fn send_message(&self, uid: &UID, data: CrustBytes) -> bool {
+    pub fn send_message(&self, uid: &UID, data: NetworkBytes) -> bool {
         if let Some(endpoint) = self.find_endpoint_by_uid(uid) {
             self.send_packet(endpoint, Packet::Message(data));
             true
@@ -521,7 +521,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.send_event(CrustEvent::ConnectFailure(their_id));
     }
 
-    fn handle_message(&self, peer_endpoint: Endpoint, data: CrustBytes) {
+    fn handle_message(&self, peer_endpoint: Endpoint, data: NetworkBytes) {
         if let Some((uid, kind)) = self.find_uid_and_kind_by_endpoint(&peer_endpoint) {
             self.send_event(CrustEvent::NewMessage(uid, kind, data));
         } else {
@@ -702,7 +702,7 @@ enum Packet<UID: Uid> {
     ConnectSuccess(UID, UID),
     ConnectFailure(UID, UID),
 
-    Message(CrustBytes),
+    Message(NetworkBytes),
     Disconnect,
 }
 

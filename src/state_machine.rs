@@ -100,14 +100,14 @@ impl State {
         )
     }
 
-    fn handle_crust_event(
+    fn handle_network_event(
         &mut self,
         event: CrustEvent<PublicId>,
         outbox: &mut EventBox,
     ) -> Transition {
         state_dispatch!(
             *self,
-            ref mut state => state.handle_crust_event(event, outbox),
+            ref mut state => state.handle_network_event(event, outbox),
             Terminated => Transition::Terminate
         )
     }
@@ -312,13 +312,12 @@ impl StateMachine {
             None => Service::new(crust_sender, pub_id),
         };
 
-        let mut crust_service = unwrap!(res, "Unable to start crust::Service");
-
-        crust_service.start_service_discovery();
+        let mut network_service = unwrap!(res, "Unable to start crust::Service");
+        network_service.start_service_discovery();
 
         let timer = Timer::new(action_sender.clone());
 
-        let state = init_state(action_sender.clone(), crust_service, timer, outbox);
+        let state = init_state(action_sender.clone(), network_service, timer, outbox);
         let is_running = match state {
             State::Terminated => false,
             _ => true,
@@ -348,7 +347,7 @@ impl StateMachine {
                 }
             }
             MaidSafeEventCategory::Crust => match self.crust_rx.try_recv() {
-                Ok(crust_event) => self.state.handle_crust_event(crust_event, outbox),
+                Ok(crust_event) => self.state.handle_network_event(crust_event, outbox),
                 Err(TryRecvError::Empty) => {
                     debug!(
                         "Crust receiver temporarily empty, probably due to node \
@@ -374,7 +373,7 @@ impl StateMachine {
         let transition = match event {
             EventType::Action(action) => self.state.handle_action(*action, outbox),
             EventType::CrustEvent(crust_event) => {
-                self.state.handle_crust_event(crust_event, outbox)
+                self.state.handle_network_event(crust_event, outbox)
             }
         };
 

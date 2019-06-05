@@ -139,18 +139,19 @@ impl NodeBuilder {
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
         StateMachine::new(
-            move |action_sender, crust_service, timer, outbox2| {
+            move |action_sender, network_service, timer, outbox2| {
                 if self.first {
                     states::Elder::first(
                         self.cache,
-                        crust_service,
+                        network_service,
                         full_id,
                         min_section_size,
                         timer,
                     )
                     .map(State::Elder)
                     .unwrap_or(State::Terminated)
-                } else if !dev_config.allow_multiple_lan_nodes && crust_service.has_peers_on_lan() {
+                } else if !dev_config.allow_multiple_lan_nodes && network_service.has_peers_on_lan()
+                {
                     error!(
                         "More than one routing node found on LAN. Currently this is not supported."
                     );
@@ -161,7 +162,7 @@ impl NodeBuilder {
                         action_sender,
                         self.cache,
                         TargetState::RelocatingNode,
-                        crust_service,
+                        network_service,
                         full_id,
                         min_section_size,
                         timer,

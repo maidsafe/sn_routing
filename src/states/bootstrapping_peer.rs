@@ -58,7 +58,7 @@ pub struct BootstrappingPeer {
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PublicId, u64)>,
     cache: Box<Cache>,
-    crust_service: Service,
+    network_service: Service,
     full_id: FullId,
     min_section_size: usize,
     target_state: TargetState,
@@ -70,17 +70,17 @@ impl BootstrappingPeer {
         action_sender: RoutingActionSender,
         cache: Box<Cache>,
         target_state: TargetState,
-        mut crust_service: Service,
+        mut network_service: Service,
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
     ) -> Result<Self, RoutingError> {
         match target_state {
             TargetState::Client { .. } => {
-                let _ = crust_service.start_bootstrap(HashSet::new(), CrustUser::Client);
+                let _ = network_service.start_bootstrap(HashSet::new(), CrustUser::Client);
             }
             TargetState::RelocatingNode | TargetState::ProvingNode { .. } => {
-                if let Err(error) = crust_service.start_listening_tcp() {
+                if let Err(error) = network_service.start_listening_tcp() {
                     error!("Failed to start listening: {:?}", error);
                     return Err(error.into());
                 }
@@ -90,7 +90,7 @@ impl BootstrappingPeer {
         Ok(Self {
             action_sender,
             cache: cache,
-            crust_service,
+            network_service,
             full_id,
             min_section_size,
             timer: timer,
@@ -109,7 +109,7 @@ impl BootstrappingPeer {
             TargetState::Client { msg_expiry_dur } => {
                 Ok(State::Client(Client::from_bootstrapping(
                     ClientDetails {
-                        crust_service: self.crust_service,
+                        network_service: self.network_service,
                         full_id: self.full_id,
                         min_section_size: self.min_section_size,
                         msg_expiry_dur,
@@ -123,7 +123,7 @@ impl BootstrappingPeer {
                 let details = RelocatingNodeDetails {
                     action_sender: self.action_sender,
                     cache: self.cache,
-                    crust_service: self.crust_service,
+                    network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,
                     proxy_pub_id,
@@ -145,7 +145,7 @@ impl BootstrappingPeer {
                 let details = ProvingNodeDetails {
                     action_sender: self.action_sender,
                     cache: self.cache,
-                    crust_service: self.crust_service,
+                    network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,
                     old_full_id,
@@ -195,7 +195,7 @@ impl BootstrappingPeer {
             "{} Disconnecting {}. Calling crust::Service::disconnect.",
             self, pub_id
         );
-        let _ = self.crust_service.disconnect(pub_id);
+        let _ = self.network_service.disconnect(pub_id);
     }
 
     fn rebootstrap(&mut self) {
@@ -204,22 +204,22 @@ impl BootstrappingPeer {
                 "{} Dropping bootstrap node {:?} and retrying.",
                 self, bootstrap_id
             );
-            let _ = self.crust_service.disconnect(&bootstrap_id);
+            let _ = self.network_service.disconnect(&bootstrap_id);
             let crust_user = if self.client_restriction() {
                 CrustUser::Client
             } else {
                 CrustUser::Node
             };
             let _ = self
-                .crust_service
+                .network_service
                 .start_bootstrap(self.bootstrap_blacklist.clone(), crust_user);
         }
     }
 }
 
 impl Base for BootstrappingPeer {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
+    fn network_service(&self) -> &Service {
+        &self.network_service
     }
 
     fn full_id(&self) -> &FullId {
@@ -326,7 +326,7 @@ impl Base for BootstrappingPeer {
         }
         trace!("{} - Listener started on port {}.", self, port);
         let _ = self
-            .crust_service
+            .network_service
             .start_bootstrap(HashSet::new(), CrustUser::Node);
         Transition::Stay
     }
@@ -393,7 +393,7 @@ mod tests {
     };
     use crate::outbox::EventBuf;
     use crate::state_machine::StateMachine;
-    use crate::states::common::from_crust_bytes;
+    use crate::states::common::from_network_bytes;
     use crate::CrustEvent;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
     use std::sync::mpsc;
@@ -413,18 +413,18 @@ mod tests {
             MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx);
         let handle0 = network.new_service_handle(None, None);
         let config = Config::with_contacts(&[handle0.endpoint()]);
-        let mut crust_service = unwrap!(Service::with_handle(
+        let mut network_service = unwrap!(Service::with_handle(
             &handle0,
             event_sender,
             *FullId::new().public_id(),
         ));
 
-        unwrap!(crust_service.start_listening_tcp());
+        unwrap!(network_service.start_listening_tcp());
         if let CrustEvent::ListenerStarted::<_>(_) = unwrap!(event_rx.try_recv()) {
         } else {
             panic!("Should have received `ListenerStarted` event.");
         }
-        let _ = crust_service.set_accept_bootstrap(true);
+        let _ = network_service.set_accept_bootstrap(true);
 
         // Construct a `StateMachine` which will start in the `Bootstrapping` state and bootstrap
         // off the Crust service above.
@@ -434,14 +434,14 @@ mod tests {
             let full_id = FullId::new();
             let pub_id = *full_id.public_id();
             StateMachine::new(
-                move |action_sender, crust_service, timer, _outbox2| {
+                move |action_sender, network_service, timer, _outbox2| {
                     BootstrappingPeer::new(
                         action_sender,
                         Box::new(NullCache),
                         TargetState::Client {
                             msg_expiry_dur: Duration::from_secs(60),
                         },
-                        crust_service,
+                        network_service,
                         full_id,
                         min_section_size,
                         timer,
@@ -483,14 +483,14 @@ mod tests {
         // `LostPeer` event in the state machine.
         network.deliver_messages();
         if let CrustEvent::NewMessage::<_>(_, _, serialised_msg) = unwrap!(event_rx.try_recv()) {
-            match unwrap!(from_crust_bytes(serialised_msg)) {
+            match unwrap!(from_network_bytes(serialised_msg)) {
                 Message::Direct(DirectMessage::BootstrapRequest(_)) => (),
                 _ => panic!("Should have received a `BootstrapRequest`."),
             }
         } else {
             panic!("Should have received `NewMessage` event.");
         }
-        drop(crust_service);
+        drop(network_service);
         network.deliver_messages();
 
         // Check the state machine received the `LostPeer` and sent `Terminate` via the `outbox`

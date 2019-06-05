@@ -17,14 +17,14 @@ use crate::{
     state_machine::Transition,
     utils::LogIdent,
     xor_name::XorName,
-    CrustBytes, CrustEvent, Service,
+    CrustEvent, NetworkBytes, Service,
 };
 use maidsafe_utilities::serialisation;
 use std::{collections::BTreeSet, fmt::Display, net::SocketAddr};
 
 // Trait for all states.
 pub trait Base: Display {
-    fn crust_service(&self) -> &Service;
+    fn network_service(&self) -> &Service;
     fn full_id(&self) -> &FullId;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
@@ -126,7 +126,7 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn handle_crust_event(
+    fn handle_network_event(
         &mut self,
         crust_event: CrustEvent<PublicId>,
         outbox: &mut EventBox,
@@ -224,10 +224,10 @@ pub trait Base: Display {
     fn handle_new_message(
         &mut self,
         pub_id: PublicId,
-        bytes: CrustBytes,
+        bytes: NetworkBytes,
         outbox: &mut EventBox,
     ) -> Transition {
-        let result = from_crust_bytes(bytes)
+        let result = from_network_bytes(bytes)
             .and_then(|message| self.handle_new_deserialised_message(pub_id, message, outbox));
 
         match result {
@@ -275,7 +275,7 @@ pub trait Base: Display {
     fn send_message(&mut self, dst_id: &PublicId, message: Message) {
         let priority = message.priority();
 
-        match to_crust_bytes(message) {
+        match to_network_bytes(message) {
             Ok(bytes) => {
                 self.send_or_drop(dst_id, bytes, priority);
             }
@@ -293,12 +293,12 @@ pub trait Base: Display {
 
     // Sends the given `data` to the peer with the given `dst_id`. If that results in an
     // error, it disconnects from the peer.
-    fn send_or_drop(&mut self, dst_id: &PublicId, data: CrustBytes, priority: u8) {
-        if let Err(err) = self.crust_service().send(dst_id, data, priority) {
+    fn send_or_drop(&mut self, dst_id: &PublicId, data: NetworkBytes, priority: u8) {
+        if let Err(err) = self.network_service().send(dst_id, data, priority) {
             info!("{} Connection to {} failed: {:?}", self, dst_id, err);
             // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
             //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
-            // self.crust_service().disconnect(*pub_id);
+            // self.network_service().disconnect(*pub_id);
             // return self.handle_lost_peer(*pub_id).map(|_| Err(err.into()));
         }
     }
@@ -309,16 +309,16 @@ pub trait Base: Display {
         signed_msg: SignedMessage,
         route: u8,
         sent_to: BTreeSet<XorName>,
-    ) -> Result<CrustBytes, RoutingError> {
+    ) -> Result<NetworkBytes, RoutingError> {
         let hop_msg = HopMessage::new(signed_msg, route, sent_to)?;
         let message = Message::Hop(hop_msg);
-        Ok(to_crust_bytes(message).map_err(|(err, _)| err)?)
+        Ok(to_network_bytes(message).map_err(|(err, _)| err)?)
     }
 }
 
-fn to_crust_bytes(
+fn to_network_bytes(
     message: Message,
-) -> Result<CrustBytes, (serialisation::SerialisationError, Message)> {
+) -> Result<NetworkBytes, (serialisation::SerialisationError, Message)> {
     #[cfg(not(feature = "mock_serialise"))]
     let result = serialisation::serialise(&message).map_err(|err| (err, message));
 
@@ -328,7 +328,7 @@ fn to_crust_bytes(
     result
 }
 
-pub fn from_crust_bytes(data: CrustBytes) -> Result<Message, RoutingError> {
+pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
     #[cfg(not(feature = "mock_serialise"))]
     let result = serialisation::deserialise(&data).map_err(RoutingError::SerialisationError);
 

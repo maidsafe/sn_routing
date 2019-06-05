@@ -71,12 +71,12 @@ impl Client {
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
         StateMachine::new(
-            move |action_sender, crust_service, timer, _outbox2| {
+            move |action_sender, network_service, timer, _outbox2| {
                 BootstrappingPeer::new(
                     action_sender,
                     Box::new(NullCache),
                     TargetState::Client { msg_expiry_dur },
-                    crust_service,
+                    network_service,
                     full_id,
                     min_section_size,
                     timer,

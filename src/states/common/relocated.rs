@@ -60,7 +60,7 @@ pub trait Relocated: Bootstrapped {
                     }
                     Ok(new_token) => new_token,
                 };
-                self.crust_service().prepare_connection_info(new_token);
+                self.network_service().prepare_connection_info(new_token);
                 return Transition::Stay;
             }
             Ok(connection_info) => connection_info,
@@ -97,7 +97,7 @@ pub trait Relocated: Bootstrapped {
                         pub_id
                     );
                     self.send_connection_info(our_pub_info, pub_id, src, dst, Some(msg_id));
-                    if let Err(error) = self.crust_service().connect(our_info, their_info) {
+                    if let Err(error) = self.network_service().connect(our_info, their_info) {
                         trace!("{} Unable to connect to {:?} - {:?}", self, pub_id, error);
                     }
                 }
@@ -155,12 +155,12 @@ pub trait Relocated: Bootstrapped {
                     src,
                     Some(message_id),
                 );
-                if let Err(error) = self.crust_service().connect(our_info, their_info) {
+                if let Err(error) = self.network_service().connect(our_info, their_info) {
                     trace!("{} Unable to connect to {:?} - {:?}", self, src, error);
                 }
             }
             Ok(Prepare(token)) => {
-                self.crust_service().prepare_connection_info(token);
+                self.network_service().prepare_connection_info(token);
             }
             Ok(IsProxy) | Ok(IsClient) | Ok(IsJoiningNode) => {
                 // TODO: we should not be getting conn info req from Proxy/JoiningNode
@@ -224,7 +224,7 @@ pub trait Relocated: Bootstrapped {
                     self,
                     public_id
                 );
-                if let Err(error) = self.crust_service().connect(our_info, their_info) {
+                if let Err(error) = self.network_service().connect(our_info, their_info) {
                     trace!(
                         "{} Unable to connect to {:?} - {:?}",
                         self,
@@ -326,7 +326,7 @@ pub trait Relocated: Bootstrapped {
             .peer_mgr_mut()
             .get_connection_token(src, dst, their_public_id)
         {
-            self.crust_service().prepare_connection_info(token);
+            self.network_service().prepare_connection_info(token);
             return Ok(());
         }
 
@@ -417,7 +417,7 @@ pub trait Relocated: Bootstrapped {
                 "{} Disconnecting {}. Calling crust::Service::disconnect.",
                 self, pub_id
             );
-            let _ = self.crust_service().disconnect(pub_id);
+            let _ = self.network_service().disconnect(pub_id);
             let _ = self.peer_mgr_mut().remove_peer(pub_id);
         }
     }
