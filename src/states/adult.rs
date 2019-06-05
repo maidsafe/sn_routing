@@ -357,6 +357,14 @@ impl Approved for Adult {
         &mut self.chain
     }
 
+    fn set_pfx_successfully_polled(&mut self, _: bool) {
+        // Doesn't do anything
+    }
+
+    fn is_pfx_successfully_polled(&self) -> bool {
+        false
+    }
+
     fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
