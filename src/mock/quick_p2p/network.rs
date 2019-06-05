@@ -161,6 +161,8 @@ impl Inner {
     }
 
     fn pop_random_packet(&mut self) -> Option<(Connection, Packet)> {
+        // TODO: randomly reorder subsequent `Packet::Message`s to simulate out-of-order delivery.
+
         let connections: Vec<_> = self
             .connections
             .iter()

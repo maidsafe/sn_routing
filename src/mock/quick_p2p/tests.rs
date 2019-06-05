@@ -268,6 +268,7 @@ fn send_to_nonexisting_node() {
 
     // Note: the real quick-p2p will only emit `UnsentUserMessage` when a connection to the peer
     // was previously successfully established. That is not the case here, so we expect nothing.
+    // TODO: this is going to get changed in the real quic-p2p, so change it here too.
     a.expect_none();
 }
 
@@ -293,23 +294,28 @@ fn send_multiple_messages_without_connecting_first() {
     let mut a = Agent::node(&network);
     let b = Agent::node(&network);
 
-    let msg0 = Bytes::from_static(b"message 0 from A");
-    a.send(b.addr(), msg0.clone());
+    let msgs = [
+        Bytes::from_static(b"message 0 from A"),
+        Bytes::from_static(b"message 1 from A"),
+        Bytes::from_static(b"message 2 from A"),
+    ];
 
-    let msg1 = Bytes::from_static(b"message 1 from A");
-    a.send(b.addr(), msg1.clone());
-
-    let msg2 = Bytes::from_static(b"message 2 from A");
-    a.send(b.addr(), msg2.clone());
+    for msg in &msgs {
+        a.send(b.addr(), msg.clone());
+    }
 
     network.poll();
 
     a.expect_connected_to_node(&b.addr());
     b.expect_connected_to_node(&a.addr());
 
-    b.expect_new_message(&a.addr(), &msg0);
-    b.expect_new_message(&a.addr(), &msg1);
-    b.expect_new_message(&a.addr(), &msg2);
+    // TODO: We shouldn't rely on the messages being delivered in the same order they were sent.
+    //       We should also change the implementation to introduce random reordering of the
+    //       messages to more faithfully simulate real quick-p2p which doesn't guarantee the order
+    //       either.
+    for msg in &msgs {
+        b.expect_new_message(&a.addr(), msg);
+    }
 }
 
 #[test]
@@ -438,9 +444,13 @@ impl Agent {
 
     // Expect `Event::BootstrappedTo` with the given address.
     fn expect_bootstrapped_to(&self, addr: &SocketAddr) {
-        let event = unwrap!(self.rx.try_recv());
-        let actual_node_info = assert_match!(event, Event::BootstrappedTo { node } => node);
-        assert_eq!(actual_node_info, NodeInfo::from(*addr));
+        let actual_addr = assert_match!(
+            self.rx.try_recv(),
+            Ok(Event::BootstrappedTo {
+                node: NodeInfo { peer_addr, .. }
+            }) => peer_addr
+        );
+        assert_eq!(actual_addr, *addr);
     }
 
     // Expect exactly one `Event::BootstrappedTo` with an address contained in the list. Expect no
@@ -449,8 +459,12 @@ impl Agent {
     where
         I: IntoIterator<Item = SocketAddr>,
     {
-        let event = unwrap!(self.rx.try_recv());
-        let actual_addr = assert_match!(event, Event::BootstrappedTo { node: NodeInfo { peer_addr, .. } } => peer_addr);
+        let actual_addr = assert_match!(
+            self.rx.try_recv(),
+            Ok(Event::BootstrappedTo {
+                node: NodeInfo { peer_addr, .. }
+            }) => peer_addr
+        );
         assert!(addrs.into_iter().any(|addr| addr == actual_addr));
         self.expect_none();
         actual_addr
@@ -458,8 +472,7 @@ impl Agent {
 
     // Expect `Event::BootstrapFailure`.
     fn expect_bootstrap_failure(&self) {
-        let event = unwrap!(self.rx.try_recv());
-        assert_match!(event, Event::BootstrapFailure);
+        assert_eq!(self.rx.try_recv(), Ok(Event::BootstrapFailure));
     }
 
     // Expect `Event::ConnectedTo` with a node contact.
@@ -470,28 +483,30 @@ impl Agent {
 
     // Expect `Event::ConnectedTo` with a client contact.
     fn expect_connected_to_client(&self, addr: &SocketAddr) {
-        let event = unwrap!(self.rx.try_recv());
         let actual_peer_addr = assert_match!(
-            event,
-            Event::ConnectedTo {
+            self.rx.try_recv(),
+            Ok(Event::ConnectedTo {
                 peer: Peer::Client { peer_addr }
-            } => peer_addr
+            }) => peer_addr
         );
         assert_eq!(actual_peer_addr, *addr);
     }
 
     // Expect `Event::ConnectionFailure` with the given address.
     fn expect_connection_failure(&self, addr: &SocketAddr) {
-        let event = unwrap!(self.rx.try_recv());
-        let actual_addr = assert_match!(event, Event::ConnectionFailure { peer_addr } => peer_addr);
+        let actual_addr = assert_match!(
+            self.rx.try_recv(),
+            Ok(Event::ConnectionFailure { peer_addr }) => peer_addr
+        );
         assert_eq!(actual_addr, *addr);
     }
 
     // Expect `Event::NewMessage` with the given sender address and content.
     fn expect_new_message(&self, src_addr: &SocketAddr, expected_msg: &Bytes) {
-        let event = unwrap!(self.rx.try_recv());
-        let (actual_addr, actual_msg) =
-            assert_match!(event, Event::NewMessage { peer_addr, msg } => (peer_addr, msg));
+        let (actual_addr, actual_msg) = assert_match!(
+            self.rx.try_recv(),
+            Ok(Event::NewMessage { peer_addr, msg }) => (peer_addr, msg)
+        );
 
         assert_eq!(actual_addr, *src_addr);
         assert_eq!(actual_msg, expected_msg);
@@ -499,9 +514,10 @@ impl Agent {
 
     // Expect `Event::UnsentUserMessage` with the given recipient address and content.
     fn expect_unsent_message(&self, dst_addr: &SocketAddr, expected_msg: &Bytes) {
-        let event = unwrap!(self.rx.try_recv());
-        let (actual_addr, actual_msg) =
-            assert_match!(event, Event::UnsentUserMessage { peer_addr, msg } => (peer_addr, msg));
+        let (actual_addr, actual_msg) = assert_match!(
+            self.rx.try_recv(),
+            Ok(Event::UnsentUserMessage { peer_addr, msg }) => (peer_addr, msg)
+        );
 
         assert_eq!(actual_addr, *dst_addr);
         assert_eq!(actual_msg, expected_msg);
@@ -509,7 +525,7 @@ impl Agent {
 
     // Expect no event.
     fn expect_none(&self) {
-        assert_match!(self.rx.try_recv(), Err(TryRecvError::Empty));
+        assert_eq!(self.rx.try_recv(), Err(TryRecvError::Empty));
     }
 }
 

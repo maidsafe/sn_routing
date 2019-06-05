@@ -166,7 +166,7 @@ impl Default for OurType {
 }
 
 /// Events from `QuicP2p` to the user.
-#[derive(Debug)]
+#[derive(Eq, PartialEq, Debug)]
 pub enum Event {
     /// Bootstrap failed.
     BootstrapFailure,
