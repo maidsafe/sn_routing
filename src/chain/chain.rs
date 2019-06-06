@@ -1378,6 +1378,7 @@ mod tests {
     use serde::Serialize;
     use std::collections::{BTreeSet, HashMap};
     use std::str::FromStr;
+    use unwrap::unwrap;
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),

@@ -287,6 +287,7 @@ mod tests {
     use rand::Rng;
     use safe_crypto;
     use std::collections::BTreeMap;
+    use unwrap::unwrap;
 
     fn huge_message_can_be_added(rate_limiter: &mut RateLimiter, client: &IpAddr) -> bool {
         sized_message_can_be_added(SOFT_CAPACITY, rate_limiter, client)

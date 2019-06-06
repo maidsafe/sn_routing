@@ -86,6 +86,7 @@ mod tests {
     use hex::ToHex;
     use maidsafe_utilities::{serialisation, SeededRng};
     use rand::Rng;
+    use unwrap::unwrap;
 
     #[cfg(not(feature = "mock_base"))]
     #[test]

@@ -20,6 +20,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     rc::{Rc, Weak},
 };
+use unwrap::unwrap;
 
 const IP_BASE: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const PORT: u16 = 9999;

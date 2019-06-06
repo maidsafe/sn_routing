@@ -37,6 +37,8 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
 use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
+#[cfg(feature = "mock_base")]
+use unwrap::unwrap;
 
 // Helper macro to implement request sending methods.
 macro_rules! impl_request {

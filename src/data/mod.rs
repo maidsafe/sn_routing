@@ -15,6 +15,7 @@ pub use self::mutable_data::{
     MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
 };
 
+use lazy_static::lazy_static;
 use safe_crypto::{PublicSignKey, PUBLIC_SIGN_KEY_BYTES};
 
 lazy_static! {

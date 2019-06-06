@@ -11,6 +11,7 @@ use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
+use unwrap::unwrap;
 
 fn hash<T: Hash>(t: &T) -> u64 {
     let mut hasher = DefaultHasher::new();

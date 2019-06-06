@@ -52,6 +52,7 @@ mod test {
     use std::fs::File;
     use std::io::Read;
     use std::path::Path;
+    use unwrap::unwrap;
 
     #[test]
     fn parse_sample_config_file() {

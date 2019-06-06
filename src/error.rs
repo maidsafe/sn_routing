@@ -15,6 +15,7 @@ use crate::sha3::Digest256;
 use config_file_handler::Error as ConfigFileHandlerError;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
+use quick_error::quick_error;
 use safe_crypto;
 use std::sync::mpsc::{RecvError, SendError};
 

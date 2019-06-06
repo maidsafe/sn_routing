@@ -10,6 +10,7 @@ use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use std::{collections::BTreeSet, iter, net::SocketAddr};
+use unwrap::unwrap;
 
 // Assert that the expression matches the expected pattern.
 macro_rules! assert_match {

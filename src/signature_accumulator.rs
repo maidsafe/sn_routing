@@ -138,6 +138,7 @@ mod tests {
     use itertools::Itertools;
     use rand;
     use std::collections::BTreeSet;
+    use unwrap::unwrap;
 
     struct MessageAndSignatures {
         signed_msg: SignedMessage,

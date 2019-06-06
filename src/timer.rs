@@ -239,6 +239,7 @@ mod implementation {
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
+    use unwrap::unwrap;
 
     struct Inner {
         next_token: u64,

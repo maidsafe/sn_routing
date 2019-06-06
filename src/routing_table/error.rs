@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use quick_error::quick_error;
+
 quick_error! {
     /// Routing table error variants.
     #[derive(Debug, PartialEq, Eq)]

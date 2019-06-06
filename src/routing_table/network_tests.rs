@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use std::iter::IntoIterator;
+use unwrap::unwrap;
 
 /// A simulated network, consisting of a set of "nodes" (routing tables) and a random number
 /// generator.

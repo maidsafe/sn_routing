@@ -17,6 +17,7 @@ use bytes::Bytes;
 use crossbeam_channel::Sender;
 use fxhash::{FxHashMap, FxHashSet};
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};
+use unwrap::unwrap;
 
 pub(super) struct Node {
     network: Rc<RefCell<Inner>>,

@@ -916,6 +916,7 @@ mod tests {
     use safe_crypto;
     use safe_crypto::SIGNATURE_BYTES;
     use std::iter;
+    use unwrap::unwrap;
 
     #[test]
     fn signed_message_check_integrity() {

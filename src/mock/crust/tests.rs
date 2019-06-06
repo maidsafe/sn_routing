@@ -15,6 +15,7 @@ use crate::CrustEvent;
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
+use unwrap::unwrap;
 
 fn get_event_sender() -> (
     CrustEventSender<PublicId>,

@@ -198,6 +198,7 @@ mod tests {
     use super::*;
     use maidsafe_utilities::serialisation;
     use safe_crypto;
+    use unwrap::unwrap;
 
     /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
     #[test]

@@ -972,6 +972,7 @@ mod tests {
     use crate::routing_table::Authority;
     use crate::types::MessageId;
     use crate::xor_name::{XorName, XOR_NAME_LEN};
+    use unwrap::unwrap;
 
     fn node_auth(byte: u8) -> Authority<XorName> {
         Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))

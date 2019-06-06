@@ -22,6 +22,7 @@ use crate::outbox::{EventBox, EventBuf};
 use crate::state_machine::{State, StateMachine};
 use crate::utils::XorTargetInterval;
 use crate::xor_name::XOR_NAME_LEN;
+use unwrap::unwrap;
 use utils::LogIdent;
 
 // Accumulate even if 1 old node and an additional new node do not vote.

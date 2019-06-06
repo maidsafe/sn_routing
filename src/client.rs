@@ -35,6 +35,8 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 #[cfg(feature = "mock_base")]
 use std::sync::mpsc::{RecvError, TryRecvError};
 use std::time::Duration;
+#[cfg(not(feature = "mock_base"))]
+use unwrap::unwrap;
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.

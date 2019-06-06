@@ -150,17 +150,7 @@
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate quick_error;
-#[macro_use]
-extern crate unwrap;
-#[cfg(not(feature = "mock_base"))]
-extern crate crust;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate serde_derive;
-#[cfg(test)]
-extern crate serde_json;
 
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]
@@ -260,6 +250,8 @@ pub use crate::{
     peer_manager::test_consts,
     rate_limiter::rate_limiter_consts,
 };
+#[cfg(not(feature = "mock_base"))]
+pub use crust;
 
 type Service = crust::Service<PublicId>;
 use crate::crust::Event as CrustEvent;

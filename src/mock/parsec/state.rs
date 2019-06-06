@@ -22,6 +22,7 @@ use std::{
     },
     mem,
 };
+use unwrap::unwrap;
 
 pub(super) struct SectionState<T: NetworkEvent, P: PublicId> {
     observations: BTreeMap<ObservationHolder<T, P>, ObservationState<P>>,

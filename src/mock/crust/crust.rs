@@ -18,6 +18,7 @@ use std::hash::Hash;
 use std::net::{IpAddr, SocketAddr};
 use std::rc::Rc;
 use std::{fmt, thread};
+use unwrap::unwrap;
 
 /// TCP listener port
 pub const LISTENER_PORT: u16 = 5485;

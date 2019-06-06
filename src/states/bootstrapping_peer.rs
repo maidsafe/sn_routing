@@ -397,6 +397,7 @@ mod tests {
     use crate::CrustEvent;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
     use std::sync::mpsc;
+    use unwrap::unwrap;
 
     #[test]
     // Check that losing our proxy connection while in the `Bootstrapping` state doesn't stall and

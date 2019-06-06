@@ -29,6 +29,7 @@ use std::{
     mem,
     sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError},
 };
+use unwrap::unwrap;
 
 // Execute $expr on the current variant of $self. Execute $term_expr if the current variant is
 // `Terminated`.

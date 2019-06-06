@@ -16,6 +16,7 @@ use maidsafe_utilities::serialisation;
 use safe_crypto;
 use std::collections::BTreeMap;
 use std::fmt;
+use unwrap::unwrap;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT: Duration = Duration::from_secs(20);

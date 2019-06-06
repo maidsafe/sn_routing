@@ -29,6 +29,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
 };
+use unwrap::unwrap;
 
 /// Time (in seconds) between accepting a new candidate (i.e. accumulating an `ExpectCandidate` in
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot

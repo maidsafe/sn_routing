@@ -30,6 +30,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::rc::{Rc, Weak};
+use unwrap::unwrap;
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
