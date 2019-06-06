@@ -1,0 +1,8 @@
+#!/bin/bash
+
+output=$(git log --oneline | grep -iE 'fixup|wip')
+if [[ $? != 1 ]]; then
+    echo "Found fixup or WIP commit(s):"
+    echo "$output"
+    exit 1
+fi

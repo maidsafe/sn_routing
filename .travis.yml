@@ -14,6 +14,10 @@ before_script:
   - rustup component add rustfmt clippy
 jobs:
   include:
+    - script: scripts/fixup_check
+      name: 'check for fixup/wip commits'
+      os: linux
+      if: type = pull_request
     - script: scripts/clippy --verbose
       os: linux
       env: CACHE_NAME=clippy_linux
