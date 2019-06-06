@@ -129,6 +129,8 @@ pub struct Elder {
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
     chain: Chain,
+    #[cfg(feature = "mock_base")]
+    ignore_candidate_info_counter: u8,
 }
 
 impl Elder {
@@ -228,6 +230,8 @@ impl Elder {
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
             chain: details.chain,
+            #[cfg(feature = "mock_base")]
+            ignore_candidate_info_counter: 0,
         }
     }
 
@@ -1057,6 +1061,13 @@ impl Elder {
         new_client_auth: &Authority<XorName>,
         outbox: &mut EventBox,
     ) {
+        #[cfg(feature = "mock_base")]
+        {
+            if self.ignore_candidate_info_counter > 0 {
+                self.ignore_candidate_info_counter -= 1;
+                return;
+            }
+        }
         debug!(
             "{} Handling CandidateInfo from {}->{}.",
             self, old_pub_id, new_pub_id
@@ -2192,6 +2203,10 @@ impl Elder {
 
     pub fn has_resource_proof_candidate(&self) -> bool {
         self.chain.has_resource_proof_candidate()
+    }
+
+    pub fn set_ignore_candidate_info_counter(&mut self, counter: u8) {
+        self.ignore_candidate_info_counter = counter;
     }
 }
 

@@ -95,9 +95,12 @@ fn candidate_timeout_resource_proof() {
 
     // Initiate connection until the candidate switch to ProvingNode:
     info!("Candidate joining name: {}", nodes[0].name());
-    poll_and_resend_until(&mut nodes, &mut [], &|nodes| {
-        nodes[0].inner.is_proving_node()
-    });
+    poll_and_resend_until(
+        &mut nodes,
+        &mut [],
+        &|nodes| nodes[0].inner.is_proving_node(),
+        None,
+    );
     let proving_node = nodes.remove(0);
 
     assert!(
@@ -169,6 +172,26 @@ fn node_joins_in_front() {
     );
     poll_and_resend(&mut nodes, &mut []);
 
+    verify_invariant_for_all_nodes(&mut nodes);
+}
+
+#[test]
+fn joining_node_with_ignoring_candidate_info() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
+    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    // Make half of the elders ingoring the candidate_info to simulate lagging.
+    // Without the resending, this will block the joining node to be approved.
+    for node in nodes.iter_mut().take(MIN_SECTION_SIZE / 2) {
+        node.inner.set_ignore_candidate_info_counter(1);
+    }
+    nodes.push(
+        TestNode::builder(&network)
+            .bootstrap_config(bootstrap_config.clone())
+            .create(),
+    );
+    let dummy = |_nodes: &[TestNode]| false;
+    poll_and_resend_until(&mut nodes, &mut [], &dummy, Some(20));
     verify_invariant_for_all_nodes(&mut nodes);
 }
 
