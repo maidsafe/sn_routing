@@ -12,11 +12,13 @@ use super::{
 use routing::mock_crust::Network;
 use routing::{
     Authority, ClientError, Event, EventStream, ImmutableData, MessageId, Request, Response,
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 
 #[test]
 fn successful_put_request() {
     let min_section_size = 8;
+    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size + 1);
@@ -56,13 +58,13 @@ fn successful_put_request() {
         }
     }
 
-    // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_section_size);
+    assert!(request_received_count >= quorum);
 }
 
 #[test]
 fn successful_get_request() {
     let min_section_size = 8;
+    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size + 1);
@@ -112,8 +114,7 @@ fn successful_get_request() {
         }
     }
 
-    // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_section_size);
+    assert!(request_received_count >= quorum);
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -147,6 +148,7 @@ fn successful_get_request() {
 #[test]
 fn failed_get_request() {
     let min_section_size = 8;
+    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size + 1);
@@ -196,8 +198,7 @@ fn failed_get_request() {
         }
     }
 
-    // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_section_size);
+    assert!(request_received_count >= quorum);
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -231,6 +232,7 @@ fn failed_get_request() {
 #[test]
 fn disconnect_on_get_request() {
     let min_section_size = 8;
+    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * min_section_size);
@@ -280,8 +282,7 @@ fn disconnect_on_get_request() {
         }
     }
 
-    // TODO: Assert a quorum here.
-    assert!(2 * request_received_count > min_section_size);
+    assert!(request_received_count >= quorum);
 
     let _ = clients[0]
         .handle
