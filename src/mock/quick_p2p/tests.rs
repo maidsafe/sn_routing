@@ -8,12 +8,8 @@
 
 use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
 use bytes::Bytes;
-use std::{
-    collections::BTreeSet,
-    iter,
-    net::SocketAddr,
-    sync::mpsc::{self, Receiver, TryRecvError},
-};
+use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
+use std::{collections::BTreeSet, iter, net::SocketAddr};
 
 // Assert that the expression matches the expected pattern.
 macro_rules! assert_match {
@@ -319,7 +315,7 @@ fn our_connection_info_of_node() {
     let network = Network::new(None);
 
     let addr = network.gen_next_addr();
-    let (tx, _) = mpsc::channel();
+    let (tx, _) = mpmc::unbounded();
     let mut node = unwrap!(Builder::new(tx).with_config(Config::node()).build());
 
     let node_info = unwrap!(node.our_connection_info());
@@ -331,7 +327,7 @@ fn our_connection_info_of_client() {
     let network = Network::new(None);
 
     let _ = network.gen_next_addr();
-    let (tx, _) = mpsc::channel();
+    let (tx, _) = mpmc::unbounded();
     let mut client = unwrap!(Builder::new(tx).with_config(Config::client()).build());
 
     assert!(client.our_connection_info().is_err())
@@ -391,7 +387,7 @@ impl Agent {
 
     fn with_config(network: &Network, config: Config) -> Self {
         let _ = network.gen_next_addr();
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpmc::unbounded();
         let inner = unwrap!(Builder::new(tx).with_config(config).build());
 
         Self { inner, rx }

@@ -14,8 +14,9 @@ use bytes::Bytes;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
 // consistent iteration order (necessary for repeatable tests). Can't use `BTreeMap` / `BTreeSet`
 // because we key by `SocketAddr` which doesn't implement `Ord`.
+use crossbeam_channel::Sender;
 use fxhash::{FxHashMap, FxHashSet};
-use std::{cell::RefCell, net::SocketAddr, rc::Rc, sync::mpsc::Sender};
+use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 
 pub(super) struct Node {
     network: Rc<RefCell<Inner>>,

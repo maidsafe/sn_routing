@@ -15,7 +15,8 @@ pub use self::network::Network;
 
 use self::node::Node;
 use bytes;
-use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc, sync::mpsc::Sender};
+use crossbeam_channel::Sender;
+use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc};
 
 /// Builder for `QuickP2p`.
 pub struct Builder {
