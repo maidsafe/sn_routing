@@ -13,7 +13,7 @@ pub mod crust;
 #[cfg(feature = "mock_parsec")]
 pub(crate) mod parsec;
 
-/// Mock version of Quick-P2P
+/// Mock version of Quic-P2P
 // TODO: remove this `allow(unused)`
 #[allow(unused)]
-pub(crate) mod quick_p2p;
+pub(crate) mod quic_p2p;
