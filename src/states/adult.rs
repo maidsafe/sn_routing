@@ -25,14 +25,15 @@ use crate::{
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::{Peer, PeerManager, PeerState},
+    peer_manager::PeerManager,
+    peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     time::{Duration, Instant},
     timer::Timer,
     xor_name::XorName,
-    Service,
+    ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
@@ -42,12 +43,13 @@ const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct AdultDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
-    pub network_service: Service,
+    pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub min_section_size: usize,
     pub msg_backlog: Vec<RoutingMessage>,
+    pub peer_map: PeerMap,
     pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -57,13 +59,14 @@ pub struct Adult {
     ack_mgr: AckManager,
     cache: Box<Cache>,
     chain: Chain,
-    network_service: Service,
+    network_service: NetworkService,
     event_backlog: Vec<Event>,
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
     msg_backlog: Vec<RoutingMessage>,
     parsec_map: ParsecMap,
+    peer_map: PeerMap,
     peer_mgr: PeerManager,
     poke_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
@@ -95,6 +98,7 @@ impl Adult {
             gen_pfx_info: details.gen_pfx_info,
             msg_backlog: details.msg_backlog,
             parsec_map,
+            peer_map: details.peer_map,
             peer_mgr: details.peer_mgr,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
@@ -131,6 +135,7 @@ impl Adult {
             gen_pfx_info: self.gen_pfx_info,
             msg_backlog: self.msg_backlog,
             parsec_map: self.parsec_map,
+            peer_map: self.peer_map,
             peer_mgr: self.peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
@@ -145,7 +150,6 @@ impl Adult {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         self.handle_routing_message(msg, outbox)
-            .map(|()| Transition::Stay)
     }
 
     // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
@@ -186,8 +190,12 @@ impl Adult {
 }
 
 impl Base for Adult {
-    fn network_service(&self) -> &Service {
+    fn network_service(&self) -> &NetworkService {
         &self.network_service
+    }
+
+    fn network_service_mut(&mut self) -> &mut NetworkService {
+        &mut self.network_service
     }
 
     fn full_id(&self) -> &FullId {
@@ -206,6 +214,14 @@ impl Base for Adult {
         self.chain.min_sec_size()
     }
 
+    fn peer_map(&self) -> &PeerMap {
+        &self.peer_map
+    }
+
+    fn peer_map_mut(&mut self) -> &mut PeerMap {
+        &mut self.peer_map
+    }
+
     fn handle_timeout(&mut self, token: u64, _: &mut EventBox) -> Transition {
         if self.poke_timer_token == token {
             self.send_parsec_poke();
@@ -217,12 +233,17 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        Relocated::handle_connect_success(self, pub_id, outbox)
+    fn handle_peer_connected(
+        &mut self,
+        pub_id: PublicId,
+        conn_info: ConnectionInfo,
+        outbox: &mut EventBox,
+    ) -> Transition {
+        Approved::handle_peer_connected(self, pub_id, conn_info, outbox)
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        RelocatedNotEstablished::handle_connect_failure(self, pub_id, outbox)
+    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        RelocatedNotEstablished::handle_peer_disconnected(self, pub_id, outbox)
     }
 
     fn handle_direct_message(
@@ -255,14 +276,8 @@ impl Base for Adult {
     fn handle_hop_message(
         &mut self,
         hop_msg: HopMessage,
-        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Connected) | Some(&PeerState::Proxy) => (),
-            _ => return Err(RoutingError::UnknownConnection(pub_id)),
-        }
-
         if let Some(routing_msg) = self.filter_hop_message(hop_msg)? {
             self.dispatch_routing_message(routing_msg, outbox)
         } else {

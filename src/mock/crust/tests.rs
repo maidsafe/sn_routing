@@ -10,8 +10,8 @@
 
 use super::crust::{CrustEventSender, CrustUser, Service};
 use super::support::{to_socket_addr, Config, Network};
+use crate::crust::Event as CrustEvent;
 use crate::id::{FullId, PublicId};
-use crate::CrustEvent;
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};

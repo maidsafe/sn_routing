@@ -59,7 +59,7 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 ///
 /// This is the only type allowed to be sent / received on the network.
 #[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
@@ -69,22 +69,13 @@ pub enum Message {
     Hop(HopMessage),
 }
 
-impl Message {
-    pub fn priority(&self) -> u8 {
-        match *self {
-            Message::Direct(ref content) => content.priority(),
-            Message::Hop(ref content) => content.content.content.priority(),
-        }
-    }
-}
-
 /// An individual hop message that represents a part of the route of a message in transit.
 ///
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
 /// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
 #[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedRoutingMessage,
@@ -97,7 +88,6 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
-    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         content: SignedRoutingMessage,
         route: u8,
@@ -484,26 +474,6 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Send our Crust connection info encrypted to a node we wish to connect to and for which we
-    /// have the keys.
-    ConnectionInfoRequest {
-        /// Encrypted Crust connection info.
-        encrypted_conn_info: Vec<u8>,
-        /// The sender's public ID.
-        pub_id: PublicId,
-        /// The message's unique identifier.
-        msg_id: MessageId,
-    },
-    /// Respond to a `ConnectionInfoRequest` with our Crust connection info encrypted to the
-    /// requester.
-    ConnectionInfoResponse {
-        /// Encrypted Crust connection info.
-        encrypted_conn_info: Vec<u8>,
-        /// The sender's public ID.
-        pub_id: PublicId,
-        /// The message's unique identifier.
-        msg_id: MessageId,
-    },
     /// Reply with the address range into which the joining node should move.
     RelocateResponse {
         /// The interval into which the joining node should join.
@@ -512,6 +482,15 @@ pub enum MessageContent {
         section: (Prefix<XorName>, BTreeSet<PublicId>),
         /// The message's unique identifier.
         message_id: MessageId,
+    },
+    /// Send a request containing our connection info to a member of a section to connect to us.
+    ConnectRequest {
+        /// The sender's public ID.
+        pub_id: PublicId,
+        /// Encrypted sender's connection info.
+        encrypted_conn_info: Vec<u8>,
+        /// The message's unique identifier.
+        msg_id: MessageId,
     },
     /// Inform neighbours about our new section. The payload is just a unique hash, as the actual
     /// information is included in the `SignedMessage`'s proving sections anyway.
@@ -593,22 +572,13 @@ impl Debug for MessageContent {
                 "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
                 old_public_id, old_client_auth, message_id
             ),
-            ConnectionInfoRequest {
+            ConnectRequest {
                 ref pub_id,
                 ref msg_id,
                 ..
             } => write!(
                 formatter,
-                "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
-                pub_id, msg_id
-            ),
-            ConnectionInfoResponse {
-                ref pub_id,
-                ref msg_id,
-                ..
-            } => write!(
-                formatter,
-                "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
+                "ConnectRequest {{ {:?}, {:?}, .. }}",
                 pub_id, msg_id
             ),
             RelocateResponse {
@@ -796,8 +766,7 @@ mod tests {
     use crate::xor_name::XorName;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use safe_crypto;
-    use safe_crypto::SIGNATURE_BYTES;
+    use safe_crypto::{self, Signature, SIGNATURE_BYTES};
     use std::iter;
     use unwrap::unwrap;
 

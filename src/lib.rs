@@ -174,6 +174,7 @@ mod messages;
 mod node;
 mod outbox;
 mod peer_manager;
+mod peer_map;
 mod rate_limiter;
 mod resource_prover;
 mod routing_message_filter;
@@ -217,6 +218,8 @@ pub const MIN_SECTION_SIZE: usize = 3;
 /// Key of an account data in the account packet
 pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
 
+#[cfg(feature = "mock_base")]
+use crate::mock::quic_p2p;
 #[cfg(any(test, feature = "mock_base"))]
 pub use crate::routing_table::verify_network_invariant;
 pub use crate::{
@@ -252,21 +255,19 @@ pub use crate::{
 };
 #[cfg(not(feature = "mock_base"))]
 pub use crust;
-
-type Service = crust::Service<PublicId>;
-use crate::crust::Event as CrustEvent;
-type CrustEventSender = crust::CrustEventSender<PublicId>;
-type PrivConnectionInfo = crust::PrivConnectionInfo<PublicId>;
-type PubConnectionInfo = crust::PubConnectionInfo<PublicId>;
+#[cfg(not(feature = "mock_base"))]
+use quic_p2p;
 
 // Format that can be sent between peers
 #[cfg(not(feature = "mock_serialise"))]
-type NetworkBytes = Vec<u8>;
+pub(crate) type NetworkBytes = bytes::Bytes;
+#[cfg(feature = "mock_serialise")]
+pub(crate) type NetworkBytes = Box<crate::messages::Message>;
 
-#[cfg(feature = "mock_serialise")]
-use crate::messages::Message;
-#[cfg(feature = "mock_serialise")]
-type NetworkBytes = Box<Message>;
+pub use self::quic_p2p::Config as NetworkConfig;
+pub(crate) use self::quic_p2p::{
+    Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p as NetworkService,
+};
 
 #[cfg(test)]
 mod tests {

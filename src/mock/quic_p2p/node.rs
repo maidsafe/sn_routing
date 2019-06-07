@@ -10,11 +10,11 @@ use super::{
     network::{Inner, NodeDetails, Packet, NEXT_NODE_DETAILS},
     Config, Error, Event, NodeInfo, OurType, Peer,
 };
-use bytes::Bytes;
+use crate::NetworkBytes;
+use crossbeam_channel::Sender;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
 // consistent iteration order (necessary for repeatable tests). Can't use `BTreeMap` / `BTreeSet`
 // because we key by `SocketAddr` which doesn't implement `Ord`.
-use crossbeam_channel::Sender;
 use fxhash::{FxHashMap, FxHashSet};
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 use unwrap::unwrap;
@@ -27,7 +27,7 @@ pub(super) struct Node {
     peers: FxHashMap<SocketAddr, ConnectionType>,
     bootstrap_cache: FxHashSet<NodeInfo>,
     pending_bootstraps: FxHashSet<SocketAddr>,
-    pending_messages: FxHashMap<SocketAddr, Vec<Bytes>>,
+    pending_messages: FxHashMap<SocketAddr, Vec<NetworkBytes>>,
 }
 
 impl Node {
@@ -94,13 +94,11 @@ impl Node {
 
     pub fn disconnect(&mut self, dst: SocketAddr) {
         if self.peers.remove(&dst).is_some() {
-            self.network
-                .borrow_mut()
-                .send(self.addr, dst, Packet::Disconnect);
+            self.network.borrow_mut().disconnect(self.addr, dst)
         }
     }
 
-    pub fn send(&mut self, dst: SocketAddr, msg: Bytes) {
+    pub fn send(&mut self, dst: SocketAddr, msg: NetworkBytes) {
         if self.peers.contains_key(&dst) {
             self.send_message(dst, msg)
         } else {
@@ -216,6 +214,10 @@ impl Node {
         self.bootstrap_cache.iter().cloned().collect()
     }
 
+    pub fn is_connected(&self, addr: &SocketAddr) -> bool {
+        self.peers.get(addr).is_some()
+    }
+
     fn fire_event(&self, event: Event) {
         let _ = self.event_tx.send(event);
     }
@@ -226,13 +228,13 @@ impl Node {
             .send(self.addr, dst, Packet::ConnectRequest(self.config.our_type))
     }
 
-    fn send_message(&self, dst: SocketAddr, msg: Bytes) {
+    fn send_message(&self, dst: SocketAddr, msg: NetworkBytes) {
         self.network
             .borrow_mut()
             .send(self.addr, dst, Packet::Message(msg))
     }
 
-    fn add_pending_message(&mut self, addr: SocketAddr, msg: Bytes) {
+    fn add_pending_message(&mut self, addr: SocketAddr, msg: NetworkBytes) {
         self.pending_messages
             .entry(addr)
             .or_insert_with(Default::default)
@@ -266,9 +268,7 @@ impl Node {
 impl Drop for Node {
     fn drop(&mut self) {
         for (dst, _) in self.peers.drain() {
-            self.network
-                .borrow_mut()
-                .send(self.addr, dst, Packet::Disconnect)
+            self.network.borrow_mut().disconnect(self.addr, dst)
         }
 
         self.network.borrow_mut().remove_node(&self.addr);

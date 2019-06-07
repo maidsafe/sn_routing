@@ -14,6 +14,6 @@ pub mod crust;
 pub(crate) mod parsec;
 
 /// Mock version of Quic-P2P
-// TODO: remove this `allow(unused)`
-#[allow(unused)]
 pub(crate) mod quic_p2p;
+
+pub use self::quic_p2p::Network;

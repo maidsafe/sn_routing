@@ -16,12 +16,17 @@ use crate::{
     xor_name::XorName,
 };
 use hex_fmt::HexFmt;
+use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::Signature;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    fmt::{self, Debug, Formatter},
+    hash::{Hash, Hasher},
+    mem,
+};
 
 /// Direct message content.
 #[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum DirectMessage {
@@ -34,18 +39,16 @@ pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
     /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
     BootstrapResponse(Result<(), BootstrapResponseError>),
+    /// Sent from members of a section to a joining node in response to `ConnectRequest` (which is
+    /// a routing message)
+    ConnectResponse,
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
     CandidateInfo {
         /// `PublicId` from before relocation.
         old_public_id: PublicId,
-        /// `PublicId` from after relocation.
-        new_public_id: PublicId,
-        /// Signature of concatenated `PublicId`s using the pre-relocation key.
+        /// Signature of both old and new `PublicId`s using the pre-relocation key.
         signature_using_old: Signature,
-        /// Signature of concatenated `PublicId`s and `signature_using_old` using the
-        /// post-relocation key.
-        signature_using_new: Signature,
         /// Client authority from after relocation.
         new_client_auth: Authority<XorName>,
     },
@@ -95,6 +98,7 @@ impl Debug for DirectMessage {
             }
             BootstrapRequest => write!(formatter, "BootstrapRequest"),
             BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
+            ConnectResponse => write!(formatter, "ConnectResponse"),
             CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
             ResourceProof {
                 ref seed,
@@ -130,8 +134,67 @@ impl Debug for DirectMessage {
     }
 }
 
+// Note: need manual impl here, because `parsec::Request` and `parsec::Response` don't implement `Hash`.
+impl Hash for DirectMessage {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        use self::DirectMessage::*;
+
+        mem::discriminant(self).hash(state);
+
+        match *self {
+            MessageSignature(ref digest, ref signature) => {
+                digest.hash(state);
+                signature.hash(state);
+            }
+            BootstrapRequest | ConnectResponse | ResourceProofResponseReceipt => (),
+            BootstrapResponse(ref result) => result.hash(state),
+            CandidateInfo {
+                ref old_public_id,
+                ref signature_using_old,
+                ref new_client_auth,
+            } => {
+                old_public_id.hash(state);
+                signature_using_old.hash(state);
+                new_client_auth.hash(state);
+            }
+            ResourceProof {
+                ref seed,
+                target_size,
+                difficulty,
+            } => {
+                seed.hash(state);
+                target_size.hash(state);
+                difficulty.hash(state);
+            }
+            ResourceProofResponse {
+                part_index,
+                part_count,
+                ref proof,
+                leading_zero_bytes,
+            } => {
+                part_index.hash(state);
+                part_count.hash(state);
+                proof.hash(state);
+                leading_zero_bytes.hash(state);
+            }
+            ProxyRateLimitExceeded { ref ack } => ack.hash(state),
+            ParsecPoke(version) => version.hash(state),
+            ParsecRequest(version, ref request) => {
+                version.hash(state);
+                // Fake hash via serialisation
+                serialise(&request).ok().hash(state)
+            }
+            ParsecResponse(version, ref response) => {
+                version.hash(state);
+                // Fake hash via serialisation
+                serialise(&response).ok().hash(state)
+            }
+        }
+    }
+}
+
 #[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedDirectMessage {
     content: DirectMessage,
     src_id: PublicId,
@@ -153,14 +216,6 @@ impl SignedDirectMessage {
     /// Verify the message signature.
     pub fn verify(&self) -> Result<(), RoutingError> {
         self::implementation::verify(&self.src_id, &self.signature, &self.content)
-    }
-
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match self.content {
-            DirectMessage::ResourceProofResponse { .. } => 9,
-            _ => 0,
-        }
     }
 
     /// Verify the message signature and return its content and the sender id.
@@ -190,11 +245,10 @@ impl Debug for SignedDirectMessage {
 #[cfg(not(feature = "mock_serialise"))]
 mod implementation {
     use super::*;
-    use maidsafe_utilities::serialisation;
 
     pub fn sign(src_full_id: &FullId, content: &DirectMessage) -> Result<Signature, RoutingError> {
-        let mut serialised = serialisation::serialise(src_full_id.public_id())?;
-        serialised.extend_from_slice(&serialisation::serialise(content)?);
+        let mut serialised = serialise(src_full_id.public_id())?;
+        serialised.extend_from_slice(&serialise(content)?);
 
         let signature = src_full_id.signing_private_key().sign_detached(&serialised);
         Ok(signature)
@@ -205,8 +259,8 @@ mod implementation {
         signature: &Signature,
         content: &DirectMessage,
     ) -> Result<(), RoutingError> {
-        let mut serialised = serialisation::serialise(src_id)?;
-        serialised.extend_from_slice(&serialisation::serialise(content)?);
+        let mut serialised = serialise(src_id)?;
+        serialised.extend_from_slice(&serialise(content)?);
 
         if src_id
             .signing_public_key()

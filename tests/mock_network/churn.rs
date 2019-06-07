@@ -13,13 +13,14 @@ use super::{
 };
 use itertools::Itertools;
 use rand::Rng;
-use routing::mock_crust::Network;
 use routing::{
-    Authority, BootstrapConfig, Event, EventStream, ImmutableData, MessageId, PublicId, Request,
+    mock::Network, Authority, Event, EventStream, ImmutableData, MessageId, NetworkConfig, Request,
     Response, XorName, XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
-use std::cmp;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::{
+    cmp,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+};
 
 /// Randomly removes some nodes, but <1/3 from each section and never node 0.
 /// max_per_pfx: limits dropping to the specified count per pfx. It would also
@@ -71,7 +72,7 @@ fn drop_random_nodes<R: Rng>(
 /// Note: This does not clear relocation overrides. Should be cleared after polling.
 fn add_nodes<R: Rng>(
     rng: &mut R,
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     skip_some_prefixes: bool,
 ) -> BTreeSet<usize> {
@@ -93,10 +94,10 @@ fn add_nodes<R: Rng>(
         } else {
             0
         };
-        let bootstrap_config =
-            BootstrapConfig::with_contacts(&[nodes[proxy_index].handle.endpoint()]);
-        let node = TestNode::builder(&network)
-            .bootstrap_config(bootstrap_config.clone())
+        let network_config =
+            NetworkConfig::node().with_hard_coded_contact(nodes[proxy_index].endpoint());
+        let node = TestNode::builder(network)
+            .network_config(network_config)
             .create();
         if let Some(&pfx) = prefixes.iter().find(|pfx| pfx.matches(&node.name())) {
             assert!(prefixes.remove(&pfx));
@@ -169,7 +170,7 @@ fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) {
 /// Note: This fn will call `poll_and_resend` itself
 fn add_nodes_and_poll<R: Rng>(
     rng: &mut R,
-    network: &Network<PublicId>,
+    network: &Network,
     mut nodes: &mut Vec<TestNode>,
     allow_add_failure: bool,
 ) -> BTreeSet<XorName> {
@@ -197,7 +198,7 @@ fn add_nodes_and_poll<R: Rng>(
 // If introducing churn, would either drop/add nodes in each prefix.
 fn random_churn<R: Rng>(
     rng: &mut R,
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     max_prefixes_len: usize,
 ) -> BTreeSet<usize> {
@@ -434,7 +435,7 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     expected_puts.verify(nodes, &mut []);
 }
 
-fn client_puts(network: &mut Network<PublicId>, nodes: &mut [TestNode], min_section_size: usize) {
+fn client_puts(network: &Network, nodes: &mut [TestNode], min_section_size: usize) {
     let mut clients = create_connected_clients(network, nodes, 1);
     let cl_auth = Authority::Client {
         client_id: *clients[0].full_id.public_id(),
@@ -464,7 +465,7 @@ fn aggressive_churn() {
     let min_section_size = 4;
     let target_section_num = 5;
     let target_network_size = 35;
-    let mut network = Network::new(min_section_size, None);
+    let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
 
     // Create an initial network, increase until we have several sections, then
@@ -486,7 +487,7 @@ fn aggressive_churn() {
             warn!("Unable to add new node.");
         }
 
-        verify_invariant_for_all_nodes(&mut nodes);
+        verify_invariant_for_all_nodes(&network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
     }
 
@@ -507,10 +508,10 @@ fn aggressive_churn() {
         let added = add_nodes_and_poll(&mut rng, &network, &mut nodes, true);
         warn!("Simultaneously added {:?} and dropped {:?}", added, dropped);
 
-        verify_invariant_for_all_nodes(&mut nodes);
+        verify_invariant_for_all_nodes(&network, &mut nodes);
 
         send_and_receive(&mut rng, &mut nodes, min_section_size);
-        client_puts(&mut network, &mut nodes, min_section_size);
+        client_puts(&network, &mut nodes, min_section_size);
         warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
 
@@ -524,9 +525,9 @@ fn aggressive_churn() {
         let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes, None);
         warn!("Dropping random nodes. Dropped: {:?}", dropped_nodes);
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&mut nodes);
+        verify_invariant_for_all_nodes(&network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
-        client_puts(&mut network, &mut nodes, min_section_size);
+        client_puts(&network, &mut nodes, min_section_size);
         shuffle_nodes(&mut rng, &mut nodes);
         warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
@@ -604,6 +605,6 @@ fn messages_during_churn() {
             warn!("Added nodes: {:?}", added_names);
         }
         expected_puts.verify(&mut nodes, &mut clients);
-        verify_invariant_for_all_nodes(&mut nodes);
+        verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 }

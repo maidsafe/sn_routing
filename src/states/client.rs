@@ -20,13 +20,14 @@ use crate::{
         UserMessageCache,
     },
     outbox::EventBox,
+    peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::Transition,
     time::{Duration, Instant},
     timer::Timer,
     xor_name::XorName,
-    Service,
+    NetworkService,
 };
 use std::{
     collections::BTreeMap,
@@ -37,10 +38,11 @@ use std::{
 pub const RATE_EXCEED_RETRY: Duration = Duration::from_millis(800);
 
 pub struct ClientDetails {
-    pub network_service: Service,
+    pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
     pub msg_expiry_dur: Duration,
+    pub peer_map: PeerMap,
     pub proxy_pub_id: PublicId,
     pub timer: Timer,
 }
@@ -50,9 +52,10 @@ pub struct ClientDetails {
 /// Each client has a _proxy_: a node through which all requests are routed.
 pub struct Client {
     ack_mgr: AckManager,
-    network_service: Service,
+    network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
+    peer_map: PeerMap,
     proxy_pub_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
@@ -68,6 +71,7 @@ impl Client {
             network_service: details.network_service,
             full_id: details.full_id,
             min_section_size: details.min_section_size,
+            peer_map: details.peer_map,
             proxy_pub_id: details.proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: details.timer,
@@ -153,8 +157,12 @@ impl Client {
 }
 
 impl Base for Client {
-    fn network_service(&self) -> &Service {
+    fn network_service(&self) -> &NetworkService {
         &self.network_service
+    }
+
+    fn network_service_mut(&mut self) -> &mut NetworkService {
+        &mut self.network_service
     }
 
     fn full_id(&self) -> &FullId {
@@ -172,6 +180,14 @@ impl Base for Client {
 
     fn min_section_size(&self) -> usize {
         self.min_section_size
+    }
+
+    fn peer_map(&self) -> &PeerMap {
+        &self.peer_map
+    }
+
+    fn peer_map_mut(&mut self) -> &mut PeerMap {
+        &mut self.peer_map
     }
 
     fn handle_client_send_request(
@@ -223,11 +239,11 @@ impl Base for Client {
         Transition::Stay
     }
 
-    fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{} Received LostPeer - {:?}", self, pub_id);
+    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} - Disconnected from {:?}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
-            debug!("{} Lost bootstrap connection to {}.", self, pub_id);
+            debug!("{} - Lost bootstrap connection to {}.", self, pub_id);
             outbox.send_event(Event::Terminated);
             Transition::Terminate
         } else {
@@ -260,13 +276,8 @@ impl Base for Client {
     fn handle_hop_message(
         &mut self,
         hop_msg: HopMessage,
-        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if self.proxy_pub_id != pub_id {
-            return Err(RoutingError::UnknownConnection(pub_id));
-        }
-
         if let Some(routing_msg) = self.filter_hop_message(hop_msg)? {
             Ok(self.dispatch_routing_message(routing_msg, outbox))
         } else {

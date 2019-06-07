@@ -18,7 +18,6 @@ use crate::{
         PrefixChangeOutcome, Proof, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
-    crust::{CrustError, CrustUser, PrivConnectionInfo},
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -29,6 +28,8 @@ use crate::{
     outbox::EventBox,
     parsec::{self, ParsecMap},
     peer_manager::{Peer, PeerManager, PeerState},
+    peer_map::PeerMap,
+    quic_p2p::NodeInfo,
     rate_limiter::RateLimiter,
     routing_message_filter::{FilteringResult, RoutingMessageFilter},
     routing_table::Error as RoutingTableError,
@@ -41,7 +42,7 @@ use crate::{
     types::MessageId,
     utils::{self, DisplayDuration, XorTargetInterval},
     xor_name::XorName,
-    Service,
+    ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -54,7 +55,7 @@ use std::{
     collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
-    net::{IpAddr, SocketAddr},
+    net::IpAddr,
 };
 
 /// Time after which a `Ticked` event is sent.
@@ -78,12 +79,13 @@ pub struct ElderDetails {
     pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub chain: Chain,
-    pub network_service: Service,
+    pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_backlog: Vec<RoutingMessage>,
     pub parsec_map: ParsecMap,
+    pub peer_map: PeerMap,
     pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -92,12 +94,13 @@ pub struct ElderDetails {
 pub struct Elder {
     ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
-    network_service: Service,
+    network_service: NetworkService,
     full_id: FullId,
     is_first_node: bool,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<RoutingMessage>,
+    peer_map: PeerMap,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
     routing_msg_filter: RoutingMessageFilter,
@@ -141,10 +144,11 @@ pub struct Elder {
 impl Elder {
     pub fn first(
         cache: Box<Cache>,
-        network_service: Service,
+        network_service: NetworkService,
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
+        outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
 
@@ -155,6 +159,7 @@ impl Elder {
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+        let peer_map = PeerMap::new();
         let peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
 
         let details = ElderDetails {
@@ -167,24 +172,20 @@ impl Elder {
             gen_pfx_info,
             msg_backlog: Vec::new(),
             parsec_map,
+            peer_map,
             peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
         };
 
-        let mut node = Self::new(details, true);
+        let node = Self::new(details, true);
 
-        match node.network_service.start_listening_tcp() {
-            Ok(()) => {
-                debug!("{} - State changed to Node.", node);
-                info!("{} - Started a new network as a seed node.", node);
-                Ok(node)
-            }
-            Err(error) => {
-                error!("{} - Failed to start listening: {:?}", node, error);
-                Err(error.into())
-            }
-        }
+        debug!("{} - State changed to Node.", node);
+        info!("{} - Started a new network as a seed node.", node);
+
+        outbox.send_event(Event::Connected);
+
+        Ok(node)
     }
 
     pub fn from_adult(
@@ -216,6 +217,7 @@ impl Elder {
             full_id: details.full_id.clone(),
             is_first_node,
             msg_queue: details.msg_backlog.into_iter().collect(),
+            peer_map: details.peer_map,
             peer_mgr: details.peer_mgr,
             response_cache: details.cache,
             routing_msg_filter: details.routing_msg_filter,
@@ -271,7 +273,7 @@ impl Elder {
         event_backlog: Vec<Event>,
         outbox: &mut EventBox,
     ) -> Result<(), RoutingError> {
-        debug!("{} - State changed to Node.", self);
+        debug!("{} - State changed to Elder.", self);
         trace!(
             "{} - Node Established. Prefixes: {:?}",
             self,
@@ -297,22 +299,6 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let _ = self.handle_section_info_event(sec_info, old_pfx, outbox)?;
-
-        // Allow other peers to bootstrap via us.
-        if let Err(err) = self.network_service.set_accept_bootstrap(true) {
-            warn!("{} Unable to accept bootstrap connections. {:?}", self, err);
-        }
-        self.network_service.set_service_discovery_listen(true);
-
-        Ok(())
-    }
-
-    // Initialises the first node of the network
-    fn init_first_node(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
-        outbox.send_event(Event::Connected);
-
-        self.network_service.set_accept_bootstrap(true)?;
-        self.network_service.set_service_discovery_listen(true);
 
         Ok(())
     }
@@ -385,16 +371,12 @@ impl Elder {
             })
             .cloned()
             .collect();
+
         for pub_id in peers_to_connect {
             debug!("{} Sending connection info to {:?}.", self, pub_id);
             let src = Authority::ManagedNode(*self.name());
-            let node_auth = Authority::ManagedNode(*pub_id.name());
-            if let Err(error) = self.send_connection_info_request(pub_id, src, node_auth, outbox) {
-                debug!(
-                    "{} - Failed to send connection info to {:?}: {:?}",
-                    self, pub_id, error
-                );
-            }
+            let dst = Authority::ManagedNode(*pub_id.name());
+            let _ = self.send_connect_request(pub_id, src, dst, outbox);
         }
     }
 
@@ -501,21 +483,19 @@ impl Elder {
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(&PeerState::Bootstrapper { .. }) => {
+            Some(PeerState::Client { .. }) => {
                 if let DirectMessage::BootstrapRequest = *msg {
-                    return Ok(());
+                    Ok(())
+                } else {
+                    debug!(
+                        "{} Illegitimate direct message {:?} from {:?}.",
+                        self, msg, pub_id
+                    );
+                    Err(RoutingError::InvalidStateForOperation)
                 }
             }
-            Some(&PeerState::Client { .. }) => (),
-            None => return Err(RoutingError::ClientConnectionNotFound),
-            _ => return Ok(()),
+            _ => Ok(()),
         }
-
-        debug!(
-            "{} Illegitimate direct message {:?} from {:?}.",
-            self, msg, pub_id
-        );
-        Err(RoutingError::InvalidStateForOperation)
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -540,8 +520,10 @@ impl Elder {
             self.sig_accumulator
                 .add_proof(min_section_size, digest, proof)
         {
-            let hop = *self.name(); // we accumulated the message, so now we act as the last hop
-            self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new())?;
+            // we accumulated the message, so now we act as the last hop
+            let mut sent_to = BTreeSet::new();
+            let _ = sent_to.insert(*self.name());
+            self.handle_signed_message(signed_msg, route, &sent_to)?;
         }
         Ok(())
     }
@@ -552,7 +534,6 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
         route: u8,
-        hop_name: XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         if signed_msg.routing_message().src.is_client() {
@@ -598,9 +579,7 @@ impl Elder {
             self.send_ack(signed_msg.routing_message(), route);
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
-                if let Err(error) =
-                    self.send_signed_message(&mut signed_msg, route, &hop_name, sent_to)
-                {
+                if let Err(error) = self.send_signed_message(&mut signed_msg, route, sent_to) {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
@@ -615,7 +594,7 @@ impl Elder {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(&mut signed_msg, route, &hop_name, sent_to) {
+        if let Err(error) = self.send_signed_message(&mut signed_msg, route, sent_to) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -653,7 +632,7 @@ impl Elder {
         &mut self,
         routing_msg: RoutingMessage,
         outbox: &mut EventBox,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
@@ -670,7 +649,10 @@ impl Elder {
                     proxy_node_name,
                 },
                 Section(dst_name),
-            ) => self.handle_relocate_request(client_id, proxy_node_name, dst_name, message_id),
+            ) => {
+                self.handle_relocate_request(client_id, proxy_node_name, dst_name, message_id)?;
+                Ok(Transition::Stay)
+            }
             (
                 ExpectCandidate {
                     old_public_id,
@@ -679,75 +661,44 @@ impl Elder {
                 },
                 Section(_),
                 Section(dst_name),
-            ) => self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id),
+            ) => {
+                self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id)?;
+                Ok(Transition::Stay)
+            }
             (
-                ConnectionInfoRequest {
+                ConnectRequest {
                     encrypted_conn_info,
                     pub_id,
-                    msg_id,
+                    ..
                 },
                 src @ Client { .. },
                 dst @ ManagedNode(_),
             )
             | (
-                ConnectionInfoRequest {
+                ConnectRequest {
                     encrypted_conn_info,
                     pub_id,
-                    msg_id,
+                    ..
                 },
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
-            )
-            | (
-                ConnectionInfoRequest {
-                    encrypted_conn_info,
-                    pub_id,
-                    msg_id,
-                },
-                src @ ManagedNode(_),
-                dst @ Client { .. },
-            ) => self.handle_connection_info_request(
-                encrypted_conn_info,
-                pub_id,
-                msg_id,
-                src,
-                dst,
-                outbox,
-            ),
-            (
-                ConnectionInfoResponse {
-                    encrypted_conn_info,
-                    pub_id,
-                    msg_id,
-                },
-                ManagedNode(src_name),
-                dst @ Client { .. },
-            )
-            | (
-                ConnectionInfoResponse {
-                    encrypted_conn_info,
-                    pub_id,
-                    msg_id,
-                },
-                ManagedNode(src_name),
-                dst @ ManagedNode(_),
-            ) => self.handle_connection_info_response(
-                encrypted_conn_info,
-                pub_id,
-                msg_id,
-                src_name,
-                dst,
-            ),
-            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
+            ) => self.handle_connect_request(&encrypted_conn_info, pub_id, src, dst, outbox),
+            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(Transition::Stay),
             (
                 NeighbourConfirm(digest, proofs, sec_infos_and_proofs),
                 ManagedNode(_),
                 Section(_),
-            ) => self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs),
-            (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
+            ) => {
+                self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs)?;
+                Ok(Transition::Stay)
+            }
+            (Merge(digest), PrefixSection(_), PrefixSection(_)) => {
+                self.handle_merge(digest)?;
+                Ok(Transition::Stay)
+            }
             (Ack(ack, _), _, _) => {
                 self.handle_ack_response(ack);
-                Ok(())
+                Ok(Transition::Stay)
             }
             (
                 UserMessagePart {
@@ -766,7 +717,7 @@ impl Elder {
                 {
                     outbox.send_event(msg.into_event(src, dst));
                 }
-                Ok(())
+                Ok(Transition::Stay)
             }
             (content, src, dst) => {
                 debug!(
@@ -790,33 +741,19 @@ impl Elder {
         // to our RT.
         // This will flag peer as valid if its found in peer_mgr regardless of their
         // connection status to us.
-        let is_connected = match self.peer_mgr.get_peer(&new_pub_id).map(Peer::is_connected) {
-            Some(true) => true,
-            Some(false) => {
-                trace!(
-                    "{} Candidate {} not yet connected to us.",
-                    self.log_ident(),
-                    new_pub_id.name()
-                );
-                false
-            }
-            None => {
-                trace!(
-                    "{} No peer with name {}",
-                    self.log_ident(),
-                    new_pub_id.name()
-                );
-                let src = Authority::ManagedNode(*self.name());
-                if let Err(error) =
-                    self.send_connection_info_request(new_pub_id, src, new_client_auth, outbox)
-                {
-                    debug!(
-                        "{} - Failed to send connection info to {}: {:?}",
-                        self, new_pub_id, error
-                    );
-                }
-                false
-            }
+        let is_connected = if self.peer_mgr.get_peer(&new_pub_id).is_some() {
+            true
+        } else {
+            trace!(
+                "{} No peer with name {}",
+                self.log_ident(),
+                new_pub_id.name()
+            );
+
+            let src = Authority::ManagedNode(*self.name());
+            let _ = self.send_connect_request(new_pub_id, src, new_client_auth, outbox);
+
+            false
         };
 
         info!(
@@ -1006,49 +943,32 @@ impl Elder {
 
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        let peer_kind = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
-            match *peer.state() {
-                PeerState::Bootstrapper { peer_kind, .. } => peer_kind,
-                _ => {
-                    return Err(RoutingError::InvalidStateForOperation);
-                }
+        let conn_info = match self.peer_map().get(&pub_id) {
+            Some(conn_info) => conn_info.clone(),
+            None => {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "Not connected to the sender of BootstrapRequest."
+                );
+                return Err(RoutingError::UnknownConnection(pub_id));
             }
-        } else {
-            return Err(RoutingError::UnknownConnection(pub_id));
         };
 
-        if peer_kind == CrustUser::Client {
-            let ip = self
-                .network_service
-                .get_peer_ip_addr(&pub_id)
-                .map_err(|err| {
-                    debug!(
-                        "{} Can't get IP address of bootstrapper {:?} : {:?}",
-                        self, pub_id, err
-                    );
-                    self.disconnect_peer(&pub_id);
-                    err
-                })?;
+        let peer_type = match conn_info {
+            ConnectionInfo::Client { .. } => "client",
+            ConnectionInfo::Node { .. } => "node",
+        };
+        trace!(
+            "{} - Received BootstrapRequest from {:?} as {}.",
+            self,
+            pub_id,
+            peer_type
+        );
 
-            if !self.peer_mgr.can_accept_client(ip) {
-                debug!(
-                    "{} Client {:?} rejected: We cannot accept more clients.",
-                    self, pub_id
-                );
-                self.send_direct_message(
-                    &pub_id,
-                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
-                );
-                self.disconnect_peer(&pub_id);
-                return Ok(());
-            }
-        }
-
-        if (peer_kind == CrustUser::Client || !self.is_first_node)
-            && self.chain.len() < self.min_section_size() - 1
-        {
+        // Check min section size.
+        if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
             debug!(
-                "{} Client {:?} rejected: Routing table has {} entries. {} required.",
+                "{} - Peer {:?} rejected: Routing table has {} entries. {} required.",
                 self,
                 pub_id,
                 self.chain.len(),
@@ -1062,10 +982,43 @@ impl Elder {
             return Ok(());
         }
 
-        self.peer_mgr
-            .handle_bootstrap_request(&pub_id, &self.log_ident());
+        if let ConnectionInfo::Client { peer_addr } = conn_info {
+            let ip = peer_addr.ip();
+
+            // Check banned IPs.
+            if self.banned_client_ips.contains_key(&ip) {
+                warn!(
+                    "{} - Client {:?} is trying to bootstrap on banned IP {}.",
+                    self, pub_id, ip
+                );
+                self.ban_and_disconnect_peer(&pub_id);
+                return Ok(());
+            }
+
+            // Check the client limit.
+            if !self.peer_mgr.can_accept_client(ip) {
+                // TODO (quic-p2p): This check gets always triggered because the client entry gets
+                // inserted during `handle_peer_connect` now. Figure out how to bring it back.
+                /*
+                debug!(
+                    "{} - Client {:?} rejected: We cannot accept more clients.",
+                    self, pub_id
+                );
+                self.send_direct_message(
+                    &pub_id,
+                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
+                );
+                self.disconnect_peer(&pub_id);
+                return Ok(());
+                */
+            }
+        }
+
+        self.peer_mgr.handle_bootstrap_request(pub_id, &conn_info);
         let _ = self.dropped_clients.remove(&pub_id);
+
         self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(Ok(())));
+
         Ok(())
     }
 
@@ -1075,7 +1028,6 @@ impl Elder {
         old_pub_id: &PublicId,
         new_pub_id: &PublicId,
         signature_using_old: &Signature,
-        signature_using_new: &Signature,
         new_client_auth: &Authority<XorName>,
         outbox: &mut EventBox,
     ) {
@@ -1091,12 +1043,7 @@ impl Elder {
             self, old_pub_id, new_pub_id
         );
 
-        if !self.is_candidate_info_valid(
-            old_pub_id,
-            new_pub_id,
-            signature_using_old,
-            signature_using_new,
-        ) {
+        if !self.is_candidate_info_valid(old_pub_id, new_pub_id, signature_using_old) {
             warn!(
                 "{} Signature check failed in CandidateInfo, so dropping peer {:?}.",
                 self, new_pub_id
@@ -1112,8 +1059,11 @@ impl Elder {
             return;
         }
 
-        let (difficulty, target_size) = if self.disable_resource_proof
-            || self.network_service.is_peer_hard_coded(new_pub_id)
+        // TODO (quic-p2p): quic-p2p doesn't currently have an API to check if a contact is
+        //                  hard-coded. Either find a workaround or request such feature to be
+        //                  implemented and then re-enable this check.
+        let (difficulty, target_size) = if cfg!(feature = "mock_base") || self.disable_resource_proof
+            // || self.network_service.is_peer_hard_coded(new_pub_id)
             || self.peer_mgr.is_or_was_joining_node(new_pub_id)
         {
             (0, 1)
@@ -1123,6 +1073,7 @@ impl Elder {
                 RESOURCE_PROOF_TARGET_SIZE / (self.chain.our_section().len() + 1),
             )
         };
+
         let seed: Vec<u8> = if cfg!(feature = "mock_base") {
             vec![5u8; 4]
         } else {
@@ -1193,19 +1144,18 @@ impl Elder {
         old_pub_id: &PublicId,
         new_pub_id: &PublicId,
         signature_using_old: &Signature,
-        signature_using_new: &Signature,
     ) -> bool {
-        let old_and_new_pub_ids = (old_pub_id, new_pub_id);
-        let mut signed_data = match serialisation::serialise(&old_and_new_pub_ids) {
+        let both_ids = (*old_pub_id, *new_pub_id);
+        let both_ids_serialised = match serialisation::serialise(&both_ids) {
             Ok(result) => result,
             Err(error) => {
-                error!("Failed to serialise public IDs: {:?}", error);
+                error!("{} - Failed to serialise public IDs: {:?}", self, error);
                 return false;
             }
         };
         if !old_pub_id
             .signing_public_key()
-            .verify_detached(signature_using_old, &signed_data)
+            .verify_detached(signature_using_old, &both_ids_serialised)
         {
             debug!(
                 "{} CandidateInfo from {}->{} has invalid old signature.",
@@ -1213,17 +1163,7 @@ impl Elder {
             );
             return false;
         }
-        signed_data.extend_from_slice(&signature_using_old.into_bytes());
-        if !new_pub_id
-            .signing_public_key()
-            .verify_detached(signature_using_new, &signed_data)
-        {
-            debug!(
-                "{} CandidateInfo from {}->{} has invalid new signature.",
-                self, old_pub_id, new_pub_id
-            );
-            return false;
-        }
+
         true
     }
 
@@ -1517,7 +1457,6 @@ impl Elder {
         &mut self,
         signed_msg: &mut SignedRoutingMessage,
         route: u8,
-        hop: &XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         let dst = signed_msg.routing_message().dst;
@@ -1538,7 +1477,7 @@ impl Elder {
         }
 
         let (new_sent_to, target_pub_ids) =
-            self.get_targets(signed_msg.routing_message(), route, hop, sent_to)?;
+            self.get_targets(signed_msg.routing_message(), route, sent_to)?;
 
         for target_pub_id in target_pub_ids {
             self.send_signed_message_to_peer(
@@ -1551,33 +1490,19 @@ impl Elder {
         Ok(())
     }
 
-    // Filter, then convert the message to a `Hop` and serialise.
-    // Send this byte string.
     fn send_signed_message_to_peer(
         &mut self,
         signed_msg: SignedRoutingMessage,
-        target: &PublicId,
+        dst_id: &PublicId,
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
-        if !self.network_service().is_connected(target) {
-            trace!(
-                "{} Not connected to {:?}. Dropping peer and message: {:?}",
-                self,
-                target,
-                signed_msg.routing_message()
-            );
-            self.disconnect_peer(target);
+        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id, route) {
             return Ok(());
         }
 
-        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), target, route) {
-            return Ok(());
-        }
-
-        let priority = signed_msg.priority();
-        let bytes = self.to_hop_bytes(signed_msg, route, sent_to)?;
-        self.send_or_drop(target, bytes, priority);
+        let message = self.to_hop_message(signed_msg, route, sent_to)?;
+        self.send_message(dst_id, message);
         Ok(())
     }
 
@@ -1589,9 +1514,7 @@ impl Elder {
         signed_msg: &SignedRoutingMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        let priority = signed_msg.priority();
         let is_client = self.peer_mgr.is_client(pub_id);
-
         let result = if self.peer_mgr.is_connected(pub_id) {
             // If the message being relayed is a data response, update the client's
             // rate limit balance to account for the initial over-counting.
@@ -1605,8 +1528,9 @@ impl Elder {
                 return Ok(());
             }
 
-            let data = self.to_hop_bytes(signed_msg.clone(), 0, BTreeSet::new())?;
-            self.send_or_drop(pub_id, data, priority);
+            let sent_to = iter::once(*self.name()).collect();
+            let message = self.to_hop_message(signed_msg.clone(), 0, sent_to)?;
+            self.send_message(pub_id, message);
             Ok(())
         } else {
             debug!(
@@ -1664,17 +1588,15 @@ impl Elder {
     }
 
     /// Returns a list of target IDs for a message sent via route.
-    /// Names in exclude and sent_to will be excluded from the result.
+    /// Names in `sent_to` will be excluded from the result.
     fn get_targets(
         &self,
         routing_msg: &RoutingMessage,
         route: u8,
-        exclude: &XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(BTreeSet<XorName>, Vec<PublicId>), RoutingError> {
         let force_via_proxy = match routing_msg.content {
-            MessageContent::ConnectionInfoRequest { pub_id, .. }
-            | MessageContent::ConnectionInfoResponse { pub_id, .. } => {
+            MessageContent::ConnectRequest { pub_id, .. } => {
                 routing_msg.src.is_client() && pub_id == *self.full_id.public_id()
             }
             _ => false,
@@ -1687,7 +1609,7 @@ impl Elder {
             let conn_peers = self.connected_peers();
             let targets: BTreeSet<_> = self
                 .chain
-                .targets(&routing_msg.dst, *exclude, route as usize, &conn_peers)?
+                .targets(&routing_msg.dst, route as usize, &conn_peers)?
                 .into_iter()
                 .filter(|target| !sent_to.contains(target))
                 .collect();
@@ -1699,7 +1621,7 @@ impl Elder {
                     .cloned()
                     .collect()
             } else {
-                BTreeSet::new()
+                iter::once(*self.name()).collect()
             };
             Ok((
                 new_sent_to,
@@ -1716,7 +1638,7 @@ impl Elder {
                 .map(Peer::pub_id)
             {
                 if self.peer_mgr.is_connected(pub_id) {
-                    Ok((BTreeSet::new(), vec![*pub_id]))
+                    Ok((iter::once(*self.name()).collect(), vec![*pub_id]))
                 } else {
                     error!(
                         "{} Unable to find connection to proxy in PeerManager.",
@@ -1786,18 +1708,14 @@ impl Elder {
                 "{} - Sending connection info to {:?} due to dropped peer.",
                 self, pub_id
             );
-            let own_name = *self.name();
-            if let Err(error) = self.send_connection_info_request(
+
+            let our_name = *self.name();
+            let _ = self.send_connect_request(
                 pub_id,
-                Authority::ManagedNode(own_name),
+                Authority::ManagedNode(our_name),
                 Authority::ManagedNode(*pub_id.name()),
                 outbox,
-            ) {
-                debug!(
-                    "{} - Failed to send connection info to {:?}: {:?}",
-                    self, pub_id, error
-                );
-            }
+            );
         }
 
         true
@@ -1830,20 +1748,39 @@ impl Elder {
     // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
     // handle malicious nodes more fully.
     fn ban_and_disconnect_peer(&mut self, pub_id: &PublicId) {
-        if let Ok(ip_addr) = self.network_service.get_peer_ip_addr(pub_id) {
-            let _ = self.banned_client_ips.insert(ip_addr, ());
-            debug!("{} Banned client {:?} on IP {}", self, pub_id, ip_addr);
-        } else {
-            warn!("{} Can't get IP address of client {:?}.", self, pub_id);
-        }
+        let ip = match self.peer_map().get(pub_id) {
+            Some(ConnectionInfo::Client { peer_addr }) => peer_addr.ip(),
+            Some(ConnectionInfo::Node { .. }) => {
+                warn!(
+                    "{} - Can't ban IP address of {:?} - not a client.",
+                    self, pub_id
+                );
+                return;
+            }
+            None => {
+                warn!(
+                    "{} - Can't ban IP address of {:?} - unknown IP address.",
+                    self, pub_id
+                );
+                return;
+            }
+        };
+
+        debug!("{} - Banned client {:?} on IP {}.", self, pub_id, ip);
+
+        let _ = self.banned_client_ips.insert(ip, ());
         let _ = self.dropped_clients.insert(*pub_id, ());
         self.disconnect_peer(pub_id);
     }
 }
 
 impl Base for Elder {
-    fn network_service(&self) -> &Service {
+    fn network_service(&self) -> &NetworkService {
         &self.network_service
+    }
+
+    fn network_service_mut(&mut self) -> &mut NetworkService {
+        &mut self.network_service
     }
 
     fn full_id(&self) -> &FullId {
@@ -1866,6 +1803,14 @@ impl Base for Elder {
 
     fn min_section_size(&self) -> usize {
         self.chain.min_sec_size()
+    }
+
+    fn peer_map(&self) -> &PeerMap {
+        &self.peer_map
+    }
+
+    fn peer_map_mut(&mut self) -> &mut PeerMap {
+        &mut self.peer_map
     }
 
     fn handle_node_send_message(
@@ -1915,69 +1860,27 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_bootstrap_accept(&mut self, pub_id: PublicId, peer_kind: CrustUser) -> Transition {
-        trace!(
-            "{} Received BootstrapAccept from {:?} as {:?}.",
-            self,
-            pub_id,
-            peer_kind
-        );
-
-        let ip = if let Ok(ip) = self.network_service.get_peer_ip_addr(&pub_id) {
-            ip
-        } else {
-            debug!(
-                "{} Can't get IP address of bootstrapper {:?}.",
-                self, pub_id
-            );
-            self.disconnect_peer(&pub_id);
-            if peer_kind == CrustUser::Client {
-                let _ = self.dropped_clients.insert(pub_id, ());
-            }
-            return Transition::Stay;
-        };
-
-        if peer_kind == CrustUser::Client && self.banned_client_ips.contains_key(&ip) {
-            warn!(
-                "{} Client {:?} is trying to bootstrap on banned IP {}.",
-                self, pub_id, ip
-            );
-            self.ban_and_disconnect_peer(&pub_id);
-            return Transition::Stay;
-        }
-
-        self.peer_mgr
-            .insert_peer(Peer::new(pub_id, PeerState::Bootstrapper { peer_kind, ip }));
-
-        Transition::Stay
-    }
-
-    fn handle_bootstrap_connect(&mut self, pub_id: PublicId, _: SocketAddr) -> Transition {
+    fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
         // A mature node doesn't need a bootstrap connection
-        self.disconnect_peer(&pub_id);
+        self.network_service.disconnect_from(node_info.peer_addr);
         Transition::Stay
     }
 
-    fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        Relocated::handle_connect_success(self, pub_id, outbox)
+    fn handle_peer_connected(
+        &mut self,
+        pub_id: PublicId,
+        conn_info: ConnectionInfo,
+        outbox: &mut EventBox,
+    ) -> Transition {
+        Approved::handle_peer_connected(self, pub_id, conn_info, outbox)
     }
 
-    fn handle_connect_failure(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        self.log_connect_failure(&pub_id);
-        let _ = self.dropped_peer(pub_id, outbox, true);
-        if self.chain.our_info().members().contains(&pub_id) {
-            self.vote_for_event(NetworkEvent::Offline(pub_id));
-        }
+    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} - Disconnected from {}", self, pub_id);
 
-        Transition::Stay
-    }
-
-    fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         if self.peer_mgr.get_peer(&pub_id).is_none() {
             return Transition::Stay;
         }
-
-        debug!("{} Received LostPeer - {}", self, pub_id);
 
         if self.dropped_peer(pub_id, outbox, true) {
             Transition::Stay
@@ -1986,31 +1889,7 @@ impl Base for Elder {
         }
     }
 
-    fn handle_connection_info_prepared(
-        &mut self,
-        result_token: u32,
-        result: Result<PrivConnectionInfo<PublicId>, CrustError>,
-    ) -> Transition {
-        Relocated::handle_connection_info_prepared(self, result_token, result)
-    }
-
-    fn handle_listener_started(&mut self, port: u16, outbox: &mut EventBox) -> Transition {
-        trace!("{} - Listener started on port {}.", self, port);
-        if self.is_first_node && self.init_first_node(outbox).is_err() {
-            outbox.send_event(Event::Terminated);
-            Transition::Terminate
-        } else {
-            Transition::Stay
-        }
-    }
-
-    fn handle_listener_failed(&mut self, outbox: &mut EventBox) -> Transition {
-        error!("{} - Failed to start listening.", self);
-        outbox.send_event(Event::Terminated);
-        Transition::Terminate
-    }
-
-    fn finish_handle_crust_event(&mut self, outbox: &mut EventBox) -> Transition {
+    fn finish_handle_network_event(&mut self, outbox: &mut EventBox) -> Transition {
         self.handle_routing_messages(outbox);
         Transition::Stay
     }
@@ -2022,13 +1901,7 @@ impl Base for Elder {
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let Err(error) = self.check_direct_message_sender(&msg, &pub_id) {
-            match error {
-                RoutingError::ClientConnectionNotFound => (),
-                _ => self.ban_and_disconnect_peer(&pub_id),
-            }
-            return Err(error);
-        }
+        self.check_direct_message_sender(&msg, &pub_id)?;
 
         use crate::messages::DirectMessage::*;
         match msg {
@@ -2044,24 +1917,13 @@ impl Base for Elder {
             }
             CandidateInfo {
                 ref old_public_id,
-                ref new_public_id,
                 ref signature_using_old,
-                ref signature_using_new,
                 ref new_client_auth,
             } => {
-                if *new_public_id != pub_id {
-                    error!(
-                        "{} CandidateInfo(new_public_id: {}) does not match crust id {}.",
-                        self, new_public_id, pub_id
-                    );
-                    self.disconnect_peer(&pub_id);
-                    return Err(RoutingError::InvalidSource);
-                }
                 self.handle_candidate_info(
                     old_public_id,
                     &pub_id,
                     signature_using_old,
-                    signature_using_new,
                     new_client_auth,
                     outbox,
                 );
@@ -2088,6 +1950,7 @@ impl Base for Elder {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
             BootstrapResponse(_)
+            | ConnectResponse
             | ProxyRateLimitExceeded { .. }
             | ResourceProof { .. }
             | ResourceProofResponseReceipt => {
@@ -2100,88 +1963,66 @@ impl Base for Elder {
 
     fn handle_hop_message(
         &mut self,
-        hop_msg: HopMessage,
-        pub_id: PublicId,
+        msg: HopMessage,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        let mut client_ip = None;
-        let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(&PeerState::Bootstrapper { .. }) => {
-                warn!(
-                    "{} Hop message received from bootstrapper {:?}, disconnecting.",
-                    self, pub_id
-                );
-                Err(RoutingError::InvalidStateForOperation)
-            }
-            Some(&PeerState::Client { ip, .. }) => {
-                client_ip = Some(ip);
-                Ok(*self.name())
-            }
-            Some(&PeerState::JoiningNode) => Ok(*self.name()),
-            Some(&PeerState::Candidate)
-            | Some(&PeerState::Proxy)
-            | Some(&PeerState::Node { .. }) => Ok(*pub_id.name()),
-            Some(&PeerState::ConnectionInfoPreparing { .. })
-            | Some(&PeerState::ConnectionInfoReady(_))
-            | Some(&PeerState::CrustConnecting)
-            | Some(&PeerState::Connected)
-            | None => {
-                if self.dropped_clients.contains_key(&pub_id) {
-                    debug!(
-                        "{} Ignoring {:?} from recently-disconnected client {:?}.",
-                        self, hop_msg, pub_id
-                    );
-                    return Ok(Transition::Stay);
+        let client_details = match msg.content.routing_message().src {
+            Authority::Client { client_id, .. } => {
+                if let Some(PeerState::Client { ip, .. }) =
+                    self.peer_mgr.get_peer(&client_id).map(Peer::state)
+                {
+                    Some((client_id, *ip))
                 } else {
-                    Ok(*self.name())
-                    // FIXME - confirm we can return with an error here by running soak tests
-                    // debug!("{} Invalid sender {} of {:?}", self, pub_id, hop_msg);
-                    // return Err(RoutingError::InvalidSource);
+                    None
                 }
             }
+            _ => None,
         };
 
-        if let Some(ip) = client_ip {
-            match self.check_valid_client_message(&ip, hop_msg.content.routing_message()) {
+        if let Some((client_id, client_ip)) = client_details {
+            if self.dropped_clients.contains_key(&client_id) {
+                debug!(
+                    "{} Ignoring {:?} from recently-disconnected client {:?}.",
+                    self, msg, client_id
+                );
+                return Ok(Transition::Stay);
+            }
+
+            match self.check_valid_client_message(&client_ip, msg.content.routing_message()) {
                 Ok(added_bytes) => {
                     self.proxy_load_amount += added_bytes;
                     self.peer_mgr
-                        .add_client_traffic(&pub_id, added_bytes, &self.log_ident());
+                        .add_client_traffic(&client_id, added_bytes, &self.log_ident());
                 }
-                Err(e) => hop_name_result = Err(e),
+                Err(RoutingError::ExceedsRateLimit(hash)) => {
+                    trace!(
+                        "{} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
+                        self,
+                        client_id
+                    );
+                    self.send_direct_message(
+                        &client_id,
+                        DirectMessage::ProxyRateLimitExceeded {
+                            ack: Ack::compute(msg.content.routing_message())?,
+                        },
+                    );
+                    return Err(RoutingError::ExceedsRateLimit(hash));
+                }
+                Err(error) => {
+                    self.ban_and_disconnect_peer(&client_id);
+                    return Err(error);
+                }
             }
         }
 
-        match hop_name_result {
-            Ok(hop_name) => {
-                let HopMessage {
-                    content,
-                    route,
-                    sent_to,
-                    ..
-                } = hop_msg;
-                self.handle_signed_message(content, route, hop_name, &sent_to)
-                    .map(|()| Transition::Stay)
-            }
-            Err(RoutingError::ExceedsRateLimit(hash)) => {
-                trace!(
-                    "{} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
-                    self,
-                    pub_id
-                );
-                self.send_direct_message(
-                    &pub_id,
-                    DirectMessage::ProxyRateLimitExceeded {
-                        ack: Ack::compute(hop_msg.content.routing_message())?,
-                    },
-                );
-                Err(RoutingError::ExceedsRateLimit(hash))
-            }
-            Err(error) => {
-                self.ban_and_disconnect_peer(&pub_id);
-                Err(error)
-            }
-        }
+        let HopMessage {
+            content,
+            route,
+            sent_to,
+            ..
+        } = msg;
+        self.handle_signed_message(content, route, &sent_to)
+            .map(|()| Transition::Stay)
     }
 }
 
@@ -2298,9 +2139,11 @@ impl Bootstrapped for Elder {
                         .add_message(signed_msg, min_section_size, route)
                 {
                     if self.in_authority(&msg.routing_message().dst) {
-                        self.handle_signed_message(msg, route, our_name, &BTreeSet::new())?;
+                        self.handle_signed_message(msg, route, &BTreeSet::new())?;
                     } else {
-                        self.send_signed_message(&mut msg, route, &our_name, &BTreeSet::new())?;
+                        let mut sent_to = BTreeSet::new();
+                        let _ = sent_to.insert(our_name);
+                        self.send_signed_message(&mut msg, route, &sent_to)?;
                     }
                 }
                 Ok(())

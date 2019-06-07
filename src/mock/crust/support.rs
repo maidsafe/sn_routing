@@ -13,13 +13,10 @@ use super::crust::{
     ConnectionInfoResult, CrustEventSender, CrustUser, Event, PrivConnectionInfo,
     PubConnectionInfo, Uid,
 };
+use crate::crust::Event as CrustEvent;
 use crate::id::PublicId;
-#[cfg(feature = "mock_serialise")]
-use crate::messages::{DirectMessage, Message};
 #[cfg(any(all(test, not(feature = "mock_serialise")), feature = "mock_parsec"))]
 use crate::parsec;
-use crate::CrustEvent;
-use crate::NetworkBytes;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use safe_crypto;
@@ -414,7 +411,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         }
     }
 
-    pub fn send_message(&self, uid: &UID, data: NetworkBytes) -> bool {
+    pub fn send_message(&self, uid: &UID, data: Vec<u8>) -> bool {
         if let Some(endpoint) = self.find_endpoint_by_uid(uid) {
             self.send_packet(endpoint, Packet::Message(data));
             true
@@ -520,7 +517,7 @@ impl<UID: Uid> ServiceImpl<UID> {
         self.send_event(CrustEvent::ConnectFailure(their_id));
     }
 
-    fn handle_message(&self, peer_endpoint: Endpoint, data: NetworkBytes) {
+    fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
         if let Some((uid, kind)) = self.find_uid_and_kind_by_endpoint(&peer_endpoint) {
             self.send_event(CrustEvent::NewMessage(uid, kind, data));
         } else {
@@ -701,17 +698,15 @@ enum Packet<UID: Uid> {
     ConnectSuccess(UID, UID),
     ConnectFailure(UID, UID),
 
-    Message(NetworkBytes),
+    Message(Vec<u8>),
     Disconnect,
 }
 
 /// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecRequest`.
 /// A serialised Parsec request message starts with these bytes.
-#[cfg(not(feature = "mock_serialise"))]
 static PARSEC_REQ_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 9, 0, 0, 0];
 /// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecResponse`.
 /// A serialised Parsec response message starts with these bytes.
-#[cfg(not(feature = "mock_serialise"))]
 static PARSEC_RSP_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 10, 0, 0, 0];
 
 impl<UID: Uid> Packet<UID> {
@@ -727,28 +722,11 @@ impl<UID: Uid> Packet<UID> {
     }
 
     /// Returns `true` if this packet contains a Parsec request or response.
-    #[cfg(not(feature = "mock_serialise"))]
     fn is_parsec_req_resp(&self) -> bool {
         match self {
             Packet::Message(bytes) if bytes.len() >= 8 => {
                 &bytes[..8] == PARSEC_REQ_MSG_TAGS || &bytes[..8] == PARSEC_RSP_MSG_TAGS
             }
-            _ => false,
-        }
-    }
-
-    #[cfg(feature = "mock_serialise")]
-    fn is_parsec_req_resp(&self) -> bool {
-        match self {
-            Packet::Message(msg) => match **msg {
-                Message::Direct(ref msg) => match *msg.content() {
-                    DirectMessage::ParsecRequest(_, _) | DirectMessage::ParsecResponse(_, _) => {
-                        true
-                    }
-                    _ => false,
-                },
-                Message::Hop(_) => false,
-            },
             _ => false,
         }
     }

@@ -9,13 +9,13 @@
 use super::{node::Node, OurType};
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec;
-use bytes::Bytes;
+use crate::NetworkBytes;
 use fxhash::{FxHashMap, FxHashSet};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use std::{
     cell::RefCell,
-    cmp::{self, Ordering},
+    cmp,
     collections::{hash_map::Entry, VecDeque},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     rc::{Rc, Weak},
@@ -25,13 +25,15 @@ use unwrap::unwrap;
 const IP_BASE: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const PORT: u16 = 9999;
 
-/// Mock network. Create one before testing with mocks. Call `set_next_node_addr` or
+/// Handle to the mock network. Create one before testing with mocks. Call `set_next_node_addr` or
 /// `gen_next_node_addr` before creating a `QuicP2p` instance.
+/// This handle is cheap to clone. Each clone refers to the same underlying mock network instance.
+#[derive(Clone)]
 pub struct Network(Rc<RefCell<Inner>>);
 
 impl Network {
     /// Construct new mock network.
-    pub fn new(seed: Option<[u32; 4]>) -> Self {
+    pub fn new(min_section_size: usize, seed: Option<[u32; 4]>) -> Self {
         let mut rng = if let Some(seed) = seed {
             SeededRng::from_seed(seed)
         } else {
@@ -44,10 +46,12 @@ impl Network {
         parsec::init_mock();
 
         Network(Rc::new(RefCell::new(Inner {
+            min_section_size,
             rng,
             nodes: Default::default(),
             connections: Default::default(),
             used_ips: Default::default(),
+            message_sent: false,
         })))
     }
 
@@ -96,6 +100,37 @@ impl Network {
         }
     }
 
+    /// Disconnect peer at `addr0` from the peer at `addr1`.
+    pub fn disconnect(&self, addr0: &SocketAddr, addr1: &SocketAddr) {
+        let node = self.0.borrow().find_node(addr0);
+        if let Some(node) = node {
+            node.borrow_mut().disconnect(*addr1)
+        }
+    }
+
+    /// Is the peer at `addr0` connected to the one at `addr1`?
+    pub fn is_connected(&self, addr0: &SocketAddr, addr1: &SocketAddr) -> bool {
+        self.0.borrow().is_connected(addr0, addr1)
+    }
+
+    /// Get min section size.
+    pub fn min_section_size(&self) -> usize {
+        self.0.borrow().min_section_size
+    }
+
+    /// Construct a new random number generator using a seed generated from random data provided by `self`.
+    pub fn new_rng(&self) -> SeededRng {
+        self.0.borrow_mut().rng.new_rng()
+    }
+
+    /// Return whether sent any message since previous query and reset the flag.
+    pub fn reset_message_sent(&self) -> bool {
+        let mut inner = self.0.borrow_mut();
+        let message_sent = inner.message_sent;
+        inner.message_sent = false;
+        message_sent
+    }
+
     fn pop_random_packet(&self) -> Option<(Connection, Packet)> {
         self.0.borrow_mut().pop_random_packet()
     }
@@ -128,16 +163,16 @@ impl Network {
 }
 
 pub(super) struct Inner {
+    min_section_size: usize,
     rng: SeededRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
     used_ips: FxHashSet<Ipv4Addr>,
+    message_sent: bool,
 }
 
 impl Inner {
     pub fn insert_node(&mut self, addr: SocketAddr, node: Rc<RefCell<Node>>) {
-        use std::collections::hash_map::Entry;
-
         match self.nodes.entry(addr) {
             Entry::Occupied(_) => panic!("Node with {} already exists", addr),
             Entry::Vacant(entry) => {
@@ -151,10 +186,22 @@ impl Inner {
     }
 
     pub fn send(&mut self, src: SocketAddr, dst: SocketAddr, packet: Packet) {
+        // Ignore gossip messages from being considered as a message that
+        // requires further polling.
+        if !packet.is_parsec_gossip() {
+            self.message_sent = true;
+        }
+
         self.connections
             .entry(Connection::new(src, dst))
             .or_insert_with(Queue::new)
             .push(packet)
+    }
+
+    pub fn disconnect(&mut self, src: SocketAddr, dst: SocketAddr) {
+        // TODO (quic-p2p): mock-crust dropped all in-flight messages from `src` to `dst` and
+        // from `dst` to `src` here. Should we do the same?
+        self.send(src, dst, Packet::Disconnect);
     }
 
     fn find_node(&self, addr: &SocketAddr) -> Option<Rc<RefCell<Node>>> {
@@ -191,7 +238,22 @@ impl Inner {
             Entry::Vacant(_) => None,
         }
     }
+
+    fn is_connected(&self, addr0: &SocketAddr, addr1: &SocketAddr) -> bool {
+        self.find_node(addr0)
+            .map(|node| node.borrow().is_connected(addr1))
+            .unwrap_or(false)
+    }
 }
+
+// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecRequest`.
+// A serialised Parsec request message starts with these bytes.
+#[cfg(not(feature = "mock_serialise"))]
+static PARSEC_REQ_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 9, 0, 0, 0];
+// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecResponse`.
+// A serialised Parsec response message starts with these bytes.
+#[cfg(not(feature = "mock_serialise"))]
+static PARSEC_RSP_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 10, 0, 0, 0];
 
 #[derive(Debug)]
 pub(super) enum Packet {
@@ -201,9 +263,38 @@ pub(super) enum Packet {
     ConnectRequest(OurType),
     ConnectSuccess,
     ConnectFailure,
-    Message(Bytes),
-    MessageFailure(Bytes),
+    Message(NetworkBytes),
+    MessageFailure(NetworkBytes),
     Disconnect,
+}
+
+impl Packet {
+    // Returns `true` if this packet contains a Parsec request or response.
+    #[cfg(not(feature = "mock_serialise"))]
+    pub fn is_parsec_gossip(&self) -> bool {
+        match self {
+            Packet::Message(bytes) if bytes.len() >= 8 => {
+                &bytes[..8] == PARSEC_REQ_MSG_TAGS || &bytes[..8] == PARSEC_RSP_MSG_TAGS
+            }
+            _ => false,
+        }
+    }
+
+    #[cfg(feature = "mock_serialise")]
+    pub fn is_parsec_gossip(&self) -> bool {
+        use crate::messages::{DirectMessage, Message};
+
+        match self {
+            Packet::Message(ref message) => match **message {
+                Message::Direct(ref message) => match message.content() {
+                    DirectMessage::ParsecRequest(..) | DirectMessage::ParsecResponse(..) => true,
+                    _ => false,
+                },
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 struct Queue(VecDeque<Packet>);

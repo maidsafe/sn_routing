@@ -8,7 +8,7 @@
 
 pub use super::support::Config;
 use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
-use crate::{id::PublicId, NetworkBytes};
+use crate::id::PublicId;
 use maidsafe_utilities::event_sender;
 use serde::de::DeserializeOwned;
 use serde::ser::Serialize;
@@ -139,7 +139,7 @@ impl<UID: Uid> Service<UID> {
 
     /// Send message to the given peer.
     // TODO: Implement tests that drop low-priority messages.
-    pub fn send(&self, uid: &UID, data: NetworkBytes, _priority: u8) -> Result<(), CrustError> {
+    pub fn send(&self, uid: &UID, data: Vec<u8>, _priority: u8) -> Result<(), CrustError> {
         if self.lock().send_message(uid, data) {
             Ok(())
         } else {
@@ -224,7 +224,7 @@ pub enum Event<UID: Uid> {
     /// Invoked when a peer disconnects or can no longer be contacted.
     LostPeer(UID),
     /// Invoked when a new message is received. Passes the message.
-    NewMessage(UID, CrustUser, NetworkBytes),
+    NewMessage(UID, CrustUser, Vec<u8>),
     /// Invoked when trying to sending a too large data.
     WriteMsgSizeProhibitive(UID, Vec<u8>),
 }

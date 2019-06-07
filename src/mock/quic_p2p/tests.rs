@@ -7,10 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
-use bytes::Bytes;
+use crate::NetworkBytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
-use std::{collections::BTreeSet, iter, net::SocketAddr};
+use fxhash::FxHashSet;
+use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
+
+const MIN_SECTION_SIZE: usize = 4;
 
 // Assert that the expression matches the expected pattern.
 macro_rules! assert_match {
@@ -28,7 +31,7 @@ macro_rules! assert_match {
 
 #[test]
 fn successful_bootstrap_node_to_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let a = Agent::node(&network);
     let b = Agent::bootstrapped_node(&network, a.addr());
     a.expect_connected_to_node(&b.addr());
@@ -36,7 +39,7 @@ fn successful_bootstrap_node_to_node() {
 
 #[test]
 fn successful_bootstrap_client_to_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let a = Agent::node(&network);
     let b = Agent::bootstrapped_client(&network, a.addr());
     a.expect_connected_to_client(&b.addr());
@@ -44,7 +47,7 @@ fn successful_bootstrap_client_to_node() {
 
 #[test]
 fn bootstrap_to_nonexisting_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let a_addr = network.gen_addr();
 
     let config = Config::node().with_hard_coded_contacts(iter::once(a_addr));
@@ -57,7 +60,7 @@ fn bootstrap_to_nonexisting_node() {
 
 #[test]
 fn bootstrap_to_multiple_nodes() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let bootstrappers: Vec<_> = (0..3).map(|_| Agent::node(&network)).collect();
 
@@ -88,7 +91,7 @@ fn bootstrap_to_multiple_nodes() {
 
 #[test]
 fn bootstrap_using_bootstrap_cache() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     // Address of a bootstrap node that is currently offline.
     let a_addr = network.gen_addr();
@@ -114,7 +117,7 @@ fn bootstrap_using_bootstrap_cache() {
 
 #[test]
 fn successful_connect_node_to_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut a = Agent::node(&network);
     let mut b = Agent::node(&network);
 
@@ -123,7 +126,7 @@ fn successful_connect_node_to_node() {
 
 #[test]
 fn successful_connect_client_to_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut a = Agent::client(&network);
     let mut b = Agent::node(&network);
 
@@ -132,7 +135,7 @@ fn successful_connect_client_to_node() {
 
 #[test]
 fn connect_to_nonexisting_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut a = Agent::node(&network);
     let b_addr = network.gen_addr();
 
@@ -144,7 +147,7 @@ fn connect_to_nonexisting_node() {
 
 #[test]
 fn connect_to_already_connected_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut a = Agent::node(&network);
     let mut b = Agent::node(&network);
 
@@ -159,7 +162,7 @@ fn connect_to_already_connected_node() {
 
 #[test]
 fn disconnect_incoming_bootstrap_connection() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let a = Agent::node(&network);
     let mut b = Agent::bootstrapped_node(&network, a.addr());
@@ -174,7 +177,7 @@ fn disconnect_incoming_bootstrap_connection() {
 
 #[test]
 fn disconnect_outgoing_bootstrap_connection() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let mut a = Agent::node(&network);
     let b = Agent::bootstrapped_node(&network, a.addr());
@@ -189,7 +192,7 @@ fn disconnect_outgoing_bootstrap_connection() {
 
 #[test]
 fn disconnect_outgoing_connection() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let mut a = Agent::node(&network);
     let mut b = Agent::node(&network);
@@ -205,7 +208,7 @@ fn disconnect_outgoing_connection() {
 
 #[test]
 fn disconnect_incoming_connection() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let mut a = Agent::node(&network);
     let mut b = Agent::node(&network);
@@ -221,14 +224,14 @@ fn disconnect_incoming_connection() {
 
 #[test]
 fn send_to_connected_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let mut a = Agent::node(&network);
     let mut b = Agent::node(&network);
 
     establish_connection(&network, &mut a, &mut b);
 
-    let msg = Bytes::from_static(b"message from A");
+    let msg = gen_message();
     a.send(b.addr(), msg.clone());
     network.poll();
 
@@ -237,13 +240,13 @@ fn send_to_connected_node() {
 
 #[test]
 fn send_to_disconnecting_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut a = Agent::node(&network);
     let mut b = Agent::node(&network);
 
     establish_connection(&network, &mut a, &mut b);
 
-    let msg = Bytes::from_static(b"message from A");
+    let msg = gen_message();
     a.send(b.addr(), msg.clone());
     b.disconnect_from(a.addr());
     network.poll();
@@ -255,12 +258,12 @@ fn send_to_disconnecting_node() {
 
 #[test]
 fn send_to_nonexisting_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let mut a = Agent::node(&network);
     let b_addr = network.gen_addr();
 
-    let msg = Bytes::from_static(b"message from A");
+    let msg = gen_message();
     a.send(b_addr, msg.clone());
     network.poll();
 
@@ -272,11 +275,11 @@ fn send_to_nonexisting_node() {
 
 #[test]
 fn send_without_connecting_first() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut a = Agent::node(&network);
     let b = Agent::node(&network);
 
-    let msg = Bytes::from_static(b"message from A");
+    let msg = gen_message();
     a.send(b.addr(), msg.clone());
 
     network.poll();
@@ -288,15 +291,11 @@ fn send_without_connecting_first() {
 
 #[test]
 fn send_multiple_messages_without_connecting_first() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
     let mut a = Agent::node(&network);
     let b = Agent::node(&network);
 
-    let msgs = [
-        Bytes::from_static(b"message 0 from A"),
-        Bytes::from_static(b"message 1 from A"),
-        Bytes::from_static(b"message 2 from A"),
-    ];
+    let msgs = [gen_message(), gen_message(), gen_message()];
 
     for msg in &msgs {
         a.send(b.addr(), msg.clone());
@@ -313,7 +312,7 @@ fn send_multiple_messages_without_connecting_first() {
 
 #[test]
 fn our_connection_info_of_node() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let addr = network.gen_next_addr();
     let (tx, _) = mpmc::unbounded();
@@ -325,7 +324,7 @@ fn our_connection_info_of_node() {
 
 #[test]
 fn our_connection_info_of_client() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let _ = network.gen_next_addr();
     let (tx, _) = mpmc::unbounded();
@@ -336,7 +335,7 @@ fn our_connection_info_of_client() {
 
 #[test]
 fn bootstrap_cache() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let mut a = Agent::node(&network);
     let mut b = Agent::node(&network);
@@ -355,7 +354,7 @@ fn bootstrap_cache() {
 
 #[test]
 fn drop_disconnects() {
-    let network = Network::new(None);
+    let network = Network::new(MIN_SECTION_SIZE, None);
 
     let mut a = Agent::node(&network);
     let a_addr = a.addr();
@@ -368,6 +367,94 @@ fn drop_disconnects() {
     network.poll();
 
     b.expect_connection_failure(&a_addr);
+}
+
+#[test]
+#[cfg(not(feature = "mock_serialise"))]
+fn packet_is_parsec_gossip() {
+    use super::network::Packet;
+    use crate::{
+        id::FullId,
+        messages::{
+            DirectMessage, HopMessage, Message, MessageContent, RoutingMessage,
+            SignedDirectMessage, SignedRoutingMessage,
+        },
+        parsec::{Request, Response},
+        routing_table::Authority,
+        types::MessageId,
+    };
+
+    use maidsafe_utilities::serialisation;
+    use serde::Serialize;
+
+    let full_id = FullId::new();
+
+    fn serialise<T: Serialize>(msg: &T) -> Vec<u8> {
+        unwrap!(serialisation::serialise(&msg))
+    }
+
+    let make_message =
+        |content| Message::Direct(unwrap!(SignedDirectMessage::new(content, &full_id)));
+
+    // Parsec doesn't provide constructors for requests and responses, but they have the same
+    // representation as a `Vec`, or a `()` in real or mock Parsec respectively.
+    #[allow(clippy::let_unit_value)]
+    let (req, rsp): (Request, Response) = {
+        #[cfg(feature = "mock_parsec")]
+        let repr = ();
+        #[cfg(not(feature = "mock_parsec"))]
+        let repr = Vec::<u64>::new();
+
+        (
+            unwrap!(serialisation::deserialise(&serialise(&repr))),
+            unwrap!(serialisation::deserialise(&serialise(&repr))),
+        )
+    };
+
+    let msgs = [
+        make_message(DirectMessage::ParsecRequest(42, req)),
+        make_message(DirectMessage::ParsecResponse(1337, rsp)),
+    ];
+    for msg in &msgs {
+        assert!(Packet::Message(NetworkBytes::from(serialise(msg))).is_parsec_gossip());
+    }
+
+    // No other direct message types contain a Parsec request or response.
+    let msgs = [
+        make_message(DirectMessage::ParsecPoke(5)),
+        make_message(DirectMessage::ResourceProofResponseReceipt),
+    ];
+    for msg in &msgs {
+        assert!(!Packet::Message(NetworkBytes::from(serialise(msg))).is_parsec_gossip());
+    }
+
+    // A hop message never contains a Parsec message.
+    let msg = RoutingMessage {
+        src: Authority::ClientManager(rand::random()),
+        dst: Authority::ClientManager(rand::random()),
+        content: MessageContent::Relocate {
+            message_id: MessageId::new(),
+        },
+    };
+    let msg = unwrap!(SignedRoutingMessage::new(msg, &full_id, None));
+    let msg = unwrap!(HopMessage::new(msg, 1, Default::default()));
+    let msg = Message::Hop(msg);
+    assert!(!Packet::Message(NetworkBytes::from(serialise(&msg))).is_parsec_gossip());
+
+    // No packet types other than `Message` represent a Parsec request or response.
+    let packets = [
+        Packet::BootstrapRequest(OurType::Client),
+        Packet::BootstrapSuccess,
+        Packet::BootstrapFailure,
+        Packet::ConnectRequest(OurType::Client),
+        Packet::ConnectSuccess,
+        Packet::ConnectFailure,
+        Packet::MessageFailure(NetworkBytes::from_static(b"hello")),
+        Packet::Disconnect,
+    ];
+    for packet in &packets {
+        assert!(!packet.is_parsec_gossip());
+    }
 }
 
 struct Agent {
@@ -423,7 +510,7 @@ impl Agent {
         self.inner.disconnect_from(dst_addr);
     }
 
-    fn send(&mut self, dst_addr: SocketAddr, msg: Bytes) {
+    fn send(&mut self, dst_addr: SocketAddr, msg: NetworkBytes) {
         self.inner.send(Peer::node(dst_addr), msg)
     }
 
@@ -465,7 +552,7 @@ impl Agent {
 
     // Expect `Event::BootstrapFailure`.
     fn expect_bootstrap_failure(&self) {
-        assert_eq!(self.rx.try_recv(), Ok(Event::BootstrapFailure));
+        assert_match!(self.rx.try_recv(), Ok(Event::BootstrapFailure));
     }
 
     // Expect `Event::ConnectedTo` with a node contact.
@@ -495,34 +582,34 @@ impl Agent {
     }
 
     // Expect `Event::NewMessage` with the given sender address and content.
-    fn expect_new_message(&self, src_addr: &SocketAddr, expected_msg: &Bytes) {
+    fn expect_new_message(&self, src_addr: &SocketAddr, expected_msg: &NetworkBytes) {
         let (actual_addr, actual_msg) = assert_match!(
             self.rx.try_recv(),
             Ok(Event::NewMessage { peer_addr, msg }) => (peer_addr, msg)
         );
 
         assert_eq!(actual_addr, *src_addr);
-        assert_eq!(actual_msg, expected_msg);
+        assert_eq!(actual_msg, *expected_msg);
     }
 
     // Expect `Event::UnsentUserMessage` with the given recipient address and content.
-    fn expect_unsent_message(&self, dst_addr: &SocketAddr, expected_msg: &Bytes) {
+    fn expect_unsent_message(&self, dst_addr: &SocketAddr, expected_msg: &NetworkBytes) {
         let (actual_addr, actual_msg) = assert_match!(
             self.rx.try_recv(),
             Ok(Event::UnsentUserMessage { peer_addr, msg }) => (peer_addr, msg)
         );
 
         assert_eq!(actual_addr, *dst_addr);
-        assert_eq!(actual_msg, expected_msg);
+        assert_eq!(actual_msg, *expected_msg);
     }
 
     // Expect no event.
     fn expect_none(&self) {
-        assert_eq!(self.rx.try_recv(), Err(TryRecvError::Empty));
+        assert_match!(self.rx.try_recv(), Err(TryRecvError::Empty));
     }
 
-    fn received_messages(&self, src_addr: &SocketAddr) -> BTreeSet<Bytes> {
-        let mut received_messages = BTreeSet::new();
+    fn received_messages(&self, src_addr: &SocketAddr) -> FxHashSet<NetworkBytes> {
+        let mut received_messages = FxHashSet::default();
         while let Ok(Event::NewMessage { peer_addr, msg }) = self.rx.try_recv() {
             assert_eq!(peer_addr, *src_addr);
             let _ = received_messages.insert(msg);
@@ -531,8 +618,8 @@ impl Agent {
     }
 }
 
-fn expected_messages_received(sent: Vec<Bytes>, received: BTreeSet<Bytes>) {
-    let expected: BTreeSet<Bytes> = sent.iter().cloned().collect();
+fn expected_messages_received(sent: Vec<NetworkBytes>, received: FxHashSet<NetworkBytes>) {
+    let expected: FxHashSet<_> = sent.into_iter().collect();
     assert_eq!(expected, received);
 }
 
@@ -562,4 +649,35 @@ fn assert_connected_to_node(event: Event, addr: &SocketAddr) {
         } => peer_addr
     );
     assert_eq!(actual_peer_addr, *addr);
+}
+
+// Generate unique message.
+fn gen_message() -> NetworkBytes {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let num = COUNTER.fetch_add(1, Ordering::Relaxed);
+
+    #[cfg(feature = "mock_serialise")]
+    {
+        use crate::{
+            id::FullId,
+            messages::{DirectMessage, Message, SignedDirectMessage},
+        };
+        use lazy_static::lazy_static;
+
+        lazy_static! {
+            static ref FULL_ID: FullId = FullId::new();
+        }
+
+        // The actual content of the message doesn't matter for the purposes of these tests, only
+        // that it is unique. Let's use `DirectMessage::ParsecPoke` as it is the simplest message
+        // that carries some data.
+        let content = DirectMessage::ParsecPoke(num as u64);
+        let message = unwrap!(SignedDirectMessage::new(content, &*FULL_ID));
+        Box::new(Message::Direct(message))
+    }
+
+    #[cfg(not(feature = "mock_serialise"))]
+    bytes::Bytes::from(format!("message {}", num))
 }

@@ -7,15 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::xor_name::XorName;
-use maidsafe_utilities::event_sender::MaidSafeObserver;
 #[cfg(any(test, feature = "mock_base"))]
 use maidsafe_utilities::SeededRng;
 #[cfg(all(not(test), not(feature = "mock_base")))]
 use rand;
 #[cfg(any(test, feature = "mock_base"))]
 use rand::Rng;
-
-pub type RoutingActionSender = MaidSafeObserver<crate::action::Action>;
 
 /// Unique ID for messages
 ///

@@ -14,9 +14,9 @@ mod tests;
 pub use self::network::Network;
 
 use self::node::Node;
-use bytes;
+use crate::NetworkBytes;
 use crossbeam_channel::Sender;
-use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, iter, net::SocketAddr, rc::Rc};
 
 /// Builder for `QuickP2p`.
 pub struct Builder {
@@ -82,8 +82,8 @@ impl QuicP2p {
     /// If the peer is not connected, it will attempt to connect to it first
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer: Peer, msg: bytes::Bytes) {
-        self.inner.borrow_mut().send(*peer.peer_addr(), msg)
+    pub fn send(&mut self, peer: Peer, msg: NetworkBytes) {
+        self.inner.borrow_mut().send(peer.peer_addr(), msg)
     }
 
     /// Get our connection info to give to others for them to connect to us
@@ -117,8 +117,10 @@ impl QuicP2p {
 /// Configuration for `QuicP2p`.
 #[derive(Default)]
 pub struct Config {
-    hard_coded_contacts: HashSet<NodeInfo>,
-    our_type: OurType,
+    /// Hard-coded contacts.
+    pub hard_coded_contacts: HashSet<NodeInfo>,
+    /// Type of our `QuicP2p` instance: node or client.
+    pub our_type: OurType,
 }
 
 impl Config {
@@ -149,6 +151,14 @@ impl Config {
             ..self
         }
     }
+
+    /// Set the `hard_coded_contacts` to a single contact.
+    pub fn with_hard_coded_contact<T>(self, contact: T) -> Self
+    where
+        T: Into<NodeInfo>,
+    {
+        self.with_hard_coded_contacts(iter::once(contact))
+    }
 }
 
 /// The type of our `QuicP2p` instance: client or node.
@@ -167,7 +177,7 @@ impl Default for OurType {
 }
 
 /// Events from `QuicP2p` to the user.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Debug)]
 pub enum Event {
     /// Bootstrap failed.
     BootstrapFailure,
@@ -186,7 +196,7 @@ pub enum Event {
         /// Intended message recipient.
         peer_addr: SocketAddr,
         /// Message content.
-        msg: bytes::Bytes,
+        msg: NetworkBytes,
     },
     /// Connection successfuly established.
     ConnectedTo {
@@ -198,7 +208,7 @@ pub enum Event {
         /// Message sender.
         peer_addr: SocketAddr,
         /// Message content.
-        msg: bytes::Bytes,
+        msg: NetworkBytes,
     },
     /// Sent right before the `QuickP2p` instance drops.
     Finish,
@@ -221,7 +231,7 @@ pub enum Peer {
 
 impl Peer {
     /// Create `Peer` with the given type and address.
-    pub fn new(peer_type: OurType, addr: SocketAddr) -> Self {
+    pub(super) fn new(peer_type: OurType, addr: SocketAddr) -> Self {
         match peer_type {
             OurType::Client => Peer::Client { peer_addr: addr },
             OurType::Node => Peer::Node {
@@ -231,25 +241,25 @@ impl Peer {
     }
 
     /// Create `Peer::Node` with the given address.
-    pub fn node(addr: SocketAddr) -> Self {
+    pub(super) fn node(addr: SocketAddr) -> Self {
         Peer::Node {
             node_info: NodeInfo::from(addr),
         }
     }
 
-    fn peer_addr(&self) -> &SocketAddr {
+    pub fn peer_addr(&self) -> SocketAddr {
         match *self {
-            Peer::Node { ref node_info } => &node_info.peer_addr,
-            Peer::Client { ref peer_addr } => peer_addr,
+            Peer::Node { ref node_info } => node_info.peer_addr,
+            Peer::Client { peer_addr } => peer_addr,
         }
     }
 }
 
 /// Information about a peer of type node.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct NodeInfo {
-    peer_addr: SocketAddr,
-    peer_cert_der: Vec<u8>,
+    pub peer_addr: SocketAddr,
+    pub peer_cert_der: Vec<u8>,
 }
 
 impl From<SocketAddr> for NodeInfo {

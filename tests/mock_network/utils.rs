@@ -6,24 +6,25 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crossbeam_channel as mpmc;
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
-use routing::test_consts::CONNECTING_PEER_TIMEOUT_SECS;
-use routing::{verify_chain_invariant, Chain};
 use routing::{
-    Authority, BootstrapConfig, Cache, Client, Config, DevConfig, Event, EventStream, FullId,
-    ImmutableData, Node, NullCache, Prefix, PublicId, Request, Response, XorName,
+    mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
+    Cache, Chain, Client, Config, DevConfig, Event, EventStream, FullId, ImmutableData,
+    NetworkConfig, Node, NullCache, Prefix, PublicId, Request, Response, XorName,
     XorTargetInterval, Xorable,
 };
-use std::cell::RefCell;
-use std::cmp;
-use std::collections::{BTreeSet, HashMap};
-use std::net::IpAddr;
-use std::ops::{Deref, DerefMut};
-use std::sync::mpsc::{RecvError, TryRecvError};
-use std::time::Duration;
+use std::{
+    cell::RefCell,
+    cmp,
+    collections::{BTreeSet, HashMap},
+    iter,
+    net::SocketAddr,
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
@@ -60,7 +61,7 @@ pub fn gen_range_except<T: Rng>(
     x
 }
 
-fn create_config(network: &Network<PublicId>) -> Config {
+fn create_config(network: &Network) -> Config {
     Config {
         dev: Some(DevConfig {
             min_section_size: Some(network.min_section_size()),
@@ -92,11 +93,11 @@ impl DerefMut for Nodes {
 impl EventStream for TestNode {
     type Item = Event;
 
-    fn next_ev(&mut self) -> Result<Event, RecvError> {
+    fn next_ev(&mut self) -> Result<Event, mpmc::RecvError> {
         self.inner.next_ev()
     }
 
-    fn try_next_ev(&mut self) -> Result<Event, TryRecvError> {
+    fn try_next_ev(&mut self) -> Result<Event, mpmc::TryRecvError> {
         self.inner.try_next_ev()
     }
 
@@ -106,42 +107,53 @@ impl EventStream for TestNode {
 }
 
 pub struct TestNode {
-    pub handle: ServiceHandle<PublicId>,
     pub inner: Node,
+    network: Network,
+    endpoint: SocketAddr,
 }
 
 impl TestNode {
-    pub fn builder(network: &Network<PublicId>) -> TestNodeBuilder {
+    pub fn builder(network: &Network) -> TestNodeBuilder {
         TestNodeBuilder {
             network: network,
             first_node: false,
-            bootstrap_config: None,
+            network_config: None,
             endpoint: None,
             cache: Box::new(NullCache),
         }
     }
 
     pub fn new(
-        network: &Network<PublicId>,
+        network: &Network,
         first_node: bool,
-        bootstrap_config: Option<BootstrapConfig>,
-        endpoint: Option<Endpoint>,
+        network_config: Option<NetworkConfig>,
+        endpoint: Option<SocketAddr>,
         cache: Box<Cache>,
     ) -> Self {
-        let handle = network.new_service_handle(bootstrap_config, endpoint);
+        let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
+        network.set_next_addr(endpoint);
+
         let config = create_config(network);
-        let node = mock_crust::make_current(&handle, || {
-            unwrap!(Node::builder()
-                .cache(cache)
-                .first(first_node)
-                .config(config)
-                .create())
-        });
+        let builder = Node::builder()
+            .cache(cache)
+            .first(first_node)
+            .config(config);
+        let builder = if let Some(network_config) = network_config {
+            builder.network_config(network_config)
+        } else {
+            builder
+        };
+        let node = unwrap!(builder.create());
 
         TestNode {
-            handle: handle,
             inner: node,
+            network: network.clone(),
+            endpoint,
         }
+    }
+
+    pub fn endpoint(&self) -> SocketAddr {
+        self.endpoint
     }
 
     pub fn id(&self) -> PublicId {
@@ -161,11 +173,15 @@ impl TestNode {
     }
 
     pub fn chain(&self) -> &Chain {
-        unwrap!(self.inner.chain(), "no chain for {}", self.name())
+        unwrap!(self.inner.chain(), "no chain for {}", self.inner)
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
         self.inner.in_authority(dst)
+    }
+
+    pub fn network(&self) -> &Network {
+        &self.network
     }
 }
 
@@ -187,10 +203,10 @@ pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
 }
 
 pub struct TestNodeBuilder<'a> {
-    network: &'a Network<PublicId>,
+    network: &'a Network,
     first_node: bool,
-    bootstrap_config: Option<BootstrapConfig>,
-    endpoint: Option<Endpoint>,
+    network_config: Option<NetworkConfig>,
+    endpoint: Option<SocketAddr>,
     cache: Box<Cache>,
 }
 
@@ -200,12 +216,12 @@ impl<'a> TestNodeBuilder<'a> {
         self
     }
 
-    pub fn bootstrap_config(mut self, bootstrap_config: BootstrapConfig) -> Self {
-        self.bootstrap_config = Some(bootstrap_config);
+    pub fn network_config(mut self, config: NetworkConfig) -> Self {
+        self.network_config = Some(config);
         self
     }
 
-    pub fn endpoint(mut self, endpoint: Endpoint) -> Self {
+    pub fn endpoint(mut self, endpoint: SocketAddr) -> Self {
         self.endpoint = Some(endpoint);
         self
     }
@@ -224,7 +240,7 @@ impl<'a> TestNodeBuilder<'a> {
         TestNode::new(
             self.network,
             self.first_node,
-            self.bootstrap_config,
+            self.network_config,
             self.endpoint,
             self.cache,
         )
@@ -234,62 +250,62 @@ impl<'a> TestNodeBuilder<'a> {
 // -----  TestClient  -----
 
 pub struct TestClient {
-    pub handle: ServiceHandle<PublicId>,
     pub inner: Client,
     pub full_id: FullId,
+    endpoint: SocketAddr,
 }
 
 impl TestClient {
     pub fn new(
-        network: &Network<PublicId>,
-        bootstrap_config: Option<BootstrapConfig>,
-        endpoint: Option<Endpoint>,
+        network: &Network,
+        network_config: Option<NetworkConfig>,
+        endpoint: Option<SocketAddr>,
     ) -> Self {
         let full_id = FullId::new();
-        Self::new_with_full_id(network, bootstrap_config, endpoint, full_id)
+        Self::new_with_full_id(network, network_config, endpoint, full_id)
     }
 
     pub fn new_with_full_id(
-        network: &Network<PublicId>,
-        bootstrap_config: Option<BootstrapConfig>,
-        endpoint: Option<Endpoint>,
+        network: &Network,
+        network_config: Option<NetworkConfig>,
+        endpoint: Option<SocketAddr>,
         full_id: FullId,
     ) -> Self {
         let duration = Duration::from_secs(CLIENT_MSG_EXPIRY_DUR_SECS);
-        Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
+        Self::new_impl(network, network_config, endpoint, full_id, duration)
     }
 
     pub fn new_with_expire_duration(
-        network: &Network<PublicId>,
-        bootstrap_config: Option<BootstrapConfig>,
-        endpoint: Option<Endpoint>,
+        network: &Network,
+        network_config: Option<NetworkConfig>,
+        endpoint: Option<SocketAddr>,
         duration: Duration,
     ) -> Self {
         let full_id = FullId::new();
-        Self::new_impl(network, bootstrap_config, endpoint, full_id, duration)
+        Self::new_impl(network, network_config, endpoint, full_id, duration)
     }
 
     fn new_impl(
-        network: &Network<PublicId>,
-        bootstrap_config: Option<BootstrapConfig>,
-        endpoint: Option<Endpoint>,
+        network: &Network,
+        network_config: Option<NetworkConfig>,
+        endpoint: Option<SocketAddr>,
         full_id: FullId,
         duration: Duration,
     ) -> Self {
-        let handle = network.new_service_handle(bootstrap_config.clone(), endpoint);
-        let client = mock_crust::make_current(&handle, || {
-            unwrap!(Client::new(
-                Some(full_id.clone()),
-                bootstrap_config,
-                create_config(network),
-                duration,
-            ))
-        });
+        let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
+        network.set_next_addr(endpoint);
+
+        let client = unwrap!(Client::new(
+            Some(full_id.clone()),
+            network_config,
+            create_config(network),
+            duration,
+        ));
 
         TestClient {
-            handle: handle,
             inner: client,
             full_id: full_id,
+            endpoint,
         }
     }
 
@@ -297,8 +313,8 @@ impl TestClient {
         *unwrap!(self.inner.id()).name()
     }
 
-    pub fn ip(&self) -> IpAddr {
-        mock_crust::to_socket_addr(&self.handle.endpoint()).ip()
+    pub fn endpoint(&self) -> SocketAddr {
+        self.endpoint
     }
 }
 
@@ -348,6 +364,7 @@ pub fn poll_all_until(
     should_stop: &Fn(&[TestNode]) -> bool,
 ) -> bool {
     assert!(!nodes.is_empty());
+    let network = nodes[0].network().clone();
     let mut result = false;
     for _ in 0..MAX_POLL_CALLS {
         if should_stop(nodes) {
@@ -355,7 +372,7 @@ pub fn poll_all_until(
         }
 
         let mut handled_message = false;
-        nodes[0].handle.deliver_messages();
+        network.poll();
         if BALANCED_POLLING {
             // handle all current messages for each node in turn, then repeat (via outer loop):
             nodes
@@ -368,7 +385,7 @@ pub fn poll_all_until(
 
         // check if there were any outgoing messages which could be due to timeouts
         // that were handled via cur iter poll.
-        let any_outgoing_messages = nodes[0].handle.reset_message_sent();
+        let any_outgoing_messages = network.reset_message_sent();
         if !handled_message && !any_outgoing_messages {
             return result;
         }
@@ -447,42 +464,37 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
     failed_to_join.len()
 }
 
-pub fn create_connected_nodes(network: &Network<PublicId>, size: usize) -> Nodes {
+pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     create_connected_nodes_with_cache(network, size, false)
 }
 
-pub fn create_connected_nodes_with_cache(
-    network: &Network<PublicId>,
-    size: usize,
-    use_cache: bool,
-) -> Nodes {
+pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cache: bool) -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
+    let endpoint = network.gen_addr();
     nodes.push(
         TestNode::builder(network)
             .first()
-            .endpoint(Endpoint(0))
+            .endpoint(endpoint)
             .cache(use_cache)
             .create(),
     );
     let _ = nodes[0].poll();
     println!("Seed node: {}", nodes[0].inner);
 
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
-
     // Create other nodes using the seed node endpoint as bootstrap contact.
-    for i in 1..size {
+    for _ in 1..size {
+        let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
         nodes.push(
             TestNode::builder(network)
-                .bootstrap_config(bootstrap_config.clone())
-                .endpoint(Endpoint(i))
+                .network_config(config)
                 .cache(use_cache)
                 .create(),
         );
 
         poll_and_resend(&mut nodes, &mut []);
-        verify_invariant_for_all_nodes(&mut nodes);
+        verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 
     let n = cmp::min(nodes.len(), network.min_section_size()) - 1;
@@ -514,16 +526,12 @@ pub fn create_connected_nodes_with_cache(
 }
 
 pub fn create_connected_nodes_until_split(
-    network: &Network<PublicId>,
+    network: &Network,
     prefix_lengths: Vec<usize>,
     use_cache: bool,
 ) -> Nodes {
     // Start first node.
-    let mut nodes = vec![TestNode::builder(network)
-        .first()
-        .endpoint(Endpoint(0))
-        .cache(use_cache)
-        .create()];
+    let mut nodes = vec![TestNode::builder(network).first().cache(use_cache).create()];
     let _ = nodes[0].poll();
     expect_next_event!(nodes[0], Event::Connected);
 
@@ -542,7 +550,7 @@ pub fn create_connected_nodes_until_split(
 // The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
 // least two elements, and every element must be no more than `8`.
 pub fn add_connected_nodes_until_split(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     mut prefix_lengths: Vec<usize>,
     use_cache: bool,
@@ -629,7 +637,7 @@ pub fn add_connected_nodes_until_split(
 // Add connected nodes to the given prefixes until adding one extra node in any of the
 // returned sub-prefixes would trigger a split in the parent prefix.
 pub fn add_connected_nodes_until_one_away_from_split(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_to_nearly_split: &[Prefix<XorName>],
     use_cache: bool,
@@ -643,7 +651,7 @@ pub fn add_connected_nodes_until_one_away_from_split(
 
 // Add connected nodes until reaching the requested size for each prefix. No split expected.
 fn add_connected_nodes_until_sized(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
     use_cache: bool,
@@ -663,7 +671,7 @@ fn add_connected_nodes_until_sized(
 
 // Start the target number of new nodes under each target prefix.
 fn add_nodes_to_prefixes(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
     use_cache: bool,
@@ -746,19 +754,16 @@ fn prefix_half_with_fewer_nodes(nodes: &[TestNode], prefix: &Prefix<XorName>) ->
 
 // Create `size` clients, all of whom are connected to `nodes[0]`.
 pub fn create_connected_clients(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut [TestNode],
     size: usize,
 ) -> Vec<TestClient> {
-    let contact = nodes[0].handle.endpoint();
+    let contact = nodes[0].endpoint();
     let mut clients = Vec::with_capacity(size);
 
     for _ in 0..size {
-        let client = TestClient::new(
-            network,
-            Some(BootstrapConfig::with_contacts(&[contact])),
-            None,
-        );
+        let config = NetworkConfig::client().with_hard_coded_contact(contact);
+        let client = TestClient::new(network, Some(config), None);
         clients.push(client);
 
         let _ = poll_all(nodes, &mut clients);
@@ -778,8 +783,8 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
-pub fn verify_invariant_for_all_nodes(nodes: &mut [TestNode]) {
-    let min_section_size = nodes[0].handle.0.borrow().network.min_section_size();
+pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode]) {
+    let min_section_size = network.min_section_size();
     verify_chain_invariant(nodes.iter().map(TestNode::chain), min_section_size);
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
@@ -868,7 +873,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 }
 
 fn add_node_to_section<T: Rng>(
-    network: &Network<PublicId>,
+    network: &Network,
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
     rng: &mut T,
@@ -881,12 +886,10 @@ fn add_node_to_section<T: Rng>(
             .set_next_relocation_interval(Some(XorTargetInterval::new(prefix.range_inclusive())));
     });
 
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
-    let endpoint = Endpoint(nodes.len());
+    let config = NetworkConfig::node().with_hard_coded_contacts(iter::once(nodes[0].endpoint()));
     nodes.push(
         TestNode::builder(network)
-            .bootstrap_config(bootstrap_config.clone())
-            .endpoint(endpoint)
+            .network_config(config)
             .cache(use_cache)
             .create(),
     );

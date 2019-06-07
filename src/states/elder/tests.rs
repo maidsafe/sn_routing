@@ -14,14 +14,16 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::*;
-use crate::cache::NullCache;
-use crate::messages::DirectMessage;
-use crate::mock_crust::crust::Config;
-use crate::mock_crust::{self, Network};
-use crate::outbox::{EventBox, EventBuf};
-use crate::state_machine::{State, StateMachine};
-use crate::utils::XorTargetInterval;
-use crate::xor_name::XOR_NAME_LEN;
+use crate::{
+    cache::NullCache,
+    messages::DirectMessage,
+    mock::Network,
+    outbox::{EventBox, EventBuf},
+    state_machine::{State, StateMachine, Transition},
+    utils::XorTargetInterval,
+    xor_name::XOR_NAME_LEN,
+    NetworkConfig, NetworkService,
+};
 use unwrap::unwrap;
 use utils::LogIdent;
 
@@ -250,8 +252,12 @@ impl ElderUnderTest {
         &mut self,
         routing_msg: RoutingMessage,
     ) -> Result<(), RoutingError> {
-        unwrap!(self.machine.current_mut().elder_state_mut())
-            .dispatch_routing_message(routing_msg, &mut self.ev_buffer)
+        match unwrap!(self.machine.current_mut().elder_state_mut())
+            .dispatch_routing_message(routing_msg, &mut self.ev_buffer)?
+        {
+            Transition::Stay => Ok(()),
+            _ => panic!("Unexpected transition"),
+        }
     }
 
     fn handle_direct_message(
@@ -312,10 +318,7 @@ impl ElderUnderTest {
         }
     }
 
-    fn connection_info_request_message(&self) -> RoutingMessage {
-        use crate::mock_crust::Endpoint;
-        use crate::PubConnectionInfo;
-
+    fn connect_request_message(&self) -> RoutingMessage {
         let new_full_id = &self.candidate_info.new_full_id;
         let their_pub_id = self.full_id.public_id();
 
@@ -330,13 +333,10 @@ impl ElderUnderTest {
                 .encrypting_private_key()
                 .shared_secret(their_pub_id.encrypting_public_key());
 
-            let our_pub_info = PubConnectionInfo {
-                id: *new_full_id.public_id(),
-                endpoint: Endpoint(333),
-            };
-            let encrypted_conn_info = unwrap!(shared_secret.encrypt(&our_pub_info));
+            let conn_info = self.candidate_node_info();
+            let encrypted_conn_info = unwrap!(shared_secret.encrypt(&conn_info));
 
-            MessageContent::ConnectionInfoRequest {
+            MessageContent::ConnectRequest {
                 encrypted_conn_info,
                 pub_id: *new_full_id.public_id(),
                 msg_id: MessageId::new(),
@@ -357,7 +357,7 @@ impl ElderUnderTest {
         let old_full_id = &self.candidate_info.old_full_id;
         let new_full_id = &self.candidate_info.new_full_id;
 
-        let old_and_new_pub_ids = (old_full_id.public_id(), new_full_id.public_id());
+        let both_ids = (old_full_id.public_id(), new_full_id.public_id());
 
         let old_signing_id = if use_bad_sig {
             new_full_id
@@ -365,18 +365,13 @@ impl ElderUnderTest {
             old_full_id
         };
 
-        let mut to_sign = unwrap!(serialisation::serialise(&old_and_new_pub_ids));
+        let to_sign = unwrap!(serialisation::serialise(&both_ids));
         let signature_using_old = old_signing_id.signing_private_key().sign_detached(&to_sign);
-
-        to_sign.extend_from_slice(&signature_using_old.into_bytes());
-        let signature_using_new = new_full_id.signing_private_key().sign_detached(&to_sign);
 
         (
             DirectMessage::CandidateInfo {
                 old_public_id: *old_full_id.public_id(),
-                new_public_id: *new_full_id.public_id(),
                 signature_using_old,
-                signature_using_new,
                 new_client_auth: Authority::Client {
                     client_id: *new_full_id.public_id(),
                     proxy_node_name: *self.candidate_info.new_proxy_id.public_id().name(),
@@ -385,13 +380,35 @@ impl ElderUnderTest {
             *new_full_id.public_id(),
         )
     }
+
+    fn candidate_node_info(&self) -> NodeInfo {
+        let peer_addr = unwrap!("198.51.100.0:5555".parse());
+        NodeInfo {
+            peer_addr,
+            peer_cert_der: vec![],
+        }
+    }
+
+    fn establish_connection_with_candidate(&mut self) {
+        let mut outbox = EventBuf::new();
+        let conn_info = ConnectionInfo::Node {
+            node_info: self.candidate_node_info(),
+        };
+
+        match unwrap!(self.machine.current_mut().elder_state_mut())
+            .handle_connected_to(conn_info, &mut outbox)
+        {
+            Transition::Stay => (),
+            _ => panic!("Unexpected transition"),
+        }
+    }
 }
 
 fn new_elder_state(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
     min_section_size: usize,
-    network_service: Service,
+    network_service: NetworkService,
     timer: Timer,
     outbox: &mut EventBox,
 ) -> State {
@@ -399,6 +416,7 @@ fn new_elder_state(
 
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
     let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+    let peer_map = PeerMap::new();
     let peer_mgr = PeerManager::new(public_id, true);
     let cache = Box::new(NullCache);
 
@@ -412,6 +430,7 @@ fn new_elder_state(
         gen_pfx_info: gen_pfx_info.clone(),
         msg_backlog: Vec::new(),
         parsec_map,
+        peer_map,
         peer_mgr,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,
@@ -431,30 +450,27 @@ fn make_state_machine(
 ) -> StateMachine {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
-    let public_id = *full_id.public_id();
 
-    let handle0 = network.new_service_handle(None, None);
-    let config = Config::with_contacts(&[handle0.endpoint()]);
+    let endpoint = network.gen_addr();
+    let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
 
-    let handle1 = network.new_service_handle(Some(config.clone()), None);
-    mock_crust::make_current(&handle1, || {
-        StateMachine::new(
-            move |_action_sender, network_service, timer, outbox2| {
-                new_elder_state(
-                    full_id,
-                    gen_pfx_info,
-                    min_section_size,
-                    network_service,
-                    timer,
-                    outbox2,
-                )
-            },
-            public_id,
-            None,
-            outbox,
-        )
-        .1
-    })
+    let _ = network.gen_next_addr();
+
+    StateMachine::new(
+        move |_action_sender, network_service, timer, outbox2| {
+            new_elder_state(
+                full_id,
+                gen_pfx_info,
+                min_section_size,
+                network_service,
+                timer,
+                outbox2,
+            )
+        },
+        config,
+        outbox,
+    )
+    .1
 }
 
 #[test]
@@ -667,7 +683,8 @@ fn candidate_info_message_in_interval() {
     elder_test.set_interval_to_match_candidate(true);
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = elder_test.dispatch_routing_message(elder_test.connection_info_request_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connect_request_message());
+    elder_test.establish_connection_with_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(elder_test.has_candidate_info());
@@ -682,7 +699,8 @@ fn candidate_info_message_not_in_interval() {
     elder_test.set_interval_to_match_candidate(false);
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = elder_test.dispatch_routing_message(elder_test.connection_info_request_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connect_request_message());
+    elder_test.establish_connection_with_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(!elder_test.has_candidate_info());
@@ -697,7 +715,8 @@ fn candidate_info_message_bad_signature() {
     elder_test.set_interval_to_match_candidate(true);
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = elder_test.dispatch_routing_message(elder_test.connection_info_request_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connect_request_message());
+    elder_test.establish_connection_with_candidate();
     let _ = elder_test
         .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
 

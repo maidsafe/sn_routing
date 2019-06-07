@@ -1056,20 +1056,14 @@ impl Chain {
         &self,
         section: &BTreeSet<XorName>,
         target: XorName,
-        exclude: Option<XorName>,
         route: usize,
     ) -> Result<XorName, Error> {
-        let names = if let Some(exclude) = exclude {
-            section.iter().filter(|&x| *x != exclude).collect_vec()
-        } else {
-            section.iter().collect_vec()
-        };
-
+        let names = section.iter().collect_vec();
         if names.is_empty() {
             return Err(Error::CannotRoute);
         }
 
-        Ok(*Chain::get_routeth_name(names, &target, route))
+        Ok(*Self::get_routeth_name(names, &target, route))
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
@@ -1101,7 +1095,6 @@ impl Chain {
     pub fn targets(
         &self,
         dst: &Authority<XorName>,
-        exclude: XorName,
         route: usize,
         connected_peers: &[&XorName],
     ) -> Result<BTreeSet<XorName>, Error> {
@@ -1184,7 +1177,7 @@ impl Chain {
                 candidates(&prefix.lower_bound())
             }
         };
-        let target = self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?;
+        let target = self.get_routeth_node(&closest_section, dst.name(), route)?;
         Ok(iter::once(target).collect())
     }
 

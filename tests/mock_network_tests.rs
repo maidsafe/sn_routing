@@ -111,7 +111,7 @@ macro_rules! expect_no_event {
     ($node:expr) => {{
         match $node.inner.try_next_ev() {
             Ok(Event::TimerTicked) => (),
-            Err(mpsc::TryRecvError::Empty) => (),
+            Err(crossbeam_channel::TryRecvError::Empty) => (),
             other => panic!("Expected no event at {}, got {:?}", $node.name(), other),
         }
     }};

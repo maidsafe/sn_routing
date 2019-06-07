@@ -11,23 +11,22 @@ use crate::{
     chain::{GenesisPfxInfo, SectionInfo},
     id::{FullId, PublicId},
     outbox::EventBox,
+    quic_p2p::Builder as NetworkBuilder,
     routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Client, Elder, ProvingNode, RelocatingNode},
     timer::Timer,
-    types::RoutingActionSender,
     xor_name::XorName,
-    BootstrapConfig, {CrustEvent, CrustEventSender, Service, MIN_SECTION_SIZE},
+    NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
 use crate::{routing_table::Authority, states::common::Bootstrapped, Chain};
+use crossbeam_channel as mpmc;
 use log::LogLevel;
-use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Display, Formatter},
     mem,
-    sync::mpsc::{self, Receiver, RecvError, Sender, TryRecvError},
 };
 use unwrap::unwrap;
 
@@ -50,11 +49,8 @@ macro_rules! state_dispatch {
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
     state: State,
-    category_rx: Receiver<MaidSafeEventCategory>,
-    category_tx: Sender<MaidSafeEventCategory>,
-    crust_rx: Receiver<CrustEvent<PublicId>>,
-    crust_tx: Sender<CrustEvent<PublicId>>,
-    action_rx: Receiver<Action>,
+    network_rx: mpmc::Receiver<NetworkEvent>,
+    action_rx: mpmc::Receiver<Action>,
     is_running: bool,
     #[cfg(feature = "mock_base")]
     events: Vec<EventType>,
@@ -74,16 +70,15 @@ pub enum State {
 
 #[cfg(feature = "mock_base")]
 enum EventType {
-    CrustEvent(CrustEvent<PublicId>),
+    NetworkEvent(NetworkEvent),
     Action(Box<Action>),
 }
 
 #[cfg(feature = "mock_base")]
 impl EventType {
     fn is_not_a_timeout(&self) -> bool {
-        use std::borrow::Borrow;
         match *self {
-            EventType::Action(ref action) => match *action.borrow() {
+            EventType::Action(ref action) => match **action {
                 Action::HandleTimeout(_) => false,
                 _ => true,
             },
@@ -101,11 +96,7 @@ impl State {
         )
     }
 
-    fn handle_network_event(
-        &mut self,
-        event: CrustEvent<PublicId>,
-        outbox: &mut EventBox,
-    ) -> Transition {
+    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut EventBox) -> Transition {
         state_dispatch!(
             *self,
             ref mut state => state.handle_network_event(event, outbox),
@@ -285,99 +276,47 @@ impl StateMachine {
     #[allow(clippy::new_ret_no_self)]
     pub fn new<F>(
         init_state: F,
-        pub_id: PublicId,
-        bootstrap_config: Option<BootstrapConfig>,
+        network_config: NetworkConfig,
         outbox: &mut EventBox,
-    ) -> (RoutingActionSender, Self)
+    ) -> (mpmc::Sender<Action>, Self)
     where
-        F: FnOnce(RoutingActionSender, Service, Timer, &mut EventBox) -> State,
+        F: FnOnce(mpmc::Sender<Action>, NetworkService, Timer, &mut EventBox) -> State,
     {
-        let (category_tx, category_rx) = mpsc::channel();
-        let (crust_tx, crust_rx) = mpsc::channel();
-        let (action_tx, action_rx) = mpsc::channel();
+        let (network_tx, network_rx) = mpmc::unbounded();
+        let (action_tx, action_rx) = mpmc::unbounded();
 
-        let action_sender = RoutingActionSender::new(
-            action_tx,
-            MaidSafeEventCategory::Routing,
-            category_tx.clone(),
+        let network_service = unwrap!(
+            NetworkBuilder::new(network_tx)
+                .with_config(network_config)
+                .build(),
+            "Unable to start network service"
         );
 
-        let crust_sender = CrustEventSender::new(
-            crust_tx.clone(),
-            MaidSafeEventCategory::Crust,
-            category_tx.clone(),
-        );
-
-        let res = match bootstrap_config {
-            Some(config) => Service::with_config(crust_sender, config, pub_id),
-            None => Service::new(crust_sender, pub_id),
-        };
-
-        let mut network_service = unwrap!(res, "Unable to start crust::Service");
-        network_service.start_service_discovery();
-
-        let timer = Timer::new(action_sender.clone());
-
-        let state = init_state(action_sender.clone(), network_service, timer, outbox);
+        let timer = Timer::new(action_tx.clone());
+        let state = init_state(action_tx.clone(), network_service, timer, outbox);
         let is_running = match state {
             State::Terminated => false,
             _ => true,
         };
         let machine = StateMachine {
-            category_rx: category_rx,
-            category_tx: category_tx,
-            crust_rx: crust_rx,
-            crust_tx: crust_tx,
-            action_rx: action_rx,
             state: state,
+            network_rx,
+            action_rx,
             is_running: is_running,
             #[cfg(feature = "mock_base")]
             events: Vec::new(),
         };
 
-        (action_sender, machine)
+        (action_tx, machine)
     }
 
-    fn handle_event(&mut self, category: MaidSafeEventCategory, outbox: &mut EventBox) {
-        let transition = match category {
-            MaidSafeEventCategory::Routing => {
-                if let Ok(action) = self.action_rx.try_recv() {
-                    self.state.handle_action(action, outbox)
-                } else {
-                    Transition::Terminate
-                }
-            }
-            MaidSafeEventCategory::Crust => match self.crust_rx.try_recv() {
-                Ok(crust_event) => self.state.handle_network_event(crust_event, outbox),
-                Err(TryRecvError::Empty) => {
-                    debug!(
-                        "Crust receiver temporarily empty, probably due to node \
-                         relocation."
-                    );
-                    Transition::Stay
-                }
-                Err(TryRecvError::Disconnected) => {
-                    debug!("Logic error: Crust receiver disconnected.");
-                    Transition::Terminate
-                }
-            },
-        };
-
+    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut EventBox) {
+        let transition = self.state.handle_network_event(event, outbox);
         self.apply_transition(transition, outbox)
     }
 
-    // Handle an event from the list and send any events produced for higher layers.
-    #[cfg(feature = "mock_base")]
-    fn handle_event_from_list(&mut self, outbox: &mut EventBox) {
-        assert!(!self.events.is_empty());
-        let event = self.events.remove(0);
-        let transition = match event {
-            EventType::Action(action) => self.state.handle_action(*action, outbox),
-            EventType::CrustEvent(crust_event) => {
-                self.state.handle_network_event(crust_event, outbox)
-            }
-        };
-
+    fn handle_action(&mut self, action: Action, outbox: &mut EventBox) {
+        let transition = self.state.handle_action(action, outbox);
         self.apply_transition(transition, outbox)
     }
 
@@ -392,25 +331,14 @@ impl StateMachine {
             IntoBootstrapping {
                 new_id,
                 our_section,
-            } => {
-                let category_tx = self.category_tx.clone();
-                let crust_tx = self.crust_tx.clone();
-                let crust_rx = &mut self.crust_rx;
-
-                self.state.replace_with(|state| match state {
-                    State::RelocatingNode(src) => {
-                        let crust_sender = CrustEventSender::new(
-                            crust_tx,
-                            MaidSafeEventCategory::Crust,
-                            category_tx,
-                        );
-                        src.into_bootstrapping(crust_rx, crust_sender, new_id, our_section, outbox)
-                    }
-                    _ => unreachable!(),
-                })
-            }
+            } => self.state.replace_with::<_, ()>(|state| match state {
+                State::RelocatingNode(src) => {
+                    Ok(src.into_bootstrapping(new_id, our_section, outbox))
+                }
+                _ => unreachable!(),
+            }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {
-                State::ProvingNode(src) => src.into_establishing_node(gen_pfx_info, outbox),
+                State::ProvingNode(src) => src.into_adult(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
             IntoElder { sec_info, old_pfx } => self.state.replace_with(|state| match state {
@@ -430,58 +358,98 @@ impl StateMachine {
     ///
     /// Errors are permanent failures due to either: state machine termination or
     /// the permanent closing of the `category_rx` event channel.
-    pub fn step(&mut self, outbox: &mut EventBox) -> Result<(), RecvError> {
+    pub fn step(&mut self, outbox: &mut EventBox) -> Result<(), mpmc::RecvError> {
         if self.is_running {
-            let category = self.category_rx.recv()?;
-            self.handle_event(category, outbox);
+            mpmc::select! {
+                recv(self.network_rx) -> event => self.handle_network_event(event?, outbox),
+                recv(self.action_rx) -> action => self.handle_action(action?, outbox),
+            }
             Ok(())
         } else {
-            Err(RecvError)
+            Err(mpmc::RecvError)
         }
     }
 
+    /// Get reference to the current state.
+    pub fn current(&self) -> &State {
+        &self.state
+    }
+
+    /// Get mutable reference to the current state.
+    pub fn current_mut(&mut self) -> &mut State {
+        &mut self.state
+    }
+}
+
+#[cfg(not(feature = "mock_base"))]
+impl StateMachine {
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
-    #[cfg(not(feature = "mock_base"))]
-    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
+    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), mpmc::TryRecvError> {
         if self.is_running {
-            let category = self.category_rx.try_recv()?;
-            self.handle_event(category, outbox);
+            match self.network_rx.try_recv() {
+                Ok(event) => {
+                    self.handle_network_event(event, outbox);
+                    return Ok(());
+                }
+                Err(mpmc::TryRecvError::Empty) => (),
+                Err(error) => return Err(error),
+            }
+
+            let action = self.action_rx.try_recv()?;
+            self.handle_action(action, outbox);
             Ok(())
         } else {
-            Err(TryRecvError::Disconnected)
+            Err(mpmc::TryRecvError::Disconnected)
         }
+    }
+}
+
+#[cfg(feature = "mock_base")]
+impl StateMachine {
+    // Handle an event from the list and send any events produced for higher layers.
+    fn handle_event_from_list(&mut self, outbox: &mut EventBox) {
+        assert!(!self.events.is_empty());
+        let event = self.events.remove(0);
+        let transition = match event {
+            EventType::Action(action) => self.state.handle_action(*action, outbox),
+            EventType::NetworkEvent(event) => self.state.handle_network_event(event, outbox),
+        };
+
+        self.apply_transition(transition, outbox)
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
-    #[cfg(feature = "mock_base")]
-    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), TryRecvError> {
+    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), mpmc::TryRecvError> {
         use itertools::Itertools;
         use maidsafe_utilities::SeededRng;
         use rand::Rng;
         use std::iter;
 
         if !self.is_running {
-            return Err(TryRecvError::Disconnected);
+            return Err(mpmc::TryRecvError::Disconnected);
         }
+
         let mut events = Vec::new();
-        while let Ok(category) = self.category_rx.try_recv() {
-            match category {
-                MaidSafeEventCategory::Routing => {
-                    if let Ok(action) = self.action_rx.try_recv() {
-                        events.push(EventType::Action(Box::new(action)));
-                    } else {
-                        self.apply_transition(Transition::Terminate, outbox);
-                        return Ok(());
-                    }
+        let mut received = true;
+
+        while received {
+            received = false;
+
+            match self.network_rx.try_recv() {
+                Ok(event) => {
+                    received = true;
+                    events.push(EventType::NetworkEvent(event));
                 }
-                MaidSafeEventCategory::Crust => match self.crust_rx.try_recv() {
-                    Ok(crust_event) => events.push(EventType::CrustEvent(crust_event)),
-                    Err(TryRecvError::Empty) => {}
-                    Err(TryRecvError::Disconnected) => {
-                        self.apply_transition(Transition::Terminate, outbox);
-                        return Ok(());
-                    }
-                },
+                Err(mpmc::TryRecvError::Empty) => (),
+                Err(mpmc::TryRecvError::Disconnected) => {
+                    self.apply_transition(Transition::Terminate, outbox);
+                    return Ok(());
+                }
+            }
+
+            if let Ok(action) = self.action_rx.try_recv() {
+                received = true;
+                events.push(EventType::Action(Box::new(action)));
             }
         }
 
@@ -518,17 +486,7 @@ impl StateMachine {
         while !self.events.is_empty() {
             self.handle_event_from_list(outbox);
         }
-        Err(TryRecvError::Empty)
-    }
-
-    /// Get reference to the current state.
-    pub fn current(&self) -> &State {
-        &self.state
-    }
-
-    /// Get mutable reference to the current state.
-    pub fn current_mut(&mut self) -> &mut State {
-        &mut self.state
+        Err(mpmc::TryRecvError::Empty)
     }
 }
 
