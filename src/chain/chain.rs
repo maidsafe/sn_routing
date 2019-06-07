@@ -1045,6 +1045,16 @@ impl Chain {
         (best_pfx, best_si.member_names())
     }
 
+    /// Returns the known sections sorted by the distance from a given XorName.
+    fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
+        let mut result = vec![(*self.our_prefix(), self.our_info().member_names())];
+        for (pfx, ni) in &self.neighbour_infos {
+            result.push((*pfx, ni.sec_info().member_names()));
+        }
+        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
+        result
+    }
+
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
     /// onwards. In all non-error cases below, the returned collection will have the members of
     /// `exclude` removed, possibly resulting in an empty set being returned.
@@ -1082,14 +1092,29 @@ impl Chain {
         let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
 
         let candidates = |target_name: &XorName| {
-            self.closest_section(target_name)
-                .1
-                .into_iter()
-                .filter(is_connected)
-                .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs))
+            let mut filtered_sections =
+                self.closest_sections(target_name)
+                    .into_iter()
+                    .map(|(_, members)| {
+                        (
+                            members.len(),
+                            members.into_iter().filter(is_connected).collect::<Vec<_>>(),
+                        )
+                    });
+            let best_section = filtered_sections
+                .find(|(len, connected)| connected.len() * 3 >= *len)
+                .ok_or(Error::CannotRoute);
+            best_section.map(|(len, connected)| {
+                (
+                    len,
+                    connected
+                        .into_iter()
+                        .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs)),
+                )
+            })
         };
 
-        let closest_section = match *dst {
+        let (best_section_len, best_section) = match *dst {
             Authority::ManagedNode(ref target_name)
             | Authority::Client {
                 proxy_node_name: ref target_name,
@@ -1101,7 +1126,7 @@ impl Chain {
                 if self.has(target_name) && is_connected(&target_name) {
                     return Ok(iter::once(*target_name).collect());
                 }
-                candidates(target_name)
+                candidates(target_name)?
             }
             Authority::ClientManager(ref target_name)
             | Authority::NaeManager(ref target_name)
@@ -1111,7 +1136,7 @@ impl Chain {
                 {
                     return Ok(group.into_iter().collect());
                 }
-                candidates(target_name)
+                candidates(target_name)?
             }
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
@@ -1125,7 +1150,7 @@ impl Chain {
                     section = section.into_iter().filter(is_connected).collect();
                     return Ok(section);
                 }
-                candidates(target_name)
+                candidates(target_name)?
             }
             Authority::PrefixSection(ref prefix) => {
                 if prefix.is_compatible(&self.our_prefix()) {
@@ -1154,14 +1179,13 @@ impl Chain {
                     let _ = targets.remove(&self.our_id().name());
                     return Ok(targets);
                 }
-                candidates(&prefix.lower_bound())
+                candidates(&prefix.lower_bound())?
             }
         };
-        let n = closest_section.len();
-        Ok(closest_section
+        Ok(best_section
             .into_iter()
             .filter(|&x| x != exclude && x != *self.our_id().name())
-            .take((n + 2) / 3)
+            .take((best_section_len + 2) / 3)
             .collect())
     }
 
