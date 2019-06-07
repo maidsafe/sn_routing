@@ -23,8 +23,8 @@ use crate::{
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedMessage, UserMessage,
-        UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
+        DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedMessage,
+        UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
     },
     outbox::EventBox,
     parsec::{self, ParsecMap},
@@ -497,12 +497,12 @@ impl Elder {
     /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
     fn check_direct_message_sender(
         &self,
-        direct_message: &DirectMessage,
+        msg: &DirectMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
             Some(&PeerState::Bootstrapper { .. }) => {
-                if let DirectMessage::BootstrapRequest(_) = *direct_message {
+                if let DirectMessage::BootstrapRequest = *msg {
                     return Ok(());
                 }
             }
@@ -513,7 +513,7 @@ impl Elder {
 
         debug!(
             "{} Illegitimate direct message {:?} from {:?}.",
-            self, direct_message, pub_id
+            self, msg, pub_id
         );
         Err(RoutingError::InvalidStateForOperation)
     }
@@ -880,7 +880,7 @@ impl Elder {
                     &pub_id,
                     elapsed.display_secs(),
                 );
-                self.send_direct_message(pub_id, DirectMessage::ResourceProofResponseReceipt);
+                self.send_direct_message(&pub_id, DirectMessage::ResourceProofResponseReceipt);
             }
             Ok((Some(online_payload), elapsed)) => {
                 info!(
@@ -1005,11 +1005,7 @@ impl Elder {
     }
 
     // If this returns an error, the peer will be dropped.
-    fn handle_bootstrap_request(
-        &mut self,
-        pub_id: PublicId,
-        signature: Signature,
-    ) -> Result<(), RoutingError> {
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
         let peer_kind = if let Some(peer) = self.peer_mgr.get_peer(&pub_id) {
             match *peer.state() {
                 PeerState::Bootstrapper { peer_kind, .. } => peer_kind,
@@ -1040,20 +1036,12 @@ impl Elder {
                     self, pub_id
                 );
                 self.send_direct_message(
-                    pub_id,
+                    &pub_id,
                     DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
                 );
                 self.disconnect_peer(&pub_id);
                 return Ok(());
             }
-        }
-
-        let ser_pub_id = serialisation::serialise(&pub_id)?;
-        if !pub_id
-            .signing_public_key()
-            .verify_detached(&signature, &ser_pub_id)
-        {
-            return Err(RoutingError::FailedSignature);
         }
 
         if (peer_kind == CrustUser::Client || !self.is_first_node)
@@ -1067,7 +1055,7 @@ impl Elder {
                 self.min_section_size() - 1
             );
             self.send_direct_message(
-                pub_id,
+                &pub_id,
                 DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewPeers)),
             );
             self.disconnect_peer(&pub_id);
@@ -1077,7 +1065,7 @@ impl Elder {
         self.peer_mgr
             .handle_bootstrap_request(&pub_id, &self.log_ident());
         let _ = self.dropped_clients.remove(&pub_id);
-        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(Ok(())));
+        self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(Ok(())));
         Ok(())
     }
 
@@ -1165,7 +1153,7 @@ impl Elder {
             &self.log_ident(),
         ) {
             Ok(true) => {
-                let direct_message = DirectMessage::ResourceProof {
+                let msg = DirectMessage::ResourceProof {
                     seed: seed,
                     target_size: target_size,
                     difficulty: difficulty,
@@ -1174,7 +1162,7 @@ impl Elder {
                     "{} Sending resource proof challenge to candidate {}->{}",
                     self, old_pub_id, new_pub_id
                 );
-                self.send_direct_message(*new_pub_id, direct_message);
+                self.send_direct_message(new_pub_id, msg);
             }
             Ok(false) => {
                 if !self.is_peer_valid(new_pub_id) {
@@ -1471,7 +1459,7 @@ impl Elder {
         };
 
         if let Some(msg) = self.parsec_map.create_gossip(version, &gossip_target) {
-            self.send_message(&gossip_target, msg);
+            self.send_direct_message(&gossip_target, msg);
         }
     }
 
@@ -2030,12 +2018,11 @@ impl Base for Elder {
     // Deconstruct a `DirectMessage` and handle or forward as appropriate.
     fn handle_direct_message(
         &mut self,
-        direct_message: DirectMessage,
+        msg: DirectMessage,
         pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectMessage::*;
-        if let Err(error) = self.check_direct_message_sender(&direct_message, &pub_id) {
+        if let Err(error) = self.check_direct_message_sender(&msg, &pub_id) {
             match error {
                 RoutingError::ClientConnectionNotFound => (),
                 _ => self.ban_and_disconnect_peer(&pub_id),
@@ -2043,10 +2030,11 @@ impl Base for Elder {
             return Err(error);
         }
 
-        match direct_message {
+        use crate::messages::DirectMessage::*;
+        match msg {
             MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, pub_id)?,
-            BootstrapRequest(signature) => {
-                if let Err(error) = self.handle_bootstrap_request(pub_id, signature) {
+            BootstrapRequest => {
+                if let Err(error) = self.handle_bootstrap_request(pub_id) {
                     warn!(
                         "{} Invalid BootstrapRequest received ({:?}), dropping {}.",
                         self, error, pub_id
@@ -2103,7 +2091,7 @@ impl Base for Elder {
             | ProxyRateLimitExceeded { .. }
             | ResourceProof { .. }
             | ResourceProofResponseReceipt => {
-                debug!("{} Unhandled direct message: {:?}", self, direct_message);
+                debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }
 
@@ -2182,7 +2170,7 @@ impl Base for Elder {
                     pub_id
                 );
                 self.send_direct_message(
-                    pub_id,
+                    &pub_id,
                     DirectMessage::ProxyRateLimitExceeded {
                         ack: Ack::compute(hop_msg.content.routing_message())?,
                     },
@@ -2322,7 +2310,7 @@ impl Bootstrapped for Elder {
                     let direct_msg = signed_msg
                         .routing_message()
                         .to_signature(self.full_id.signing_private_key())?;
-                    self.send_direct_message(pub_id, direct_msg);
+                    self.send_direct_message(&pub_id, direct_msg);
                     Ok(())
                 } else {
                     Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))

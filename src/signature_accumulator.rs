@@ -129,12 +129,16 @@ impl SignatureAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::SectionInfo;
-    use crate::id::{FullId, PublicId};
-    use crate::messages::{DirectMessage, MessageContent, RoutingMessage, SignedMessage};
-    use crate::routing_table::Authority;
-    use crate::routing_table::Prefix;
-    use crate::types::MessageId;
+    use crate::{
+        chain::SectionInfo,
+        id::{FullId, PublicId},
+        messages::{
+            DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
+            SignedMessage,
+        },
+        routing_table::{Authority, Prefix},
+        types::MessageId,
+    };
     use itertools::Itertools;
     use rand;
     use std::collections::BTreeSet;
@@ -142,7 +146,7 @@ mod tests {
 
     struct MessageAndSignatures {
         signed_msg: SignedMessage,
-        signature_msgs: Vec<DirectMessage>,
+        signature_msgs: Vec<SignedDirectMessage>,
     }
 
     impl MessageAndSignatures {
@@ -164,16 +168,19 @@ mod tests {
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
             let sec_info = unwrap!(SectionInfo::new(all_ids, prefix, None));
             let signed_msg = unwrap!(SignedMessage::new(routing_msg, msg_sender_id, sec_info));
-            let signature_msgs = other_ids
+            let signature_msgs: Result<_, _> = other_ids
                 .map(|id| {
-                    unwrap!(signed_msg
+                    signed_msg
                         .routing_message()
-                        .to_signature(id.signing_private_key(),))
+                        .to_signature(id.signing_private_key())
+                        .and_then(|content| SignedDirectMessage::new(content, msg_sender_id))
                 })
                 .collect();
+            let signature_msgs = unwrap!(signature_msgs);
+
             MessageAndSignatures {
-                signed_msg: signed_msg,
-                signature_msgs: signature_msgs,
+                signed_msg,
+                signature_msgs,
             }
         }
     }
@@ -226,7 +233,7 @@ mod tests {
                 .signature_msgs
                 .iter()
                 .zip(env.other_ids.iter())
-                .foreach(|(signature_msg, full_id)| match *signature_msg {
+                .foreach(|(signature_msg, full_id)| match *signature_msg.content() {
                     DirectMessage::MessageSignature(hash, sig) => {
                         let result = sig_accumulator.add_proof(
                             env.num_nodes(),
@@ -301,7 +308,7 @@ mod tests {
                     .iter()
                     .zip(env.other_ids.iter())
                     .foreach(|(signature_msg, full_id)| {
-                        let result = match *signature_msg {
+                        let result = match *signature_msg.content() {
                             DirectMessage::MessageSignature(hash, sig) => sig_accumulator
                                 .add_proof(
                                     env.num_nodes(),

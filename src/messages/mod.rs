@@ -6,35 +6,41 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod direct;
 mod request;
 mod response;
 
-pub use self::request::Request;
-pub use self::response::{AccountInfo, Response};
+pub use self::{
+    direct::{DirectMessage, SignedDirectMessage},
+    request::Request,
+    response::{AccountInfo, Response},
+};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use crate::ack_manager::Ack;
-use crate::chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo};
-use crate::data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-use crate::error::{BootstrapResponseError, Result, RoutingError};
-use crate::event::Event;
-use crate::id::{FullId, PublicId};
-use crate::parsec;
-use crate::routing_table::Authority;
-use crate::routing_table::{Prefix, Xorable};
-use crate::sha3::Digest256;
-use crate::types::MessageId;
-use crate::xor_name::XorName;
-use crate::XorTargetInterval;
+use crate::{
+    ack_manager::Ack,
+    chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo},
+    data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+    error::{Result, RoutingError},
+    event::Event,
+    id::{FullId, PublicId},
+    routing_table::{Authority, Prefix, Xorable},
+    sha3::Digest256,
+    types::MessageId,
+    xor_name::XorName,
+    XorTargetInterval,
+};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use safe_crypto;
-use safe_crypto::{SecretSignKey, Signature};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::fmt::{self, Debug, Formatter};
-use std::result::Result as StdResult;
-use std::time::Duration;
+#[cfg(test)]
+use safe_crypto::Signature;
+use safe_crypto::{self, SecretSignKey};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    fmt::{self, Debug, Formatter},
+    time::Duration,
+};
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
@@ -58,7 +64,7 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
     /// A message sent between two nodes directly
-    Direct(DirectMessage),
+    Direct(SignedDirectMessage),
     /// A message sent across the network (in transit)
     Hop(HopMessage),
 }
@@ -68,85 +74,6 @@ impl Message {
         match *self {
             Message::Direct(ref content) => content.priority(),
             Message::Hop(ref content) => content.content.content.priority(),
-        }
-    }
-}
-
-/// Messages sent via a direct connection.
-///
-/// Allows routing to directly send specific messages between nodes.
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-pub enum DirectMessage {
-    /// Sent from members of a section or group message's source authority to the first hop. The
-    /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(Digest256, Signature),
-    /// Sent from a newly connected client to the bootstrap node to prove that it is the owner of
-    /// the client's claimed public ID.
-    BootstrapRequest(Signature),
-    /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
-    /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
-    BootstrapResponse(StdResult<(), BootstrapResponseError>),
-    /// Sent from a node which is still joining the network to another node, to allow the latter to
-    /// add the former to its routing table.
-    CandidateInfo {
-        /// `PublicId` from before relocation.
-        old_public_id: PublicId,
-        /// `PublicId` from after relocation.
-        new_public_id: PublicId,
-        /// Signature of concatenated `PublicId`s using the pre-relocation key.
-        signature_using_old: Signature,
-        /// Signature of concatenated `PublicId`s and `signature_using_old` using the
-        /// post-relocation key.
-        signature_using_new: Signature,
-        /// Client authority from after relocation.
-        new_client_auth: Authority<XorName>,
-    },
-    /// Request a proof to be provided by the joining node.
-    ///
-    /// This is sent from member of Group Y to the joining node.
-    ResourceProof {
-        /// seed of proof
-        seed: Vec<u8>,
-        /// size of the proof
-        target_size: usize,
-        /// leading zero bits of the hash of the proof
-        difficulty: u8,
-    },
-    /// Provide a proof to the network
-    ///
-    /// This is sent from the joining node to member of Group Y
-    ResourceProofResponse {
-        /// The index of this part of the resource proof.
-        part_index: usize,
-        /// The total number of parts.
-        part_count: usize,
-        /// Proof to be presented
-        proof: Vec<u8>,
-        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
-        /// the difficulty requirement
-        leading_zero_bytes: u64,
-    },
-    /// Receipt of a part of a ResourceProofResponse
-    ResourceProofResponseReceipt,
-    /// Sent from a proxy node to its client to indicate that the client exceeded its rate limit.
-    ProxyRateLimitExceeded { ack: Ack },
-    /// Poke a node to send us the first gossip request
-    ParsecPoke(u64),
-    /// Parsec request message
-    ParsecRequest(u64, parsec::Request),
-    /// Parsec response message
-    ParsecResponse(u64, parsec::Response),
-}
-
-impl DirectMessage {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            DirectMessage::ResourceProofResponse { .. } => 9,
-            _ => 0,
         }
     }
 }
@@ -627,50 +554,6 @@ impl MessageContent {
                 priority
             }
             _ => 0,
-        }
-    }
-}
-
-impl Debug for DirectMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        use self::DirectMessage::*;
-        match *self {
-            MessageSignature(ref digest, _) => {
-                write!(formatter, "MessageSignature ({:.14}, ..)", HexFmt(&digest))
-            }
-            BootstrapRequest(_) => write!(formatter, "BootstrapRequest"),
-            BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
-            CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
-            ResourceProof {
-                ref seed,
-                ref target_size,
-                ref difficulty,
-            } => write!(
-                formatter,
-                "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
-                seed, target_size, difficulty
-            ),
-            ResourceProofResponse {
-                part_index,
-                part_count,
-                ref proof,
-                leading_zero_bytes,
-            } => write!(
-                formatter,
-                "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
-                 {:?} }}",
-                part_index + 1,
-                part_count,
-                proof.len(),
-                leading_zero_bytes
-            ),
-            ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
-            ProxyRateLimitExceeded { ref ack } => {
-                write!(formatter, "ProxyRateLimitExceeded({:?})", ack)
-            }
-            ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
-            ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
-            ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
         }
     }
 }

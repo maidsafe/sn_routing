@@ -15,12 +15,10 @@ use super::crust::{
 };
 use crate::id::PublicId;
 #[cfg(feature = "mock_serialise")]
-use crate::messages::DirectMessage;
+use crate::messages::{DirectMessage, Message};
 #[cfg(any(all(test, not(feature = "mock_serialise")), feature = "mock_parsec"))]
 use crate::parsec;
 use crate::CrustEvent;
-#[cfg(feature = "mock_serialise")]
-use crate::Message;
 use crate::NetworkBytes;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
@@ -743,9 +741,13 @@ impl<UID: Uid> Packet<UID> {
     fn is_parsec_req_resp(&self) -> bool {
         match self {
             Packet::Message(msg) => match **msg {
-                Message::Direct(DirectMessage::ParsecRequest(_, _))
-                | Message::Direct(DirectMessage::ParsecResponse(_, _)) => true,
-                _ => false,
+                Message::Direct(ref msg) => match *msg.content() {
+                    DirectMessage::ParsecRequest(_, _) | DirectMessage::ParsecResponse(_, _) => {
+                        true
+                    }
+                    _ => false,
+                },
+                Message::Hop(_) => false,
             },
             _ => false,
         }
@@ -799,12 +801,15 @@ where
 #[cfg(not(feature = "mock_serialise"))]
 #[allow(clippy::let_unit_value)]
 fn test_is_parsec_req_resp() {
-    use crate::id::FullId;
-    use crate::messages::{
-        DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
+    use crate::{
+        id::FullId,
+        messages::{
+            DirectMessage, HopMessage, Message, MessageContent, RoutingMessage,
+            SignedDirectMessage, SignedMessage,
+        },
+        routing_table::Authority,
+        types::MessageId,
     };
-    use crate::routing_table::Authority;
-    use crate::types::MessageId;
     use maidsafe_utilities::serialisation;
     use serde::Serialize;
 
@@ -828,16 +833,19 @@ fn test_is_parsec_req_resp() {
         )
     };
 
-    let msg = Message::Direct(DirectMessage::ParsecRequest(42, req));
+    let make_message =
+        |content| Message::Direct(unwrap!(SignedDirectMessage::new(content, &full_id)));
+
+    let msg = make_message(DirectMessage::ParsecRequest(42, req));
     assert!(Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
 
-    let msg = Message::Direct(DirectMessage::ParsecResponse(1337, rsp));
+    let msg = make_message(DirectMessage::ParsecResponse(1337, rsp));
     assert!(Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
 
     // No other direct message types contain a Parsec request or response.
-    let msg = Message::Direct(DirectMessage::ParsecPoke(5));
+    let msg = make_message(DirectMessage::ParsecPoke(5));
     assert!(!Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
-    let msg = Message::Direct(DirectMessage::ResourceProofResponseReceipt);
+    let msg = make_message(DirectMessage::ResourceProofResponseReceipt);
     assert!(!Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
 
     // A hop message never contains a Parsec message.

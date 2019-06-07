@@ -11,7 +11,10 @@ use crate::{
     crust::{ConnectionInfoResult, CrustError, CrustUser, PrivConnectionInfo},
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, Request, SignedMessage, UserMessage},
+    messages::{
+        DirectMessage, HopMessage, Message, Request, SignedDirectMessage, SignedMessage,
+        UserMessage,
+    },
     outbox::EventBox,
     routing_table::Authority,
     state_machine::Transition,
@@ -247,8 +250,11 @@ pub trait Base: Display {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
-            Message::Hop(hop_msg) => self.handle_hop_message(hop_msg, pub_id, outbox),
-            Message::Direct(direct_msg) => self.handle_direct_message(direct_msg, pub_id, outbox),
+            Message::Hop(msg) => self.handle_hop_message(msg, pub_id, outbox),
+            Message::Direct(msg) => {
+                let (msg, pub_id) = msg.open()?;
+                self.handle_direct_message(msg, pub_id, outbox)
+            }
         }
     }
 
@@ -268,8 +274,16 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message(&mut self, dst_id: PublicId, message: DirectMessage) {
-        self.send_message(&dst_id, Message::Direct(message));
+    fn send_direct_message(&mut self, dst_id: &PublicId, content: DirectMessage) {
+        let message = match SignedDirectMessage::new(content, self.full_id()) {
+            Ok(message) => message,
+            Err(err) => {
+                error!("{} - Failed to create DirectMessage: {:?}", self, err);
+                return;
+            }
+        };
+
+        self.send_message(dst_id, Message::Direct(message));
     }
 
     fn send_message(&mut self, dst_id: &PublicId, message: Message) {

@@ -246,7 +246,7 @@ impl ProvingNode {
 
         let _ = self.resource_proofing_status.insert(pub_id, false);
 
-        self.send_direct_message(pub_id, msg);
+        self.send_direct_message(&pub_id, msg);
     }
 
     fn resend_info(&mut self, outbox: &mut EventBox) -> Transition {
@@ -321,7 +321,7 @@ impl Base for ProvingNode {
         let msg = self
             .resource_prover
             .handle_action_res_proof(pub_id, messages);
-        self.send_direct_message(pub_id, msg);
+        self.send_direct_message(&pub_id, msg);
     }
 
     fn handle_connect_success(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
@@ -383,10 +383,10 @@ impl Base for ProvingNode {
             }
             ResourceProofResponseReceipt => {
                 if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
-                    self.send_direct_message(pub_id, msg);
+                    self.send_direct_message(&pub_id, msg);
                 }
             }
-            BootstrapRequest(_) => self.handle_bootstrap_request(pub_id),
+            BootstrapRequest => self.handle_bootstrap_request(pub_id),
             _ => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }

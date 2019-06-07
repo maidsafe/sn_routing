@@ -22,7 +22,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, RoutingMessage},
+    messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     parsec::ParsecMap,
     peer_manager::{Peer, PeerManager, PeerState},
@@ -165,10 +165,7 @@ impl Adult {
             .collect_vec();
 
         for recipient in recipients {
-            self.send_message(
-                &recipient,
-                Message::Direct(DirectMessage::ParsecPoke(version)),
-            );
+            self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
         }
     }
 }
@@ -244,7 +241,7 @@ impl Base for Adult {
             ParsecResponse(version, par_response) => {
                 self.handle_parsec_response(version, par_response, pub_id, outbox)
             }
-            BootstrapRequest(_) => {
+            BootstrapRequest => {
                 self.handle_bootstrap_request(pub_id);
                 Ok(Transition::Stay)
             }

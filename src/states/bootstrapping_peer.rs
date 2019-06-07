@@ -18,7 +18,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, Request, UserMessage},
+    messages::{DirectMessage, HopMessage, Request, UserMessage},
     outbox::EventBox,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
@@ -27,7 +27,6 @@ use crate::{
     xor_name::XorName,
     Service,
 };
-use maidsafe_utilities::serialisation;
 use std::{
     collections::{BTreeSet, HashSet},
     fmt::{self, Display, Formatter},
@@ -174,20 +173,7 @@ impl BootstrappingPeer {
         let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
         self.bootstrap_connection = Some((pub_id, token));
 
-        let serialised_public_id = match serialisation::serialise(self.full_id.public_id()) {
-            Ok(rslt) => rslt,
-            Err(e) => {
-                error!("Failed to serialise public ID: {:?}", e);
-                return;
-            }
-        };
-        let signature = self
-            .full_id
-            .signing_private_key()
-            .sign_detached(&serialised_public_id);
-        let direct_message = DirectMessage::BootstrapRequest(signature);
-
-        self.send_message(&pub_id, Message::Direct(direct_message));
+        self.send_direct_message(&pub_id, DirectMessage::BootstrapRequest);
     }
 
     fn disconnect_peer(&mut self, pub_id: &PublicId) {
@@ -347,7 +333,7 @@ impl Base for BootstrappingPeer {
         pub_id: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        use self::DirectMessage::*;
+        use crate::messages::DirectMessage::*;
         match msg {
             BootstrapResponse(Ok(())) => Ok(Transition::IntoBootstrapped {
                 proxy_public_id: pub_id,
@@ -384,17 +370,20 @@ impl Display for BootstrappingPeer {
 #[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
-    use crate::cache::NullCache;
-    use crate::id::FullId;
-    use crate::mock::crust::{
-        self as mock_crust,
-        crust::{Config, Service},
-        Network,
+    use crate::{
+        cache::NullCache,
+        id::FullId,
+        messages::Message,
+        mock::crust::{
+            self as mock_crust,
+            crust::{Config, Service},
+            Network,
+        },
+        outbox::EventBuf,
+        state_machine::StateMachine,
+        states::common::from_network_bytes,
+        CrustEvent,
     };
-    use crate::outbox::EventBuf;
-    use crate::state_machine::StateMachine;
-    use crate::states::common::from_network_bytes;
-    use crate::CrustEvent;
     use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
     use std::sync::mpsc;
     use unwrap::unwrap;
@@ -484,9 +473,16 @@ mod tests {
         // `LostPeer` event in the state machine.
         network.deliver_messages();
         if let CrustEvent::NewMessage::<_>(_, _, serialised_msg) = unwrap!(event_rx.try_recv()) {
-            match unwrap!(from_network_bytes(serialised_msg)) {
-                Message::Direct(DirectMessage::BootstrapRequest(_)) => (),
-                _ => panic!("Should have received a `BootstrapRequest`."),
+            let ok = match unwrap!(from_network_bytes(serialised_msg)) {
+                Message::Direct(msg) => match *msg.content() {
+                    DirectMessage::BootstrapRequest => true,
+                    _ => false,
+                },
+                _ => false,
+            };
+
+            if !ok {
+                panic!("Should have received a `BootstrapRequest`.");
             }
         } else {
             panic!("Should have received `NewMessage` event.");

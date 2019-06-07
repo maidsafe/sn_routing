@@ -15,7 +15,7 @@
 
 use super::*;
 use crate::cache::NullCache;
-use crate::messages::Message;
+use crate::messages::DirectMessage;
 use crate::mock_crust::crust::Config;
 use crate::mock_crust::{self, Network};
 use crate::outbox::{EventBox, EventBuf};
@@ -118,13 +118,8 @@ impl ElderUnderTest {
 
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
         let other_pub_id = *self.other_full_ids[0].public_id();
-        match self.other_parsec_map[0].create_gossip(0, self.full_id.public_id()) {
-            Some(Message::Direct(message)) => {
-                self.handle_direct_message((message, other_pub_id))?
-            }
-            _ => panic!("create_gossip unexpected message"),
-        };
-        Ok(())
+        let message = unwrap!(self.other_parsec_map[0].create_gossip(0, self.full_id.public_id()));
+        self.handle_direct_message((message, other_pub_id))
     }
 
     fn n_vote_for_gossipped(

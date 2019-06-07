@@ -98,7 +98,7 @@ pub trait Approved: Relocated {
                 .handle_request(msg_version, par_request, pub_id, &log_ident);
 
         if let Some(response) = response {
-            self.send_message(&pub_id, response);
+            self.send_direct_message(&pub_id, response);
         }
 
         if poll {

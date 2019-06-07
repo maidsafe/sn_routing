@@ -132,8 +132,9 @@ pub trait RelocatedNotEstablished: Relocated {
             "{} - Client {:?} rejected: We are not an established node yet.",
             self, pub_id
         );
+
         self.send_direct_message(
-            pub_id,
+            &pub_id,
             DirectMessage::BootstrapResponse(Err(BootstrapResponseError::NotApproved)),
         );
         self.disconnect_peer(&pub_id);
