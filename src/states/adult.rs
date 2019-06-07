@@ -132,7 +132,9 @@ impl Adult {
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
             peer_mgr: self.peer_mgr,
-            routing_msg_filter: self.routing_msg_filter,
+            // we reset the message filter so that the node can correctly process some messages as
+            // an Elder even if it has already seen them as an Adult
+            routing_msg_filter: RoutingMessageFilter::new(),
             timer: self.timer,
         };
 
