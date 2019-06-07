@@ -15,7 +15,7 @@ use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use std::{
     cell::RefCell,
-    cmp::Ordering,
+    cmp::{self, Ordering},
     collections::{hash_map::Entry, VecDeque},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     rc::{Rc, Weak},
@@ -161,8 +161,6 @@ impl Inner {
     }
 
     fn pop_random_packet(&mut self) -> Option<(Connection, Packet)> {
-        // TODO: randomly reorder subsequent `Packet::Message`s to simulate out-of-order delivery.
-
         let connections: Vec<_> = self
             .connections
             .iter()
@@ -183,7 +181,7 @@ impl Inner {
     fn pop_packet(&mut self, connection: Connection) -> Option<Packet> {
         match self.connections.entry(connection) {
             Entry::Occupied(mut entry) => {
-                let packet = entry.get_mut().pop();
+                let packet = entry.get_mut().pop_random_msg(&mut self.rng);
                 if entry.get().is_empty() {
                     let _ = entry.remove_entry();
                 }
@@ -218,12 +216,26 @@ impl Queue {
         self.0.push_back(packet)
     }
 
-    fn pop(&mut self) -> Option<Packet> {
-        self.0.pop_front()
-    }
-
     fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    // This function will pop random msg from the queue.
+    fn pop_random_msg(&mut self, rng: &mut SeededRng) -> Option<Packet> {
+        let first_non_msg_packet = self
+            .0
+            .iter()
+            .position(|packet| {
+                if let Packet::Message(_) = packet {
+                    false
+                } else {
+                    true
+                }
+            })
+            .unwrap_or(0);
+
+        let selected = rng.gen_range(0, cmp::max(first_non_msg_packet, 1));
+        self.0.remove(selected)
     }
 }
 

@@ -9,6 +9,7 @@
 use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
 use bytes::Bytes;
 use std::{
+    collections::BTreeSet,
     iter,
     net::SocketAddr,
     sync::mpsc::{self, Receiver, TryRecvError},
@@ -309,13 +310,8 @@ fn send_multiple_messages_without_connecting_first() {
     a.expect_connected_to_node(&b.addr());
     b.expect_connected_to_node(&a.addr());
 
-    // TODO: We shouldn't rely on the messages being delivered in the same order they were sent.
-    //       We should also change the implementation to introduce random reordering of the
-    //       messages to more faithfully simulate real quick-p2p which doesn't guarantee the order
-    //       either.
-    for msg in &msgs {
-        b.expect_new_message(&a.addr(), msg);
-    }
+    let received_messages = b.received_messages(&a.addr());
+    expected_messages_received(msgs.to_vec(), received_messages);
 }
 
 #[test]
@@ -527,6 +523,20 @@ impl Agent {
     fn expect_none(&self) {
         assert_eq!(self.rx.try_recv(), Err(TryRecvError::Empty));
     }
+
+    fn received_messages(&self, src_addr: &SocketAddr) -> BTreeSet<Bytes> {
+        let mut received_messages = BTreeSet::new();
+        while let Ok(Event::NewMessage { peer_addr, msg }) = self.rx.try_recv() {
+            assert_eq!(peer_addr, *src_addr);
+            let _ = received_messages.insert(msg);
+        }
+        received_messages
+    }
+}
+
+fn expected_messages_received(sent: Vec<Bytes>, received: BTreeSet<Bytes>) {
+    let expected: BTreeSet<Bytes> = sent.iter().cloned().collect();
+    assert_eq!(expected, received);
 }
 
 fn establish_connection(network: &Network, a: &mut Agent, b: &mut Agent) {
