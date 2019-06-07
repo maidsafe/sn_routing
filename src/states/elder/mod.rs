@@ -134,7 +134,7 @@ pub struct Elder {
     ignore_candidate_info_counter: u8,
     /// Cached proving sections used to in case a prefix change causes a section info not to
     /// accumulate.
-    proving_section_cache: LruCache<(Vec<ProvingSection>, SectionInfo), ()>,
+    proving_section_cache: LruCache<SectionInfo, Vec<ProvingSection>>,
     pfx_is_successfully_polled: bool,
 }
 
@@ -640,37 +640,24 @@ impl Elder {
         sec_info: SectionInfo,
     ) {
         if self.chain.is_new_neighbour(&sec_info) {
-            self.remove_from_proving_section_cache(&sec_info);
-            let _ = self
-                .proving_section_cache
-                .insert((proving_secs, sec_info), ());
+            let _ = self.proving_section_cache.insert(sec_info, proving_secs);
         }
     }
 
     fn remove_from_proving_section_cache(&mut self, sec_info: &SectionInfo) {
-        let to_remove = self
-            .proving_section_cache
-            .peek_iter()
-            .map(|x| x.0)
-            .filter(|(_, si)| si == sec_info)
-            .cloned()
-            .collect_vec();
-        to_remove.into_iter().for_each(|p| {
-            let _ = self.proving_section_cache.remove(&p);
-        });
+        let _ = self.proving_section_cache.remove(&sec_info);
     }
 
     fn vote_for_neighbours_in_proving_section_cache(&mut self) {
-        let ps = self
-            .proving_section_cache
+        self.proving_section_cache
             .peek_iter()
-            .map(|x| x.0)
-            .filter(|(_, si)| self.chain.is_new_neighbour(si))
-            .cloned()
-            .collect_vec();
-        ps.into_iter().for_each(|(ps, si)| {
-            self.vote_for_event(NetworkEvent::ProvingSections(ps, si));
-        });
+            .filter(|(si, _)| self.chain.is_new_neighbour(si))
+            .map(|(si, ps)| (si.clone(), ps.clone()))
+            .collect_vec()
+            .into_iter()
+            .for_each(|(si, ps)| {
+                self.vote_for_event(NetworkEvent::ProvingSections(ps, si));
+            });
         self.proving_section_cache.clear();
     }
 
