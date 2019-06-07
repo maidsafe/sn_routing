@@ -11,7 +11,7 @@ use crate::{
     chain::SectionInfo,
     error::RoutingError,
     id::PublicId,
-    messages::{HopMessage, RoutingMessage, SignedMessage},
+    messages::{HopMessage, RoutingMessage, SignedRoutingMessage},
     routing_message_filter::FilteringResult,
     routing_table::Authority,
     time::Instant,
@@ -83,7 +83,7 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
             }
         };
 
-        let signed_msg = SignedMessage::new(routing_msg, self.full_id(), None)?;
+        let signed_msg = SignedRoutingMessage::new(routing_msg, self.full_id(), None)?;
 
         if self.add_to_pending_acks(signed_msg.routing_message(), src_section, route, expires_at)
             && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)

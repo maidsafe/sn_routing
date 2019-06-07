@@ -12,7 +12,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
     messages::{
-        DirectMessage, HopMessage, Message, Request, SignedDirectMessage, SignedMessage,
+        DirectMessage, HopMessage, Message, Request, SignedDirectMessage, SignedRoutingMessage,
         UserMessage,
     },
     outbox::EventBox,
@@ -320,7 +320,7 @@ pub trait Base: Display {
     // Serialise HopMessage containing the given signed message.
     fn to_hop_bytes(
         &self,
-        signed_msg: SignedMessage,
+        signed_msg: SignedRoutingMessage,
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<NetworkBytes, RoutingError> {

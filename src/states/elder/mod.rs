@@ -23,7 +23,7 @@ use crate::{
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedMessage,
+        DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage,
         UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
     },
     outbox::EventBox,
@@ -550,7 +550,7 @@ impl Elder {
     // to the rest of our section when destination is targeting multiple; if not, forward it.
     fn handle_signed_message(
         &mut self,
-        mut signed_msg: SignedMessage,
+        mut signed_msg: SignedRoutingMessage,
         route: u8,
         hop_name: XorName,
         sent_to: &BTreeSet<XorName>,
@@ -1515,7 +1515,7 @@ impl Elder {
     // Don't send to any nodes already sent_to.
     fn send_signed_message(
         &mut self,
-        signed_msg: &mut SignedMessage,
+        signed_msg: &mut SignedRoutingMessage,
         route: u8,
         hop: &XorName,
         sent_to: &BTreeSet<XorName>,
@@ -1555,7 +1555,7 @@ impl Elder {
     // Send this byte string.
     fn send_signed_message_to_peer(
         &mut self,
-        signed_msg: SignedMessage,
+        signed_msg: SignedRoutingMessage,
         target: &PublicId,
         route: u8,
         sent_to: BTreeSet<XorName>,
@@ -1586,7 +1586,7 @@ impl Elder {
     // In the case that the `pub_id` is unknown, an ack is sent and the message dropped.
     fn relay_to_client(
         &mut self,
-        signed_msg: &SignedMessage,
+        signed_msg: &SignedRoutingMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
@@ -2287,7 +2287,7 @@ impl Bootstrapped for Elder {
             );
         }
 
-        let signed_msg = SignedMessage::new(routing_msg, &self.full_id, sending_sec)?;
+        let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, sending_sec)?;
 
         match self.get_signature_target(&signed_msg.routing_message().src, route) {
             None => Ok(()),

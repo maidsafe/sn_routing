@@ -805,7 +805,7 @@ fn test_is_parsec_req_resp() {
         id::FullId,
         messages::{
             DirectMessage, HopMessage, Message, MessageContent, RoutingMessage,
-            SignedDirectMessage, SignedMessage,
+            SignedDirectMessage, SignedRoutingMessage,
         },
         routing_table::Authority,
         types::MessageId,
@@ -857,7 +857,7 @@ fn test_is_parsec_req_resp() {
         },
     };
     let sig_msg =
-        SignedMessage::new(rt_msg, &full_id, None).expect("failed to create signed message");
+        SignedRoutingMessage::new(rt_msg, &full_id, None).expect("failed to create signed message");
     let hop_msg =
         HopMessage::new(sig_msg, 1, Default::default()).expect("failed to create hop message");
     let msg = Message::Hop(hop_msg);

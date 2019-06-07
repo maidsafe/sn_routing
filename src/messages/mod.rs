@@ -87,7 +87,7 @@ impl Message {
 #[derive(Serialize, Deserialize)]
 pub struct HopMessage {
     /// Wrapped signed message.
-    pub content: SignedMessage,
+    pub content: SignedRoutingMessage,
     /// Route number; corresponds to the index of the peer in the section of target peers being
     /// considered for the next hop.
     pub route: u8,
@@ -99,7 +99,7 @@ impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
-        content: SignedMessage,
+        content: SignedRoutingMessage,
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<HopMessage> {
@@ -113,7 +113,7 @@ impl HopMessage {
 
 /// Wrapper around a routing message, signed by the originator of the message.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SignedMessage {
+pub struct SignedRoutingMessage {
     /// A request or response type message.
     content: RoutingMessage,
     /// Nodes sending the message (those expected to sign it)
@@ -126,7 +126,7 @@ pub struct SignedMessage {
     proving_sections: Vec<ProvingSection>,
 }
 
-impl SignedMessage {
+impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     ///
     /// Requires the list `src_section` of nodes who should sign this message.
@@ -135,11 +135,11 @@ impl SignedMessage {
         content: RoutingMessage,
         full_id: &FullId,
         src_section: T,
-    ) -> Result<SignedMessage> {
+    ) -> Result<SignedRoutingMessage> {
         let sk = full_id.signing_private_key();
         let mut signatures = ProofSet::new();
         let _ = signatures.add_proof(Proof::new(*full_id.public_id(), sk, &content)?);
-        Ok(SignedMessage {
+        Ok(SignedRoutingMessage {
             content,
             src_section: src_section.into(),
             signatures,
@@ -242,7 +242,7 @@ impl SignedMessage {
     }
 
     /// Adds all signatures from the given message, without validating them.
-    pub fn add_signatures(&mut self, msg: SignedMessage) {
+    pub fn add_signatures(&mut self, msg: SignedRoutingMessage) {
         if self.content.src.is_multiple() {
             self.signatures.merge(msg.signatures);
         }
@@ -568,11 +568,11 @@ impl Debug for HopMessage {
     }
 }
 
-impl Debug for SignedMessage {
+impl Debug for SignedRoutingMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SignedMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?}, \
+            "SignedRoutingMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?}, \
              proving_sections: {:?} }}",
             self.content, self.src_section, self.signatures, self.proving_sections
         )
@@ -816,7 +816,8 @@ mod tests {
                 message_id: MessageId::new(),
             },
         };
-        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, None);
+        let signed_message_result =
+            SignedRoutingMessage::new(routing_message.clone(), &full_id, None);
 
         let mut signed_message = unwrap!(signed_message_result);
 
@@ -876,7 +877,11 @@ mod tests {
             prefix,
             None,
         ));
-        let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0, src_section));
+        let mut signed_msg = unwrap!(SignedRoutingMessage::new(
+            routing_message,
+            &full_id_0,
+            src_section
+        ));
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
