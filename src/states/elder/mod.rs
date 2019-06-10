@@ -561,20 +561,7 @@ impl Elder {
                 return Err(RoutingError::InvalidProvingSection);
             }
         } else {
-            // Remove any untrusted trailing section infos.
-            // TODO: remove wasted clone. Only useful when msg isnt trusted for log msg.
-            let msg_clone = signed_msg.clone();
-            while match signed_msg.previous_hop() {
-                None => true,
-                Some(hop) => !self.is_trusted(hop)?,
-            } {
-                // We don't know the last hop! Try the one before that.
-                if !signed_msg.pop_previous_hop() {
-                    debug!("{} Untrusted message: {:?}", self, msg_clone);
-                    return Err(RoutingError::NotEnoughSignatures);
-                }
-            }
-            // Now that we validated the sections, inform our peers about any new ones.
+            // Inform our peers about any new sections.
             if signed_msg
                 .section_infos()
                 .any(|si| self.chain.is_new_neighbour(si))

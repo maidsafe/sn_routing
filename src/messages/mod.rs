@@ -182,11 +182,6 @@ impl HopMessage {
             sent_to: sent_to,
         })
     }
-
-    #[cfg(feature = "mock_serialise")]
-    fn content_to_serialise(_content: &SignedMessage) -> &[u8; 18] {
-        b"HopMessage.content"
-    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
