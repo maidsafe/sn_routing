@@ -1468,7 +1468,7 @@ impl Elder {
         signed_msg: &SignedRoutingMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        let result = if self.peer_mgr.is_connected(pub_id) {
+        if self.peer_mgr.is_connected(pub_id) {
             if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id) {
                 return Ok(());
             }
@@ -1482,9 +1482,7 @@ impl Elder {
                 self, signed_msg
             );
             Err(RoutingError::ClientConnectionNotFound)
-        };
-
-        result
+        }
     }
 
     /// Returns the set of peers that are responsible for collecting signatures to verify a message;
@@ -2042,27 +2040,25 @@ impl Bootstrapped for Elder {
                         self.send_signed_message(&mut msg, &target)?;
                     }
                 }
+            } else if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
+                trace!(
+                    "{} Sending a signature for message {:?} to {:?}",
+                    self,
+                    signed_msg.routing_message(),
+                    target
+                );
+                self.send_direct_message(
+                    &pub_id,
+                    DirectMessage::MessageSignature(signed_msg.clone()),
+                );
             } else {
-                if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
-                    trace!(
-                        "{} Sending a signature for message {:?} to {:?}",
-                        self,
-                        signed_msg.routing_message(),
-                        target
-                    );
-                    self.send_direct_message(
-                        &pub_id,
-                        DirectMessage::MessageSignature(signed_msg.clone()),
-                    );
-                } else {
-                    error!(
-                        "{} Failed to resolve signature target {:?} for message {:?}",
-                        self,
-                        target,
-                        signed_msg.routing_message()
-                    );
-                    return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
-                }
+                error!(
+                    "{} Failed to resolve signature target {:?} for message {:?}",
+                    self,
+                    target,
+                    signed_msg.routing_message()
+                );
+                return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
             }
         }
         Ok(())

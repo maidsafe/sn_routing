@@ -800,7 +800,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let candidates = |target_name: &T| {
             self.closest_section(target_name)
                 .1
-                .into_iter()
+                .iter()
                 .cloned()
                 .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs))
         };
