@@ -267,7 +267,7 @@ impl Base for Client {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg, pub_id)? {
+        if let Some(routing_msg) = self.filter_hop_message(hop_msg)? {
             Ok(self.dispatch_routing_message(routing_msg, outbox))
         } else {
             Ok(Transition::Stay)

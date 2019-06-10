@@ -28,13 +28,8 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
     fn filter_hop_message(
         &mut self,
         hop_msg: HopMessage,
-        pub_id: PublicId,
     ) -> Result<Option<RoutingMessage>, RoutingError> {
-        hop_msg.verify(pub_id.signing_public_key())?;
-
         let signed_msg = hop_msg.content;
-        signed_msg.check_integrity(self.min_section_size())?;
-
         let routing_msg = signed_msg.into_routing_message();
         let in_authority = self.in_authority(&routing_msg.dst);
         if in_authority && Self::SEND_ACK {

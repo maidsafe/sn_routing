@@ -30,7 +30,7 @@ use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use safe_crypto;
-use safe_crypto::{PublicSignKey, SecretSignKey, Signature};
+use safe_crypto::{SecretSignKey, Signature};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::result::Result as StdResult;
@@ -186,19 +186,6 @@ impl HopMessage {
             sent_to: sent_to,
             signature: signing_key.sign_detached(&bytes_to_sign),
         })
-    }
-
-    /// Validate that the message is signed by `verification_key` contained in message.
-    ///
-    /// This does not imply that the message came from a known node. That requires a check against
-    /// the routing table to identify the name associated with the `verification_key`.
-    pub fn verify(&self, verification_key: &PublicSignKey) -> Result<()> {
-        let signed_bytes = serialise(HopMessage::content_to_serialise(&self.content))?;
-        if verification_key.verify_detached(&self.signature, &signed_bytes) {
-            Ok(())
-        } else {
-            Err(RoutingError::FailedSignature)
-        }
     }
 
     #[cfg(not(feature = "mock_serialise"))]
@@ -942,8 +929,7 @@ mod tests {
     use maidsafe_utilities::serialisation::serialise;
     use rand;
     use safe_crypto;
-    use safe_crypto::{gen_sign_keypair, SIGNATURE_BYTES};
-    use std::collections::BTreeSet;
+    use safe_crypto::SIGNATURE_BYTES;
     use std::iter;
 
     #[test]
@@ -1071,38 +1057,6 @@ mod tests {
         assert!(!signed_msg
             .signatures
             .contains_id(irrelevant_full_id.public_id(),));
-    }
-
-    #[test]
-    fn hop_message_verify() {
-        let name: XorName = rand::random();
-        let routing_message = RoutingMessage {
-            src: Authority::ClientManager(name),
-            dst: Authority::ClientManager(name),
-            content: MessageContent::Relocate {
-                message_id: MessageId::new(),
-            },
-        };
-        let full_id = FullId::new();
-        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, None);
-        let signed_message = unwrap!(signed_message_result);
-
-        let (public_signing_key, secret_signing_key) = gen_sign_keypair();
-        let hop_message_result = HopMessage::new(
-            signed_message.clone(),
-            0,
-            BTreeSet::new(),
-            &secret_signing_key,
-        );
-
-        let hop_message = unwrap!(hop_message_result);
-
-        assert_eq!(signed_message, hop_message.content);
-
-        assert!(hop_message.verify(&public_signing_key).is_ok());
-
-        let (public_signing_key, _) = gen_sign_keypair();
-        assert!(hop_message.verify(&public_signing_key).is_err());
     }
 
     #[test]
