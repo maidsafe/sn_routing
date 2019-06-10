@@ -166,8 +166,6 @@ pub struct HopMessage {
     pub route: u8,
     /// Every node this has already been sent to.
     pub sent_to: BTreeSet<XorName>,
-    /// Signature to be validated against the neighbouring sender's public key.
-    signature: Signature,
 }
 
 impl HopMessage {
@@ -177,20 +175,12 @@ impl HopMessage {
         content: SignedMessage,
         route: u8,
         sent_to: BTreeSet<XorName>,
-        signing_key: &SecretSignKey,
     ) -> Result<HopMessage> {
-        let bytes_to_sign = serialise(HopMessage::content_to_serialise(&content))?;
         Ok(HopMessage {
             content: content,
             route: route,
             sent_to: sent_to,
-            signature: signing_key.sign_detached(&bytes_to_sign),
         })
-    }
-
-    #[cfg(not(feature = "mock_serialise"))]
-    fn content_to_serialise(content: &SignedMessage) -> &SignedMessage {
-        content
     }
 
     #[cfg(feature = "mock_serialise")]

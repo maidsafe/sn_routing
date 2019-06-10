@@ -849,9 +849,8 @@ fn test_is_parsec_req_resp() {
     };
     let sig_msg =
         SignedMessage::new(rt_msg, &full_id, None).expect("failed to create signed message");
-    let key = full_id.signing_private_key();
     let hop_msg =
-        HopMessage::new(sig_msg, 1, Default::default(), key).expect("failed to create hop message");
+        HopMessage::new(sig_msg, 1, Default::default()).expect("failed to create hop message");
     let msg = Message::Hop(hop_msg);
     assert!(!Packet::<PublicId>::Message(ser(&msg)).is_parsec_req_resp());
 
