@@ -597,7 +597,14 @@ fn messages_during_churn() {
 
         poll_and_resend(&mut nodes, &mut clients);
         let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);
-        assert!(failed_indices.is_empty());
+        assert!(
+            failed_indices.is_empty(),
+            "Non-empty set of failed nodes! Failed nodes: {:?}",
+            failed_indices
+                .into_iter()
+                .map(|idx| nodes[idx].name())
+                .collect::<Vec<_>>()
+        );
         clear_relocation_overrides(&mut nodes);
         shuffle_nodes(&mut rng, &mut nodes);
 
