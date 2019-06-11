@@ -546,7 +546,7 @@ impl Elder {
         Ok(())
     }
 
-    // Verify the message, then, if it is for us, handle the enclosed routing message and swarm it
+    // If the message is for us, verify it then, handle the enclosed routing message and swarm it
     // to the rest of our section when destination is targeting multiple; if not, forward it.
     fn handle_signed_message(
         &mut self,
@@ -555,28 +555,13 @@ impl Elder {
         hop_name: XorName,
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
-        signed_msg.check_integrity(self.min_section_size())?;
-
         if signed_msg.routing_message().src.is_client() {
             if signed_msg.previous_hop().is_some() {
                 warn!("{} Unexpected section infos in {:?}", self, signed_msg);
                 return Err(RoutingError::InvalidProvingSection);
             }
         } else {
-            // Remove any untrusted trailing section infos.
-            // TODO: remove wasted clone. Only useful when msg isnt trusted for log msg.
-            let msg_clone = signed_msg.clone();
-            while match signed_msg.previous_hop() {
-                None => true,
-                Some(hop) => !self.is_trusted(hop)?,
-            } {
-                // We don't know the last hop! Try the one before that.
-                if !signed_msg.pop_previous_hop() {
-                    debug!("{} Untrusted message: {:?}", self, msg_clone);
-                    return Err(RoutingError::NotEnoughSignatures);
-                }
-            }
-            // Now that we validated the sections, inform our peers about any new ones.
+            // Inform our peers about any new sections.
             if signed_msg
                 .section_infos()
                 .any(|si| self.chain.is_new_neighbour(si))
@@ -607,6 +592,9 @@ impl Elder {
         };
 
         if self.in_authority(&signed_msg.routing_message().dst) {
+            // The message is addressed to our section. Verify its integrity.
+            signed_msg.check_integrity(self.min_section_size())?;
+
             self.send_ack(signed_msg.routing_message(), route);
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
@@ -2128,7 +2116,6 @@ impl Base for Elder {
         pub_id: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        hop_msg.verify(pub_id.signing_public_key())?;
         let mut client_ip = None;
         let mut hop_name_result = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
             Some(&PeerState::Bootstrapper { .. }) => {

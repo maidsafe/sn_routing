@@ -310,12 +310,7 @@ pub trait Base: Display {
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<CrustBytes, RoutingError> {
-        let hop_msg = HopMessage::new(
-            signed_msg,
-            route,
-            sent_to,
-            self.full_id().signing_private_key(),
-        )?;
+        let hop_msg = HopMessage::new(signed_msg, route, sent_to)?;
         let message = Message::Hop(hop_msg);
         Ok(to_crust_bytes(message).map_err(|(err, _)| err)?)
     }
