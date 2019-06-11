@@ -28,6 +28,9 @@ pub trait Approved: Relocated {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain_mut(&mut self) -> &mut Chain;
 
+    fn set_pfx_successfully_polled(&mut self, val: bool);
+    fn is_pfx_successfully_polled(&self) -> bool;
+
     /// Handles an accumulated `AddElder` event.
     fn handle_add_elder_event(
         &mut self,
@@ -132,6 +135,7 @@ pub trait Approved: Relocated {
                 }
                 Observation::Genesis(_) => {
                     // FIXME: Validate with Chain info.
+                    self.set_pfx_successfully_polled(true);
                     continue;
                 }
                 Observation::OpaquePayload(event) => {

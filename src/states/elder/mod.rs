@@ -72,6 +72,7 @@ const CANDIDATE_STATUS_INTERVAL: Duration = Duration::from_secs(60);
 const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 /// Duration for which clients' IDs we disconnected from are retained.
 const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
+const PROVING_SECTION_CACHE_SIZE: usize = 100;
 
 pub struct ElderDetails {
     pub ack_mgr: AckManager,
@@ -131,6 +132,10 @@ pub struct Elder {
     chain: Chain,
     #[cfg(feature = "mock_base")]
     ignore_candidate_info_counter: u8,
+    /// Cached proving sections used to in case a prefix change causes a section info not to
+    /// accumulate.
+    proving_section_cache: LruCache<SectionInfo, Vec<ProvingSection>>,
+    pfx_is_successfully_polled: bool,
 }
 
 impl Elder {
@@ -232,6 +237,8 @@ impl Elder {
             chain: details.chain,
             #[cfg(feature = "mock_base")]
             ignore_candidate_info_counter: 0,
+            proving_section_cache: LruCache::with_capacity(PROVING_SECTION_CACHE_SIZE),
+            pfx_is_successfully_polled: false,
         }
     }
 
@@ -468,6 +475,10 @@ impl Elder {
                 self.vote_for_event(event.clone());
             });
 
+        // This also clears the cache, something that *might* be a problem during a multi stage
+        // merge.
+        self.vote_for_neighbours_in_proving_section_cache();
+
         Ok(())
     }
 
@@ -574,12 +585,15 @@ impl Elder {
                     // TODO: Why is `add_new_sections` still necessary? The vote should suffice.
                     // TODO: This is enabled for relayed messages only because it considerably
                     //       slows down the tests. Find out why, maybe enable it in more cases.
-                    if self.add_new_sections(signed_msg.section_infos())
-                        && (!self.in_authority(&signed_msg.routing_message().dst)
-                            || signed_msg.routing_message().dst.is_single())
-                    {
+                    if self.add_new_sections(signed_msg.section_infos()) {
                         let ps = signed_msg.proving_sections().clone();
-                        self.vote_for_event(NetworkEvent::ProvingSections(ps, si.clone()));
+                        if !self.in_authority(&signed_msg.routing_message().dst)
+                            || !self.is_pfx_successfully_polled()
+                        {
+                            self.vote_for_event(NetworkEvent::ProvingSections(ps, si.clone()));
+                        } else if self.is_pfx_successfully_polled() {
+                            self.add_to_proving_section_cache(ps.clone(), si.clone());
+                        }
                     }
                 }
             }
@@ -618,6 +632,33 @@ impl Elder {
         }
 
         Ok(())
+    }
+
+    fn add_to_proving_section_cache(
+        &mut self,
+        proving_secs: Vec<ProvingSection>,
+        sec_info: SectionInfo,
+    ) {
+        if self.chain.is_new_neighbour(&sec_info) {
+            let _ = self.proving_section_cache.insert(sec_info, proving_secs);
+        }
+    }
+
+    fn remove_from_proving_section_cache(&mut self, sec_info: &SectionInfo) {
+        let _ = self.proving_section_cache.remove(&sec_info);
+    }
+
+    fn vote_for_neighbours_in_proving_section_cache(&mut self) {
+        self.proving_section_cache
+            .peek_iter()
+            .filter(|(si, _)| self.chain.is_new_neighbour(si))
+            .map(|(si, ps)| (si.clone(), ps.clone()))
+            .collect_vec()
+            .into_iter()
+            .for_each(|(si, ps)| {
+                self.vote_for_event(NetworkEvent::ProvingSections(ps, si));
+            });
+        self.proving_section_cache.clear();
     }
 
     fn dispatch_routing_message(
@@ -818,6 +859,7 @@ impl Elder {
     }
 
     fn init_parsec(&mut self) {
+        self.set_pfx_successfully_polled(false);
         self.parsec_map
             .init(self.full_id.clone(), &self.gen_pfx_info, &self.log_ident())
     }
@@ -2354,6 +2396,14 @@ impl Approved for Elder {
         &mut self.chain
     }
 
+    fn set_pfx_successfully_polled(&mut self, val: bool) {
+        self.pfx_is_successfully_polled = val;
+    }
+
+    fn is_pfx_successfully_polled(&self) -> bool {
+        self.pfx_is_successfully_polled
+    }
+
     fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
@@ -2468,6 +2518,7 @@ impl Approved for Elder {
             self.chain.reset_candidate_if_member_of(sec_info.members());
             self.send_neighbour_infos();
         } else {
+            self.remove_from_proving_section_cache(&sec_info);
             // Vote for neighbour update if we haven't done so already.
             // vote_for_event is expected to only generate a new vote if required.
             self.vote_for_event(sec_info.into_network_event());
