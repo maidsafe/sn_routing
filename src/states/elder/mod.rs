@@ -1510,8 +1510,9 @@ impl Elder {
             // calculation. This even when going via RT would have only allowed route-0 to succeed
             // as by ack-failure, the new node would have been accepted to the RT.
             // Need a better network startup separation.
-            PrefixSection(_) => {
+            PrefixSection(pfx) => {
                 Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
+                    .filter(|name| pfx.matches(name))
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
             }
             ManagedNode(_) | Client { .. } => {
