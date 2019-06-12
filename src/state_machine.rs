@@ -323,7 +323,6 @@ impl StateMachine {
             State::Terminated => false,
             _ => true,
         };
-        #[cfg(feature = "mock_base")]
         let machine = StateMachine {
             category_rx: category_rx,
             category_tx: category_tx,
@@ -332,17 +331,8 @@ impl StateMachine {
             action_rx: action_rx,
             state: state,
             is_running: is_running,
+            #[cfg(feature = "mock_base")]
             events: Vec::new(),
-        };
-        #[cfg(not(feature = "mock_base"))]
-        let machine = StateMachine {
-            category_rx: category_rx,
-            category_tx: category_tx,
-            crust_rx: crust_rx,
-            crust_tx: crust_tx,
-            action_rx: action_rx,
-            state: state,
-            is_running: is_running,
         };
 
         (action_sender, machine)
