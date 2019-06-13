@@ -21,7 +21,7 @@ mod test_utils;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test_utils::verify_chain_invariant;
 pub use self::{
-    chain::{Chain, PrefixChangeOutcome},
+    chain::{delivery_group_size, Chain, PrefixChangeOutcome},
     neighbour_sigs::NeighbourSigs,
     network_event::{ExpectCandidatePayload, NetworkEvent, OnlinePayload},
     proof::{Proof, ProofSet, ProvingSection},

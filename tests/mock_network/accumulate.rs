@@ -10,14 +10,15 @@ use super::{
     create_connected_nodes, gen_immutable_data, poll_all, sort_nodes_by_distance_to, TestNode,
 };
 use routing::{
-    mock::Network, Authority, Event, EventStream, MessageId, Response, XorName, QUORUM_DENOMINATOR,
-    QUORUM_NUMERATOR,
+    delivery_group_size, mock::Network, Authority, Event, EventStream, MessageId, Response,
+    XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::cmp::min;
 
 #[test]
 fn messages_accumulate_with_quorum() {
     let min_section_size = 8;
+    let dg_size = delivery_group_size(min_section_size);
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 15);
@@ -61,8 +62,8 @@ fn messages_accumulate_with_quorum() {
     let message_id = MessageId::new();
     for node in nodes
         .iter_mut()
-        .skip(3)
-        .take(min(quorum, min_section_size - 3))
+        .skip(dg_size)
+        .take(min(quorum, min_section_size - dg_size))
     {
         send(node, &dst, message_id);
     }
@@ -106,8 +107,8 @@ fn messages_accumulate_with_quorum() {
     let message_id = MessageId::new();
     for node in nodes
         .iter_mut()
-        .skip(3)
-        .take(min(quorum, min_section_size - 3))
+        .skip(dg_size)
+        .take(min(quorum, min_section_size - dg_size))
     {
         send(node, &dst_grp, message_id);
     }

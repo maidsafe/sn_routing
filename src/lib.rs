@@ -242,7 +242,10 @@ pub use crate::{
     xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN},
 };
 #[cfg(feature = "mock_base")]
-pub use crate::{chain::verify_chain_invariant, peer_manager::test_consts};
+pub use crate::{
+    chain::{delivery_group_size, verify_chain_invariant},
+    peer_manager::test_consts,
+};
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 

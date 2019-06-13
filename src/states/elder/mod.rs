@@ -13,8 +13,8 @@ use super::common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPI
 use crate::{
     cache::Cache,
     chain::{
-        Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
-        PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
+        delivery_group_size, Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent,
+        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -1526,7 +1526,7 @@ impl Elder {
             None
         } else {
             let len = list.len();
-            Some(list.into_iter().take((len + 2) / 3).collect())
+            Some(list.into_iter().take(delivery_group_size(len)).collect())
         }
     }
 

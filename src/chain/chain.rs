@@ -32,6 +32,12 @@ use std::mem;
 /// protect against rapid splitting and merging in the face of moderate churn.
 const SPLIT_BUFFER: usize = 1;
 
+/// Returns the delivery group size based on the section size `n`
+pub fn delivery_group_size(n: usize) -> usize {
+    // this is an integer that is ≥ n/3
+    (n + 2) / 3
+}
+
 /// Data chain.
 pub struct Chain {
     /// Minimum number of nodes we consider acceptable in a section
@@ -1185,7 +1191,7 @@ impl Chain {
         Ok(best_section
             .into_iter()
             .filter(|&x| x != exclude && x != *self.our_id().name())
-            .take((best_section_len + 2) / 3)
+            .take(delivery_group_size(best_section_len))
             .collect())
     }
 
