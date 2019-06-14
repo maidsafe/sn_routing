@@ -6,9 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/// Mock version of Crust.
-pub mod crust;
-
 /// Mock version of Parsec.
 #[cfg(feature = "mock_parsec")]
 pub(crate) mod parsec;

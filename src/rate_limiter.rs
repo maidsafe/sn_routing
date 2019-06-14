@@ -34,7 +34,7 @@ const MIN_CLIENT_CAPACITY: u64 = MAX_IMMUTABLE_DATA_SIZE_IN_BYTES + 10_240;
 /// exceeds the `SOFT_CAPACITY`.
 #[cfg(not(feature = "mock_base"))]
 const SOFT_CAPACITY: u64 = 8 * 1024 * 1024;
-/// For the mock-crust tests, we want a small `SOFT_CAPACITY` in order to trigger more rate-limited
+/// For the mock-network tests, we want a small `SOFT_CAPACITY` in order to trigger more rate-limited
 /// rejections. This must be at least `2 * MIN_CLIENT_CAPACITY` for the multi-client tests to work.
 #[cfg(feature = "mock_base")]
 const SOFT_CAPACITY: u64 = 2 * MIN_CLIENT_CAPACITY;

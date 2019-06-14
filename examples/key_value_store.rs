@@ -111,7 +111,7 @@ Options:
   A passive node is one that simply reacts on received requests. Such nodes are
   the workers; they route messages and store and provide data.
 
-  The crust configuration file can be used to provide information on what
+  The network configuration file can be used to provide information on what
   network discovery patterns to use, or which seed nodes to use.
 ";
 

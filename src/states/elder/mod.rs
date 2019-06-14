@@ -108,10 +108,10 @@ pub struct Elder {
     tick_timer_token: u64,
     timer: Timer,
     user_msg_cache: UserMessageCache,
-    /// Value which can be set in mock-crust tests to be used as the calculated name for the next
+    /// Value which can be set in mock-network tests to be used as the calculated name for the next
     /// relocation request received by this node.
     next_relocation_dst: Option<XorName>,
-    /// Interval used for relocation in mock crust tests.
+    /// Interval used for relocation in mock network tests.
     next_relocation_interval: Option<XorTargetInterval>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: u64,

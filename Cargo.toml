@@ -14,8 +14,6 @@ edition = "2018"
 bytes = "~0.4.12"
 config_file_handler = "~0.11.0"
 crossbeam-channel = "~0.3.8"
-# crust = { git = "https://github.com/maidsafe/crust", rev = "028de4ea8" }
-crust = { path = "../crust" }
 fake_clock = "~0.3.0"
 fxhash = { version = "~0.2.1", optional = true }
 hex = "~0.2.0"

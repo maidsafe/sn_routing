@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::crust::Uid;
 use crate::parsec;
 use crate::xor_name::XorName;
 use safe_crypto;
@@ -118,8 +117,6 @@ pub struct PublicId {
     public_sign_key: PublicSignKey,
     public_encrypt_key: PublicEncryptKey,
 }
-
-impl Uid for PublicId {}
 
 impl Debug for PublicId {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

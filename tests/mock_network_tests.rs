@@ -60,7 +60,7 @@ extern crate maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;
 
-// This module is a driver and defines macros. See `mock_crust` modules for
+// This module is a driver and defines macros. See `mock_network` modules for
 // tests.
 
 /// Expect that the next event raised by the node matches the given pattern.

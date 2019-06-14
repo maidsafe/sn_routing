@@ -20,7 +20,7 @@ use crate::{
     xor_name::XorName,
 };
 
-// Common functionality for states that are bootstrapped (have established a crust
+// Common functionality for states that are bootstrapped (have established a network
 // connection to at least one peer).
 pub trait Bootstrapped: Base {
     fn ack_mgr(&self) -> &AckManager;

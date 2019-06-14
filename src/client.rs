@@ -539,8 +539,7 @@ impl Client {
 
 #[cfg(feature = "mock_base")]
 impl Client {
-    /// Create a new `Client` for testing with mock crust.
-    #[allow(clippy::new_ret_no_self)]
+    /// Create a new `Client` for testing with mock network.
     pub fn new(
         keys: Option<FullId>,
         network_config: Option<NetworkConfig>,
@@ -580,7 +579,7 @@ impl Client {
         request: Request,
         priority: u8,
     ) -> Result<(), InterfaceError> {
-        // Make sure the state machine has processed any outstanding crust events.
+        // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
         let action = Action::ClientSendRequest {

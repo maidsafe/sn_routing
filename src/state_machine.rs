@@ -460,7 +460,7 @@ impl StateMachine {
             .map(|token| EventType::Action(Box::new(Action::HandleTimeout(*token))))
             .collect_vec();
 
-        // Interleave timer events with routing or crust events.
+        // Interleave timer events with routing or network events.
         let mut positions = iter::repeat(true)
             .take(timed_out_events.len())
             .chain(iter::repeat(false).take(events.len()))

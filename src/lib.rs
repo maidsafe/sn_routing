@@ -193,9 +193,6 @@ mod xor_name;
 pub mod mock;
 pub(crate) mod parsec;
 
-/// Reexports `crust::Config`
-pub type BootstrapConfig = crust::Config;
-
 /// SHA-3 type alias.
 pub mod sha3;
 
@@ -248,13 +245,8 @@ pub use crate::{
 };
 #[cfg(feature = "mock_base")]
 pub use crate::{
-    chain::verify_chain_invariant,
-    mock::crust::{self as mock_crust, crust},
-    peer_manager::test_consts,
-    rate_limiter::rate_limiter_consts,
+    chain::verify_chain_invariant, peer_manager::test_consts, rate_limiter::rate_limiter_consts,
 };
-#[cfg(not(feature = "mock_base"))]
-pub use crust;
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 
