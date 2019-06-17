@@ -96,6 +96,11 @@ impl QuicP2p {
         Ok(self.inner.borrow().bootstrap_cache())
     }
 
+    /// Check whether the given contact is hard-coded (always `true` in mock).
+    pub fn is_hard_coded_contact(&self, _node_info: &NodeInfo) -> bool {
+        true
+    }
+
     fn new(event_tx: Sender<Event>, config: Config) -> Self {
         Self {
             inner: Node::new(event_tx, config),

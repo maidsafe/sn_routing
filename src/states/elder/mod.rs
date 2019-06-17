@@ -1058,11 +1058,8 @@ impl Elder {
             return;
         }
 
-        // TODO (quic-p2p): quic-p2p doesn't currently have an API to check if a contact is
-        //                  hard-coded. Either find a workaround or request such feature to be
-        //                  implemented and then re-enable this check.
-        let (difficulty, target_size) = if cfg!(feature = "mock_base") || self.disable_resource_proof
-            // || self.network_service.is_peer_hard_coded(new_pub_id)
+        let (difficulty, target_size) = if self.disable_resource_proof
+            || self.is_peer_hard_coded(new_pub_id)
             || self.peer_mgr.is_or_was_joining_node(new_pub_id)
         {
             (0, 1)
@@ -1771,6 +1768,18 @@ impl Elder {
         let _ = self.banned_client_ips.insert(ip, ());
         let _ = self.dropped_clients.insert(*pub_id, ());
         self.disconnect_peer(pub_id);
+    }
+
+    // Is the peer among our hard-coded contacts?
+    fn is_peer_hard_coded(&self, pub_id: &PublicId) -> bool {
+        self.peer_map
+            .get_connection_info(pub_id)
+            .and_then(|conn_info| match conn_info {
+                ConnectionInfo::Node { node_info } => Some(node_info),
+                ConnectionInfo::Client { .. } => None,
+            })
+            .map(|node_info| self.network_service.is_hard_coded_contact(node_info))
+            .unwrap_or(false)
     }
 }
 
