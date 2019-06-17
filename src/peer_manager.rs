@@ -175,6 +175,15 @@ impl Peer {
         }
     }
 
+    // If the peer is a client, return its IP, otherwise returns `None`.
+    fn client_ip(&self) -> Option<&IpAddr> {
+        if let PeerState::Client { ref ip, .. } = self.state {
+            Some(ip)
+        } else {
+            None
+        }
+    }
+
     /// Returns whether the peer is or was a joining node and we are their proxy.
     fn is_or_was_joining_node(&self) -> bool {
         match self.state {
@@ -574,13 +583,27 @@ impl PeerManager {
         });
     }
 
-    /// Checks whether we can accept more clients.
-    pub fn can_accept_client(&self, client_ip: IpAddr) -> bool {
-        self.disable_client_rate_limiter
-            || !self.peers.values().any(|peer| match *peer.state() {
-                PeerState::Client { ip, .. } => client_ip == ip,
-                _ => false,
-            })
+    /// Check whether the given peer exceeds the client limit.
+    pub fn exceeds_client_limit(&mut self, pub_id: &PublicId) -> bool {
+        if self.disable_client_rate_limiter {
+            return false;
+        }
+
+        let client_ip = self.peers.get(pub_id).and_then(Peer::client_ip);
+        let client_ip = if let Some(ip) = client_ip {
+            ip
+        } else {
+            return false;
+        };
+
+        // Allow only one client per IP
+        self.peers
+            .values()
+            .filter_map(Peer::client_ip)
+            .filter(|other_ip| *other_ip == client_ip)
+            .take(2)
+            .count()
+            >= 2
     }
 
     /// Inserts the peer in the `Connecting` state, unless already exists.

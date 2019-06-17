@@ -996,10 +996,7 @@ impl Elder {
             }
 
             // Check the client limit.
-            if !self.peer_mgr.can_accept_client(ip) {
-                // TODO (quic-p2p): This check gets always triggered because the client entry gets
-                // inserted during `handle_peer_connect` now. Figure out how to bring it back.
-                /*
+            if self.peer_mgr.exceeds_client_limit(&pub_id) {
                 debug!(
                     "{} - Client {:?} rejected: We cannot accept more clients.",
                     self, pub_id
@@ -1010,7 +1007,6 @@ impl Elder {
                 );
                 self.disconnect_peer(&pub_id);
                 return Ok(());
-                */
             }
         }
 
