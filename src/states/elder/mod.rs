@@ -335,12 +335,11 @@ impl Elder {
         let mut peers_to_add = Vec::new();
         let mut peers_to_remove = Vec::new();
 
-        for peer in self.peer_mgr.connected_peers() {
-            let pub_id = peer.pub_id();
+        for (pub_id, peer) in self.peer_mgr.connected_peers() {
             if self.is_peer_valid(pub_id) {
                 peers_to_add.push(*pub_id);
             } else if peer.is_node() && self.chain.prefix_change() == PrefixChange::None {
-                peers_to_remove.push(*peer.pub_id());
+                peers_to_remove.push(*pub_id);
             }
         }
         for pub_id in peers_to_add {
@@ -1522,11 +1521,7 @@ impl Elder {
             ..
         } = routing_msg.src
         {
-            if let Some(pub_id) = self
-                .peer_mgr
-                .get_peer_by_name(proxy_node_name)
-                .map(Peer::pub_id)
-            {
+            if let Some(pub_id) = self.peer_mgr.get_pub_id(proxy_node_name) {
                 if self.peer_mgr.is_connected(pub_id) {
                     Ok(vec![*pub_id])
                 } else {
@@ -1556,7 +1551,7 @@ impl Elder {
     fn connected_peers(&self) -> Vec<&XorName> {
         self.peer_mgr
             .connected_peers()
-            .map(Peer::name)
+            .map(|(pub_id, _)| pub_id.name())
             .chain(iter::once(self.name()))
             .collect()
     }
@@ -1581,7 +1576,7 @@ impl Elder {
         if self
             .peer_mgr
             .connected_peers()
-            .filter(|p| p.is_node())
+            .filter(|(_, p)| p.is_node())
             .count()
             == 0
         {

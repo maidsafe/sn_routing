@@ -266,8 +266,8 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             self.dispatch_routing_message(routing_msg, outbox)?;
-        } 
-        Ok(Transition::Stay)        
+        }
+        Ok(Transition::Stay)
     }
 }
 

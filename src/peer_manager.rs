@@ -20,7 +20,10 @@ use itertools::Itertools;
 use log::LogLevel;
 use resource_proof::ResourceProof;
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{
+        btree_map::{BTreeMap, Entry},
+        BTreeSet, VecDeque,
+    },
     net::IpAddr,
 };
 
@@ -84,26 +87,16 @@ impl<'a> From<&'a ConnectionInfo> for PeerState {
 /// Represents peer we are connected or attempting connection to.
 #[derive(Debug)]
 pub struct Peer {
-    pub_id: PublicId,
     state: PeerState,
     timestamp: Instant,
 }
 
 impl Peer {
-    pub fn new(pub_id: PublicId, state: PeerState) -> Self {
+    pub fn new(state: PeerState) -> Self {
         Self {
-            pub_id,
             state,
             timestamp: Instant::now(),
         }
-    }
-
-    pub fn pub_id(&self) -> &PublicId {
-        &self.pub_id
-    }
-
-    pub fn name(&self) -> &XorName {
-        self.pub_id.name()
     }
 
     pub fn state(&self) -> &PeerState {
@@ -468,8 +461,8 @@ impl PeerManager {
     }
 
     /// Returns an iterator over all connected peers.
-    pub fn connected_peers(&self) -> impl Iterator<Item = &Peer> {
-        self.peers.values().filter(|peer| peer.is_connected())
+    pub fn connected_peers(&self) -> impl Iterator<Item = (&PublicId, &Peer)> {
+        self.peers.iter().filter(|(_, peer)| peer.is_connected())
     }
 
     /// Returns if the given peer is our proxy node.
@@ -487,9 +480,9 @@ impl PeerManager {
     /// Returns the proxy node's name if we have a proxy.
     pub fn get_proxy_name(&self) -> Option<&XorName> {
         self.peers
-            .values()
-            .find(|peer| peer.state == PeerState::Proxy)
-            .map(Peer::name)
+            .iter()
+            .find(|(_, peer)| peer.state == PeerState::Proxy)
+            .map(|(pub_id, _)| pub_id.name())
     }
 
     /// Return old public id of expired candidate only once
@@ -506,9 +499,9 @@ impl PeerManager {
     pub fn remove_expired_peers(&mut self) -> Vec<PublicId> {
         let expired_peers = self
             .peers
-            .values()
-            .filter(|peer| peer.is_expired())
-            .map(|peer| *peer.pub_id())
+            .iter()
+            .filter(|(_, peer)| peer.is_expired())
+            .map(|(pub_id, _)| *pub_id)
             .collect_vec();
 
         for id in &expired_peers {
@@ -546,7 +539,7 @@ impl PeerManager {
         let _ = self
             .peers
             .entry(pub_id)
-            .or_insert_with(|| Peer::new(pub_id, PeerState::Connecting));
+            .or_insert_with(|| Peer::new(PeerState::Connecting));
     }
 
     /// Marks the given peer as direct-connected.
@@ -564,19 +557,9 @@ impl PeerManager {
         self.get_peer(pub_id).map_or(false, Peer::is_connected)
     }
 
-    /// Returns the given peer.
-    pub fn get_peer_by_name(&self, name: &XorName) -> Option<&Peer> {
-        let id = if let Some(id) = self.peers.keys().find(|id| id.name() == name) {
-            id
-        } else {
-            return None;
-        };
-        self.get_peer(id)
-    }
-
     /// Returns the `PublicId` of the node with a given name.
     pub fn get_pub_id(&self, name: &XorName) -> Option<&PublicId> {
-        self.get_peer_by_name(name).map(Peer::pub_id)
+        self.peers.keys().find(|pub_id| pub_id.name() == name)
     }
 
     /// Returns the `PublicId`s of nodes bearing the names.
@@ -597,7 +580,7 @@ impl PeerManager {
     /// Insert a peer with the given state.
     /// If a peer with the same public id already exists, it is overwritten.
     pub fn insert_peer(&mut self, pub_id: PublicId, state: PeerState) {
-        let _ = self.peers.insert(pub_id, Peer::new(pub_id, state));
+        let _ = self.peers.insert(pub_id, Peer::new(state));
     }
 
     /// Forget about the current candidate.
@@ -608,17 +591,18 @@ impl PeerManager {
     /// Removes the given peer. Returns whether the peer was actually present.
     /// If the peer was joining before, it is demoted back to JoiningNode and false is returned.
     pub fn remove_peer(&mut self, pub_id: &PublicId) -> bool {
-        if let Some(mut peer) = self.peers.remove(pub_id) {
-            if peer.is_or_was_joining_node() && peer.is_node() {
-                peer.state = PeerState::JoiningNode;
-                let _ = self.peers.insert(peer.pub_id, peer);
-                return false;
+        match self.peers.entry(*pub_id) {
+            Entry::Occupied(mut entry) => {
+                if entry.get().is_or_was_joining_node() && entry.get().is_node() {
+                    entry.get_mut().state = PeerState::JoiningNode;
+                    false
+                } else {
+                    let _ = entry.remove();
+                    true
+                }
             }
-        } else {
-            return false;
+            Entry::Vacant(_) => false,
         }
-
-        true
     }
 
     /// Removes the given peer. Returns whether the peer was actually present.
