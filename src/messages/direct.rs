@@ -208,7 +208,7 @@ pub struct SignedDirectMessage {
 impl SignedDirectMessage {
     /// Create new `DirectMessage` with `content` and signed by `src_full_id`.
     pub fn new(content: DirectMessage, src_full_id: &FullId) -> Result<Self, RoutingError> {
-        let signature = self::implementation::sign(src_full_id, &content)?;
+        let signature = self::implementation::sign_public_id_and_content(src_full_id, &content)?;
 
         Ok(Self {
             content,
@@ -219,7 +219,11 @@ impl SignedDirectMessage {
 
     /// Verify the message signature.
     pub fn verify(&self) -> Result<(), RoutingError> {
-        self::implementation::verify(&self.src_id, &self.signature, &self.content)
+        self::implementation::verify_public_id_and_content(
+            &self.src_id,
+            &self.signature,
+            &self.content,
+        )
     }
 
     /// Verify the message signature and return its content and the sender id.
@@ -250,7 +254,10 @@ impl Debug for SignedDirectMessage {
 mod implementation {
     use super::*;
 
-    pub fn sign(src_full_id: &FullId, content: &DirectMessage) -> Result<Signature, RoutingError> {
+    pub fn sign_public_id_and_content(
+        src_full_id: &FullId,
+        content: &DirectMessage,
+    ) -> Result<Signature, RoutingError> {
         let mut serialised = serialise(src_full_id.public_id())?;
         serialised.extend_from_slice(&serialise(content)?);
 
@@ -258,7 +265,7 @@ mod implementation {
         Ok(signature)
     }
 
-    pub fn verify(
+    pub fn verify_public_id_and_content(
         src_id: &PublicId,
         signature: &Signature,
         content: &DirectMessage,
@@ -282,11 +289,18 @@ mod implementation {
     use super::*;
     use safe_crypto::SIGNATURE_BYTES;
 
-    pub fn sign(_: &FullId, _: &DirectMessage) -> Result<Signature, RoutingError> {
+    pub fn sign_public_id_and_content(
+        _: &FullId,
+        _: &DirectMessage,
+    ) -> Result<Signature, RoutingError> {
         Ok(Signature::from_bytes([0; SIGNATURE_BYTES]))
     }
 
-    pub fn verify(_: &PublicId, _: &Signature, _: &DirectMessage) -> Result<(), RoutingError> {
+    pub fn verify_public_id_and_content(
+        _: &PublicId,
+        _: &Signature,
+        _: &DirectMessage,
+    ) -> Result<(), RoutingError> {
         Ok(())
     }
 }

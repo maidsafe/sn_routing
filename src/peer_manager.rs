@@ -48,9 +48,7 @@ pub mod test_consts {
 }
 
 /// Our relationship status with a known peer.
-#[derive(Debug)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum PeerState {
     /// We sent our connection info to them and are waiting for the connection.
     Connecting,
@@ -144,10 +142,7 @@ impl Peer {
 
     /// Returns whether the peer is in the `Connecting` state.
     pub fn is_connecting(&self) -> bool {
-        match self.state {
-            PeerState::Connecting => true,
-            _ => false,
-        }
+        self.state == PeerState::Connecting
     }
 
     /// Returns whether the peer is a full node.
@@ -160,10 +155,7 @@ impl Peer {
 
     /// Returns whether the peer is our proxy node.
     fn is_proxy(&self) -> bool {
-        match self.state {
-            PeerState::Proxy => true,
-            _ => false,
-        }
+        self.state == PeerState::Proxy
     }
 
     /// Returns whether the peer is our client.
@@ -522,10 +514,7 @@ impl PeerManager {
     pub fn get_proxy_name(&self) -> Option<&XorName> {
         self.peers
             .values()
-            .find(|peer| match peer.state {
-                PeerState::Proxy => true,
-                _ => false,
-            })
+            .find(|peer| peer.state == PeerState::Proxy)
             .map(Peer::name)
     }
 
