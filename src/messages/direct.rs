@@ -134,7 +134,11 @@ impl Debug for DirectMessage {
     }
 }
 
-// Note: need manual impl here, because `parsec::Request` and `parsec::Response` don't implement `Hash`.
+// Note: we need explicit impl here, because `parsec::Request` and `parsec::Response` don't
+// implement `Hash`.
+// We don't need explicit `PartialEq` impl, because `parsec::Request/Response` do implement it.
+// So it's OK to silence this clippy lint:
+#[allow(clippy::derive_hash_xor_eq)]
 impl Hash for DirectMessage {
     fn hash<H: Hasher>(&self, state: &mut H) {
         use self::DirectMessage::*;
