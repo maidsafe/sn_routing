@@ -238,8 +238,8 @@ impl Base for RelocatingNode {
         Transition::Stay
     }
 
-    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{} - Disconnected from {}", self, pub_id);
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} - Lost peer {}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
             debug!("{} - Lost bootstrap connection to {}.", self, pub_id);

@@ -258,7 +258,7 @@ impl Base for BootstrappingPeer {
     }
 
     fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
-        let _ = self.peer_map_mut().handle_connected_to(Peer::Node {
+        self.peer_map_mut().handle_connected_to(Peer::Node {
             node_info: node_info.clone(),
         });
 

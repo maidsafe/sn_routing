@@ -620,7 +620,7 @@ impl Elder {
         &mut self,
         routing_msg: RoutingMessage,
         outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<(), RoutingError> {
         use crate::messages::MessageContent::*;
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
@@ -637,10 +637,7 @@ impl Elder {
                     proxy_node_name,
                 },
                 Section(dst_name),
-            ) => {
-                self.handle_relocate_request(client_id, proxy_node_name, dst_name, message_id)?;
-                Ok(Transition::Stay)
-            }
+            ) => self.handle_relocate_request(client_id, proxy_node_name, dst_name, message_id),
             (
                 ExpectCandidate {
                     old_public_id,
@@ -649,10 +646,7 @@ impl Elder {
                 },
                 Section(_),
                 Section(dst_name),
-            ) => {
-                self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id)?;
-                Ok(Transition::Stay)
-            }
+            ) => self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id),
             (
                 ConnectionRequest {
                     encrypted_conn_info,
@@ -671,19 +665,13 @@ impl Elder {
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(Transition::Stay),
+            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
             (
                 NeighbourConfirm(digest, proofs, sec_infos_and_proofs),
                 ManagedNode(_),
                 Section(_),
-            ) => {
-                self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs)?;
-                Ok(Transition::Stay)
-            }
-            (Merge(digest), PrefixSection(_), PrefixSection(_)) => {
-                self.handle_merge(digest)?;
-                Ok(Transition::Stay)
-            }
+            ) => self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs),
+            (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (
                 UserMessagePart {
                     hash,
@@ -701,7 +689,7 @@ impl Elder {
                 {
                     outbox.send_event(msg.into_event(src, dst));
                 }
-                Ok(Transition::Stay)
+                Ok(())
             }
             (content, src, dst) => {
                 debug!(
@@ -938,6 +926,11 @@ impl Elder {
         self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(Ok(())));
 
         Ok(())
+    }
+
+    fn handle_connection_response(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+        self.peer_mgr_mut().set_connected(pub_id);
+        self.process_connection(pub_id, outbox);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1771,17 +1764,8 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_peer_connected(
-        &mut self,
-        pub_id: PublicId,
-        conn_info: ConnectionInfo,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        Approved::handle_peer_connected(self, pub_id, conn_info, outbox)
-    }
-
-    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{} - Disconnected from {}", self, pub_id);
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} - Lost peer {}", self, pub_id);
 
         if self.peer_mgr.get_peer(&pub_id).is_none() {
             return Transition::Stay;
@@ -1820,6 +1804,7 @@ impl Base for Elder {
                     self.ban_and_disconnect_peer(&pub_id);
                 }
             }
+            ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             CandidateInfo {
                 ref old_public_id,
                 ref signature_using_old,
@@ -1854,10 +1839,7 @@ impl Base for Elder {
             ParsecResponse(version, par_response) => {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
-            BootstrapResponse(_)
-            | ConnectionResponse
-            | ResourceProof { .. }
-            | ResourceProofResponseReceipt => {
+            BootstrapResponse(_) | ResourceProof { .. } | ResourceProofResponseReceipt => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }

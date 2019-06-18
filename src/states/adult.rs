@@ -32,7 +32,7 @@ use crate::{
     time::{Duration, Instant},
     timer::Timer,
     xor_name::XorName,
-    ConnectionInfo, NetworkService,
+    NetworkService,
 };
 use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
@@ -109,7 +109,7 @@ impl Adult {
         debug!("{} - State changed to Adult.", self);
 
         for msg in self.msg_backlog.drain(..).collect_vec() {
-            let _ = self.dispatch_routing_message(msg, outbox)?;
+            self.dispatch_routing_message(msg, outbox)?;
         }
 
         Ok(())
@@ -145,7 +145,7 @@ impl Adult {
         &mut self,
         msg: RoutingMessage,
         outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<(), RoutingError> {
         self.handle_routing_message(msg, outbox)
     }
 
@@ -228,17 +228,8 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_peer_connected(
-        &mut self,
-        pub_id: PublicId,
-        conn_info: ConnectionInfo,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        Approved::handle_peer_connected(self, pub_id, conn_info, outbox)
-    }
-
-    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        RelocatedNotEstablished::handle_peer_disconnected(self, pub_id, outbox)
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        RelocatedNotEstablished::handle_peer_lost(self, pub_id, outbox)
     }
 
     fn handle_direct_message(
@@ -274,10 +265,9 @@ impl Base for Adult {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
-            self.dispatch_routing_message(routing_msg, outbox)
-        } else {
-            Ok(Transition::Stay)
-        }
+            self.dispatch_routing_message(routing_msg, outbox)?;
+        } 
+        Ok(Transition::Stay)        
     }
 }
 

@@ -138,11 +138,6 @@ impl Peer {
         self.timestamp.elapsed() >= Duration::from_secs(timeout)
     }
 
-    /// Returns whether the peer is in the `Connecting` state.
-    pub fn is_connecting(&self) -> bool {
-        self.state == PeerState::Connecting
-    }
-
     /// Returns whether the peer is a full node.
     pub fn is_node(&self) -> bool {
         match self.state {
@@ -475,11 +470,6 @@ impl PeerManager {
     /// Returns an iterator over all connected peers.
     pub fn connected_peers(&self) -> impl Iterator<Item = &Peer> {
         self.peers.values().filter(|peer| peer.is_connected())
-    }
-
-    /// Returns if the given peer is in the `Connecting` state.
-    pub fn is_connecting(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, Peer::is_connecting)
     }
 
     /// Returns if the given peer is our proxy node.

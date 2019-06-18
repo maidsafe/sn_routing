@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{base::Base, bootstrapped::Bootstrapped};
+use super::bootstrapped::Bootstrapped;
 use crate::{
     error::RoutingError,
     event::Event,
@@ -16,10 +16,8 @@ use crate::{
     peer_manager::{Peer, PeerManager},
     quic_p2p::NodeInfo,
     routing_table::Authority,
-    state_machine::Transition,
     types::MessageId,
     xor_name::XorName,
-    ConnectionInfo,
 };
 
 /// Common functionality for node states post-relocation.
@@ -46,12 +44,6 @@ pub trait Relocated: Bootstrapped {
             );
 
             self.process_connection(their_pub_id, outbox);
-            return Ok(());
-        } else if self.peer_mgr().is_connecting(&their_pub_id) {
-            debug!(
-                "{} - Not sending our connection info to {:?} - already sent or received.",
-                self, their_pub_id
-            );
             return Ok(());
         } else {
             self.peer_mgr_mut().set_connecting(their_pub_id);
@@ -97,7 +89,7 @@ pub trait Relocated: Bootstrapped {
         _src: Authority<XorName>,
         _dst: Authority<XorName>,
         outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<(), RoutingError> {
         let shared_secret = self
             .full_id()
             .encrypting_private_key()
@@ -111,26 +103,14 @@ pub trait Relocated: Bootstrapped {
             self, their_pub_id
         );
 
-        self.peer_mgr_mut().set_connecting(their_pub_id);
-
-        let transition = match self
-            .peer_map_mut()
-            .handle_connection_request(their_pub_id, their_conn_info.clone())
-        {
-            Ok(()) => Base::handle_peer_connected(
-                self,
-                their_pub_id,
-                ConnectionInfo::Node {
-                    node_info: their_conn_info,
-                },
-                outbox,
-            ),
-            _ => Transition::Stay,
-        };
+        self.peer_map_mut()
+            .handle_connection_request(their_pub_id, their_conn_info.clone());
+        self.peer_mgr_mut().set_connected(their_pub_id);
+        self.process_connection(their_pub_id, outbox);
 
         self.send_direct_message(&their_pub_id, DirectMessage::ConnectionResponse);
 
-        Ok(transition)
+        Ok(())
     }
 
     /// Disconnects if the peer is not a proxy, client or routing table entry.

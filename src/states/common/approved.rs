@@ -19,7 +19,7 @@ use crate::{
     routing_table::Prefix,
     state_machine::Transition,
     xor_name::XorName,
-    Authority, ConnectionInfo,
+    Authority,
 };
 use maidsafe_utilities::serialisation;
 
@@ -84,26 +84,6 @@ pub trait Approved: Relocated {
         proving_secs: Vec<ProvingSection>,
         sec_info: SectionInfo,
     ) -> Result<(), RoutingError>;
-
-    fn handle_peer_connected(
-        &mut self,
-        pub_id: PublicId,
-        _conn_info: ConnectionInfo,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        if self.peer_mgr().is_connected(&pub_id) {
-            debug!(
-                "{} - Connected to {} but the peer was already in the peer manager",
-                self, pub_id
-            );
-        } else {
-            debug!("{} - Connected to {}", self, pub_id);
-            self.peer_mgr_mut().set_connected(pub_id);
-            self.process_connection(pub_id, outbox);
-        }
-
-        Transition::Stay
-    }
 
     fn handle_parsec_request(
         &mut self,

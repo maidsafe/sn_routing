@@ -252,12 +252,8 @@ impl ElderUnderTest {
         &mut self,
         routing_msg: RoutingMessage,
     ) -> Result<(), RoutingError> {
-        match unwrap!(self.machine.current_mut().elder_state_mut())
-            .dispatch_routing_message(routing_msg, &mut self.ev_buffer)?
-        {
-            Transition::Stay => Ok(()),
-            _ => panic!("Unexpected transition"),
-        }
+        unwrap!(self.machine.current_mut().elder_state_mut())
+            .dispatch_routing_message(routing_msg, &mut self.ev_buffer)
     }
 
     fn handle_direct_message(
