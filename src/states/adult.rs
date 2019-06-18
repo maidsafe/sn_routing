@@ -25,7 +25,7 @@ use crate::{
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::PeerManager,
+    peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -275,10 +275,16 @@ impl Base for Adult {
 
     fn handle_hop_message(
         &mut self,
-        hop_msg: HopMessage,
+        msg: HopMessage,
+        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg)? {
+        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
+            Some(PeerState::Connected) | Some(PeerState::Proxy) => (),
+            _ => return Err(RoutingError::UnknownConnection(pub_id)),
+        }
+
+        if let Some(routing_msg) = self.filter_hop_message(msg)? {
             self.dispatch_routing_message(routing_msg, outbox)
         } else {
             Ok(Transition::Stay)

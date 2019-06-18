@@ -17,7 +17,7 @@ use crate::{
     time::Instant,
     xor_name::XorName,
 };
-use std::iter;
+use std::collections::BTreeSet;
 
 pub trait BootstrappedNotEstablished: Bootstrapped {
     // Whether acknowledge hop messages sent to us.
@@ -88,8 +88,7 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
         if self.add_to_pending_acks(signed_msg.routing_message(), src_section, route, expires_at)
             && !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id, route)
         {
-            let sent_to = iter::once(*self.name()).collect();
-            let message = self.to_hop_message(signed_msg.clone(), route, sent_to)?;
+            let message = self.to_hop_message(signed_msg.clone(), route, BTreeSet::new())?;
             self.send_message(&proxy_pub_id, message);
         }
 

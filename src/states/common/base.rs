@@ -68,6 +68,7 @@ pub trait Base: Display {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
+        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -237,7 +238,14 @@ pub trait Base: Display {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
-            Message::Hop(msg) => self.handle_hop_message(msg, outbox),
+            Message::Hop(msg) => {
+                if let Some(pub_id) = self.peer_map().get_public_id(&src_addr).cloned() {
+                    self.handle_hop_message(msg, pub_id, outbox)
+                } else {
+                    debug!("{} - Received {:?} from unknown peer", self, msg);
+                    return Err(RoutingError::InvalidPeer);
+                }
+            }
             Message::Direct(msg) => {
                 let (msg, pub_id) = msg.open()?;
 
@@ -292,8 +300,8 @@ pub trait Base: Display {
     }
 
     fn send_message(&mut self, dst_id: &PublicId, message: Message) {
-        let peer = match self.peer_map().get(dst_id) {
-            Some(peer) => peer.clone(),
+        let conn_info = match self.peer_map().get_connection_info(dst_id) {
+            Some(conn_info) => conn_info.clone(),
             None => {
                 error!(
                     "{} - Failed to send message to {:?} - not connected",
@@ -303,12 +311,12 @@ pub trait Base: Display {
             }
         };
 
-        self.send_message_over_network(peer, message);
+        self.send_message_over_network(conn_info, message);
     }
 
-    fn send_message_over_network(&mut self, dst: ConnectionInfo, message: Message) {
+    fn send_message_over_network(&mut self, conn_info: ConnectionInfo, message: Message) {
         match to_network_bytes(message) {
-            Ok(bytes) => self.network_service_mut().send(dst, bytes),
+            Ok(bytes) => self.network_service_mut().send(conn_info, bytes),
             Err((error, message)) => {
                 error!(
                     "{} Failed to serialise message {:?}: {:?}",
