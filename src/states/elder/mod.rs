@@ -954,10 +954,11 @@ impl Elder {
             }
         };
 
-        let peer_type = match conn_info {
-            ConnectionInfo::Client { .. } => "client",
-            ConnectionInfo::Node { .. } => "node",
+        let (peer_type, client_ip) = match conn_info {
+            ConnectionInfo::Client { peer_addr } => ("client", Some(peer_addr.ip())),
+            ConnectionInfo::Node { .. } => ("node", None),
         };
+
         trace!(
             "{} - Received BootstrapRequest from {:?} as {}.",
             self,
@@ -965,26 +966,7 @@ impl Elder {
             peer_type
         );
 
-        // Check min section size.
-        if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
-            debug!(
-                "{} - Peer {:?} rejected: Routing table has {} entries. {} required.",
-                self,
-                pub_id,
-                self.chain.len(),
-                self.min_section_size() - 1
-            );
-            self.send_direct_message(
-                &pub_id,
-                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewPeers)),
-            );
-            self.disconnect_peer(&pub_id);
-            return Ok(());
-        }
-
-        if let ConnectionInfo::Client { peer_addr } = conn_info {
-            let ip = peer_addr.ip();
-
+        if let Some(ip) = client_ip {
             // Check banned IPs.
             if self.banned_client_ips.contains_key(&ip) {
                 warn!(
@@ -1008,6 +990,25 @@ impl Elder {
                 self.disconnect_peer(&pub_id);
                 return Ok(());
             }
+        }
+
+        // Check min section size.
+        if (client_ip.is_some() || !self.is_first_node)
+            && self.chain.len() < self.min_section_size() - 1
+        {
+            debug!(
+                "{} - Peer {:?} rejected: Routing table has {} entries. {} required.",
+                self,
+                pub_id,
+                self.chain.len(),
+                self.min_section_size() - 1
+            );
+            self.send_direct_message(
+                &pub_id,
+                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewPeers)),
+            );
+            self.disconnect_peer(&pub_id);
+            return Ok(());
         }
 
         self.peer_mgr.handle_bootstrap_request(pub_id, &conn_info);
