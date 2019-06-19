@@ -147,12 +147,12 @@ impl ProvingNode {
 
         for pub_id in our_section {
             debug!(
-                "{} Sending ConnectRequest to {:?} on Relocation response.",
+                "{} Sending ConnectionRequest to {:?} on Relocation response.",
                 self, pub_id
             );
 
             let dst = Authority::ManagedNode(*pub_id.name());
-            self.send_connect_request(pub_id, src, dst, outbox)?;
+            self.send_connection_request(pub_id, src, dst, outbox)?;
         }
         self.resend_token = Some(self.timer.schedule(RESEND_TIMEOUT));
         Ok(())
@@ -272,7 +272,7 @@ impl ProvingNode {
         for (pub_id, resource_proofing) in self.resource_proofing_status.clone() {
             if !self.peer_mgr.is_connected(&pub_id) {
                 let dst = Authority::ManagedNode(*pub_id.name());
-                let _ = self.send_connect_request(pub_id, src, dst, outbox);
+                let _ = self.send_connection_request(pub_id, src, dst, outbox);
             } else if !resource_proofing {
                 self.send_candidate_info(pub_id);
             }
@@ -370,7 +370,7 @@ impl Base for ProvingNode {
 
         use crate::messages::DirectMessage::*;
         match msg {
-            ConnectResponse => (),
+            ConnectionResponse => (),
             ResourceProof {
                 seed,
                 target_size,

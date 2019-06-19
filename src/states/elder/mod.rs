@@ -376,7 +376,7 @@ impl Elder {
             debug!("{} Sending connection info to {:?}.", self, pub_id);
             let src = Authority::ManagedNode(*self.name());
             let dst = Authority::ManagedNode(*pub_id.name());
-            let _ = self.send_connect_request(pub_id, src, dst, outbox);
+            let _ = self.send_connection_request(pub_id, src, dst, outbox);
         }
     }
 
@@ -668,7 +668,7 @@ impl Elder {
                 Ok(Transition::Stay)
             }
             (
-                ConnectRequest {
+                ConnectionRequest {
                     encrypted_conn_info,
                     pub_id,
                     ..
@@ -677,14 +677,14 @@ impl Elder {
                 dst @ ManagedNode(_),
             )
             | (
-                ConnectRequest {
+                ConnectionRequest {
                     encrypted_conn_info,
                     pub_id,
                     ..
                 },
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
-            ) => self.handle_connect_request(&encrypted_conn_info, pub_id, src, dst, outbox),
+            ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
             (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(Transition::Stay),
             (
                 NeighbourConfirm(digest, proofs, sec_infos_and_proofs),
@@ -753,7 +753,7 @@ impl Elder {
             );
 
             let src = Authority::ManagedNode(*self.name());
-            let _ = self.send_connect_request(new_pub_id, src, new_client_auth, outbox);
+            let _ = self.send_connection_request(new_pub_id, src, new_client_auth, outbox);
 
             false
         };
@@ -1593,7 +1593,7 @@ impl Elder {
         sent_to: &BTreeSet<XorName>,
     ) -> Result<(BTreeSet<XorName>, Vec<PublicId>), RoutingError> {
         let force_via_proxy = match routing_msg.content {
-            MessageContent::ConnectRequest { pub_id, .. } => {
+            MessageContent::ConnectionRequest { pub_id, .. } => {
                 routing_msg.src.is_client() && pub_id == *self.full_id.public_id()
             }
             _ => false,
@@ -1707,7 +1707,7 @@ impl Elder {
             );
 
             let our_name = *self.name();
-            let _ = self.send_connect_request(
+            let _ = self.send_connection_request(
                 pub_id,
                 Authority::ManagedNode(our_name),
                 Authority::ManagedNode(*pub_id.name()),
@@ -1959,7 +1959,7 @@ impl Base for Elder {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
             BootstrapResponse(_)
-            | ConnectResponse
+            | ConnectionResponse
             | ProxyRateLimitExceeded { .. }
             | ResourceProof { .. }
             | ResourceProofResponseReceipt => {

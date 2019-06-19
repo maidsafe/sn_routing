@@ -129,7 +129,7 @@ impl RelocatingNode {
         match routing_msg.content {
             Relocate { .. }
             | ExpectCandidate { .. }
-            | ConnectRequest { .. }
+            | ConnectionRequest { .. }
             | NeighbourInfo(..)
             | NeighbourConfirm(..)
             | Merge(..)

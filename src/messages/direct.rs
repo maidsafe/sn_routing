@@ -39,9 +39,9 @@ pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
     /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
     BootstrapResponse(Result<(), BootstrapResponseError>),
-    /// Sent from members of a section to a joining node in response to `ConnectRequest` (which is
+    /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
-    ConnectResponse,
+    ConnectionResponse,
     /// Sent from a node which is still joining the network to another node, to allow the latter to
     /// add the former to its routing table.
     CandidateInfo {
@@ -98,7 +98,7 @@ impl Debug for DirectMessage {
             }
             BootstrapRequest => write!(formatter, "BootstrapRequest"),
             BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
-            ConnectResponse => write!(formatter, "ConnectResponse"),
+            ConnectionResponse => write!(formatter, "ConnectionResponse"),
             CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
             ResourceProof {
                 ref seed,
@@ -150,7 +150,7 @@ impl Hash for DirectMessage {
                 digest.hash(state);
                 signature.hash(state);
             }
-            BootstrapRequest | ConnectResponse | ResourceProofResponseReceipt => (),
+            BootstrapRequest | ConnectionResponse | ResourceProofResponseReceipt => (),
             BootstrapResponse(ref result) => result.hash(state),
             CandidateInfo {
                 ref old_public_id,

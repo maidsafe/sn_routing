@@ -318,7 +318,7 @@ impl ElderUnderTest {
         }
     }
 
-    fn connect_request_message(&self) -> RoutingMessage {
+    fn connection_request_message(&self) -> RoutingMessage {
         let new_full_id = &self.candidate_info.new_full_id;
         let their_pub_id = self.full_id.public_id();
 
@@ -336,7 +336,7 @@ impl ElderUnderTest {
             let conn_info = self.candidate_node_info();
             let encrypted_conn_info = unwrap!(shared_secret.encrypt(&conn_info));
 
-            MessageContent::ConnectRequest {
+            MessageContent::ConnectionRequest {
                 encrypted_conn_info,
                 pub_id: *new_full_id.public_id(),
                 msg_id: MessageId::new(),
@@ -683,7 +683,7 @@ fn candidate_info_message_in_interval() {
     elder_test.set_interval_to_match_candidate(true);
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = elder_test.dispatch_routing_message(elder_test.connect_request_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
     elder_test.establish_connection_with_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
@@ -699,7 +699,7 @@ fn candidate_info_message_not_in_interval() {
     elder_test.set_interval_to_match_candidate(false);
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = elder_test.dispatch_routing_message(elder_test.connect_request_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
     elder_test.establish_connection_with_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
@@ -715,7 +715,7 @@ fn candidate_info_message_bad_signature() {
     elder_test.set_interval_to_match_candidate(true);
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
-    let _ = elder_test.dispatch_routing_message(elder_test.connect_request_message());
+    let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
     elder_test.establish_connection_with_candidate();
     let _ = elder_test
         .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));

@@ -484,7 +484,7 @@ pub enum MessageContent {
         message_id: MessageId,
     },
     /// Send a request containing our connection info to a member of a section to connect to us.
-    ConnectRequest {
+    ConnectionRequest {
         /// The sender's public ID.
         pub_id: PublicId,
         /// Encrypted sender's connection info.
@@ -572,13 +572,13 @@ impl Debug for MessageContent {
                 "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
                 old_public_id, old_client_auth, message_id
             ),
-            ConnectRequest {
+            ConnectionRequest {
                 ref pub_id,
                 ref msg_id,
                 ..
             } => write!(
                 formatter,
-                "ConnectRequest {{ {:?}, {:?}, .. }}",
+                "ConnectionRequest {{ {:?}, {:?}, .. }}",
                 pub_id, msg_id
             ),
             RelocateResponse {
@@ -771,11 +771,11 @@ mod tests {
     use unwrap::unwrap;
 
     #[test]
-    fn signed_message_check_integrity() {
+    fn signed_routing_message_check_integrity() {
         let min_section_size = 1000;
         let name: XorName = rand::random();
         let full_id = FullId::new();
-        let routing_message = RoutingMessage {
+        let msg = RoutingMessage {
             src: Authority::Client {
                 client_id: *full_id.public_id(),
                 proxy_node_name: name,
@@ -785,31 +785,28 @@ mod tests {
                 message_id: MessageId::new(),
             },
         };
-        let signed_message_result =
-            SignedRoutingMessage::new(routing_message.clone(), &full_id, None);
+        let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg.clone(), &full_id, None));
 
-        let mut signed_message = unwrap!(signed_message_result);
+        assert_eq!(msg, *signed_msg.routing_message());
+        assert_eq!(1, signed_msg.signatures.len());
+        assert!(signed_msg.signatures.contains_id(full_id.public_id()));
 
-        assert_eq!(routing_message, *signed_message.routing_message());
-        assert_eq!(1, signed_message.signatures.len());
-        assert!(signed_message.signatures.contains_id(full_id.public_id()));
-
-        unwrap!(signed_message.check_integrity(min_section_size));
+        unwrap!(signed_msg.check_integrity(min_section_size));
 
         let full_id = FullId::new();
-        let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
+        let bytes_to_sign = unwrap!(serialise(&(&msg, full_id.public_id())));
         let signature = full_id.signing_private_key().sign_detached(&bytes_to_sign);
 
-        signed_message.signatures.sigs = iter::once((*full_id.public_id(), signature)).collect();
+        signed_msg.signatures.sigs = iter::once((*full_id.public_id(), signature)).collect();
 
         // Invalid because it's not signed by the sender:
-        assert!(signed_message.check_integrity(min_section_size).is_err());
+        assert!(signed_msg.check_integrity(min_section_size).is_err());
         // However, the signature itself should be valid:
-        assert!(signed_message.has_enough_sigs(min_section_size));
+        assert!(signed_msg.has_enough_sigs(min_section_size));
     }
 
     #[test]
-    fn msg_signatures() {
+    fn signed_routing_message_signatures() {
         let min_section_size = 8;
 
         let full_id_0 = FullId::new();
@@ -828,7 +825,7 @@ mod tests {
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
         let name: XorName = rand::random();
-        let routing_message = RoutingMessage {
+        let msg = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
             content: part,
@@ -846,11 +843,7 @@ mod tests {
             prefix,
             None,
         ));
-        let mut signed_msg = unwrap!(SignedRoutingMessage::new(
-            routing_message,
-            &full_id_0,
-            src_section
-        ));
+        let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg, &full_id_0, src_section));
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.

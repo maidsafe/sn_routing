@@ -93,8 +93,8 @@ impl PeerMap {
         }
     }
 
-    // Handles received `ConnectRequest` message.
-    pub fn handle_connect_request(
+    // Handles received `ConnectionRequest` message.
+    pub fn handle_connection_request(
         &mut self,
         pub_id: PublicId,
         node_info: NodeInfo,
@@ -294,14 +294,14 @@ mod tests {
     }
 
     #[test]
-    fn connect_request_then_connected_to() {
+    fn connection_request_then_connected_to() {
         let mut peer_map = PeerMap::new();
 
         let node_info = node_info("198.51.100.0:5555");
         let pub_id = *FullId::new().public_id();
 
         assert_eq!(
-            peer_map.handle_connect_request(pub_id, node_info.clone()),
+            peer_map.handle_connection_request(pub_id, node_info.clone()),
             Err(ConnectionError::Incomplete)
         );
         assert_eq!(
@@ -323,7 +323,10 @@ mod tests {
             }),
             Err(ConnectionError::Incomplete)
         );
-        assert_eq!(peer_map.handle_connect_request(pub_id, node_info), Ok(()));
+        assert_eq!(
+            peer_map.handle_connection_request(pub_id, node_info),
+            Ok(())
+        );
     }
 
     // TODO: cover edge cases

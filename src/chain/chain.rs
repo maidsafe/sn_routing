@@ -1069,7 +1069,7 @@ impl Chain {
             return Err(Error::CannotRoute);
         }
 
-        Ok(*Chain::get_routeth_name(names, &target, route))
+        Ok(*Self::get_routeth_name(names, &target, route))
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent

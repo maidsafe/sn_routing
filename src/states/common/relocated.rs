@@ -33,7 +33,7 @@ pub trait Relocated: Bootstrapped {
     fn add_node_failure(&mut self, pub_id: &PublicId);
     fn send_event(&mut self, event: Event, outbox: &mut EventBox);
 
-    fn send_connect_request(
+    fn send_connection_request(
         &mut self,
         their_pub_id: PublicId,
         src: Authority<XorName>,
@@ -71,7 +71,7 @@ pub trait Relocated: Bootstrapped {
             err
         })?;
 
-        let content = MessageContent::ConnectRequest {
+        let content = MessageContent::ConnectionRequest {
             encrypted_conn_info,
             pub_id: *self.full_id().public_id(),
             msg_id: MessageId::new(),
@@ -91,7 +91,7 @@ pub trait Relocated: Bootstrapped {
         })
     }
 
-    fn handle_connect_request(
+    fn handle_connection_request(
         &mut self,
         encrypted_their_conn_info: &[u8],
         their_pub_id: PublicId,
@@ -116,7 +116,7 @@ pub trait Relocated: Bootstrapped {
 
         let transition = match self
             .peer_map_mut()
-            .handle_connect_request(their_pub_id, their_conn_info.clone())
+            .handle_connection_request(their_pub_id, their_conn_info.clone())
         {
             Ok(()) => Base::handle_peer_connected(
                 self,
@@ -129,7 +129,7 @@ pub trait Relocated: Bootstrapped {
             _ => Transition::Stay,
         };
 
-        self.send_direct_message(&their_pub_id, DirectMessage::ConnectResponse);
+        self.send_direct_message(&their_pub_id, DirectMessage::ConnectionResponse);
 
         Ok(transition)
     }

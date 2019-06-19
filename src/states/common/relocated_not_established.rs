@@ -31,7 +31,7 @@ pub trait RelocatedNotEstablished: Relocated {
         match self.peer_mgr().get_peer(pub_id).map(Peer::state) {
             Some(PeerState::Connected) | Some(PeerState::Proxy) => return Ok(()),
             Some(PeerState::Connecting) => {
-                if let DirectMessage::ConnectResponse = msg {
+                if let DirectMessage::ConnectionResponse = msg {
                     return Ok(());
                 }
             }
@@ -57,7 +57,7 @@ pub trait RelocatedNotEstablished: Relocated {
         match msg {
             RoutingMessage {
                 content:
-                    ConnectRequest {
+                    ConnectionRequest {
                         encrypted_conn_info,
                         pub_id,
                         msg_id,
@@ -66,7 +66,7 @@ pub trait RelocatedNotEstablished: Relocated {
                 dst: ManagedNode(_),
             } => {
                 if self.our_prefix().matches(&src_name) {
-                    self.handle_connect_request(
+                    self.handle_connection_request(
                         &encrypted_conn_info,
                         pub_id,
                         msg.src,
@@ -75,7 +75,7 @@ pub trait RelocatedNotEstablished: Relocated {
                     )
                 } else {
                     self.add_message_to_backlog(RoutingMessage {
-                        content: ConnectRequest {
+                        content: ConnectionRequest {
                             encrypted_conn_info,
                             pub_id,
                             msg_id,
