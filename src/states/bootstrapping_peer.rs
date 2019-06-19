@@ -322,7 +322,6 @@ impl Base for BootstrappingPeer {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        _: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         debug!("{} - Unhandled hop message: {:?}", self, msg);

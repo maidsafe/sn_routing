@@ -1090,7 +1090,6 @@ impl Chain {
     pub fn targets(
         &self,
         dst: &Authority<XorName>,
-        exclude: XorName,
         connected_peers: &[&XorName],
     ) -> Result<BTreeSet<XorName>, Error> {
         // FIXME: only filtering for now to match RT.
@@ -1190,7 +1189,7 @@ impl Chain {
         };
         Ok(best_section
             .into_iter()
-            .filter(|&x| x != exclude && x != *self.our_id().name())
+            .filter(|&x| x != *self.our_id().name())
             .take(delivery_group_size(best_section_len))
             .collect())
     }

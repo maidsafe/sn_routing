@@ -18,7 +18,6 @@ pub use self::{
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::{
     chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo},
-    data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
     error::{Result, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -41,7 +40,6 @@ use std::{
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
-pub const MAX_PARTS: u32 = ((MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / MAX_PART_LEN as u64) + 1) as u32;
 
 /// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
 /// critical to prevent data loss.

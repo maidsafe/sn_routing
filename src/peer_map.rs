@@ -149,14 +149,6 @@ impl PeerMap {
         self.routing_to_network.get(pub_id)
     }
 
-    // Find public id of the peer with the given socket address.
-    pub fn get_public_id<'a>(&'a self, socket_addr: &SocketAddr) -> Option<&'a PublicId> {
-        match self.network_to_routing.get(socket_addr) {
-            Some(State::Routing(pub_id)) | Some(State::Complete(pub_id)) => Some(pub_id),
-            Some(State::Network(_)) | None => None,
-        }
-    }
-
     fn invalid_state<T>() -> Result<T, ConnectionError> {
         log_or_panic!(
             LogLevel::Error,

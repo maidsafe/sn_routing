@@ -22,7 +22,7 @@ use crate::{
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
-    peer_manager::{Peer, PeerManager, PeerState},
+    peer_manager::{PeerManager, PeerState},
     peer_map::PeerMap,
     resource_prover::ResourceProver,
     routing_message_filter::RoutingMessageFilter,
@@ -400,14 +400,8 @@ impl Base for ProvingNode {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(PeerState::Connected) | Some(PeerState::Proxy) => (),
-            _ => return Err(RoutingError::UnknownConnection(pub_id)),
-        }
-
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             self.dispatch_routing_message(routing_msg, outbox)
         } else {

@@ -263,13 +263,8 @@ impl Base for RelocatingNode {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if self.proxy_pub_id != pub_id {
-            return Err(RoutingError::UnknownConnection(pub_id));
-        }
-
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             Ok(self.dispatch_routing_message(routing_msg))
         } else {

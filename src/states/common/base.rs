@@ -68,7 +68,6 @@ pub trait Base: Display {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -238,14 +237,7 @@ pub trait Base: Display {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
-            Message::Hop(msg) => {
-                if let Some(pub_id) = self.peer_map().get_public_id(&src_addr).cloned() {
-                    self.handle_hop_message(msg, pub_id, outbox)
-                } else {
-                    debug!("{} - Received {:?} from unknown peer", self, msg);
-                    return Err(RoutingError::InvalidPeer);
-                }
-            }
+            Message::Hop(msg) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg) => {
                 let (msg, pub_id) = msg.open()?;
 
