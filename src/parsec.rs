@@ -11,7 +11,7 @@ use crate::mock::parsec as inner;
 use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
-    messages::{DirectMessage, Message},
+    messages::DirectMessage,
     utils::LogIdent,
 };
 use log::LogLevel;
@@ -62,7 +62,7 @@ impl ParsecMap {
         request: Request,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> (Option<Message>, bool) {
+    ) -> (Option<DirectMessage>, bool) {
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
@@ -71,7 +71,7 @@ impl ParsecMap {
 
         let response = parsec
             .handle_request(&pub_id, request)
-            .map(|response| Message::Direct(DirectMessage::ParsecResponse(msg_version, response)))
+            .map(|response| DirectMessage::ParsecResponse(msg_version, response))
             .map_err(|err| {
                 debug!("{} - Error handling parsec request: {:?}", log_ident, err);
                 err
@@ -102,11 +102,9 @@ impl ParsecMap {
         self.last_version() == msg_version
     }
 
-    pub fn create_gossip(&mut self, version: u64, target: &id::PublicId) -> Option<Message> {
+    pub fn create_gossip(&mut self, version: u64, target: &id::PublicId) -> Option<DirectMessage> {
         let request = self.map.get_mut(&version)?.create_gossip(target).ok()?;
-        Some(Message::Direct(DirectMessage::ParsecRequest(
-            version, request,
-        )))
+        Some(DirectMessage::ParsecRequest(version, request))
     }
 
     pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &LogIdent) {

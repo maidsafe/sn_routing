@@ -8,29 +8,54 @@
 
 use crate::{
     action::Action,
-    crust::{ConnectionInfoResult, CrustError, CrustUser, PrivConnectionInfo},
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, Request, SignedMessage, UserMessage},
+    messages::{
+        DirectMessage, HopMessage, Message, Request, SignedDirectMessage, SignedRoutingMessage,
+        UserMessage,
+    },
     outbox::EventBox,
+    peer_map::PeerMap,
+    quic_p2p::NodeInfo,
     routing_table::Authority,
     state_machine::Transition,
     utils::LogIdent,
     xor_name::XorName,
-    CrustBytes, CrustEvent, Service,
+    ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{collections::BTreeSet, fmt::Display, net::SocketAddr};
 
 // Trait for all states.
 pub trait Base: Display {
-    fn crust_service(&self) -> &Service;
+    fn network_service(&self) -> &NetworkService;
+    fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
     fn min_section_size(&self) -> usize;
+    fn peer_map(&self) -> &PeerMap;
+    fn peer_map_mut(&mut self) -> &mut PeerMap;
 
     fn log_ident(&self) -> LogIdent {
         LogIdent::new(self)
+    }
+
+    fn handle_peer_connected(
+        &mut self,
+        _pub_id: PublicId,
+        _conn_info: ConnectionInfo,
+        _outbox: &mut EventBox,
+    ) -> Transition {
+        Transition::Stay
+    }
+
+    fn handle_peer_disconnected(
+        &mut self,
+        _pub_id: PublicId,
+        _outbox: &mut EventBox,
+    ) -> Transition {
+        Transition::Stay
     }
 
     fn handle_direct_message(
@@ -126,109 +151,75 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn handle_crust_event(
-        &mut self,
-        crust_event: CrustEvent<PublicId>,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        let transition = match crust_event {
-            CrustEvent::BootstrapAccept(pub_id, peer_kind) => {
-                self.handle_bootstrap_accept(pub_id, peer_kind)
+    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut EventBox) -> Transition {
+        use crate::NetworkEvent::*;
+
+        let transition = match event {
+            BootstrappedTo { node } => self.handle_bootstrapped_to(node),
+            BootstrapFailure => self.handle_bootstrap_failure(outbox),
+            ConnectedTo { peer } => self.handle_connected_to(peer, outbox),
+            ConnectionFailure { peer_addr } => self.handle_connection_failure(peer_addr, outbox),
+            NewMessage { peer_addr, msg } => self.handle_new_message(peer_addr, msg, outbox),
+            UnsentUserMessage { .. } => {
+                // TODO (quic-p2p): handle unsent messages
+                error!("{} - Unhandled UnsentUserMessage", self);
+                Transition::Stay
             }
-            CrustEvent::BootstrapConnect(pub_id, socked_addr) => {
-                self.handle_bootstrap_connect(pub_id, socked_addr)
-            }
-            CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(outbox),
-            CrustEvent::ConnectSuccess(pub_id) => self.handle_connect_success(pub_id, outbox),
-            CrustEvent::ConnectFailure(pub_id) => self.handle_connect_failure(pub_id, outbox),
-            CrustEvent::LostPeer(pub_id) => self.handle_lost_peer(pub_id, outbox),
-            CrustEvent::NewMessage(pub_id, _, bytes) => {
-                self.handle_new_message(pub_id, bytes, outbox)
-            }
-            CrustEvent::ConnectionInfoPrepared(ConnectionInfoResult {
-                result_token,
-                result,
-            }) => self.handle_connection_info_prepared(result_token, result),
-            CrustEvent::ListenerStarted(port) => self.handle_listener_started(port, outbox),
-            CrustEvent::ListenerFailed => self.handle_listener_failed(outbox),
-            CrustEvent::WriteMsgSizeProhibitive(pub_id, msg) => {
-                self.handle_message_too_large(pub_id, msg)
-            }
+            Finish => Transition::Terminate,
         };
 
         if let Transition::Stay = transition {
-            self.finish_handle_crust_event(outbox)
+            self.finish_handle_network_event(outbox)
         } else {
             transition
         }
     }
 
-    fn handle_bootstrap_accept(&mut self, _pub_id: PublicId, _peer_kind: CrustUser) -> Transition {
-        debug!("{} - Unhandled crust event: BootstrapAccept", self);
+    fn handle_bootstrapped_to(&mut self, _node_info: NodeInfo) -> Transition {
+        debug!("{} - Unhandled network event: BootstrappedTo", self);
         Transition::Stay
     }
 
-    fn handle_bootstrap_connect(
+    fn handle_bootstrap_failure(&mut self, _outbox: &mut EventBox) -> Transition {
+        debug!("{} - Unhandled network event: BootstrapFailure", self);
+        Transition::Stay
+    }
+
+    fn handle_connected_to(
         &mut self,
-        _pub_id: PublicId,
-        _socked_addr: SocketAddr,
+        conn_info: ConnectionInfo,
+        outbox: &mut EventBox,
     ) -> Transition {
-        debug!("{} - Unhandled crust event: BootstrapConnect", self);
-        Transition::Stay
+        if let Ok(pub_id) = self.peer_map_mut().handle_connected_to(conn_info.clone()) {
+            self.handle_peer_connected(pub_id, conn_info, outbox)
+        } else {
+            Transition::Stay
+        }
     }
 
-    fn handle_bootstrap_failed(&mut self, _outbox: &mut EventBox) -> Transition {
-        debug!("{} - Unhandled crust event: BootstrapFailed", self);
-        Transition::Stay
-    }
-
-    fn handle_connect_success(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
-        Transition::Stay
-    }
-
-    fn handle_connect_failure(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
-        Transition::Stay
-    }
-
-    fn handle_lost_peer(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
-        Transition::Stay
-    }
-
-    fn handle_connection_info_prepared(
+    fn handle_connection_failure(
         &mut self,
-        _result_token: u32,
-        _result: Result<PrivConnectionInfo<PublicId>, CrustError>,
+        peer_addr: SocketAddr,
+        outbox: &mut EventBox,
     ) -> Transition {
-        Transition::Stay
-    }
+        trace!("{} - ConnectionFailure from {}", self, peer_addr);
 
-    fn handle_listener_started(&mut self, _port: u16, _outbox: &mut EventBox) -> Transition {
-        Transition::Stay
-    }
-
-    fn handle_listener_failed(&mut self, _outbox: &mut EventBox) -> Transition {
-        Transition::Stay
-    }
-
-    fn handle_message_too_large(&mut self, pub_id: PublicId, msg: Vec<u8>) -> Transition {
-        error!(
-            "{} - Failed to send {}-byte message to {:?}: Message too large.",
-            self,
-            msg.len(),
-            pub_id
-        );
-
-        Transition::Stay
+        if let Some(pub_id) = self.peer_map_mut().handle_connection_failure(peer_addr) {
+            trace!("{} - ConnectionFailure from {}", self, pub_id);
+            self.handle_peer_disconnected(pub_id, outbox)
+        } else {
+            Transition::Stay
+        }
     }
 
     fn handle_new_message(
         &mut self,
-        pub_id: PublicId,
-        bytes: CrustBytes,
+        src_addr: SocketAddr,
+        bytes: NetworkBytes,
         outbox: &mut EventBox,
     ) -> Transition {
-        let result = from_crust_bytes(bytes)
-            .and_then(|message| self.handle_new_deserialised_message(pub_id, message, outbox));
+        let result = from_network_bytes(bytes)
+            .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
 
         match result {
             Ok(transition) => transition,
@@ -242,17 +233,35 @@ pub trait Base: Display {
 
     fn handle_new_deserialised_message(
         &mut self,
-        pub_id: PublicId,
+        src_addr: SocketAddr,
         message: Message,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
-            Message::Hop(hop_msg) => self.handle_hop_message(hop_msg, pub_id, outbox),
-            Message::Direct(direct_msg) => self.handle_direct_message(direct_msg, pub_id, outbox),
+            Message::Hop(msg) => {
+                if let Some(pub_id) = self.peer_map().get_public_id(&src_addr).cloned() {
+                    self.handle_hop_message(msg, pub_id, outbox)
+                } else {
+                    debug!("{} - Received {:?} from unknown peer", self, msg);
+                    return Err(RoutingError::InvalidPeer);
+                }
+            }
+            Message::Direct(msg) => {
+                let (msg, pub_id) = msg.open()?;
+
+                if let Ok(conn_info) = self.peer_map_mut().handle_direct_message(pub_id, src_addr) {
+                    match self.handle_peer_connected(pub_id, conn_info, outbox) {
+                        Transition::Stay => (),
+                        _ => log_or_panic!(LogLevel::Error, "Unexpected transition"),
+                    }
+                }
+
+                self.handle_direct_message(msg, pub_id, outbox)
+            }
         }
     }
 
-    fn finish_handle_crust_event(&mut self, _outbox: &mut EventBox) -> Transition {
+    fn finish_handle_network_event(&mut self, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -264,21 +273,50 @@ pub trait Base: Display {
         self.full_id().public_id().name()
     }
 
+    fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+        self.network_service_mut()
+            .our_connection_info()
+            .map_err(|err| {
+                debug!(
+                    "{} - Failed to retrieve our connection info: {:?}",
+                    self, err
+                );
+                err.into()
+            })
+    }
+
     fn close_group(&self, _name: XorName, _count: usize) -> Option<Vec<XorName>> {
         None
     }
 
-    fn send_direct_message(&mut self, dst_id: PublicId, message: DirectMessage) {
-        self.send_message(&dst_id, Message::Direct(message));
+    fn send_direct_message(&mut self, dst_id: &PublicId, content: DirectMessage) {
+        let message = if let Ok(message) = self.to_signed_direct_message(content) {
+            message
+        } else {
+            return;
+        };
+
+        self.send_message(dst_id, message)
     }
 
     fn send_message(&mut self, dst_id: &PublicId, message: Message) {
-        let priority = message.priority();
-
-        match to_crust_bytes(message) {
-            Ok(bytes) => {
-                self.send_or_drop(dst_id, bytes, priority);
+        let conn_info = match self.peer_map().get_connection_info(dst_id) {
+            Some(conn_info) => conn_info.clone(),
+            None => {
+                error!(
+                    "{} - Failed to send message to {:?} - not connected",
+                    self, dst_id
+                );
+                return;
             }
+        };
+
+        self.send_message_over_network(conn_info, message);
+    }
+
+    fn send_message_over_network(&mut self, conn_info: ConnectionInfo, message: Message) {
+        match to_network_bytes(message) {
+            Ok(bytes) => self.network_service_mut().send(conn_info, bytes),
             Err((error, message)) => {
                 error!(
                     "{} Failed to serialise message {:?}: {:?}",
@@ -291,36 +329,34 @@ pub trait Base: Display {
         };
     }
 
-    // Sends the given `data` to the peer with the given `dst_id`. If that results in an
-    // error, it disconnects from the peer.
-    fn send_or_drop(&mut self, dst_id: &PublicId, data: CrustBytes, priority: u8) {
-        if let Err(err) = self.crust_service().send(dst_id, data, priority) {
-            info!("{} Connection to {} failed: {:?}", self, dst_id, err);
-            // TODO: Handle lost peer, but avoid a cascade of sending messages and handling more
-            //       lost peers: https://maidsafe.atlassian.net/browse/MAID-1924
-            // self.crust_service().disconnect(*pub_id);
-            // return self.handle_lost_peer(*pub_id).map(|_| Err(err.into()));
-        }
-    }
-
-    // Serialise HopMessage containing the given signed message.
-    fn to_hop_bytes(
+    // Create HopMessage containing the given signed message.
+    fn to_hop_message(
         &self,
-        signed_msg: SignedMessage,
+        signed_msg: SignedRoutingMessage,
         route: u8,
         sent_to: BTreeSet<XorName>,
-    ) -> Result<CrustBytes, RoutingError> {
+    ) -> Result<Message, RoutingError> {
         let hop_msg = HopMessage::new(signed_msg, route, sent_to)?;
-        let message = Message::Hop(hop_msg);
-        Ok(to_crust_bytes(message).map_err(|(err, _)| err)?)
+        Ok(Message::Hop(hop_msg))
+    }
+
+    fn to_signed_direct_message(&self, content: DirectMessage) -> Result<Message, RoutingError> {
+        SignedDirectMessage::new(content, self.full_id())
+            .map(Message::Direct)
+            .map_err(|err| {
+                error!("{} - Failed to create SignedDirectMessage: {:?}", self, err);
+                err
+            })
     }
 }
 
-fn to_crust_bytes(
+pub fn to_network_bytes(
     message: Message,
-) -> Result<CrustBytes, (serialisation::SerialisationError, Message)> {
+) -> Result<NetworkBytes, (serialisation::SerialisationError, Message)> {
     #[cfg(not(feature = "mock_serialise"))]
-    let result = serialisation::serialise(&message).map_err(|err| (err, message));
+    let result = Ok(NetworkBytes::from(
+        serialisation::serialise(&message).map_err(|err| (err, message))?,
+    ));
 
     #[cfg(feature = "mock_serialise")]
     let result = Ok(Box::new(message));
@@ -328,9 +364,9 @@ fn to_crust_bytes(
     result
 }
 
-pub fn from_crust_bytes(data: CrustBytes) -> Result<Message, RoutingError> {
+pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
     #[cfg(not(feature = "mock_serialise"))]
-    let result = serialisation::deserialise(&data).map_err(RoutingError::SerialisationError);
+    let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
 
     #[cfg(feature = "mock_serialise")]
     let result = Ok(*data);

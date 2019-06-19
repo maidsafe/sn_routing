@@ -129,6 +129,7 @@ mod tests {
     use crate::xor_name::XorName;
     use rand;
     use safe_crypto::gen_sign_keypair;
+    use unwrap::unwrap;
 
     #[test]
     fn full() {

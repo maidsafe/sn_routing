@@ -118,6 +118,8 @@ use std::fmt::Result as FmtResult;
 use std::fmt::{Binary, Debug, Formatter};
 use std::hash::Hash;
 use std::{iter, mem};
+#[cfg(any(test, feature = "mock_base"))]
+use unwrap::unwrap;
 
 pub type Sections<T> = BTreeMap<Prefix<T>, (u64, BTreeSet<T>)>;
 type SectionItem<'a, T> = (Prefix<T>, (u64, &'a BTreeSet<T>));

@@ -12,13 +12,10 @@ use super::{
 };
 use fake_clock::FakeClock;
 use rand::Rng;
-use routing::mock_crust::Network;
-use routing::rate_limiter_consts::RATE;
 use routing::{
-    Authority, Event, EventStream, ImmutableData, MessageId, Prefix, Request, Response,
-    MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+    mock::Network, rate_limiter_consts::RATE, Authority, Event, EventStream, ImmutableData,
+    MessageId, Prefix, Request, Response, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
 };
-use std::sync::mpsc;
 
 // Generate random immutable data, but make sure the first node in the given
 // node slice (the proxy node) is not in the data's section.

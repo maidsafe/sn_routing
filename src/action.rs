@@ -8,8 +8,7 @@
 
 use crate::error::InterfaceError;
 use crate::id::PublicId;
-use crate::messages::DirectMessage;
-use crate::messages::{Request, UserMessage};
+use crate::messages::{DirectMessage, Request, UserMessage};
 use crate::routing_table::Authority;
 use crate::xor_name::XorName;
 use std::fmt::{self, Debug, Formatter};

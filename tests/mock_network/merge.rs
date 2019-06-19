@@ -12,8 +12,7 @@ use super::{
 };
 use itertools::Itertools;
 use rand::Rng;
-use routing::mock_crust::Network;
-use routing::{Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
+use routing::{mock::Network, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
@@ -21,7 +20,7 @@ fn merge(prefix_lengths: Vec<usize>) {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 
     // Drop nodes from a section with the shortest prefix until we get a merge event for the empty
     // prefix.
@@ -63,7 +62,7 @@ fn merge(prefix_lengths: Vec<usize>) {
                 }
             }
         }
-        verify_invariant_for_all_nodes(&mut nodes);
+        verify_invariant_for_all_nodes(&network, &mut nodes);
         if merge_events_missing == 0 {
             return;
         }
@@ -96,7 +95,7 @@ fn concurrent_merge() {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
     rng.shuffle(&mut nodes);
 
     // Choose two random sections to drop nodes from:
@@ -146,7 +145,7 @@ fn concurrent_merge() {
 
     // Poll the nodes, check the invariant and ensure the network has merged to 3 sections.
     poll_and_resend(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
     assert_eq!(count_sections(&nodes), 3);
 }
 
@@ -161,7 +160,7 @@ fn merge_drop_multiple_nodes() {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
     rng.shuffle(&mut nodes);
 
     // Choose one section to drop nodes from.
@@ -186,6 +185,6 @@ fn merge_drop_multiple_nodes() {
     }
 
     poll_and_resend(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
     assert_eq!(count_sections(&nodes), 1);
 }

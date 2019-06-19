@@ -13,7 +13,7 @@ edition = "2018"
 [dependencies]
 bytes = "~0.4.12"
 config_file_handler = "~0.11.0"
-crust = { git = "https://github.com/maidsafe/crust", rev = "028de4ea8" }
+crossbeam-channel = "~0.3.8"
 fake_clock = "~0.3.0"
 fxhash = { version = "~0.2.1", optional = true }
 hex = "~0.2.0"
@@ -25,6 +25,7 @@ lru_time_cache = "~0.8.1"
 maidsafe_utilities = "~0.16.0"
 num-bigint = "~0.1.40"
 parsec = { git = "https://github.com/maidsafe/parsec", rev = "8c0d9d00e" }
+quic-p2p = { git = "https://github.com/maidsafe/quic-p2p" }
 quick-error = "~1.2.0"
 rand = "~0.3.16"
 resource_proof = "~0.6.0"

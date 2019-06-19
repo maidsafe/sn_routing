@@ -6,37 +6,43 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::action::Action;
-use crate::cache::{Cache, NullCache};
-use crate::client_error::ClientError;
-use crate::config_handler::{self, Config};
-use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value};
-use crate::error::{InterfaceError, RoutingError};
-use crate::event::Event;
-use crate::event_stream::{EventStepper, EventStream};
-use crate::id::{FullId, PublicId};
-use crate::messages::{
-    AccountInfo, Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
-    RELOCATE_PRIORITY,
+use crate::{
+    action::Action,
+    cache::{Cache, NullCache},
+    client_error::ClientError,
+    config_handler::{self, Config},
+    data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value},
+    error::{InterfaceError, RoutingError},
+    event::Event,
+    event_stream::{EventStepper, EventStream},
+    id::{FullId, PublicId},
+    messages::{
+        AccountInfo, Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
+        RELOCATE_PRIORITY,
+    },
+    outbox::{EventBox, EventBuf},
+    quic_p2p::OurType,
+    routing_table::Authority,
+    state_machine::{State, StateMachine},
+    states::{self, BootstrappingPeer, TargetState},
+    types::MessageId,
+    xor_name::XorName,
+    NetworkConfig, MIN_SECTION_SIZE,
 };
-use crate::outbox::{EventBox, EventBuf};
-use crate::routing_table::Authority;
-use crate::state_machine::{State, StateMachine};
-use crate::states::{self, BootstrappingPeer, TargetState};
-use crate::types::{MessageId, RoutingActionSender};
 #[cfg(feature = "mock_base")]
-use crate::utils::XorTargetInterval;
-use crate::xor_name::XorName;
-#[cfg(feature = "mock_base")]
-use crate::Chain;
-use crate::MIN_SECTION_SIZE;
+use crate::{utils::XorTargetInterval, Chain};
+use crossbeam_channel as mpmc;
 #[cfg(not(feature = "mock_base"))]
 use safe_crypto;
 use safe_crypto::PublicSignKey;
-use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
-use std::sync::mpsc::{channel, Receiver, RecvError, Sender, TryRecvError};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::mpsc,
+};
+#[cfg(feature = "mock_base")]
+use unwrap::unwrap;
 
 // Helper macro to implement request sending methods.
 macro_rules! impl_request {
@@ -84,6 +90,7 @@ pub struct NodeBuilder {
     cache: Box<Cache>,
     first: bool,
     config: Option<Config>,
+    network_config: Option<NetworkConfig>,
 }
 
 impl NodeBuilder {
@@ -105,6 +112,14 @@ impl NodeBuilder {
         }
     }
 
+    /// The node will use the given network config rather than default.
+    pub fn network_config(self, config: NetworkConfig) -> NodeBuilder {
+        NodeBuilder {
+            network_config: Some(config),
+            ..self
+        }
+    }
+
     /// Creates new `Node`.
     ///
     /// It will automatically connect to the network in the same way a client does, but then
@@ -121,7 +136,7 @@ impl NodeBuilder {
 
         // start the handler for routing without a restriction to become a full node
         let (_, machine) = self.make_state_machine(&mut ev_buffer);
-        let (tx, rx) = channel();
+        let (tx, rx) = mpsc::channel();
 
         Ok(Node {
             interface_result_tx: tx,
@@ -131,47 +146,44 @@ impl NodeBuilder {
         })
     }
 
-    fn make_state_machine(self, outbox: &mut EventBox) -> (RoutingActionSender, StateMachine) {
+    fn make_state_machine(self, outbox: &mut EventBox) -> (mpmc::Sender<Action>, StateMachine) {
         let full_id = FullId::new();
-        let pub_id = *full_id.public_id();
         let config = self.config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
+        let first = self.first;
+        let cache = self.cache;
+
+        let mut network_config = self.network_config.unwrap_or_default();
+        network_config.our_type = OurType::Node;
+
         StateMachine::new(
-            move |action_sender, crust_service, timer, outbox2| {
-                if self.first {
+            move |action_sender, network_service, timer, outbox| {
+                if first {
                     states::Elder::first(
-                        self.cache,
-                        crust_service,
+                        cache,
+                        network_service,
                         full_id,
                         min_section_size,
                         timer,
+                        outbox,
                     )
                     .map(State::Elder)
                     .unwrap_or(State::Terminated)
-                } else if !dev_config.allow_multiple_lan_nodes && crust_service.has_peers_on_lan() {
-                    error!(
-                        "More than one routing node found on LAN. Currently this is not supported."
-                    );
-                    outbox2.send_event(Event::Terminated);
-                    State::Terminated
                 } else {
-                    BootstrappingPeer::new(
+                    State::BootstrappingPeer(BootstrappingPeer::new(
                         action_sender,
-                        self.cache,
+                        cache,
                         TargetState::RelocatingNode,
-                        crust_service,
+                        network_service,
                         full_id,
                         min_section_size,
                         timer,
-                    )
-                    .map(State::BootstrappingPeer)
-                    .unwrap_or(State::Terminated)
+                    ))
                 }
             },
-            pub_id,
-            None,
+            network_config,
             outbox,
         )
     }
@@ -185,8 +197,8 @@ impl NodeBuilder {
 /// `ManagedNode` or as a part of a section or group authority. Their `src` argument indicates that
 /// role, and can be any [`Authority`](enum.Authority.html) other than `Client`.
 pub struct Node {
-    interface_result_tx: Sender<Result<(), InterfaceError>>,
-    interface_result_rx: Receiver<Result<(), InterfaceError>>,
+    interface_result_tx: mpsc::Sender<Result<(), InterfaceError>>,
+    interface_result_rx: mpsc::Receiver<Result<(), InterfaceError>>,
     machine: StateMachine,
     event_buffer: EventBuf,
 }
@@ -198,6 +210,7 @@ impl Node {
             cache: Box::new(NullCache),
             first: false,
             config: None,
+            network_config: None,
         }
     }
 
@@ -538,7 +551,7 @@ impl Node {
         user_msg: UserMessage,
         priority: u8,
     ) -> Result<(), InterfaceError> {
-        // Make sure the state machine has processed any outstanding crust events.
+        // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
         let action = Action::NodeSendMessage {
@@ -562,11 +575,11 @@ impl Node {
 impl EventStepper for Node {
     type Item = Event;
 
-    fn produce_events(&mut self) -> Result<(), RecvError> {
+    fn produce_events(&mut self) -> Result<(), mpmc::RecvError> {
         self.machine.step(&mut self.event_buffer)
     }
 
-    fn try_produce_events(&mut self) -> Result<(), TryRecvError> {
+    fn try_produce_events(&mut self) -> Result<(), mpmc::TryRecvError> {
         self.machine.try_step(&mut self.event_buffer)
     }
 

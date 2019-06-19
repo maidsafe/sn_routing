@@ -180,6 +180,7 @@ mod tests {
     use super::Proof;
     use crate::id::FullId;
     use safe_crypto;
+    use unwrap::unwrap;
 
     #[test]
     fn confirm_proof() {

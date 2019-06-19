@@ -646,6 +646,7 @@ mod tests {
     use safe_crypto::gen_sign_keypair;
     use std::collections::{BTreeMap, BTreeSet};
     use std::iter;
+    use unwrap::unwrap;
 
     macro_rules! assert_err {
         ($left:expr, $err:pat) => {{

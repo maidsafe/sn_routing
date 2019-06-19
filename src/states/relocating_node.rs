@@ -12,6 +12,7 @@ use super::{
 };
 use crate::{
     ack_manager::{Ack, AckManager},
+    action::Action,
     cache::Cache,
     chain::SectionInfo,
     error::RoutingError,
@@ -19,44 +20,47 @@ use crate::{
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
+    peer_map::PeerMap,
     resource_prover::RESOURCE_PROOF_DURATION,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     time::{Duration, Instant},
     timer::Timer,
-    types::{MessageId, RoutingActionSender},
+    types::MessageId,
     xor_name::XorName,
-    CrustEvent, CrustEventSender, Service, XorTargetInterval,
+    NetworkService, XorTargetInterval,
 };
+use crossbeam_channel as mpmc;
 use log::LogLevel;
 use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
-    sync::mpsc::Receiver,
 };
 
 /// Total time to wait for `RelocateResponse`.
 const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
 
 pub struct RelocatingNodeDetails {
-    pub action_sender: RoutingActionSender,
+    pub action_sender: mpmc::Sender<Action>,
     pub cache: Box<Cache>,
-    pub crust_service: Service,
+    pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
+    pub peer_map: PeerMap,
     pub proxy_pub_id: PublicId,
     pub timer: Timer,
 }
 
 pub struct RelocatingNode {
-    action_sender: RoutingActionSender,
+    action_sender: mpmc::Sender<Action>,
     ack_mgr: AckManager,
-    crust_service: Service,
+    network_service: NetworkService,
     full_id: FullId,
     /// Only held here to be passed eventually to the `Node` state.
     cache: Box<Cache>,
     min_section_size: usize,
+    peer_map: PeerMap,
     proxy_pub_id: PublicId,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
@@ -71,21 +75,21 @@ impl RelocatingNode {
         let mut node = Self {
             action_sender: details.action_sender,
             ack_mgr: AckManager::new(),
-            crust_service: details.crust_service,
+            network_service: details.network_service,
             full_id: details.full_id,
             cache: details.cache,
             min_section_size: details.min_section_size,
+            peer_map: details.peer_map,
             proxy_pub_id: details.proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             relocation_timer_token,
             timer: details.timer,
         };
 
+        debug!("{} State changed to RelocatingNode.", node);
+
         match node.relocate() {
-            Ok(()) => {
-                debug!("{} State changed to RelocatingNode.", node);
-                Ok(node)
-            }
+            Ok(()) => Ok(node),
             Err(error) => {
                 error!("{} Failed to start relocation: {:?}", node, error);
                 Err(error)
@@ -94,69 +98,30 @@ impl RelocatingNode {
     }
 
     pub fn into_bootstrapping(
-        self,
-        crust_rx: &mut Receiver<CrustEvent<PublicId>>,
-        crust_sender: CrustEventSender,
+        mut self,
         new_full_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-        outbox: &mut EventBox,
-    ) -> Result<State, RoutingError> {
-        let service = Self::start_new_crust_service(
-            self.crust_service,
-            *new_full_id.public_id(),
-            crust_rx,
-            crust_sender,
-        );
+        _outbox: &mut EventBox,
+    ) -> State {
+        // Disconnect from all currently connected peers.
+        for peer in self.peer_map.remove_all() {
+            self.network_service.disconnect_from(peer.peer_addr());
+        }
+
         let target_state = TargetState::ProvingNode {
             old_full_id: self.full_id,
             our_section: our_section,
         };
 
-        match BootstrappingPeer::new(
+        State::BootstrappingPeer(BootstrappingPeer::new(
             self.action_sender,
             self.cache,
             target_state,
-            service,
+            self.network_service,
             new_full_id,
             self.min_section_size,
             self.timer,
-        ) {
-            Ok(peer) => Ok(State::BootstrappingPeer(peer)),
-            Err(error) => {
-                outbox.send_event(Event::RestartRequired);
-                Err(error)
-            }
-        }
-    }
-
-    #[cfg(not(feature = "mock_base"))]
-    fn start_new_crust_service(
-        old_crust_service: Service,
-        pub_id: PublicId,
-        crust_rx: &mut Receiver<CrustEvent<PublicId>>,
-        crust_sender: CrustEventSender,
-    ) -> Service {
-        // Drop the current Crust service and flush the receiver
-        drop(old_crust_service);
-        while let Ok(_crust_event) = crust_rx.try_recv() {}
-
-        let mut crust_service = match Service::new(crust_sender, pub_id) {
-            Ok(service) => service,
-            Err(error) => panic!("Unable to start crust::Service {:?}", error),
-        };
-        crust_service.start_service_discovery();
-        crust_service
-    }
-
-    #[cfg(feature = "mock_base")]
-    fn start_new_crust_service(
-        old_crust_service: Service,
-        pub_id: PublicId,
-        _crust_rx: &mut Receiver<CrustEvent<PublicId>>,
-        crust_sender: CrustEventSender,
-    ) -> Service {
-        old_crust_service.restart(crust_sender, pub_id);
-        old_crust_service
+        ))
     }
 
     fn dispatch_routing_message(&mut self, routing_msg: RoutingMessage) -> Transition {
@@ -164,8 +129,7 @@ impl RelocatingNode {
         match routing_msg.content {
             Relocate { .. }
             | ExpectCandidate { .. }
-            | ConnectionInfoRequest { .. }
-            | ConnectionInfoResponse { .. }
+            | ConnectionRequest { .. }
             | NeighbourInfo(..)
             | NeighbourConfirm(..)
             | Merge(..)
@@ -239,8 +203,12 @@ impl RelocatingNode {
 }
 
 impl Base for RelocatingNode {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
+    fn network_service(&self) -> &NetworkService {
+        &self.network_service
+    }
+
+    fn network_service_mut(&mut self) -> &mut NetworkService {
+        &mut self.network_service
     }
 
     fn full_id(&self) -> &FullId {
@@ -259,6 +227,14 @@ impl Base for RelocatingNode {
         self.min_section_size
     }
 
+    fn peer_map(&self) -> &PeerMap {
+        &self.peer_map
+    }
+
+    fn peer_map_mut(&mut self) -> &mut PeerMap {
+        &mut self.peer_map
+    }
+
     fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
         if self.relocation_timer_token == token {
             info!(
@@ -272,11 +248,11 @@ impl Base for RelocatingNode {
         Transition::Stay
     }
 
-    fn handle_lost_peer(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{} Received LostPeer - {}", self, pub_id);
+    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} - Disconnected from {}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
-            debug!("{} Lost bootstrap connection to {}.", self, pub_id);
+            debug!("{} - Lost bootstrap connection to {}.", self, pub_id);
             outbox.send_event(Event::Terminated);
             Transition::Terminate
         } else {
@@ -296,7 +272,7 @@ impl Base for RelocatingNode {
 
     fn handle_hop_message(
         &mut self,
-        hop_msg: HopMessage,
+        msg: HopMessage,
         pub_id: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
@@ -304,7 +280,7 @@ impl Base for RelocatingNode {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        if let Some(routing_msg) = self.filter_hop_message(hop_msg)? {
+        if let Some(routing_msg) = self.filter_hop_message(msg)? {
             Ok(self.dispatch_routing_message(routing_msg))
         } else {
             Ok(Transition::Stay)

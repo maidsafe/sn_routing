@@ -14,7 +14,7 @@ use super::{
 };
 use crate::error::RoutingError;
 use crate::id::PublicId;
-use crate::messages::SignedMessage;
+use crate::messages::SignedRoutingMessage;
 use crate::routing_table::{Authority, Error};
 use crate::sha3::Digest256;
 use crate::utils::LogIdent;
@@ -496,7 +496,10 @@ impl Chain {
 
     /// Appends a list of `ProvingSection`s that authenticates the message, if possible. The last
     /// section will then belong to the next hop.
-    pub fn extend_proving_sections(&self, msg: &mut SignedMessage) -> Result<(), RoutingError> {
+    pub fn extend_proving_sections(
+        &self,
+        msg: &mut SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
         let dst_name = msg.routing_message().dst.name();
 
         while (msg.previous_hop()).map_or(false, |hop| !self.is_trusted(hop, false)) {
@@ -1066,7 +1069,7 @@ impl Chain {
             return Err(Error::CannotRoute);
         }
 
-        Ok(*Chain::get_routeth_name(names, &target, route))
+        Ok(*Self::get_routeth_name(names, &target, route))
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
@@ -1378,6 +1381,7 @@ mod tests {
     use serde::Serialize;
     use std::collections::{BTreeSet, HashMap};
     use std::str::FromStr;
+    use unwrap::unwrap;
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),

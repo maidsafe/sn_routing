@@ -7,16 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::routing_table::Error as RoutingTableError;
-use crate::action::Action;
-use crate::crust::CrustError;
-use crate::event::Event;
-use crate::id::PublicId;
-use crate::sha3::Digest256;
+use crate::{action::Action, event::Event, id::PublicId, quic_p2p, sha3::Digest256};
 use config_file_handler::Error as ConfigFileHandlerError;
-use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
+use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
+use quick_error::quick_error;
 use safe_crypto;
-use std::sync::mpsc::{RecvError, SendError};
+use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
 pub type Result<T> = ::std::result::Result<T, RoutingError>;
@@ -30,21 +27,37 @@ pub enum InterfaceError {
     NotConnected,
     /// We are not in a state to handle the action.
     InvalidState,
-    /// Error while trying to receive a message from a channel
-    ChannelRxError(RecvError),
-    /// Error while trying to transmit an event via a channel
-    EventSenderError(EventSenderError<MaidSafeEventCategory, Action>),
+    /// Error while trying to receive a message from a multiple-producer-single-consumer channel
+    MpscRecvError(mpsc::RecvError),
+    /// Error while trying to receive a message from a multiple-producer-multiple-consumer channel
+    MpmcRecvError(mpmc::RecvError),
+    /// Error while trying to send an event to a multiple-producer-multiple-consumer channel
+    MpmcSendEventError(mpmc::SendError<Event>),
+    /// Error while trying to send an action to a multiple-producer-multiple-consumer channel
+    MpmcSendActionError(mpmc::SendError<Action>),
 }
 
-impl From<EventSenderError<MaidSafeEventCategory, Action>> for InterfaceError {
-    fn from(error: EventSenderError<MaidSafeEventCategory, Action>) -> InterfaceError {
-        InterfaceError::EventSenderError(error)
+impl From<mpsc::RecvError> for InterfaceError {
+    fn from(error: mpsc::RecvError) -> InterfaceError {
+        InterfaceError::MpscRecvError(error)
     }
 }
 
-impl From<RecvError> for InterfaceError {
-    fn from(error: RecvError) -> InterfaceError {
-        InterfaceError::ChannelRxError(error)
+impl From<mpmc::RecvError> for InterfaceError {
+    fn from(error: mpmc::RecvError) -> InterfaceError {
+        InterfaceError::MpmcRecvError(error)
+    }
+}
+
+impl From<mpmc::SendError<Event>> for InterfaceError {
+    fn from(error: mpmc::SendError<Event>) -> InterfaceError {
+        InterfaceError::MpmcSendEventError(error)
+    }
+}
+
+impl From<mpmc::SendError<Action>> for InterfaceError {
+    fn from(error: mpmc::SendError<Action>) -> InterfaceError {
+        InterfaceError::MpmcSendActionError(error)
     }
 }
 
@@ -89,10 +102,10 @@ pub enum RoutingError {
     Interface(InterfaceError),
     /// i/o error
     Io(::std::io::Error),
-    /// Crust error
-    Crust(CrustError),
+    /// Network layer error
+    Network(quic_p2p::Error),
     /// Channel sending error
-    SendEventError(SendError<Event>),
+    MpscSendEventError(mpsc::SendError<Event>),
     /// Current state is invalid for the operation
     InvalidStateForOperation,
     /// Serialisation Error
@@ -160,15 +173,15 @@ impl From<InterfaceError> for RoutingError {
     }
 }
 
-impl From<CrustError> for RoutingError {
-    fn from(error: CrustError) -> RoutingError {
-        RoutingError::Crust(error)
+impl From<quic_p2p::Error> for RoutingError {
+    fn from(error: quic_p2p::Error) -> RoutingError {
+        RoutingError::Network(error)
     }
 }
 
-impl From<SendError<Event>> for RoutingError {
-    fn from(error: SendError<Event>) -> RoutingError {
-        RoutingError::SendEventError(error)
+impl From<mpsc::SendError<Event>> for RoutingError {
+    fn from(error: mpsc::SendError<Event>) -> RoutingError {
+        RoutingError::MpscSendEventError(error)
     }
 }
 

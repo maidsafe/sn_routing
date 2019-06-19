@@ -16,6 +16,7 @@ use std::{
     ops::Deref,
     rc::Rc,
 };
+use unwrap::unwrap;
 
 /// Wrapper for `Observation` and optionally its creator, depending on the consensus mode.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]

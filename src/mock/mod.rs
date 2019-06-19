@@ -6,14 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/// Mock version of Crust.
-pub mod crust;
-
 /// Mock version of Parsec.
 #[cfg(feature = "mock_parsec")]
 pub(crate) mod parsec;
 
-/// Mock version of Quick-P2P
-// TODO: remove this `allow(unused)`
-#[allow(unused)]
-pub(crate) mod quick_p2p;
+/// Mock version of Quic-P2P
+pub(crate) mod quic_p2p;
+
+pub use self::quic_p2p::Network;

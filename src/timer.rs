@@ -13,14 +13,11 @@ mod implementation {
     use crate::{
         action::Action,
         time::{Duration, Instant},
-        types::RoutingActionSender,
     };
+    use crossbeam_channel as mpmc;
     use itertools::Itertools;
     use maidsafe_utilities::thread::{self, Joiner};
-    use std::cell::RefCell;
-    use std::collections::BTreeMap;
-    use std::rc::Rc;
-    use std::sync::mpsc::{self, Receiver, RecvError, RecvTimeoutError, SyncSender};
+    use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc};
 
     struct Detail {
         expiry: Instant,
@@ -35,13 +32,13 @@ mod implementation {
 
     struct Inner {
         next_token: u64,
-        tx: SyncSender<Detail>,
+        tx: mpsc::SyncSender<Detail>,
         _worker: Joiner,
     }
 
     impl Timer {
         /// Creates a new timer, passing a channel sender used to send `Timeout` events.
-        pub fn new(sender: RoutingActionSender) -> Self {
+        pub fn new(sender: mpmc::Sender<Action>) -> Self {
             let (tx, rx) = mpsc::sync_channel(1);
 
             let worker = thread::named("Timer", move || Self::run(sender, rx));
@@ -75,7 +72,7 @@ mod implementation {
             })
         }
 
-        fn run(sender: RoutingActionSender, rx: Receiver<Detail>) {
+        fn run(sender: mpmc::Sender<Action>, rx: mpsc::Receiver<Detail>) {
             let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
 
             loop {
@@ -85,8 +82,8 @@ mod implementation {
                         let duration = *t - now;
                         match rx.recv_timeout(duration) {
                             Ok(d) => Some(d),
-                            Err(RecvTimeoutError::Timeout) => None,
-                            Err(RecvTimeoutError::Disconnected) => break,
+                            Err(mpsc::RecvTimeoutError::Timeout) => None,
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         }
                     } else {
                         None
@@ -94,7 +91,7 @@ mod implementation {
                 } else {
                     match rx.recv() {
                         Ok(d) => Some(d),
-                        Err(RecvError) => break,
+                        Err(mpsc::RecvError) => break,
                     }
                 };
 
@@ -124,32 +121,16 @@ mod implementation {
     mod tests {
         use super::*;
         use crate::action::Action;
-        use crate::types::RoutingActionSender;
-        use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-        use std::sync::mpsc;
         use std::thread;
         use std::time::{Duration, Instant};
 
         #[test]
         fn schedule() {
-            let (action_sender, action_receiver) = mpsc::channel();
-            let (category_sender, category_receiver) = mpsc::channel();
-            let routing_event_category = MaidSafeEventCategory::Routing;
-            let sender = RoutingActionSender::new(
-                action_sender,
-                routing_event_category,
-                category_sender.clone(),
-            );
+            let (action_tx, action_rx) = mpmc::unbounded();
             let interval = Duration::from_millis(500);
             let instant_when_added;
             let check_no_events_received = || {
-                let category = category_receiver.try_recv();
-                assert!(
-                    category.is_err(),
-                    "Expected no event, but received {:?}",
-                    category
-                );
-                let action = action_receiver.try_recv();
+                let action = action_rx.try_recv();
                 assert!(
                     action.is_err(),
                     "Expected no event, but received {:?}",
@@ -157,7 +138,7 @@ mod implementation {
                 );
             };
             {
-                let timer = Timer::new(sender);
+                let timer = Timer::new(action_tx);
 
                 // Add deadlines, the first to time out after 2.5s, the second after 2.0s, and so on
                 // down to 500ms.
@@ -174,17 +155,7 @@ mod implementation {
                     check_no_events_received();
                     thread::sleep(interval);
 
-                    let category = category_receiver.try_recv();
-                    match category.expect("Should have received a category.") {
-                        MaidSafeEventCategory::Routing => (),
-                        unexpected_category => {
-                            panic!(
-                                "Expected `MaidSafeEventCategory::Routing`, but received {:?}",
-                                unexpected_category
-                            );
-                        }
-                    }
-                    let action = action_receiver.try_recv();
+                    let action = action_rx.try_recv();
                     match action.expect("Should have received an action.") {
                         Action::HandleTimeout(token) => assert_eq!(token, u64::from(count - i - 1)),
                         unexpected_action => {
@@ -213,15 +184,8 @@ mod implementation {
 
         #[test]
         fn heavy_duty_time_out() {
-            let (action_sender, _action_receiver) = mpsc::channel();
-            let (category_sender, _category_receiver) = mpsc::channel();
-            let routing_event_category = MaidSafeEventCategory::Routing;
-            let sender = RoutingActionSender::new(
-                action_sender,
-                routing_event_category,
-                category_sender.clone(),
-            );
-            let timer = Timer::new(sender);
+            let (action_tx, _) = mpmc::unbounded();
+            let timer = Timer::new(action_tx);
             for _ in 0..1000 {
                 let _ = timer.schedule(Duration::new(0, 3000));
             }
@@ -232,13 +196,15 @@ mod implementation {
 #[cfg(feature = "mock_base")]
 mod implementation {
     use crate::{
+        action::Action,
         time::{Duration, Instant},
-        types::RoutingActionSender,
     };
+    use crossbeam_channel as mpmc;
     use itertools::Itertools;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
+    use unwrap::unwrap;
 
     struct Inner {
         next_token: u64,
@@ -251,7 +217,7 @@ mod implementation {
     }
 
     impl Timer {
-        pub fn new(_action_sender: RoutingActionSender) -> Self {
+        pub fn new(_action_sender: mpmc::Sender<Action>) -> Self {
             Timer {
                 inner: Rc::new(RefCell::new(Inner {
                     next_token: 0,

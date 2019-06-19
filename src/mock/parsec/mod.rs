@@ -224,7 +224,7 @@ where
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Request<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>);
 
 impl<T: NetworkEvent, P: PublicId> Request<T, P> {
@@ -233,7 +233,7 @@ impl<T: NetworkEvent, P: PublicId> Request<T, P> {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct Response<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>);
 
 impl<T: NetworkEvent, P: PublicId> Response<T, P> {

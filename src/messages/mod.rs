@@ -6,35 +6,41 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod direct;
 mod request;
 mod response;
 
-pub use self::request::Request;
-pub use self::response::{AccountInfo, Response};
+pub use self::{
+    direct::{DirectMessage, SignedDirectMessage},
+    request::Request,
+    response::{AccountInfo, Response},
+};
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
-use crate::ack_manager::Ack;
-use crate::chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo};
-use crate::data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES;
-use crate::error::{BootstrapResponseError, Result, RoutingError};
-use crate::event::Event;
-use crate::id::{FullId, PublicId};
-use crate::parsec;
-use crate::routing_table::Authority;
-use crate::routing_table::{Prefix, Xorable};
-use crate::sha3::Digest256;
-use crate::types::MessageId;
-use crate::xor_name::XorName;
-use crate::XorTargetInterval;
+use crate::{
+    ack_manager::Ack,
+    chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo},
+    data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+    error::{Result, RoutingError},
+    event::Event,
+    id::{FullId, PublicId},
+    routing_table::{Authority, Prefix, Xorable},
+    sha3::Digest256,
+    types::MessageId,
+    xor_name::XorName,
+    XorTargetInterval,
+};
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use safe_crypto;
-use safe_crypto::{SecretSignKey, Signature};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::fmt::{self, Debug, Formatter};
-use std::result::Result as StdResult;
-use std::time::Duration;
+#[cfg(test)]
+use safe_crypto::Signature;
+use safe_crypto::{self, SecretSignKey};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    fmt::{self, Debug, Formatter},
+    time::Duration,
+};
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
@@ -53,102 +59,14 @@ pub const CLIENT_GET_PRIORITY: u8 = 3;
 ///
 /// This is the only type allowed to be sent / received on the network.
 #[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
     /// A message sent between two nodes directly
-    Direct(DirectMessage),
+    Direct(SignedDirectMessage),
     /// A message sent across the network (in transit)
     Hop(HopMessage),
-}
-
-impl Message {
-    pub fn priority(&self) -> u8 {
-        match *self {
-            Message::Direct(ref content) => content.priority(),
-            Message::Hop(ref content) => content.content.content.priority(),
-        }
-    }
-}
-
-/// Messages sent via a direct connection.
-///
-/// Allows routing to directly send specific messages between nodes.
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-pub enum DirectMessage {
-    /// Sent from members of a section or group message's source authority to the first hop. The
-    /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(Digest256, Signature),
-    /// Sent from a newly connected client to the bootstrap node to prove that it is the owner of
-    /// the client's claimed public ID.
-    BootstrapRequest(Signature),
-    /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
-    /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
-    BootstrapResponse(StdResult<(), BootstrapResponseError>),
-    /// Sent from a node which is still joining the network to another node, to allow the latter to
-    /// add the former to its routing table.
-    CandidateInfo {
-        /// `PublicId` from before relocation.
-        old_public_id: PublicId,
-        /// `PublicId` from after relocation.
-        new_public_id: PublicId,
-        /// Signature of concatenated `PublicId`s using the pre-relocation key.
-        signature_using_old: Signature,
-        /// Signature of concatenated `PublicId`s and `signature_using_old` using the
-        /// post-relocation key.
-        signature_using_new: Signature,
-        /// Client authority from after relocation.
-        new_client_auth: Authority<XorName>,
-    },
-    /// Request a proof to be provided by the joining node.
-    ///
-    /// This is sent from member of Group Y to the joining node.
-    ResourceProof {
-        /// seed of proof
-        seed: Vec<u8>,
-        /// size of the proof
-        target_size: usize,
-        /// leading zero bits of the hash of the proof
-        difficulty: u8,
-    },
-    /// Provide a proof to the network
-    ///
-    /// This is sent from the joining node to member of Group Y
-    ResourceProofResponse {
-        /// The index of this part of the resource proof.
-        part_index: usize,
-        /// The total number of parts.
-        part_count: usize,
-        /// Proof to be presented
-        proof: Vec<u8>,
-        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
-        /// the difficulty requirement
-        leading_zero_bytes: u64,
-    },
-    /// Receipt of a part of a ResourceProofResponse
-    ResourceProofResponseReceipt,
-    /// Sent from a proxy node to its client to indicate that the client exceeded its rate limit.
-    ProxyRateLimitExceeded { ack: Ack },
-    /// Poke a node to send us the first gossip request
-    ParsecPoke(u64),
-    /// Parsec request message
-    ParsecRequest(u64, parsec::Request),
-    /// Parsec response message
-    ParsecResponse(u64, parsec::Response),
-}
-
-impl DirectMessage {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            DirectMessage::ResourceProofResponse { .. } => 9,
-            _ => 0,
-        }
-    }
 }
 
 /// An individual hop message that represents a part of the route of a message in transit.
@@ -157,10 +75,10 @@ impl DirectMessage {
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
 /// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
 #[cfg_attr(feature = "mock_serialise", derive(Clone))]
-#[derive(Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct HopMessage {
     /// Wrapped signed message.
-    pub content: SignedMessage,
+    pub content: SignedRoutingMessage,
     /// Route number; corresponds to the index of the peer in the section of target peers being
     /// considered for the next hop.
     pub route: u8,
@@ -170,9 +88,8 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
-    #[allow(clippy::new_ret_no_self)]
     pub fn new(
-        content: SignedMessage,
+        content: SignedRoutingMessage,
         route: u8,
         sent_to: BTreeSet<XorName>,
     ) -> Result<HopMessage> {
@@ -186,7 +103,7 @@ impl HopMessage {
 
 /// Wrapper around a routing message, signed by the originator of the message.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SignedMessage {
+pub struct SignedRoutingMessage {
     /// A request or response type message.
     content: RoutingMessage,
     /// Nodes sending the message (those expected to sign it)
@@ -199,7 +116,7 @@ pub struct SignedMessage {
     proving_sections: Vec<ProvingSection>,
 }
 
-impl SignedMessage {
+impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     ///
     /// Requires the list `src_section` of nodes who should sign this message.
@@ -208,11 +125,11 @@ impl SignedMessage {
         content: RoutingMessage,
         full_id: &FullId,
         src_section: T,
-    ) -> Result<SignedMessage> {
+    ) -> Result<SignedRoutingMessage> {
         let sk = full_id.signing_private_key();
         let mut signatures = ProofSet::new();
         let _ = signatures.add_proof(Proof::new(*full_id.public_id(), sk, &content)?);
-        Ok(SignedMessage {
+        Ok(SignedRoutingMessage {
             content,
             src_section: src_section.into(),
             signatures,
@@ -315,7 +232,7 @@ impl SignedMessage {
     }
 
     /// Adds all signatures from the given message, without validating them.
-    pub fn add_signatures(&mut self, msg: SignedMessage) {
+    pub fn add_signatures(&mut self, msg: SignedRoutingMessage) {
         if self.content.src.is_multiple() {
             self.signatures.merge(msg.signatures);
         }
@@ -557,26 +474,6 @@ pub enum MessageContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Send our Crust connection info encrypted to a node we wish to connect to and for which we
-    /// have the keys.
-    ConnectionInfoRequest {
-        /// Encrypted Crust connection info.
-        encrypted_conn_info: Vec<u8>,
-        /// The sender's public ID.
-        pub_id: PublicId,
-        /// The message's unique identifier.
-        msg_id: MessageId,
-    },
-    /// Respond to a `ConnectionInfoRequest` with our Crust connection info encrypted to the
-    /// requester.
-    ConnectionInfoResponse {
-        /// Encrypted Crust connection info.
-        encrypted_conn_info: Vec<u8>,
-        /// The sender's public ID.
-        pub_id: PublicId,
-        /// The message's unique identifier.
-        msg_id: MessageId,
-    },
     /// Reply with the address range into which the joining node should move.
     RelocateResponse {
         /// The interval into which the joining node should join.
@@ -585,6 +482,15 @@ pub enum MessageContent {
         section: (Prefix<XorName>, BTreeSet<PublicId>),
         /// The message's unique identifier.
         message_id: MessageId,
+    },
+    /// Send a request containing our connection info to a member of a section to connect to us.
+    ConnectionRequest {
+        /// The sender's public ID.
+        pub_id: PublicId,
+        /// Encrypted sender's connection info.
+        encrypted_conn_info: Vec<u8>,
+        /// The message's unique identifier.
+        msg_id: MessageId,
     },
     /// Inform neighbours about our new section. The payload is just a unique hash, as the actual
     /// information is included in the `SignedMessage`'s proving sections anyway.
@@ -631,50 +537,6 @@ impl MessageContent {
     }
 }
 
-impl Debug for DirectMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        use self::DirectMessage::*;
-        match *self {
-            MessageSignature(ref digest, _) => {
-                write!(formatter, "MessageSignature ({:.14}, ..)", HexFmt(&digest))
-            }
-            BootstrapRequest(_) => write!(formatter, "BootstrapRequest"),
-            BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
-            CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
-            ResourceProof {
-                ref seed,
-                ref target_size,
-                ref difficulty,
-            } => write!(
-                formatter,
-                "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
-                seed, target_size, difficulty
-            ),
-            ResourceProofResponse {
-                part_index,
-                part_count,
-                ref proof,
-                leading_zero_bytes,
-            } => write!(
-                formatter,
-                "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
-                 {:?} }}",
-                part_index + 1,
-                part_count,
-                proof.len(),
-                leading_zero_bytes
-            ),
-            ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
-            ProxyRateLimitExceeded { ref ack } => {
-                write!(formatter, "ProxyRateLimitExceeded({:?})", ack)
-            }
-            ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
-            ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
-            ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
-        }
-    }
-}
-
 impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
@@ -685,11 +547,11 @@ impl Debug for HopMessage {
     }
 }
 
-impl Debug for SignedMessage {
+impl Debug for SignedRoutingMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SignedMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?}, \
+            "SignedRoutingMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?}, \
              proving_sections: {:?} }}",
             self.content, self.src_section, self.signatures, self.proving_sections
         )
@@ -710,22 +572,13 @@ impl Debug for MessageContent {
                 "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
                 old_public_id, old_client_auth, message_id
             ),
-            ConnectionInfoRequest {
+            ConnectionRequest {
                 ref pub_id,
                 ref msg_id,
                 ..
             } => write!(
                 formatter,
-                "ConnectionInfoRequest {{ {:?}, {:?}, .. }}",
-                pub_id, msg_id
-            ),
-            ConnectionInfoResponse {
-                ref pub_id,
-                ref msg_id,
-                ..
-            } => write!(
-                formatter,
-                "ConnectionInfoResponse {{ {:?}, {:?}, .. }}",
+                "ConnectionRequest {{ {:?}, {:?}, .. }}",
                 pub_id, msg_id
             ),
             RelocateResponse {
@@ -913,16 +766,16 @@ mod tests {
     use crate::xor_name::XorName;
     use maidsafe_utilities::serialisation::serialise;
     use rand;
-    use safe_crypto;
-    use safe_crypto::SIGNATURE_BYTES;
+    use safe_crypto::{self, Signature, SIGNATURE_BYTES};
     use std::iter;
+    use unwrap::unwrap;
 
     #[test]
-    fn signed_message_check_integrity() {
+    fn signed_routing_message_check_integrity() {
         let min_section_size = 1000;
         let name: XorName = rand::random();
         let full_id = FullId::new();
-        let routing_message = RoutingMessage {
+        let msg = RoutingMessage {
             src: Authority::Client {
                 client_id: *full_id.public_id(),
                 proxy_node_name: name,
@@ -932,30 +785,28 @@ mod tests {
                 message_id: MessageId::new(),
             },
         };
-        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id, None);
+        let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg.clone(), &full_id, None));
 
-        let mut signed_message = unwrap!(signed_message_result);
+        assert_eq!(msg, *signed_msg.routing_message());
+        assert_eq!(1, signed_msg.signatures.len());
+        assert!(signed_msg.signatures.contains_id(full_id.public_id()));
 
-        assert_eq!(routing_message, *signed_message.routing_message());
-        assert_eq!(1, signed_message.signatures.len());
-        assert!(signed_message.signatures.contains_id(full_id.public_id()));
-
-        unwrap!(signed_message.check_integrity(min_section_size));
+        unwrap!(signed_msg.check_integrity(min_section_size));
 
         let full_id = FullId::new();
-        let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
+        let bytes_to_sign = unwrap!(serialise(&(&msg, full_id.public_id())));
         let signature = full_id.signing_private_key().sign_detached(&bytes_to_sign);
 
-        signed_message.signatures.sigs = iter::once((*full_id.public_id(), signature)).collect();
+        signed_msg.signatures.sigs = iter::once((*full_id.public_id(), signature)).collect();
 
         // Invalid because it's not signed by the sender:
-        assert!(signed_message.check_integrity(min_section_size).is_err());
+        assert!(signed_msg.check_integrity(min_section_size).is_err());
         // However, the signature itself should be valid:
-        assert!(signed_message.has_enough_sigs(min_section_size));
+        assert!(signed_msg.has_enough_sigs(min_section_size));
     }
 
     #[test]
-    fn msg_signatures() {
+    fn signed_routing_message_signatures() {
         let min_section_size = 8;
 
         let full_id_0 = FullId::new();
@@ -974,7 +825,7 @@ mod tests {
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
         let name: XorName = rand::random();
-        let routing_message = RoutingMessage {
+        let msg = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
             content: part,
@@ -992,7 +843,7 @@ mod tests {
             prefix,
             None,
         ));
-        let mut signed_msg = unwrap!(SignedMessage::new(routing_message, &full_id_0, src_section));
+        let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg, &full_id_0, src_section));
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.

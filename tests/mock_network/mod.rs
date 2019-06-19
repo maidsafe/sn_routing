@@ -26,9 +26,9 @@ pub use self::utils::{
 use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
-use routing::mock_crust::{Endpoint, Network};
 use routing::{
-    test_consts, BootstrapConfig, Event, EventStream, Prefix, PublicId, XorName, XorTargetInterval,
+    mock::Network, test_consts, Event, EventStream, NetworkConfig, Prefix, XorName,
+    XorTargetInterval,
 };
 
 pub const MIN_SECTION_SIZE: usize = 3;
@@ -51,7 +51,7 @@ fn test_nodes(percentage_size: usize) {
     let size = MIN_SECTION_SIZE * percentage_size / 100;
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, size);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 fn nodes_with_prefix_mut<'a>(
@@ -64,20 +64,20 @@ fn nodes_with_prefix_mut<'a>(
 }
 
 #[test]
+// TODO (quic-p2p): This test requires bootstrap blacklist which isn't implemented in quic-p2p.
+#[ignore]
 fn disconnect_on_rebootstrap() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, 2);
+
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[1].handle.endpoint()]);
-    nodes.push(
-        TestNode::builder(&network)
-            .bootstrap_config(bootstrap_config)
-            .endpoint(Endpoint(2))
-            .create(),
-    );
+    let config = NetworkConfig::node().with_hard_coded_contact(nodes[1].endpoint());
+    nodes.push(TestNode::builder(&network).network_config(config).create());
     let _ = poll_all(&mut nodes, &mut []);
+
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
-    assert!(!unwrap!(nodes.last()).handle.is_connected(&nodes[1].handle));
+    assert!(!network.is_connected(&nodes[2].endpoint(), &nodes[1].endpoint()));
+
     expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminated);
 }
 
@@ -85,11 +85,11 @@ fn disconnect_on_rebootstrap() {
 fn candidate_timeout_resource_proof() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.insert(
         0,
         TestNode::builder(&network)
-            .bootstrap_config(bootstrap_config)
+            .network_config(network_config)
             .create(),
     );
 
@@ -134,7 +134,7 @@ fn single_section() {
     let sec_size = 10;
     let network = Network::new(sec_size, None);
     let mut nodes = create_connected_nodes(&network, sec_size);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 #[test]
@@ -163,43 +163,38 @@ fn client_connects_to_nodes() {
 fn node_joins_in_front() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, 2 * MIN_SECTION_SIZE);
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.insert(
         0,
         TestNode::builder(&network)
-            .bootstrap_config(bootstrap_config)
+            .network_config(network_config)
             .create(),
     );
     poll_and_resend(&mut nodes, &mut []);
 
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 #[test]
 fn joining_node_with_ignoring_candidate_info() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
+    let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     // Make half of the elders ingoring the candidate_info to simulate lagging.
     // Without the resending, this will block the joining node to be approved.
     for node in nodes.iter_mut().take(MIN_SECTION_SIZE / 2) {
         node.inner.set_ignore_candidate_info_counter(1);
     }
-    nodes.push(
-        TestNode::builder(&network)
-            .bootstrap_config(bootstrap_config.clone())
-            .create(),
-    );
+    nodes.push(TestNode::builder(&network).network_config(config).create());
     let dummy = |_nodes: &[TestNode]| false;
     poll_and_resend_until(&mut nodes, &mut [], &dummy, Some(20));
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 #[test]
 fn multiple_joining_nodes() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-    let bootstrap_config = BootstrapConfig::with_contacts(&[nodes[0].handle.endpoint()]);
 
     while nodes.len() < 40 {
         info!("Size {}", nodes.len());
@@ -208,9 +203,10 @@ fn multiple_joining_nodes() {
         // can handle this, either by adding the nodes in sequence or by rejecting some.
         let count = 5;
         for _ in 0..count {
+            let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
             nodes.push(
                 TestNode::builder(&network)
-                    .bootstrap_config(bootstrap_config.clone())
+                    .network_config(network_config)
                     .create(),
             );
         }
@@ -224,7 +220,7 @@ fn multiple_joining_nodes() {
             .map(TestNode::name)
             .collect();
         info!("Added Nodes: {:?}", nodes_added);
-        verify_invariant_for_all_nodes(&mut nodes);
+        verify_invariant_for_all_nodes(&network, &mut nodes);
         assert!(
             !nodes_added.is_empty(),
             "Should always handle at least one node"
@@ -236,7 +232,7 @@ fn multiple_joining_nodes() {
 fn multi_split() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 struct SimultaneousJoiningNode {
@@ -253,7 +249,7 @@ struct SimultaneousJoiningNode {
 
 // Proceed with testing joining nodes at the same time with the given configuration.
 fn simultaneous_joining_nodes(
-    network: Network<PublicId>,
+    network: Network,
     mut nodes: Nodes,
     nodes_to_add_setup: &[SimultaneousJoiningNode],
 ) {
@@ -282,20 +278,18 @@ fn simultaneous_joining_nodes(
 
         // Create nodes and find proxies from the given prefixes
         let node_to_add = {
-            // Get random bootstrap node from within proxy_prefix
-            let bootstrap_config = {
-                let mut compatible_proxies =
-                    nodes_with_prefix_mut(&mut nodes, &setup.proxy_prefix).collect_vec();
-                rng.shuffle(&mut compatible_proxies);
-
-                BootstrapConfig::with_contacts(&[unwrap!(nodes.first()).handle.endpoint()])
-            };
-
             // Get random new TestNode from within src_prefix
             loop {
-                let node = TestNode::builder(&network)
-                    .bootstrap_config(bootstrap_config.clone())
-                    .create();
+                // Get random bootstrap node from within proxy_prefix
+                let config = {
+                    let mut compatible_proxies =
+                        nodes_with_prefix_mut(&mut nodes, &setup.proxy_prefix).collect_vec();
+                    rng.shuffle(&mut compatible_proxies);
+
+                    NetworkConfig::node().with_hard_coded_contact(unwrap!(nodes.first()).endpoint())
+                };
+
+                let node = TestNode::builder(&network).network_config(config).create();
                 if setup.src_section_prefix.matches(&node.name()) {
                     break node;
                 }
@@ -325,7 +319,7 @@ fn simultaneous_joining_nodes(
         "Should be full node: {:?}",
         non_full_nodes
     );
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 #[test]

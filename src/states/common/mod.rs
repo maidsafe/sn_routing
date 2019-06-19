@@ -16,7 +16,7 @@ mod relocated_not_established;
 
 pub use self::{
     approved::Approved,
-    base::{from_crust_bytes, Base},
+    base::{from_network_bytes, Base},
     bootstrapped::Bootstrapped,
     bootstrapped_not_established::BootstrappedNotEstablished,
     relocated::Relocated,

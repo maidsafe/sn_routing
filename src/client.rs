@@ -6,35 +6,39 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::action::Action;
-use crate::cache::NullCache;
-use crate::config_handler::{self, Config};
-use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
-use crate::error::{InterfaceError, RoutingError};
-use crate::event::Event;
 #[cfg(feature = "mock_base")]
 use crate::event_stream::{EventStepper, EventStream};
-use crate::id::{FullId, PublicId};
-use crate::messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY};
-use crate::outbox::{EventBox, EventBuf};
-use crate::routing_table::Authority;
-use crate::state_machine::{State, StateMachine};
-use crate::states::{BootstrappingPeer, TargetState};
-use crate::types::{MessageId, RoutingActionSender};
-use crate::xor_name::XorName;
-use crate::{BootstrapConfig, MIN_SECTION_SIZE};
-#[cfg(not(feature = "mock_base"))]
-use crust::read_config_file as read_bootstrap_config_file;
+use crate::{
+    action::Action,
+    cache::NullCache,
+    config_handler::{self, Config},
+    data::{EntryAction, ImmutableData, MutableData, PermissionSet, User},
+    error::{InterfaceError, RoutingError},
+    event::Event,
+    id::{FullId, PublicId},
+    messages::{Request, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY},
+    outbox::{EventBox, EventBuf},
+    quic_p2p::OurType,
+    routing_table::Authority,
+    state_machine::{State, StateMachine},
+    states::{BootstrappingPeer, TargetState},
+    types::MessageId,
+    xor_name::XorName,
+    NetworkConfig, MIN_SECTION_SIZE,
+};
+use crossbeam_channel as mpmc;
 #[cfg(not(feature = "mock_base"))]
 use maidsafe_utilities::thread::{self, Joiner};
 #[cfg(not(feature = "mock_base"))]
 use safe_crypto;
 use safe_crypto::PublicSignKey;
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::mpsc::{channel, Receiver, Sender};
-#[cfg(feature = "mock_base")]
-use std::sync::mpsc::{RecvError, TryRecvError};
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::mpsc,
+    time::Duration,
+};
+#[cfg(not(feature = "mock_base"))]
+use unwrap::unwrap;
 
 /// Interface for sending and receiving messages to and from a network of nodes in the role of a
 /// client.
@@ -42,11 +46,11 @@ use std::time::Duration;
 /// A client is connected to the network via one or more nodes. Messages are never routed via a
 /// client, and a client cannot be part of a section authority.
 pub struct Client {
-    interface_result_tx: Sender<Result<(), InterfaceError>>,
-    interface_result_rx: Receiver<Result<(), InterfaceError>>,
+    interface_result_tx: mpsc::Sender<Result<(), InterfaceError>>,
+    interface_result_rx: mpsc::Receiver<Result<(), InterfaceError>>,
 
     #[cfg(not(feature = "mock_base"))]
-    action_sender: RoutingActionSender,
+    action_sender: mpmc::Sender<Action>,
     #[cfg(not(feature = "mock_base"))]
     _joiner: Joiner,
 
@@ -60,32 +64,30 @@ impl Client {
     fn make_state_machine(
         keys: Option<FullId>,
         outbox: &mut EventBox,
-        bootstrap_config: Option<BootstrapConfig>,
+        mut network_config: NetworkConfig,
         config: Option<Config>,
         msg_expiry_dur: Duration,
-    ) -> (RoutingActionSender, StateMachine) {
+    ) -> (mpmc::Sender<Action>, StateMachine) {
         let full_id = keys.unwrap_or_else(FullId::new);
-        let pub_id = *full_id.public_id();
         let config = config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
+        network_config.our_type = OurType::Client;
+
         StateMachine::new(
-            move |action_sender, crust_service, timer, _outbox2| {
-                BootstrappingPeer::new(
+            move |action_sender, network_service, timer, _outbox2| {
+                State::BootstrappingPeer(BootstrappingPeer::new(
                     action_sender,
                     Box::new(NullCache),
                     TargetState::Client { msg_expiry_dur },
-                    crust_service,
+                    network_service,
                     full_id,
                     min_section_size,
                     timer,
-                )
-                .map(State::BootstrappingPeer)
-                .unwrap_or(State::Terminated)
+                ))
             },
-            pub_id,
-            bootstrap_config,
+            network_config,
             outbox,
         )
     }
@@ -457,15 +459,16 @@ impl Client {
     /// cryptographically secure and uses section consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     pub fn new(
-        event_sender: Sender<Event>,
+        event_sender: mpsc::Sender<Event>,
         keys: Option<FullId>,
-        bootstrap_config: Option<BootstrapConfig>,
+        network_config: Option<NetworkConfig>,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
         safe_crypto::init()?; // enable shared global (i.e. safe to multithread now)
 
-        let (tx, rx) = channel();
-        let (get_action_sender_tx, get_action_sender_rx) = channel();
+        let (tx, rx) = mpsc::channel();
+        let (get_action_sender_tx, get_action_sender_rx) = mpsc::channel();
+        let network_config = network_config.unwrap_or_default();
 
         let joiner = thread::named("Client thread", move || {
             // start the handler for routing with a restriction to become a full node
@@ -473,7 +476,7 @@ impl Client {
             let (action_sender, mut machine) = Self::make_state_machine(
                 keys,
                 &mut event_buffer,
-                bootstrap_config,
+                network_config,
                 None,
                 msg_expiry_dur,
             );
@@ -511,16 +514,9 @@ impl Client {
 
     /// Returns the `PublicId` of this client.
     pub fn id(&self) -> Result<PublicId, InterfaceError> {
-        let (result_tx, result_rx) = channel();
-        self.action_sender.send(Action::GetId {
-            result_tx: result_tx,
-        })?;
+        let (result_tx, result_rx) = mpsc::channel();
+        self.action_sender.send(Action::GetId { result_tx })?;
         Ok(result_rx.recv()?)
-    }
-
-    /// Returns the bootstrap config that this client was created with.
-    pub fn bootstrap_config() -> Result<BootstrapConfig, RoutingError> {
-        Ok(read_bootstrap_config_file()?)
     }
 
     fn send_request(
@@ -543,24 +539,25 @@ impl Client {
 
 #[cfg(feature = "mock_base")]
 impl Client {
-    /// Create a new `Client` for testing with mock crust.
-    #[allow(clippy::new_ret_no_self)]
+    /// Create a new `Client` for testing with mock network.
     pub fn new(
         keys: Option<FullId>,
-        bootstrap_config: Option<BootstrapConfig>,
+        network_config: Option<NetworkConfig>,
         config: Config,
         msg_expiry_dur: Duration,
     ) -> Result<Client, RoutingError> {
+        let network_config = network_config.unwrap_or_default();
+
         let mut event_buffer = EventBuf::new();
         let (_, machine) = Self::make_state_machine(
             keys,
             &mut event_buffer,
-            bootstrap_config,
+            network_config,
             Some(config),
             msg_expiry_dur,
         );
 
-        let (tx, rx) = channel();
+        let (tx, rx) = mpsc::channel();
 
         Ok(Client {
             interface_result_tx: tx,
@@ -582,7 +579,7 @@ impl Client {
         request: Request,
         priority: u8,
     ) -> Result<(), InterfaceError> {
-        // Make sure the state machine has processed any outstanding crust events.
+        // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
         let action = Action::ClientSendRequest {
@@ -611,11 +608,11 @@ impl Client {
 impl EventStepper for Client {
     type Item = Event;
 
-    fn produce_events(&mut self) -> Result<(), RecvError> {
+    fn produce_events(&mut self) -> Result<(), mpmc::RecvError> {
         self.machine.step(&mut self.event_buffer)
     }
 
-    fn try_produce_events(&mut self) -> Result<(), TryRecvError> {
+    fn try_produce_events(&mut self) -> Result<(), mpmc::TryRecvError> {
         self.machine.try_step(&mut self.event_buffer)
     }
 

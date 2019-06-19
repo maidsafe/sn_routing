@@ -9,12 +9,10 @@
 use super::{
     create_connected_nodes, gen_immutable_data, poll_all, sort_nodes_by_distance_to, TestNode,
 };
-use routing::mock_crust::Network;
 use routing::{
-    Authority, Event, EventStream, MessageId, Response, XorName, QUORUM_DENOMINATOR,
+    mock::Network, Authority, Event, EventStream, MessageId, Response, XorName, QUORUM_DENOMINATOR,
     QUORUM_NUMERATOR,
 };
-use std::sync::mpsc;
 
 #[test]
 fn messages_accumulate_with_quorum() {

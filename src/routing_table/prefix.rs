@@ -8,6 +8,7 @@
 
 use super::xorable::Xorable;
 use crate::XorName;
+use lazy_static::lazy_static;
 use std::cmp::{self, Ordering};
 use std::fmt::Result as FmtResult;
 use std::fmt::{Binary, Debug, Formatter};
@@ -320,6 +321,7 @@ impl FromStr for Prefix<XorName> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use unwrap::unwrap;
 
     #[test]
     fn prefix() {

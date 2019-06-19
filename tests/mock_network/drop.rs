@@ -10,7 +10,7 @@ use super::{
     create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use rand::Rng;
-use routing::{mock_crust::Network, Event, EventStream};
+use routing::{mock::Network, Event, EventStream};
 
 // Drop node at index and verify its own section receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
@@ -45,7 +45,7 @@ fn node_drops() {
     // Trigger poll_and_resend to allow remaining nodes to gossip and
     // update their chain accordingly.
     poll_and_resend(&mut nodes, &mut []);
-    verify_invariant_for_all_nodes(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 #[test]

@@ -18,6 +18,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     ops::{Deref, DerefMut},
 };
+use unwrap::unwrap;
 
 #[test]
 fn smoke() {

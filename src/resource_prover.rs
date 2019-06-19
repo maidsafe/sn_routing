@@ -17,9 +17,9 @@ use crate::{
     state_machine::Transition,
     time::{Duration, Instant},
     timer::Timer,
-    types::RoutingActionSender,
     utils::{DisplayDuration, LogIdent},
 };
+use crossbeam_channel as mpmc;
 use itertools::Itertools;
 use maidsafe_utilities::thread;
 use resource_proof::ResourceProof;
@@ -29,6 +29,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
 };
+use unwrap::unwrap;
 
 /// Time (in seconds) between accepting a new candidate (i.e. accumulating an `ExpectCandidate` in
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot
@@ -48,7 +49,7 @@ const APPROVAL_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 /// Handles resource proofs
 pub struct ResourceProver {
     /// Copy of the action sender, used to allow worker threads to contact us
-    action_sender: RoutingActionSender,
+    action_sender: mpmc::Sender<Action>,
     get_approval_timer_token: Option<u64>,
     approval_progress_timer_token: Option<u64>,
     approval_expiry_time: Instant,
@@ -64,7 +65,7 @@ pub struct ResourceProver {
 
 impl ResourceProver {
     /// Create an instance.
-    pub fn new(action_sender: RoutingActionSender, timer: Timer, challenger_count: usize) -> Self {
+    pub fn new(action_sender: mpmc::Sender<Action>, timer: Timer, challenger_count: usize) -> Self {
         ResourceProver {
             action_sender: action_sender,
             get_approval_timer_token: None,
@@ -174,7 +175,7 @@ impl ResourceProver {
                 );
             }
         });
-        // If using mock_crust we want the joiner to drop and join immediately
+        // If using mock network we want the joiner to drop and join immediately
         if cfg!(feature = "mock_base") {
             let _ = joiner;
         } else {
