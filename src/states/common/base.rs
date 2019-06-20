@@ -147,10 +147,8 @@ pub trait Base: Display {
                 self.handle_connection_failure(peer_addr, outbox)
             }
             NewMessage { peer_addr, msg } => self.handle_new_message(peer_addr, msg, outbox),
-            UnsentUserMessage { .. } => {
-                // TODO (quic-p2p): handle unsent messages
-                error!("{} - Unhandled UnsentUserMessage", self);
-                Transition::Stay
+            UnsentUserMessage { peer_addr, msg } => {
+                self.handle_unsent_bytes(peer_addr, msg, outbox)
             }
             SentUserMessage { .. } => {
                 // TODO (quic-p2p): handle sent messages
@@ -234,6 +232,69 @@ pub trait Base: Display {
                 self.handle_direct_message(msg, pub_id, outbox)
             }
         }
+    }
+
+    fn handle_unsent_bytes(
+        &mut self,
+        peer_addr: SocketAddr,
+        bytes: NetworkBytes,
+        outbox: &mut EventBox,
+    ) -> Transition {
+        let result = from_network_bytes(bytes)
+            .and_then(|message| self.handle_unsent_message(peer_addr, message, outbox));
+
+        match result {
+            Ok(transition) => transition,
+            Err(err) => {
+                debug!("{} - {:?}", self, err);
+                Transition::Stay
+            }
+        }
+    }
+
+    fn handle_unsent_message(
+        &mut self,
+        peer_addr: SocketAddr,
+        msg: Message,
+        outbox: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        match msg {
+            Message::Hop(hop_msg) => {
+                let peer_id = match self.peer_map().get_public_id(&peer_addr) {
+                    Some(peer_id) => *peer_id,
+                    None => {
+                        // we don't even know the peer we failed to send to - ignore
+                        warn!(
+                            "{} Failed sending a hop message to an unknown endpoint - ignoring. Message: {:?}",
+                            self,
+                            hop_msg
+                        );
+                        return Ok(Transition::Stay);
+                    }
+                };
+                self.handle_unsent_hop_message(peer_id, hop_msg, outbox)
+            }
+            Message::Direct(direct_msg) => self.handle_unsent_direct_message(direct_msg, outbox),
+        }
+    }
+
+    fn handle_unsent_hop_message(
+        &mut self,
+        peer_id: PublicId,
+        msg: HopMessage,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        warn!("{} Unsent hop message to {:?}: {:?}", self, peer_id, msg);
+        Ok(Transition::Stay)
+    }
+
+    fn handle_unsent_direct_message(
+        &mut self,
+        msg: SignedDirectMessage,
+        _: &mut EventBox,
+    ) -> Result<Transition, RoutingError> {
+        warn!("{} Unsent direct message {:?}", self, msg);
+        Ok(Transition::Stay)
     }
 
     fn finish_handle_network_event(&mut self, _outbox: &mut EventBox) -> Transition {
