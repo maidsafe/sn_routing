@@ -129,7 +129,7 @@ impl RelocatingNode {
             | NeighbourInfo(..)
             | NeighbourConfirm(..)
             | Merge(..)
-            | UserMessagePart { .. }
+            | UserMessage { .. }
             | NodeApproval { .. } => {
                 warn!(
                     "{} Not joined yet. Not handling {:?} from {:?} to {:?}",

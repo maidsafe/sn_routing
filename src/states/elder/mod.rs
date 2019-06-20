@@ -9,7 +9,7 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
+use super::common::{Approved, Base, Bootstrapped, Relocated};
 use crate::{
     cache::Cache,
     chain::{
@@ -22,7 +22,7 @@ use crate::{
     id::{FullId, PublicId},
     messages::{
         DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage,
-        UserMessage, UserMessageCache,
+        UserMessage,
     },
     outbox::EventBox,
     parsec::{self, ParsecMap},
@@ -89,7 +89,6 @@ pub struct ElderDetails {
 }
 
 pub struct Elder {
-    cacheable_user_msg_cache: UserMessageCache,
     network_service: NetworkService,
     full_id: FullId,
     is_first_node: bool,
@@ -103,7 +102,6 @@ pub struct Elder {
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
     timer: Timer,
-    user_msg_cache: UserMessageCache,
     /// Value which can be set in mock-network tests to be used as the calculated name for the next
     /// relocation request received by this node.
     next_relocation_dst: Option<XorName>,
@@ -201,9 +199,6 @@ impl Elder {
         let candidate_status_token = timer.schedule(CANDIDATE_STATUS_INTERVAL);
 
         Self {
-            cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
-                USER_MSG_CACHE_EXPIRY_DURATION,
-            ),
             network_service: details.network_service,
             full_id: details.full_id.clone(),
             is_first_node,
@@ -215,7 +210,6 @@ impl Elder {
             sig_accumulator: Default::default(),
             tick_timer_token: tick_timer_token,
             timer: timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             next_relocation_dst: None,
             next_relocation_interval: None,
             candidate_status_token,
@@ -624,7 +618,7 @@ impl Elder {
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
         match routing_msg.content {
-            UserMessagePart { .. } => (),
+            UserMessage { .. } => (),
             _ => trace!("{} Got routing message {:?}.", self, routing_msg),
         }
 
@@ -671,23 +665,8 @@ impl Elder {
                 Section(_),
             ) => self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs),
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
-            (
-                UserMessagePart {
-                    hash,
-                    part_count,
-                    part_index,
-                    payload,
-                    ..
-                },
-                src,
-                dst,
-            ) => {
-                if let Some(msg) = self
-                    .user_msg_cache
-                    .add(hash, part_count, part_index, payload)
-                {
-                    outbox.send_event(msg.into_event(src, dst));
-                }
+            (UserMessage { content, .. }, src, dst) => {
+                outbox.send_event(content.into_event(src, dst));
                 Ok(())
             }
             (content, src, dst) => {
@@ -805,44 +784,34 @@ impl Elder {
     }
 
     fn respond_from_cache(&mut self, routing_msg: &RoutingMessage) -> Result<bool, RoutingError> {
-        if let MessageContent::UserMessagePart {
-            hash,
-            part_count,
-            part_index,
-            cacheable,
-            ref payload,
-            ..
-        } = routing_msg.content
-        {
-            if !cacheable {
+        let content = if let MessageContent::UserMessage { ref content, .. } = routing_msg.content {
+            if content.is_cacheable() {
+                content
+            } else {
                 return Ok(false);
             }
+        } else {
+            return Ok(false);
+        };
 
-            match self
-                .cacheable_user_msg_cache
-                .add(hash, part_count, part_index, payload.clone())
-            {
-                Some(UserMessage::Request(request)) => {
-                    if let Some(response) = self.response_cache.get(&request) {
-                        debug!("{} Found cached response to {:?}", self, request);
+        match content {
+            UserMessage::Request(request) => {
+                if let Some(response) = self.response_cache.get(request) {
+                    debug!("{} Found cached response to {:?}", self, request);
 
-                        let priority = response.priority();
-                        let src = Authority::ManagedNode(*self.name());
-                        let dst = routing_msg.src;
-                        let msg = UserMessage::Response(response);
+                    let priority = response.priority();
+                    let src = Authority::ManagedNode(*self.name());
+                    let dst = routing_msg.src;
+                    let msg = UserMessage::Response(response);
 
-                        self.send_user_message(src, dst, msg, priority)?;
+                    self.send_user_message(src, dst, msg, priority)?;
 
-                        return Ok(true);
-                    }
+                    return Ok(true);
                 }
-
-                Some(UserMessage::Response(response)) => {
-                    debug!("{} Putting {:?} in cache", self, response);
-                    self.response_cache.put(response);
-                }
-
-                None => (),
+            }
+            UserMessage::Response(response) => {
+                debug!("{} Putting {:?} in cache", self, response);
+                self.response_cache.put(response.clone());
             }
         }
 
@@ -1352,14 +1321,10 @@ impl Elder {
         &mut self,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        user_msg: UserMessage,
+        content: UserMessage,
         priority: u8,
     ) -> Result<(), RoutingError> {
-        #[allow(clippy::identity_conversion)]
-        for part in user_msg.to_parts(priority)? {
-            self.send_routing_message(src, dst, part)?;
-        }
-        Ok(())
+        self.send_routing_message(src, dst, MessageContent::UserMessage { content, priority })
     }
 
     // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if

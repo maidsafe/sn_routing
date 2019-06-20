@@ -22,6 +22,3 @@ pub use self::{
     relocated::Relocated,
     relocated_not_established::RelocatedNotEstablished,
 };
-use crate::time::Duration;
-
-pub const USER_MSG_CACHE_EXPIRY_DURATION: Duration = Duration::from_secs(120);

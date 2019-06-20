@@ -6,17 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::{
-    proxied, Base, Bootstrapped, BootstrappedNotEstablished, USER_MSG_CACHE_EXPIRY_DURATION,
-};
+use super::common::{proxied, Base, Bootstrapped, BootstrappedNotEstablished};
 use crate::{
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{
-        DirectMessage, HopMessage, MessageContent, Request, RoutingMessage, UserMessage,
-        UserMessageCache,
-    },
+    messages::{DirectMessage, HopMessage, MessageContent, Request, RoutingMessage, UserMessage},
     outbox::EventBox,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
@@ -50,7 +45,6 @@ pub struct Client {
     proxy_pub_id: PublicId,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
-    user_msg_cache: UserMessageCache,
     msg_expiry_dur: Duration,
 }
 
@@ -64,7 +58,6 @@ impl Client {
             proxy_pub_id: details.proxy_pub_id,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: details.timer,
-            user_msg_cache: UserMessageCache::with_expiry_duration(USER_MSG_CACHE_EXPIRY_DURATION),
             msg_expiry_dur: details.msg_expiry_dur,
         };
 
@@ -80,30 +73,15 @@ impl Client {
         outbox: &mut EventBox,
     ) -> Transition {
         match routing_msg.content {
-            MessageContent::UserMessagePart {
-                hash,
-                part_count,
-                part_index,
-                payload,
-                ..
-            } => {
+            MessageContent::UserMessage { content, .. } => {
                 trace!(
-                    "{} Got UserMessagePart {:02x}{:02x}{:02x}.., {}/{} from {:?} to {:?}.",
+                    "{} Got UserMessage {} from {:?} to {:?}.",
                     self,
-                    hash[0],
-                    hash[1],
-                    hash[2],
-                    part_index + 1,
-                    part_count,
+                    content.short_display(),
                     routing_msg.src,
                     routing_msg.dst
                 );
-                if let Some(msg) = self
-                    .user_msg_cache
-                    .add(hash, part_count, part_index, payload)
-                {
-                    outbox.send_event(msg.into_event(routing_msg.src, routing_msg.dst));
-                }
+                outbox.send_event(content.into_event(routing_msg.src, routing_msg.dst));
                 Transition::Stay
             }
             content => {
@@ -121,20 +99,16 @@ impl Client {
         &mut self,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        user_msg: UserMessage,
+        content: UserMessage,
         priority: u8,
     ) -> Result<(), RoutingError> {
-        let parts = user_msg.to_parts(priority)?;
         let msg_expiry_dur = self.msg_expiry_dur;
-        for part in parts {
-            self.send_routing_message_with_expiry(
-                src,
-                dst,
-                part,
-                Some(Instant::now() + msg_expiry_dur),
-            )?;
-        }
-        Ok(())
+        self.send_routing_message_with_expiry(
+            src,
+            dst,
+            MessageContent::UserMessage { content, priority },
+            Some(Instant::now() + msg_expiry_dur),
+        )
     }
 }
 

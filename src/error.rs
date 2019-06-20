@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::routing_table::Error as RoutingTableError;
-use crate::{action::Action, event::Event, id::PublicId, quic_p2p, sha3::Digest256};
+use crate::{action::Action, event::Event, id::PublicId, quic_p2p, types::MessageId};
 use config_file_handler::Error as ConfigFileHandlerError;
 use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
@@ -134,9 +134,9 @@ pub enum RoutingError {
     InvalidMessage,
     /// Invalid Peer
     InvalidPeer,
-    /// The client's message indicated by the included hash digest has been rejected by the
+    /// The client's message indicated by the included message id has been rejected by the
     /// rate-limiter.
-    ExceedsRateLimit(Digest256),
+    ExceedsRateLimit(MessageId),
     /// Invalid configuration
     ConfigError(ConfigFileHandlerError),
     /// Invalid chain
