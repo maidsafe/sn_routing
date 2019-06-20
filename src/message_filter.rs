@@ -75,6 +75,7 @@ impl<Message: Hash> MessageFilter<Message> {
     }
 
     /// Removes any expired messages, then returns whether `message` exists in the filter or not.
+    #[cfg(test)]
     pub fn contains(&mut self, message: &Message) -> bool {
         self.remove_expired();
         self.count.contains_key(&hash(message))

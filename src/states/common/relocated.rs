@@ -8,7 +8,6 @@
 
 use super::{base::Base, bootstrapped::Bootstrapped};
 use crate::{
-    ack_manager::Ack,
     error::RoutingError,
     event::Event,
     id::PublicId,
@@ -132,10 +131,6 @@ pub trait Relocated: Bootstrapped {
         self.send_direct_message(&their_pub_id, DirectMessage::ConnectionResponse);
 
         Ok(transition)
-    }
-
-    fn handle_ack_response(&mut self, ack: Ack) {
-        self.ack_mgr_mut().receive(ack)
     }
 
     /// Disconnects if the peer is not a proxy, client or routing table entry.

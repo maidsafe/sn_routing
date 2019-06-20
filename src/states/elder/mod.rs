@@ -11,11 +11,10 @@ mod tests;
 
 use super::common::{Approved, Base, Bootstrapped, Relocated, USER_MSG_CACHE_EXPIRY_DURATION};
 use crate::{
-    ack_manager::{Ack, AckManager},
     cache::Cache,
     chain::{
-        Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
-        PrefixChangeOutcome, Proof, ProofSet, ProvingSection, SectionInfo,
+        delivery_group_size, Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent,
+        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -23,14 +22,13 @@ use crate::{
     id::{FullId, PublicId},
     messages::{
         DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage,
-        UserMessage, UserMessageCache, DEFAULT_PRIORITY, MAX_PARTS, MAX_PART_LEN,
+        UserMessage, UserMessageCache,
     },
     outbox::EventBox,
     parsec::{self, ParsecMap},
     peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
-    rate_limiter::RateLimiter,
     routing_message_filter::{FilteringResult, RoutingMessageFilter},
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
@@ -76,7 +74,6 @@ const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 const PROVING_SECTION_CACHE_SIZE: usize = 100;
 
 pub struct ElderDetails {
-    pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub chain: Chain,
     pub network_service: NetworkService,
@@ -92,7 +89,6 @@ pub struct ElderDetails {
 }
 
 pub struct Elder {
-    ack_mgr: AckManager,
     cacheable_user_msg_cache: UserMessageCache,
     network_service: NetworkService,
     full_id: FullId,
@@ -115,9 +111,6 @@ pub struct Elder {
     next_relocation_interval: Option<XorTargetInterval>,
     /// The timer token for displaying the current candidate status.
     candidate_status_token: u64,
-    /// Limits the rate at which clients can pass messages through this node when it acts as their
-    /// proxy.
-    clients_rate_limiter: RateLimiter,
     /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
     banned_client_ips: LruCache<IpAddr, ()>,
     /// Recently-disconnected clients.  Clients are added to this when we disconnect from them so we
@@ -163,7 +156,6 @@ impl Elder {
         let peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
 
         let details = ElderDetails {
-            ack_mgr: AckManager::new(),
             cache,
             chain,
             network_service,
@@ -209,7 +201,6 @@ impl Elder {
         let candidate_status_token = timer.schedule(CANDIDATE_STATUS_INTERVAL);
 
         Self {
-            ack_mgr: details.ack_mgr,
             cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(
                 USER_MSG_CACHE_EXPIRY_DURATION,
             ),
@@ -228,7 +219,6 @@ impl Elder {
             next_relocation_dst: None,
             next_relocation_interval: None,
             candidate_status_token,
-            clients_rate_limiter: RateLimiter::new(dev_config.disable_client_rate_limiter),
             banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
@@ -502,8 +492,7 @@ impl Elder {
     /// message, handles it.
     fn handle_message_signature(
         &mut self,
-        digest: Digest256,
-        sig: Signature,
+        msg: SignedRoutingMessage,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
         if !self.peer_mgr.get_peer(&pub_id).map_or(false, Peer::is_node) {
@@ -515,14 +504,11 @@ impl Elder {
         }
 
         let min_section_size = self.min_section_size();
-        let proof = Proof { sig, pub_id };
-        if let Some((signed_msg, route)) =
-            self.sig_accumulator
-                .add_proof(min_section_size, digest, proof)
+        if let Some(signed_msg) = self
+            .sig_accumulator
+            .add_proof(min_section_size, msg.clone())
         {
-            // we accumulated the message, so now we act as the last hop
-            let hop = *self.name();
-            self.handle_signed_message(signed_msg, route, hop, &BTreeSet::new())?;
+            self.handle_signed_message(signed_msg)?;
         }
         Ok(())
     }
@@ -532,9 +518,6 @@ impl Elder {
     fn handle_signed_message(
         &mut self,
         mut signed_msg: SignedRoutingMessage,
-        route: u8,
-        hop_name: XorName,
-        sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         if signed_msg.routing_message().src.is_client() {
             if signed_msg.previous_hop().is_some() {
@@ -567,21 +550,24 @@ impl Elder {
 
         let filter_res = self
             .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message(), route);
-        if filter_res == FilteringResult::KnownMessageAndRoute {
+            .filter_incoming(signed_msg.routing_message());
+
+        if filter_res == FilteringResult::KnownMessage {
+            debug!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                signed_msg.routing_message()
+            );
             return Ok(());
-        };
+        }
 
         if self.in_authority(&signed_msg.routing_message().dst) {
             // The message is addressed to our section. Verify its integrity.
             signed_msg.check_integrity(self.min_section_size())?;
 
-            self.send_ack(signed_msg.routing_message(), route);
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
-                if let Err(error) =
-                    self.send_signed_message(&mut signed_msg, route, &hop_name, sent_to)
-                {
+                if let Err(error) = self.send_signed_message(&mut signed_msg) {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
@@ -592,11 +578,11 @@ impl Elder {
             return Ok(());
         }
 
-        if self.respond_from_cache(signed_msg.routing_message(), route)? {
+        if self.respond_from_cache(signed_msg.routing_message())? {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(&mut signed_msg, route, &hop_name, sent_to) {
+        if let Err(error) = self.send_signed_message(&mut signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -639,7 +625,7 @@ impl Elder {
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
         match routing_msg.content {
-            Ack(..) | UserMessagePart { .. } => (),
+            UserMessagePart { .. } => (),
             _ => trace!("{} Got routing message {:?}.", self, routing_msg),
         }
 
@@ -696,10 +682,6 @@ impl Elder {
             }
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => {
                 self.handle_merge(digest)?;
-                Ok(Transition::Stay)
-            }
-            (Ack(ack, _), _, _) => {
-                self.handle_ack_response(ack);
                 Ok(Transition::Stay)
             }
             (
@@ -835,69 +817,7 @@ impl Elder {
         }
     }
 
-    /// Returns `Ok` with rate_limiter charged size if client is allowed to send the given message.
-    fn check_valid_client_message(
-        &mut self,
-        ip: &IpAddr,
-        msg: &RoutingMessage,
-    ) -> Result<u64, RoutingError> {
-        match (&msg.src, &msg.content) {
-            (
-                &Authority::Client { .. },
-                &MessageContent::UserMessagePart {
-                    ref hash,
-                    ref msg_id,
-                    ref part_count,
-                    ref part_index,
-                    ref priority,
-                    ref payload,
-                    ..
-                },
-            ) if *part_count <= MAX_PARTS
-                && part_index < part_count
-                && *priority >= DEFAULT_PRIORITY
-                && payload.len() <= MAX_PART_LEN =>
-            {
-                self.clients_rate_limiter.add_message(
-                    ip,
-                    hash,
-                    msg_id,
-                    *part_count,
-                    *part_index,
-                    payload,
-                )
-            }
-            _ => {
-                debug!(
-                    "{} Illegitimate client message {:?}. Refusing to relay.",
-                    self, msg
-                );
-                Err(RoutingError::RejectedClientMessage)
-            }
-        }
-    }
-
-    fn correct_rate_limits(&mut self, ip: &IpAddr, msg: &RoutingMessage) -> Option<u64> {
-        if let MessageContent::UserMessagePart {
-            ref msg_id,
-            part_count,
-            part_index,
-            ref payload,
-            ..
-        } = msg.content
-        {
-            self.clients_rate_limiter
-                .apply_refund_for_response(ip, msg_id, part_count, part_index, payload)
-        } else {
-            None
-        }
-    }
-
-    fn respond_from_cache(
-        &mut self,
-        routing_msg: &RoutingMessage,
-        route: u8,
-    ) -> Result<bool, RoutingError> {
+    fn respond_from_cache(&mut self, routing_msg: &RoutingMessage) -> Result<bool, RoutingError> {
         if let MessageContent::UserMessagePart {
             hash,
             part_count,
@@ -924,7 +844,6 @@ impl Elder {
                         let dst = routing_msg.src;
                         let msg = UserMessage::Response(response);
 
-                        self.send_ack_from(routing_msg, route, src);
                         self.send_user_message(src, dst, msg, priority)?;
 
                         return Ok(true);
@@ -1173,6 +1092,12 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         // Validate relocating node has contacted the correct Section-X
         if *relocating_node_id.name() != dst_name {
+            error!(
+                "{} Invalid destination in a relocate request! Node name: {:?}, destination: {:?}",
+                self,
+                relocating_node_id.name(),
+                dst_name
+            );
             return Err(RoutingError::InvalidDestination);
         }
 
@@ -1447,21 +1372,21 @@ impl Elder {
 
     // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
     // we are the first sender or the proxy for a client or joining node.
-    //
-    // Don't send to any nodes already sent_to.
     fn send_signed_message(
         &mut self,
         signed_msg: &mut SignedRoutingMessage,
-        route: u8,
-        hop_name: &XorName,
-        sent_to: &BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
         let dst = signed_msg.routing_message().dst;
 
         // TODO: Figure out when failure is expected, and in which cases we should still handle the
         // message anyway.
         if let Err(err) = self.chain.extend_proving_sections(signed_msg) {
-            debug!("{} Failed to add section infos: {:?}", self, err);
+            debug!(
+                "{} Failed to add section infos to message {:?}: {:?}",
+                self,
+                signed_msg.routing_message(),
+                err
+            );
         }
 
         if let Authority::Client { ref client_id, .. } = dst {
@@ -1473,17 +1398,24 @@ impl Elder {
             }
         }
 
-        let (new_sent_to, target_pub_ids) =
-            self.get_targets(signed_msg.routing_message(), route, hop_name, sent_to)?;
+        let target_pub_ids = self.get_targets(signed_msg.routing_message())?;
+
+        debug!(
+            "{}: Sending message {:?} via targets {:?}",
+            self,
+            signed_msg.routing_message(),
+            target_pub_ids
+        );
 
         for target_pub_id in target_pub_ids {
-            self.send_signed_message_to_peer(
-                signed_msg.clone(),
-                &target_pub_id,
-                route,
-                new_sent_to.clone(),
-            )?;
+            self.send_signed_message_to_peer(signed_msg.clone(), &target_pub_id)?;
         }
+
+        // we've seen this message - don't handle it again if someone else sends it to us
+        let _ = self
+            .routing_msg_filter
+            .filter_incoming(signed_msg.routing_message());
+
         Ok(())
     }
 
@@ -1491,14 +1423,12 @@ impl Elder {
         &mut self,
         signed_msg: SignedRoutingMessage,
         dst_id: &PublicId,
-        route: u8,
-        sent_to: BTreeSet<XorName>,
     ) -> Result<(), RoutingError> {
-        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id, route) {
+        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id) {
             return Ok(());
         }
 
-        let message = self.to_hop_message(signed_msg, route, sent_to)?;
+        let message = self.to_hop_message(signed_msg)?;
         self.send_message(dst_id, message);
         Ok(())
     }
@@ -1511,21 +1441,12 @@ impl Elder {
         signed_msg: &SignedRoutingMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        let is_client = self.peer_mgr.is_client(pub_id);
-        let result = if self.peer_mgr.is_connected(pub_id) {
-            // If the message being relayed is a data response, update the client's
-            // rate limit balance to account for the initial over-counting.
-            if let Some(&PeerState::Client { ip, .. }) =
-                self.peer_mgr.get_peer(pub_id).map(Peer::state)
-            {
-                let _ = self.correct_rate_limits(&ip, signed_msg.routing_message());
-            }
-
-            if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id, 0) {
+        if self.peer_mgr.is_connected(pub_id) {
+            if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id) {
                 return Ok(());
             }
 
-            let message = self.to_hop_message(signed_msg.clone(), 0, BTreeSet::new())?;
+            let message = self.to_hop_message(signed_msg.clone())?;
             self.send_message(pub_id, message);
             Ok(())
         } else {
@@ -1534,20 +1455,13 @@ impl Elder {
                 self, signed_msg
             );
             Err(RoutingError::ClientConnectionNotFound)
-        };
-
-        // Acknowledge the message so that the sender doesn't retry.
-        if is_client || result.is_err() {
-            let hop = *self.name();
-            self.send_ack_from(signed_msg.routing_message(), 0, Authority::ManagedNode(hop));
         }
-
-        result
     }
 
-    /// Returns the peer that is responsible for collecting signatures to verify a message; this
-    /// may be us or another node. If our signature is not required, this returns `None`.
-    fn get_signature_target(&self, src: &Authority<XorName>, route: u8) -> Option<XorName> {
+    /// Returns the set of peers that are responsible for collecting signatures to verify a message;
+    /// this may contain us or only other nodes. If our signature is not required, this returns
+    /// `None`.
+    fn get_signature_targets(&self, src: &Authority<XorName>) -> Option<BTreeSet<XorName>> {
         use crate::Authority::*;
 
         let list: Vec<XorName> = match *src {
@@ -1569,29 +1483,29 @@ impl Elder {
             // calculation. This even when going via RT would have only allowed route-0 to succeed
             // as by ack-failure, the new node would have been accepted to the RT.
             // Need a better network startup separation.
-            PrefixSection(_) => {
+            PrefixSection(pfx) => {
                 Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
+                    .filter(|name| pfx.matches(name))
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
             }
-            ManagedNode(_) | Client { .. } => return Some(*self.name()),
+            ManagedNode(_) | Client { .. } => {
+                let mut result = BTreeSet::new();
+                let _ = result.insert(*self.name());
+                return Some(result);
+            }
         };
 
         if !list.contains(&self.name()) {
             None
         } else {
-            Some(list[route as usize % list.len()])
+            let len = list.len();
+            Some(list.into_iter().take(delivery_group_size(len)).collect())
         }
     }
 
     /// Returns a list of target IDs for a message sent via route.
-    /// Names in `sent_to` will be excluded from the result.
-    fn get_targets(
-        &self,
-        routing_msg: &RoutingMessage,
-        route: u8,
-        exclude: &XorName,
-        sent_to: &BTreeSet<XorName>,
-    ) -> Result<(BTreeSet<XorName>, Vec<PublicId>), RoutingError> {
+    /// Name in exclude will be excluded from the result.
+    fn get_targets(&self, routing_msg: &RoutingMessage) -> Result<Vec<PublicId>, RoutingError> {
         let force_via_proxy = match routing_msg.content {
             MessageContent::ConnectionRequest { pub_id, .. } => {
                 routing_msg.src.is_client() && pub_id == *self.full_id.public_id()
@@ -1606,24 +1520,10 @@ impl Elder {
             let conn_peers = self.connected_peers();
             let targets: BTreeSet<_> = self
                 .chain
-                .targets(&routing_msg.dst, *exclude, route as usize, &conn_peers)?
+                .targets(&routing_msg.dst, &conn_peers)?
                 .into_iter()
-                .filter(|target| !sent_to.contains(target))
                 .collect();
-            let new_sent_to = if self.in_authority(&routing_msg.dst) {
-                sent_to
-                    .iter()
-                    .chain(&targets)
-                    .chain(iter::once(self.name()))
-                    .cloned()
-                    .collect()
-            } else {
-                BTreeSet::new()
-            };
-            Ok((
-                new_sent_to,
-                self.peer_mgr.get_pub_ids(&targets).into_iter().collect(),
-            ))
+            Ok(self.peer_mgr.get_pub_ids(&targets).into_iter().collect())
         } else if let Authority::Client {
             ref proxy_node_name,
             ..
@@ -1635,7 +1535,7 @@ impl Elder {
                 .map(Peer::pub_id)
             {
                 if self.peer_mgr.is_connected(pub_id) {
-                    Ok((iter::once(*self.name()).collect(), vec![*pub_id]))
+                    Ok(vec![*pub_id])
                 } else {
                     error!(
                         "{} Unable to find connection to proxy in PeerManager.",
@@ -1855,10 +1755,6 @@ impl Base for Elder {
             }
 
             self.send_parsec_gossip(None);
-        } else {
-            // Each token has only one purpose, so we only need to call this if none of the above
-            // matched:
-            self.resend_unacknowledged_timed_out_msgs(token);
         }
 
         Transition::Stay
@@ -1914,7 +1810,7 @@ impl Base for Elder {
 
         use crate::messages::DirectMessage::*;
         match msg {
-            MessageSignature(digest, sig) => self.handle_message_signature(digest, sig, pub_id)?,
+            MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
             BootstrapRequest => {
                 if let Err(error) = self.handle_bootstrap_request(pub_id) {
                     warn!(
@@ -1960,83 +1856,21 @@ impl Base for Elder {
             }
             BootstrapResponse(_)
             | ConnectionResponse
-            | ProxyRateLimitExceeded { .. }
             | ResourceProof { .. }
             | ResourceProofResponseReceipt => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }
-
         Ok(Transition::Stay)
     }
 
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        let mut client_ip = None;
-        let hop_name = match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(PeerState::Client { ip, .. }) => {
-                client_ip = Some(*ip);
-                *self.name()
-            }
-            Some(PeerState::JoiningNode) => *self.name(),
-            Some(PeerState::Candidate) | Some(PeerState::Proxy) | Some(PeerState::Node { .. }) => {
-                *pub_id.name()
-            }
-            Some(PeerState::Connected) | Some(PeerState::Connecting) | None => {
-                if self.dropped_clients.contains_key(&pub_id) {
-                    debug!(
-                        "{} Ignoring {:?} from recently-disconnected client {:?}.",
-                        self, msg, pub_id
-                    );
-                    return Ok(Transition::Stay);
-                } else {
-                    *self.name()
-                    // FIXME - confirm we can return with an error here by running soak tests
-                    // debug!("{} Invalid sender {} of {:?}", self, pub_id, hop_msg);
-                    // return Err(RoutingError::InvalidSource);
-                }
-            }
-        };
-
-        if let Some(ip) = client_ip {
-            match self.check_valid_client_message(&ip, msg.content.routing_message()) {
-                Ok(added_bytes) => {
-                    self.proxy_load_amount += added_bytes;
-                    self.peer_mgr
-                        .add_client_traffic(&pub_id, added_bytes, &self.log_ident());
-                }
-                Err(RoutingError::ExceedsRateLimit(hash)) => {
-                    trace!(
-                        "{} Temporarily can't proxy messages from client {:?} (rate-limit hit).",
-                        self,
-                        pub_id
-                    );
-                    self.send_direct_message(
-                        &pub_id,
-                        DirectMessage::ProxyRateLimitExceeded {
-                            ack: Ack::compute(msg.content.routing_message())?,
-                        },
-                    );
-                    return Err(RoutingError::ExceedsRateLimit(hash));
-                }
-                Err(error) => {
-                    self.ban_and_disconnect_peer(&pub_id);
-                    return Err(error);
-                }
-            }
-        }
-
-        let HopMessage {
-            content,
-            route,
-            sent_to,
-            ..
-        } = msg;
-        self.handle_signed_message(content, route, hop_name, &sent_to)
+        let HopMessage { content, .. } = msg;
+        self.handle_signed_message(content)
             .map(|()| Transition::Stay)
     }
 }
@@ -2084,95 +1918,71 @@ impl Elder {
 }
 
 impl Bootstrapped for Elder {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
-    // Constructs a signed message, finds the node responsible for accumulation, and either sends
-    // this node a signature or tries to accumulate signatures for this message (on success, the
+    // Constructs a signed message, finds the nodes responsible for accumulation, and either sends
+    // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
-        expires_at: Option<Instant>,
+        _expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
         if !self.in_authority(&routing_msg.src) {
-            if route == 0 {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Not part of the source authority. Not sending message {:?}.",
-                    self,
-                    routing_msg
-                );
-            }
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Not part of the source authority. Not sending message {:?}.",
+                self,
+                routing_msg
+            );
             return Ok(());
         }
 
         use crate::routing_table::Authority::*;
-        let sending_sec = if route == 0 {
-            match routing_msg.src {
-                ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-                | PrefixSection(_) => Some(self.chain.our_info().clone()),
-                Client { .. } => None,
-            }
-        } else {
-            src_section
+        let sending_sec = match routing_msg.src {
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
+            | PrefixSection(_) => Some(self.chain.our_info().clone()),
+            Client { .. } => None,
         };
-
-        if !self.add_to_pending_acks(&routing_msg, sending_sec.clone(), route, expires_at) {
-            debug!(
-                "{} already received an ack for {:?} - so not resending it.",
-                self, routing_msg
-            );
-            return Ok(());
-        }
-
-        if route > 0 {
-            trace!(
-                "{} Resending Msg: {:?} via route: {} and src_section: {:?}",
-                self,
-                routing_msg,
-                route,
-                sending_sec
-            );
-        }
 
         let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, sending_sec)?;
 
-        match self.get_signature_target(&signed_msg.routing_message().src, route) {
-            None => Ok(()),
-            Some(our_name) if our_name == *self.name() => {
+        for target in Iterator::flatten(
+            self.get_signature_targets(&signed_msg.routing_message().src)
+                .into_iter(),
+        ) {
+            if target == *self.name() {
                 let min_section_size = self.min_section_size();
-                if let Some((mut msg, route)) =
-                    self.sig_accumulator
-                        .add_message(signed_msg, min_section_size, route)
+                if let Some(mut msg) = self
+                    .sig_accumulator
+                    .add_proof(min_section_size, signed_msg.clone())
                 {
                     if self.in_authority(&msg.routing_message().dst) {
-                        self.handle_signed_message(msg, route, our_name, &BTreeSet::new())?;
+                        self.handle_signed_message(msg)?;
                     } else {
-                        self.send_signed_message(&mut msg, route, &our_name, &BTreeSet::new())?;
+                        self.send_signed_message(&mut msg)?;
                     }
                 }
-                Ok(())
-            }
-            Some(target_name) => {
-                if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target_name) {
-                    let direct_msg = signed_msg
-                        .routing_message()
-                        .to_signature(self.full_id.signing_private_key())?;
-                    self.send_direct_message(&pub_id, direct_msg);
-                    Ok(())
-                } else {
-                    Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer))
-                }
+            } else if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
+                trace!(
+                    "{} Sending a signature for message {:?} to {:?}",
+                    self,
+                    signed_msg.routing_message(),
+                    target
+                );
+                self.send_direct_message(
+                    &pub_id,
+                    DirectMessage::MessageSignature(signed_msg.clone()),
+                );
+            } else {
+                error!(
+                    "{} Failed to resolve signature target {:?} for message {:?}",
+                    self,
+                    target,
+                    signed_msg.routing_message()
+                );
+                return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
             }
         }
+        Ok(())
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {

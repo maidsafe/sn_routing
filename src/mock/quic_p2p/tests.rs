@@ -238,6 +238,9 @@ fn send_to_connected_node() {
     b.expect_new_message(&a.addr(), &msg);
 }
 
+// TODO: unignore once proper error handling is in place in routing and this functionality is
+// restored
+#[ignore]
 #[test]
 fn send_to_disconnecting_node() {
     let network = Network::new(MIN_SECTION_SIZE, None);
@@ -437,7 +440,7 @@ fn packet_is_parsec_gossip() {
         },
     };
     let msg = unwrap!(SignedRoutingMessage::new(msg, &full_id, None));
-    let msg = unwrap!(HopMessage::new(msg, 1, Default::default()));
+    let msg = unwrap!(HopMessage::new(msg));
     let msg = Message::Hop(msg);
     assert!(!Packet::Message(NetworkBytes::from(serialise(&msg))).is_parsec_gossip());
 

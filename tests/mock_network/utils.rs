@@ -275,16 +275,6 @@ impl TestClient {
         Self::new_impl(network, network_config, endpoint, full_id, duration)
     }
 
-    pub fn new_with_expire_duration(
-        network: &Network,
-        network_config: Option<NetworkConfig>,
-        endpoint: Option<SocketAddr>,
-        duration: Duration,
-    ) -> Self {
-        let full_id = FullId::new();
-        Self::new_impl(network, network_config, endpoint, full_id, duration)
-    }
-
     fn new_impl(
         network: &Network,
         network_config: Option<NetworkConfig>,
@@ -416,14 +406,8 @@ pub fn poll_and_resend_until(
             return;
         }
 
-        let node_busy = |node: &TestNode| {
-            node.inner.has_unacked_msg() || node.inner.has_unpolled_observations()
-        };
-        let client_busy = |client: &TestClient| client.inner.has_unacked_msg();
-        if poll_all_until(nodes, clients, should_stop)
-            || nodes.iter().any(node_busy)
-            || clients.iter().any(client_busy)
-        {
+        let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
+        if poll_all_until(nodes, clients, should_stop) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
             FakeClock::advance_time(1001);
         } else if let Some(step) = extra_advance {

@@ -7,15 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    ack_manager::Ack,
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
+    messages::SignedRoutingMessage,
     parsec,
     routing_table::Authority,
-    sha3::Digest256,
     xor_name::XorName,
 };
-use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::Signature;
 use std::{
@@ -32,7 +30,7 @@ use std::{
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(Digest256, Signature),
+    MessageSignature(SignedRoutingMessage),
     /// Sent from a newly connected client to the bootstrap node to prove that it is the owner of
     /// the client's claimed public ID.
     BootstrapRequest,
@@ -79,8 +77,6 @@ pub enum DirectMessage {
     },
     /// Receipt of a part of a ResourceProofResponse
     ResourceProofResponseReceipt,
-    /// Sent from a proxy node to its client to indicate that the client exceeded its rate limit.
-    ProxyRateLimitExceeded { ack: Ack },
     /// Poke a node to send us the first gossip request
     ParsecPoke(u64),
     /// Parsec request message
@@ -93,9 +89,7 @@ impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
         match *self {
-            MessageSignature(ref digest, _) => {
-                write!(formatter, "MessageSignature ({:.14}, ..)", HexFmt(&digest))
-            }
+            MessageSignature(ref msg) => write!(formatter, "MessageSignature ({:?})", msg),
             BootstrapRequest => write!(formatter, "BootstrapRequest"),
             BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
@@ -124,9 +118,6 @@ impl Debug for DirectMessage {
                 leading_zero_bytes
             ),
             ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
-            ProxyRateLimitExceeded { ref ack } => {
-                write!(formatter, "ProxyRateLimitExceeded({:?})", ack)
-            }
             ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
@@ -146,9 +137,8 @@ impl Hash for DirectMessage {
         mem::discriminant(self).hash(state);
 
         match *self {
-            MessageSignature(ref digest, ref signature) => {
-                digest.hash(state);
-                signature.hash(state);
+            MessageSignature(ref msg) => {
+                msg.hash(state);
             }
             BootstrapRequest | ConnectionResponse | ResourceProofResponseReceipt => (),
             BootstrapResponse(ref result) => result.hash(state),
@@ -181,7 +171,6 @@ impl Hash for DirectMessage {
                 proof.hash(state);
                 leading_zero_bytes.hash(state);
             }
-            ProxyRateLimitExceeded { ref ack } => ack.hash(state),
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, ref request) => {
                 version.hash(state);

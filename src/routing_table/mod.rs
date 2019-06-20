@@ -777,37 +777,32 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// * If the destination is an `Authority::Section`:
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     ///
     /// * If the destination is an `Authority::PrefixSection`:
     ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
     ///       RT, returns all members in these prefixes except ourself; otherwise
     ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
     ///       our RT, returns `Err(Error::CannotRoute)`; otherwise
-    ///     - returns the `route`-th closest member of the RT to the lower bound of the target
+    ///     - returns the `N/3` closest members of the RT to the lower bound of the target
     ///       prefix
     ///
     /// * If the destination is a group (`ClientManager`, `NaeManager` or `NodeManager`):
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     ///
     /// * If the destination is an individual node (`ManagedNode` or `Client`):
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
-    pub fn targets(
-        &self,
-        dst: &Authority<T>,
-        exclude: T,
-        route: usize,
-    ) -> Result<BTreeSet<T>, Error> {
+    ///     - returns the `N/3` closest members of the RT to the target
+    pub fn targets(&self, dst: &Authority<T>, exclude: T) -> Result<BTreeSet<T>, Error> {
         let candidates = |target_name: &T| {
-            self.closest_known_names(target_name, self.min_section_size)
-                .into_iter()
-                .filter(|name| **name != self.our_name)
+            self.closest_section(target_name)
+                .1
+                .iter()
                 .cloned()
-                .collect::<BTreeSet<T>>()
+                .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs))
         };
 
         let closest_section = match *dst {
@@ -874,15 +869,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 candidates(&prefix.lower_bound())
             }
         };
-        Ok(
-            iter::once(self.get_routeth_node(
-                &closest_section,
-                dst.name(),
-                Some(exclude),
-                route,
-            )?)
-            .collect(),
-        )
+        let n = closest_section.len();
+        Ok(closest_section
+            .into_iter()
+            .filter(|&x| x != exclude && x != self.our_name)
+            .take((n + 2) / 3)
+            .collect())
     }
 
     /// Returns whether we are a part of the given authority.
@@ -1055,39 +1047,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
         }
         result
-    }
-
-    /// Gets the `route`-th name from a collection of names
-    fn get_routeth_name<'a, U: IntoIterator<Item = &'a T>>(
-        names: U,
-        dst_name: &T,
-        route: usize,
-    ) -> &'a T {
-        let sorted_names = names
-            .into_iter()
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
-        sorted_names[route % sorted_names.len()]
-    }
-
-    /// Returns the `route`-th node in the given section, sorted by distance to `target`
-    fn get_routeth_node(
-        &self,
-        section: &BTreeSet<T>,
-        target: T,
-        exclude: Option<T>,
-        route: usize,
-    ) -> Result<T, Error> {
-        let names = if let Some(exclude) = exclude {
-            section.iter().filter(|&x| *x != exclude).collect_vec()
-        } else {
-            section.iter().collect_vec()
-        };
-
-        if names.is_empty() {
-            return Err(Error::CannotRoute);
-        }
-
-        Ok(*RoutingTable::get_routeth_name(names, &target, route))
     }
 
     /// Checks if the invariant is held. Allows printing additional log messages for failures and

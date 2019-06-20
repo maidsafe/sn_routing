@@ -17,7 +17,7 @@ mod relocating_node;
 pub use self::{
     adult::Adult,
     bootstrapping_peer::{BootstrappingPeer, TargetState},
-    client::{Client, RATE_EXCEED_RETRY},
+    client::Client,
     elder::Elder,
     proving_node::ProvingNode,
     relocating_node::RelocatingNode,

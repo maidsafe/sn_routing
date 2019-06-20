@@ -17,9 +17,7 @@ pub use self::{
 };
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::{
-    ack_manager::Ack,
     chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo},
-    data::MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
     error::{Result, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -33,9 +31,7 @@ use hex_fmt::HexFmt;
 use itertools::Itertools;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-#[cfg(test)]
-use safe_crypto::Signature;
-use safe_crypto::{self, SecretSignKey};
+use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     fmt::{self, Debug, Formatter},
@@ -44,7 +40,6 @@ use std::{
 
 /// The maximal length of a user message part, in bytes.
 pub const MAX_PART_LEN: usize = 20 * 1024;
-pub const MAX_PARTS: u32 = ((MAX_IMMUTABLE_DATA_SIZE_IN_BYTES / MAX_PART_LEN as u64) + 1) as u32;
 
 /// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
 /// critical to prevent data loss.
@@ -79,25 +74,12 @@ pub enum Message {
 pub struct HopMessage {
     /// Wrapped signed message.
     pub content: SignedRoutingMessage,
-    /// Route number; corresponds to the index of the peer in the section of target peers being
-    /// considered for the next hop.
-    pub route: u8,
-    /// Every node this has already been sent to.
-    pub sent_to: BTreeSet<XorName>,
 }
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
-    pub fn new(
-        content: SignedRoutingMessage,
-        route: u8,
-        sent_to: BTreeSet<XorName>,
-    ) -> Result<HopMessage> {
-        Ok(HopMessage {
-            content: content,
-            route: route,
-            sent_to: sent_to,
-        })
+    pub fn new(content: SignedRoutingMessage) -> Result<HopMessage> {
+        Ok(HopMessage { content: content })
     }
 }
 
@@ -371,26 +353,22 @@ pub struct RoutingMessage {
 }
 
 impl RoutingMessage {
-    /// Create ack for the given message
-    pub fn ack_from(msg: &RoutingMessage, src: Authority<XorName>) -> Result<Self> {
-        Ok(RoutingMessage {
-            src: src,
-            dst: msg.src,
-            content: MessageContent::Ack(Ack::compute(msg)?, msg.priority()),
-        })
-    }
-
     /// Returns the priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         self.content.priority()
     }
 
-    /// Returns a `DirectMessage::MessageSignature` for this message.
-    pub fn to_signature(&self, signing_key: &SecretSignKey) -> Result<DirectMessage> {
+    /// Returns the message hash
+    pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
-        let hash = safe_crypto::hash(&serialised_msg);
+        Ok(safe_crypto::hash(&serialised_msg))
+    }
+
+    /// Returns a signature for this message.
+    pub fn to_signature(&self, signing_key: &SecretSignKey) -> Result<Signature> {
+        let serialised_msg = serialise(self)?;
         let sig = signing_key.sign_detached(&serialised_msg);
-        Ok(DirectMessage::MessageSignature(hash, sig))
+        Ok(sig)
     }
 }
 
@@ -500,8 +478,6 @@ pub enum MessageContent {
     /// Inform neighbours that we need to merge, and that the successor of the section info with
     /// the given hash will be the merged section.
     Merge(Digest256),
-    /// Sent to all connected peers when our own section splits
-    Ack(Ack, u8),
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
@@ -529,9 +505,7 @@ impl MessageContent {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         match *self {
-            MessageContent::Ack(_, priority) | MessageContent::UserMessagePart { priority, .. } => {
-                priority
-            }
+            MessageContent::UserMessagePart { priority, .. } => priority,
             _ => 0,
         }
     }
@@ -541,8 +515,8 @@ impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
-            self.content, self.route
+            "HopMessage {{ content: {:?}, signature: .. }}",
+            self.content
         )
     }
 }
@@ -601,7 +575,6 @@ impl Debug for MessageContent {
                 neighbour_sec_infos.len(),
             ),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
-            Ack(ack, priority) => write!(formatter, "Ack({:?}, {})", ack, priority),
             UserMessagePart {
                 hash,
                 part_count,
@@ -847,15 +820,15 @@ mod tests {
         assert_eq!(signed_msg.signatures.len(), 1);
 
         // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match unwrap!(signed_msg
+        let irrelevant_sig = match signed_msg
             .routing_message()
-            .to_signature(irrelevant_full_id.signing_private_key()))
+            .to_signature(irrelevant_full_id.signing_private_key())
         {
-            DirectMessage::MessageSignature(_, sig) => {
+            Ok(sig) => {
                 signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
                 sig
             }
-            msg => panic!("Unexpected message: {:?}", msg),
+            err => panic!("Unexpected error: {:?}", err),
         };
         assert_eq!(signed_msg.signatures.len(), 1);
         assert!(!signed_msg
@@ -865,16 +838,14 @@ mod tests {
 
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
         for full_id in &[full_id_1, full_id_2] {
-            match unwrap!(signed_msg
+            match signed_msg
                 .routing_message()
-                .to_signature(full_id.signing_private_key()))
+                .to_signature(full_id.signing_private_key())
             {
-                DirectMessage::MessageSignature(hash, sig) => {
-                    let serialised_msg = unwrap!(serialise(signed_msg.routing_message()));
-                    assert_eq!(hash, safe_crypto::hash(&serialised_msg));
+                Ok(sig) => {
                     signed_msg.add_signature(*full_id.public_id(), sig);
                 }
-                msg => panic!("Unexpected message: {:?}", msg),
+                err => panic!("Unexpected error: {:?}", err),
             }
         }
 

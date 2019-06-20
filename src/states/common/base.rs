@@ -25,7 +25,7 @@ use crate::{
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use std::{collections::BTreeSet, fmt::Display, net::SocketAddr};
+use std::{fmt::Display, net::SocketAddr};
 
 // Trait for all states.
 pub trait Base: Display {
@@ -68,7 +68,6 @@ pub trait Base: Display {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -238,14 +237,7 @@ pub trait Base: Display {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
-            Message::Hop(msg) => {
-                if let Some(pub_id) = self.peer_map().get_public_id(&src_addr).cloned() {
-                    self.handle_hop_message(msg, pub_id, outbox)
-                } else {
-                    debug!("{} - Received {:?} from unknown peer", self, msg);
-                    return Err(RoutingError::InvalidPeer);
-                }
-            }
+            Message::Hop(msg) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg) => {
                 let (msg, pub_id) = msg.open()?;
 
@@ -330,13 +322,8 @@ pub trait Base: Display {
     }
 
     // Create HopMessage containing the given signed message.
-    fn to_hop_message(
-        &self,
-        signed_msg: SignedRoutingMessage,
-        route: u8,
-        sent_to: BTreeSet<XorName>,
-    ) -> Result<Message, RoutingError> {
-        let hop_msg = HopMessage::new(signed_msg, route, sent_to)?;
+    fn to_hop_message(&self, signed_msg: SignedRoutingMessage) -> Result<Message, RoutingError> {
+        let hop_msg = HopMessage::new(signed_msg)?;
         Ok(Message::Hop(hop_msg))
     }
 

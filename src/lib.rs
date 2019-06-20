@@ -156,7 +156,6 @@ extern crate serde_derive;
 #[macro_use]
 mod macros;
 
-mod ack_manager;
 mod action;
 mod cache;
 mod chain;
@@ -175,7 +174,6 @@ mod node;
 mod outbox;
 mod peer_manager;
 mod peer_map;
-mod rate_limiter;
 mod resource_prover;
 mod routing_message_filter;
 mod routing_table;
@@ -245,7 +243,8 @@ pub use crate::{
 };
 #[cfg(feature = "mock_base")]
 pub use crate::{
-    chain::verify_chain_invariant, peer_manager::test_consts, rate_limiter::rate_limiter_consts,
+    chain::{delivery_group_size, verify_chain_invariant},
+    peer_manager::test_consts,
 };
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;

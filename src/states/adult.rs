@@ -14,7 +14,6 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    ack_manager::AckManager,
     cache::Cache,
     chain::{
         Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, ProvingSection, SectionInfo,
@@ -25,7 +24,7 @@ use crate::{
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::{Peer, PeerManager, PeerState},
+    peer_manager::PeerManager,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -41,7 +40,6 @@ use std::fmt::{self, Display, Formatter};
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct AdultDetails {
-    pub ack_mgr: AckManager,
     pub cache: Box<Cache>,
     pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
@@ -56,7 +54,6 @@ pub struct AdultDetails {
 }
 
 pub struct Adult {
-    ack_mgr: AckManager,
     cache: Box<Cache>,
     chain: Chain,
     network_service: NetworkService,
@@ -89,7 +86,6 @@ impl Adult {
         );
 
         let mut node = Self {
-            ack_mgr: details.ack_mgr,
             cache: details.cache,
             chain,
             network_service: details.network_service,
@@ -126,7 +122,6 @@ impl Adult {
         outbox: &mut EventBox,
     ) -> Result<State, RoutingError> {
         let details = ElderDetails {
-            ack_mgr: self.ack_mgr,
             cache: self.cache,
             chain: self.chain,
             network_service: self.network_service,
@@ -137,7 +132,9 @@ impl Adult {
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
             peer_mgr: self.peer_mgr,
-            routing_msg_filter: self.routing_msg_filter,
+            // we reset the message filter so that the node can correctly process some messages as
+            // an Elder even if it has already seen them as an Adult
+            routing_msg_filter: RoutingMessageFilter::new(),
             timer: self.timer,
         };
 
@@ -226,8 +223,6 @@ impl Base for Adult {
         if self.poke_timer_token == token {
             self.send_parsec_poke();
             self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
-        } else {
-            self.resend_unacknowledged_timed_out_msgs(token);
         }
 
         Transition::Stay
@@ -276,14 +271,8 @@ impl Base for Adult {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(PeerState::Connected) | Some(PeerState::Proxy) => (),
-            _ => return Err(RoutingError::UnknownConnection(pub_id)),
-        }
-
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             self.dispatch_routing_message(routing_msg, outbox)
         } else {
@@ -293,14 +282,6 @@ impl Base for Adult {
 }
 
 impl Bootstrapped for Adult {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
         &mut self.routing_msg_filter
     }
@@ -309,14 +290,12 @@ impl Bootstrapped for Adult {
         &mut self.timer
     }
 
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
+        self.send_routing_message_via_proxy(routing_msg, expires_at)
     }
 }
 
@@ -349,8 +328,6 @@ impl Relocated for Adult {
 }
 
 impl BootstrappedNotEstablished for Adult {
-    const SEND_ACK: bool = true;
-
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
     }

@@ -13,8 +13,8 @@ use super::{
 use fake_clock::FakeClock;
 use rand::Rng;
 use routing::{
-    mock::Network, rate_limiter_consts::RATE, Authority, Event, EventStream, ImmutableData,
-    MessageId, Prefix, Request, Response, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+    mock::Network, Authority, Event, EventStream, ImmutableData, MessageId, Prefix, Request,
+    Response,
 };
 
 // Generate random immutable data, but make sure the first node in the given
@@ -104,10 +104,10 @@ fn response_caching() {
              src_name == data.name()
     );
 
-    // Drain remaining events if any, and advance the fake clock to allow the rate-limiter to drain
-    // enough to permit another Get request.
+    // Drain remaining events if any, and advance the fake clock by a second (TODO: check if still
+    // necessary, waiting here was needed because of the rate limiter)
     while let Ok(_) = clients[0].inner.try_next_ev() {}
-    let wait_millis = (MAX_IMMUTABLE_DATA_SIZE_IN_BYTES * 1000 / RATE as u64) + 1; // round up
+    let wait_millis = 1000;
     FakeClock::advance_time(wait_millis);
 
     let message_id = MessageId::new();

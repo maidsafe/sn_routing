@@ -13,17 +13,16 @@ use super::{
     },
 };
 use crate::{
-    ack_manager::AckManager,
     action::Action,
     cache::Cache,
-    chain::{GenesisPfxInfo, SectionInfo},
+    chain::GenesisPfxInfo,
     config_handler,
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
-    peer_manager::{Peer, PeerManager, PeerState},
+    peer_manager::{PeerManager, PeerState},
     peer_map::PeerMap,
     resource_prover::ResourceProver,
     routing_message_filter::RoutingMessageFilter,
@@ -60,7 +59,6 @@ pub struct ProvingNodeDetails {
 }
 
 pub struct ProvingNode {
-    ack_mgr: AckManager,
     cache: Box<Cache>,
     network_service: NetworkService,
     /// Whether resource proof is disabled.
@@ -101,7 +99,6 @@ impl ProvingNode {
         );
 
         let mut node = Self {
-            ack_mgr: AckManager::new(),
             cache: details.cache,
             network_service: details.network_service,
             event_backlog: Vec::new(),
@@ -164,7 +161,6 @@ impl ProvingNode {
         outbox: &mut EventBox,
     ) -> Result<State, RoutingError> {
         let details = AdultDetails {
-            ack_mgr: self.ack_mgr,
             cache: self.cache,
             network_service: self.network_service,
             event_backlog: self.event_backlog,
@@ -332,7 +328,6 @@ impl Base for ProvingNode {
         {
             transition
         } else {
-            self.resend_unacknowledged_timed_out_msgs(token);
             Transition::Stay
         }
     }
@@ -405,14 +400,8 @@ impl Base for ProvingNode {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        match self.peer_mgr.get_peer(&pub_id).map(Peer::state) {
-            Some(PeerState::Connected) | Some(PeerState::Proxy) => (),
-            _ => return Err(RoutingError::UnknownConnection(pub_id)),
-        }
-
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             self.dispatch_routing_message(routing_msg, outbox)
         } else {
@@ -422,14 +411,6 @@ impl Base for ProvingNode {
 }
 
 impl Bootstrapped for ProvingNode {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
         &mut self.routing_msg_filter
     }
@@ -438,14 +419,12 @@ impl Bootstrapped for ProvingNode {
         &mut self.timer
     }
 
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
+        self.send_routing_message_via_proxy(routing_msg, expires_at)
     }
 }
 
@@ -478,8 +457,6 @@ impl Relocated for ProvingNode {
 }
 
 impl BootstrappedNotEstablished for ProvingNode {
-    const SEND_ACK: bool = true;
-
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
     }

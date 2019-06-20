@@ -85,13 +85,6 @@ pub trait RelocatedNotEstablished: Relocated {
                     Ok(Transition::Stay)
                 }
             }
-            RoutingMessage {
-                content: Ack(ack, _),
-                ..
-            } => {
-                self.handle_ack_response(ack);
-                Ok(Transition::Stay)
-            }
             _ => {
                 self.add_message_to_backlog(msg);
                 Ok(Transition::Stay)

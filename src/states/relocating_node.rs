@@ -11,10 +11,8 @@ use super::{
     BootstrappingPeer, TargetState,
 };
 use crate::{
-    ack_manager::{Ack, AckManager},
     action::Action,
     cache::Cache,
-    chain::SectionInfo,
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
@@ -54,7 +52,6 @@ pub struct RelocatingNodeDetails {
 
 pub struct RelocatingNode {
     action_sender: mpmc::Sender<Action>,
-    ack_mgr: AckManager,
     network_service: NetworkService,
     full_id: FullId,
     /// Only held here to be passed eventually to the `Node` state.
@@ -74,7 +71,6 @@ impl RelocatingNode {
         let relocation_timer_token = details.timer.schedule(RELOCATE_TIMEOUT);
         let mut node = Self {
             action_sender: details.action_sender,
-            ack_mgr: AckManager::new(),
             network_service: details.network_service,
             full_id: details.full_id,
             cache: details.cache,
@@ -140,7 +136,6 @@ impl RelocatingNode {
                     self, routing_msg.content, routing_msg.src, routing_msg.dst
                 );
             }
-            Ack(ack, _) => self.handle_ack_response(ack),
             RelocateResponse {
                 target_interval,
                 section,
@@ -192,10 +187,6 @@ impl RelocatingNode {
         }
     }
 
-    fn handle_ack_response(&mut self, ack: Ack) {
-        self.ack_mgr.receive(ack);
-    }
-
     #[cfg(feature = "mock_base")]
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
@@ -244,7 +235,6 @@ impl Base for RelocatingNode {
             outbox.send_event(Event::RestartRequired);
             return Transition::Terminate;
         }
-        self.resend_unacknowledged_timed_out_msgs(token);
         Transition::Stay
     }
 
@@ -273,13 +263,8 @@ impl Base for RelocatingNode {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        pub_id: PublicId,
         _: &mut EventBox,
     ) -> Result<Transition, RoutingError> {
-        if self.proxy_pub_id != pub_id {
-            return Err(RoutingError::UnknownConnection(pub_id));
-        }
-
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             Ok(self.dispatch_routing_message(routing_msg))
         } else {
@@ -289,25 +274,15 @@ impl Base for RelocatingNode {
 }
 
 impl Bootstrapped for RelocatingNode {
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
-    }
-
     // Constructs a signed message, finds the node responsible for accumulation, and either sends
     // this node a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message_via_route(
+    fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        src_section: Option<SectionInfo>,
-        route: u8,
         expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, src_section, route, expires_at)
+        self.send_routing_message_via_proxy(routing_msg, expires_at)
     }
 
     fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
@@ -320,8 +295,6 @@ impl Bootstrapped for RelocatingNode {
 }
 
 impl BootstrappedNotEstablished for RelocatingNode {
-    const SEND_ACK: bool = true;
-
     fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
         proxied::get_proxy_public_id(self, &self.proxy_pub_id, proxy_name)
     }

@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    ack_manager::ACK_TIMEOUT,
     action::Action,
     event::Event,
     id::PublicId,
@@ -38,11 +37,8 @@ pub const RESOURCE_PROOF_DURATION: Duration = Duration::from_secs(300);
 /// Maximum time a new node will wait to receive `NodeApproval` after receiving a
 /// `RelocateResponse`. This covers the built-in delay of the process and also allows time for the
 /// message to accumulate and be sent via four different routes.
-const APPROVAL_TIMEOUT: Duration = Duration::from_secs(
-    RESOURCE_PROOF_DURATION.as_secs()
-        + ACCUMULATION_TIMEOUT.as_secs()
-        + (4 * ACK_TIMEOUT.as_secs()),
-);
+const APPROVAL_TIMEOUT: Duration =
+    Duration::from_secs(RESOURCE_PROOF_DURATION.as_secs() + 2 * ACCUMULATION_TIMEOUT.as_secs());
 /// Interval between displaying info about ongoing approval progress, in seconds.
 const APPROVAL_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
 

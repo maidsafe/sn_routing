@@ -39,12 +39,10 @@ const CONNECTED_PEER_TIMEOUT_SECS: u64 = 120;
 #[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod test_consts {
-    pub const ACK_TIMEOUT_SECS: u64 = crate::ack_manager::ACK_TIMEOUT.as_secs();
     pub const CANDIDATE_EXPIRED_TIMEOUT_SECS: u64 = super::CANDIDATE_EXPIRED_TIMEOUT.as_secs();
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
-    pub const RATE_EXCEED_RETRY_MS: u64 = crate::states::RATE_EXCEED_RETRY.as_millis() as u64;
 }
 
 /// Our relationship status with a known peer.
@@ -156,15 +154,6 @@ impl Peer {
     /// Returns whether the peer is our proxy node.
     fn is_proxy(&self) -> bool {
         self.state == PeerState::Proxy
-    }
-
-    /// Returns whether the peer is our client.
-    fn is_client(&self) -> bool {
-        if let PeerState::Client { .. } = self.state {
-            true
-        } else {
-            false
-        }
     }
 
     // If the peer is a client, return its IP, otherwise returns `None`.
@@ -498,11 +487,6 @@ impl PeerManager {
         self.peers.get(pub_id).map_or(false, Peer::is_proxy)
     }
 
-    /// Returns if the given peer is our client.
-    pub fn is_client(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, Peer::is_client)
-    }
-
     /// Returns if the given peer is or was a joining node.
     pub fn is_or_was_joining_node(&self, pub_id: &PublicId) -> bool {
         self.peers
@@ -542,34 +526,6 @@ impl PeerManager {
         }
 
         expired_peers
-    }
-
-    /// Updates the given clients total traffic amount.
-    pub fn add_client_traffic(
-        &mut self,
-        pub_id: &PublicId,
-        added_bytes: u64,
-        log_ident: &LogIdent,
-    ) {
-        let _ = self.peers.get_mut(pub_id).map(|peer| {
-            if let PeerState::Client {
-                ip,
-                traffic: old_traffic,
-            } = *peer.state()
-            {
-                let new_traffic = old_traffic.wrapping_add(added_bytes);
-                if new_traffic % (100 * 1024 * 1024) < added_bytes {
-                    info!(
-                        "{} Stats - Client current session traffic from {:?} - {:?}",
-                        log_ident, ip, new_traffic
-                    );
-                }
-                peer.state = PeerState::Client {
-                    ip,
-                    traffic: new_traffic,
-                };
-            }
-        });
     }
 
     /// Check whether the given peer exceeds the client limit.

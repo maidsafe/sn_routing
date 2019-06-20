@@ -421,7 +421,6 @@ fn new_elder_state(
     let cache = Box::new(NullCache);
 
     let details = ElderDetails {
-        ack_mgr: AckManager::new(),
         cache,
         chain,
         network_service,

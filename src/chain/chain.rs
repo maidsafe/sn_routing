@@ -32,6 +32,12 @@ use std::mem;
 /// protect against rapid splitting and merging in the face of moderate churn.
 const SPLIT_BUFFER: usize = 1;
 
+/// Returns the delivery group size based on the section size `n`
+pub fn delivery_group_size(n: usize) -> usize {
+    // this is an integer that is ≥ n/3
+    (n + 2) / 3
+}
+
 /// Data chain.
 pub struct Chain {
     /// Minimum number of nodes we consider acceptable in a section
@@ -535,6 +541,12 @@ impl Chain {
             let opt_ns = self.neighbour_infos.values().find(proves_si);
             let ns = opt_ns.ok_or_else(|| {
                 // Should be unreachable if section info is known.
+                error!(
+                    "Our prefix: {:?}, all prefixes: {:?}, sec_info.prefix(): {:?}",
+                    self.our_prefix(),
+                    self.prefixes(),
+                    sec_info.prefix(),
+                );
                 log_or_panic!(LogLevel::Error, "Unknown previous section info.");
                 RoutingError::UnknownPrevHop
             })?;
@@ -1039,37 +1051,14 @@ impl Chain {
         (best_pfx, best_si.member_names())
     }
 
-    /// Gets the `route`-th name from a collection of names
-    fn get_routeth_name<'a, U: IntoIterator<Item = &'a XorName>>(
-        names: U,
-        dst_name: &XorName,
-        route: usize,
-    ) -> &'a XorName {
-        let sorted_names = names
-            .into_iter()
-            .sorted_by(|&lhs, &rhs| dst_name.cmp_distance(lhs, rhs));
-        sorted_names[route % sorted_names.len()]
-    }
-
-    /// Returns the `route`-th node in the given section, sorted by distance to `target`
-    fn get_routeth_node(
-        &self,
-        section: &BTreeSet<XorName>,
-        target: XorName,
-        exclude: Option<XorName>,
-        route: usize,
-    ) -> Result<XorName, Error> {
-        let names = if let Some(exclude) = exclude {
-            section.iter().filter(|&x| *x != exclude).collect_vec()
-        } else {
-            section.iter().collect_vec()
-        };
-
-        if names.is_empty() {
-            return Err(Error::CannotRoute);
+    /// Returns the known sections sorted by the distance from a given XorName.
+    fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
+        let mut result = vec![(*self.our_prefix(), self.our_info().member_names())];
+        for (pfx, ni) in &self.neighbour_infos {
+            result.push((*pfx, ni.sec_info().member_names()));
         }
-
-        Ok(*Self::get_routeth_name(names, &target, route))
+        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
+        result
     }
 
     /// Returns a collection of nodes to which a message for the given `Authority` should be sent
@@ -1079,44 +1068,58 @@ impl Chain {
     /// * If the destination is an `Authority::Section`:
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     ///
     /// * If the destination is an `Authority::PrefixSection`:
     ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
     ///       RT, returns all members in these prefixes except ourself; otherwise
     ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
     ///       our RT, returns `Err(Error::CannotRoute)`; otherwise
-    ///     - returns the `route`-th closest member of the RT to the lower bound of the target
+    ///     - returns the `N/3` closest members of the RT to the lower bound of the target
     ///       prefix
     ///
     /// * If the destination is a group (`ClientManager`, `NaeManager` or `NodeManager`):
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     ///
     /// * If the destination is an individual node (`ManagedNode` or `Client`):
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
-    ///     - returns the `route`-th closest member of the RT to the target
+    ///     - returns the `N/3` closest members of the RT to the target
     pub fn targets(
         &self,
         dst: &Authority<XorName>,
-        exclude: XorName,
-        route: usize,
         connected_peers: &[&XorName],
     ) -> Result<BTreeSet<XorName>, Error> {
-        let candidates = |target_name: &XorName| {
-            self.closest_known_names(target_name, self.min_sec_size, &connected_peers)
-                .into_iter()
-                .filter(|name| name != self.our_id().name())
-                .collect::<BTreeSet<XorName>>()
-        };
-
         // FIXME: only filtering for now to match RT.
         // should confirm if needed esp after msg_relay changes.
         let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
 
-        let closest_section = match *dst {
+        let candidates = |target_name: &XorName| {
+            let mut filtered_sections =
+                self.closest_sections(target_name)
+                    .into_iter()
+                    .map(|(_, members)| {
+                        (
+                            members.len(),
+                            members.into_iter().filter(is_connected).collect::<Vec<_>>(),
+                        )
+                    });
+            let best_section = filtered_sections
+                .find(|(len, connected)| connected.len() * 3 >= *len)
+                .ok_or(Error::CannotRoute);
+            best_section.map(|(len, connected)| {
+                (
+                    len,
+                    connected
+                        .into_iter()
+                        .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs)),
+                )
+            })
+        };
+
+        let (best_section_len, best_section) = match *dst {
             Authority::ManagedNode(ref target_name)
             | Authority::Client {
                 proxy_node_name: ref target_name,
@@ -1128,7 +1131,7 @@ impl Chain {
                 if self.has(target_name) && is_connected(&target_name) {
                     return Ok(iter::once(*target_name).collect());
                 }
-                candidates(target_name)
+                candidates(target_name)?
             }
             Authority::ClientManager(ref target_name)
             | Authority::NaeManager(ref target_name)
@@ -1138,7 +1141,7 @@ impl Chain {
                 {
                     return Ok(group.into_iter().collect());
                 }
-                candidates(target_name)
+                candidates(target_name)?
             }
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
@@ -1152,7 +1155,7 @@ impl Chain {
                     section = section.into_iter().filter(is_connected).collect();
                     return Ok(section);
                 }
-                candidates(target_name)
+                candidates(target_name)?
             }
             Authority::PrefixSection(ref prefix) => {
                 if prefix.is_compatible(&self.our_prefix()) {
@@ -1181,11 +1184,14 @@ impl Chain {
                     let _ = targets.remove(&self.our_id().name());
                     return Ok(targets);
                 }
-                candidates(&prefix.lower_bound())
+                candidates(&prefix.lower_bound())?
             }
         };
-        let target = self.get_routeth_node(&closest_section, dst.name(), Some(exclude), route)?;
-        Ok(iter::once(target).collect())
+        Ok(best_section
+            .into_iter()
+            .filter(|&x| x != *self.our_id().name())
+            .take(delivery_group_size(best_section_len))
+            .collect())
     }
 
     /// Returns our own section, including our own name.
