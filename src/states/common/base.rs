@@ -239,14 +239,13 @@ pub trait Base: Display {
     fn handle_unsent_message(
         &mut self,
         peer_addr: SocketAddr,
-        _msg: NetworkBytes,
+        msg: NetworkBytes,
         msg_id: u64,
         _outbox: &mut EventBox,
     ) -> Transition {
-        warn!(
-            "{} Unsent message with ID {} to {:?}",
-            self, msg_id, peer_addr
-        );
+        let log_ident = LogIdent::new(self);
+        self.network_service_mut()
+            .send_message_to_next_target(msg, msg_id, peer_addr, log_ident);
         Transition::Stay
     }
 
@@ -257,10 +256,13 @@ pub trait Base: Display {
         msg_id: u64,
         _outbox: &mut EventBox,
     ) -> Transition {
-        warn!(
+        debug!(
             "{} Successfully sent message with ID {} to {:?}",
             self, msg_id, peer_addr
         );
+        self.network_service_mut()
+            .targets_cache_mut()
+            .target_succeeded(msg_id, peer_addr);
         Transition::Stay
     }
 
