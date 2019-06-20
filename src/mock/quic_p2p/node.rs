@@ -179,10 +179,18 @@ impl Node {
                 // attempts, only when a previously successfully established connection gets
                 // dropped.
             }
-            Packet::Message(msg) => self.fire_event(Event::NewMessage {
-                peer_addr: src,
-                msg,
-            }),
+            Packet::Message(msg) => {
+                if self.peers.contains_key(&src) {
+                    self.fire_event(Event::NewMessage {
+                        peer_addr: src,
+                        msg,
+                    })
+                } else {
+                    self.network
+                        .borrow_mut()
+                        .send(self.addr, src, Packet::MessageFailure(msg))
+                }
+            }
             Packet::MessageFailure(msg) => self.fire_event(Event::UnsentUserMessage {
                 peer_addr: src,
                 msg,
