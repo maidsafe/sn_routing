@@ -9,7 +9,15 @@
 use crate::{id::PublicId, quic_p2p::NodeInfo, ConnectionInfo};
 use std::{collections::HashMap, net::SocketAddr};
 
-/// Map between public ids and connection infos.
+/// This structure holds the bi-directional association between peers public id and their network
+/// connection info. This association can be create in two ways:
+/// 1. When both pieces of information (public id and connection info) are obtained at the same
+///    time, call `insert`. This happens when a third party (other members of the section) sends
+///    them to us.
+/// 2. Otherwise its a two step process: first, when the connection to the peer is established at
+///    the network layer, call `connect`. Then when their public id is received, call `identify`.
+///    This happens when the peer connects to us and then sends us a message which contains their
+///    public id.
 #[derive(Default)]
 pub struct PeerMap {
     forward: HashMap<PublicId, ConnectionInfo>,
@@ -34,11 +42,12 @@ impl PeerMap {
         Self::default()
     }
 
-    // Handles `ConnectedTo` event from the network layer.
+    // Marks the connection as established at the network layer. This is the first step in creating
+    // an association between public id and connection info. The second step is to call `identify`.
     // TODO: remove this `allow` when https://github.com/rust-lang/rust-clippy/issues/4219
     // is fixed.
     #[allow(clippy::map_entry)]
-    pub fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
+    pub fn connect(&mut self, conn_info: ConnectionInfo) {
         let socket_addr = conn_info.peer_addr();
         if !self.reverse.contains_key(&socket_addr) {
             let _ = self
@@ -47,9 +56,9 @@ impl PeerMap {
         }
     }
 
-    // Handles `ConnectionFailure` event from the network layer. Returns the `PublicId` of the peer,
-    // if the connection to them was previously established. Otherwise returns `None`.
-    pub fn handle_connection_failure(&mut self, socket_addr: SocketAddr) -> Option<PublicId> {
+    // Marks the connection as severed at the network layer. Returns the peers public id if the
+    // connection has been associated with one.
+    pub fn disconnect(&mut self, socket_addr: SocketAddr) -> Option<PublicId> {
         let _ = self.pending.remove(&socket_addr);
 
         if let Some(pub_id) = self.reverse.remove(&socket_addr) {
@@ -60,8 +69,9 @@ impl PeerMap {
         }
     }
 
-    // Handles received `DirectMessage`.
-    pub fn handle_direct_message(&mut self, pub_id: PublicId, socket_addr: SocketAddr) {
+    // Associate a network layer connection, that was previously established via `connect`, with
+    // the peers public id.
+    pub fn identify(&mut self, pub_id: PublicId, socket_addr: SocketAddr) {
         if let Some(peer_type) = self.pending.remove(&socket_addr) {
             let _ = self
                 .forward
@@ -70,8 +80,10 @@ impl PeerMap {
         }
     }
 
-    // Handles received `ConnectionRequest` message.
-    pub fn handle_connection_request(&mut self, pub_id: PublicId, node_info: NodeInfo) {
+    // Inserts a new entry into the peer map. This is equivalent to calling `connect` followed by
+    // `identify` and can be used when we obtain both the public id and the connection info at the
+    // same time (for example when a third party sends them to us).
+    pub fn insert(&mut self, pub_id: PublicId, node_info: NodeInfo) {
         let _ = self.pending.remove(&node_info.peer_addr);
         let _ = self.reverse.insert(node_info.peer_addr, pub_id);
         let _ = self
@@ -79,7 +91,7 @@ impl PeerMap {
             .insert(pub_id, ConnectionInfo::Node { node_info });
     }
 
-    // Removes the peer. If we were connected to the peer, returns its `Peer` info. Otherwise
+    // Removes the peer. If we were connected to the peer, returns its connection info. Otherwise
     // returns `None`.
     pub fn remove(&mut self, pub_id: &PublicId) -> Option<ConnectionInfo> {
         let conn_info = self.forward.remove(pub_id)?;
@@ -87,7 +99,7 @@ impl PeerMap {
         Some(conn_info)
     }
 
-    // Removes all peers. Returns an iterator over the `Peer` infos of the removed peers.
+    // Removes all peers. Returns an iterator over the connection infos of the removed peers.
     pub fn remove_all<'a>(&'a mut self) -> impl Iterator<Item = ConnectionInfo> + 'a {
         self.reverse.clear();
         self.forward.drain().map(|(_, conn_info)| conn_info).chain(
@@ -140,26 +152,26 @@ mod tests {
     use unwrap::unwrap;
 
     #[test]
-    fn connected_to_then_direct_message_then_connection_failure() {
+    fn connect_then_identify_then_disconnect() {
         let mut peer_map = PeerMap::new();
         let conn_info = conn_info("198.51.100.0:5555");
         let pub_id = *FullId::new().public_id();
 
         assert!(peer_map.get_connection_info(&pub_id).is_none());
 
-        peer_map.handle_connected_to(conn_info.clone());
+        peer_map.connect(conn_info.clone());
         assert!(peer_map.get_connection_info(&pub_id).is_none());
 
-        peer_map.handle_direct_message(pub_id, conn_info.peer_addr());
+        peer_map.identify(pub_id, conn_info.peer_addr());
         assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
 
-        let outcome = peer_map.handle_connection_failure(conn_info.peer_addr());
+        let outcome = peer_map.disconnect(conn_info.peer_addr());
         assert_eq!(outcome, Some(pub_id));
         assert!(peer_map.get_connection_info(&pub_id).is_none());
     }
 
     #[test]
-    fn connection_request() {
+    fn insert() {
         let mut peer_map = PeerMap::new();
         let node_info = node_info("198.51.100.0:5555");
         let conn_info = ConnectionInfo::Node {
@@ -169,7 +181,7 @@ mod tests {
 
         assert!(peer_map.get_connection_info(&pub_id).is_none());
 
-        peer_map.handle_connection_request(pub_id, node_info.clone());
+        peer_map.insert(pub_id, node_info.clone());
         assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
     }
 

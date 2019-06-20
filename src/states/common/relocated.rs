@@ -104,7 +104,7 @@ pub trait Relocated: Bootstrapped {
         );
 
         self.peer_map_mut()
-            .handle_connection_request(their_pub_id, their_conn_info.clone());
+            .insert(their_pub_id, their_conn_info.clone());
         self.peer_mgr_mut().set_connected(their_pub_id);
         self.process_connection(their_pub_id, outbox);
 

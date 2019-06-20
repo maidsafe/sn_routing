@@ -175,7 +175,7 @@ pub trait Base: Display {
         conn_info: ConnectionInfo,
         _outbox: &mut EventBox,
     ) -> Transition {
-        self.peer_map_mut().handle_connected_to(conn_info);
+        self.peer_map_mut().connect(conn_info);
         Transition::Stay
     }
 
@@ -186,7 +186,7 @@ pub trait Base: Display {
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, peer_addr);
 
-        if let Some(pub_id) = self.peer_map_mut().handle_connection_failure(peer_addr) {
+        if let Some(pub_id) = self.peer_map_mut().disconnect(peer_addr) {
             trace!("{} - ConnectionFailure from {}", self, pub_id);
             self.handle_peer_lost(pub_id, outbox)
         } else {
@@ -223,7 +223,7 @@ pub trait Base: Display {
             Message::Hop(msg) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg) => {
                 let (msg, pub_id) = msg.open()?;
-                self.peer_map_mut().handle_direct_message(pub_id, src_addr);
+                self.peer_map_mut().identify(pub_id, src_addr);
                 self.handle_direct_message(msg, pub_id, outbox)
             }
         }
