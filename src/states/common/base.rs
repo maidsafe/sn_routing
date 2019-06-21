@@ -23,7 +23,6 @@ use crate::{
     xor_name::XorName,
     ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
-use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{fmt::Display, net::SocketAddr};
 
@@ -41,20 +40,7 @@ pub trait Base: Display {
         LogIdent::new(self)
     }
 
-    fn handle_peer_connected(
-        &mut self,
-        _pub_id: PublicId,
-        _conn_info: ConnectionInfo,
-        _outbox: &mut EventBox,
-    ) -> Transition {
-        Transition::Stay
-    }
-
-    fn handle_peer_disconnected(
-        &mut self,
-        _pub_id: PublicId,
-        _outbox: &mut EventBox,
-    ) -> Transition {
+    fn handle_peer_lost(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -187,13 +173,10 @@ pub trait Base: Display {
     fn handle_connected_to(
         &mut self,
         conn_info: ConnectionInfo,
-        outbox: &mut EventBox,
+        _outbox: &mut EventBox,
     ) -> Transition {
-        if let Ok(pub_id) = self.peer_map_mut().handle_connected_to(conn_info.clone()) {
-            self.handle_peer_connected(pub_id, conn_info, outbox)
-        } else {
-            Transition::Stay
-        }
+        self.peer_map_mut().connect(conn_info);
+        Transition::Stay
     }
 
     fn handle_connection_failure(
@@ -203,9 +186,9 @@ pub trait Base: Display {
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, peer_addr);
 
-        if let Some(pub_id) = self.peer_map_mut().handle_connection_failure(peer_addr) {
+        if let Some(pub_id) = self.peer_map_mut().disconnect(peer_addr) {
             trace!("{} - ConnectionFailure from {}", self, pub_id);
-            self.handle_peer_disconnected(pub_id, outbox)
+            self.handle_peer_lost(pub_id, outbox)
         } else {
             Transition::Stay
         }
@@ -240,14 +223,7 @@ pub trait Base: Display {
             Message::Hop(msg) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg) => {
                 let (msg, pub_id) = msg.open()?;
-
-                if let Ok(conn_info) = self.peer_map_mut().handle_direct_message(pub_id, src_addr) {
-                    match self.handle_peer_connected(pub_id, conn_info, outbox) {
-                        Transition::Stay => (),
-                        _ => log_or_panic!(LogLevel::Error, "Unexpected transition"),
-                    }
-                }
-
+                self.peer_map_mut().identify(pub_id, src_addr);
                 self.handle_direct_message(msg, pub_id, outbox)
             }
         }

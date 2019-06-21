@@ -258,7 +258,7 @@ impl Base for BootstrappingPeer {
     }
 
     fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
-        let _ = self.peer_map_mut().handle_connected_to(Peer::Node {
+        self.peer_map_mut().connect(Peer::Node {
             node_info: node_info.clone(),
         });
 
@@ -284,7 +284,7 @@ impl Base for BootstrappingPeer {
     }
 
     fn handle_connection_failure(&mut self, peer_addr: SocketAddr, _: &mut EventBox) -> Transition {
-        let _ = self.peer_map_mut().handle_connection_failure(peer_addr);
+        let _ = self.peer_map_mut().disconnect(peer_addr);
 
         if let Some((node_info, _)) = self.bootstrap_connection.as_ref() {
             if node_info.peer_addr == peer_addr {

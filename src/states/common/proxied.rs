@@ -8,12 +8,7 @@
 
 //! Utilities for node states that are connected via proxy.
 
-use crate::{
-    error::RoutingError,
-    id::PublicId,
-    peer_manager::{Peer, PeerManager},
-    xor_name::XorName,
-};
+use crate::{error::RoutingError, id::PublicId, peer_manager::PeerManager, xor_name::XorName};
 use std::fmt::Display;
 
 pub fn get_proxy_public_id<'a, T: Display>(
@@ -34,7 +29,7 @@ pub fn find_proxy_public_id<'a, T: Display>(
     peer_mgr: &'a PeerManager,
     proxy_name: &XorName,
 ) -> Result<&'a PublicId, RoutingError> {
-    if let Some(pub_id) = peer_mgr.get_peer_by_name(proxy_name).map(Peer::pub_id) {
+    if let Some(pub_id) = peer_mgr.get_pub_id(proxy_name) {
         if peer_mgr.is_connected(pub_id) {
             Ok(pub_id)
         } else {

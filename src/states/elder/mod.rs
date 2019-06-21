@@ -335,12 +335,11 @@ impl Elder {
         let mut peers_to_add = Vec::new();
         let mut peers_to_remove = Vec::new();
 
-        for peer in self.peer_mgr.connected_peers() {
-            let pub_id = peer.pub_id();
+        for (pub_id, peer) in self.peer_mgr.connected_peers() {
             if self.is_peer_valid(pub_id) {
                 peers_to_add.push(*pub_id);
             } else if peer.is_node() && self.chain.prefix_change() == PrefixChange::None {
-                peers_to_remove.push(*peer.pub_id());
+                peers_to_remove.push(*pub_id);
             }
         }
         for pub_id in peers_to_add {
@@ -620,7 +619,7 @@ impl Elder {
         &mut self,
         routing_msg: RoutingMessage,
         outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<(), RoutingError> {
         use crate::messages::MessageContent::*;
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
@@ -637,10 +636,7 @@ impl Elder {
                     proxy_node_name,
                 },
                 Section(dst_name),
-            ) => {
-                self.handle_relocate_request(client_id, proxy_node_name, dst_name, message_id)?;
-                Ok(Transition::Stay)
-            }
+            ) => self.handle_relocate_request(client_id, proxy_node_name, dst_name, message_id),
             (
                 ExpectCandidate {
                     old_public_id,
@@ -649,10 +645,7 @@ impl Elder {
                 },
                 Section(_),
                 Section(dst_name),
-            ) => {
-                self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id)?;
-                Ok(Transition::Stay)
-            }
+            ) => self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id),
             (
                 ConnectionRequest {
                     encrypted_conn_info,
@@ -671,19 +664,13 @@ impl Elder {
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(Transition::Stay),
+            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
             (
                 NeighbourConfirm(digest, proofs, sec_infos_and_proofs),
                 ManagedNode(_),
                 Section(_),
-            ) => {
-                self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs)?;
-                Ok(Transition::Stay)
-            }
-            (Merge(digest), PrefixSection(_), PrefixSection(_)) => {
-                self.handle_merge(digest)?;
-                Ok(Transition::Stay)
-            }
+            ) => self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs),
+            (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (
                 UserMessagePart {
                     hash,
@@ -701,7 +688,7 @@ impl Elder {
                 {
                     outbox.send_event(msg.into_event(src, dst));
                 }
-                Ok(Transition::Stay)
+                Ok(())
             }
             (content, src, dst) => {
                 debug!(
@@ -938,6 +925,11 @@ impl Elder {
         self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(Ok(())));
 
         Ok(())
+    }
+
+    fn handle_connection_response(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+        self.peer_mgr_mut().set_connected(pub_id);
+        self.process_connection(pub_id, outbox);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1529,11 +1521,7 @@ impl Elder {
             ..
         } = routing_msg.src
         {
-            if let Some(pub_id) = self
-                .peer_mgr
-                .get_peer_by_name(proxy_node_name)
-                .map(Peer::pub_id)
-            {
+            if let Some(pub_id) = self.peer_mgr.get_pub_id(proxy_node_name) {
                 if self.peer_mgr.is_connected(pub_id) {
                     Ok(vec![*pub_id])
                 } else {
@@ -1563,7 +1551,7 @@ impl Elder {
     fn connected_peers(&self) -> Vec<&XorName> {
         self.peer_mgr
             .connected_peers()
-            .map(Peer::name)
+            .map(|(pub_id, _)| pub_id.name())
             .chain(iter::once(self.name()))
             .collect()
     }
@@ -1588,7 +1576,7 @@ impl Elder {
         if self
             .peer_mgr
             .connected_peers()
-            .filter(|p| p.is_node())
+            .filter(|(_, p)| p.is_node())
             .count()
             == 0
         {
@@ -1771,17 +1759,8 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_peer_connected(
-        &mut self,
-        pub_id: PublicId,
-        conn_info: ConnectionInfo,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        Approved::handle_peer_connected(self, pub_id, conn_info, outbox)
-    }
-
-    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{} - Disconnected from {}", self, pub_id);
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} - Lost peer {}", self, pub_id);
 
         if self.peer_mgr.get_peer(&pub_id).is_none() {
             return Transition::Stay;
@@ -1820,6 +1799,7 @@ impl Base for Elder {
                     self.ban_and_disconnect_peer(&pub_id);
                 }
             }
+            ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             CandidateInfo {
                 ref old_public_id,
                 ref signature_using_old,
@@ -1854,10 +1834,7 @@ impl Base for Elder {
             ParsecResponse(version, par_response) => {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
-            BootstrapResponse(_)
-            | ConnectionResponse
-            | ResourceProof { .. }
-            | ResourceProofResponseReceipt => {
+            BootstrapResponse(_) | ResourceProof { .. } | ResourceProofResponseReceipt => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }

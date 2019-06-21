@@ -32,7 +32,7 @@ use crate::{
     time::Instant,
     timer::Timer,
     xor_name::XorName,
-    ConnectionInfo, NetworkService,
+    NetworkService,
 };
 use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
@@ -189,8 +189,16 @@ impl ProvingNode {
                 src: PrefixSection(_),
                 dst: Client { .. },
             } => Ok(self.handle_node_approval(gen_info)),
-            _ => self.handle_routing_message(msg, outbox),
+            _ => {
+                self.handle_routing_message(msg, outbox)?;
+                Ok(Transition::Stay)
+            }
         }
+    }
+
+    fn handle_connection_response(&mut self, pub_id: PublicId) {
+        self.peer_mgr.set_connected(pub_id);
+        self.send_candidate_info(pub_id);
     }
 
     fn handle_node_approval(&mut self, gen_pfx_info: GenesisPfxInfo) -> Transition {
@@ -339,20 +347,9 @@ impl Base for ProvingNode {
         self.send_direct_message(&pub_id, msg);
     }
 
-    fn handle_peer_connected(
-        &mut self,
-        pub_id: PublicId,
-        _conn_info: ConnectionInfo,
-        _outbox: &mut EventBox,
-    ) -> Transition {
-        self.peer_mgr.set_connected(pub_id);
-        self.send_candidate_info(pub_id);
-        Transition::Stay
-    }
-
-    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
         let _ = self.resource_proofing_status.remove(&pub_id);
-        RelocatedNotEstablished::handle_peer_disconnected(self, pub_id, outbox)
+        RelocatedNotEstablished::handle_peer_lost(self, pub_id, outbox)
     }
 
     fn handle_direct_message(
@@ -365,7 +362,7 @@ impl Base for ProvingNode {
 
         use crate::messages::DirectMessage::*;
         match msg {
-            ConnectionResponse => (),
+            ConnectionResponse => self.handle_connection_response(pub_id),
             ResourceProof {
                 seed,
                 target_size,

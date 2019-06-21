@@ -49,7 +49,7 @@ pub trait RelocatedNotEstablished: Relocated {
         &mut self,
         msg: RoutingMessage,
         outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<(), RoutingError> {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
 
         let src_name = msg.src.name();
@@ -82,12 +82,12 @@ pub trait RelocatedNotEstablished: Relocated {
                         },
                         ..msg
                     });
-                    Ok(Transition::Stay)
+                    Ok(())
                 }
             }
             _ => {
                 self.add_message_to_backlog(msg);
-                Ok(Transition::Stay)
+                Ok(())
             }
         }
     }
@@ -115,8 +115,8 @@ pub trait RelocatedNotEstablished: Relocated {
         self.disconnect_peer(&pub_id);
     }
 
-    fn handle_peer_disconnected(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
-        debug!("{} - Disconnected from {}", self, pub_id);
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+        debug!("{} - Lost peer {}", self, pub_id);
 
         let was_proxy = self.peer_mgr().is_proxy(&pub_id);
 
