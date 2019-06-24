@@ -28,6 +28,7 @@ use std::net::SocketAddr;
 use unwrap::unwrap;
 use utils::LogIdent;
 
+const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 // Accumulate even if 1 old node and an additional new node do not vote.
 const NO_SINGLE_VETO_VOTE_COUNT: usize = 7;
 const ACCUMULATE_VOTE_COUNT: usize = 6;
@@ -89,6 +90,10 @@ struct ElderUnderTest {
 
 impl ElderUnderTest {
     fn new() -> Self {
+        Self::with_min_section_size(DEFAULT_MIN_SECTION_SIZE)
+    }
+
+    fn with_min_section_size(min_section_size: usize) -> Self {
         let full_ids = (0..NO_SINGLE_VETO_VOTE_COUNT)
             .map(|_| FullId::new())
             .collect_vec();
@@ -107,7 +112,7 @@ impl ElderUnderTest {
         };
 
         let full_id = full_ids[0].clone();
-        let machine = make_state_machine(&full_id, &gen_pfx_info, &mut ev_buffer);
+        let machine = make_state_machine(&full_id, &gen_pfx_info, min_section_size, &mut ev_buffer);
 
         let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
         let other_parsec_map = other_full_ids
@@ -205,7 +210,7 @@ impl ElderUnderTest {
 
     fn accumulate_add_elder_if_vote(&mut self, online_payload: OnlinePayload) {
         let _ = self.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
+            NOT_ACCUMULATE_ALONE_VOTE_COUNT,
             &[&NetworkEvent::AddElder(
                 online_payload.new_public_id,
                 online_payload.client_auth,
@@ -492,9 +497,9 @@ fn new_elder_state(
 fn make_state_machine(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
+    min_section_size: usize,
     outbox: &mut EventBox,
 ) -> StateMachine {
-    let min_section_size = 4;
     let network = Network::new(min_section_size, None);
 
     let endpoint = network.gen_addr();
@@ -793,4 +798,26 @@ fn allow_only_one_client_per_ip() {
 
     assert!(elder_test.has_client(client0.public_id()));
     assert!(!elder_test.has_client(client1.public_id()));
+}
+
+#[test]
+fn accept_previously_rejected_client_after_reaching_min_section_size() {
+    // Set min_section_size to one more than the initial size of the section. This makes us reject
+    // any bootstrapping clients.
+    let mut elder_test = ElderUnderTest::with_min_section_size(NO_SINGLE_VETO_VOTE_COUNT + 1);
+    let client = ClientInfo::with_addr("198.51.100.0:5000");
+
+    // Bootstrap fails for insufficient section size.
+    elder_test.handle_bootstrap_request(*client.public_id(), client.connection_info());
+    assert!(!elder_test.has_client(client.public_id()));
+
+    // Add new section member to reach min_section_size.
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_section_info_if_vote(elder_test.new_section_info_with_candidate());
+
+    // Re-bootstrap now succeeds.
+    elder_test.handle_bootstrap_request(*client.public_id(), client.connection_info());
+    assert!(elder_test.has_client(client.public_id()));
 }
