@@ -511,27 +511,13 @@ impl PeerManager {
         expired_peers
     }
 
-    /// Check whether the given peer exceeds the client limit.
-    pub fn exceeds_client_limit(&mut self, pub_id: &PublicId) -> bool {
-        if self.disable_client_rate_limiter {
-            return false;
-        }
-
-        let client_ip = self.peers.get(pub_id).and_then(Peer::client_ip);
-        let client_ip = if let Some(ip) = client_ip {
-            ip
-        } else {
-            return false;
-        };
-
-        // Allow only one client per IP
-        self.peers
-            .values()
-            .filter_map(Peer::client_ip)
-            .filter(|other_ip| *other_ip == client_ip)
-            .take(2)
-            .count()
-            >= 2
+    /// Checks whether we can accept more clients. We only allow one client per IP address.
+    pub fn can_accept_client(&self, client_ip: &IpAddr) -> bool {
+        self.disable_client_rate_limiter
+            || !self
+                .peers
+                .values()
+                .any(|peer| peer.client_ip() == Some(client_ip))
     }
 
     /// Inserts the peer in the `Connecting` state, unless already exists.

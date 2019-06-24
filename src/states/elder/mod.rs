@@ -48,6 +48,8 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
 use safe_crypto::Signature;
+#[cfg(feature = "mock_base")]
+use std::net::SocketAddr;
 use std::{
     cmp,
     collections::{BTreeSet, VecDeque},
@@ -855,7 +857,7 @@ impl Elder {
             }
 
             // Check the client limit.
-            if self.peer_mgr.exceeds_client_limit(&pub_id) {
+            if !self.peer_mgr.can_accept_client(&ip) {
                 debug!(
                     "{} - Client {:?} rejected: We cannot accept more clients.",
                     self, pub_id
@@ -1856,6 +1858,14 @@ impl Elder {
 
     pub fn set_ignore_candidate_info_counter(&mut self, counter: u8) {
         self.ignore_candidate_info_counter = counter;
+    }
+
+    pub fn get_peer(&self, pub_id: &PublicId) -> Option<&Peer> {
+        self.peer_mgr.get_peer(pub_id)
+    }
+
+    pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
+        self.peer_map.identify(pub_id, peer_addr)
     }
 }
 

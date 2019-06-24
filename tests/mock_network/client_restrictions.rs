@@ -53,27 +53,6 @@ fn ban_malicious_client() {
     expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
 }
 
-/// Connects two clients to the network using the same ip address and via the same proxy.
-/// Expect only one client got connected.
-#[test]
-// TODO (quic-p2p): This test requires bootstrap blacklist which isn't implemented in quic-p2p.
-#[ignore]
-fn only_one_client_per_ip() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-    let mut clients = create_connected_clients(&network, &mut nodes, 1);
-
-    // Connect a new client with the same ip address shall get rejected.
-    let mut endpoint = clients[0].endpoint();
-    endpoint.set_port(endpoint.port() + 1);
-
-    let config = NetworkConfig::client().with_hard_coded_contact(nodes[0].endpoint());
-    let client = TestClient::new(&network, Some(config), Some(endpoint));
-    clients.push(client);
-    let _ = poll_all(&mut nodes, &mut clients);
-    expect_next_event!(unwrap!(clients.last_mut()), Event::Terminated);
-}
-
 /// Reconnect a client (disconnected as network not having enough nodes) with the same id.
 #[test]
 // TODO (quic-p2p): This test requires bootstrap blacklist which isn't implemented in quic-p2p.

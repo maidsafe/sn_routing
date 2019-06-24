@@ -24,6 +24,7 @@ use crate::{
     xor_name::XOR_NAME_LEN,
     NetworkConfig, NetworkService,
 };
+use std::net::SocketAddr;
 use unwrap::unwrap;
 use utils::LogIdent;
 
@@ -48,6 +49,30 @@ impl CandidateInfo {
             new_full_id: FullId::new(),
             new_proxy_id: FullId::new(),
             message_id: MessageId::new(),
+        }
+    }
+}
+
+struct ClientInfo {
+    full_id: FullId,
+    addr: SocketAddr,
+}
+
+impl ClientInfo {
+    fn with_addr(addr: &str) -> Self {
+        Self {
+            full_id: FullId::new(),
+            addr: unwrap!(addr.parse()),
+        }
+    }
+
+    fn public_id(&self) -> &PublicId {
+        self.full_id.public_id()
+    }
+
+    fn connection_info(&self) -> ConnectionInfo {
+        ConnectionInfo::Client {
+            peer_addr: self.addr,
         }
     }
 }
@@ -140,7 +165,8 @@ impl ElderUnderTest {
             *self.full_id.public_id().name()
         };
 
-        unwrap!(self.machine.current_mut().elder_state_mut())
+        self.machine
+            .elder_state_mut()
             .set_next_relocation_interval(Some(XorTargetInterval(name, name)));
     }
 
@@ -260,12 +286,30 @@ impl ElderUnderTest {
         &mut self,
         msg: (DirectMessage, PublicId),
     ) -> Result<(), RoutingError> {
-        let _ = unwrap!(self.machine.current_mut().elder_state_mut()).handle_direct_message(
+        let _ = self.machine.elder_state_mut().handle_direct_message(
             msg.0,
             msg.1,
             &mut self.ev_buffer,
         )?;
         Ok(())
+    }
+
+    fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
+        match self
+            .machine
+            .elder_state_mut()
+            .handle_connected_to(conn_info, &mut self.ev_buffer)
+        {
+            Transition::Stay => (),
+            _ => panic!("Unexpected transition"),
+        }
+    }
+
+    fn handle_connected_to_candidate(&mut self) {
+        let conn_info = ConnectionInfo::Node {
+            node_info: self.candidate_node_info(),
+        };
+        self.handle_connected_to(conn_info)
     }
 
     fn expect_candidate_payload(&self) -> ExpectCandidatePayload {
@@ -385,17 +429,24 @@ impl ElderUnderTest {
         }
     }
 
-    fn establish_connection_with_candidate(&mut self) {
-        let mut outbox = EventBuf::new();
-        let conn_info = ConnectionInfo::Node {
-            node_info: self.candidate_node_info(),
-        };
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
+        let peer_addr = conn_info.peer_addr();
 
-        match unwrap!(self.machine.current_mut().elder_state_mut())
-            .handle_connected_to(conn_info, &mut outbox)
-        {
-            Transition::Stay => (),
-            _ => panic!("Unexpected transition"),
+        self.handle_connected_to(conn_info);
+        self.machine
+            .elder_state_mut()
+            .identify_connection(pub_id, peer_addr);
+        unwrap!(self
+            .machine
+            .elder_state_mut()
+            .handle_bootstrap_request(pub_id));
+    }
+
+    fn has_client(&self, pub_id: &PublicId) -> bool {
+        match self.elder_state().get_peer(pub_id).map(Peer::state) {
+            Some(PeerState::Client { .. }) => true,
+            Some(state) => panic!("Unexpected peer state: expected Client, got {:?}", state),
+            None => false,
         }
     }
 }
@@ -413,7 +464,7 @@ fn new_elder_state(
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
     let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
     let peer_map = PeerMap::new();
-    let peer_mgr = PeerManager::new(public_id, true);
+    let peer_mgr = PeerManager::new(public_id, false);
     let cache = Box::new(NullCache);
 
     let details = ElderDetails {
@@ -466,6 +517,16 @@ fn make_state_machine(
         outbox,
     )
     .1
+}
+
+trait StateMachineExt {
+    fn elder_state_mut(&mut self) -> &mut Elder;
+}
+
+impl StateMachineExt for StateMachine {
+    fn elder_state_mut(&mut self) -> &mut Elder {
+        unwrap!(self.current_mut().elder_state_mut())
+    }
 }
 
 #[test]
@@ -679,7 +740,7 @@ fn candidate_info_message_in_interval() {
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.establish_connection_with_candidate();
+    elder_test.handle_connected_to_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(elder_test.has_candidate_info());
@@ -695,7 +756,7 @@ fn candidate_info_message_not_in_interval() {
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.establish_connection_with_candidate();
+    elder_test.handle_connected_to_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(!elder_test.has_candidate_info());
@@ -711,11 +772,25 @@ fn candidate_info_message_bad_signature() {
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.establish_connection_with_candidate();
+    elder_test.handle_connected_to_candidate();
     let _ = elder_test
         .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
 
     assert!(!elder_test.has_candidate_info());
     assert!(elder_test.has_resource_proof_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
+}
+
+#[test]
+fn allow_only_one_client_per_ip() {
+    // Create two clients on the same IP.
+    let client0 = ClientInfo::with_addr("198.51.100.0:5000");
+    let client1 = ClientInfo::with_addr("198.51.100.0:5001");
+
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.handle_bootstrap_request(*client0.public_id(), client0.connection_info());
+    elder_test.handle_bootstrap_request(*client1.public_id(), client1.connection_info());
+
+    assert!(elder_test.has_client(client0.public_id()));
+    assert!(!elder_test.has_client(client1.public_id()));
 }
