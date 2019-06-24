@@ -187,6 +187,10 @@ impl Node {
                 peer_addr: src,
                 msg,
             }),
+            Packet::MessageSent(msg) => self.fire_event(Event::SentUserMessage {
+                peer_addr: src,
+                msg,
+            }),
             Packet::Disconnect => {
                 if self.peers.remove(&src).is_some() {
                     self.fire_event(Event::ConnectionFailure {

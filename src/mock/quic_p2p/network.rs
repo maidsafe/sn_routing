@@ -142,8 +142,13 @@ impl Network {
 
     fn process_packet(&self, connection: &Connection, packet: Packet) {
         let response = if let Some(dst) = self.find_node(&connection.dst) {
+            let msg = if let Packet::Message(ref msg) = packet {
+                Some(Packet::MessageSent(msg.clone()))
+            } else {
+                None
+            };
             dst.borrow_mut().receive_packet(connection.src, packet);
-            None
+            msg
         } else {
             match packet {
                 Packet::BootstrapRequest(_) => Some(Packet::BootstrapFailure),
@@ -268,6 +273,7 @@ pub(super) enum Packet {
     ConnectFailure,
     Message(NetworkBytes),
     MessageFailure(NetworkBytes),
+    MessageSent(NetworkBytes),
     Disconnect,
 }
 
