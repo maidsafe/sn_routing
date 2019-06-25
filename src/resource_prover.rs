@@ -10,7 +10,7 @@ use crate::{
     action::Action,
     event::Event,
     id::PublicId,
-    messages::{DirectMessage, MAX_PART_LEN},
+    messages::DirectMessage,
     outbox::EventBox,
     signature_accumulator::ACCUMULATION_TIMEOUT,
     state_machine::Transition,
@@ -41,6 +41,9 @@ const APPROVAL_TIMEOUT: Duration =
     Duration::from_secs(RESOURCE_PROOF_DURATION.as_secs() + 2 * ACCUMULATION_TIMEOUT.as_secs());
 /// Interval between displaying info about ongoing approval progress, in seconds.
 const APPROVAL_PROGRESS_INTERVAL: Duration = Duration::from_secs(30);
+
+// Maximum size in bytes of the proof data contained in one `ResourceProofResponse` message.
+const MAX_PROOF_DATA_PART_SIZE: usize = 20 * 1024;
 
 /// Handles resource proofs
 pub struct ResourceProver {
@@ -126,7 +129,7 @@ impl ResourceProver {
 
             let parts = proof_data
                 .into_iter()
-                .chunks(MAX_PART_LEN)
+                .chunks(MAX_PROOF_DATA_PART_SIZE)
                 .into_iter()
                 .map(Iterator::collect)
                 .collect_vec();

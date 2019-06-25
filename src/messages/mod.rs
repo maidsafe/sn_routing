@@ -29,17 +29,12 @@ use crate::{
 };
 use hex_fmt::HexFmt;
 use itertools::Itertools;
-use lru_time_cache::LruCache;
-use maidsafe_utilities::serialisation::{deserialise, serialise};
+use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
-    fmt::{self, Debug, Formatter},
-    time::Duration,
+    collections::{BTreeSet, HashSet},
+    fmt::{self, Debug, Display, Formatter},
 };
-
-/// The maximal length of a user message part, in bytes.
-pub const MAX_PART_LEN: usize = 20 * 1024;
 
 /// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
 /// critical to prevent data loss.
@@ -479,21 +474,11 @@ pub enum MessageContent {
     /// the given hash will be the merged section.
     Merge(Digest256),
     /// Part of a user-facing message
-    UserMessagePart {
-        /// The hash of this user message.
-        hash: Digest256,
-        /// The unique message ID of this user message.
-        msg_id: MessageId,
-        /// The number of parts.
-        part_count: u32,
-        /// The index of this part.
-        part_index: u32,
+    UserMessage {
+        /// The content of the user message.
+        content: UserMessage,
         /// The message priority.
         priority: u8,
-        /// Is the message cacheable?
-        cacheable: bool,
-        /// The `part_index`-th part of the serialised user message.
-        payload: Vec<u8>,
     },
     /// Approves the joining node as a routing node.
     ///
@@ -505,7 +490,7 @@ impl MessageContent {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         match *self {
-            MessageContent::UserMessagePart { priority, .. } => priority,
+            MessageContent::UserMessage { priority, .. } => priority,
             _ => 0,
         }
     }
@@ -575,24 +560,14 @@ impl Debug for MessageContent {
                 neighbour_sec_infos.len(),
             ),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
-            UserMessagePart {
-                hash,
-                part_count,
-                part_index,
+            UserMessage {
+                ref content,
                 priority,
-                cacheable,
                 ..
             } => write!(
                 formatter,
-                "UserMessagePart {{ {}/{}, priority: {}, cacheable: {}, \
-                 {:02x}{:02x}{:02x}.. }}",
-                part_index + 1,
-                part_count,
-                priority,
-                cacheable,
-                hash[0],
-                hash[1],
-                hash[2]
+                "UserMessage {{ content: {:?}, priority: {} }}",
+                content, priority,
             ),
             NodeApproval(ref gen_info) => write!(formatter, "NodeApproval {{ {:?} }}", gen_info),
         }
@@ -609,46 +584,6 @@ pub enum UserMessage {
 }
 
 impl UserMessage {
-    /// Splits up the message into smaller `MessageContent` parts, which can individually be sent
-    /// and routed, and then be put back together by the receiver.
-    pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>> {
-        let payload = serialise(self)?;
-        let hash = safe_crypto::hash(&payload);
-        let msg_id = *self.message_id();
-        let len = payload.len();
-        let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
-
-        Ok((0..part_count)
-            .map(|i| MessageContent::UserMessagePart {
-                hash,
-                msg_id,
-                part_count: part_count as u32,
-                part_index: i as u32,
-                cacheable: self.is_cacheable(),
-                payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
-                priority,
-            })
-            .collect())
-    }
-
-    /// Puts the given parts of a serialised message together and verifies that it matches the
-    /// given hash code. If it does, returns the `UserMessage`.
-    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(
-        hash: Digest256,
-        parts: I,
-    ) -> Result<UserMessage> {
-        let mut payload = Vec::new();
-        for part in parts {
-            payload.extend_from_slice(part);
-        }
-        let user_msg = deserialise(&payload[..])?;
-        if hash != safe_crypto::hash(&payload) {
-            Err(RoutingError::HashMismatch)
-        } else {
-            Ok(user_msg)
-        }
-    }
-
     /// Returns an event indicating that this message was received with the given source and
     /// destination authorities.
     pub fn into_event(self, src: Authority<XorName>, dst: Authority<XorName>) -> Event {
@@ -674,58 +609,28 @@ impl UserMessage {
         }
     }
 
-    fn is_cacheable(&self) -> bool {
+    pub fn is_cacheable(&self) -> bool {
         match *self {
             UserMessage::Request(ref request) => request.is_cacheable(),
             UserMessage::Response(ref response) => response.is_cacheable(),
         }
     }
+
+    /// Returns an object that implements `Display` for printing short, simplified representation of
+    /// `UserMessage`.
+    pub fn short_display(&self) -> UserMessageShortDisplay {
+        UserMessageShortDisplay(self)
+    }
 }
 
-/// This assembles `UserMessage`s from `UserMessagePart`s.
-/// It maps `(hash, part_count)` of an incoming `UserMessage` to the map containing
-/// all `UserMessagePart`s that have already arrived, by `part_index`.
-pub struct UserMessageCache(LruCache<(Digest256, u32), BTreeMap<u32, Vec<u8>>>);
+pub struct UserMessageShortDisplay<'a>(&'a UserMessage);
 
-impl UserMessageCache {
-    pub fn with_expiry_duration(duration: Duration) -> Self {
-        UserMessageCache(LruCache::with_expiry_duration(duration))
-    }
-
-    /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
-    /// given part was the last missing piece of it.
-    pub fn add(
-        &mut self,
-        hash: Digest256,
-        part_count: u32,
-        part_index: u32,
-        payload: Vec<u8>,
-    ) -> Option<UserMessage> {
-        {
-            let entry = self
-                .0
-                .entry((hash, part_count))
-                .or_insert_with(BTreeMap::new);
-            if entry.insert(part_index, payload).is_some() {
-                debug!(
-                    "Duplicate UserMessagePart {}/{} with hash {:02x}{:02x}{:02x}.. \
-                     added to cache.",
-                    part_index + 1,
-                    part_count,
-                    hash[0],
-                    hash[1],
-                    hash[2]
-                );
-            }
-
-            if entry.len() != part_count as usize {
-                return None;
-            }
+impl<'a> Display for UserMessageShortDisplay<'a> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self.0 {
+            UserMessage::Request(ref r) => write!(f, "Request {{ {:?} }}", r.message_id()),
+            UserMessage::Response(ref r) => write!(f, "Response {{ {:?} }}", r.message_id()),
         }
-
-        self.0
-            .remove(&(hash, part_count))
-            .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
     }
 }
 
@@ -794,14 +699,14 @@ mod tests {
             data: data,
             msg_id: MessageId::new(),
         });
-        let parts = unwrap!(user_msg.to_parts(1));
-        assert_eq!(1, parts.len());
-        let part = parts[0].clone();
         let name: XorName = rand::random();
         let msg = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: part,
+            content: MessageContent::UserMessage {
+                content: user_msg,
+                priority: 0,
+            },
         };
 
         let src_section = unwrap!(SectionInfo::new(
@@ -864,44 +769,5 @@ mod tests {
         assert!(!signed_msg
             .signatures
             .contains_id(irrelevant_full_id.public_id(),));
-    }
-
-    #[test]
-    fn user_message_parts() {
-        let data_bytes: Vec<u8> = (0..(MAX_PART_LEN * 2)).map(|i| i as u8).collect();
-        let data = ImmutableData::new(data_bytes);
-        let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: MessageId::new(),
-        });
-        let msg_hash = safe_crypto::hash(&unwrap!(serialise(&user_msg)));
-        let parts = unwrap!(user_msg.to_parts(42));
-        assert_eq!(parts.len(), 3);
-        let payloads: Vec<Vec<u8>> = parts
-            .into_iter()
-            .enumerate()
-            .map(|(i, msg)| match msg {
-                MessageContent::UserMessagePart {
-                    hash,
-                    msg_id,
-                    part_count,
-                    part_index,
-                    payload,
-                    priority,
-                    cacheable,
-                } => {
-                    assert_eq!(msg_hash, hash);
-                    assert_eq!(user_msg.message_id(), &msg_id);
-                    assert_eq!(3, part_count);
-                    assert_eq!(i, part_index as usize);
-                    assert_eq!(42, priority);
-                    assert!(!cacheable);
-                    payload
-                }
-                msg => panic!("Unexpected message {:?}", msg),
-            })
-            .collect();
-        let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
-        assert_eq!(user_msg, deserialised_user_msg);
     }
 }
