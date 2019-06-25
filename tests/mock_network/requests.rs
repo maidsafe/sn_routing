@@ -6,12 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    create_connected_clients, create_connected_nodes, gen_bytes, gen_immutable_data, poll_all,
-};
+use super::{create_connected_clients, create_connected_nodes, gen_immutable_data, poll_all};
 use routing::{
-    mock::Network, Authority, ClientError, Event, EventStream, ImmutableData, MessageId, Request,
-    Response, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    mock::Network, Authority, ClientError, Event, EventStream, MessageId, Request, Response,
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 
 #[test]
@@ -226,78 +224,4 @@ fn failed_get_request() {
     }
 
     assert_eq!(response_received_count, 1);
-}
-
-#[test]
-// TODO (quic-p2p): this test relies on a behaviour of mock-crust which drops all in-flight messages
-// on disconnect. Verify whether this behaviour should be transitioned over to quic-p2p. If yes,
-// then do so and then re-enable this test. If not, modify this test accordignly (or remove it if
-// not relevant anymore).
-#[ignore]
-fn disconnect_on_get_request() {
-    let min_section_size = 8;
-    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
-    let network = Network::new(min_section_size, None);
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 2 * min_section_size);
-    let mut clients = create_connected_clients(&network, &mut nodes, 1);
-
-    let data = ImmutableData::new(gen_bytes(&mut rng, 1024));
-    let dst = Authority::NaeManager(*data.name());
-    let message_id = MessageId::new();
-
-    assert!(clients[0]
-        .inner
-        .get_idata(dst, *data.name(), message_id)
-        .is_ok());
-
-    let _ = poll_all(&mut nodes, &mut clients);
-
-    let mut request_received_count = 0;
-
-    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
-        loop {
-            match node.try_next_ev() {
-                Ok(Event::RequestReceived {
-                    request:
-                        Request::GetIData {
-                            name: ref req_name,
-                            msg_id: ref req_message_id,
-                        },
-                    src,
-                    dst,
-                }) => {
-                    request_received_count += 1;
-                    if data.name() == req_name && message_id == *req_message_id {
-                        if let Err(err) = node.inner.send_get_idata_response(
-                            dst,
-                            src,
-                            Ok(data.clone()),
-                            *req_message_id,
-                        ) {
-                            trace!("Failed to send GetIData success response: {:?}", err);
-                        }
-                        break;
-                    }
-                }
-                Ok(_) => (),
-                _ => panic!("Event::Request not received"),
-            }
-        }
-    }
-
-    assert!(request_received_count >= quorum);
-
-    network.disconnect(&clients[0].endpoint(), &nodes[0].endpoint());
-    network.poll();
-    network.disconnect(&nodes[0].endpoint(), &clients[0].endpoint());
-    network.poll();
-
-    let _ = poll_all(&mut nodes, &mut clients);
-
-    for client in &mut clients {
-        if let Ok(Event::ResponseReceived { .. }) = client.inner.try_next_ev() {
-            panic!("Unexpected Event::ResponseReceived");
-        }
-    }
 }

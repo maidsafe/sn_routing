@@ -204,8 +204,6 @@ impl Inner {
     }
 
     pub fn disconnect(&mut self, src: SocketAddr, dst: SocketAddr) {
-        // TODO (quic-p2p): mock-crust dropped all in-flight messages from `src` to `dst` and
-        // from `dst` to `src` here. Should we do the same?
         self.send(src, dst, Packet::Disconnect);
     }
 
