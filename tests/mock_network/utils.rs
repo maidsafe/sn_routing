@@ -465,7 +465,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
             .create(),
     );
     let _ = nodes[0].poll();
-    println!("Seed node: {}", nodes[0].inner);
+    info!("Seed node: {}", nodes[0].inner);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {

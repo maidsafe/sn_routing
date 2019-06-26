@@ -19,11 +19,14 @@ use std::{
     collections::{hash_map::Entry, VecDeque},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     rc::{Rc, Weak},
+    sync::Once,
 };
 use unwrap::unwrap;
 
 const IP_BASE: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const PORT: u16 = 9999;
+
+static PRINT_SEED: Once = Once::new();
 
 /// Handle to the mock network. Create one before testing with mocks. Call `set_next_node_addr` or
 /// `gen_next_node_addr` before creating a `QuicP2p` instance.
@@ -39,6 +42,8 @@ impl Network {
         } else {
             SeededRng::new()
         };
+
+        PRINT_SEED.call_once(|| println!("{:?}", rng));
 
         unwrap!(safe_crypto::init_with_rng(&mut rng));
 
