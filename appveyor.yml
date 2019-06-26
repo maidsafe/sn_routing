@@ -27,4 +27,4 @@ build_script:
   - cargo check --verbose --release --lib --tests
 
 test_script:
-  - cargo test --verbose --release --features=mock_parsec
+  - cargo test --verbose --release --features=mock -- --nocapture
