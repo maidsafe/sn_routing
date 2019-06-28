@@ -417,16 +417,16 @@ mod tests {
             panic!("Should have received `NewMessage` event.");
         }
 
-        // Drop the network service to trigger `LostPeer` event in the state machine.
+        // Drop the network service to trigger `ConnectionFailure` event in the state machine.
         drop(node_network_service);
         network.poll();
 
-        // Check the state machine received the `LostPeer` and sent `Terminate` via the `outbox`
-        // since it can't re-bootstrap (there are no more bootstrap contacts).
+        // The state machine should attempt to rebootstrap...
         unwrap!(client_state_machine.step(&mut client_outbox));
         assert!(client_outbox.take_all().is_empty());
         network.poll();
 
+        // ...but there is no one to bootstrap to, so the state machine should terminate.
         unwrap!(client_state_machine.step(&mut client_outbox));
         let events = client_outbox.take_all();
         assert_eq!(events.len(), 1);

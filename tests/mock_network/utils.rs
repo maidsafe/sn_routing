@@ -252,7 +252,6 @@ impl<'a> TestNodeBuilder<'a> {
 pub struct TestClient {
     pub inner: Client,
     pub full_id: FullId,
-    endpoint: SocketAddr,
 }
 
 impl TestClient {
@@ -295,16 +294,11 @@ impl TestClient {
         TestClient {
             inner: client,
             full_id: full_id,
-            endpoint,
         }
     }
 
     pub fn name(&self) -> XorName {
         *unwrap!(self.inner.id()).name()
-    }
-
-    pub fn endpoint(&self) -> SocketAddr {
-        self.endpoint
     }
 }
 

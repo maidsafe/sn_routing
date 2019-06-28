@@ -24,9 +24,11 @@ use crate::{
     xor_name::XOR_NAME_LEN,
     NetworkConfig, NetworkService,
 };
+use std::net::SocketAddr;
 use unwrap::unwrap;
 use utils::LogIdent;
 
+const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 // Accumulate even if 1 old node and an additional new node do not vote.
 const NO_SINGLE_VETO_VOTE_COUNT: usize = 7;
 const ACCUMULATE_VOTE_COUNT: usize = 6;
@@ -52,6 +54,30 @@ impl CandidateInfo {
     }
 }
 
+struct ClientInfo {
+    full_id: FullId,
+    addr: SocketAddr,
+}
+
+impl ClientInfo {
+    fn with_addr(addr: &str) -> Self {
+        Self {
+            full_id: FullId::new(),
+            addr: unwrap!(addr.parse()),
+        }
+    }
+
+    fn public_id(&self) -> &PublicId {
+        self.full_id.public_id()
+    }
+
+    fn connection_info(&self) -> ConnectionInfo {
+        ConnectionInfo::Client {
+            peer_addr: self.addr,
+        }
+    }
+}
+
 struct ElderUnderTest {
     pub machine: StateMachine,
     pub full_id: FullId,
@@ -64,6 +90,10 @@ struct ElderUnderTest {
 
 impl ElderUnderTest {
     fn new() -> Self {
+        Self::with_min_section_size(DEFAULT_MIN_SECTION_SIZE)
+    }
+
+    fn with_min_section_size(min_section_size: usize) -> Self {
         let full_ids = (0..NO_SINGLE_VETO_VOTE_COUNT)
             .map(|_| FullId::new())
             .collect_vec();
@@ -82,7 +112,7 @@ impl ElderUnderTest {
         };
 
         let full_id = full_ids[0].clone();
-        let machine = make_state_machine(&full_id, &gen_pfx_info, &mut ev_buffer);
+        let machine = make_state_machine(&full_id, &gen_pfx_info, min_section_size, &mut ev_buffer);
 
         let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
         let other_parsec_map = other_full_ids
@@ -140,7 +170,8 @@ impl ElderUnderTest {
             *self.full_id.public_id().name()
         };
 
-        unwrap!(self.machine.current_mut().elder_state_mut())
+        self.machine
+            .elder_state_mut()
             .set_next_relocation_interval(Some(XorTargetInterval(name, name)));
     }
 
@@ -179,7 +210,7 @@ impl ElderUnderTest {
 
     fn accumulate_add_elder_if_vote(&mut self, online_payload: OnlinePayload) {
         let _ = self.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
+            NOT_ACCUMULATE_ALONE_VOTE_COUNT,
             &[&NetworkEvent::AddElder(
                 online_payload.new_public_id,
                 online_payload.client_auth,
@@ -260,12 +291,30 @@ impl ElderUnderTest {
         &mut self,
         msg: (DirectMessage, PublicId),
     ) -> Result<(), RoutingError> {
-        let _ = unwrap!(self.machine.current_mut().elder_state_mut()).handle_direct_message(
+        let _ = self.machine.elder_state_mut().handle_direct_message(
             msg.0,
             msg.1,
             &mut self.ev_buffer,
         )?;
         Ok(())
+    }
+
+    fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
+        match self
+            .machine
+            .elder_state_mut()
+            .handle_connected_to(conn_info, &mut self.ev_buffer)
+        {
+            Transition::Stay => (),
+            _ => panic!("Unexpected transition"),
+        }
+    }
+
+    fn handle_connected_to_candidate(&mut self) {
+        let conn_info = ConnectionInfo::Node {
+            node_info: self.candidate_node_info(),
+        };
+        self.handle_connected_to(conn_info)
     }
 
     fn expect_candidate_payload(&self) -> ExpectCandidatePayload {
@@ -385,17 +434,24 @@ impl ElderUnderTest {
         }
     }
 
-    fn establish_connection_with_candidate(&mut self) {
-        let mut outbox = EventBuf::new();
-        let conn_info = ConnectionInfo::Node {
-            node_info: self.candidate_node_info(),
-        };
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
+        let peer_addr = conn_info.peer_addr();
 
-        match unwrap!(self.machine.current_mut().elder_state_mut())
-            .handle_connected_to(conn_info, &mut outbox)
-        {
-            Transition::Stay => (),
-            _ => panic!("Unexpected transition"),
+        self.handle_connected_to(conn_info);
+        self.machine
+            .elder_state_mut()
+            .identify_connection(pub_id, peer_addr);
+        unwrap!(self
+            .machine
+            .elder_state_mut()
+            .handle_bootstrap_request(pub_id));
+    }
+
+    fn has_client(&self, pub_id: &PublicId) -> bool {
+        match self.elder_state().get_peer(pub_id).map(Peer::state) {
+            Some(PeerState::Client { .. }) => true,
+            Some(state) => panic!("Unexpected peer state: expected Client, got {:?}", state),
+            None => false,
         }
     }
 }
@@ -413,7 +469,7 @@ fn new_elder_state(
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
     let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
     let peer_map = PeerMap::new();
-    let peer_mgr = PeerManager::new(public_id, true);
+    let peer_mgr = PeerManager::new(public_id, false);
     let cache = Box::new(NullCache);
 
     let details = ElderDetails {
@@ -441,9 +497,9 @@ fn new_elder_state(
 fn make_state_machine(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
+    min_section_size: usize,
     outbox: &mut EventBox,
 ) -> StateMachine {
-    let min_section_size = 4;
     let network = Network::new(min_section_size, None);
 
     let endpoint = network.gen_addr();
@@ -466,6 +522,16 @@ fn make_state_machine(
         outbox,
     )
     .1
+}
+
+trait StateMachineExt {
+    fn elder_state_mut(&mut self) -> &mut Elder;
+}
+
+impl StateMachineExt for StateMachine {
+    fn elder_state_mut(&mut self) -> &mut Elder {
+        unwrap!(self.current_mut().elder_state_mut())
+    }
 }
 
 #[test]
@@ -679,7 +745,7 @@ fn candidate_info_message_in_interval() {
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.establish_connection_with_candidate();
+    elder_test.handle_connected_to_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(elder_test.has_candidate_info());
@@ -695,7 +761,7 @@ fn candidate_info_message_not_in_interval() {
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.establish_connection_with_candidate();
+    elder_test.handle_connected_to_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(!elder_test.has_candidate_info());
@@ -711,11 +777,47 @@ fn candidate_info_message_bad_signature() {
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.establish_connection_with_candidate();
+    elder_test.handle_connected_to_candidate();
     let _ = elder_test
         .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
 
     assert!(!elder_test.has_candidate_info());
     assert!(elder_test.has_resource_proof_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
+}
+
+#[test]
+fn allow_only_one_client_per_ip() {
+    // Create two clients on the same IP.
+    let client0 = ClientInfo::with_addr("198.51.100.0:5000");
+    let client1 = ClientInfo::with_addr("198.51.100.0:5001");
+
+    let mut elder_test = ElderUnderTest::new();
+    elder_test.handle_bootstrap_request(*client0.public_id(), client0.connection_info());
+    elder_test.handle_bootstrap_request(*client1.public_id(), client1.connection_info());
+
+    assert!(elder_test.has_client(client0.public_id()));
+    assert!(!elder_test.has_client(client1.public_id()));
+}
+
+#[test]
+fn accept_previously_rejected_client_after_reaching_min_section_size() {
+    // Set min_section_size to one more than the initial size of the section. This makes us reject
+    // any bootstrapping clients.
+    let mut elder_test = ElderUnderTest::with_min_section_size(NO_SINGLE_VETO_VOTE_COUNT + 1);
+    let client = ClientInfo::with_addr("198.51.100.0:5000");
+
+    // Bootstrap fails for insufficient section size.
+    elder_test.handle_bootstrap_request(*client.public_id(), client.connection_info());
+    assert!(!elder_test.has_client(client.public_id()));
+
+    // Add new section member to reach min_section_size.
+    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
+    elder_test.accumulate_online(elder_test.online_payload());
+    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_section_info_if_vote(elder_test.new_section_info_with_candidate());
+
+    // Re-bootstrap now succeeds.
+    elder_test.handle_bootstrap_request(*client.public_id(), client.connection_info());
+    assert!(elder_test.has_client(client.public_id()));
 }

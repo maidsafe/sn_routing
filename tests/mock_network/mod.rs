@@ -9,7 +9,6 @@
 mod accumulate;
 mod cache;
 mod churn;
-mod client_restrictions;
 mod drop;
 mod merge;
 mod requests;
