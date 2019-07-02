@@ -27,7 +27,7 @@ pub(super) struct Node {
     peers: FxHashMap<SocketAddr, ConnectionType>,
     bootstrap_cache: FxHashSet<NodeInfo>,
     pending_bootstraps: FxHashSet<SocketAddr>,
-    pending_messages: FxHashMap<SocketAddr, Vec<NetworkBytes>>,
+    pending_messages: FxHashMap<SocketAddr, Vec<(NetworkBytes, u64)>>,
 }
 
 impl Node {
@@ -98,12 +98,12 @@ impl Node {
         }
     }
 
-    pub fn send(&mut self, dst: SocketAddr, msg: NetworkBytes) {
+    pub fn send(&mut self, dst: SocketAddr, msg: NetworkBytes, msg_id: u64) {
         if self.peers.contains_key(&dst) {
-            self.send_message(dst, msg)
+            self.send_message(dst, msg, msg_id)
         } else {
             self.send_connect_request(dst);
-            self.add_pending_message(dst, msg)
+            self.add_pending_message(dst, msg, msg_id)
         }
     }
 
@@ -179,25 +179,29 @@ impl Node {
                 // attempts, only when a previously successfully established connection gets
                 // dropped.
             }
-            Packet::Message(msg) => {
+            Packet::Message(msg, msg_id) => {
                 if self.peers.contains_key(&src) {
                     self.fire_event(Event::NewMessage {
                         peer_addr: src,
                         msg,
                     })
                 } else {
-                    self.network
-                        .borrow_mut()
-                        .send(self.addr, src, Packet::MessageFailure(msg))
+                    self.network.borrow_mut().send(
+                        self.addr,
+                        src,
+                        Packet::MessageFailure(msg, msg_id),
+                    )
                 }
             }
-            Packet::MessageFailure(msg) => self.fire_event(Event::UnsentUserMessage {
+            Packet::MessageFailure(msg, msg_id) => self.fire_event(Event::UnsentUserMessage {
                 peer_addr: src,
                 msg,
+                msg_id,
             }),
-            Packet::MessageSent(msg) => self.fire_event(Event::SentUserMessage {
+            Packet::MessageSent(msg, msg_id) => self.fire_event(Event::SentUserMessage {
                 peer_addr: src,
                 msg,
+                msg_id,
             }),
             Packet::Disconnect => {
                 if self.peers.remove(&src).is_some() {
@@ -235,17 +239,17 @@ impl Node {
             .send(self.addr, dst, Packet::ConnectRequest(self.config.our_type))
     }
 
-    fn send_message(&self, dst: SocketAddr, msg: NetworkBytes) {
+    fn send_message(&self, dst: SocketAddr, msg: NetworkBytes, msg_id: u64) {
         self.network
             .borrow_mut()
-            .send(self.addr, dst, Packet::Message(msg))
+            .send(self.addr, dst, Packet::Message(msg, msg_id))
     }
 
-    fn add_pending_message(&mut self, addr: SocketAddr, msg: NetworkBytes) {
+    fn add_pending_message(&mut self, addr: SocketAddr, msg: NetworkBytes, msg_id: u64) {
         self.pending_messages
             .entry(addr)
             .or_insert_with(Default::default)
-            .push(msg)
+            .push((msg, msg_id))
     }
 
     fn send_pending_messages(&mut self, addr: SocketAddr) {
@@ -255,8 +259,8 @@ impl Node {
             return;
         };
 
-        for msg in messages {
-            self.send_message(addr, msg)
+        for (msg, msg_id) in messages {
+            self.send_message(addr, msg, msg_id)
         }
     }
 }

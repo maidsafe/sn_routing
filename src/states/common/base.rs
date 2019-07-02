@@ -147,9 +147,11 @@ pub trait Base: Display {
                 self.handle_connection_failure(peer_addr, outbox)
             }
             NewMessage { peer_addr, msg } => self.handle_new_message(peer_addr, msg, outbox),
-            UnsentUserMessage { peer_addr, msg } => {
-                self.handle_unsent_bytes(peer_addr, msg, outbox)
-            }
+            UnsentUserMessage {
+                peer_addr,
+                msg,
+                msg_id,
+            } => self.handle_unsent_message(peer_addr, msg, msg_id, outbox),
             SentUserMessage { .. } => {
                 // TODO (quic-p2p): handle sent messages
                 error!("{} - Unhandled SentUserMessage", self);
@@ -234,67 +236,18 @@ pub trait Base: Display {
         }
     }
 
-    fn handle_unsent_bytes(
-        &mut self,
-        peer_addr: SocketAddr,
-        bytes: NetworkBytes,
-        outbox: &mut EventBox,
-    ) -> Transition {
-        let result = from_network_bytes(bytes)
-            .and_then(|message| self.handle_unsent_message(peer_addr, message, outbox));
-
-        match result {
-            Ok(transition) => transition,
-            Err(err) => {
-                debug!("{} - {:?}", self, err);
-                Transition::Stay
-            }
-        }
-    }
-
     fn handle_unsent_message(
         &mut self,
         peer_addr: SocketAddr,
-        msg: Message,
-        outbox: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
-        match msg {
-            Message::Hop(hop_msg) => {
-                let peer_id = match self.peer_map().get_public_id(&peer_addr) {
-                    Some(peer_id) => *peer_id,
-                    None => {
-                        // we don't even know the peer we failed to send to - ignore
-                        warn!(
-                            "{} Failed sending a hop message to an unknown endpoint - ignoring. Message: {:?}",
-                            self,
-                            hop_msg
-                        );
-                        return Ok(Transition::Stay);
-                    }
-                };
-                self.handle_unsent_hop_message(peer_id, hop_msg, outbox)
-            }
-            Message::Direct(direct_msg) => self.handle_unsent_direct_message(direct_msg, outbox),
-        }
-    }
-
-    fn handle_unsent_hop_message(
-        &mut self,
-        peer_id: PublicId,
-        msg: HopMessage,
-        _: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
-        warn!("{} Unsent hop message to {:?}: {:?}", self, peer_id, msg);
-        Ok(Transition::Stay)
-    }
-
-    fn handle_unsent_direct_message(
-        &mut self,
-        msg: SignedDirectMessage,
-        _: &mut EventBox,
-    ) -> Result<Transition, RoutingError> {
-        warn!("{} Unsent direct message {:?}", self, msg);
-        Ok(Transition::Stay)
+        _msg: NetworkBytes,
+        msg_id: u64,
+        _outbox: &mut EventBox,
+    ) -> Transition {
+        warn!(
+            "{} Unsent message with ID {} to {:?}",
+            self, msg_id, peer_addr
+        );
+        Transition::Stay
     }
 
     fn finish_handle_network_event(&mut self, _outbox: &mut EventBox) -> Transition {
@@ -311,6 +264,7 @@ pub trait Base: Display {
 
     fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
         self.network_service_mut()
+            .service_mut()
             .our_connection_info()
             .map_err(|err| {
                 debug!(
@@ -326,16 +280,31 @@ pub trait Base: Display {
     }
 
     fn send_direct_message(&mut self, dst_id: &PublicId, content: DirectMessage) {
+        let next_id = self.network_service_mut().next_msg_id();
+        self.send_direct_message_with_id(dst_id, content, next_id);
+    }
+
+    fn send_direct_message_with_id(
+        &mut self,
+        dst_id: &PublicId,
+        content: DirectMessage,
+        msg_id: u64,
+    ) {
         let message = if let Ok(message) = self.to_signed_direct_message(content) {
             message
         } else {
             return;
         };
 
-        self.send_message(dst_id, message)
+        self.send_message_with_id(dst_id, message, msg_id)
     }
 
     fn send_message(&mut self, dst_id: &PublicId, message: Message) {
+        let next_id = self.network_service_mut().next_msg_id();
+        self.send_message_with_id(dst_id, message, next_id);
+    }
+
+    fn send_message_with_id(&mut self, dst_id: &PublicId, message: Message, msg_id: u64) {
         let conn_info = match self.peer_map().get_connection_info(dst_id) {
             Some(conn_info) => conn_info.clone(),
             None => {
@@ -347,12 +316,20 @@ pub trait Base: Display {
             }
         };
 
-        self.send_message_over_network(conn_info, message);
+        self.send_message_over_network(conn_info, message, msg_id);
     }
 
-    fn send_message_over_network(&mut self, conn_info: ConnectionInfo, message: Message) {
+    fn send_message_over_network(
+        &mut self,
+        conn_info: ConnectionInfo,
+        message: Message,
+        msg_id: u64,
+    ) {
         match to_network_bytes(message) {
-            Ok(bytes) => self.network_service_mut().send(conn_info, bytes),
+            Ok(bytes) => self
+                .network_service_mut()
+                .service_mut()
+                .send(conn_info, bytes, msg_id),
             Err((error, message)) => {
                 error!(
                     "{} Failed to serialise message {:?}: {:?}",

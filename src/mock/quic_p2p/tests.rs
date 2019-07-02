@@ -232,7 +232,7 @@ fn send_to_connected_node() {
     establish_connection(&network, &mut a, &mut b);
 
     let msg = gen_message();
-    a.send(b.addr(), msg.clone());
+    a.send(b.addr(), msg.clone(), 0);
     network.poll();
 
     b.expect_new_message(&a.addr(), &msg);
@@ -247,12 +247,12 @@ fn send_to_disconnecting_node() {
     establish_connection(&network, &mut a, &mut b);
 
     let msg = gen_message();
-    a.send(b.addr(), msg.clone());
+    a.send(b.addr(), msg.clone(), 0);
     b.disconnect_from(a.addr());
     network.poll();
 
     a.expect_connection_failure(&b.addr());
-    a.expect_unsent_message(&b.addr(), &msg);
+    a.expect_unsent_message(&b.addr(), &msg, 0);
     b.expect_none();
 }
 
@@ -264,7 +264,7 @@ fn send_to_nonexisting_node() {
     let b_addr = network.gen_addr();
 
     let msg = gen_message();
-    a.send(b_addr, msg.clone());
+    a.send(b_addr, msg.clone(), 0);
     network.poll();
 
     // Note: the real quick-p2p will only emit `UnsentUserMessage` when a connection to the peer
@@ -280,7 +280,7 @@ fn send_without_connecting_first() {
     let b = Agent::node(&network);
 
     let msg = gen_message();
-    a.send(b.addr(), msg.clone());
+    a.send(b.addr(), msg.clone(), 0);
 
     network.poll();
 
@@ -297,8 +297,8 @@ fn send_multiple_messages_without_connecting_first() {
 
     let msgs = [gen_message(), gen_message(), gen_message()];
 
-    for msg in &msgs {
-        a.send(b.addr(), msg.clone());
+    for (msg_id, msg) in msgs.iter().enumerate() {
+        a.send(b.addr(), msg.clone(), msg_id as u64);
     }
 
     network.poll();
@@ -416,7 +416,7 @@ fn packet_is_parsec_gossip() {
         make_message(DirectMessage::ParsecResponse(1337, rsp)),
     ];
     for msg in &msgs {
-        assert!(Packet::Message(NetworkBytes::from(serialise(msg))).is_parsec_gossip());
+        assert!(Packet::Message(NetworkBytes::from(serialise(msg)), 0).is_parsec_gossip());
     }
 
     // No other direct message types contain a Parsec request or response.
@@ -425,7 +425,7 @@ fn packet_is_parsec_gossip() {
         make_message(DirectMessage::ResourceProofResponseReceipt),
     ];
     for msg in &msgs {
-        assert!(!Packet::Message(NetworkBytes::from(serialise(msg))).is_parsec_gossip());
+        assert!(!Packet::Message(NetworkBytes::from(serialise(msg)), 0).is_parsec_gossip());
     }
 
     // A hop message never contains a Parsec message.
@@ -439,7 +439,7 @@ fn packet_is_parsec_gossip() {
     let msg = unwrap!(SignedRoutingMessage::new(msg, &full_id, None));
     let msg = unwrap!(HopMessage::new(msg));
     let msg = Message::Hop(msg);
-    assert!(!Packet::Message(NetworkBytes::from(serialise(&msg))).is_parsec_gossip());
+    assert!(!Packet::Message(NetworkBytes::from(serialise(&msg)), 0).is_parsec_gossip());
 
     // No packet types other than `Message` represent a Parsec request or response.
     let packets = [
@@ -449,7 +449,7 @@ fn packet_is_parsec_gossip() {
         Packet::ConnectRequest(OurType::Client),
         Packet::ConnectSuccess,
         Packet::ConnectFailure,
-        Packet::MessageFailure(NetworkBytes::from_static(b"hello")),
+        Packet::MessageFailure(NetworkBytes::from_static(b"hello"), 0),
         Packet::Disconnect,
     ];
     for packet in &packets {
@@ -510,8 +510,8 @@ impl Agent {
         self.inner.disconnect_from(dst_addr);
     }
 
-    fn send(&mut self, dst_addr: SocketAddr, msg: NetworkBytes) {
-        self.inner.send(Peer::node(dst_addr), msg)
+    fn send(&mut self, dst_addr: SocketAddr, msg: NetworkBytes, msg_id: u64) {
+        self.inner.send(Peer::node(dst_addr), msg, msg_id)
     }
 
     fn addr(&self) -> SocketAddr {
@@ -593,14 +593,20 @@ impl Agent {
     }
 
     // Expect `Event::UnsentUserMessage` with the given recipient address and content.
-    fn expect_unsent_message(&self, dst_addr: &SocketAddr, expected_msg: &NetworkBytes) {
-        let (actual_addr, actual_msg) = assert_match!(
+    fn expect_unsent_message(
+        &self,
+        dst_addr: &SocketAddr,
+        expected_msg: &NetworkBytes,
+        expected_msg_id: u64,
+    ) {
+        let (actual_addr, actual_msg, actual_id) = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::UnsentUserMessage { peer_addr, msg }) => (peer_addr, msg)
+            Ok(Event::UnsentUserMessage { peer_addr, msg, msg_id }) => (peer_addr, msg, msg_id)
         );
 
         assert_eq!(actual_addr, *dst_addr);
         assert_eq!(actual_msg, *expected_msg);
+        assert_eq!(actual_id, expected_msg_id);
     }
 
     // Expect no event.

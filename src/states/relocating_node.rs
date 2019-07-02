@@ -101,7 +101,9 @@ impl RelocatingNode {
     ) -> State {
         // Disconnect from all currently connected peers.
         for peer in self.peer_map.remove_all() {
-            self.network_service.disconnect_from(peer.peer_addr());
+            self.network_service
+                .service_mut()
+                .disconnect_from(peer.peer_addr());
         }
 
         let target_state = TargetState::ProvingNode {

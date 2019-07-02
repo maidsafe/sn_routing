@@ -1633,7 +1633,11 @@ impl Elder {
                 ConnectionInfo::Node { node_info } => Some(node_info),
                 ConnectionInfo::Client { .. } => None,
             })
-            .map(|node_info| self.network_service.is_hard_coded_contact(node_info))
+            .map(|node_info| {
+                self.network_service
+                    .service()
+                    .is_hard_coded_contact(node_info)
+            })
             .unwrap_or(false)
     }
 }
@@ -1722,7 +1726,9 @@ impl Base for Elder {
 
     fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
         // A mature node doesn't need a bootstrap connection
-        self.network_service.disconnect_from(node_info.peer_addr);
+        self.network_service
+            .service_mut()
+            .disconnect_from(node_info.peer_addr);
         Transition::Stay
     }
 

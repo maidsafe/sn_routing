@@ -77,7 +77,7 @@ impl BootstrappingPeer {
         min_section_size: usize,
         timer: Timer,
     ) -> Self {
-        network_service.bootstrap();
+        network_service.service_mut().bootstrap();
 
         Self {
             action_sender,
@@ -167,7 +167,8 @@ impl BootstrappingPeer {
                 return;
             };
 
-        self.send_message_over_network(Peer::Node { node_info: dst }, message);
+        let next_id = self.network_service.next_msg_id();
+        self.send_message_over_network(Peer::Node { node_info: dst }, message, next_id);
     }
 
     fn rebootstrap(&mut self) {
@@ -176,8 +177,10 @@ impl BootstrappingPeer {
                 "{} Dropping bootstrap node at {} and retrying.",
                 self, node_info.peer_addr
             );
-            self.network_service.disconnect_from(node_info.peer_addr);
-            self.network_service.bootstrap();
+            self.network_service
+                .service_mut()
+                .disconnect_from(node_info.peer_addr);
+            self.network_service.service_mut().bootstrap();
         }
     }
 }
