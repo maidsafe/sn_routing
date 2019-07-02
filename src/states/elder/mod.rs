@@ -1357,7 +1357,7 @@ impl Elder {
             }
         }
 
-        let target_pub_ids = self.get_targets(signed_msg.routing_message())?;
+        let (target_pub_ids, dg_size) = self.get_targets(signed_msg.routing_message())?;
 
         debug!(
             "{}: Sending message {:?} via targets {:?}",
@@ -1375,7 +1375,7 @@ impl Elder {
 
         let message = self.to_hop_message(signed_msg.clone())?;
 
-        self.send_message_to_targets(&targets, targets.len(), message);
+        self.send_message_to_targets(&targets, dg_size, message);
 
         // we've seen this message - don't handle it again if someone else sends it to us
         let _ = self
@@ -1457,7 +1457,10 @@ impl Elder {
 
     /// Returns a list of target IDs for a message sent via route.
     /// Name in exclude will be excluded from the result.
-    fn get_targets(&self, routing_msg: &RoutingMessage) -> Result<Vec<PublicId>, RoutingError> {
+    fn get_targets(
+        &self,
+        routing_msg: &RoutingMessage,
+    ) -> Result<(Vec<PublicId>, usize), RoutingError> {
         let force_via_proxy = match routing_msg.content {
             MessageContent::ConnectionRequest { pub_id, .. } => {
                 routing_msg.src.is_client() && pub_id == *self.full_id.public_id()
@@ -1470,12 +1473,15 @@ impl Elder {
             // we remove self in targets info and can do same by not
             // chaining us to conn_peer list here?
             let conn_peers = self.connected_peers();
-            let targets: BTreeSet<_> = self
-                .chain
-                .targets(&routing_msg.dst, &conn_peers)?
-                .into_iter()
-                .collect();
-            Ok(self.peer_mgr.get_pub_ids(&targets).into_iter().collect())
+            let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
+            Ok((
+                targets
+                    .into_iter()
+                    .filter_map(|name| self.peer_mgr.get_pub_id(&name))
+                    .cloned()
+                    .collect(),
+                dg_size,
+            ))
         } else if let Authority::Client {
             ref proxy_node_name,
             ..
@@ -1483,7 +1489,7 @@ impl Elder {
         {
             if let Some(pub_id) = self.peer_mgr.get_pub_id(proxy_node_name) {
                 if self.peer_mgr.is_connected(pub_id) {
-                    Ok(vec![*pub_id])
+                    Ok((vec![*pub_id], 1))
                 } else {
                     error!(
                         "{} Unable to find connection to proxy in PeerManager.",

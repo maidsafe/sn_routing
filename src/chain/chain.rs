@@ -1091,7 +1091,7 @@ impl Chain {
         &self,
         dst: &Authority<XorName>,
         connected_peers: &[&XorName],
-    ) -> Result<BTreeSet<XorName>, Error> {
+    ) -> Result<(Vec<XorName>, usize), Error> {
         // FIXME: only filtering for now to match RT.
         // should confirm if needed esp after msg_relay changes.
         let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
@@ -1119,17 +1119,17 @@ impl Chain {
             })
         };
 
-        let (best_section_len, best_section) = match *dst {
+        let (best_section_len, mut best_section) = match *dst {
             Authority::ManagedNode(ref target_name)
             | Authority::Client {
                 proxy_node_name: ref target_name,
                 ..
             } => {
                 if target_name == self.our_id().name() {
-                    return Ok(BTreeSet::new());
+                    return Ok((Vec::new(), 0));
                 }
                 if self.has(target_name) && is_connected(&target_name) {
-                    return Ok(iter::once(*target_name).collect());
+                    return Ok((vec![*target_name], 1));
                 }
                 candidates(target_name)?
             }
@@ -1139,7 +1139,8 @@ impl Chain {
                 if let Some(group) =
                     self.other_closest_names(target_name, self.min_sec_size, &connected_peers)
                 {
-                    return Ok(group.into_iter().collect());
+                    let group_len = group.len();
+                    return Ok((group, group_len));
                 }
                 candidates(target_name)?
             }
@@ -1152,8 +1153,9 @@ impl Chain {
 
                     // FIXME: only doing this for now to match RT.
                     // should confirm if needed esp after msg_relay changes.
-                    section = section.into_iter().filter(is_connected).collect();
-                    return Ok(section);
+                    let section: Vec<_> = section.into_iter().filter(is_connected).collect();
+                    let dg_size = section.len();
+                    return Ok((section, dg_size));
                 }
                 candidates(target_name)?
             }
@@ -1174,24 +1176,23 @@ impl Chain {
                         }
                     };
 
-                    let mut targets = Iterator::flatten(
+                    let targets = Iterator::flatten(
                         self.all_sections()
                             .filter_map(is_compatible)
                             .map(SectionInfo::member_names),
                     )
                     .filter(is_connected)
-                    .collect::<BTreeSet<_>>();
-                    let _ = targets.remove(&self.our_id().name());
-                    return Ok(targets);
+                    .filter(|name| name != self.our_id().name())
+                    .collect::<Vec<_>>();
+                    let dg_size = targets.len();
+                    return Ok((targets, dg_size));
                 }
                 candidates(&prefix.lower_bound())?
             }
         };
-        Ok(best_section
-            .into_iter()
-            .filter(|&x| x != *self.our_id().name())
-            .take(delivery_group_size(best_section_len))
-            .collect())
+
+        best_section.retain(|&x| x != *self.our_id().name());
+        Ok((best_section, delivery_group_size(best_section_len)))
     }
 
     /// Returns our own section, including our own name.
