@@ -152,11 +152,11 @@ pub trait Base: Display {
                 msg,
                 msg_id,
             } => self.handle_unsent_message(peer_addr, msg, msg_id, outbox),
-            SentUserMessage { .. } => {
-                // TODO (quic-p2p): handle sent messages
-                error!("{} - Unhandled SentUserMessage", self);
-                Transition::Stay
-            }
+            SentUserMessage {
+                peer_addr,
+                msg,
+                msg_id,
+            } => self.handle_sent_message(peer_addr, msg, msg_id, outbox),
             Finish => Transition::Terminate,
         };
 
@@ -245,6 +245,20 @@ pub trait Base: Display {
     ) -> Transition {
         warn!(
             "{} Unsent message with ID {} to {:?}",
+            self, msg_id, peer_addr
+        );
+        Transition::Stay
+    }
+
+    fn handle_sent_message(
+        &mut self,
+        peer_addr: SocketAddr,
+        _msg: NetworkBytes,
+        msg_id: u64,
+        _outbox: &mut EventBox,
+    ) -> Transition {
+        warn!(
+            "{} Successfully sent message with ID {} to {:?}",
             self, msg_id, peer_addr
         );
         Transition::Stay
