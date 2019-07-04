@@ -168,7 +168,7 @@ impl BootstrappingPeer {
             };
 
         let next_id = self.network_service.next_msg_id();
-        self.send_message_over_network(Peer::Node { node_info: dst }, message, next_id);
+        self.send_message_over_network(Peer::Node { node_info: dst }, &message, next_id);
     }
 
     fn rebootstrap(&mut self) {

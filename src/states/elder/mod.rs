@@ -1366,29 +1366,22 @@ impl Elder {
             target_pub_ids
         );
 
-        for target_pub_id in target_pub_ids {
-            self.send_signed_message_to_peer(signed_msg.clone(), &target_pub_id)?;
-        }
+        let targets: Vec<_> = target_pub_ids
+            .into_iter()
+            .filter(|pub_id| {
+                !self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id)
+            })
+            .collect();
+
+        let message = self.to_hop_message(signed_msg.clone())?;
+
+        self.send_message_to_targets(&targets, targets.len(), message);
 
         // we've seen this message - don't handle it again if someone else sends it to us
         let _ = self
             .routing_msg_filter
             .filter_incoming(signed_msg.routing_message());
 
-        Ok(())
-    }
-
-    fn send_signed_message_to_peer(
-        &mut self,
-        signed_msg: SignedRoutingMessage,
-        dst_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id) {
-            return Ok(());
-        }
-
-        let message = self.to_hop_message(signed_msg)?;
-        self.send_message(dst_id, message);
         Ok(())
     }
 
