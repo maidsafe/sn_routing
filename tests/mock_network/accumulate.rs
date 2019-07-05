@@ -17,11 +17,11 @@ use std::cmp::min;
 
 #[test]
 fn messages_accumulate_with_quorum() {
-    let min_section_size = 8;
-    let dg_size = delivery_group_size(min_section_size);
-    let network = Network::new(min_section_size, None);
+    let section_size = 15;
+    let dg_size = delivery_group_size(section_size);
+    let network = Network::new(8, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, 15);
+    let mut nodes = create_connected_nodes(&network, section_size);
 
     let data = gen_immutable_data(&mut rng, 8);
     let src = Authority::NaeManager(*data.name()); // The data's NaeManager.
@@ -36,8 +36,8 @@ fn messages_accumulate_with_quorum() {
 
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
                                                        // The smallest number such that
-                                                       // `quorum * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR`:
-    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
+                                                       // `quorum * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR`:
+    let quorum = 1 + (section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
@@ -63,7 +63,7 @@ fn messages_accumulate_with_quorum() {
     for node in nodes
         .iter_mut()
         .skip(dg_size)
-        .take(min(quorum, min_section_size - dg_size))
+        .take(min(quorum, section_size - dg_size))
     {
         send(node, &dst, message_id);
     }
@@ -108,7 +108,7 @@ fn messages_accumulate_with_quorum() {
     for node in nodes
         .iter_mut()
         .skip(dg_size)
-        .take(min(quorum, min_section_size - dg_size))
+        .take(min(quorum, section_size - dg_size))
     {
         send(node, &dst_grp, message_id);
     }

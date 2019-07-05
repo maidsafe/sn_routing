@@ -1018,22 +1018,6 @@ impl Chain {
         }
     }
 
-    /// Returns the `count-1` closest entries to `name` in the routing table, excluding
-    /// our own name, sorted by ascending distance to `name` -  or `None`, if our name
-    /// isn't among `count` names closest to `name`.
-    fn other_closest_names(
-        &self,
-        name: &XorName,
-        count: usize,
-        connected_peers: &[&XorName],
-    ) -> Option<Vec<XorName>> {
-        self.closest_names(name, count, connected_peers)
-            .map(|mut result| {
-                result.retain(|name| name != self.our_id().name());
-                result
-            })
-    }
-
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
@@ -1136,16 +1120,8 @@ impl Chain {
             }
             Authority::ClientManager(ref target_name)
             | Authority::NaeManager(ref target_name)
-            | Authority::NodeManager(ref target_name) => {
-                if let Some(group) =
-                    self.other_closest_names(target_name, self.min_sec_size, &connected_peers)
-                {
-                    let group_len = group.len();
-                    return Ok((group, group_len));
-                }
-                candidates(target_name)?
-            }
-            Authority::Section(ref target_name) => {
+            | Authority::NodeManager(ref target_name)
+            | Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
                 if &prefix == self.our_prefix() {
                     // Exclude our name since we don't need to send to ourself
@@ -1201,23 +1177,16 @@ impl Chain {
         self.state.our_info().member_names()
     }
 
-    /// Are we among the `count` closest nodes to `name`?
-    fn is_closest(&self, name: &XorName, count: usize, connected_peers: &[&XorName]) -> bool {
-        self.closest_names(name, count, connected_peers).is_some()
-    }
-
     /// Returns whether we are a part of the given authority.
-    pub fn in_authority(&self, auth: &Authority<XorName>, connected_peers: &[&XorName]) -> bool {
+    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *auth {
             // clients have no routing tables
             Authority::Client { .. } => false,
             Authority::ManagedNode(ref name) => self.our_id().name() == name,
             Authority::ClientManager(ref name)
             | Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name) => {
-                self.is_closest(name, self.min_sec_size, connected_peers)
-            }
-            Authority::Section(ref name) => self.our_prefix().matches(name),
+            | Authority::NodeManager(ref name)
+            | Authority::Section(ref name) => self.our_prefix().matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
         }
     }
