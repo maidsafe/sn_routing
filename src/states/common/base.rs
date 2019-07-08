@@ -306,7 +306,7 @@ pub trait Base: Display {
     }
 
     fn send_message(&mut self, dst_id: &PublicId, message: Message) {
-        self.send_message_to_targets(&[dst_id.clone()], 1, message);
+        self.send_message_to_targets(&[*dst_id], 1, message);
     }
 
     fn send_message_to_targets(
@@ -317,7 +317,7 @@ pub trait Base: Display {
     ) {
         let msg_id = self.network_service_mut().next_msg_id();
         let conn_infos: Vec<_> = dst_targets
-            .into_iter()
+            .iter()
             .filter_map(|pub_id| self.peer_map().get_connection_info(pub_id).cloned())
             .collect();
 
@@ -327,7 +327,7 @@ pub trait Base: Display {
                 self,
                 dg_size,
                 dst_targets
-                    .into_iter()
+                    .iter()
                     .filter(|pub_id| self.peer_map().get_connection_info(pub_id).is_some())
             );
         }
@@ -381,9 +381,9 @@ pub trait Base: Display {
     }
 }
 
-pub fn to_network_bytes<'a>(
-    message: &'a Message,
-) -> Result<NetworkBytes, (serialisation::SerialisationError, &'a Message)> {
+pub fn to_network_bytes(
+    message: &Message,
+) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
     #[cfg(not(feature = "mock_serialise"))]
     let result = Ok(NetworkBytes::from(
         serialisation::serialise(message).map_err(|err| (err, message))?,

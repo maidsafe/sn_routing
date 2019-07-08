@@ -29,17 +29,12 @@ impl TargetState {
     }
 }
 
+#[derive(Default)]
 pub struct SendingTargetsCache {
     cache: HashMap<u64, Vec<(ConnectionInfo, TargetState)>>,
 }
 
 impl SendingTargetsCache {
-    pub fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
-        }
-    }
-
     pub fn insert_message(
         &mut self,
         msg_id: u64,
@@ -63,17 +58,14 @@ impl SendingTargetsCache {
         let _ = self.cache.insert(msg_id, targets);
     }
 
-    fn target_states<'a>(
-        &'a self,
-        msg_id: u64,
-    ) -> impl Iterator<Item = &'a (ConnectionInfo, TargetState)> {
+    fn target_states(&self, msg_id: u64) -> impl Iterator<Item = &(ConnectionInfo, TargetState)> {
         self.cache.get(&msg_id).into_iter().flatten()
     }
 
-    fn target_states_mut<'a>(
-        &'a mut self,
+    fn target_states_mut(
+        &mut self,
         msg_id: u64,
-    ) -> impl Iterator<Item = &'a mut (ConnectionInfo, TargetState)> {
+    ) -> impl Iterator<Item = &mut (ConnectionInfo, TargetState)> {
         self.cache.get_mut(&msg_id).into_iter().flatten()
     }
 

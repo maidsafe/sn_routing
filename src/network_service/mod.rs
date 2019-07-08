@@ -81,7 +81,7 @@ impl NetworkBuilder {
     pub fn build(self) -> Result<NetworkService, Error> {
         Ok(NetworkService {
             quic_p2p: self.quic_p2p.build()?,
-            cache: SendingTargetsCache::new(),
+            cache: Default::default(),
             next_msg_id: 0,
         })
     }
