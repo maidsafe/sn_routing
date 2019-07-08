@@ -189,7 +189,10 @@ impl Node {
             }),
             Packet::Disconnect => {
                 if self.peers.remove(&src).is_some() {
-                    self.fire_event(Event::ConnectionFailure { peer_addr: src })
+                    self.fire_event(Event::ConnectionFailure {
+                        peer_addr: src,
+                        err: Error,
+                    })
                 }
             }
         }

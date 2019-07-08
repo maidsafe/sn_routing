@@ -195,6 +195,8 @@ pub enum Event {
     ConnectionFailure {
         /// Address of the peer we attempted connecting to.
         peer_addr: SocketAddr,
+        /// Error explaining connection failure.
+        err: Error,
     },
     /// Message sent by us but not delivered due to connection drop.
     UnsentUserMessage {
