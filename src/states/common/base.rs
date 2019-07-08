@@ -143,7 +143,9 @@ pub trait Base: Display {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
             BootstrapFailure => self.handle_bootstrap_failure(outbox),
             ConnectedTo { peer } => self.handle_connected_to(peer, outbox),
-            ConnectionFailure { peer_addr } => self.handle_connection_failure(peer_addr, outbox),
+            ConnectionFailure { peer_addr, .. } => {
+                self.handle_connection_failure(peer_addr, outbox)
+            }
             NewMessage { peer_addr, msg } => self.handle_new_message(peer_addr, msg, outbox),
             UnsentUserMessage { .. } => {
                 // TODO (quic-p2p): handle unsent messages
