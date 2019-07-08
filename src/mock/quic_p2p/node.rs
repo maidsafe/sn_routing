@@ -158,6 +158,7 @@ impl Node {
                     self.network
                         .borrow_mut()
                         .send(self.addr, src, Packet::ConnectSuccess);
+                    self.send_pending_messages(src);
 
                     self.fire_event(Event::ConnectedTo {
                         peer: Peer::new(peer_type, src),
