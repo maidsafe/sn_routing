@@ -235,6 +235,7 @@ fn send_to_connected_node() {
     a.send(b.addr(), msg.clone(), 0);
     network.poll();
 
+    a.expect_sent_message(&b.addr(), &msg, 0);
     b.expect_new_message(&a.addr(), &msg);
 }
 
@@ -285,6 +286,7 @@ fn send_without_connecting_first() {
     network.poll();
 
     a.expect_connected_to_node(&b.addr());
+    a.expect_sent_message(&b.addr(), &msg, 0);
     b.expect_connected_to_node(&a.addr());
     b.expect_new_message(&a.addr(), &msg);
 }
@@ -304,6 +306,10 @@ fn send_multiple_messages_without_connecting_first() {
     network.poll();
 
     a.expect_connected_to_node(&b.addr());
+    for (msg_id, msg) in msgs.iter().enumerate() {
+        a.expect_sent_message(&b.addr(), msg, msg_id as u64);
+    }
+
     b.expect_connected_to_node(&a.addr());
 
     let received_messages = b.received_messages(&a.addr());
@@ -590,6 +596,22 @@ impl Agent {
 
         assert_eq!(actual_addr, *src_addr);
         assert_eq!(actual_msg, *expected_msg);
+    }
+
+    fn expect_sent_message(
+        &self,
+        dst_addr: &SocketAddr,
+        expected_msg: &NetworkBytes,
+        expected_msg_id: u64,
+    ) {
+        let (actual_addr, actual_msg, actual_id) = assert_match!(
+            self.rx.try_recv(),
+            Ok(Event::SentUserMessage { peer_addr, msg, msg_id }) => (peer_addr, msg, msg_id)
+        );
+
+        assert_eq!(actual_addr, *dst_addr);
+        assert_eq!(actual_msg, *expected_msg);
+        assert_eq!(actual_id, expected_msg_id);
     }
 
     // Expect `Event::UnsentUserMessage` with the given recipient address and content.
