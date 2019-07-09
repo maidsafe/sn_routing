@@ -27,6 +27,13 @@ impl TargetState {
             TargetState::Sending(_) => false,
         }
     }
+
+    pub fn is_sending(&self) -> bool {
+        match *self {
+            TargetState::Failed(_) | TargetState::Sent => false,
+            TargetState::Sending(_) => true,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -105,17 +112,22 @@ impl SendingTargetsCache {
     }
 
     fn should_drop(&self, msg_id: u64) -> bool {
+        // Other methods maintain the invariant that exactly one of these is true:
+        // - some target is in the Sending state
+        // - we succeeded (no further sending needed)
+        // - we failed (no more targets available)
+        // So if none are sending, the handling of the message is finished and we can drop it
         self.target_states(msg_id)
-            .all(|(_info, state)| state.is_complete())
+            .all(|(_info, state)| !state.is_sending())
     }
 
     pub fn target_failed(&mut self, msg_id: u64, target: SocketAddr) -> Option<ConnectionInfo> {
         self.fail_target(msg_id, target);
+        let result = self.take_next_target(msg_id);
         if self.should_drop(msg_id) {
             let _ = self.cache.remove(&msg_id);
         }
-        // if we dropped the msg_id above, this would have returned None even if we hadn't
-        self.take_next_target(msg_id)
+        result
     }
 
     pub fn target_succeeded(&mut self, msg_id: u64, target: SocketAddr) {
