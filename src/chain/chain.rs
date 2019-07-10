@@ -1061,9 +1061,10 @@ impl Chain {
         result
     }
 
-    /// Returns a collection of nodes to which a message for the given `Authority` should be sent
-    /// onwards. In all non-error cases below, the returned collection will have the members of
-    /// `exclude` removed, possibly resulting in an empty set being returned.
+    /// Returns a set of nodes to which a message for the given `Authority` could be sent
+    /// onwards, sorted by priority, along with the number of targets the message should be sent to.
+    /// If the total number of targets returned is larger than this number, the spare targets can
+    /// be used if the message can't be delivered to some of the initial ones.
     ///
     /// * If the destination is an `Authority::Section`:
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of

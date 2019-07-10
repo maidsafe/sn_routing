@@ -14,8 +14,12 @@ use std::net::SocketAddr;
 const MAX_RESENDS: u8 = 3;
 
 enum TargetState {
+    /// we don't know whether the last send attempt suceeded or failed
+    /// the stored number of attempts already failed before
     Sending(u8),
+    /// the last sending attempt (if any) failed; in total, the stored number of attempts failed
     Failed(u8),
+    /// sending to this target succeeded
     Sent,
 }
 
@@ -48,6 +52,10 @@ impl SendingTargetsCache {
         initial_targets: Vec<ConnectionInfo>,
         dg_size: usize,
     ) {
+        // When a message is inserted into the cache initially, we are only sending it to `dg_size`
+        // targets with the highest priority - thus, we will set the first `dg_size` targets'
+        // states to Sending(0), and the rest to Failed(0) (indicating that we haven't sent to
+        // them, and so they haven't failed yet)
         let targets = initial_targets
             .into_iter()
             .enumerate()
@@ -96,6 +104,9 @@ impl SendingTargetsCache {
             });
     }
 
+    /// Finds a Failed target with the lowest number of failed attempts so far, among the ones that
+    /// failed at most MAX_RESENDS times. If there are multiple possibilities, the one with the
+    /// highest priority (earliest in the list) is taken. Returns None if no such targets exist.
     fn take_next_target(&mut self, msg_id: u64) -> Option<ConnectionInfo> {
         self.target_states_mut(msg_id)
             .filter(|(_info, state)| !state.is_complete())

@@ -210,7 +210,7 @@ pub enum Event {
     /// Message sent by us and we won't receive UnsentUserMessage for this one.
     /// Either it was sent successfully or it will fail too late for the failure
     /// to be detected.
-    /// In most cases, this should be synonimous with success. It is safe to consider
+    /// In most cases, this should be synonymous with success. It is safe to consider
     /// a failure beyond this point as a byzantine fault.
     SentUserMessage {
         /// Intended message recipient.
