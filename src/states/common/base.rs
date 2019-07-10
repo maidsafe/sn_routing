@@ -323,12 +323,13 @@ pub trait Base: Display {
 
         if conn_infos.len() < dg_size {
             warn!(
-                "{} Less than dg_size valid targets! dg_size = {}; targets = {:?}",
+                "{} Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
                 self,
                 dg_size,
                 dst_targets
                     .iter()
-                    .filter(|pub_id| self.peer_map().get_connection_info(pub_id).is_some())
+                    .filter(|pub_id| self.peer_map().get_connection_info(pub_id).is_some()),
+                message
             );
         }
 

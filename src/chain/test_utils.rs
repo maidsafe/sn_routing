@@ -65,9 +65,11 @@ fn verify_single_chain(chain: &Chain, min_section_size: usize) {
         .find(|info| info.members().len() < min_section_size)
     {
         panic!(
-            "A section is below the minimum size: size({:?}) = {}",
+            "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?})",
             info.prefix(),
-            info.members().len()
+            info.members().len(),
+            chain.our_id(),
+            chain.our_info().prefix(),
         );
     }
 

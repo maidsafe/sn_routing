@@ -2147,9 +2147,16 @@ impl Approved for Elder {
                 trusted = Some(ps);
             }
         }
-        if validates(&trusted, &sec_info) || self.is_trusted(&sec_info)? {
-            let _ = self.add_new_section(&sec_info);
+        if !(validates(&trusted, &sec_info) || self.is_trusted(&sec_info)?) {
+            trace!(
+                "{} Adding untrusted neighbour section info {:?}",
+                self,
+                &sec_info
+            );
         }
+        // Always add section info until SMD is complete
+        // TODO: Fix for SMD.
+        let _ = self.add_new_section(&sec_info);
         Ok(())
     }
 }
