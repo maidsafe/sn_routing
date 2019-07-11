@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{ProofSet, ProvingSection, SectionInfo};
-use crate::{error::RoutingError, sha3::Digest256, Prefix, XorName};
+use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
 use std::{
     collections::BTreeSet,
@@ -31,16 +31,21 @@ pub struct SharedState {
     pub split_cache: Option<(SectionInfo, ProofSet)>,
     /// The set of section info hashes that are currently merging.
     pub merging: BTreeSet<Digest256>,
+    /// Our section's key history for Secure Message Delivery
+    pub our_history: SectionProofChain,
 }
 
 impl SharedState {
     pub fn new(section_info: SectionInfo) -> Self {
+        let pk = BlsPublicKey::from_section_info(&section_info);
+        let our_history = SectionProofChain::from_genesis(pk);
         Self {
             new_info: section_info.clone(),
             our_infos: NonEmptyList::new((section_info, Default::default())),
             change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
+            our_history,
         }
     }
 
@@ -218,5 +223,36 @@ impl NonEmptyList<(SectionInfo, ProofSet)> {
             }
             Err(_) => oldest_version == 0,
         }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SectionProofBlock {
+    key: BlsPublicKey,
+    sig: BlsSignature,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SectionProofChain {
+    genesis_pk: BlsPublicKey,
+    blocks: Vec<SectionProofBlock>,
+}
+
+impl SectionProofChain {
+    pub fn from_genesis(pk: BlsPublicKey) -> Self {
+        Self {
+            genesis_pk: pk,
+            blocks: Vec::new(),
+        }
+    }
+}
+
+impl Debug for SectionProofChain {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SectionProofChain(len = {})",
+            self.blocks.len() + 1
+        )
     }
 }
