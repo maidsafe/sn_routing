@@ -134,8 +134,6 @@ mod tests {
     }
 
     struct Env {
-        _msg_sender_id: FullId,
-        _senders: BTreeSet<PublicId>,
         msgs_and_sigs: Vec<MessageAndSignatures>,
     }
 
@@ -157,8 +155,6 @@ mod tests {
                 })
                 .collect();
             Env {
-                _msg_sender_id: msg_sender_id,
-                _senders: pub_ids,
                 msgs_and_sigs: msgs_and_sigs,
             }
         }
