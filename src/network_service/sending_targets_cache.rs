@@ -1,0 +1,155 @@
+// Copyright 2019 MaidSafe.net limited.
+//
+// This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied. Please review the Licences for the specific language governing
+// permissions and limitations relating to use of the SAFE Network Software.
+
+use crate::ConnectionInfo;
+use log::LogLevel;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+
+const MAX_RESENDS: u8 = 3;
+
+enum TargetState {
+    /// we don't know whether the last send attempt suceeded or failed
+    /// the stored number of attempts already failed before
+    Sending(u8),
+    /// the last sending attempt (if any) failed; in total, the stored number of attempts failed
+    Failed(u8),
+    /// sending to this target succeeded
+    Sent,
+}
+
+impl TargetState {
+    pub fn is_complete(&self) -> bool {
+        match *self {
+            TargetState::Failed(x) => x > MAX_RESENDS,
+            TargetState::Sent => true,
+            TargetState::Sending(_) => false,
+        }
+    }
+
+    pub fn is_sending(&self) -> bool {
+        match *self {
+            TargetState::Failed(_) | TargetState::Sent => false,
+            TargetState::Sending(_) => true,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct SendingTargetsCache {
+    cache: HashMap<u64, Vec<(ConnectionInfo, TargetState)>>,
+}
+
+impl SendingTargetsCache {
+    pub fn insert_message(
+        &mut self,
+        msg_id: u64,
+        initial_targets: Vec<ConnectionInfo>,
+        dg_size: usize,
+    ) {
+        // When a message is inserted into the cache initially, we are only sending it to `dg_size`
+        // targets with the highest priority - thus, we will set the first `dg_size` targets'
+        // states to Sending(0), and the rest to Failed(0) (indicating that we haven't sent to
+        // them, and so they haven't failed yet)
+        let targets = initial_targets
+            .into_iter()
+            .enumerate()
+            .map(|(idx, tgt_info)| {
+                (
+                    tgt_info,
+                    if idx < dg_size {
+                        TargetState::Sending(0)
+                    } else {
+                        TargetState::Failed(0)
+                    },
+                )
+            })
+            .collect();
+        let _ = self.cache.insert(msg_id, targets);
+    }
+
+    fn target_states(&self, msg_id: u64) -> impl Iterator<Item = &(ConnectionInfo, TargetState)> {
+        self.cache.get(&msg_id).into_iter().flatten()
+    }
+
+    fn target_states_mut(
+        &mut self,
+        msg_id: u64,
+    ) -> impl Iterator<Item = &mut (ConnectionInfo, TargetState)> {
+        self.cache.get_mut(&msg_id).into_iter().flatten()
+    }
+
+    fn fail_target(&mut self, msg_id: u64, target: SocketAddr) {
+        let _ = self
+            .target_states_mut(msg_id)
+            .find(|(info, _state)| info.peer_addr() == target)
+            .map(|(_info, state)| match *state {
+                TargetState::Failed(_) => {
+                    log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
+                }
+                TargetState::Sending(x) => {
+                    *state = TargetState::Failed(x + 1);
+                }
+                TargetState::Sent => {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "A target that should no longer fail - failed!"
+                    );
+                }
+            });
+    }
+
+    /// Finds a Failed target with the lowest number of failed attempts so far, among the ones that
+    /// failed at most MAX_RESENDS times. If there are multiple possibilities, the one with the
+    /// highest priority (earliest in the list) is taken. Returns None if no such targets exist.
+    fn take_next_target(&mut self, msg_id: u64) -> Option<ConnectionInfo> {
+        self.target_states_mut(msg_id)
+            .filter(|(_info, state)| !state.is_complete())
+            .filter_map(|(info, state)| match state {
+                TargetState::Failed(x) => Some((info, *x, state)),
+                _ => None,
+            })
+            .min_by_key(|(_info, num, _state)| *num)
+            .map(|(info, num, state)| {
+                *state = TargetState::Sending(num);
+                info
+            })
+            .cloned()
+    }
+
+    fn should_drop(&self, msg_id: u64) -> bool {
+        // Other methods maintain the invariant that exactly one of these is true:
+        // - some target is in the Sending state
+        // - we succeeded (no further sending needed)
+        // - we failed (no more targets available)
+        // So if none are sending, the handling of the message is finished and we can drop it
+        self.target_states(msg_id)
+            .all(|(_info, state)| !state.is_sending())
+    }
+
+    pub fn target_failed(&mut self, msg_id: u64, target: SocketAddr) -> Option<ConnectionInfo> {
+        self.fail_target(msg_id, target);
+        let result = self.take_next_target(msg_id);
+        if self.should_drop(msg_id) {
+            let _ = self.cache.remove(&msg_id);
+        }
+        result
+    }
+
+    pub fn target_succeeded(&mut self, msg_id: u64, target: SocketAddr) {
+        let _ = self
+            .target_states_mut(msg_id)
+            .find(|(info, _state)| info.peer_addr() == target)
+            .map(|(_info, state)| {
+                *state = TargetState::Sent;
+            });
+        if self.should_drop(msg_id) {
+            let _ = self.cache.remove(&msg_id);
+        }
+    }
+}

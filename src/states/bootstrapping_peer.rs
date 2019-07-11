@@ -77,7 +77,7 @@ impl BootstrappingPeer {
         min_section_size: usize,
         timer: Timer,
     ) -> Self {
-        network_service.bootstrap();
+        network_service.service_mut().bootstrap();
 
         Self {
             action_sender,
@@ -167,7 +167,8 @@ impl BootstrappingPeer {
                 return;
             };
 
-        self.send_message_over_network(Peer::Node { node_info: dst }, message);
+        let next_id = self.network_service.next_msg_id();
+        self.send_message_over_network(Peer::Node { node_info: dst }, &message, next_id);
     }
 
     fn rebootstrap(&mut self) {
@@ -176,8 +177,10 @@ impl BootstrappingPeer {
                 "{} Dropping bootstrap node at {} and retrying.",
                 self, node_info.peer_addr
             );
-            self.network_service.disconnect_from(node_info.peer_addr);
-            self.network_service.bootstrap();
+            self.network_service
+                .service_mut()
+                .disconnect_from(node_info.peer_addr);
+            self.network_service.service_mut().bootstrap();
         }
     }
 }
@@ -395,7 +398,7 @@ mod tests {
         // The state machine should have received the `BootstrappedTo` event and this will have
         // caused it to send a `BootstrapRequest` message.
         network.poll();
-        unwrap!(client_state_machine.step(&mut client_outbox));
+        step_at_least_once(&mut client_state_machine, &mut client_outbox);
 
         // Check the network service received the `BootstrapRequest`
         network.poll();
@@ -417,19 +420,27 @@ mod tests {
             panic!("Should have received `NewMessage` event.");
         }
 
-        // Drop the network service to trigger `ConnectionFailure` event in the state machine.
+        // Drop the network service...
         drop(node_network_service);
         network.poll();
 
-        // The state machine should attempt to rebootstrap...
-        unwrap!(client_state_machine.step(&mut client_outbox));
+        // ...which triggers `ConnectionFailure` on the state machine which then attempts to
+        // rebootstrap..
+        step_at_least_once(&mut client_state_machine, &mut client_outbox);
         assert!(client_outbox.take_all().is_empty());
         network.poll();
 
-        // ...but there is no one to bootstrap to, so the state machine should terminate.
-        unwrap!(client_state_machine.step(&mut client_outbox));
+        // ... but there is no one to bootstrap to, so the bootstrap fails which causes the state
+        // machine to terminate.
+        step_at_least_once(&mut client_state_machine, &mut client_outbox);
         let events = client_outbox.take_all();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0], Event::Terminated);
+    }
+    fn step_at_least_once(machine: &mut StateMachine, outbox: &mut EventBox) {
+        // Blocking step for the first one. Must not err.
+        unwrap!(machine.step(outbox));
+        // Exhaust any remaining step
+        while machine.try_step(outbox).is_ok() {}
     }
 }

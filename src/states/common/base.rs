@@ -147,11 +147,16 @@ pub trait Base: Display {
                 self.handle_connection_failure(peer_addr, outbox)
             }
             NewMessage { peer_addr, msg } => self.handle_new_message(peer_addr, msg, outbox),
-            UnsentUserMessage { .. } => {
-                // TODO (quic-p2p): handle unsent messages
-                error!("{} - Unhandled UnsentUserMessage", self);
-                Transition::Stay
-            }
+            UnsentUserMessage {
+                peer_addr,
+                msg,
+                msg_id,
+            } => self.handle_unsent_message(peer_addr, msg, msg_id, outbox),
+            SentUserMessage {
+                peer_addr,
+                msg,
+                msg_id,
+            } => self.handle_sent_message(peer_addr, msg, msg_id, outbox),
             Finish => Transition::Terminate,
         };
 
@@ -231,6 +236,36 @@ pub trait Base: Display {
         }
     }
 
+    fn handle_unsent_message(
+        &mut self,
+        peer_addr: SocketAddr,
+        msg: NetworkBytes,
+        msg_id: u64,
+        _outbox: &mut EventBox,
+    ) -> Transition {
+        let log_ident = LogIdent::new(self);
+        self.network_service_mut()
+            .send_message_to_next_target(msg, msg_id, peer_addr, log_ident);
+        Transition::Stay
+    }
+
+    fn handle_sent_message(
+        &mut self,
+        peer_addr: SocketAddr,
+        _msg: NetworkBytes,
+        msg_id: u64,
+        _outbox: &mut EventBox,
+    ) -> Transition {
+        debug!(
+            "{} Successfully sent message with ID {} to {:?}",
+            self, msg_id, peer_addr
+        );
+        self.network_service_mut()
+            .targets_cache_mut()
+            .target_succeeded(msg_id, peer_addr);
+        Transition::Stay
+    }
+
     fn finish_handle_network_event(&mut self, _outbox: &mut EventBox) -> Transition {
         Transition::Stay
     }
@@ -245,6 +280,7 @@ pub trait Base: Display {
 
     fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
         self.network_service_mut()
+            .service_mut()
             .our_connection_info()
             .map_err(|err| {
                 debug!(
@@ -266,27 +302,57 @@ pub trait Base: Display {
             return;
         };
 
-        self.send_message(dst_id, message)
+        self.send_message(dst_id, message);
     }
 
     fn send_message(&mut self, dst_id: &PublicId, message: Message) {
-        let conn_info = match self.peer_map().get_connection_info(dst_id) {
-            Some(conn_info) => conn_info.clone(),
-            None => {
-                error!(
-                    "{} - Failed to send message to {:?} - not connected",
-                    self, dst_id
-                );
-                return;
-            }
-        };
-
-        self.send_message_over_network(conn_info, message);
+        self.send_message_to_targets(&[*dst_id], 1, message);
     }
 
-    fn send_message_over_network(&mut self, conn_info: ConnectionInfo, message: Message) {
+    fn send_message_to_targets(
+        &mut self,
+        dst_targets: &[PublicId],
+        dg_size: usize,
+        message: Message,
+    ) {
+        let msg_id = self.network_service_mut().next_msg_id();
+        let conn_infos: Vec<_> = dst_targets
+            .iter()
+            .filter_map(|pub_id| self.peer_map().get_connection_info(pub_id).cloned())
+            .collect();
+
+        if conn_infos.len() < dg_size {
+            warn!(
+                "{} Less than dg_size valid targets! dg_size = {}; targets = {:?}",
+                self,
+                dg_size,
+                dst_targets
+                    .iter()
+                    .filter(|pub_id| self.peer_map().get_connection_info(pub_id).is_some())
+            );
+        }
+
+        // initially only send to dg_size targets
+        for conn_info in conn_infos.iter().take(dg_size) {
+            self.send_message_over_network(conn_info.clone(), &message, msg_id);
+        }
+
+        self.network_service_mut()
+            .targets_cache_mut()
+            .insert_message(msg_id, conn_infos, dg_size);
+    }
+
+    fn send_message_over_network(
+        &mut self,
+        conn_info: ConnectionInfo,
+        message: &Message,
+        msg_id: u64,
+    ) {
         match to_network_bytes(message) {
-            Ok(bytes) => self.network_service_mut().send(conn_info, bytes),
+            Ok(bytes) => self
+                .network_service_mut()
+                .service_mut()
+                .send(conn_info, bytes, msg_id),
             Err((error, message)) => {
                 error!(
                     "{} Failed to serialise message {:?}: {:?}",
@@ -316,15 +382,15 @@ pub trait Base: Display {
 }
 
 pub fn to_network_bytes(
-    message: Message,
-) -> Result<NetworkBytes, (serialisation::SerialisationError, Message)> {
+    message: &Message,
+) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
     #[cfg(not(feature = "mock_serialise"))]
     let result = Ok(NetworkBytes::from(
-        serialisation::serialise(&message).map_err(|err| (err, message))?,
+        serialisation::serialise(message).map_err(|err| (err, message))?,
     ));
 
     #[cfg(feature = "mock_serialise")]
-    let result = Ok(Box::new(message));
+    let result = Ok(Box::new(message.clone()));
 
     result
 }

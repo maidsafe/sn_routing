@@ -170,6 +170,7 @@ mod event_stream;
 mod id;
 mod message_filter;
 mod messages;
+mod network_service;
 mod node;
 mod outbox;
 mod peer_manager;
@@ -255,10 +256,9 @@ pub(crate) type NetworkBytes = bytes::Bytes;
 #[cfg(feature = "mock_serialise")]
 pub(crate) type NetworkBytes = Box<crate::messages::Message>;
 
+pub(crate) use self::network_service::NetworkService;
 pub use self::quic_p2p::Config as NetworkConfig;
-pub(crate) use self::quic_p2p::{
-    Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p as NetworkService,
-};
+pub(crate) use self::quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p};
 
 #[cfg(test)]
 mod tests {

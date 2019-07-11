@@ -1357,7 +1357,7 @@ impl Elder {
             }
         }
 
-        let target_pub_ids = self.get_targets(signed_msg.routing_message())?;
+        let (target_pub_ids, dg_size) = self.get_targets(signed_msg.routing_message())?;
 
         debug!(
             "{}: Sending message {:?} via targets {:?}",
@@ -1366,29 +1366,22 @@ impl Elder {
             target_pub_ids
         );
 
-        for target_pub_id in target_pub_ids {
-            self.send_signed_message_to_peer(signed_msg.clone(), &target_pub_id)?;
-        }
+        let targets: Vec<_> = target_pub_ids
+            .into_iter()
+            .filter(|pub_id| {
+                !self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id)
+            })
+            .collect();
+
+        let message = self.to_hop_message(signed_msg.clone())?;
+
+        self.send_message_to_targets(&targets, dg_size, message);
 
         // we've seen this message - don't handle it again if someone else sends it to us
         let _ = self
             .routing_msg_filter
             .filter_incoming(signed_msg.routing_message());
 
-        Ok(())
-    }
-
-    fn send_signed_message_to_peer(
-        &mut self,
-        signed_msg: SignedRoutingMessage,
-        dst_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        if self.filter_outgoing_routing_msg(signed_msg.routing_message(), dst_id) {
-            return Ok(());
-        }
-
-        let message = self.to_hop_message(signed_msg)?;
-        self.send_message(dst_id, message);
         Ok(())
     }
 
@@ -1464,7 +1457,10 @@ impl Elder {
 
     /// Returns a list of target IDs for a message sent via route.
     /// Name in exclude will be excluded from the result.
-    fn get_targets(&self, routing_msg: &RoutingMessage) -> Result<Vec<PublicId>, RoutingError> {
+    fn get_targets(
+        &self,
+        routing_msg: &RoutingMessage,
+    ) -> Result<(Vec<PublicId>, usize), RoutingError> {
         let force_via_proxy = match routing_msg.content {
             MessageContent::ConnectionRequest { pub_id, .. } => {
                 routing_msg.src.is_client() && pub_id == *self.full_id.public_id()
@@ -1477,12 +1473,15 @@ impl Elder {
             // we remove self in targets info and can do same by not
             // chaining us to conn_peer list here?
             let conn_peers = self.connected_peers();
-            let targets: BTreeSet<_> = self
-                .chain
-                .targets(&routing_msg.dst, &conn_peers)?
-                .into_iter()
-                .collect();
-            Ok(self.peer_mgr.get_pub_ids(&targets).into_iter().collect())
+            let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
+            Ok((
+                targets
+                    .into_iter()
+                    .filter_map(|name| self.peer_mgr.get_pub_id(&name))
+                    .cloned()
+                    .collect(),
+                dg_size,
+            ))
         } else if let Authority::Client {
             ref proxy_node_name,
             ..
@@ -1490,7 +1489,7 @@ impl Elder {
         {
             if let Some(pub_id) = self.peer_mgr.get_pub_id(proxy_node_name) {
                 if self.peer_mgr.is_connected(pub_id) {
-                    Ok(vec![*pub_id])
+                    Ok((vec![*pub_id], 1))
                 } else {
                     error!(
                         "{} Unable to find connection to proxy in PeerManager.",
@@ -1633,7 +1632,11 @@ impl Elder {
                 ConnectionInfo::Node { node_info } => Some(node_info),
                 ConnectionInfo::Client { .. } => None,
             })
-            .map(|node_info| self.network_service.is_hard_coded_contact(node_info))
+            .map(|node_info| {
+                self.network_service
+                    .service()
+                    .is_hard_coded_contact(node_info)
+            })
             .unwrap_or(false)
     }
 }
@@ -1722,7 +1725,9 @@ impl Base for Elder {
 
     fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
         // A mature node doesn't need a bootstrap connection
-        self.network_service.disconnect_from(node_info.peer_addr);
+        self.network_service
+            .service_mut()
+            .disconnect_from(node_info.peer_addr);
         Transition::Stay
     }
 

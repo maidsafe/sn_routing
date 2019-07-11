@@ -142,13 +142,18 @@ impl Network {
 
     fn process_packet(&self, connection: &Connection, packet: Packet) {
         let response = if let Some(dst) = self.find_node(&connection.dst) {
+            let msg = if let Packet::Message(ref msg, msg_id) = packet {
+                Some(Packet::MessageSent(msg.clone(), msg_id))
+            } else {
+                None
+            };
             dst.borrow_mut().receive_packet(connection.src, packet);
-            None
+            msg
         } else {
             match packet {
                 Packet::BootstrapRequest(_) => Some(Packet::BootstrapFailure),
                 Packet::ConnectRequest(_) => Some(Packet::ConnectFailure),
-                Packet::Message(msg) => Some(Packet::MessageFailure(msg)),
+                Packet::Message(msg, msg_id) => Some(Packet::MessageFailure(msg, msg_id)),
                 _ => None,
             }
         };
@@ -266,8 +271,9 @@ pub(super) enum Packet {
     ConnectRequest(OurType),
     ConnectSuccess,
     ConnectFailure,
-    Message(NetworkBytes),
-    MessageFailure(NetworkBytes),
+    Message(NetworkBytes, u64),
+    MessageFailure(NetworkBytes, u64),
+    MessageSent(NetworkBytes, u64),
     Disconnect,
 }
 
@@ -276,7 +282,7 @@ impl Packet {
     #[cfg(not(feature = "mock_serialise"))]
     pub fn is_parsec_gossip(&self) -> bool {
         match self {
-            Packet::Message(bytes) if bytes.len() >= 8 => {
+            Packet::Message(bytes, _) if bytes.len() >= 8 => {
                 &bytes[..8] == PARSEC_REQ_MSG_TAGS || &bytes[..8] == PARSEC_RSP_MSG_TAGS
             }
             _ => false,
@@ -288,7 +294,7 @@ impl Packet {
         use crate::messages::{DirectMessage, Message};
 
         match self {
-            Packet::Message(ref message) => match **message {
+            Packet::Message(ref message, _) => match **message {
                 Message::Direct(ref message) => match message.content() {
                     DirectMessage::ParsecRequest(..) | DirectMessage::ParsecResponse(..) => true,
                     _ => false,
@@ -321,7 +327,7 @@ impl Queue {
             .0
             .iter()
             .position(|packet| {
-                if let Packet::Message(_) = packet {
+                if let Packet::Message(_, _) = packet {
                     false
                 } else {
                     true
