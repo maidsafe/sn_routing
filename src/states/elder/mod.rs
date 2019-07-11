@@ -1337,17 +1337,6 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         let dst = signed_msg.routing_message().dst;
 
-        // TODO: Figure out when failure is expected, and in which cases we should still handle the
-        // message anyway.
-        if let Err(err) = self.chain.extend_proving_sections(signed_msg) {
-            debug!(
-                "{} Failed to add section infos to message {:?}: {:?}",
-                self,
-                signed_msg.routing_message(),
-                err
-            );
-        }
-
         if let Authority::Client { ref client_id, .. } = dst {
             if *self.name() == dst.name() {
                 // This is a message for a client we are the proxy of. Relay it.
@@ -2158,9 +2147,16 @@ impl Approved for Elder {
                 trusted = Some(ps);
             }
         }
-        if validates(&trusted, &sec_info) || self.is_trusted(&sec_info)? {
-            let _ = self.add_new_section(&sec_info);
+        if !(validates(&trusted, &sec_info) || self.is_trusted(&sec_info)?) {
+            trace!(
+                "{} Adding untrusted neighbour section info {:?}",
+                self,
+                &sec_info
+            );
         }
+        // Always add section info until SMD is complete
+        // TODO: Fix for SMD.
+        let _ = self.add_new_section(&sec_info);
         Ok(())
     }
 }
