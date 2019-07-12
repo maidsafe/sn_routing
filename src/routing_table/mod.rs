@@ -885,8 +885,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             Authority::ManagedNode(ref name) => self.our_name == *name,
             Authority::ClientManager(ref name)
             | Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name) => self.is_closest(name, self.min_section_size),
-            Authority::Section(ref name) => self.our_prefix.matches(name),
+            | Authority::NodeManager(ref name)
+            | Authority::Section(ref name) => self.our_prefix.matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix.is_compatible(prefix),
         }
     }

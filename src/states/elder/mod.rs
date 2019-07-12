@@ -498,11 +498,7 @@ impl Elder {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        let min_section_size = self.min_section_size();
-        if let Some(signed_msg) = self
-            .sig_accumulator
-            .add_proof(min_section_size, msg.clone())
-        {
+        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
             self.handle_signed_message(signed_msg)?;
         }
         Ok(())
@@ -558,7 +554,7 @@ impl Elder {
 
         if self.in_authority(&signed_msg.routing_message().dst) {
             // The message is addressed to our section. Verify its integrity.
-            signed_msg.check_integrity(self.min_section_size())?;
+            signed_msg.check_integrity()?;
 
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
@@ -1406,16 +1402,7 @@ impl Elder {
         use crate::Authority::*;
 
         let list: Vec<XorName> = match *src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) => {
-                let mut v = self
-                    .chain
-                    .our_section()
-                    .into_iter()
-                    .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs));
-                v.truncate(self.min_section_size());
-                v
-            }
-            Section(_) => self
+            ClientManager(_) | NaeManager(_) | NodeManager(_) | Section(_) => self
                 .chain
                 .our_section()
                 .into_iter()
@@ -1647,8 +1634,7 @@ impl Base for Elder {
         if let Authority::Client { ref client_id, .. } = *auth {
             client_id == self.full_id.public_id()
         } else {
-            let conn_peers = self.connected_peers();
-            self.chain.in_authority(auth, &conn_peers)
+            self.chain.in_authority(auth)
         }
     }
 
@@ -1896,11 +1882,7 @@ impl Bootstrapped for Elder {
                 .into_iter(),
         ) {
             if target == *self.name() {
-                let min_section_size = self.min_section_size();
-                if let Some(mut msg) = self
-                    .sig_accumulator
-                    .add_proof(min_section_size, signed_msg.clone())
-                {
+                if let Some(mut msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
