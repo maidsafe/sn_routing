@@ -10,7 +10,7 @@ use super::{ProofSet, ProvingSection, SectionInfo};
 use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -33,6 +33,8 @@ pub struct SharedState {
     pub merging: BTreeSet<Digest256>,
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
+    /// BLS public keys of other sections
+    pub their_keys: HashMap<Prefix<XorName>, BlsPublicKey>,
 }
 
 impl SharedState {
@@ -46,6 +48,7 @@ impl SharedState {
             split_cache: None,
             merging: Default::default(),
             our_history,
+            their_keys: Default::default(),
         }
     }
 

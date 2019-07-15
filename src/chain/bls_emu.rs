@@ -9,7 +9,10 @@
 //! Types emulating the BLS functionality until proper BLS lands
 use super::SectionInfo;
 use crate::id::{FullId, PublicId};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct PublicKeySet {
@@ -99,5 +102,11 @@ impl PublicKey {
             })
             .count()
             > self.0.threshold
+    }
+}
+
+impl fmt::Debug for PublicKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "BLS-PublicKey({:?})", self.0.sec_info)
     }
 }
