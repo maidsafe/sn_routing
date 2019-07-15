@@ -86,9 +86,8 @@ impl ProvingNode {
         outbox: &mut EventBox,
     ) -> Result<Self, RoutingError> {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
-        let public_id = *details.full_id.public_id();
 
-        let mut peer_mgr = PeerManager::new(public_id, dev_config.disable_client_rate_limiter);
+        let mut peer_mgr = PeerManager::new(dev_config.disable_client_rate_limiter);
         peer_mgr.insert_peer(details.proxy_pub_id, PeerState::Proxy);
 
         let challenger_count = details.our_section.1.len();

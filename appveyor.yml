@@ -24,7 +24,7 @@ configuration:
   - Release
 
 build_script:
-  - cargo check --verbose --release --features=mock_base --lib --tests
+  - cargo check --verbose --release --lib --tests
 
 test_script:
   - cargo test --verbose --release --features=mock -- --nocapture

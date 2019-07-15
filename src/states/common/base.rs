@@ -16,7 +16,7 @@ use crate::{
     },
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::NodeInfo,
+    quic_p2p::{NodeInfo, Token},
     routing_table::Authority,
     state_machine::Transition,
     utils::LogIdent,
@@ -150,13 +150,13 @@ pub trait Base: Display {
             UnsentUserMessage {
                 peer_addr,
                 msg,
-                msg_id,
-            } => self.handle_unsent_message(peer_addr, msg, msg_id, outbox),
+                token,
+            } => self.handle_unsent_message(peer_addr, msg, token, outbox),
             SentUserMessage {
                 peer_addr,
                 msg,
-                msg_id,
-            } => self.handle_sent_message(peer_addr, msg, msg_id, outbox),
+                token,
+            } => self.handle_sent_message(peer_addr, msg, token, outbox),
             Finish => Transition::Terminate,
         };
 
@@ -240,12 +240,12 @@ pub trait Base: Display {
         &mut self,
         peer_addr: SocketAddr,
         msg: NetworkBytes,
-        msg_id: u64,
+        token: Token,
         _outbox: &mut EventBox,
     ) -> Transition {
         let log_ident = LogIdent::new(self);
         self.network_service_mut()
-            .send_message_to_next_target(msg, msg_id, peer_addr, log_ident);
+            .send_message_to_next_target(msg, token, peer_addr, log_ident);
         Transition::Stay
     }
 
@@ -253,16 +253,16 @@ pub trait Base: Display {
         &mut self,
         peer_addr: SocketAddr,
         _msg: NetworkBytes,
-        msg_id: u64,
+        token: Token,
         _outbox: &mut EventBox,
     ) -> Transition {
         debug!(
             "{} Successfully sent message with ID {} to {:?}",
-            self, msg_id, peer_addr
+            self, token, peer_addr
         );
         self.network_service_mut()
             .targets_cache_mut()
-            .target_succeeded(msg_id, peer_addr);
+            .target_succeeded(token, peer_addr);
         Transition::Stay
     }
 
@@ -315,7 +315,7 @@ pub trait Base: Display {
         dg_size: usize,
         message: Message,
     ) {
-        let msg_id = self.network_service_mut().next_msg_id();
+        let token = self.network_service_mut().next_msg_token();
         let conn_infos: Vec<_> = dst_targets
             .iter()
             .filter_map(|pub_id| self.peer_map().get_connection_info(pub_id).cloned())
@@ -335,25 +335,25 @@ pub trait Base: Display {
 
         // initially only send to dg_size targets
         for conn_info in conn_infos.iter().take(dg_size) {
-            self.send_message_over_network(conn_info.clone(), &message, msg_id);
+            self.send_message_over_network(conn_info.clone(), &message, token);
         }
 
         self.network_service_mut()
             .targets_cache_mut()
-            .insert_message(msg_id, conn_infos, dg_size);
+            .insert_message(token, conn_infos, dg_size);
     }
 
     fn send_message_over_network(
         &mut self,
         conn_info: ConnectionInfo,
         message: &Message,
-        msg_id: u64,
+        token: Token,
     ) {
         match to_network_bytes(message) {
             Ok(bytes) => self
                 .network_service_mut()
                 .service_mut()
-                .send(conn_info, bytes, msg_id),
+                .send(conn_info, bytes, token),
             Err((error, message)) => {
                 error!(
                     "{} Failed to serialise message {:?}: {:?}",

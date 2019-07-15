@@ -12,6 +12,7 @@ mod node;
 mod tests;
 
 pub use self::network::Network;
+pub use quic_p2p::Token;
 
 use self::node::Node;
 use crate::NetworkBytes;
@@ -82,8 +83,8 @@ impl QuicP2p {
     /// If the peer is not connected, it will attempt to connect to it first
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer: Peer, msg: NetworkBytes, msg_id: u64) {
-        self.inner.borrow_mut().send(peer.peer_addr(), msg, msg_id)
+    pub fn send(&mut self, peer: Peer, msg: NetworkBytes, token: Token) {
+        self.inner.borrow_mut().send(peer.peer_addr(), msg, token)
     }
 
     /// Get our connection info to give to others for them to connect to us
@@ -204,8 +205,8 @@ pub enum Event {
         peer_addr: SocketAddr,
         /// Message content.
         msg: NetworkBytes,
-        /// Message ID
-        msg_id: u64,
+        /// Message Token
+        token: Token,
     },
     /// Message sent by us and we won't receive UnsentUserMessage for this one.
     /// Either it was sent successfully or it will fail too late for the failure
@@ -217,8 +218,8 @@ pub enum Event {
         peer_addr: SocketAddr,
         /// Message content.
         msg: NetworkBytes,
-        /// Message ID
-        msg_id: u64,
+        /// Message Token
+        token: Token,
     },
     /// Connection successfuly established.
     ConnectedTo {
