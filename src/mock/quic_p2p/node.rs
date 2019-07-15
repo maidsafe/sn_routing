@@ -98,12 +98,12 @@ impl Node {
         }
     }
 
-    pub fn send(&mut self, dst: SocketAddr, msg: NetworkBytes, msg_id: u64) {
+    pub fn send(&mut self, dst: SocketAddr, msg: NetworkBytes, token: u64) {
         if self.peers.contains_key(&dst) {
-            self.send_message(dst, msg, msg_id)
+            self.send_message(dst, msg, token)
         } else {
             self.send_connect_request(dst);
-            self.add_pending_message(dst, msg, msg_id)
+            self.add_pending_message(dst, msg, token)
         }
     }
 
@@ -180,7 +180,7 @@ impl Node {
                 // attempts, only when a previously successfully established connection gets
                 // dropped.
             }
-            Packet::Message(msg, msg_id) => {
+            Packet::Message(msg, token) => {
                 if self.peers.contains_key(&src) {
                     self.fire_event(Event::NewMessage {
                         peer_addr: src,
@@ -190,19 +190,19 @@ impl Node {
                     self.network.borrow_mut().send(
                         self.addr,
                         src,
-                        Packet::MessageFailure(msg, msg_id),
+                        Packet::MessageFailure(msg, token),
                     )
                 }
             }
-            Packet::MessageFailure(msg, msg_id) => self.fire_event(Event::UnsentUserMessage {
+            Packet::MessageFailure(msg, token) => self.fire_event(Event::UnsentUserMessage {
                 peer_addr: src,
                 msg,
-                msg_id,
+                token,
             }),
-            Packet::MessageSent(msg, msg_id) => self.fire_event(Event::SentUserMessage {
+            Packet::MessageSent(msg, token) => self.fire_event(Event::SentUserMessage {
                 peer_addr: src,
                 msg,
-                msg_id,
+                token,
             }),
             Packet::Disconnect => {
                 if self.peers.remove(&src).is_some() {
@@ -240,17 +240,17 @@ impl Node {
             .send(self.addr, dst, Packet::ConnectRequest(self.config.our_type))
     }
 
-    fn send_message(&self, dst: SocketAddr, msg: NetworkBytes, msg_id: u64) {
+    fn send_message(&self, dst: SocketAddr, msg: NetworkBytes, token: u64) {
         self.network
             .borrow_mut()
-            .send(self.addr, dst, Packet::Message(msg, msg_id))
+            .send(self.addr, dst, Packet::Message(msg, token))
     }
 
-    fn add_pending_message(&mut self, addr: SocketAddr, msg: NetworkBytes, msg_id: u64) {
+    fn add_pending_message(&mut self, addr: SocketAddr, msg: NetworkBytes, token: u64) {
         self.pending_messages
             .entry(addr)
             .or_insert_with(Default::default)
-            .push((msg, msg_id))
+            .push((msg, token))
     }
 
     fn send_pending_messages(&mut self, addr: SocketAddr) {
@@ -260,8 +260,8 @@ impl Node {
             return;
         };
 
-        for (msg, msg_id) in messages {
-            self.send_message(addr, msg, msg_id)
+        for (msg, token) in messages {
+            self.send_message(addr, msg, token)
         }
     }
 }

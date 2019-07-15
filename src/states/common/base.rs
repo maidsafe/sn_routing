@@ -150,13 +150,13 @@ pub trait Base: Display {
             UnsentUserMessage {
                 peer_addr,
                 msg,
-                msg_id,
-            } => self.handle_unsent_message(peer_addr, msg, msg_id, outbox),
+                token,
+            } => self.handle_unsent_message(peer_addr, msg, token, outbox),
             SentUserMessage {
                 peer_addr,
                 msg,
-                msg_id,
-            } => self.handle_sent_message(peer_addr, msg, msg_id, outbox),
+                token,
+            } => self.handle_sent_message(peer_addr, msg, token, outbox),
             Finish => Transition::Terminate,
         };
 

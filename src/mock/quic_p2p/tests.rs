@@ -299,15 +299,15 @@ fn send_multiple_messages_without_connecting_first() {
 
     let msgs = [gen_message(), gen_message(), gen_message()];
 
-    for (msg_id, msg) in msgs.iter().enumerate() {
-        a.send(b.addr(), msg.clone(), msg_id as u64);
+    for (token, msg) in msgs.iter().enumerate() {
+        a.send(b.addr(), msg.clone(), token as u64);
     }
 
     network.poll();
 
     a.expect_connected_to_node(&b.addr());
-    for (msg_id, msg) in msgs.iter().enumerate() {
-        a.expect_sent_message(&b.addr(), msg, msg_id as u64);
+    for (token, msg) in msgs.iter().enumerate() {
+        a.expect_sent_message(&b.addr(), msg, token as u64);
     }
 
     b.expect_connected_to_node(&a.addr());
@@ -516,8 +516,8 @@ impl Agent {
         self.inner.disconnect_from(dst_addr);
     }
 
-    fn send(&mut self, dst_addr: SocketAddr, msg: NetworkBytes, msg_id: u64) {
-        self.inner.send(Peer::node(dst_addr), msg, msg_id)
+    fn send(&mut self, dst_addr: SocketAddr, msg: NetworkBytes, token: u64) {
+        self.inner.send(Peer::node(dst_addr), msg, token)
     }
 
     fn addr(&self) -> SocketAddr {
@@ -602,16 +602,16 @@ impl Agent {
         &self,
         dst_addr: &SocketAddr,
         expected_msg: &NetworkBytes,
-        expected_msg_id: u64,
+        expected_token: u64,
     ) {
         let (actual_addr, actual_msg, actual_id) = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::SentUserMessage { peer_addr, msg, msg_id }) => (peer_addr, msg, msg_id)
+            Ok(Event::SentUserMessage { peer_addr, msg, token }) => (peer_addr, msg, token)
         );
 
         assert_eq!(actual_addr, *dst_addr);
         assert_eq!(actual_msg, *expected_msg);
-        assert_eq!(actual_id, expected_msg_id);
+        assert_eq!(actual_id, expected_token);
     }
 
     // Expect `Event::UnsentUserMessage` with the given recipient address and content.
@@ -619,16 +619,16 @@ impl Agent {
         &self,
         dst_addr: &SocketAddr,
         expected_msg: &NetworkBytes,
-        expected_msg_id: u64,
+        expected_token: u64,
     ) {
         let (actual_addr, actual_msg, actual_id) = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::UnsentUserMessage { peer_addr, msg, msg_id }) => (peer_addr, msg, msg_id)
+            Ok(Event::UnsentUserMessage { peer_addr, msg, token }) => (peer_addr, msg, token)
         );
 
         assert_eq!(actual_addr, *dst_addr);
         assert_eq!(actual_msg, *expected_msg);
-        assert_eq!(actual_id, expected_msg_id);
+        assert_eq!(actual_id, expected_token);
     }
 
     // Expect no event.
