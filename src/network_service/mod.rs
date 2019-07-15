@@ -9,7 +9,7 @@
 mod sending_targets_cache;
 
 use crate::{
-    quic_p2p::{Builder, Error},
+    quic_p2p::{Builder, Error, Token},
     utils::LogIdent,
     NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
 };
@@ -23,7 +23,7 @@ use sending_targets_cache::SendingTargetsCache;
 pub struct NetworkService {
     quic_p2p: QuicP2p,
     cache: SendingTargetsCache,
-    next_msg_id: u64,
+    next_msg_token: Token,
 }
 
 impl NetworkService {
@@ -35,9 +35,9 @@ impl NetworkService {
         &mut self.quic_p2p
     }
 
-    pub fn next_msg_id(&mut self) -> u64 {
-        self.next_msg_id = self.next_msg_id.wrapping_add(1);
-        self.next_msg_id
+    pub fn next_msg_token(&mut self) -> Token {
+        self.next_msg_token = self.next_msg_token.wrapping_add(1);
+        self.next_msg_token
     }
 
     pub fn targets_cache_mut(&mut self) -> &mut SendingTargetsCache {
@@ -47,16 +47,16 @@ impl NetworkService {
     pub fn send_message_to_next_target(
         &mut self,
         msg: NetworkBytes,
-        msg_id: u64,
+        token: Token,
         failed_tgt: SocketAddr,
         log_ident: LogIdent,
     ) {
-        if let Some(tgt) = self.cache.target_failed(msg_id, failed_tgt) {
+        if let Some(tgt) = self.cache.target_failed(token, failed_tgt) {
             info!(
                 "{} Sending of message ID {} failed; resending...",
-                log_ident, msg_id
+                log_ident, token
             );
-            self.quic_p2p.send(tgt, msg, msg_id);
+            self.quic_p2p.send(tgt, msg, token);
         }
     }
 }
@@ -82,7 +82,7 @@ impl NetworkBuilder {
         Ok(NetworkService {
             quic_p2p: self.quic_p2p.build()?,
             cache: Default::default(),
-            next_msg_id: 0,
+            next_msg_token: 0,
         })
     }
 }

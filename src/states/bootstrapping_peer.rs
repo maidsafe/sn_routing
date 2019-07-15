@@ -167,7 +167,7 @@ impl BootstrappingPeer {
                 return;
             };
 
-        let next_id = self.network_service.next_msg_id();
+        let next_id = self.network_service.next_msg_token();
         self.send_message_over_network(Peer::Node { node_info: dst }, &message, next_id);
     }
 
