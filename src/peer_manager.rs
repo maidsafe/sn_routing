@@ -22,7 +22,7 @@ use resource_proof::ResourceProof;
 use std::{
     collections::{
         btree_map::{BTreeMap, Entry},
-        BTreeSet, VecDeque,
+        VecDeque,
     },
     net::IpAddr,
 };
@@ -252,17 +252,15 @@ struct ResourceProofChallenge {
 /// we have verified, and whom we are connected to.
 pub struct PeerManager {
     peers: BTreeMap<PublicId, Peer>,
-    our_public_id: PublicId,
     candidate: Candidate,
     disable_client_rate_limiter: bool,
 }
 
 impl PeerManager {
     /// Returns a new peer manager with no entries.
-    pub fn new(our_public_id: PublicId, disable_client_rate_limiter: bool) -> PeerManager {
+    pub fn new(disable_client_rate_limiter: bool) -> PeerManager {
         PeerManager {
             peers: BTreeMap::new(),
-            our_public_id: our_public_id,
             candidate: Candidate::None,
             disable_client_rate_limiter: disable_client_rate_limiter,
         }
@@ -546,21 +544,6 @@ impl PeerManager {
     /// Returns the `PublicId` of the node with a given name.
     pub fn get_pub_id(&self, name: &XorName) -> Option<&PublicId> {
         self.peers.keys().find(|pub_id| pub_id.name() == name)
-    }
-
-    /// Returns the `PublicId`s of nodes bearing the names.
-    pub fn get_pub_ids(&self, names: &BTreeSet<XorName>) -> BTreeSet<PublicId> {
-        names
-            .iter()
-            .filter_map(|name| {
-                if name == self.our_public_id.name() {
-                    Some(&self.our_public_id)
-                } else {
-                    self.get_pub_id(name)
-                }
-            })
-            .cloned()
-            .collect()
     }
 
     /// Insert a peer with the given state.
