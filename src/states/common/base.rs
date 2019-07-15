@@ -315,7 +315,6 @@ pub trait Base: Display {
         dg_size: usize,
         message: Message,
     ) {
-        let token = self.network_service_mut().next_msg_token();
         let conn_infos: Vec<_> = dst_targets
             .iter()
             .filter_map(|pub_id| self.peer_map().get_connection_info(pub_id).cloned())
@@ -333,27 +332,17 @@ pub trait Base: Display {
             );
         }
 
-        // initially only send to dg_size targets
-        for conn_info in conn_infos.iter().take(dg_size) {
-            self.send_message_over_network(conn_info.clone(), &message, token);
-        }
-
-        self.network_service_mut()
-            .targets_cache_mut()
-            .insert_message(token, conn_infos, dg_size);
+        self.send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
-    fn send_message_over_network(
+    fn send_message_to_initial_targets(
         &mut self,
-        conn_info: ConnectionInfo,
-        message: &Message,
-        token: Token,
+        conn_infos: Vec<ConnectionInfo>,
+        dg_size: usize,
+        message: Message,
     ) {
-        match to_network_bytes(message) {
-            Ok(bytes) => self
-                .network_service_mut()
-                .service_mut()
-                .send(conn_info, bytes, token),
+        let bytes = match to_network_bytes(&message) {
+            Ok(bytes) => bytes,
             Err((error, message)) => {
                 error!(
                     "{} Failed to serialise message {:?}: {:?}",
@@ -362,8 +351,12 @@ pub trait Base: Display {
                 // The caller can't do much to handle this except log more messages, so just stop
                 // trying to send here and let other mechanisms handle the lost message. If the
                 // node drops too many messages, it should fail to join the network anyway.
+                return;
             }
         };
+
+        self.network_service_mut()
+            .send_message_to_initial_targets(conn_infos, dg_size, bytes);
     }
 
     // Create HopMessage containing the given signed message.
@@ -391,7 +384,7 @@ pub fn to_network_bytes(
     ));
 
     #[cfg(feature = "mock_serialise")]
-    let result = Ok(Box::new(message.clone()));
+    let result = Ok(NetworkBytes::new(message.clone()));
 
     result
 }
@@ -401,7 +394,7 @@ pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
     let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
 
     #[cfg(feature = "mock_serialise")]
-    let result = Ok(*data);
+    let result = Ok((*data).clone());
 
     result
 }

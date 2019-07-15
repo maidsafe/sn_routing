@@ -254,7 +254,7 @@ use quic_p2p;
 #[cfg(not(feature = "mock_serialise"))]
 pub(crate) type NetworkBytes = bytes::Bytes;
 #[cfg(feature = "mock_serialise")]
-pub(crate) type NetworkBytes = Box<crate::messages::Message>;
+pub(crate) type NetworkBytes = std::rc::Rc<crate::messages::Message>;
 
 pub(crate) use self::network_service::NetworkService;
 pub use self::quic_p2p::Config as NetworkConfig;

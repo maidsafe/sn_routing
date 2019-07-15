@@ -703,7 +703,7 @@ fn gen_message() -> NetworkBytes {
         // that carries some data.
         let content = DirectMessage::ParsecPoke(num as u64);
         let message = unwrap!(SignedDirectMessage::new(content, &*FULL_ID));
-        Box::new(Message::Direct(message))
+        NetworkBytes::new(Message::Direct(message))
     }
 
     #[cfg(not(feature = "mock_serialise"))]

@@ -167,8 +167,9 @@ impl BootstrappingPeer {
                 return;
             };
 
-        let next_id = self.network_service.next_msg_token();
-        self.send_message_over_network(Peer::Node { node_info: dst }, &message, next_id);
+        let conn_infos = vec![Peer::Node { node_info: dst }];
+        let dg_size = 1;
+        self.send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
     fn rebootstrap(&mut self) {

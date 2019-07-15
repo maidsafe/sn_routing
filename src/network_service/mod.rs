@@ -11,7 +11,7 @@ mod sending_targets_cache;
 use crate::{
     quic_p2p::{Builder, Error, Token},
     utils::LogIdent,
-    NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
+    ConnectionInfo, NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
 };
 use crossbeam_channel::Sender;
 use std::net::SocketAddr;
@@ -42,6 +42,23 @@ impl NetworkService {
 
     pub fn targets_cache_mut(&mut self) -> &mut SendingTargetsCache {
         &mut self.cache
+    }
+
+    pub fn send_message_to_initial_targets(
+        &mut self,
+        conn_infos: Vec<ConnectionInfo>,
+        dg_size: usize,
+        msg: NetworkBytes,
+    ) {
+        let token = self.next_msg_token();
+
+        // initially only send to dg_size targets
+        for conn_info in conn_infos.iter().take(dg_size) {
+            // NetworkBytes is refcounted and cheap to clone.
+            self.quic_p2p.send(conn_info.clone(), msg.clone(), token);
+        }
+
+        self.cache.insert_message(token, conn_infos, dg_size);
     }
 
     pub fn send_message_to_next_target(
