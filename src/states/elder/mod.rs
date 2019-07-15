@@ -13,8 +13,8 @@ use super::common::{Approved, Base, Bootstrapped, Relocated};
 use crate::{
     cache::Cache,
     chain::{
-        delivery_group_size, Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent,
-        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
+        Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
+        PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -30,10 +30,8 @@ use crate::{
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
     routing_message_filter::{FilteringResult, RoutingMessageFilter},
-    routing_table::Error as RoutingTableError,
-    routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
+    routing_table::{Authority, Prefix, DEFAULT_PREFIX},
     sha3::Digest256,
-    signature_accumulator::SignatureAccumulator,
     state_machine::Transition,
     time::{Duration, Instant},
     timer::Timer,
@@ -52,7 +50,7 @@ use safe_crypto::Signature;
 use std::net::SocketAddr;
 use std::{
     cmp,
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::IpAddr,
@@ -101,7 +99,6 @@ pub struct Elder {
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
     routing_msg_filter: RoutingMessageFilter,
-    sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
     timer: Timer,
     /// Value which can be set in mock-network tests to be used as the calculated name for the next
@@ -132,6 +129,7 @@ pub struct Elder {
     /// accumulate.
     proving_section_cache: LruCache<SectionInfo, Vec<ProvingSection>>,
     pfx_is_successfully_polled: bool,
+    signed_messages: BTreeMap<Digest256, RoutingMessage>,
 }
 
 impl Elder {
@@ -209,7 +207,6 @@ impl Elder {
             peer_mgr: details.peer_mgr,
             response_cache: details.cache,
             routing_msg_filter: details.routing_msg_filter,
-            sig_accumulator: Default::default(),
             tick_timer_token: tick_timer_token,
             timer: timer,
             next_relocation_dst: None,
@@ -227,6 +224,7 @@ impl Elder {
             ignore_candidate_info_counter: 0,
             proving_section_cache: LruCache::with_capacity(PROVING_SECTION_CACHE_SIZE),
             pfx_is_successfully_polled: false,
+            signed_messages: BTreeMap::new(),
         }
     }
 
@@ -427,7 +425,8 @@ impl Elder {
                 | NetworkEvent::RemoveElder(_)
                 | NetworkEvent::Online(_)
                 | NetworkEvent::ExpectCandidate(_)
-                | NetworkEvent::PurgeCandidate(_) => false,
+                | NetworkEvent::PurgeCandidate(_)
+                | NetworkEvent::MessageDigest(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
@@ -481,27 +480,6 @@ impl Elder {
             }
             _ => Ok(()),
         }
-    }
-
-    /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
-    /// message, handles it.
-    fn handle_message_signature(
-        &mut self,
-        msg: SignedRoutingMessage,
-        pub_id: PublicId,
-    ) -> Result<(), RoutingError> {
-        if !self.peer_mgr.get_peer(&pub_id).map_or(false, Peer::is_node) {
-            debug!(
-                "{} Received message signature from unknown peer {}",
-                self, pub_id
-            );
-            return Err(RoutingError::UnknownConnection(pub_id));
-        }
-
-        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
-            self.handle_signed_message(signed_msg)?;
-        }
-        Ok(())
     }
 
     // If the message is for us, verify it then, handle the enclosed routing message and swarm it
@@ -1395,42 +1373,6 @@ impl Elder {
         }
     }
 
-    /// Returns the set of peers that are responsible for collecting signatures to verify a message;
-    /// this may contain us or only other nodes. If our signature is not required, this returns
-    /// `None`.
-    fn get_signature_targets(&self, src: &Authority<XorName>) -> Option<BTreeSet<XorName>> {
-        use crate::Authority::*;
-
-        let list: Vec<XorName> = match *src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | Section(_) => self
-                .chain
-                .our_section()
-                .into_iter()
-                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            // FIXME: This does not include recently accepted peers which would affect quorum
-            // calculation. This even when going via RT would have only allowed route-0 to succeed
-            // as by ack-failure, the new node would have been accepted to the RT.
-            // Need a better network startup separation.
-            PrefixSection(pfx) => {
-                Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
-                    .filter(|name| pfx.matches(name))
-                    .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
-            }
-            ManagedNode(_) | Client { .. } => {
-                let mut result = BTreeSet::new();
-                let _ = result.insert(*self.name());
-                return Some(result);
-            }
-        };
-
-        if !list.contains(&self.name()) {
-            None
-        } else {
-            let len = list.len();
-            Some(list.into_iter().take(delivery_group_size(len)).collect())
-        }
-    }
-
     /// Returns a list of target IDs for a message sent via route.
     /// Name in exclude will be excluded from the result.
     fn get_targets(
@@ -1736,7 +1678,6 @@ impl Base for Elder {
 
         use crate::messages::DirectMessage::*;
         match msg {
-            MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
             BootstrapRequest => {
                 if let Err(error) = self.handle_bootstrap_request(pub_id) {
                     warn!(
@@ -1868,48 +1809,11 @@ impl Bootstrapped for Elder {
             return Ok(());
         }
 
-        use crate::routing_table::Authority::*;
-        let sending_sec = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-            | PrefixSection(_) => Some(self.chain.our_info().clone()),
-            Client { .. } => None,
-        };
+        let hash = routing_msg.hash()?;
+        let event = NetworkEvent::MessageDigest(hash);
 
-        let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, sending_sec)?;
-
-        for target in Iterator::flatten(
-            self.get_signature_targets(&signed_msg.routing_message().src)
-                .into_iter(),
-        ) {
-            if target == *self.name() {
-                if let Some(mut msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
-                    if self.in_authority(&msg.routing_message().dst) {
-                        self.handle_signed_message(msg)?;
-                    } else {
-                        self.send_signed_message(&mut msg)?;
-                    }
-                }
-            } else if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
-                trace!(
-                    "{} Sending a signature for message {:?} to {:?}",
-                    self,
-                    signed_msg.routing_message(),
-                    target
-                );
-                self.send_direct_message(
-                    &pub_id,
-                    DirectMessage::MessageSignature(signed_msg.clone()),
-                );
-            } else {
-                error!(
-                    "{} Failed to resolve signature target {:?} for message {:?}",
-                    self,
-                    target,
-                    signed_msg.routing_message()
-                );
-                return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
-            }
-        }
+        let _ = self.signed_messages.insert(hash, routing_msg);
+        self.vote_for_event(event);
         Ok(())
     }
 
@@ -1971,6 +1875,29 @@ impl Approved for Elder {
 
     fn is_pfx_successfully_polled(&self) -> bool {
         self.pfx_is_successfully_polled
+    }
+
+    fn handle_message_event(&mut self, digest: Digest256) -> Result<(), RoutingError> {
+        let routing_message = if let Some(routing_message) = self.signed_messages.remove(&digest) {
+            routing_message.clone()
+        } else {
+            return Ok(());
+        };
+        if self.in_authority(&routing_message.dst) {
+            self.msg_queue.push_back(routing_message);
+            Ok(())
+        } else {
+            use crate::routing_table::Authority::*;
+            let sending_sec = match routing_message.src {
+                ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
+                | PrefixSection(_) => Some(self.chain.our_info().clone()),
+                Client { .. } => None,
+            };
+
+            let mut signed_msg =
+                SignedRoutingMessage::new(routing_message, &self.full_id, sending_sec)?;
+            self.send_signed_message(&mut signed_msg)
+        }
     }
 
     fn handle_add_elder_event(

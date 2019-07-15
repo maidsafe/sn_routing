@@ -673,7 +673,8 @@ impl Chain {
             | NetworkEvent::Online(_)
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
-            | NetworkEvent::PurgeCandidate(_) => {
+            | NetworkEvent::PurgeCandidate(_)
+            | NetworkEvent::MessageDigest(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
             NetworkEvent::ProvingSections(_, _) => true,

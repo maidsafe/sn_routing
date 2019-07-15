@@ -12,7 +12,6 @@ use crate::{
     id::PublicId,
     messages::DirectMessage,
     outbox::EventBox,
-    signature_accumulator::ACCUMULATION_TIMEOUT,
     state_machine::Transition,
     time::{Duration, Instant},
     timer::Timer,
@@ -29,6 +28,10 @@ use std::{
     sync::Arc,
 };
 use unwrap::unwrap;
+
+/// Time (in seconds) within which a message and a quorum of signatures need to arrive to
+/// accumulate.
+pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Time (in seconds) between accepting a new candidate (i.e. accumulating an `ExpectCandidate` in
 /// our section) and sending a `CandidateApproval` for this candidate. If the candidate cannot

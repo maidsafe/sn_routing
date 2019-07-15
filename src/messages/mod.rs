@@ -230,6 +230,11 @@ impl SignedRoutingMessage {
         self.content.priority()
     }
 
+    /// Get the signature of an id if any.
+    pub fn get_signature(&self, id: &PublicId) -> Option<&Signature> {
+        self.signatures.get_signature(id)
+    }
+
     /// Returns whether there are enough signatures from the sender.
     pub fn check_fully_signed(&mut self) -> bool {
         if !self.has_enough_sigs() {

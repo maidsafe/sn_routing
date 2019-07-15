@@ -65,6 +65,9 @@ pub enum NetworkEvent {
 
     /// A list of proofs for a neighbour section, starting from the current section.
     ProvingSections(Vec<ProvingSection>, SectionInfo),
+
+    /// Digest of a SignedMessage
+    MessageDigest(Digest256),
 }
 
 impl NetworkEvent {
@@ -126,6 +129,9 @@ impl Debug for NetworkEvent {
             NetworkEvent::PurgeCandidate(ref id) => write!(formatter, "PurgeCandidate({})", id),
             NetworkEvent::ProvingSections(_, ref sec_info) => {
                 write!(formatter, "ProvingSections(_, {:?})", sec_info)
+            }
+            NetworkEvent::MessageDigest(ref digest) => {
+                write!(formatter, "MessageDigest({:.14?})", HexFmt(digest))
             }
         }
     }

@@ -124,6 +124,11 @@ impl ProofSet {
     pub fn merge(&mut self, other: Self) {
         self.sigs.extend(other.sigs);
     }
+
+    /// Get the signature of an id if any.
+    pub fn get_signature(&self, id: &PublicId) -> Option<&Signature> {
+        self.sigs.get(id)
+    }
 }
 
 impl Debug for ProofSet {

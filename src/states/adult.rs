@@ -28,6 +28,7 @@ use crate::{
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
+    sha3::Digest256,
     state_machine::{State, Transition},
     time::{Duration, Instant},
     timer::Timer,
@@ -348,6 +349,12 @@ impl Approved for Adult {
 
     fn is_pfx_successfully_polled(&self) -> bool {
         false
+    }
+
+    fn handle_message_event(&mut self, _digest: Digest256) -> Result<(), RoutingError> {
+        // TODO: need to ensure whether there is situation an Adult will call this function, once
+        // node aging got deployed.
+        Ok(())
     }
 
     fn handle_add_elder_event(

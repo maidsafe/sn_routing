@@ -17,6 +17,7 @@ use crate::{
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
     routing_table::Prefix,
+    sha3::Digest256,
     state_machine::Transition,
     xor_name::XorName,
     Authority,
@@ -51,6 +52,9 @@ pub trait Approved: Relocated {
 
     /// Handles an accumulated `Offline` event.
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError>;
+
+    /// Handles an accumulated message.
+    fn handle_message_event(&mut self, digest: Digest256) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `OurMerge` event.
     fn handle_our_merge_event(&mut self) -> Result<(), RoutingError>;
@@ -214,6 +218,9 @@ pub trait Approved: Relocated {
 
                 NetworkEvent::ProvingSections(proving_secs, sec_info) => {
                     self.handle_proving_sections_event(proving_secs, sec_info)?;
+                }
+                NetworkEvent::MessageDigest(digest) => {
+                    self.handle_message_event(digest)?;
                 }
             }
 

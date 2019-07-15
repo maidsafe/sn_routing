@@ -9,7 +9,6 @@
 use crate::{
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
-    messages::SignedRoutingMessage,
     parsec,
     routing_table::Authority,
     xor_name::XorName,
@@ -28,9 +27,6 @@ use std::{
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum DirectMessage {
-    /// Sent from members of a section or group message's source authority to the first hop. The
-    /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(SignedRoutingMessage),
     /// Sent from a newly connected client to the bootstrap node to prove that it is the owner of
     /// the client's claimed public ID.
     BootstrapRequest,
@@ -89,7 +85,6 @@ impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
         match *self {
-            MessageSignature(ref msg) => write!(formatter, "MessageSignature ({:?})", msg),
             BootstrapRequest => write!(formatter, "BootstrapRequest"),
             BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
@@ -137,9 +132,6 @@ impl Hash for DirectMessage {
         mem::discriminant(self).hash(state);
 
         match *self {
-            MessageSignature(ref msg) => {
-                msg.hash(state);
-            }
             BootstrapRequest | ConnectionResponse | ResourceProofResponseReceipt => (),
             BootstrapResponse(ref result) => result.hash(state),
             CandidateInfo {
@@ -219,7 +211,7 @@ impl SignedDirectMessage {
     }
 
     /// Content of the message.
-    #[cfg(any(test, feature = "mock_serialise"))]
+    #[cfg(any(all(test, feature = "mock_base"), feature = "mock_serialise"))]
     pub fn content(&self) -> &DirectMessage {
         &self.content
     }
