@@ -7,7 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    create_connected_nodes, gen_immutable_data, poll_all, sort_nodes_by_distance_to, TestNode,
+    create_connected_nodes, gen_immutable_data, poll_all, poll_and_resend,
+    sort_nodes_by_distance_to, TestNode,
 };
 use routing::{
     delivery_group_size, mock::Network, Authority, Event, EventStream, MessageId, Response,
@@ -49,7 +50,7 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
     send(&mut nodes[quorum - 1], &dst, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_and_resend(&mut nodes, &mut []);
     expect_next_event!(nodes[0],
         Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[quorum], &dst, message_id);
@@ -70,7 +71,7 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
     send(&mut nodes[0], &dst, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_and_resend(&mut nodes, &mut []);
     expect_next_event!(nodes[0],
         Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[1], &dst, message_id);
@@ -90,7 +91,7 @@ fn messages_accumulate_with_quorum() {
         expect_no_event!(node);
     }
     send(&mut nodes[quorum - 1], &dst_grp, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_and_resend(&mut nodes, &mut []);
     for node in &mut *nodes {
         expect_next_event!(node,
             Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
@@ -117,7 +118,7 @@ fn messages_accumulate_with_quorum() {
         expect_no_event!(node);
     }
     send(&mut nodes[0], &dst_grp, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_and_resend(&mut nodes, &mut []);
     for node in &mut *nodes {
         expect_next_event!(node,
             Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });

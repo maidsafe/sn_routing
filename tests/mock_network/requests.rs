@@ -6,7 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_clients, create_connected_nodes, gen_immutable_data, poll_all};
+use super::{
+    create_connected_clients, create_connected_nodes, gen_immutable_data, poll_all, poll_and_resend,
+};
 use routing::{
     mock::Network, Authority, ClientError, Event, EventStream, MessageId, Request, Response,
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
@@ -113,7 +115,7 @@ fn successful_get_request() {
 
     assert!(request_received_count >= quorum);
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_and_resend(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
@@ -197,7 +199,7 @@ fn failed_get_request() {
 
     assert!(request_received_count >= quorum);
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_and_resend(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
