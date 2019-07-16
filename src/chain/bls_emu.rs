@@ -7,16 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 //! Types emulating the BLS functionality until proper BLS lands
-use super::SectionInfo;
+use super::{delivery_group_size, NetworkEvent, ProofSet, SectionInfo};
 use crate::id::{FullId, PublicId};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt,
-};
+use parsec;
+use std::{collections::BTreeMap, fmt};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct PublicKeySet {
-    keys: BTreeSet<PublicId>,
+    sec_info: SectionInfo,
     threshold: usize,
 }
 
@@ -33,6 +31,12 @@ pub struct PublicKeyShare(PublicId);
 #[derive(Clone, PartialEq, Eq)]
 pub struct Signature {
     sigs: BTreeMap<PublicId, SignatureShare>,
+}
+
+impl Signature {
+    pub fn from_proof_set(proofs: ProofSet) -> Self {
+        Self { sigs: proofs.sigs }
+    }
 }
 
 impl SecretKeyShare {
@@ -69,6 +73,7 @@ impl PublicKeySet {
     {
         let sigs: BTreeMap<_, _> = shares
             .into_iter()
+            .filter(|(pk, _ss)| self.sec_info.members().contains(&pk.0))
             .map(|(pk, ss)| (pk.0, *ss))
             .collect();
         // In the BLS scheme, more than `threshold` valid signatures are needed to obtain a
@@ -88,20 +93,26 @@ impl PublicKeySet {
 
 impl PublicKey {
     pub fn from_section_info(sec_info: &SectionInfo) -> Self {
-        let keys = sec_info.members().clone();
-        let threshold = (keys.len() + 2) / 3;
-        PublicKey(PublicKeySet { keys, threshold })
+        let threshold = delivery_group_size(sec_info.members().len());
+        PublicKey(PublicKeySet {
+            sec_info: sec_info.clone(),
+            threshold,
+        })
     }
 
-    #[allow(unused)]
     pub fn verify<M: AsRef<[u8]>>(&self, sig: &Signature, msg: M) -> bool {
         sig.sigs
             .iter()
             .filter(|&(pk, ss)| {
-                self.0.keys.contains(pk) && PublicKeyShare(*pk).verify(ss, msg.as_ref())
+                self.0.sec_info.members().contains(pk)
+                    && PublicKeyShare(*pk).verify(ss, msg.as_ref())
             })
             .count()
             > self.0.threshold
+    }
+
+    pub fn as_event(&self) -> parsec::Observation<NetworkEvent, PublicId> {
+        parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(self.0.sec_info.clone()))
     }
 }
 

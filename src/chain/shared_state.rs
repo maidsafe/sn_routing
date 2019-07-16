@@ -9,6 +9,7 @@
 use super::{ProofSet, ProvingSection, SectionInfo};
 use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
+use maidsafe_utilities::serialisation;
 use std::{
     collections::{BTreeSet, HashMap},
     fmt::{self, Debug, Formatter},
@@ -235,6 +236,23 @@ pub struct SectionProofBlock {
     sig: BlsSignature,
 }
 
+impl SectionProofBlock {
+    pub fn from_sec_info_with_proofs(sec_info: &SectionInfo, proofs: ProofSet) -> Self {
+        let key = BlsPublicKey::from_section_info(sec_info);
+        let sig = BlsSignature::from_proof_set(proofs);
+        SectionProofBlock { key, sig }
+    }
+
+    #[allow(unused)]
+    pub fn verify_with_pk(&self, pk: &BlsPublicKey) -> bool {
+        let to_verify = self.key.as_event();
+        match serialisation::serialise(&to_verify) {
+            Ok(data) => pk.verify(&self.sig, data),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct SectionProofChain {
     genesis_pk: BlsPublicKey,
@@ -247,6 +265,10 @@ impl SectionProofChain {
             genesis_pk: pk,
             blocks: Vec::new(),
         }
+    }
+
+    pub fn push(&mut self, block: SectionProofBlock) {
+        self.blocks.push(block);
     }
 }
 
