@@ -1355,6 +1355,13 @@ impl Chain {
 }
 
 #[cfg(test)]
+impl Chain {
+    pub fn validate_our_history(&self) -> bool {
+        self.state.our_history.validate()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::super::{GenesisPfxInfo, Proof, ProofSet, SectionInfo};
     use super::Chain;
@@ -1517,6 +1524,7 @@ mod tests {
             full_ids.extend(new_ids);
             let proofs = gen_proofs(&full_ids, chain.our_info().members(), &new_info);
             unwrap!(chain.add_section_info(new_info, proofs));
+            assert!(chain.validate_our_history());
             check_infos_for_duplication(&chain);
         }
     }

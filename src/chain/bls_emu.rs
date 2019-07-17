@@ -10,7 +10,10 @@
 use super::{delivery_group_size, NetworkEvent, ProofSet, SectionInfo};
 use crate::id::{FullId, PublicId};
 use parsec;
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct PublicKeySet {
@@ -62,6 +65,23 @@ impl PublicKeyShare {
 
 impl PublicKeySet {
     #[allow(unused)]
+    pub fn new(threshold: usize, keys: BTreeSet<PublicId>) -> Self {
+        let sec_info = SectionInfo::new(keys, Default::default(), None).unwrap();
+        Self {
+            threshold,
+            sec_info,
+        }
+    }
+
+    pub fn from_section_info(sec_info: SectionInfo) -> Self {
+        let threshold = delivery_group_size(sec_info.members().len()) - 1;
+        Self {
+            threshold,
+            sec_info,
+        }
+    }
+
+    #[allow(unused)]
     pub fn threshold(&self) -> usize {
         self.threshold
     }
@@ -93,11 +113,7 @@ impl PublicKeySet {
 
 impl PublicKey {
     pub fn from_section_info(sec_info: &SectionInfo) -> Self {
-        let threshold = delivery_group_size(sec_info.members().len());
-        PublicKey(PublicKeySet {
-            sec_info: sec_info.clone(),
-            threshold,
-        })
+        PublicKey(PublicKeySet::from_section_info(sec_info.clone()))
     }
 
     pub fn verify<M: AsRef<[u8]>>(&self, sig: &Signature, msg: M) -> bool {
@@ -119,5 +135,56 @@ impl PublicKey {
 impl fmt::Debug for PublicKey {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "BLS-PublicKey({:?})", self.0.sec_info)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{chain::delivery_group_size, id::FullId};
+    use safe_crypto;
+    use unwrap::unwrap;
+
+    fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
+        unwrap!(safe_crypto::init());
+
+        let threshold = delivery_group_size(size) - 1;
+
+        let ids: Vec<_> = (0..size).map(|_| FullId::new()).collect();
+        let pub_ids = ids.iter().map(|full_id| *full_id.public_id()).collect();
+        let pk_set = PublicKeySet::new(threshold, pub_ids);
+
+        (pk_set, ids.into_iter().map(SecretKeyShare).collect())
+    }
+
+    #[test]
+    fn test_signature() {
+        let section_size = 10;
+        let min_sigs = delivery_group_size(section_size);
+
+        let (pk_set, sk_shares) = gen_section(section_size);
+
+        let data = [1u8, 2, 3, 4, 5, 6];
+
+        let mut sigs: Vec<_> = sk_shares
+            .iter()
+            .take(min_sigs - 1)
+            .map(|sk| (sk.public_key_share(), sk.sign(&data)))
+            .collect();
+
+        assert!(sigs.iter().all(|(pks, sig)| pks.verify(sig, &data)));
+
+        assert!(pk_set
+            .combine_signatures(sigs.iter().map(|(pk, sig)| (*pk, sig)))
+            .is_none());
+
+        sigs.push((
+            sk_shares[min_sigs - 1].public_key_share(),
+            sk_shares[min_sigs - 1].sign(&data),
+        ));
+
+        let sig = unwrap!(pk_set.combine_signatures(sigs.iter().map(|(pk, sig)| (*pk, sig))));
+
+        assert!(pk_set.public_key().verify(&sig, &data));
     }
 }

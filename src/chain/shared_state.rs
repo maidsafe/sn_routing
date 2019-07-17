@@ -243,7 +243,6 @@ impl SectionProofBlock {
         SectionProofBlock { key, sig }
     }
 
-    #[allow(unused)]
     pub fn verify_with_pk(&self, pk: &BlsPublicKey) -> bool {
         let to_verify = self.key.as_event();
         match serialisation::serialise(&to_verify) {
@@ -269,6 +268,18 @@ impl SectionProofChain {
 
     pub fn push(&mut self, block: SectionProofBlock) {
         self.blocks.push(block);
+    }
+
+    #[allow(unused)]
+    pub fn validate(&self) -> bool {
+        let mut current_pk = &self.genesis_pk;
+        for block in &self.blocks {
+            if !block.verify_with_pk(current_pk) {
+                return false;
+            }
+            current_pk = &block.key;
+        }
+        true
     }
 }
 
