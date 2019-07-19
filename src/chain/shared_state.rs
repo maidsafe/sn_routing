@@ -7,10 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{ProofSet, ProvingSection, SectionInfo};
-use crate::{error::RoutingError, sha3::Digest256, Prefix, XorName};
+use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
+use maidsafe_utilities::serialisation;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -31,16 +32,24 @@ pub struct SharedState {
     pub split_cache: Option<(SectionInfo, ProofSet)>,
     /// The set of section info hashes that are currently merging.
     pub merging: BTreeSet<Digest256>,
+    /// Our section's key history for Secure Message Delivery
+    pub our_history: SectionProofChain,
+    /// BLS public keys of other sections
+    pub their_keys: HashMap<Prefix<XorName>, BlsPublicKey>,
 }
 
 impl SharedState {
     pub fn new(section_info: SectionInfo) -> Self {
+        let pk = BlsPublicKey::from_section_info(&section_info);
+        let our_history = SectionProofChain::from_genesis(pk);
         Self {
             new_info: section_info.clone(),
             our_infos: NonEmptyList::new((section_info, Default::default())),
             change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
+            our_history,
+            their_keys: Default::default(),
         }
     }
 
@@ -218,5 +227,68 @@ impl NonEmptyList<(SectionInfo, ProofSet)> {
             }
             Err(_) => oldest_version == 0,
         }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SectionProofBlock {
+    key: BlsPublicKey,
+    sig: BlsSignature,
+}
+
+impl SectionProofBlock {
+    pub fn from_sec_info_with_proofs(sec_info: &SectionInfo, proofs: ProofSet) -> Self {
+        let key = BlsPublicKey::from_section_info(sec_info);
+        let sig = BlsSignature::from_proof_set(proofs);
+        SectionProofBlock { key, sig }
+    }
+
+    pub fn verify_with_pk(&self, pk: &BlsPublicKey) -> bool {
+        let to_verify = self.key.as_event();
+        match serialisation::serialise(&to_verify) {
+            Ok(data) => pk.verify(&self.sig, data),
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SectionProofChain {
+    genesis_pk: BlsPublicKey,
+    blocks: Vec<SectionProofBlock>,
+}
+
+impl SectionProofChain {
+    pub fn from_genesis(pk: BlsPublicKey) -> Self {
+        Self {
+            genesis_pk: pk,
+            blocks: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, block: SectionProofBlock) {
+        self.blocks.push(block);
+    }
+
+    #[allow(unused)]
+    pub fn validate(&self) -> bool {
+        let mut current_pk = &self.genesis_pk;
+        for block in &self.blocks {
+            if !block.verify_with_pk(current_pk) {
+                return false;
+            }
+            current_pk = &block.key;
+        }
+        true
+    }
+}
+
+impl Debug for SectionProofChain {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SectionProofChain(len = {})",
+            self.blocks.len() + 1
+        )
     }
 }

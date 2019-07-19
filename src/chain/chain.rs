@@ -8,7 +8,7 @@
 
 use super::{
     candidate::Candidate,
-    shared_state::{PrefixChange, SharedState},
+    shared_state::{PrefixChange, SectionProofBlock, SharedState},
     GenesisPfxInfo, NeighbourSigs, NetworkEvent, OnlinePayload, Proof, ProofSet, ProvingSection,
     SectionInfo,
 };
@@ -775,6 +775,12 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let pfx = *sec_info.prefix();
         if pfx.matches(self.our_id.name()) {
+            self.state
+                .our_history
+                .push(SectionProofBlock::from_sec_info_with_proofs(
+                    &sec_info,
+                    proofs.clone(),
+                ));
             self.state.our_infos.push((sec_info.clone(), proofs));
             if !self.is_member && sec_info.members().contains(&self.our_id) {
                 self.is_member = true;
@@ -1349,6 +1355,13 @@ impl Chain {
 }
 
 #[cfg(test)]
+impl Chain {
+    pub fn validate_our_history(&self) -> bool {
+        self.state.our_history.validate()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::super::{GenesisPfxInfo, Proof, ProofSet, SectionInfo};
     use super::Chain;
@@ -1511,6 +1524,7 @@ mod tests {
             full_ids.extend(new_ids);
             let proofs = gen_proofs(&full_ids, chain.our_info().members(), &new_info);
             unwrap!(chain.add_section_info(new_info, proofs));
+            assert!(chain.validate_our_history());
             check_infos_for_duplication(&chain);
         }
     }

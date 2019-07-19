@@ -256,9 +256,12 @@ pub(crate) type NetworkBytes = bytes::Bytes;
 #[cfg(feature = "mock_serialise")]
 pub(crate) type NetworkBytes = std::rc::Rc<crate::messages::Message>;
 
-pub(crate) use self::network_service::NetworkService;
 pub use self::quic_p2p::Config as NetworkConfig;
-pub(crate) use self::quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p};
+pub(crate) use self::{
+    chain::bls_emu::{PublicKey as BlsPublicKey, Signature as BlsSignature},
+    network_service::NetworkService,
+    quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p},
+};
 
 #[cfg(test)]
 mod tests {

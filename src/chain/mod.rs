@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 // The `chain` submodule contains the `Chain` implementation, which we reexport here.
+pub(crate) mod bls_emu;
 mod candidate;
 #[allow(clippy::module_inception)]
 mod chain;
