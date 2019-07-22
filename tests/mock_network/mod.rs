@@ -434,3 +434,20 @@ fn check_close_names_for_min_section_size_nodes() {
         .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
     assert!(close_sections_complete);
 }
+
+#[test]
+fn check_section_info_ack() {
+    let min_section_size = 8;
+    let network = Network::new(min_section_size, None);
+
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], true);
+
+    // Due to the behaviour in the `create nodes until split`, there shall only be one section nodes
+    // sending out `section_info_ack`. Hence only one section shall receive the ack.
+    let num_of_receives = nodes
+        .iter()
+        .filter(|node| node.inner.received_section_info_ack())
+        .count();
+    assert!(num_of_receives >= min_section_size);
+    assert!(num_of_receives < 2 * min_section_size);
+}

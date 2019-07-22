@@ -68,6 +68,11 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         }
     }
 
+    /// Returns the name of this prefix.
+    pub fn name(&self) -> T {
+        self.name
+    }
+
     /// Returns a `VersionedPrefix` with this prefix and the given version number.
     pub fn with_version(self, version: u64) -> VersionedPrefix<T> {
         VersionedPrefix {

@@ -462,6 +462,8 @@ pub enum MessageContent {
     ///
     /// Sent from Group Y to the joining node.
     NodeApproval(GenesisPfxInfo),
+    /// Acknowledgement of a consensused section info.
+    AckMessage(SectionInfo),
 }
 
 impl MessageContent {
@@ -548,6 +550,7 @@ impl Debug for MessageContent {
                 content, priority,
             ),
             NodeApproval(ref gen_info) => write!(formatter, "NodeApproval {{ {:?} }}", gen_info),
+            AckMessage(ref sec_info) => write!(formatter, "AckMessage({:?})", sec_info),
         }
     }
 }
