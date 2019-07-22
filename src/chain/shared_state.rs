@@ -15,6 +15,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
+use unwrap::unwrap;
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
@@ -156,6 +157,27 @@ impl SharedState {
                 .collect()
         }
     }
+
+    /// Updates the entry in `their_keys` for `prefix` to the latest known key; if a split
+    /// occurred in the meantime, the keys for sections covering the rest of the address space are
+    /// initialised to the old key that was stored for their common ancestor
+    /// NOTE: the function as it is currently is not merge-safe.
+    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, key: BlsPublicKey) {
+        if let Some(&pfx) = self
+            .their_keys
+            .keys()
+            .find(|pfx| pfx.is_compatible(&prefix))
+        {
+            let old_key = unwrap!(self.their_keys.remove(&pfx));
+            let old_pfx_sibling = pfx.sibling();
+            let mut current_pfx = prefix.sibling();
+            while !self.their_keys.contains_key(&current_pfx) && current_pfx != old_pfx_sibling {
+                let _ = self.their_keys.insert(current_pfx, old_key.clone());
+                current_pfx = current_pfx.popped().sibling();
+            }
+        }
+        let _ = self.their_keys.insert(prefix, key);
+    }
 }
 
 /// The prefix-affecting change (split or merge) to our own section that is currently in progress.
@@ -291,4 +313,12 @@ impl Debug for SectionProofChain {
             self.blocks.len() + 1
         )
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_update_their_keys() {}
 }

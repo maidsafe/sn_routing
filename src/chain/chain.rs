@@ -12,14 +12,16 @@ use super::{
     GenesisPfxInfo, NeighbourSigs, NetworkEvent, OnlinePayload, Proof, ProofSet, ProvingSection,
     SectionInfo,
 };
-use crate::error::RoutingError;
-use crate::id::PublicId;
-use crate::messages::SignedRoutingMessage;
-use crate::routing_table::{Authority, Error};
-use crate::sha3::Digest256;
-use crate::utils::LogIdent;
-use crate::utils::XorTargetInterval;
-use crate::{Prefix, XorName, Xorable};
+use crate::{
+    error::RoutingError,
+    id::PublicId,
+    messages::SignedRoutingMessage,
+    routing_table::{Authority, Error},
+    sha3::Digest256,
+    utils::LogIdent,
+    utils::XorTargetInterval,
+    BlsPublicKey, Prefix, XorName, Xorable,
+};
 use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
@@ -827,6 +829,11 @@ impl Chain {
             self.check_and_clean_neighbour_infos(Some(&pfx));
         }
         Ok(())
+    }
+
+    /// Updates `their_keys` in the shared state
+    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, bls_key: BlsPublicKey) {
+        self.state.update_their_keys(prefix, bls_key);
     }
 
     /// Returns whether we should split into two sections.
