@@ -178,6 +178,12 @@ impl SharedState {
         }
         let _ = self.their_keys.insert(prefix, key);
     }
+
+    #[cfg(test)]
+    /// Returns the reference to their_keys
+    pub fn get_their_keys(&self) -> &HashMap<Prefix<XorName>, BlsPublicKey> {
+        &self.their_keys
+    }
 }
 
 /// The prefix-affecting change (split or merge) to our own section that is currently in progress.
@@ -318,7 +324,95 @@ impl Debug for SectionProofChain {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::{chain::SectionInfo, BlsPublicKey, FullId, Prefix, XorName};
+    use std::collections::{BTreeSet, HashMap};
+    use std::str::FromStr;
+    use unwrap::unwrap;
+
+    fn gen_section_info(pfx: Prefix<XorName>) -> SectionInfo {
+        let sec_size = 5;
+        let mut members = BTreeSet::new();
+        for _ in 0..sec_size {
+            let id = FullId::within_range(&pfx.range_inclusive());
+            let _ = members.insert(*id.public_id());
+        }
+        unwrap!(SectionInfo::new(members, pfx, None))
+    }
+
+    fn gen_pk(pfx: Prefix<XorName>) -> BlsPublicKey {
+        BlsPublicKey::from_section_info(&gen_section_info(pfx))
+    }
+
+    // start_pfx: the prefix of our section as string
+    // updates: the prefixes of the sections we update the keys for, in sequence; every entry in
+    //          the vector will get its own key
+    // expected: vec of pairs (prefix, index)
+    //           the prefix is the prefix of the section whose key we check
+    //           the index is the index in the `updates` vector, which should have generated the
+    //           key we expect to get for the given prefix
+    fn update_keys_and_check(start_pfx: &str, updates: Vec<&str>, expected: Vec<(&str, usize)>) {
+        let keys_to_update = updates
+            .into_iter()
+            .map(|pfx_str| {
+                let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
+                (pfx, gen_pk(pfx))
+            })
+            .collect::<Vec<_>>();
+        let expected_keys = expected
+            .into_iter()
+            .map(|(pfx_str, index)| {
+                let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
+                (pfx, keys_to_update[index].1.clone())
+            })
+            .collect::<HashMap<_, _>>();
+
+        let start_section = gen_section_info(unwrap!(Prefix::from_str(start_pfx)));
+        let mut state = SharedState::new(start_section);
+
+        for (pfx, key) in keys_to_update {
+            state.update_their_keys(pfx, key);
+        }
+
+        assert_eq!(state.get_their_keys(), &expected_keys);
+    }
 
     #[test]
-    fn test_update_their_keys() {}
+    fn single_prefix_multiple_updates() {
+        update_keys_and_check("0", vec!["1", "1", "1", "1"], vec![("1", 3)]);
+    }
+
+    #[test]
+    fn simple_split() {
+        update_keys_and_check(
+            "0",
+            vec!["10", "11", "101"],
+            vec![("100", 0), ("11", 1), ("101", 2)],
+        );
+    }
+
+    #[test]
+    fn our_section_not_sibling_of_ancestor() {
+        update_keys_and_check(
+            "01", // Not the sibling of the single bit parent prefix of 111
+            vec!["1", "111"],
+            vec![("111", 1), ("110", 0), ("10", 0)],
+        );
+    }
+
+    #[test]
+    fn multiple_split() {
+        update_keys_and_check(
+            "0",
+            vec!["1", "1011001"],
+            vec![
+                ("11", 0),
+                ("100", 0),
+                ("1010", 0),
+                ("10111", 0),
+                ("101101", 0),
+                ("1011000", 0),
+                ("1011001", 1),
+            ],
+        );
+    }
 }
