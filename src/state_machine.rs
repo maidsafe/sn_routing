@@ -347,6 +347,9 @@ impl StateMachine {
     ///
     /// Errors are permanent failures due to either: state machine termination or
     /// the permanent closing of the `category_rx` event channel.
+    // TODO: remove the #[allow]s below once crossbeam-channel gets fixed
+    #[allow(clippy::drop_copy)]
+    #[allow(clippy::zero_ptr)]
     pub fn step(&mut self, outbox: &mut EventBox) -> Result<(), mpmc::RecvError> {
         if self.is_running {
             mpmc::select! {
