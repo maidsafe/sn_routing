@@ -128,6 +128,8 @@ pub struct Elder {
     chain: Chain,
     #[cfg(feature = "mock_base")]
     ignore_candidate_info_counter: u8,
+    #[cfg(feature = "mock_base")]
+    received_section_info_ack: bool,
     /// Cached proving sections used to in case a prefix change causes a section info not to
     /// accumulate.
     proving_section_cache: LruCache<SectionInfo, Vec<ProvingSection>>,
@@ -225,6 +227,8 @@ impl Elder {
             chain: details.chain,
             #[cfg(feature = "mock_base")]
             ignore_candidate_info_counter: 0,
+            #[cfg(feature = "mock_base")]
+            received_section_info_ack: false,
             proving_section_cache: LruCache::with_capacity(PROVING_SECTION_CACHE_SIZE),
             pfx_is_successfully_polled: false,
         }
@@ -667,6 +671,15 @@ impl Elder {
                 outbox.send_event(content.into_event(src, dst));
                 Ok(())
             }
+            (AckMessage(_sec_info), Section(_src), Section(_dst)) => {
+                // TODO: The shared_state shall be updated on when on consensus.
+                //       Which is part of the issue 1670 to handle it.
+                #[cfg(feature = "mock_base")]
+                {
+                    self.received_section_info_ack = true;
+                }
+                Ok(())
+            }
             (content, src, dst) => {
                 debug!(
                     "{} Unhandled routing message {:?} from {:?} to {:?}",
@@ -675,6 +688,14 @@ impl Elder {
                 Err(RoutingError::BadAuthority)
             }
         }
+    }
+
+    fn send_section_info_ack(&mut self, sec_info: SectionInfo) {
+        let src = Authority::Section(self.our_prefix().name());
+        let dst = Authority::Section(sec_info.prefix().name());
+        let content = MessageContent::AckMessage(sec_info);
+
+        let _ = self.send_routing_message(src, dst, content);
     }
 
     fn handle_candidate_approval(
@@ -1820,6 +1841,10 @@ impl Elder {
         self.next_relocation_dst = dst;
     }
 
+    pub fn received_section_info_ack(&self) -> bool {
+        self.received_section_info_ack
+    }
+
     pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
         self.next_relocation_interval = interval;
     }
@@ -2095,7 +2120,9 @@ impl Approved for Elder {
             );
             // Vote for neighbour update if we haven't done so already.
             // vote_for_event is expected to only generate a new vote if required.
-            self.vote_for_event(sec_info.into_network_event());
+            self.vote_for_event(sec_info.clone().into_network_event());
+
+            self.send_section_info_ack(sec_info)
         }
 
         let _ = self.merge_if_necessary();
