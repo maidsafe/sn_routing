@@ -628,12 +628,6 @@ impl Node {
         self.proving_node_state().is_some()
     }
 
-    /// Returns whether an `AckMessage` for consensused neighbouring section's section info has been
-    /// received.
-    pub fn received_section_info_ack(&self) -> bool {
-        self.machine.current().received_section_info_ack()
-    }
-
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
         let _ = self

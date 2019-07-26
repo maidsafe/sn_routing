@@ -65,6 +65,8 @@ pub enum NetworkEvent {
 
     /// A list of proofs for a neighbour section, starting from the current section.
     ProvingSections(Vec<ProvingSection>, SectionInfo),
+
+    AckMessage(SectionInfo),
 }
 
 impl NetworkEvent {
@@ -126,6 +128,9 @@ impl Debug for NetworkEvent {
             NetworkEvent::PurgeCandidate(ref id) => write!(formatter, "PurgeCandidate({})", id),
             NetworkEvent::ProvingSections(_, ref sec_info) => {
                 write!(formatter, "ProvingSections(_, {:?})", sec_info)
+            }
+            NetworkEvent::AckMessage(ref sec_info) => {
+                write!(formatter, "AckMessage(_, {:?})", sec_info)
             }
         }
     }

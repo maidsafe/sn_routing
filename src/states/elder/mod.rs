@@ -128,8 +128,6 @@ pub struct Elder {
     chain: Chain,
     #[cfg(feature = "mock_base")]
     ignore_candidate_info_counter: u8,
-    #[cfg(feature = "mock_base")]
-    received_section_info_ack: bool,
     /// Cached proving sections used to in case a prefix change causes a section info not to
     /// accumulate.
     proving_section_cache: LruCache<SectionInfo, Vec<ProvingSection>>,
@@ -227,8 +225,6 @@ impl Elder {
             chain: details.chain,
             #[cfg(feature = "mock_base")]
             ignore_candidate_info_counter: 0,
-            #[cfg(feature = "mock_base")]
-            received_section_info_ack: false,
             proving_section_cache: LruCache::with_capacity(PROVING_SECTION_CACHE_SIZE),
             pfx_is_successfully_polled: false,
         }
@@ -443,7 +439,9 @@ impl Elder {
                 NetworkEvent::OurMerge => false,
 
                 // Keep: Still relevant after prefix change.
-                NetworkEvent::NeighbourMerge(_) | NetworkEvent::ProvingSections(_, _) => true,
+                NetworkEvent::NeighbourMerge(_)
+                | NetworkEvent::ProvingSections(_, _)
+                | NetworkEvent::AckMessage(_) => true,
             })
             .for_each(|event| {
                 self.vote_for_event(event.clone());
@@ -674,14 +672,8 @@ impl Elder {
                 outbox.send_event(content.into_event(src, dst));
                 Ok(())
             }
-            (AckMessage(_sec_info), Section(_src), Section(_dst)) => {
-                // TODO: The shared_state shall be updated on when on consensus.
-                //       Which is part of the issue 1670 to handle it.
-                #[cfg(feature = "mock_base")]
-                {
-                    self.received_section_info_ack = true;
-                }
-                Ok(())
+            (AckMessage(sec_info), Section(src), Section(dst)) => {
+                self.handle_ack_message(sec_info, src, dst)
             }
             (content, src, dst) => {
                 debug!(
@@ -691,6 +683,18 @@ impl Elder {
                 Err(RoutingError::BadAuthority)
             }
         }
+    }
+
+    fn handle_ack_message(
+        &mut self,
+        sec_info: SectionInfo,
+        _src: XorName,
+        _dst: XorName,
+    ) -> Result<(), RoutingError> {
+        // Prefix doesn't need to match, as we may get an ack for the section where we were before
+        // splitting.
+        self.vote_for_event(NetworkEvent::AckMessage(sec_info));
+        Ok(())
     }
 
     fn send_section_info_ack(&mut self, sec_info: SectionInfo) {
@@ -1844,10 +1848,6 @@ impl Elder {
         self.next_relocation_dst = dst;
     }
 
-    pub fn received_section_info_ack(&self) -> bool {
-        self.received_section_info_ack
-    }
-
     pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
         self.next_relocation_interval = interval;
     }
@@ -2084,6 +2084,12 @@ impl Approved for Elder {
             self.chain.reset_candidate();
             self.peer_mgr.reset_candidate();
         }
+        Ok(())
+    }
+
+    fn handle_ack_message_event(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError> {
+        self.chain
+            .update_their_knowledge(*sec_info.prefix(), *sec_info.version());
         Ok(())
     }
 

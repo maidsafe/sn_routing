@@ -67,6 +67,9 @@ pub trait Approved: Relocated {
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError>;
 
+    /// Handles an accumulated `UpdateSharedState` event.
+    fn handle_ack_message_event(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError>;
+
     // Handles an accumulated `ExpectCandidate` event.
     // Context: a node is joining our section. Send the node our section. If the
     // network is unbalanced, send `ExpectCandidate` on to a section with a shorter prefix.
@@ -216,6 +219,7 @@ pub trait Approved: Relocated {
                         transition => return Ok(transition),
                     }
                 }
+                NetworkEvent::AckMessage(sec_info) => self.handle_ack_message_event(sec_info)?,
                 NetworkEvent::ExpectCandidate(vote) => self.handle_expect_candidate_event(vote)?,
                 NetworkEvent::PurgeCandidate(old_public_id) => {
                     self.handle_purge_candidate_event(old_public_id)?
