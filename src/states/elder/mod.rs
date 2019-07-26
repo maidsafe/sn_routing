@@ -14,7 +14,7 @@ use crate::{
     cache::Cache,
     chain::{
         delivery_group_size, Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent,
-        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
+        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProvingSection, SectionInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -662,11 +662,6 @@ impl Elder {
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
             (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
-            (
-                NeighbourConfirm(digest, proofs, sec_infos_and_proofs),
-                ManagedNode(_),
-                Section(_),
-            ) => self.handle_neighbour_confirm(digest, proofs, sec_infos_and_proofs),
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (UserMessage { content, .. }, src, dst) => {
                 outbox.send_event(content.into_event(src, dst));
@@ -1254,29 +1249,6 @@ impl Elder {
                 _ => None,
             })
             .any(is_proof))
-    }
-
-    fn handle_neighbour_confirm(
-        &mut self,
-        digest: Digest256,
-        proofs: ProofSet,
-        sec_infos_and_proofs: Vec<(SectionInfo, ProofSet)>,
-    ) -> Result<(), RoutingError> {
-        let (pfx, version) = {
-            let sec_info = self
-                .chain
-                .our_info_by_hash(&digest)
-                .ok_or(RoutingError::InvalidMessage)?;
-            let &(ref neighbour_info, _) = sec_infos_and_proofs
-                .last()
-                .ok_or(RoutingError::InvalidMessage)?;
-            if !neighbour_info.proves(sec_info, &proofs) {
-                return Err(RoutingError::InvalidMessage);
-            }
-            (*neighbour_info.prefix(), *sec_info.version())
-        };
-        self.chain.update_their_knowledge(pfx, version);
-        Ok(())
     }
 
     fn handle_merge(&mut self, digest: Digest256) -> Result<(), RoutingError> {
