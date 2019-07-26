@@ -21,6 +21,7 @@ use crate::{
     xor_name::XorName,
     Authority,
 };
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
 
 /// Common functionality for node states post resource proof.
@@ -133,7 +134,7 @@ pub trait Approved: Relocated {
                     // FIXME: Handle properly
                     unreachable!("...")
                 }
-                Observation::Genesis(_) => {
+                Observation::Genesis { .. } => {
                     // FIXME: Validate with Chain info.
                     self.set_pfx_successfully_polled(true);
                     continue;
@@ -170,6 +171,14 @@ pub trait Approved: Relocated {
                     trace!("{} Parsec Remove: - {}", self, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;
                 }
+                obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "parsec_poll polled internal Observation: {:?}",
+                        obs
+                    );
+                }
+                Observation::DkgResult { .. } => unreachable!("..."),
             }
 
             match self.chain_poll(outbox)? {

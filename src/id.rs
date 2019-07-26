@@ -98,6 +98,20 @@ impl parsec::SecretId for FullId {
     fn sign_detached(&self, data: &[u8]) -> <Self::PublicId as parsec::PublicId>::Signature {
         self.signing_private_key().sign_detached(data)
     }
+
+    fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, msg: M) -> Option<Vec<u8>> {
+        let shared_secret = self
+            .encrypting_private_key()
+            .shared_secret(to.encrypting_public_key());
+        shared_secret.encrypt_bytes(msg.as_ref()).ok()
+    }
+
+    fn decrypt(&self, from: &Self::PublicId, ct: &[u8]) -> Option<Vec<u8>> {
+        let shared_secret = self
+            .encrypting_private_key()
+            .shared_secret(from.encrypting_public_key());
+        shared_secret.decrypt_bytes(ct).ok()
+    }
 }
 
 impl Default for FullId {

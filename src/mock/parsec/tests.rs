@@ -31,19 +31,9 @@ fn smoke() {
     let _ = genesis_group.insert(alice_id);
     let _ = genesis_group.insert(bob_id);
 
-    let mut alice = Parsec::from_genesis(
-        Default::default(),
-        alice_id,
-        &genesis_group,
-        ConsensusMode::Supermajority,
-    );
+    let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Supermajority);
 
-    let mut bob = Parsec::from_genesis(
-        Default::default(),
-        bob_id,
-        &genesis_group,
-        ConsensusMode::Supermajority,
-    );
+    let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Supermajority);
 
     alice
         .vote_for(Observation::OpaquePayload(Payload(1)))
@@ -87,21 +77,10 @@ fn add_peer() {
     let _ = genesis_group.insert(bob_id);
     let _ = genesis_group.insert(carol_id);
 
-    let mut bob = Parsec::from_genesis(
-        Default::default(),
-        bob_id,
-        &genesis_group,
-        ConsensusMode::Supermajority,
-    );
-    let mut carol = Parsec::from_genesis(
-        Default::default(),
-        carol_id,
-        &genesis_group,
-        ConsensusMode::Supermajority,
-    );
+    let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Supermajority);
+    let mut carol = from_genesis(carol_id, &genesis_group, ConsensusMode::Supermajority);
 
-    let mut alice = Parsec::from_existing(
-        Default::default(),
+    let mut alice = from_existing(
         alice_id,
         &genesis_group,
         &genesis_group,
@@ -163,18 +142,8 @@ fn consensus_mode_single() {
     let _ = genesis_group.insert(alice_id);
     let _ = genesis_group.insert(bob_id);
 
-    let mut alice = Parsec::from_genesis(
-        Default::default(),
-        alice_id,
-        &genesis_group,
-        ConsensusMode::Single,
-    );
-    let mut bob = Parsec::from_genesis(
-        Default::default(),
-        bob_id,
-        &genesis_group,
-        ConsensusMode::Single,
-    );
+    let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Single);
+    let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Single);
 
     // First cast votes with different payloads. They should all get consensused.
     alice
@@ -335,6 +304,14 @@ impl SecretId for PeerId {
     }
 
     fn sign_detached(&self, _: &[u8]) -> <Self::PublicId as PublicId>::Signature {}
+
+    fn encrypt<M: AsRef<[u8]>>(&self, _to: &Self::PublicId, _msg: M) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn decrypt(&self, _from: &Self::PublicId, _ct: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 impl PublicId for PeerId {
@@ -404,9 +381,41 @@ fn create_nodes(
     consensus_mode: ConsensusMode,
 ) -> impl Iterator<Item = Parsec<Payload, PeerId>> {
     let genesis_group: BTreeSet<_> = (0..count).map(PeerId).collect();
-    genesis_group.clone().into_iter().map(move |peer_id| {
-        Parsec::from_genesis(Default::default(), peer_id, &genesis_group, consensus_mode)
-    })
+    genesis_group
+        .clone()
+        .into_iter()
+        .map(move |peer_id| from_genesis(peer_id, &genesis_group, consensus_mode))
+}
+
+fn from_genesis(
+    our_id: PeerId,
+    genesis_group: &BTreeSet<PeerId>,
+    consensus_mode: ConsensusMode,
+) -> Parsec<Payload, PeerId> {
+    Parsec::from_genesis(
+        Default::default(),
+        our_id,
+        genesis_group,
+        vec![],
+        consensus_mode,
+        Box::new(rand::os::OsRng::new().unwrap()),
+    )
+}
+
+fn from_existing(
+    our_id: PeerId,
+    genesis_group: &BTreeSet<PeerId>,
+    section: &BTreeSet<PeerId>,
+    consensus_mode: ConsensusMode,
+) -> Parsec<Payload, PeerId> {
+    Parsec::from_existing(
+        Default::default(),
+        our_id,
+        genesis_group,
+        section,
+        consensus_mode,
+        Box::new(rand::os::OsRng::new().unwrap()),
+    )
 }
 
 fn pick_gossip_recipient<'a, R: Rng>(

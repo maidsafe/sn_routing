@@ -407,9 +407,12 @@ impl Elder {
                 parsec::Observation::Remove { peer_id, .. } => NetworkEvent::Offline(peer_id),
                 parsec::Observation::OpaquePayload(event) => event.clone(),
 
-                parsec::Observation::Genesis(_)
+                parsec::Observation::Genesis { .. }
                 | parsec::Observation::Add { .. }
-                | parsec::Observation::Accusation { .. } => continue,
+                | parsec::Observation::Accusation { .. }
+                | parsec::Observation::StartDkg(_)
+                | parsec::Observation::DkgResult { .. }
+                | parsec::Observation::DkgMessage(_) => continue,
             };
             let _ = cached_events.insert(event);
         }

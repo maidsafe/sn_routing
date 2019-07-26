@@ -53,7 +53,9 @@ where
         section_hash: Digest256,
         our_id: S,
         genesis_group: &BTreeSet<S::PublicId>,
+        genesis_related_info: Vec<u8>,
         consensus_mode: ConsensusMode,
+        _secure_rng: Box<dyn rand::Rng>,
     ) -> Self {
         let mut parsec = Self {
             section_hash,
@@ -66,7 +68,10 @@ where
         };
 
         parsec
-            .vote_for(Observation::Genesis(genesis_group.clone()))
+            .vote_for(Observation::Genesis {
+                group: genesis_group.clone(),
+                related_info: genesis_related_info,
+            })
             .unwrap();
         parsec
     }
@@ -77,6 +82,7 @@ where
         genesis_group: &BTreeSet<S::PublicId>,
         _section: &BTreeSet<S::PublicId>,
         consensus_mode: ConsensusMode,
+        _secure_rng: Box<dyn rand::Rng>,
     ) -> Self {
         Self {
             section_hash,
