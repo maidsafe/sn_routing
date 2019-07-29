@@ -15,13 +15,13 @@ use std::{
     fmt,
 };
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
     sec_info: SectionInfo,
     threshold: usize,
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKey(PublicKeySet);
 
 pub type SignatureShare = ::safe_crypto::Signature;
@@ -31,7 +31,7 @@ pub struct SecretKeyShare(FullId);
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct PublicKeyShare(PublicId);
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct Signature {
     sigs: BTreeMap<PublicId, SignatureShare>,
 }

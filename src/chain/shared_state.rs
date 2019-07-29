@@ -326,7 +326,7 @@ where
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key: BlsPublicKey,
     sig: BlsSignature,
@@ -348,7 +348,7 @@ impl SectionProofBlock {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_pk: BlsPublicKey,
     blocks: Vec<SectionProofBlock>,

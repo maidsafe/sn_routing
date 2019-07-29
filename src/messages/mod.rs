@@ -17,7 +17,7 @@ pub use self::{
 };
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::{
-    chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo},
+    chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo, SectionProofChain},
     error::{Result, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -25,14 +25,14 @@ use crate::{
     sha3::Digest256,
     types::MessageId,
     xor_name::XorName,
-    XorTargetInterval,
+    BlsSignature, BlsSignatureShare, XorTargetInterval,
 };
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
 };
 
@@ -78,6 +78,23 @@ impl HopMessage {
     }
 }
 
+/// Metadata needed for verification of the sender
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+pub struct FullSecurityMetadata {
+    proof: SectionProofChain,
+    sender_prefix: Prefix<XorName>,
+    signature: BlsSignature,
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum SecurityMetadata {
+    None,
+    Partial(BTreeMap<PublicId, BlsSignatureShare>),
+    Signed(BlsSignature),
+    Full(FullSecurityMetadata),
+}
+
 /// Wrapper around a routing message, signed by the originator of the message.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SignedRoutingMessage {
@@ -91,6 +108,8 @@ pub struct SignedRoutingMessage {
     /// Each entry proves the authenticity of the previous one. The last one should be known by the
     /// receiver, while the first one proves the `src_section` itself.
     proving_sections: Vec<ProvingSection>,
+    /// Optional metadata for verifying the sender
+    security_metadata: SecurityMetadata,
 }
 
 impl SignedRoutingMessage {
@@ -111,6 +130,7 @@ impl SignedRoutingMessage {
             src_section: src_section.into(),
             signatures,
             proving_sections: Vec::new(),
+            security_metadata: SecurityMetadata::None,
         })
     }
 
