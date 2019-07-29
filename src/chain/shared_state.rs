@@ -264,7 +264,6 @@ impl SharedState {
         let _ = self.their_knowledge.insert(prefix, version);
     }
 
-    #[cfg(test)]
     /// Returns the reference to their_keys
     pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
         &self.their_keys
@@ -366,7 +365,6 @@ impl SectionProofChain {
         self.blocks.push(block);
     }
 
-    #[allow(unused)]
     pub fn validate(&self) -> bool {
         let mut current_pk = &self.genesis_pk;
         for block in &self.blocks {
@@ -376,6 +374,17 @@ impl SectionProofChain {
             current_pk = &block.key;
         }
         true
+    }
+
+    pub fn last_public_key(&self) -> &BlsPublicKey {
+        self.blocks
+            .last()
+            .map(|block| &block.key)
+            .unwrap_or(&self.genesis_pk)
+    }
+
+    pub fn all_keys(&self) -> impl DoubleEndedIterator<Item = &BlsPublicKey> {
+        iter::once(&self.genesis_pk).chain(self.blocks.iter().map(|block| &block.key))
     }
 }
 

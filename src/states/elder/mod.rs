@@ -548,7 +548,16 @@ impl Elder {
         }
 
         if self.in_authority(&signed_msg.routing_message().dst) {
-            // The message is addressed to our section. Verify its integrity.
+            // The message is addressed to our section. Verify its integrity and trust
+            if !signed_msg.check_trust(&self.chain) {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} Untrusted SignedRoutingMessage: {:?}",
+                    self,
+                    signed_msg
+                );
+                return Err(RoutingError::UntrustedMessage);
+            }
             signed_msg.check_integrity()?;
 
             if signed_msg.routing_message().dst.is_multiple() {

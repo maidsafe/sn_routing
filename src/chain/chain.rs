@@ -9,7 +9,7 @@
 use super::{
     candidate::Candidate,
     shared_state::{PrefixChange, SectionProofBlock, SharedState},
-    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
+    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -489,6 +489,24 @@ impl Chain {
         } else {
             self.neighbour_infos().any(is_proof)
         }
+    }
+
+    /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
+    /// for a prefix compatible with `prefix`
+    pub fn check_trust(&self, prefix: &Prefix<XorName>, proof_chain: &SectionProofChain) -> bool {
+        let filtered_keys: BTreeSet<_> = if prefix.is_compatible(self.our_prefix()) {
+            self.state.our_history.all_keys().collect()
+        } else {
+            self.state
+                .get_their_keys()
+                .iter()
+                .filter(|&(pfx, _)| prefix.is_compatible(pfx))
+                .map(|(_, key)| key)
+                .collect()
+        };
+        proof_chain
+            .all_keys()
+            .any(|key| filtered_keys.contains(key))
     }
 
     /// Returns `true` if the `SectionInfo` isn't known to us yet.

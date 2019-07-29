@@ -17,7 +17,9 @@ pub use self::{
 };
 use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::{
-    chain::{GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo, SectionProofChain},
+    chain::{
+        Chain, GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo, SectionProofChain,
+    },
     error::{Result, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -86,6 +88,24 @@ pub struct FullSecurityMetadata {
     signature: BlsSignature,
 }
 
+impl FullSecurityMetadata {
+    pub fn verify_sig(&self, bytes: Vec<u8>) -> bool {
+        self.proof.last_public_key().verify(&self.signature, bytes)
+    }
+
+    pub fn validate_proof(&self) -> bool {
+        self.proof.validate()
+    }
+
+    pub fn prefix(&self) -> &Prefix<XorName> {
+        &self.sender_prefix
+    }
+
+    pub fn proof_chain(&self) -> &SectionProofChain {
+        &self.proof
+    }
+}
+
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
@@ -136,28 +156,33 @@ impl SignedRoutingMessage {
 
     /// Confirms the signatures.
     pub fn check_integrity(&self) -> Result<()> {
-        let signed_bytes = serialise(&self.content)?;
-        if !self.find_invalid_sigs(signed_bytes).is_empty() {
-            return Err(RoutingError::FailedSignature);
+        match self.security_metadata {
+            SecurityMetadata::None => Ok(()),
+            SecurityMetadata::Partial(_) | SecurityMetadata::Signed(_) => {
+                Err(RoutingError::FailedSignature)
+            }
+            SecurityMetadata::Full(ref security_metadata) => {
+                let signed_bytes = serialise(&self.content)?;
+                if !security_metadata.verify_sig(signed_bytes) {
+                    return Err(RoutingError::FailedSignature);
+                }
+                if !security_metadata.validate_proof() {
+                    return Err(RoutingError::InvalidProvingSection);
+                }
+                Ok(())
+            }
         }
-        if !self.has_enough_sigs() {
-            return Err(RoutingError::NotEnoughSignatures);
-        }
+    }
 
-        // TODO: What needs to be checked if these are `None`?
-        if let (&Some(ref src_sec), Some(ref proving_sec)) =
-            (&self.src_section, self.proving_sections.first())
-        {
-            if !proving_sec.validate(src_sec) {
-                return Err(RoutingError::InvalidProvingSection);
+    /// Checks if the message can be trusted according to the Chain
+    pub fn check_trust(&self, chain: &Chain) -> bool {
+        match self.security_metadata {
+            SecurityMetadata::Full(ref security_metadata) => {
+                chain.check_trust(security_metadata.prefix(), security_metadata.proof_chain())
             }
+            SecurityMetadata::None => true,
+            _ => false,
         }
-        for (ps0, ps1) in self.proving_sections.iter().tuple_windows() {
-            if !ps1.validate(&ps0.sec_info) {
-                return Err(RoutingError::InvalidProvingSection);
-            }
-        }
-        Ok(())
     }
 
     /// Returns the previous hop: if that hop can be trusted, the message can be trusted, too.

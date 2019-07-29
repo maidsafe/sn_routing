@@ -145,6 +145,8 @@ pub enum RoutingError {
     UnknownPrevHop,
     /// A signed message's chain of proving sections is invalid.
     InvalidProvingSection,
+    /// A signed message could not be trusted
+    UntrustedMessage,
     /// Crypto related error.
     Crypto(safe_crypto::Error),
 }
