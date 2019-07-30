@@ -36,7 +36,7 @@ pub struct SharedState {
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
-    pub their_keys: BTreeMap<Prefix<XorName>, BlsPublicKey>,
+    pub their_keys: BTreeMap<Prefix<XorName>, (u64, BlsPublicKey)>,
 }
 
 impl SharedState {
@@ -162,12 +162,17 @@ impl SharedState {
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     /// NOTE: the function as it is currently is not merge-safe.
-    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, key: BlsPublicKey) {
-        if let Some(&pfx) = self
+    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, version: u64, key: BlsPublicKey) {
+        if let Some((&pfx, (key_version, _))) = self
             .their_keys
-            .keys()
-            .find(|pfx| pfx.is_compatible(&prefix))
+            .iter()
+            .find(|(pfx, _)| pfx.is_compatible(&prefix))
         {
+            if version <= key_version {
+                // Older version
+                return;
+            }
+
             let old_key = unwrap!(self.their_keys.remove(&pfx));
             let old_pfx_sibling = pfx.sibling();
             let mut current_pfx = prefix.sibling();
@@ -176,17 +181,17 @@ impl SharedState {
                 current_pfx = current_pfx.popped().sibling();
             }
         }
-        let _ = self.their_keys.insert(prefix, key);
+        let _ = self.their_keys.insert(prefix, (version, key));
     }
 
     #[cfg(test)]
     /// Returns the reference to their_keys
-    pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
+    pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, (u64, BlsPublicKey)> {
         &self.their_keys
     }
 
     pub fn get_their_keys_versions(&self) -> impl Iterator<Item = (&Prefix<XorName>, &u64)> {
-        self.their_keys.iter().map(|(prefix, key)| (prefix, key.version()))
+        self.their_keys.iter().map(|(prefix, (version, _key))| (prefix, version))
     }
 }
 

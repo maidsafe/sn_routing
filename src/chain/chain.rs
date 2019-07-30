@@ -257,6 +257,7 @@ impl Chain {
                 if !sec_info.prefix().matches(self.our_id.name()) {
                     self.update_their_keys(
                         *sec_info.prefix(),
+                        *sec_info.version(),
                         BlsPublicKey::from_section_info(&sec_info),
                     );
                 }
@@ -878,8 +879,8 @@ impl Chain {
     }
 
     /// Updates `their_keys` in the shared state
-    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, bls_key: BlsPublicKey) {
-        self.state.update_their_keys(prefix, bls_key);
+    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, version: u64, bls_key: BlsPublicKey) {
+        self.state.update_their_keys(prefix, version, bls_key);
     }
 
     /// Returns whether we should split into two sections.
