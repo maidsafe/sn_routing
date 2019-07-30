@@ -40,7 +40,7 @@ impl ParsecMap {
         let mut map = BTreeMap::new();
         let _ = map.insert(
             *gen_pfx_info.first_info.version(),
-            create(full_id, gen_pfx_info),
+            create(full_id, gen_pfx_info, Vec::new()),
         );
 
         Self { map }
@@ -48,7 +48,7 @@ impl ParsecMap {
 
     pub fn init(&mut self, full_id: FullId, gen_pfx_info: &GenesisPfxInfo, log_ident: &LogIdent) {
         if let Entry::Vacant(entry) = self.map.entry(*gen_pfx_info.first_info.version()) {
-            let _ = entry.insert(create(full_id, gen_pfx_info));
+            let _ = entry.insert(create(full_id, gen_pfx_info, gen_pfx_info.first_state_serialized.clone()));
             info!(
                 "{}: Init new Parsec, genesis = {:?}",
                 log_ident, gen_pfx_info
@@ -171,7 +171,7 @@ impl ParsecMap {
 }
 
 /// Create Parsec instance.
-fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
+fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo, related_info: Vec<u8>) -> Parsec {
     if gen_pfx_info
         .first_info
         .members()
@@ -182,7 +182,7 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
             *gen_pfx_info.first_info.hash(),
             full_id,
             &gen_pfx_info.first_info.members(),
-            vec![],
+            related_info,
             ConsensusMode::Single,
             Box::new(rand::os::OsRng::new().unwrap()),
         )

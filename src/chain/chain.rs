@@ -22,6 +22,7 @@ use crate::{
     utils::XorTargetInterval,
     BlsPublicKey, Prefix, XorName, Xorable,
 };
+use maidsafe_utilities::serialisation::{serialise, deserialise};
 use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
@@ -109,6 +110,26 @@ impl Chain {
             event_cache: Default::default(),
             candidate: Candidate::None,
         }
+    }
+
+    /// Handles an accumulated parsec Observation for membership mutation.
+    ///
+    /// The provided proofs wouldn't be validated against the mapped NetworkEvent as they're
+    /// for parsec::Observation::Add/Remove.
+    pub fn handle_genesis_event(
+        &mut self,
+        _group: &BTreeSet<PublicId>,
+        related_info: &[u8],
+    ) -> Result<(), RoutingError> {
+        if !related_info.is_empty() {
+            self.state = deserialise(related_info)?;
+        }
+        Ok(())
+    }
+
+    /// Docs.....
+    pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
+        Ok(serialise(&self.state)?)
     }
 
     /// Handles an accumulated parsec Observation for membership mutation.
@@ -383,6 +404,7 @@ impl Chain {
         Ok(PrefixChangeOutcome {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
+                first_state_serialized: self.get_genesis_related_info()?,
                 latest_info: Default::default(),
             },
             cached_events: chain_acc
@@ -1465,6 +1487,7 @@ mod tests {
         let our_members = first_info.members().clone();
         let genesis_info = GenesisPfxInfo {
             first_info,
+            first_state_serialized: Vec::new(),
             latest_info: Default::default(),
         };
 

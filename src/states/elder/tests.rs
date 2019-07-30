@@ -108,6 +108,7 @@ impl ElderUnderTest {
 
         let gen_pfx_info = GenesisPfxInfo {
             first_info: section_info.clone(),
+            first_state_serialized: Vec::new(),
             latest_info: SectionInfo::default(),
         };
 

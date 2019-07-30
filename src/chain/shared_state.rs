@@ -18,7 +18,7 @@ use std::{
 use unwrap::unwrap;
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SharedState {
     /// The new self section info, that doesn't necessarily have a full set of signatures yet.
     pub new_info: SectionInfo,
@@ -187,7 +187,7 @@ impl SharedState {
 }
 
 /// The prefix-affecting change (split or merge) to our own section that is currently in progress.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PrefixChange {
     None,
     Splitting,
@@ -195,7 +195,7 @@ pub enum PrefixChange {
 }
 
 /// Vec-like container that is guaranteed to contain at least one element.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
 pub struct NonEmptyList<T> {
     head: Vec<T>,
     tail: T,
@@ -258,7 +258,7 @@ impl NonEmptyList<(SectionInfo, ProofSet)> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key: BlsPublicKey,
     sig: BlsSignature,
@@ -280,7 +280,7 @@ impl SectionProofBlock {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_pk: BlsPublicKey,
     blocks: Vec<SectionProofBlock>,

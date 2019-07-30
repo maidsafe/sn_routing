@@ -150,6 +150,7 @@ impl Elder {
         let public_id = *full_id.public_id();
         let gen_pfx_info = GenesisPfxInfo {
             first_info: create_first_section_info(public_id)?,
+            first_state_serialized: Vec::new(),
             latest_info: SectionInfo::default(),
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
@@ -737,6 +738,7 @@ impl Elder {
 
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
+            first_state_serialized: self.gen_pfx_info.first_state_serialized.clone(),
             latest_info: self.chain.our_info().clone(),
         };
 
