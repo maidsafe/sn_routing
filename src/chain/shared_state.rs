@@ -168,8 +168,8 @@ impl SharedState {
             .iter()
             .find(|(pfx, _)| pfx.is_compatible(&prefix))
         {
-            if version <= key_version {
-                // Older version
+            if version <= *key_version {
+                // Ignore older versions
                 return;
             }
 
@@ -371,7 +371,7 @@ mod test {
             .into_iter()
             .map(|(pfx_str, index)| {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
-                (pfx, keys_to_update[index].1.clone())
+                (pfx, (0, keys_to_update[index].1.clone()))
             })
             .collect::<BTreeMap<_, _>>();
 
@@ -379,7 +379,7 @@ mod test {
         let mut state = SharedState::new(start_section);
 
         for (pfx, key) in keys_to_update {
-            state.update_their_keys(pfx, key);
+            state.update_their_keys(pfx, 0, key);
         }
 
         assert_eq!(state.get_their_keys(), &expected_keys);
