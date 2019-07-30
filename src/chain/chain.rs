@@ -244,6 +244,16 @@ impl Chain {
 
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
+                info!("chain::poll1: {:?}, sec_info.prefix(): {:?}, matches: {}",
+                    self.our_id(), sec_info.prefix(), sec_info.prefix().matches(self.our_id.name()));
+
+                info!("chain::poll2: {:?}", self.state.get_their_keys_versions().collect::<BTreeMap<_,_>>());
+                if format!("{:?}", self.our_id()) == "PublicId(name: af7022..)"
+                    //&& format!("{:?}", sec_info.prefix()) == "Prefix(101)"
+                     {
+                    info!("OUR_ITEM: {:?}", self.state);
+                }
+
                 if !sec_info.prefix().matches(self.our_id.name()) {
                     self.update_their_keys(
                         *sec_info.prefix(),

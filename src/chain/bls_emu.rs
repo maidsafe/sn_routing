@@ -130,6 +130,10 @@ impl PublicKey {
     pub fn as_event(&self) -> parsec::Observation<NetworkEvent, PublicId> {
         parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(self.0.sec_info.clone()))
     }
+
+    pub fn version(&self) -> &u64 {
+        self.0.sec_info.version()
+    }
 }
 
 impl fmt::Debug for PublicKey {

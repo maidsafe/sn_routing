@@ -192,7 +192,8 @@ fn joining_node_with_ignoring_candidate_info() {
 
 #[test]
 fn multiple_joining_nodes() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let _ = maidsafe_utilities::log::init(false);
+    let network = Network::new(MIN_SECTION_SIZE, Some([1463356228, 652298051, 1604270005, 2737306343]));
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
 
     while nodes.len() < 40 {

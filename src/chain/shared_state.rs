@@ -184,6 +184,10 @@ impl SharedState {
     pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
         &self.their_keys
     }
+
+    pub fn get_their_keys_versions(&self) -> impl Iterator<Item = (&Prefix<XorName>, &u64)> {
+        self.their_keys.iter().map(|(prefix, key)| (prefix, key.version()))
+    }
 }
 
 /// The prefix-affecting change (split or merge) to our own section that is currently in progress.
@@ -412,6 +416,21 @@ mod test {
                 ("101101", 0),
                 ("1011000", 0),
                 ("1011001", 1),
+            ],
+        );
+    }
+
+
+    #[test]
+    fn update_after_split() {
+        update_keys_and_check(
+            "101",
+            vec!["10", "01", "11", "00", "100"],
+            vec![
+                ("01", 1),
+                ("11", 2),
+                ("00", 3),
+                ("100", 4),
             ],
         );
     }
