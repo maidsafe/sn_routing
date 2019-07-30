@@ -48,10 +48,14 @@ impl ParsecMap {
 
     pub fn init(&mut self, full_id: FullId, gen_pfx_info: &GenesisPfxInfo, log_ident: &LogIdent) {
         if let Entry::Vacant(entry) = self.map.entry(*gen_pfx_info.first_info.version()) {
-            let _ = entry.insert(create(full_id, gen_pfx_info, gen_pfx_info.first_state_serialized.clone()));
+            let _ = entry.insert(create(
+                full_id,
+                gen_pfx_info,
+                gen_pfx_info.first_state_serialized.clone(),
+            ));
             info!(
-                "{}: Init new Parsec, genesis = {:?}",
-                log_ident, gen_pfx_info
+                "{}: Init new Parsec, genesis = {:?}, info = {:?}",
+                log_ident, gen_pfx_info, gen_pfx_info.first_state_serialized
             );
         }
     }

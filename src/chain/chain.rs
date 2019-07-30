@@ -22,9 +22,9 @@ use crate::{
     utils::XorTargetInterval,
     BlsPublicKey, Prefix, XorName, Xorable,
 };
-use maidsafe_utilities::serialisation::{serialise, deserialise};
 use itertools::Itertools;
 use log::LogLevel;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
@@ -244,6 +244,13 @@ impl Chain {
 
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
+                if !sec_info.prefix().matches(self.our_id.name()) {
+                    self.update_their_keys(
+                        *sec_info.prefix(),
+                        BlsPublicKey::from_section_info(&sec_info),
+                    );
+                }
+
                 self.add_section_info(sec_info.clone(), proofs)?;
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
@@ -400,6 +407,13 @@ impl Chain {
         let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
             .map(NetworkEvent::NeighbourMerge);
+
+        trace!(
+            "finalise_prefix_change: {:?}, {:?}, state: {:?}",
+            self.our_prefix(),
+            self.our_id(),
+            self.state,
+        );
 
         Ok(PrefixChangeOutcome {
             gen_pfx_info: GenesisPfxInfo {

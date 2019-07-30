@@ -11,7 +11,7 @@ use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Pr
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, BTreeMap},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -36,7 +36,7 @@ pub struct SharedState {
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
-    pub their_keys: HashMap<Prefix<XorName>, BlsPublicKey>,
+    pub their_keys: BTreeMap<Prefix<XorName>, BlsPublicKey>,
 }
 
 impl SharedState {
@@ -181,7 +181,7 @@ impl SharedState {
 
     #[cfg(test)]
     /// Returns the reference to their_keys
-    pub fn get_their_keys(&self) -> &HashMap<Prefix<XorName>, BlsPublicKey> {
+    pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
         &self.their_keys
     }
 }
@@ -325,7 +325,7 @@ impl Debug for SectionProofChain {
 mod test {
     use super::*;
     use crate::{chain::SectionInfo, BlsPublicKey, FullId, Prefix, XorName};
-    use std::collections::{BTreeSet, HashMap};
+    use std::collections::{BTreeSet, BTreeMap};
     use std::str::FromStr;
     use unwrap::unwrap;
 
@@ -364,7 +364,7 @@ mod test {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
                 (pfx, keys_to_update[index].1.clone())
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
 
         let start_section = gen_section_info(unwrap!(Prefix::from_str(start_pfx)));
         let mut state = SharedState::new(start_section);

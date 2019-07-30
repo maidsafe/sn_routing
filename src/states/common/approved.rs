@@ -134,9 +134,14 @@ pub trait Approved: Relocated {
                     // FIXME: Handle properly
                     unreachable!("...")
                 }
-                Observation::Genesis { group, related_info } => {
+                Observation::Genesis {
+                    group,
+                    related_info,
+                } => {
                     // FIXME: Validate with Chain info.
-                    self.chain_mut().handle_genesis_event(&group, &related_info)?;
+                    trace!("{} Parsec Genesis: {:?}", self, group,);
+                    self.chain_mut()
+                        .handle_genesis_event(&group, &related_info)?;
                     self.set_pfx_successfully_polled(true);
                     continue;
                 }

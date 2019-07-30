@@ -34,7 +34,7 @@ use std::fmt::{self, Debug, Formatter};
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
     pub first_info: SectionInfo,
-    pub first_state_serialized : Vec<u8>,
+    pub first_state_serialized: Vec<u8>,
     pub latest_info: SectionInfo,
 }
 
