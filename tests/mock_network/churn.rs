@@ -23,6 +23,7 @@ use std::{
 };
 
 /// Randomly removes some nodes, but <1/3 from each section and never node 0.
+/// Never trigger merge: never remove enough nodes to drop to `min_sec_size`.
 /// max_per_pfx: limits dropping to the specified count per pfx. It would also
 /// skip prefixes randomly allowing sections to split if this is executed in the same
 /// iteration as `add_nodes_and_poll`.
@@ -34,15 +35,22 @@ fn drop_random_nodes<R: Rng>(
     max_per_pfx: Option<usize>,
 ) -> BTreeSet<XorName> {
     let mut dropped_nodes = BTreeSet::new();
+    let min_sec_size = |node: &TestNode| node.chain().min_sec_size();
     let node_section_size = |node: &TestNode| node.chain().our_info().members().len();
     let sections: BTreeMap<_, _> = nodes
         .iter()
-        .map(|node| (*node.our_prefix(), node_section_size(node)))
+        .map(|node| {
+            let initial_size = node_section_size(node);
+            let min_size = min_sec_size(node);
+            let max_drop = initial_size.saturating_sub(min_size);
+            (*node.our_prefix(), (initial_size, max_drop))
+        })
         .collect();
     let mut drop_count: BTreeMap<_, _> = sections.keys().map(|pfx| (*pfx, 0)).collect();
     loop {
         let i = gen_range(rng, 1, nodes.len());
         let pfx = nodes[i].our_prefix();
+        let (initial_size, max_drop) = sections[&pfx];
         if drop_count.is_empty() {
             break;
         } else if drop_count.get(&pfx).is_none() {
@@ -52,7 +60,8 @@ fn drop_random_nodes<R: Rng>(
         let early_terminate = max_per_pfx.map_or(false, |n| {
             drop_count[&pfx] >= n || rng.gen_weighted_bool(drop_count.keys().len() as u32)
         });
-        let normal_terminate = (drop_count[&pfx] + 1) * 3 >= sections[&pfx];
+        let normal_terminate =
+            ((drop_count[&pfx] + 1) * 3 >= initial_size) || (drop_count[&pfx] >= max_drop);
         if early_terminate || normal_terminate {
             let _ = drop_count.remove(&pfx);
             continue;
@@ -521,8 +530,12 @@ fn aggressive_churn() {
         nodes.len(),
         count_sections(&nodes)
     );
-    while count_sections(&nodes) > 1 && nodes.len() > min_section_size {
+    loop {
         let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes, None);
+        if dropped_nodes.is_empty() {
+            break;
+        }
+
         warn!("Dropping random nodes. Dropped: {:?}", dropped_nodes);
         poll_and_resend(&mut nodes, &mut []);
         verify_invariant_for_all_nodes(&network, &mut nodes);
@@ -545,7 +558,7 @@ fn messages_during_churn() {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let prefixes = vec![2, 2, 2, 3, 3];
-    let prefixes_len = prefixes.len();
+    let max_prefixes_len = prefixes.len() * 2;
     let mut nodes = create_connected_nodes_until_split(&network, prefixes, false);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
     let cl_auth = Authority::Client {
@@ -555,7 +568,7 @@ fn messages_during_churn() {
 
     for i in 0..50 {
         warn!("Iteration {}. Prefixes: {:?}", i, current_sections(&nodes));
-        let new_indices = random_churn(&mut rng, &network, &mut nodes, prefixes_len);
+        let new_indices = random_churn(&mut rng, &network, &mut nodes, max_prefixes_len);
 
         // Create random data and pick random sending and receiving nodes.
         let data = ImmutableData::new(rng.gen_iter().take(100).collect());

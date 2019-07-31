@@ -70,26 +70,31 @@ fn merge(prefix_lengths: Vec<usize>) {
 }
 
 #[test]
+#[ignore]
 fn merge_three_sections_into_one() {
     merge(vec![1, 2, 2])
 }
 
 #[test]
+#[ignore]
 fn merge_four_unbalanced_sections_into_one() {
     merge(vec![1, 2, 3, 3])
 }
 
 #[test]
+#[ignore]
 fn merge_four_balanced_sections_into_one() {
     merge(vec![2, 2, 2, 2])
 }
 
 #[test]
+#[ignore]
 fn merge_five_sections_into_one() {
     merge(vec![1, 3, 3, 3, 3])
 }
 
 #[test]
+#[ignore]
 fn concurrent_merge() {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
@@ -150,6 +155,7 @@ fn concurrent_merge() {
 }
 
 #[test]
+#[ignore]
 fn merge_drop_multiple_nodes() {
     let min_section_size = 7;
     let nodes_to_drop = (min_section_size - 1) / 3;
