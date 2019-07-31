@@ -446,8 +446,6 @@ pub enum MessageContent {
     /// Inform neighbours about our new section. The payload is just a unique hash, as the actual
     /// information is included in the `SignedMessage`'s proving sections anyway.
     NeighbourInfo(Digest256),
-    /// Sent from a section that signed a neighbour's section info to that neighbour.
-    NeighbourConfirm(Digest256, ProofSet, Vec<(SectionInfo, ProofSet)>),
     /// Inform neighbours that we need to merge, and that the successor of the section info with
     /// the given hash will be the merged section.
     Merge(Digest256),
@@ -532,13 +530,6 @@ impl Debug for MessageContent {
             NeighbourInfo(ref digest) => {
                 write!(formatter, "NeighbourInfo({:.14?})", HexFmt(digest),)
             }
-            NeighbourConfirm(ref digest, ref proofs, ref neighbour_sec_infos) => write!(
-                formatter,
-                "NeighbourConfirm({:.14?}, {} proofs, {} section infos)",
-                HexFmt(digest),
-                proofs.len(),
-                neighbour_sec_infos.len(),
-            ),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
             UserMessage {
                 ref content,

@@ -225,18 +225,6 @@ impl State {
         }
     }
 
-    pub fn received_section_info_ack(&self) -> bool {
-        match *self {
-            State::Terminated
-            | State::BootstrappingPeer(_)
-            | State::Client(_)
-            | State::RelocatingNode(_)
-            | State::ProvingNode(_)
-            | State::Adult(_) => false,
-            State::Elder(ref state) => state.received_section_info_ack(),
-        }
-    }
-
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         state_dispatch!(
             *self,

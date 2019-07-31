@@ -402,6 +402,11 @@ impl Approved for Adult {
         }
     }
 
+    fn handle_ack_message_event(&mut self, _sec_info: SectionInfo) -> Result<(), RoutingError> {
+        debug!("{} - Unhandled UpdateSharedState event", self);
+        Ok(())
+    }
+
     fn handle_our_merge_event(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled OurMerge event", self);
         Ok(())

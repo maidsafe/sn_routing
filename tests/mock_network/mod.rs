@@ -443,11 +443,11 @@ fn check_section_info_ack() {
     let nodes = create_connected_nodes_until_split(&network, vec![1, 1], true);
 
     // Due to the behaviour in the `create nodes until split`, there shall only be one section nodes
-    // sending out `section_info_ack`. Hence only one section shall receive the ack.
-    let num_of_receives = nodes
+    // sending out `section_info_ack`. Hence only one section shall consensus on it eventually.
+    let num_of_consensus = nodes
         .iter()
-        .filter(|node| node.inner.received_section_info_ack())
+        .filter(|node| node.chain().get_their_knowldege_versions().count() > 0)
         .count();
-    assert!(num_of_receives >= min_section_size);
-    assert!(num_of_receives < 2 * min_section_size);
+    assert!(num_of_consensus >= min_section_size);
+    assert!(num_of_consensus < 2 * min_section_size);
 }
