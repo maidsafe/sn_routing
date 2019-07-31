@@ -232,6 +232,30 @@ impl SignedRoutingMessage {
         }
     }
 
+    /// Generate and attach the full proof for the recipient
+    pub fn attach_proof(&mut self, chain: &Chain) {
+        if let SecurityMetadata::Signed(sig) =
+            mem::replace(&mut self.security_metadata, SecurityMetadata::None)
+        {
+            let signed_bytes = match serialise(&self.content) {
+                Ok(serialised) => serialised,
+                Err(error) => {
+                    warn!("Failed to serialise {:?}: {:?}", self, error);
+                    return;
+                }
+            };
+            let proof_chain = chain.prove(&self.content.dst, &sig, &signed_bytes);
+            let proof = FullSecurityMetadata {
+                proof: proof_chain,
+                sender_prefix: *chain.our_prefix(),
+                signature: sig,
+            };
+            self.security_metadata = SecurityMetadata::Full(proof);
+        } else {
+            warn!("Tried to call attach_proof on {:?}", self);
+        }
+    }
+
     /// Returns the routing message without cloning it.
     pub fn into_routing_message(self) -> RoutingMessage {
         self.content

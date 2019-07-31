@@ -497,10 +497,11 @@ impl Elder {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        if let Some(signed_msg) = self
+        if let Some(mut signed_msg) = self
             .sig_accumulator
             .add_proof(msg.clone(), &self.public_key_set())
         {
+            signed_msg.attach_proof(&self.chain);
             self.handle_signed_message(signed_msg)?;
         }
         Ok(())
@@ -1866,6 +1867,7 @@ impl Bootstrapped for Elder {
                     .sig_accumulator
                     .add_proof(signed_msg.clone(), &self.public_key_set())
                 {
+                    msg.attach_proof(&self.chain);
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {

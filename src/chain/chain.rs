@@ -18,7 +18,7 @@ use crate::{
     sha3::Digest256,
     utils::LogIdent,
     utils::XorTargetInterval,
-    BlsPublicKey, Prefix, XorName, Xorable,
+    BlsPublicKey, BlsSignature, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -528,6 +528,44 @@ impl Chain {
     /// Returns `true` if the `SectionInfo` isn't known to us yet and is a neighbouring section.
     pub fn is_new_neighbour(&self, sec_info: &SectionInfo) -> bool {
         self.our_prefix().is_neighbour(sec_info.prefix()) && self.is_new(sec_info)
+    }
+
+    /// Returns the index of the public key in our_history that will be trusted by the target
+    /// Authority
+    fn proving_index(&self, target: &Authority<XorName>) -> u64 {
+        self.state
+            .their_knowledge
+            .iter()
+            .find(|(prefix, _)| prefix.matches(&target.name()))
+            .map(|(_, index)| *index)
+            .unwrap_or(0)
+    }
+
+    /// Provide a SectionProofChain that proves the given signature to the section with a given
+    /// prefix
+    pub fn prove(
+        &self,
+        target: &Authority<XorName>,
+        signature: &BlsSignature,
+        data: &[u8],
+    ) -> SectionProofChain {
+        let first_index = self.proving_index(target);
+        let keys_len = self.state.our_history.len();
+        let last_index = self
+            .state
+            .our_history
+            .all_keys()
+            .rev()
+            .enumerate()
+            // .enumerate().rev() is impossible due to iter::Chain not implementing
+            // ExactSizeIterator
+            .map(|(index, key)| (keys_len - index, key))
+            .find(|(_, key)| key.verify(signature, data))
+            .map(|(index, _)| index)
+            .unwrap_or_else(|| self.state.our_history.last_index());
+        self.state
+            .our_history
+            .slice(first_index as usize, last_index)
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
