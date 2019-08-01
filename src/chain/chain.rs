@@ -237,6 +237,11 @@ impl Chain {
                 let our_hash = *self.state.new_info.hash();
                 let _ = self.state.merging.insert(our_hash);
                 self.state.change = PrefixChange::Merging;
+                panic!(
+                    "Merge not supported: NetworkEvent::OurMerge {:?}: {:?}",
+                    self.our_id(),
+                    self.state.new_info
+                );
             }
             NetworkEvent::NeighbourMerge(digest) => {
                 // TODO: Check that the section is known and not already merged.
@@ -317,6 +322,11 @@ impl Chain {
             // set to merge state to prevent extending chain any further.
             // We'd still not Vote for OurMerge until we've updated our_infos
             self.state.change = PrefixChange::Merging;
+            panic!(
+                "Merge not supported: remove_member < min_sec_size {:?}: {:?}",
+                self.our_id(),
+                self.state.new_info
+            );
         }
 
         Ok(self.state.new_info.clone())
