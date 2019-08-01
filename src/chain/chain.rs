@@ -112,6 +112,24 @@ impl Chain {
         }
     }
 
+    /// Handles an accumulated parsec Observation for genesis.
+    ///
+    /// The related_info is the serialized shared state that will be the starting
+    /// point when processing parsec data.
+    pub fn handle_genesis_event(
+        &mut self,
+        _group: &BTreeSet<PublicId>,
+        related_info: &[u8],
+    ) -> Result<(), RoutingError> {
+        self.state.update_with_genesis_related_info(related_info)
+    }
+
+    /// Get the serialized shared state that will be the starting point when processing
+    /// parsec data
+    pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
+        self.state.get_genesis_related_info()
+    }
+
     /// Handles an accumulated parsec Observation for membership mutation.
     ///
     /// The provided proofs wouldn't be validated against the mapped NetworkEvent as they're
@@ -370,18 +388,7 @@ impl Chain {
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
     /// cached and currently accumulated events.
     pub fn finalise_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
-        // Check the lowest version of our info that any neighbour has and remove everything less
-        // than it
-        let our_oldest_ver = self.their_knowledge.values().min().map_or(0, |&v| v);
-
-        if !self.state.our_infos.clean_older(our_oldest_ver) {
-            log!(
-                LogLevel::Warn,
-                "Oldest version ({:?}) indicated by neighbours not found in our infos",
-                our_oldest_ver
-            );
-        }
-
+        // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
         self.state.change = PrefixChange::None;
 
@@ -392,9 +399,17 @@ impl Chain {
             .into_iter()
             .map(NetworkEvent::NeighbourMerge);
 
+        info!(
+            "finalise_prefix_change: {:?}, {:?}, state: {:?}",
+            self.our_prefix(),
+            self.our_id(),
+            self.state,
+        );
+
         Ok(PrefixChangeOutcome {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
+                first_state_serialized: self.get_genesis_related_info()?,
                 latest_info: Default::default(),
             },
             cached_events: chain_acc
@@ -1499,6 +1514,7 @@ mod tests {
         let our_members = first_info.members().clone();
         let genesis_info = GenesisPfxInfo {
             first_info,
+            first_state_serialized: Vec::new(),
             latest_info: Default::default(),
         };
 

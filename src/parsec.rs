@@ -182,7 +182,7 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
             *gen_pfx_info.first_info.hash(),
             full_id,
             &gen_pfx_info.first_info.members(),
-            vec![],
+            gen_pfx_info.first_state_serialized.clone(),
             ConsensusMode::Single,
             Box::new(rand::os::OsRng::new().unwrap()),
         )

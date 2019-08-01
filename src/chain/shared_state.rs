@@ -9,6 +9,7 @@
 use super::{ProofSet, ProvingSection, SectionInfo};
 use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
     collections::{BTreeSet, HashMap},
@@ -52,6 +53,47 @@ impl SharedState {
             our_history,
             their_keys: Default::default(),
         }
+    }
+
+    pub fn update_with_genesis_related_info(
+        &mut self,
+        related_info: &[u8],
+    ) -> Result<(), RoutingError> {
+        if related_info.is_empty() {
+            return Ok(());
+        }
+
+        let (our_infos, our_history) = serialisation::deserialise(related_info)?;
+        if self.our_infos.len() != 1 {
+            // Check nodes with a history before genesis match the genesis block:
+            if self.our_infos != our_infos {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different our_infos:\n{:?},\n{:?}",
+                    self.our_infos,
+                    our_infos
+                );
+            }
+            if self.our_history != our_history {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different our_history:\n{:?},\n{:?}",
+                    self.our_history,
+                    our_history
+                );
+            }
+        }
+        self.our_infos = our_infos;
+        self.our_history = our_history;
+
+        Ok(())
+    }
+
+    pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
+        Ok(serialisation::serialise(&(
+            &self.our_infos,
+            &self.our_history,
+        ))?)
     }
 
     pub fn our_infos(&self) -> impl Iterator<Item = &SectionInfo> + DoubleEndedIterator {
@@ -195,7 +237,7 @@ pub enum PrefixChange {
 }
 
 /// Vec-like container that is guaranteed to contain at least one element.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
 pub struct NonEmptyList<T> {
     head: Vec<T>,
     tail: T,
@@ -235,30 +277,7 @@ where
     }
 }
 
-impl NonEmptyList<(SectionInfo, ProofSet)> {
-    /// Remove infos that are sorted before the info with version equal to `oldest_version`.
-    /// If no info has that version, do not remove anything and return 'false'.
-    /// Otherwise return `true`
-    pub fn clean_older(&mut self, oldest_version: u64) -> bool {
-        if *self.tail.0.version() == oldest_version {
-            self.head.clear();
-            return true;
-        }
-
-        match self
-            .head
-            .binary_search_by_key(&oldest_version, |(si, _)| *si.version())
-        {
-            Ok(index) => {
-                let _ = self.head.drain(0..index);
-                true
-            }
-            Err(_) => oldest_version == 0,
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key: BlsPublicKey,
     sig: BlsSignature,
@@ -280,7 +299,7 @@ impl SectionProofBlock {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_pk: BlsPublicKey,
     blocks: Vec<SectionProofBlock>,
