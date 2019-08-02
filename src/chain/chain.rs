@@ -9,7 +9,7 @@
 use super::{
     candidate::Candidate,
     shared_state::{PrefixChange, SectionProofBlock, SharedState},
-    GenesisPfxInfo, NeighbourSigs, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
+    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
 };
 use crate::{
     error::RoutingError,
@@ -353,13 +353,8 @@ impl Chain {
 
     /// Returns `true` if we should merge.
     pub fn should_vote_for_merge(&self) -> bool {
-        self.state.should_vote_for_merge(
-            self.min_sec_size,
-            self.state
-                .neighbour_infos
-                .values()
-                .map(NeighbourSigs::sec_info),
-        )
+        self.state
+            .should_vote_for_merge(self.min_sec_size, self.neighbour_infos())
     }
 
     /// Check inside the `neighbour_infos` failing which inside the chain accumulator if we have a
@@ -448,10 +443,7 @@ impl Chain {
 
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &SectionInfo> {
-        self.state
-            .neighbour_infos
-            .values()
-            .map(NeighbourSigs::sec_info)
+        self.state.neighbour_infos.values()
     }
 
     /// Return prefixes of all our neighbours
@@ -533,7 +525,7 @@ impl Chain {
             .state
             .neighbour_infos
             .iter()
-            .any(|(pfx, nsigs)| pfx == si.prefix() && nsigs.sec_info().version() >= si.version())
+            .any(|(pfx, sec_info)| pfx == si.prefix() && sec_info.version() >= si.version())
         {
             return true;
         }
@@ -592,7 +584,7 @@ impl Chain {
             .neighbour_infos
             .iter()
             .find(move |&(pfx, _)| pfx.is_compatible(si.prefix()))
-            .map(|(_, nsigs)| nsigs.sec_info())
+            .map(|(_, sec_info)| sec_info)
     }
 
     /// Check if we can handle a given event immediately.
@@ -693,40 +685,40 @@ impl Chain {
         } else {
             let ppfx = sec_info.prefix().popped();
             let spfx = sec_info.prefix().sibling();
-            let new_nsigs_version = *sec_info.version();
-            let nsigs = self
+            let new_sec_info_version = *sec_info.version();
+            let sec_info = self
                 .state
                 .our_infos()
                 .rev()
                 .find(|our_info| our_info.is_quorum(&proofs))
-                .map(|our_info| NeighbourSigs::new(sec_info, proofs, our_info))
+                .map(|_| sec_info)
                 .ok_or(RoutingError::InvalidMessage)?;
 
-            if let Some(old_nsigs) = self.state.neighbour_infos.insert(pfx, nsigs) {
-                if *old_nsigs.sec_info().version() > new_nsigs_version {
+            if let Some(old_sec_info) = self.state.neighbour_infos.insert(pfx, sec_info) {
+                if *old_sec_info.version() > new_sec_info_version {
                     log_or_panic!(
                         LogLevel::Error,
                         "{} Ejected newer neighbour info {:?}",
                         self,
-                        old_nsigs
+                        old_sec_info
                     );
                 }
             }
 
             // If we just split an existing neighbour and we also need its sibling,
             // add the sibling prefix with the parent prefix sigs.
-            if let Some(ssigs) = self
+            if let Some(ssec_info) = self
                 .state
                 .neighbour_infos
                 .get(&ppfx)
-                .filter(|psigs| {
-                    *psigs.sec_info().version() < new_nsigs_version
+                .filter(|psec_info| {
+                    *psec_info.version() < new_sec_info_version
                         && self.our_prefix().is_neighbour(&spfx)
                         && !self.state.neighbour_infos.contains_key(&spfx)
                 })
                 .cloned()
             {
-                let _ = self.state.neighbour_infos.insert(spfx, ssigs);
+                let _ = self.state.neighbour_infos.insert(spfx, ssec_info);
             }
 
             self.check_and_clean_neighbour_infos(Some(&pfx));
@@ -808,16 +800,15 @@ impl Chain {
             .state
             .neighbour_infos
             .iter()
-            .filter_map(|(pfx, nsigs)| {
+            .filter_map(|(pfx, sec_info)| {
                 if !self.our_prefix().is_neighbour(pfx) {
                     // we just split making old neighbour no longer needed
                     return Some(*pfx);
                 }
 
                 // Remove older compatible neighbour prefixes.
-                let is_newer = |(other_pfx, other_sigs): (&Prefix<XorName>, &NeighbourSigs)| {
-                    other_pfx.is_compatible(pfx)
-                        && other_sigs.sec_info().version() > nsigs.sec_info().version()
+                let is_newer = |(other_pfx, other_sec_info): (&Prefix<XorName>, &SectionInfo)| {
+                    other_pfx.is_compatible(pfx) && other_sec_info.version() > sec_info.version()
                 };
 
                 if self.state.neighbour_infos.iter().any(is_newer) {
@@ -845,15 +836,11 @@ impl Chain {
 
     /// Returns an iterator over all neighbouring sections and our own, together with their prefix
     /// in the map.
-    pub fn all_sections(&self) -> impl Iterator<Item = (Prefix<XorName>, &SectionInfo)> {
-        self.state
-            .neighbour_infos
-            .iter()
-            .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info()))
-            .chain(iter::once((
-                *self.state.our_info().prefix(),
-                self.state.our_info(),
-            )))
+    pub fn all_sections(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionInfo)> {
+        self.state.neighbour_infos.iter().chain(iter::once((
+            self.state.our_info().prefix(),
+            self.state.our_info(),
+        )))
     }
 
     /// Finds the `count` names closest to `name` in the whole routing table.
@@ -892,7 +879,7 @@ impl Chain {
             .neighbour_infos
             .iter()
             .find(|&(ref pfx, _)| pfx.matches(name))
-            .map(|(_, ref ni)| ni.sec_info().member_names())
+            .map(|(_, ref sec_info)| sec_info.member_names())
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including
@@ -944,13 +931,13 @@ impl Chain {
     fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
         let mut best_pfx = *self.our_prefix();
         let mut best_si = self.our_info();
-        for (pfx, ni) in &self.state.neighbour_infos {
+        for (pfx, sec_info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !ni.sec_info().members().is_empty()
+            if !sec_info.members().is_empty()
                 && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater
             {
                 best_pfx = *pfx;
-                best_si = ni.sec_info();
+                best_si = sec_info;
             }
         }
         (best_pfx, best_si.member_names())
@@ -959,8 +946,8 @@ impl Chain {
     /// Returns the known sections sorted by the distance from a given XorName.
     fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
         let mut result = vec![(*self.our_prefix(), self.our_info().member_names())];
-        for (pfx, ni) in &self.state.neighbour_infos {
-            result.push((*pfx, ni.sec_info().member_names()));
+        for (pfx, sec_info) in &self.state.neighbour_infos {
+            result.push((*pfx, sec_info.member_names()));
         }
         result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
         result
@@ -1066,7 +1053,7 @@ impl Chain {
                         return Err(Error::CannotRoute);
                     }
 
-                    let is_compatible = |(ref pfx, section)| {
+                    let is_compatible = |(pfx, section)| {
                         if prefix.is_compatible(pfx) {
                             Some(section)
                         } else {
@@ -1117,7 +1104,7 @@ impl Chain {
         self.state
             .neighbour_infos
             .values()
-            .map(|ni| ni.sec_info().members().len())
+            .map(|sec_info| sec_info.members().len())
             .sum::<usize>()
             + self.state.our_info().members().len()
             - 1
@@ -1229,8 +1216,8 @@ impl Debug for Chain {
         }
 
         writeln!(formatter, "\tneighbour_infos:")?;
-        for (pfx, nsigs) in &self.state.neighbour_infos {
-            writeln!(formatter, "\t {:?}\t {}", pfx, nsigs.sec_info())?;
+        for (pfx, sec_info) in &self.state.neighbour_infos {
+            writeln!(formatter, "\t {:?}\t {}", pfx, sec_info)?;
         }
 
         writeln!(
@@ -1259,10 +1246,7 @@ impl Chain {
         if self.our_prefix() == pfx {
             Some(self.our_info())
         } else {
-            self.state
-                .neighbour_infos
-                .get(pfx)
-                .map(NeighbourSigs::sec_info)
+            self.state.neighbour_infos.get(pfx)
         }
     }
 }

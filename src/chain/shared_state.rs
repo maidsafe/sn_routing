@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{NeighbourSigs, ProofSet, SectionInfo};
+use super::{ProofSet, SectionInfo};
 use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
 use log::LogLevel;
@@ -32,7 +32,7 @@ pub struct SharedState {
     /// signatures by some version of our own section. Note that after a split, the neighbour's
     /// latest section info could be the one from the pre-split parent section, so the value's
     /// prefix doesn't always match the key.
-    pub neighbour_infos: BTreeMap<Prefix<XorName>, NeighbourSigs>,
+    pub neighbour_infos: BTreeMap<Prefix<XorName>, SectionInfo>,
     /// Any change (split or merge) to the section that is currently in progress.
     pub change: PrefixChange,
     // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
@@ -145,7 +145,7 @@ impl SharedState {
     /// Returns the next section info if both we and our sibling have signalled for merging.
     pub(super) fn try_merge(&mut self) -> Result<Option<SectionInfo>, RoutingError> {
         let their_info = match self.neighbour_infos.get(&self.our_prefix().sibling()) {
-            Some(ni) => ni.sec_info(),
+            Some(sec_info) => sec_info,
             None => return Ok(None),
         };
 
