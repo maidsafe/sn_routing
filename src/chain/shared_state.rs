@@ -28,6 +28,11 @@ pub struct SharedState {
     /// This is not a `BTreeSet` just now as it is ordered according to the sequence of pushes into
     /// it.
     pub our_infos: NonEmptyList<(SectionInfo, ProofSet)>,
+    /// Maps our neighbours' prefixes to their latest signed section infos, together with the
+    /// signatures by some version of our own section. Note that after a split, the neighbour's
+    /// latest section info could be the one from the pre-split parent section, so the value's
+    /// prefix doesn't always match the key.
+    pub neighbour_infos: BTreeMap<Prefix<XorName>, NeighbourSigs>,
     /// Any change (split or merge) to the section that is currently in progress.
     pub change: PrefixChange,
     // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
@@ -47,6 +52,7 @@ impl SharedState {
         Self {
             new_info: section_info.clone(),
             our_infos: NonEmptyList::new((section_info, Default::default())),
+            neighbour_infos: Default::default(),
             change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
@@ -57,15 +63,13 @@ impl SharedState {
 
     pub fn update_with_genesis_related_info(
         &mut self,
-        neighbour_infos: &mut BTreeMap<Prefix<XorName>, NeighbourSigs>,
         related_info: &[u8],
     ) -> Result<(), RoutingError> {
         if related_info.is_empty() {
             return Ok(());
         }
 
-        let (our_infos, our_history, neighbour_infos_value) =
-            serialisation::deserialise(related_info)?;
+        let (our_infos, our_history, neighbour_infos) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
             if self.our_infos != our_infos {
@@ -84,31 +88,27 @@ impl SharedState {
                     our_history
                 );
             }
-            if *neighbour_infos != neighbour_infos_value {
+            if self.neighbour_infos != neighbour_infos {
                 log_or_panic!(
                     LogLevel::Error,
                     "update_with_genesis_related_info different neighbour_infos:\n{:?},\n{:?}",
-                    *neighbour_infos,
-                    neighbour_infos_value
+                    self.neighbour_infos,
+                    neighbour_infos
                 );
             }
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
-        let neighbour_infos_value: BTreeMap<Prefix<XorName>, NeighbourSigs> = neighbour_infos_value;
-        *neighbour_infos = neighbour_infos_value;
+        self.neighbour_infos = neighbour_infos;
 
         Ok(())
     }
 
-    pub fn get_genesis_related_info(
-        &self,
-        neighbour_infos: &BTreeMap<Prefix<XorName>, NeighbourSigs>,
-    ) -> Result<Vec<u8>, RoutingError> {
+    pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
         Ok(serialisation::serialise(&(
             &self.our_infos,
             &self.our_history,
-            neighbour_infos,
+            &self.neighbour_infos,
         ))?)
     }
 
@@ -143,10 +143,12 @@ impl SharedState {
     }
 
     /// Returns the next section info if both we and our sibling have signalled for merging.
-    pub(super) fn try_merge(
-        &mut self,
-        their_info: &SectionInfo,
-    ) -> Result<Option<SectionInfo>, RoutingError> {
+    pub(super) fn try_merge(&mut self) -> Result<Option<SectionInfo>, RoutingError> {
+        let their_info = match self.neighbour_infos.get(&self.our_prefix().sibling()) {
+            Some(ni) => ni.sec_info(),
+            None => return Ok(None),
+        };
+
         let our_hash = *self.our_info().hash();
         let their_hash = their_info.hash();
 
