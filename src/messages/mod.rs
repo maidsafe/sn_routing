@@ -154,14 +154,6 @@ impl SignedRoutingMessage {
         self.proving_sections.pop().is_some()
     }
 
-    /// Appends the proving sections to this message.
-    pub fn extend_proving_sections<I>(&mut self, proving_sections: I)
-    where
-        I: IntoIterator<Item = ProvingSection>,
-    {
-        self.proving_sections.extend(proving_sections);
-    }
-
     /// Returns the list of section infos from this message's proof chain.
     pub fn section_infos(&self) -> impl Iterator<Item = &SectionInfo> {
         self.src_section

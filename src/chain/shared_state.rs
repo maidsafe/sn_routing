@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{ProofSet, ProvingSection, SectionInfo};
+use super::{NeighbourSigs, ProofSet, SectionInfo};
 use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -57,13 +57,15 @@ impl SharedState {
 
     pub fn update_with_genesis_related_info(
         &mut self,
+        neighbour_infos: &mut BTreeMap<Prefix<XorName>, NeighbourSigs>,
         related_info: &[u8],
     ) -> Result<(), RoutingError> {
         if related_info.is_empty() {
             return Ok(());
         }
 
-        let (our_infos, our_history) = serialisation::deserialise(related_info)?;
+        let (our_infos, our_history, neighbour_infos_value) =
+            serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
             if self.our_infos != our_infos {
@@ -82,17 +84,31 @@ impl SharedState {
                     our_history
                 );
             }
+            if *neighbour_infos != neighbour_infos_value {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different neighbour_infos:\n{:?},\n{:?}",
+                    *neighbour_infos,
+                    neighbour_infos_value
+                );
+            }
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
+        let neighbour_infos_value: BTreeMap<Prefix<XorName>, NeighbourSigs> = neighbour_infos_value;
+        *neighbour_infos = neighbour_infos_value;
 
         Ok(())
     }
 
-    pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
+    pub fn get_genesis_related_info(
+        &self,
+        neighbour_infos: &BTreeMap<Prefix<XorName>, NeighbourSigs>,
+    ) -> Result<Vec<u8>, RoutingError> {
         Ok(serialisation::serialise(&(
             &self.our_infos,
             &self.our_history,
+            neighbour_infos,
         ))?)
     }
 
@@ -118,14 +134,6 @@ impl SharedState {
         self.our_infos
             .iter()
             .find(|(sec_info, _)| sec_info.hash() == hash)
-            .map(|(sec_info, _)| sec_info)
-    }
-
-    /// Returns the section info matching our own name with the given version number.
-    pub fn our_info_by_version(&self, version: u64) -> Option<&SectionInfo> {
-        self.our_infos
-            .iter()
-            .find(|(sec_info, _)| *sec_info.version() == version)
             .map(|(sec_info, _)| sec_info)
     }
 
@@ -176,28 +184,6 @@ impl SharedState {
         };
 
         neighbour_infos.into_iter().any(needs_merge)
-    }
-
-    /// Returns a list of `ProvingSection`s whose first element proves `from` and whose last
-    /// element is `to`.
-    pub(super) fn proving_sections_to_own(&self, from: u64, to: u64) -> Vec<ProvingSection> {
-        if from < to {
-            self.our_infos
-                .iter()
-                .skip_while(|(sec_info, _)| *sec_info.version() <= from)
-                .take_while(|(sec_info, _)| *sec_info.version() <= to)
-                .map(|(sec_info, _)| ProvingSection::successor(sec_info))
-                .collect()
-        } else {
-            self.our_infos
-                .iter()
-                .rev()
-                .skip_while(|(sec_info, _)| *sec_info.version() != from)
-                .take_while(|(sec_info, _)| *sec_info.version() >= to)
-                .tuple_windows()
-                .map(|((_, proofs), (sec_info, _))| ProvingSection::signatures(sec_info, proofs))
-                .collect()
-        }
     }
 
     /// Updates the entry in `their_keys` for `prefix` to the latest known key; if a split

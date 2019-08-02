@@ -9,13 +9,11 @@
 use super::{
     candidate::Candidate,
     shared_state::{PrefixChange, SectionProofBlock, SharedState},
-    GenesisPfxInfo, NeighbourSigs, NetworkEvent, OnlinePayload, Proof, ProofSet, ProvingSection,
-    SectionInfo,
+    GenesisPfxInfo, NeighbourSigs, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
 };
 use crate::{
     error::RoutingError,
     id::PublicId,
-    messages::SignedRoutingMessage,
     routing_table::{Authority, Error},
     sha3::Digest256,
     utils::LogIdent,
@@ -121,13 +119,14 @@ impl Chain {
         _group: &BTreeSet<PublicId>,
         related_info: &[u8],
     ) -> Result<(), RoutingError> {
-        self.state.update_with_genesis_related_info(related_info)
+        self.state
+            .update_with_genesis_related_info(&mut self.neighbour_infos, related_info)
     }
 
     /// Get the serialized shared state that will be the starting point when processing
     /// parsec data
     pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
-        self.state.get_genesis_related_info()
+        self.state.get_genesis_related_info(&self.neighbour_infos)
     }
 
     /// Handles an accumulated parsec Observation for membership mutation.
@@ -190,7 +189,6 @@ impl Chain {
         proof: Proof,
     ) -> Result<(), RoutingError> {
         if self.should_skip_accumulator(event) {
-            self.add_extra_proof_for_neighbour(event, proof);
             return Ok(());
         }
 
@@ -400,9 +398,10 @@ impl Chain {
             .map(NetworkEvent::NeighbourMerge);
 
         info!(
-            "finalise_prefix_change: {:?}, {:?}, state: {:?}",
+            "finalise_prefix_change: {:?}, {:?}, neighbour_infos: {:?}, state: {:?}",
             self.our_prefix(),
             self.our_id(),
+            self.neighbour_infos,
             self.state,
         );
 
@@ -523,105 +522,6 @@ impl Chain {
         self.our_prefix().is_neighbour(sec_info.prefix()) && self.is_new(sec_info)
     }
 
-    /// Appends a list of `ProvingSection`s that authenticates the message, if possible. The last
-    /// section will then belong to the next hop.
-    pub fn extend_proving_sections(
-        &self,
-        msg: &mut SignedRoutingMessage,
-    ) -> Result<(), RoutingError> {
-        let dst_name = msg.routing_message().dst.name();
-
-        while (msg.previous_hop()).map_or(false, |hop| !self.is_trusted(hop, false)) {
-            // We don't know the last hop! Try the one before that.
-            if !msg.pop_previous_hop() {
-                return Err(RoutingError::UnknownPrevHop); // We don't know any proving section.
-            };
-        }
-
-        // If the previous hop is a neighbour, insert the proof from our own section.
-        let proving_sections = if let Some(prev_hop) = msg.previous_hop() {
-            self.get_proving_sections(prev_hop, dst_name)?
-        } else {
-            return Ok(()); // No sending section.
-        };
-        msg.extend_proving_sections(proving_sections);
-
-        Ok(())
-    }
-
-    /// Returns a chain of proving sections leading back to `sec_info`.
-    pub fn get_proving_sections(
-        &self,
-        sec_info: &SectionInfo,
-        dst_name: XorName,
-    ) -> Result<Vec<ProvingSection>, RoutingError> {
-        let mut result = Vec::new();
-        if !sec_info.prefix().matches(self.our_id.name()) {
-            // Find the neighbour info that matches the hop or the hop's successor.
-            let proves_si = |ns: &&NeighbourSigs| {
-                ns.sec_info() == sec_info || ns.sec_info().is_successor_of(sec_info)
-            };
-            let opt_ns = self.neighbour_infos.values().find(proves_si);
-            let ns = opt_ns.ok_or_else(|| {
-                // Should be unreachable if section info is known.
-                error!(
-                    "Our prefix: {:?}, all prefixes: {:?}, sec_info.prefix(): {:?}",
-                    self.our_prefix(),
-                    self.prefixes(),
-                    sec_info.prefix(),
-                );
-                log_or_panic!(LogLevel::Error, "Unknown previous section info.");
-                RoutingError::UnknownPrevHop
-            })?;
-
-            // If it's not `sec_info` itself but its successor, insert it as a proving section.
-            if ns.sec_info().is_successor_of(sec_info) {
-                result.push(ProvingSection::successor(ns.sec_info()));
-            }
-
-            // Now insert our own proof of the neighbour section.
-            let our_info = self
-                .state
-                .our_info_by_version(ns.our_version())
-                .ok_or_else(|| {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "No matching own section info for signed neighbour section."
-                    );
-                    RoutingError::InvalidStateForOperation
-                })?;
-            result.push(ProvingSection::signatures(our_info, ns.proofs()));
-        }
-
-        // If the destination is our own section, insert links up to the latest version and return.
-        // Otherwise, insert links up to the version known by the next hop.
-        let from_ver = *result
-            .last()
-            .map_or(sec_info, |last| &last.sec_info)
-            .version();
-        let our_ver = *self.our_info().version();
-        if self.our_prefix().matches(&dst_name) {
-            result.extend(self.state.proving_sections_to_own(from_ver, our_ver));
-        } else {
-            let to_version = |(_, version): (_, &u64)| *version;
-            let is_closer = |&(pfx, _): &(&Prefix<_>, _)| {
-                pfx.common_prefix(&dst_name) > self.our_prefix().common_prefix(&dst_name)
-            };
-            let known_version = self.their_knowledge.iter().find(is_closer).map(to_version);
-            let to_ver = known_version.unwrap_or_else(|| {
-                self.state
-                    .our_infos()
-                    .nth(0)
-                    .map(SectionInfo::version)
-                    .cloned()
-                    .unwrap_or(0)
-            });
-            result.extend(self.state.proving_sections_to_own(from_ver, to_ver));
-            result.extend(self.state.proving_sections_to_own(to_ver, our_ver));
-        }
-        Ok(result)
-    }
-
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
     fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
@@ -645,21 +545,6 @@ impl Chain {
         }
 
         false
-    }
-
-    /// If incoming event is for a neighbour we currently hold, accept the proof directly.
-    /// This helps with keeping the neighbour_infos signed by latest self section.
-    fn add_extra_proof_for_neighbour(&mut self, event: &NetworkEvent, proof: Proof) {
-        let si = match *event {
-            NetworkEvent::SectionInfo(ref si) => si,
-            _ => return,
-        };
-
-        let add_proof =
-            |nsigs: &mut NeighbourSigs| nsigs.sec_info() == si && nsigs.add_proof(proof);
-        if self.neighbour_infos.values_mut().any(add_proof) {
-            self.check_and_clean_neighbour_infos(Some(si.prefix()));
-        }
     }
 
     /// If given `NetworkEvent` is a `SectionInfo`, returns `true` if we have the previous
@@ -921,24 +806,7 @@ impl Chain {
     ///
     /// If we want to do for a particular `NeighbourInfo` then supply that else we will go over the
     /// entire list.
-    fn check_and_clean_neighbour_infos(&mut self, for_pfx: Option<&Prefix<XorName>>) {
-        // Update neighbour version signed by self section
-        let our_infos: Vec<_> = self.state.our_infos().collect();
-
-        let update_version = |nsigs: &mut NeighbourSigs| {
-            for our_info in our_infos.iter().rev() {
-                if nsigs.update_version(our_info) {
-                    break;
-                }
-            }
-        };
-
-        if let Some(pfx) = for_pfx {
-            self.neighbour_infos.get_mut(pfx).map_or((), update_version);
-        } else {
-            self.neighbour_infos.values_mut().for_each(update_version);
-        }
-
+    fn check_and_clean_neighbour_infos(&mut self, _for_pfx: Option<&Prefix<XorName>>) {
         // Remove invalid neighbour pfx, older version of compatible pfx.
         let to_remove: Vec<Prefix<XorName>> = self
             .neighbour_infos
@@ -1362,13 +1230,7 @@ impl Debug for Chain {
 
         writeln!(formatter, "\tneighbour_infos:")?;
         for (pfx, nsigs) in &self.neighbour_infos {
-            writeln!(
-                formatter,
-                "\t {:?} signed by our_version: {}",
-                pfx,
-                nsigs.our_version()
-            )?;
-            writeln!(formatter, "\t {}", nsigs.sec_info())?;
+            writeln!(formatter, "\t {:?}\t {}", pfx, nsigs.sec_info())?;
         }
 
         writeln!(
