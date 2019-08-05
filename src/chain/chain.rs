@@ -9,13 +9,11 @@
 use super::{
     candidate::Candidate,
     shared_state::{PrefixChange, SectionProofBlock, SharedState},
-    GenesisPfxInfo, NeighbourSigs, NetworkEvent, OnlinePayload, Proof, ProofSet, ProvingSection,
-    SectionInfo,
+    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
 };
 use crate::{
     error::RoutingError,
     id::PublicId,
-    messages::SignedRoutingMessage,
     routing_table::{Authority, Error},
     sha3::Digest256,
     utils::LogIdent,
@@ -52,11 +50,6 @@ pub struct Chain {
     /// If we're a member of the section yet. This will be toggled once we get a `SectionInfo`
     /// block accumulated which bears `our_id` as one of the members
     is_member: bool,
-    /// Maps our neighbours' prefixes to their latest signed section infos, together with the
-    /// signatures by some version of our own section. Note that after a split, the neighbour's
-    /// latest section info could be the one from the pre-split parent section, so the value's
-    /// prefix doesn't always match the key.
-    neighbour_infos: BTreeMap<Prefix<XorName>, NeighbourSigs>,
     /// Their knowledge of us
     their_knowledge: BTreeMap<Prefix<XorName>, u64>,
     /// A map containing network events that have not been handled yet, together with their proofs
@@ -103,7 +96,6 @@ impl Chain {
             our_id,
             state: SharedState::new(gen_info.first_info),
             is_member,
-            neighbour_infos: Default::default(),
             their_knowledge: Default::default(),
             chain_accumulator: Default::default(),
             completed_events: Default::default(),
@@ -190,7 +182,6 @@ impl Chain {
         proof: Proof,
     ) -> Result<(), RoutingError> {
         if self.should_skip_accumulator(event) {
-            self.add_extra_proof_for_neighbour(event, proof);
             return Ok(());
         }
 
@@ -352,12 +343,7 @@ impl Chain {
 
     /// Returns the next section info if both we and our sibling have signalled for merging.
     pub fn try_merge(&mut self) -> Result<Option<SectionInfo>, RoutingError> {
-        let their_info = match self.neighbour_infos.get(&self.our_prefix().sibling()) {
-            Some(ni) => ni.sec_info(),
-            None => return Ok(None),
-        };
-
-        self.state.try_merge(their_info)
+        self.state.try_merge()
     }
 
     /// Returns `true` if we have accumulated self `NetworkEvent::OurMerge`.
@@ -367,10 +353,8 @@ impl Chain {
 
     /// Returns `true` if we should merge.
     pub fn should_vote_for_merge(&self) -> bool {
-        self.state.should_vote_for_merge(
-            self.min_sec_size,
-            self.neighbour_infos.values().map(NeighbourSigs::sec_info),
-        )
+        self.state
+            .should_vote_for_merge(self.min_sec_size, self.neighbour_infos())
     }
 
     /// Check inside the `neighbour_infos` failing which inside the chain accumulator if we have a
@@ -459,12 +443,12 @@ impl Chain {
 
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &SectionInfo> {
-        self.neighbour_infos.values().map(NeighbourSigs::sec_info)
+        self.state.neighbour_infos.values()
     }
 
     /// Return prefixes of all our neighbours
     pub fn other_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.neighbour_infos.keys().cloned().collect()
+        self.state.neighbour_infos.keys().cloned().collect()
     }
 
     /// Checks if given `PublicId` is a valid peer by checking if we have them as a member of self
@@ -523,105 +507,6 @@ impl Chain {
         self.our_prefix().is_neighbour(sec_info.prefix()) && self.is_new(sec_info)
     }
 
-    /// Appends a list of `ProvingSection`s that authenticates the message, if possible. The last
-    /// section will then belong to the next hop.
-    pub fn extend_proving_sections(
-        &self,
-        msg: &mut SignedRoutingMessage,
-    ) -> Result<(), RoutingError> {
-        let dst_name = msg.routing_message().dst.name();
-
-        while (msg.previous_hop()).map_or(false, |hop| !self.is_trusted(hop, false)) {
-            // We don't know the last hop! Try the one before that.
-            if !msg.pop_previous_hop() {
-                return Err(RoutingError::UnknownPrevHop); // We don't know any proving section.
-            };
-        }
-
-        // If the previous hop is a neighbour, insert the proof from our own section.
-        let proving_sections = if let Some(prev_hop) = msg.previous_hop() {
-            self.get_proving_sections(prev_hop, dst_name)?
-        } else {
-            return Ok(()); // No sending section.
-        };
-        msg.extend_proving_sections(proving_sections);
-
-        Ok(())
-    }
-
-    /// Returns a chain of proving sections leading back to `sec_info`.
-    pub fn get_proving_sections(
-        &self,
-        sec_info: &SectionInfo,
-        dst_name: XorName,
-    ) -> Result<Vec<ProvingSection>, RoutingError> {
-        let mut result = Vec::new();
-        if !sec_info.prefix().matches(self.our_id.name()) {
-            // Find the neighbour info that matches the hop or the hop's successor.
-            let proves_si = |ns: &&NeighbourSigs| {
-                ns.sec_info() == sec_info || ns.sec_info().is_successor_of(sec_info)
-            };
-            let opt_ns = self.neighbour_infos.values().find(proves_si);
-            let ns = opt_ns.ok_or_else(|| {
-                // Should be unreachable if section info is known.
-                error!(
-                    "Our prefix: {:?}, all prefixes: {:?}, sec_info.prefix(): {:?}",
-                    self.our_prefix(),
-                    self.prefixes(),
-                    sec_info.prefix(),
-                );
-                log_or_panic!(LogLevel::Error, "Unknown previous section info.");
-                RoutingError::UnknownPrevHop
-            })?;
-
-            // If it's not `sec_info` itself but its successor, insert it as a proving section.
-            if ns.sec_info().is_successor_of(sec_info) {
-                result.push(ProvingSection::successor(ns.sec_info()));
-            }
-
-            // Now insert our own proof of the neighbour section.
-            let our_info = self
-                .state
-                .our_info_by_version(ns.our_version())
-                .ok_or_else(|| {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "No matching own section info for signed neighbour section."
-                    );
-                    RoutingError::InvalidStateForOperation
-                })?;
-            result.push(ProvingSection::signatures(our_info, ns.proofs()));
-        }
-
-        // If the destination is our own section, insert links up to the latest version and return.
-        // Otherwise, insert links up to the version known by the next hop.
-        let from_ver = *result
-            .last()
-            .map_or(sec_info, |last| &last.sec_info)
-            .version();
-        let our_ver = *self.our_info().version();
-        if self.our_prefix().matches(&dst_name) {
-            result.extend(self.state.proving_sections_to_own(from_ver, our_ver));
-        } else {
-            let to_version = |(_, version): (_, &u64)| *version;
-            let is_closer = |&(pfx, _): &(&Prefix<_>, _)| {
-                pfx.common_prefix(&dst_name) > self.our_prefix().common_prefix(&dst_name)
-            };
-            let known_version = self.their_knowledge.iter().find(is_closer).map(to_version);
-            let to_ver = known_version.unwrap_or_else(|| {
-                self.state
-                    .our_infos()
-                    .nth(0)
-                    .map(SectionInfo::version)
-                    .cloned()
-                    .unwrap_or(0)
-            });
-            result.extend(self.state.proving_sections_to_own(from_ver, to_ver));
-            result.extend(self.state.proving_sections_to_own(to_ver, our_ver));
-        }
-        Ok(result)
-    }
-
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
     fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
@@ -637,29 +522,15 @@ impl Chain {
 
         // we can skip neighbour infos we've already accumulated
         if self
+            .state
             .neighbour_infos
             .iter()
-            .any(|(pfx, nsigs)| pfx == si.prefix() && nsigs.sec_info().version() >= si.version())
+            .any(|(pfx, sec_info)| pfx == si.prefix() && sec_info.version() >= si.version())
         {
             return true;
         }
 
         false
-    }
-
-    /// If incoming event is for a neighbour we currently hold, accept the proof directly.
-    /// This helps with keeping the neighbour_infos signed by latest self section.
-    fn add_extra_proof_for_neighbour(&mut self, event: &NetworkEvent, proof: Proof) {
-        let si = match *event {
-            NetworkEvent::SectionInfo(ref si) => si,
-            _ => return,
-        };
-
-        let add_proof =
-            |nsigs: &mut NeighbourSigs| nsigs.sec_info() == si && nsigs.add_proof(proof);
-        if self.neighbour_infos.values_mut().any(add_proof) {
-            self.check_and_clean_neighbour_infos(Some(si.prefix()));
-        }
     }
 
     /// If given `NetworkEvent` is a `SectionInfo`, returns `true` if we have the previous
@@ -709,10 +580,11 @@ impl Chain {
     }
 
     fn compatible_neighbour_info<'a>(&'a self, si: &'a SectionInfo) -> Option<&'a SectionInfo> {
-        self.neighbour_infos
+        self.state
+            .neighbour_infos
             .iter()
             .find(move |&(pfx, _)| pfx.is_compatible(si.prefix()))
-            .map(|(_, nsigs)| nsigs.sec_info())
+            .map(|(_, sec_info)| sec_info)
     }
 
     /// Check if we can handle a given event immediately.
@@ -813,39 +685,40 @@ impl Chain {
         } else {
             let ppfx = sec_info.prefix().popped();
             let spfx = sec_info.prefix().sibling();
-            let new_nsigs_version = *sec_info.version();
-            let nsigs = self
+            let new_sec_info_version = *sec_info.version();
+            let sec_info = self
                 .state
                 .our_infos()
                 .rev()
                 .find(|our_info| our_info.is_quorum(&proofs))
-                .map(|our_info| NeighbourSigs::new(sec_info, proofs, our_info))
+                .map(|_| sec_info)
                 .ok_or(RoutingError::InvalidMessage)?;
 
-            if let Some(old_nsigs) = self.neighbour_infos.insert(pfx, nsigs) {
-                if *old_nsigs.sec_info().version() > new_nsigs_version {
+            if let Some(old_sec_info) = self.state.neighbour_infos.insert(pfx, sec_info) {
+                if *old_sec_info.version() > new_sec_info_version {
                     log_or_panic!(
                         LogLevel::Error,
                         "{} Ejected newer neighbour info {:?}",
                         self,
-                        old_nsigs
+                        old_sec_info
                     );
                 }
             }
 
             // If we just split an existing neighbour and we also need its sibling,
             // add the sibling prefix with the parent prefix sigs.
-            if let Some(ssigs) = self
+            if let Some(ssec_info) = self
+                .state
                 .neighbour_infos
                 .get(&ppfx)
-                .filter(|psigs| {
-                    *psigs.sec_info().version() < new_nsigs_version
+                .filter(|psec_info| {
+                    *psec_info.version() < new_sec_info_version
                         && self.our_prefix().is_neighbour(&spfx)
-                        && !self.neighbour_infos.contains_key(&spfx)
+                        && !self.state.neighbour_infos.contains_key(&spfx)
                 })
                 .cloned()
             {
-                let _ = self.neighbour_infos.insert(spfx, ssigs);
+                let _ = self.state.neighbour_infos.insert(spfx, ssec_info);
             }
 
             self.check_and_clean_neighbour_infos(Some(&pfx));
@@ -921,41 +794,24 @@ impl Chain {
     ///
     /// If we want to do for a particular `NeighbourInfo` then supply that else we will go over the
     /// entire list.
-    fn check_and_clean_neighbour_infos(&mut self, for_pfx: Option<&Prefix<XorName>>) {
-        // Update neighbour version signed by self section
-        let our_infos: Vec<_> = self.state.our_infos().collect();
-
-        let update_version = |nsigs: &mut NeighbourSigs| {
-            for our_info in our_infos.iter().rev() {
-                if nsigs.update_version(our_info) {
-                    break;
-                }
-            }
-        };
-
-        if let Some(pfx) = for_pfx {
-            self.neighbour_infos.get_mut(pfx).map_or((), update_version);
-        } else {
-            self.neighbour_infos.values_mut().for_each(update_version);
-        }
-
+    fn check_and_clean_neighbour_infos(&mut self, _for_pfx: Option<&Prefix<XorName>>) {
         // Remove invalid neighbour pfx, older version of compatible pfx.
         let to_remove: Vec<Prefix<XorName>> = self
+            .state
             .neighbour_infos
             .iter()
-            .filter_map(|(pfx, nsigs)| {
+            .filter_map(|(pfx, sec_info)| {
                 if !self.our_prefix().is_neighbour(pfx) {
                     // we just split making old neighbour no longer needed
                     return Some(*pfx);
                 }
 
                 // Remove older compatible neighbour prefixes.
-                let is_newer = |(other_pfx, other_sigs): (&Prefix<XorName>, &NeighbourSigs)| {
-                    other_pfx.is_compatible(pfx)
-                        && other_sigs.sec_info().version() > nsigs.sec_info().version()
+                let is_newer = |(other_pfx, other_sec_info): (&Prefix<XorName>, &SectionInfo)| {
+                    other_pfx.is_compatible(pfx) && other_sec_info.version() > sec_info.version()
                 };
 
-                if self.neighbour_infos.iter().any(is_newer) {
+                if self.state.neighbour_infos.iter().any(is_newer) {
                     return Some(*pfx);
                 }
 
@@ -963,7 +819,7 @@ impl Chain {
             })
             .collect();
         for pfx in to_remove {
-            let _ = self.neighbour_infos.remove(&pfx);
+            let _ = self.state.neighbour_infos.remove(&pfx);
         }
     }
 
@@ -980,14 +836,11 @@ impl Chain {
 
     /// Returns an iterator over all neighbouring sections and our own, together with their prefix
     /// in the map.
-    pub fn all_sections(&self) -> impl Iterator<Item = (Prefix<XorName>, &SectionInfo)> {
-        self.neighbour_infos
-            .iter()
-            .map(|(pfx, sec_sigs)| (*pfx, sec_sigs.sec_info()))
-            .chain(iter::once((
-                *self.state.our_info().prefix(),
-                self.state.our_info(),
-            )))
+    pub fn all_sections(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionInfo)> {
+        self.state.neighbour_infos.iter().chain(iter::once((
+            self.state.our_info().prefix(),
+            self.state.our_info(),
+        )))
     }
 
     /// Finds the `count` names closest to `name` in the whole routing table.
@@ -1022,10 +875,11 @@ impl Chain {
         if self.our_prefix().matches(name) {
             return Some(self.our_info().member_names());
         }
-        self.neighbour_infos
+        self.state
+            .neighbour_infos
             .iter()
             .find(|&(ref pfx, _)| pfx.matches(name))
-            .map(|(_, ref ni)| ni.sec_info().member_names())
+            .map(|(_, ref sec_info)| sec_info.member_names())
     }
 
     /// If our section is the closest one to `name`, returns all names in our section *including
@@ -1077,13 +931,13 @@ impl Chain {
     fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
         let mut best_pfx = *self.our_prefix();
         let mut best_si = self.our_info();
-        for (pfx, ni) in &self.neighbour_infos {
+        for (pfx, sec_info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !ni.sec_info().members().is_empty()
+            if !sec_info.members().is_empty()
                 && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater
             {
                 best_pfx = *pfx;
-                best_si = ni.sec_info();
+                best_si = sec_info;
             }
         }
         (best_pfx, best_si.member_names())
@@ -1092,8 +946,8 @@ impl Chain {
     /// Returns the known sections sorted by the distance from a given XorName.
     fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
         let mut result = vec![(*self.our_prefix(), self.our_info().member_names())];
-        for (pfx, ni) in &self.neighbour_infos {
-            result.push((*pfx, ni.sec_info().member_names()));
+        for (pfx, sec_info) in &self.state.neighbour_infos {
+            result.push((*pfx, sec_info.member_names()));
         }
         result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
         result
@@ -1199,7 +1053,7 @@ impl Chain {
                         return Err(Error::CannotRoute);
                     }
 
-                    let is_compatible = |(ref pfx, section)| {
+                    let is_compatible = |(pfx, section)| {
                         if prefix.is_compatible(pfx) {
                             Some(section)
                         } else {
@@ -1247,9 +1101,10 @@ impl Chain {
 
     /// Returns the total number of entries in the routing table, excluding our own name.
     pub fn len(&self) -> usize {
-        self.neighbour_infos
+        self.state
+            .neighbour_infos
             .values()
-            .map(|ni| ni.sec_info().members().len())
+            .map(|sec_info| sec_info.members().len())
             .sum::<usize>()
             + self.state.our_info().members().len()
             - 1
@@ -1279,7 +1134,7 @@ impl Chain {
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
     pub fn min_len_prefix(&self) -> Prefix<XorName> {
         *iter::once(self.our_prefix())
-            .chain(self.neighbour_infos.keys())
+            .chain(self.state.neighbour_infos.keys())
             .min_by_key(|prefix| prefix.bit_count())
             .unwrap_or(&self.our_prefix())
     }
@@ -1361,14 +1216,8 @@ impl Debug for Chain {
         }
 
         writeln!(formatter, "\tneighbour_infos:")?;
-        for (pfx, nsigs) in &self.neighbour_infos {
-            writeln!(
-                formatter,
-                "\t {:?} signed by our_version: {}",
-                pfx,
-                nsigs.our_version()
-            )?;
-            writeln!(formatter, "\t {}", nsigs.sec_info())?;
+        for (pfx, sec_info) in &self.state.neighbour_infos {
+            writeln!(formatter, "\t {:?}\t {}", pfx, sec_info)?;
         }
 
         writeln!(
@@ -1397,7 +1246,7 @@ impl Chain {
         if self.our_prefix() == pfx {
             Some(self.our_info())
         } else {
-            self.neighbour_infos.get(pfx).map(NeighbourSigs::sec_info)
+            self.state.neighbour_infos.get(pfx)
         }
     }
 }

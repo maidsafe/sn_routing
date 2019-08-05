@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{ProofSet, ProvingSection, SectionInfo};
+use super::{ProofSet, SectionInfo};
 use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -28,6 +28,11 @@ pub struct SharedState {
     /// This is not a `BTreeSet` just now as it is ordered according to the sequence of pushes into
     /// it.
     pub our_infos: NonEmptyList<(SectionInfo, ProofSet)>,
+    /// Maps our neighbours' prefixes to their latest signed section infos, together with the
+    /// signatures by some version of our own section. Note that after a split, the neighbour's
+    /// latest section info could be the one from the pre-split parent section, so the value's
+    /// prefix doesn't always match the key.
+    pub neighbour_infos: BTreeMap<Prefix<XorName>, SectionInfo>,
     /// Any change (split or merge) to the section that is currently in progress.
     pub change: PrefixChange,
     // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
@@ -47,6 +52,7 @@ impl SharedState {
         Self {
             new_info: section_info.clone(),
             our_infos: NonEmptyList::new((section_info, Default::default())),
+            neighbour_infos: Default::default(),
             change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
@@ -63,7 +69,7 @@ impl SharedState {
             return Ok(());
         }
 
-        let (our_infos, our_history) = serialisation::deserialise(related_info)?;
+        let (our_infos, our_history, neighbour_infos) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
             if self.our_infos != our_infos {
@@ -82,9 +88,18 @@ impl SharedState {
                     our_history
                 );
             }
+            if self.neighbour_infos != neighbour_infos {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different neighbour_infos:\n{:?},\n{:?}",
+                    self.neighbour_infos,
+                    neighbour_infos
+                );
+            }
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
+        self.neighbour_infos = neighbour_infos;
 
         Ok(())
     }
@@ -93,6 +108,7 @@ impl SharedState {
         Ok(serialisation::serialise(&(
             &self.our_infos,
             &self.our_history,
+            &self.neighbour_infos,
         ))?)
     }
 
@@ -121,24 +137,18 @@ impl SharedState {
             .map(|(sec_info, _)| sec_info)
     }
 
-    /// Returns the section info matching our own name with the given version number.
-    pub fn our_info_by_version(&self, version: u64) -> Option<&SectionInfo> {
-        self.our_infos
-            .iter()
-            .find(|(sec_info, _)| *sec_info.version() == version)
-            .map(|(sec_info, _)| sec_info)
-    }
-
     /// Returns `true` if we have accumulated self `NetworkEvent::OurMerge`.
     pub(super) fn is_self_merge_ready(&self) -> bool {
         self.merging.contains(self.our_info().hash())
     }
 
     /// Returns the next section info if both we and our sibling have signalled for merging.
-    pub(super) fn try_merge(
-        &mut self,
-        their_info: &SectionInfo,
-    ) -> Result<Option<SectionInfo>, RoutingError> {
+    pub(super) fn try_merge(&mut self) -> Result<Option<SectionInfo>, RoutingError> {
+        let their_info = match self.neighbour_infos.get(&self.our_prefix().sibling()) {
+            Some(sec_info) => sec_info,
+            None => return Ok(None),
+        };
+
         let our_hash = *self.our_info().hash();
         let their_hash = their_info.hash();
 
@@ -176,28 +186,6 @@ impl SharedState {
         };
 
         neighbour_infos.into_iter().any(needs_merge)
-    }
-
-    /// Returns a list of `ProvingSection`s whose first element proves `from` and whose last
-    /// element is `to`.
-    pub(super) fn proving_sections_to_own(&self, from: u64, to: u64) -> Vec<ProvingSection> {
-        if from < to {
-            self.our_infos
-                .iter()
-                .skip_while(|(sec_info, _)| *sec_info.version() <= from)
-                .take_while(|(sec_info, _)| *sec_info.version() <= to)
-                .map(|(sec_info, _)| ProvingSection::successor(sec_info))
-                .collect()
-        } else {
-            self.our_infos
-                .iter()
-                .rev()
-                .skip_while(|(sec_info, _)| *sec_info.version() != from)
-                .take_while(|(sec_info, _)| *sec_info.version() >= to)
-                .tuple_windows()
-                .map(|((_, proofs), (sec_info, _))| ProvingSection::signatures(sec_info, proofs))
-                .collect()
-        }
     }
 
     /// Updates the entry in `their_keys` for `prefix` to the latest known key; if a split

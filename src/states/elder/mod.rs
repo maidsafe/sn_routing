@@ -376,7 +376,6 @@ impl Elder {
             .our_unpolled_observations()
             .cloned()
             .collect();
-        let sibling_pfx = self.chain.our_prefix().sibling();
 
         let PrefixChangeOutcome {
             gen_pfx_info,
@@ -387,17 +386,6 @@ impl Elder {
         self.chain.reset_candidate();
         self.peer_mgr.reset_candidate();
         self.init_parsec(); // We don't reset the chain on prefix change.
-
-        let neighbour_infos: Vec<_> = self.chain.neighbour_infos().cloned().collect();
-        for ni in neighbour_infos {
-            if sibling_pfx != *ni.prefix() {
-                debug!("{} Committing neighbour section proof for {:?}", self, ni);
-                let ps = self.chain.get_proving_sections(&ni, *self.name())?;
-                self.vote_for_event(NetworkEvent::ProvingSections(ps, ni.clone()));
-            }
-            debug!("{} Re-voting for neighbour section {:?}", self, ni);
-            self.vote_for_event(ni.into_network_event());
-        }
 
         for obs in drained_obs {
             let event = match obs {
