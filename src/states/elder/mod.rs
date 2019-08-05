@@ -40,7 +40,7 @@ use crate::{
     types::MessageId,
     utils::{self, DisplayDuration, XorTargetInterval},
     xor_name::XorName,
-    BlsPublicKey, ConnectionInfo, NetworkService,
+    ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -2084,11 +2084,7 @@ impl Approved for Elder {
             self.send_neighbour_infos();
         } else {
             self.remove_from_proving_section_cache(&sec_info);
-            // Update their_keys in chain
-            self.chain.update_their_keys(
-                *sec_info.prefix(),
-                BlsPublicKey::from_section_info(&sec_info),
-            );
+
             // Vote for neighbour update if we haven't done so already.
             // vote_for_event is expected to only generate a new vote if required.
             self.vote_for_event(sec_info.clone().into_network_event());
