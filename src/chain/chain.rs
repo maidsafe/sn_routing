@@ -996,29 +996,44 @@ impl Chain {
         let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
 
         let candidates = |target_name: &XorName| {
-            let mut filtered_sections =
+            let filtered_sections =
                 self.closest_sections(target_name)
                     .into_iter()
-                    .map(|(_, members)| {
+                    .map(|(prefix, members)| {
                         (
+                            prefix,
                             members.len(),
                             members.into_iter().filter(is_connected).collect::<Vec<_>>(),
                         )
                     });
-            let best_section = filtered_sections
-                .find(|(len, connected)| connected.len() * 3 >= *len)
-                .ok_or(Error::CannotRoute);
-            best_section.map(|(len, connected)| {
-                (
-                    len,
-                    connected
-                        .into_iter()
-                        .sorted_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs)),
-                )
-            })
+
+            let mut dg_size = 0;
+            let mut nodes_to_send = Vec::new();
+            for (idx, (prefix, len, connected)) in filtered_sections.enumerate() {
+                nodes_to_send.extend(connected.into_iter());
+                dg_size = delivery_group_size(len);
+
+                if &prefix == self.our_prefix() {
+                    // Send to all connected targets so they can forward the message
+                    nodes_to_send.retain(|&x| x != *self.our_id().name());
+                    dg_size = nodes_to_send.len();
+                    break;
+                }
+                if idx == 0 && nodes_to_send.len() >= dg_size {
+                    // can deliver to enough of the closest section
+                    break;
+                }
+            }
+            nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs));
+
+            if dg_size > 0 && nodes_to_send.len() >= dg_size {
+                Ok((dg_size, nodes_to_send))
+            } else {
+                Err(Error::CannotRoute)
+            }
         };
 
-        let (best_section_len, mut best_section) = match *dst {
+        let (dg_size, best_section) = match *dst {
             Authority::ManagedNode(ref target_name)
             | Authority::Client {
                 proxy_node_name: ref target_name,
@@ -1082,8 +1097,7 @@ impl Chain {
             }
         };
 
-        best_section.retain(|&x| x != *self.our_id().name());
-        Ok((best_section, delivery_group_size(best_section_len)))
+        Ok((best_section, dg_size))
     }
 
     /// Returns our own section, including our own name.
