@@ -1438,7 +1438,12 @@ impl Elder {
             // TODO: even if having chain reply based on connected_state,
             // we remove self in targets info and can do same by not
             // chaining us to conn_peer list here?
-            let conn_peers = self.connected_peers();
+            let conn_peers = self
+                .peer_map()
+                .connected_ids()
+                .map(|pub_id| pub_id.name())
+                .chain(iter::once(self.name()))
+                .collect_vec();
             let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
             Ok((
                 targets
