@@ -14,7 +14,7 @@ use crate::{
     cache::Cache,
     chain::{
         delivery_group_size, Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent,
-        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProvingSection, SectionInfo,
+        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProofSet, ProvingSection, SectionInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -668,8 +668,8 @@ impl Elder {
                 outbox.send_event(content.into_event(src, dst));
                 Ok(())
             }
-            (AckMessage(sec_info), Section(src), Section(dst)) => {
-                self.handle_ack_message(sec_info, src, dst)
+            (AckMessage(sec_info, proofs), Section(src), Section(dst)) => {
+                self.handle_ack_message(sec_info, proofs, src, dst)
             }
             (content, src, dst) => {
                 debug!(
@@ -684,21 +684,26 @@ impl Elder {
     fn handle_ack_message(
         &mut self,
         sec_info: SectionInfo,
+        proofs: ProofSet,
         _src: XorName,
         _dst: XorName,
     ) -> Result<(), RoutingError> {
-        // Prefix doesn't need to match, as we may get an ack for the section where we were before
-        // splitting.
-        self.vote_for_event(NetworkEvent::AckMessage(sec_info));
+        if self.chain.is_valid_neighbour_info(&sec_info, &proofs) {
+            // Prefix doesn't need to match, as we may get an ack for the section where we were before
+            // splitting.
+            self.vote_for_event(NetworkEvent::AckMessage(sec_info));
+        }
         Ok(())
     }
 
     fn send_section_info_ack(&mut self, sec_info: SectionInfo) {
-        let src = Authority::Section(self.our_prefix().name());
-        let dst = Authority::Section(sec_info.prefix().name());
-        let content = MessageContent::AckMessage(sec_info);
+        if let Some(proofs) = self.chain.last_section_info_proofs() {
+            let src = Authority::Section(self.our_prefix().name());
+            let dst = Authority::Section(sec_info.prefix().name());
+            let content = MessageContent::AckMessage(sec_info, proofs);
 
-        let _ = self.send_routing_message(src, dst, content);
+            let _ = self.send_routing_message(src, dst, content);
+        }
     }
 
     fn handle_candidate_approval(

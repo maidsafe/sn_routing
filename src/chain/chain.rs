@@ -70,6 +70,8 @@ pub struct Chain {
     event_cache: BTreeSet<NetworkEvent>,
     /// Current consensused candidate.
     candidate: Candidate,
+    /// Proofs for the last polled `SectionInfo` event
+    section_info_proofs: Option<ProofSet>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -109,6 +111,7 @@ impl Chain {
             completed_events: Default::default(),
             event_cache: Default::default(),
             candidate: Candidate::None,
+            section_info_proofs: None,
         }
     }
 
@@ -221,6 +224,11 @@ impl Chain {
         Ok(())
     }
 
+    /// Returns the proofs of the last polled `SectionInfo` event.
+    pub fn last_section_info_proofs(&self) -> Option<ProofSet> {
+        self.section_info_proofs.clone()
+    }
+
     /// Returns the next accumulated event.
     ///
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
@@ -242,7 +250,8 @@ impl Chain {
 
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
-                self.add_section_info(sec_info.clone(), proofs)?;
+                self.add_section_info(sec_info.clone(), proofs.clone())?;
+                self.section_info_proofs = Some(proofs);
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
                         return Ok(None);
