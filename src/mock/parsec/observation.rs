@@ -38,6 +38,14 @@ impl<T: NetworkEvent, P: PublicId> ObservationHolder<T, P> {
             _ => ObservationHolder::Supermajority(Rc::new(observation)),
         }
     }
+
+    pub fn is_genesis(&self) -> bool {
+        if let Observation::Genesis { .. } = ***self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
