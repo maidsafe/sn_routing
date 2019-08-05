@@ -26,7 +26,10 @@ use unwrap::unwrap;
 
 pub(super) struct SectionState<T: NetworkEvent, P: PublicId> {
     observations: BTreeMap<ObservationHolder<T, P>, ObservationState<P>>,
-    unconsensused_observations: BTreeSet<ObservationHolder<T, P>>,
+    // Unconsensused Observations in the order they were first voted for.
+    // In real Parsec, observations that are voted first should come out first if they all reach
+    // consensus at the same time.
+    unconsensused_observations: Vec<ObservationHolder<T, P>>,
     blocks: Vec<(Block<T, P>, ObservationHolder<T, P>)>,
 }
 
@@ -34,7 +37,7 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
     fn new() -> Self {
         Self {
             observations: BTreeMap::new(),
-            unconsensused_observations: BTreeSet::new(),
+            unconsensused_observations: Vec::new(),
             blocks: Vec::new(),
         }
     }
@@ -46,7 +49,7 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
         let state = match self.observations.entry(holder.clone()) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
-                let _ = self.unconsensused_observations.insert(holder.clone());
+                self.unconsensused_observations.push(holder.clone());
                 entry.insert(ObservationState::new())
             }
         };
@@ -55,13 +58,25 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
     }
 
     pub fn compute_consensus(&mut self, peers: &BTreeSet<P>, consensus_mode: ConsensusMode) {
-        for holder in mem::replace(&mut self.unconsensused_observations, BTreeSet::new()) {
-            let state = unwrap!(self.observations.get_mut(&holder));
-            if let Some(block) = state.compute_consensus(peers, consensus_mode, &holder) {
-                self.blocks.push((block, holder));
-            } else {
-                let _ = self.unconsensused_observations.insert(holder);
+        let mut unconsensused_genesis = false;
+
+        // Update consensus for unconsensused_observations.
+        // Add blocks for consensused observations and keep others in unconsensused_observations.
+        // Genesis needs to be the first block: If it is unconsensused, no block is added.
+        // (Genesis is the first `unconsensused_observations` if present (voted on creation).
+        //  Because it requires supermajority consensus, we need to ensure Opaque payloads that
+        //  only require a single vote do not become blocks before genesis.)
+        for holder in mem::replace(&mut self.unconsensused_observations, Vec::new()) {
+            if !unconsensused_genesis {
+                let state = unwrap!(self.observations.get_mut(&holder));
+                if let Some(block) = state.compute_consensus(peers, consensus_mode, &holder) {
+                    self.blocks.push((block, holder));
+                    continue;
+                }
             }
+
+            unconsensused_genesis |= holder.is_genesis();
+            self.unconsensused_observations.push(holder);
         }
     }
 

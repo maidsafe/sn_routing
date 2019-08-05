@@ -132,6 +132,7 @@ pub trait Approved: Relocated {
 
     fn parsec_poll(&mut self, outbox: &mut EventBox) -> Result<Transition, RoutingError> {
         while let Some(block) = self.parsec_map_mut().poll() {
+            let parsec_version = self.parsec_map_mut().last_version();
             match block.payload() {
                 Observation::Accusation { .. } => {
                     // FIXME: Handle properly
@@ -142,6 +143,14 @@ pub trait Approved: Relocated {
                     related_info,
                 } => {
                     // FIXME: Validate with Chain info.
+
+                    trace!(
+                        "{} Parsec Genesis {}: group {:?} - related_info {}",
+                        self,
+                        parsec_version,
+                        group,
+                        related_info.len()
+                    );
                     self.chain_mut()
                         .handle_genesis_event(&group, &related_info)?;
                     self.set_pfx_successfully_polled(true);
@@ -153,8 +162,9 @@ pub trait Approved: Relocated {
                         sig: *p.signature(),
                     }) {
                         trace!(
-                            "{} Parsec OpaquePayload: {} - {:?}",
+                            "{} Parsec OpaquePayload {}: {} - {:?}",
                             self,
+                            parsec_version,
                             proof.pub_id(),
                             event
                         );
@@ -170,19 +180,20 @@ pub trait Approved: Relocated {
                         serialisation::deserialise(&related_info)?,
                     );
                     let proof_set = to_proof_set(&block);
-                    trace!("{} Parsec Add: - {}", self, peer_id);
+                    trace!("{} Parsec Add {}: - {}", self, parsec_version, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;
                 }
                 Observation::Remove { peer_id, .. } => {
                     let event = NetworkEvent::RemoveElder(*peer_id);
                     let proof_set = to_proof_set(&block);
-                    trace!("{} Parsec Remove: - {}", self, peer_id);
+                    trace!("{} Parsec Remove {}: - {}", self, parsec_version, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;
                 }
                 obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
                     log_or_panic!(
                         LogLevel::Error,
-                        "parsec_poll polled internal Observation: {:?}",
+                        "parsec_poll polled internal Observation {}: {:?}",
+                        parsec_version,
                         obs
                     );
                 }

@@ -32,13 +32,11 @@ fn smoke() {
     let _ = genesis_group.insert(bob_id);
 
     let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Supermajority);
-
-    let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Supermajority);
-
     alice
         .vote_for(Observation::OpaquePayload(Payload(1)))
         .unwrap();
 
+    let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Supermajority);
     bob.vote_for(Observation::OpaquePayload(Payload(1)))
         .unwrap();
 
@@ -59,9 +57,17 @@ fn smoke() {
     bob.handle_response(&bob_id, response_0).unwrap();
 
     let alice_blocks: Vec<_> = poll_all(&mut alice).collect();
+    let alice_blocks_payloads: Vec<_> = alice_blocks.iter().map(|x| x.payload()).cloned().collect();
     let bob_blocks: Vec<_> = poll_all(&mut bob).collect();
 
-    assert_eq!(alice_blocks.len(), 3); // Genesis + Payload(1) + Payload(0)
+    assert_eq!(
+        alice_blocks_payloads,
+        vec![
+            genesis_observation(genesis_group),
+            Observation::OpaquePayload(Payload(1)),
+            Observation::OpaquePayload(Payload(0))
+        ]
+    );
     assert_eq!(alice_blocks, bob_blocks);
 }
 
@@ -123,10 +129,14 @@ fn add_peer() {
     exchange_gossip(&mut carol, &mut bob);
 
     alice_blocks.extend(poll_all(&mut alice));
+    let alice_blocks_payloads: Vec<_> = alice_blocks.iter().map(|x| x.payload()).cloned().collect();
     bob_blocks.extend(poll_all(&mut bob));
     carol_blocks.extend(poll_all(&mut carol));
 
-    assert_eq!(alice_blocks.len(), 3);
+    assert_eq!(
+        alice_blocks_payloads,
+        vec![genesis_observation(genesis_group), add_alice, payload0]
+    );
     assert_eq!(alice_blocks, bob_blocks);
     assert_eq!(bob_blocks, carol_blocks);
 }
@@ -142,21 +152,30 @@ fn consensus_mode_single() {
     let _ = genesis_group.insert(alice_id);
     let _ = genesis_group.insert(bob_id);
 
+    // First start parsec and cast votes with different payloads.
+    // They should all get consensused after Genesis block.
     let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Single);
-    let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Single);
-
-    // First cast votes with different payloads. They should all get consensused.
     alice
         .vote_for(Observation::OpaquePayload(Payload(0)))
         .unwrap();
+
+    let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Single);
     bob.vote_for(Observation::OpaquePayload(Payload(1)))
         .unwrap();
 
     exchange_gossip(&mut bob, &mut alice);
 
     let alice_blocks: Vec<_> = poll_all(&mut alice).collect();
+    let alice_blocks_payloads: Vec<_> = alice_blocks.iter().map(|x| x.payload()).cloned().collect();
     let bob_blocks: Vec<_> = poll_all(&mut bob).collect();
-    assert_eq!(alice_blocks.len(), 3); // Genesis + Payload(0) + Payload(1)
+    assert_eq!(
+        alice_blocks_payloads,
+        vec![
+            genesis_observation(genesis_group),
+            Observation::OpaquePayload(Payload(0)),
+            Observation::OpaquePayload(Payload(1))
+        ]
+    );
     assert_eq!(alice_blocks, bob_blocks);
 
     // Now cast votes with the same payload. They should get consensused separately.
@@ -416,6 +435,13 @@ fn from_existing(
         consensus_mode,
         Box::new(rand::os::OsRng::new().unwrap()),
     )
+}
+
+fn genesis_observation(genesis_group: BTreeSet<PeerId>) -> Observation<Payload, PeerId> {
+    Observation::Genesis {
+        group: genesis_group,
+        related_info: vec![],
+    }
 }
 
 fn pick_gossip_recipient<'a, R: Rng>(

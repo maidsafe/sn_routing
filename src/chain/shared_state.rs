@@ -12,7 +12,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -42,7 +42,7 @@ pub struct SharedState {
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
-    pub their_keys: HashMap<Prefix<XorName>, BlsPublicKey>,
+    pub their_keys: BTreeMap<Prefix<XorName>, BlsPublicKey>,
 }
 
 impl SharedState {
@@ -69,7 +69,8 @@ impl SharedState {
             return Ok(());
         }
 
-        let (our_infos, our_history, neighbour_infos) = serialisation::deserialise(related_info)?;
+        let (our_infos, our_history, neighbour_infos, their_keys) =
+            serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
             if self.our_infos != our_infos {
@@ -96,10 +97,19 @@ impl SharedState {
                     neighbour_infos
                 );
             }
+            if self.their_keys != their_keys {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different their_keys:\n{:?},\n{:?}",
+                    self.their_keys,
+                    their_keys
+                );
+            }
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
         self.neighbour_infos = neighbour_infos;
+        self.their_keys = their_keys;
 
         Ok(())
     }
@@ -109,6 +119,7 @@ impl SharedState {
             &self.our_infos,
             &self.our_history,
             &self.neighbour_infos,
+            &self.their_keys,
         ))?)
     }
 
@@ -211,7 +222,7 @@ impl SharedState {
 
     #[cfg(test)]
     /// Returns the reference to their_keys
-    pub fn get_their_keys(&self) -> &HashMap<Prefix<XorName>, BlsPublicKey> {
+    pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
         &self.their_keys
     }
 }
@@ -332,7 +343,7 @@ impl Debug for SectionProofChain {
 mod test {
     use super::*;
     use crate::{chain::SectionInfo, BlsPublicKey, FullId, Prefix, XorName};
-    use std::collections::{BTreeSet, HashMap};
+    use std::collections::{BTreeMap, BTreeSet};
     use std::str::FromStr;
     use unwrap::unwrap;
 
@@ -371,7 +382,7 @@ mod test {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
                 (pfx, keys_to_update[index].1.clone())
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
 
         let start_section = gen_section_info(unwrap!(Prefix::from_str(start_pfx)));
         let mut state = SharedState::new(start_section);
