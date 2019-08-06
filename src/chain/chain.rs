@@ -491,6 +491,11 @@ impl Chain {
         }
     }
 
+    /// Return the keys we know
+    pub fn get_their_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &BlsPublicKey)> {
+        self.state.get_their_keys()
+    }
+
     /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
     /// for a prefix compatible with `prefix`
     pub fn check_trust(&self, prefix: &Prefix<XorName>, proof_chain: &SectionProofChain) -> bool {
@@ -499,7 +504,6 @@ impl Chain {
         } else {
             self.state
                 .get_their_keys()
-                .iter()
                 .filter(|&(pfx, _)| prefix.is_compatible(pfx))
                 .map(|(_, key)| key)
                 .collect()

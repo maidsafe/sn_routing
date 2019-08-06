@@ -534,9 +534,10 @@ impl Elder {
             if !signed_msg.check_trust(&self.chain) {
                 log_or_panic!(
                     LogLevel::Error,
-                    "{} Untrusted SignedRoutingMessage: {:?}",
+                    "{} Untrusted SignedRoutingMessage: {:?} --- {:?}",
                     self,
-                    signed_msg
+                    signed_msg,
+                    self.chain.get_their_keys().collect::<Vec<_>>()
                 );
                 return Err(RoutingError::UntrustedMessage);
             }

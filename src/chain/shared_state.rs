@@ -12,11 +12,13 @@ use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
 use unwrap::unwrap;
+
+const MAX_THEIR_RECENT_KEYS: usize = 10;
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
@@ -45,6 +47,8 @@ pub struct SharedState {
     pub their_keys: BTreeMap<Prefix<XorName>, BlsPublicKey>,
     /// Other sections' knowledge of us
     pub their_knowledge: BTreeMap<Prefix<XorName>, u64>,
+    /// Recent keys removed from their_keys
+    pub their_recent_keys: VecDeque<(Prefix<XorName>, BlsPublicKey)>,
 }
 
 impl SharedState {
@@ -61,6 +65,7 @@ impl SharedState {
             our_history,
             their_keys: Default::default(),
             their_knowledge: Default::default(),
+            their_recent_keys: Default::default(),
         }
     }
 
@@ -72,8 +77,14 @@ impl SharedState {
             return Ok(());
         }
 
-        let (our_infos, our_history, neighbour_infos, their_keys, their_knowledge) =
-            serialisation::deserialise(related_info)?;
+        let (
+            our_infos,
+            our_history,
+            neighbour_infos,
+            their_keys,
+            their_knowledge,
+            their_recent_keys,
+        ) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
             if self.our_infos != our_infos {
@@ -116,12 +127,21 @@ impl SharedState {
                     their_knowledge
                 );
             }
+            if self.their_recent_keys != their_recent_keys {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different their_recent_keys:\n{:?},\n{:?}",
+                    self.their_recent_keys,
+                    their_recent_keys
+                );
+            }
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
         self.neighbour_infos = neighbour_infos;
         self.their_keys = their_keys;
         self.their_knowledge = their_knowledge;
+        self.their_recent_keys = their_recent_keys;
 
         Ok(())
     }
@@ -133,6 +153,7 @@ impl SharedState {
             &self.neighbour_infos,
             &self.their_keys,
             &self.their_knowledge,
+            &self.their_recent_keys,
         ))?)
     }
 
@@ -223,6 +244,19 @@ impl SharedState {
             .find(|pfx| pfx.is_compatible(&prefix))
         {
             let old_key = unwrap!(self.their_keys.remove(&pfx));
+            self.their_recent_keys.push_front((pfx, old_key.clone()));
+            if self.their_recent_keys.len() > MAX_THEIR_RECENT_KEYS {
+                let _ = self.their_recent_keys.pop_back();
+            }
+
+            trace!(
+                "update_their_keys {:?}/{:?} to {:?}/{:?}",
+                pfx,
+                old_key,
+                prefix,
+                key
+            );
+
             let old_pfx_sibling = pfx.sibling();
             let mut current_pfx = prefix.sibling();
             while !self.their_keys.contains_key(&current_pfx) && current_pfx != old_pfx_sibling {
@@ -265,8 +299,10 @@ impl SharedState {
     }
 
     /// Returns the reference to their_keys
-    pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
-        &self.their_keys
+    pub fn get_their_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &BlsPublicKey)> {
+        self.their_keys
+            .iter()
+            .chain(self.their_recent_keys.iter().map(|(p, k)| (p, k)))
     }
 
     #[cfg(feature = "mock_base")]
@@ -426,7 +462,7 @@ impl Debug for SectionProofChain {
 mod test {
     use super::*;
     use crate::{chain::SectionInfo, BlsPublicKey, FullId, Prefix, XorName};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
     use std::str::FromStr;
     use unwrap::unwrap;
 
@@ -465,7 +501,7 @@ mod test {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
                 (pfx, keys_to_update[index].1.clone())
             })
-            .collect::<BTreeMap<_, _>>();
+            .collect::<Vec<_>>();
 
         let start_section = gen_section_info(unwrap!(Prefix::from_str(start_pfx)));
         let mut state = SharedState::new(start_section);
@@ -474,12 +510,21 @@ mod test {
             state.update_their_keys(pfx, key);
         }
 
-        assert_eq!(state.get_their_keys(), &expected_keys);
+        let actual_keys = state
+            .get_their_keys()
+            .map(|(p, k)| (*p, k.clone()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(actual_keys, expected_keys);
     }
 
     #[test]
     fn single_prefix_multiple_updates() {
-        update_keys_and_check("0", vec!["1", "1", "1", "1"], vec![("1", 3)]);
+        update_keys_and_check(
+            "0",
+            vec!["1", "1", "1", "1"],
+            vec![("1", 3), ("1", 2), ("1", 1), ("1", 0)],
+        );
     }
 
     #[test]
@@ -487,7 +532,7 @@ mod test {
         update_keys_and_check(
             "0",
             vec!["10", "11", "101"],
-            vec![("100", 0), ("11", 1), ("101", 2)],
+            vec![("100", 0), ("101", 2), ("11", 1), ("10", 0)],
         );
     }
 
@@ -496,7 +541,7 @@ mod test {
         update_keys_and_check(
             "01", // Not the sibling of the single bit parent prefix of 111
             vec!["1", "111"],
-            vec![("111", 1), ("110", 0), ("10", 0)],
+            vec![("10", 0), ("110", 0), ("111", 1), ("1", 0)],
         );
     }
 
@@ -506,13 +551,14 @@ mod test {
             "0",
             vec!["1", "1011001"],
             vec![
-                ("11", 0),
                 ("100", 0),
                 ("1010", 0),
-                ("10111", 0),
-                ("101101", 0),
                 ("1011000", 0),
                 ("1011001", 1),
+                ("101101", 0),
+                ("10111", 0),
+                ("11", 0),
+                ("1", 0),
             ],
         );
     }
