@@ -790,7 +790,7 @@ impl Chain {
 
     /// Updates `their_keys` in the shared state
     pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, bls_key: BlsPublicKey) {
-        self.state.update_their_keys(prefix, bls_key);
+        self.state.update_their_keys(prefix, bls_key, &self.our_id);
     }
 
     /// Returns whether we should split into two sections.

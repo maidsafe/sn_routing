@@ -7,7 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{ProofSet, SectionInfo};
-use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
+use crate::{
+    error::RoutingError, id::PublicId, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName,
+};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -237,7 +239,12 @@ impl SharedState {
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     /// NOTE: the function as it is currently is not merge-safe.
-    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, key: BlsPublicKey) {
+    pub fn update_their_keys(
+        &mut self,
+        prefix: Prefix<XorName>,
+        key: BlsPublicKey,
+        our_id: &PublicId,
+    ) {
         if let Some(&pfx) = self
             .their_keys
             .keys()
@@ -250,7 +257,8 @@ impl SharedState {
             }
 
             trace!(
-                "update_their_keys {:?}/{:?} to {:?}/{:?}",
+                "{} update_their_keys {:?}/{:?} to {:?}/{:?}",
+                our_id,
                 pfx,
                 old_key,
                 prefix,
@@ -367,6 +375,16 @@ pub struct SectionProofBlock {
     sig: BlsSignature,
 }
 
+impl Debug for SectionProofBlock {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SectionProofBlock {{ key: {:?}, sig: .. }}",
+            self.key,
+        )
+    }
+}
+
 impl SectionProofBlock {
     pub fn from_sec_info_with_proofs(sec_info: &SectionInfo, proofs: ProofSet) -> Self {
         let key = BlsPublicKey::from_section_info(sec_info);
@@ -383,7 +401,7 @@ impl SectionProofBlock {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_pk: BlsPublicKey,
     blocks: Vec<SectionProofBlock>,
@@ -448,16 +466,6 @@ impl SectionProofChain {
     }
 }
 
-impl Debug for SectionProofChain {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SectionProofChain(len = {})",
-            self.blocks.len() + 1
-        )
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -505,9 +513,10 @@ mod test {
 
         let start_section = gen_section_info(unwrap!(Prefix::from_str(start_pfx)));
         let mut state = SharedState::new(start_section);
+        let our_id = *unwrap!(state.new_info.members().iter().next());
 
         for (pfx, key) in keys_to_update {
-            state.update_their_keys(pfx, key);
+            state.update_their_keys(pfx, key, &our_id);
         }
 
         let actual_keys = state

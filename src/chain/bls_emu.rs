@@ -17,7 +17,7 @@ use parsec;
 use std::collections::BTreeSet;
 use std::{collections::BTreeMap, fmt};
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
     sec_info: SectionInfo,
     threshold: usize,

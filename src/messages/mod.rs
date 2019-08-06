@@ -113,6 +113,16 @@ impl FullSecurityMetadata {
     }
 }
 
+impl Debug for FullSecurityMetadata {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "FullSecurityMetadata {{ sender_prefix: {:?}, proof: {:?}, .. }}",
+            self.sender_prefix, self.proof
+        )
+    }
+}
+
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
@@ -550,15 +560,15 @@ impl Debug for HopMessage {
 
 impl Debug for SignedRoutingMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let security_metadata_str = match self.security_metadata {
-            SecurityMetadata::None => "None",
-            SecurityMetadata::Partial(_) => "Partial",
-            SecurityMetadata::Full(_) => "Full",
+        let security_metadata_str = match &self.security_metadata {
+            SecurityMetadata::None => "None".to_owned(),
+            SecurityMetadata::Partial(_) => "Partial".to_owned(),
+            SecurityMetadata::Full(smd) => format!("{:?}", smd),
         };
         write!(
             formatter,
             "SignedRoutingMessage {{ content: {:?}, sending nodes: {:?}, \
-             security_metadata: {:?} }}",
+             security_metadata: {} }}",
             self.content, self.src_section, security_metadata_str
         )
     }
