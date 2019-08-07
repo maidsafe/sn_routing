@@ -146,6 +146,18 @@ impl SignedRoutingMessage {
         })
     }
 
+    /// Creates a `SignedRoutingMessage` without security metadata
+    pub fn insecure<T: Into<Option<SectionInfo>>>(
+        content: RoutingMessage,
+        src_section: T,
+    ) -> SignedRoutingMessage {
+        SignedRoutingMessage {
+            content,
+            src_section: src_section.into(),
+            security_metadata: SecurityMetadata::None,
+        }
+    }
+
     /// Confirms the signatures.
     pub fn check_integrity(&self) -> Result<()> {
         match self.security_metadata {

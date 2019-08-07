@@ -1856,6 +1856,17 @@ impl Bootstrapped for Elder {
             Client { .. } => None,
         };
 
+        // If the source is single, we don't even need to send signatures, so let's cut this short
+        if !routing_msg.src.is_multiple() {
+            let mut msg = SignedRoutingMessage::insecure(routing_msg.clone(), sending_sec.clone());
+            if self.in_authority(&msg.routing_message().dst) {
+                self.handle_signed_message(msg)?;
+            } else {
+                self.send_signed_message(&mut msg)?;
+            }
+            return Ok(());
+        }
+
         let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, sending_sec)?;
 
         for target in Iterator::flatten(
