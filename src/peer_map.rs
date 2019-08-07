@@ -113,6 +113,10 @@ impl PeerMap {
     pub fn get_connection_info<'a>(&'a self, pub_id: &PublicId) -> Option<&'a ConnectionInfo> {
         self.forward.get(pub_id)
     }
+
+    pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
+        self.forward.keys()
+    }
 }
 
 enum PendingConnection {
