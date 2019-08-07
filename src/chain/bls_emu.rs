@@ -28,7 +28,7 @@ pub type SignatureShare = ::safe_crypto::Signature;
 
 pub struct SecretKeyShare(FullId);
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize, Debug)]
 pub struct PublicKeyShare(pub PublicId);
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]

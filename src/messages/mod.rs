@@ -350,6 +350,14 @@ impl SignedRoutingMessage {
             SecurityMetadata::Signed(_) | SecurityMetadata::Full(_) => true,
         }
     }
+
+    #[cfg(test)]
+    pub fn signatures(&self) -> Option<&BTreeMap<BlsPublicKeyShare, BlsSignatureShare>> {
+        match &self.security_metadata {
+            SecurityMetadata::Partial(sigs) => Some(sigs),
+            _ => None,
+        }
+    }
 }
 
 /// A routing message with source and destination authorities.
@@ -666,10 +674,8 @@ mod tests {
     use crate::routing_table::{Authority, Prefix};
     use crate::types::MessageId;
     use crate::xor_name::XorName;
-    use maidsafe_utilities::serialisation::serialise;
     use rand;
     use safe_crypto::{self, Signature, SIGNATURE_BYTES};
-    use std::iter;
     use unwrap::unwrap;
 
     #[test]
@@ -689,21 +695,17 @@ mod tests {
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg.clone(), &full_id, None));
 
         assert_eq!(msg, *signed_msg.routing_message());
-        assert_eq!(1, signed_msg.signatures.len());
-        assert!(signed_msg.signatures.contains_id(full_id.public_id()));
+        assert_eq!(1, signed_msg.signatures().expect("no signatures").len());
+        assert!(signed_msg
+            .signatures()
+            .expect("no signatures")
+            .contains_key(&BlsPublicKeyShare(*full_id.public_id())));
 
-        unwrap!(signed_msg.check_integrity());
-
-        let full_id = FullId::new();
-        let bytes_to_sign = unwrap!(serialise(&(&msg, full_id.public_id())));
-        let signature = full_id.signing_private_key().sign_detached(&bytes_to_sign);
-
-        signed_msg.signatures.sigs = iter::once((*full_id.public_id(), signature)).collect();
-
-        // Invalid because it's not signed by the sender:
         assert!(signed_msg.check_integrity().is_err());
-        // However, the signature itself should be valid:
-        assert!(signed_msg.has_enough_sigs());
+
+        signed_msg.security_metadata = SecurityMetadata::None;
+
+        assert!(signed_msg.check_integrity().is_ok());
     }
 
     #[test]
@@ -713,7 +715,6 @@ mod tests {
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
         let full_id_3 = FullId::new();
-        let irrelevant_full_id = FullId::new();
         let data_bytes: Vec<u8> = (0..10).collect();
         let data = ImmutableData::new(data_bytes);
         let user_msg = UserMessage::Request(Request::PutIData {
@@ -741,25 +742,11 @@ mod tests {
             prefix,
             None,
         ));
+        let pk_set = BlsPublicKeySet::from_section_info(src_section.clone());
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg, &full_id_0, src_section));
-        assert_eq!(signed_msg.signatures.len(), 1);
+        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 1);
 
-        // Try to add a signature which will not correspond to an ID from the sending nodes.
-        let irrelevant_sig = match signed_msg
-            .routing_message()
-            .to_signature(irrelevant_full_id.signing_private_key())
-        {
-            Ok(sig) => {
-                signed_msg.add_signature(*irrelevant_full_id.public_id(), sig);
-                sig
-            }
-            err => panic!("Unexpected error: {:?}", err),
-        };
-        assert_eq!(signed_msg.signatures.len(), 1);
-        assert!(!signed_msg
-            .signatures
-            .contains_id(irrelevant_full_id.public_id()));
-        assert!(!signed_msg.check_fully_signed());
+        assert!(!signed_msg.check_fully_signed(&pk_set));
 
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
         for full_id in &[full_id_1, full_id_2] {
@@ -768,26 +755,22 @@ mod tests {
                 .to_signature(full_id.signing_private_key())
             {
                 Ok(sig) => {
-                    signed_msg.add_signature(*full_id.public_id(), sig);
+                    signed_msg.add_signature_share(BlsPublicKeyShare(*full_id.public_id()), sig);
                 }
                 err => panic!("Unexpected error: {:?}", err),
             }
         }
 
         let bad_sig = Signature::from_bytes([0; SIGNATURE_BYTES]);
-        signed_msg.add_signature(*full_id_3.public_id(), bad_sig);
-        assert_eq!(signed_msg.signatures.len(), 4);
-        assert!(signed_msg.check_fully_signed());
+        signed_msg.add_signature_share(BlsPublicKeyShare(*full_id_3.public_id()), bad_sig);
+        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 4);
+        assert!(signed_msg.check_fully_signed(&pk_set));
 
         // Check the bad signature got removed (by check_fully_signed) properly.
-        assert_eq!(signed_msg.signatures.len(), 3);
-        assert!(!signed_msg.signatures.contains_id(full_id_3.public_id()));
-
-        // Check an irrelevant signature can't be added.
-        signed_msg.add_signature(*irrelevant_full_id.public_id(), irrelevant_sig);
-        assert_eq!(signed_msg.signatures.len(), 3);
+        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 3);
         assert!(!signed_msg
-            .signatures
-            .contains_id(irrelevant_full_id.public_id(),));
+            .signatures()
+            .expect("no signatures")
+            .contains_key(&BlsPublicKeyShare(*full_id_3.public_id())));
     }
 }

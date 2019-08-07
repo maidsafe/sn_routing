@@ -93,6 +93,7 @@ mod tests {
         },
         routing_table::{Authority, Prefix},
         types::MessageId,
+        BlsPublicKeySet,
     };
     use itertools::Itertools;
     use rand;
@@ -149,6 +150,7 @@ mod tests {
 
     struct Env {
         msgs_and_sigs: Vec<MessageAndSignatures>,
+        pk_set: BlsPublicKeySet,
     }
 
     impl Env {
@@ -168,8 +170,10 @@ mod tests {
                     MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
                 })
                 .collect();
+            let pk_set = BlsPublicKeySet::new(4, pub_ids);
             Env {
                 msgs_and_sigs: msgs_and_sigs,
+                pk_set,
             }
         }
     }
@@ -184,19 +188,22 @@ mod tests {
         // Add each message with the section list added - none should accumulate.
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             let signed_msg = msg_and_sigs.signed_msg.clone();
-            let result = sig_accumulator.add_proof(signed_msg);
+            let result = sig_accumulator.add_proof(signed_msg, &env.pk_set);
             assert!(result.is_none());
         });
         let expected_msgs_count = env.msgs_and_sigs.len();
         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
 
         // Add each message's signatures - each should accumulate once quorum has been reached.
+        let mut count = 0;
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             msg_and_sigs.signature_msgs.iter().foreach(|signature_msg| {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
                 let result = match signature_msg.content() {
-                    DirectMessage::MessageSignature(msg) => sig_accumulator.add_proof(msg.clone()),
+                    DirectMessage::MessageSignature(msg) => {
+                        sig_accumulator.add_proof(msg.clone(), &env.pk_set)
+                    }
                     ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
@@ -206,11 +213,13 @@ mod tests {
                         msg_and_sigs.signed_msg.routing_message(),
                         returned_msg.routing_message()
                     );
-                    unwrap!(returned_msg.check_integrity());
-                    assert!(returned_msg.check_fully_signed());
+                    assert!(returned_msg.check_fully_signed(&env.pk_set));
+                    count += 1;
                 }
             });
         });
+
+        assert_eq!(count, expected_msgs_count);
 
         FakeClock::advance_time(ACCUMULATION_TIMEOUT.as_secs() * 1000 + 1000);
 
