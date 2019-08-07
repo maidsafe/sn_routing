@@ -9,6 +9,7 @@
 use super::{ProofSet, ProvingSection, SectionInfo};
 use crate::id::PublicId;
 use crate::parsec;
+use crate::routing_table::Prefix;
 use crate::sha3::Digest256;
 use crate::types::MessageId;
 use crate::{Authority, RoutingError, XorName};
@@ -36,6 +37,14 @@ pub struct OnlinePayload {
     pub old_public_id: PublicId,
     /// The joining node's current authority.
     pub client_auth: Authority<XorName>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct AckMessagePayload {
+    /// The prefix of our section when we acknowledge their SectionInfo of version ack_version.
+    pub src_prefix: Prefix<XorName>,
+    /// The version acknowledged.
+    pub ack_version: u64,
 }
 
 /// Routing Network events
@@ -66,7 +75,8 @@ pub enum NetworkEvent {
     /// A list of proofs for a neighbour section, starting from the current section.
     ProvingSections(Vec<ProvingSection>, SectionInfo),
 
-    AckMessage(SectionInfo),
+    // Voted for received AckMessage to update their_knowledge
+    AckMessage(AckMessagePayload),
 }
 
 impl NetworkEvent {
@@ -129,9 +139,7 @@ impl Debug for NetworkEvent {
             NetworkEvent::ProvingSections(_, ref sec_info) => {
                 write!(formatter, "ProvingSections(_, {:?})", sec_info)
             }
-            NetworkEvent::AckMessage(ref sec_info) => {
-                write!(formatter, "AckMessage(_, {:?})", sec_info)
-            }
+            NetworkEvent::AckMessage(ref payload) => write!(formatter, "AckMessage({:?})", payload),
         }
     }
 }
