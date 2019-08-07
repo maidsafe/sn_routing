@@ -15,11 +15,8 @@ pub use self::{
     request::Request,
     response::{AccountInfo, Response},
 };
-use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use crate::{
-    chain::{
-        Chain, GenesisPfxInfo, Proof, ProofSet, ProvingSection, SectionInfo, SectionProofChain,
-    },
+    chain::{Chain, GenesisPfxInfo, SectionInfo, SectionProofChain},
     error::{Result, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -27,15 +24,16 @@ use crate::{
     sha3::Digest256,
     types::MessageId,
     xor_name::XorName,
-    BlsSignature, BlsSignatureShare, XorTargetInterval,
+    BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare, XorTargetInterval,
 };
 use hex_fmt::HexFmt;
-use itertools::Itertools;
+use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
+    mem,
 };
 
 /// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
@@ -110,7 +108,7 @@ impl FullSecurityMetadata {
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
     None,
-    Partial(BTreeMap<PublicId, BlsSignatureShare>),
+    Partial(BTreeMap<BlsPublicKeyShare, BlsSignatureShare>),
     Signed(BlsSignature),
     Full(FullSecurityMetadata),
 }
@@ -122,12 +120,6 @@ pub struct SignedRoutingMessage {
     content: RoutingMessage,
     /// Nodes sending the message (those expected to sign it)
     src_section: Option<SectionInfo>,
-    /// The IDs and signatures of the source authority's members.
-    signatures: ProofSet,
-    /// The lists of the sections involved in routing this message, in chronological order.
-    /// Each entry proves the authenticity of the previous one. The last one should be known by the
-    /// receiver, while the first one proves the `src_section` itself.
-    proving_sections: Vec<ProvingSection>,
     /// Optional metadata for verifying the sender
     security_metadata: SecurityMetadata,
 }
@@ -143,14 +135,14 @@ impl SignedRoutingMessage {
         src_section: T,
     ) -> Result<SignedRoutingMessage> {
         let sk = full_id.signing_private_key();
-        let mut signatures = ProofSet::new();
-        let _ = signatures.add_proof(Proof::new(*full_id.public_id(), sk, &content)?);
+        let mut signatures = BTreeMap::new();
+        let pk_share = BlsPublicKeyShare(*full_id.public_id());
+        let sig = content.to_signature(sk)?;
+        let _ = signatures.insert(pk_share, sig);
         Ok(SignedRoutingMessage {
             content,
             src_section: src_section.into(),
-            signatures,
-            proving_sections: Vec::new(),
-            security_metadata: SecurityMetadata::None,
+            security_metadata: SecurityMetadata::Partial(signatures),
         })
     }
 
@@ -185,42 +177,9 @@ impl SignedRoutingMessage {
         }
     }
 
-    /// Returns the previous hop: if that hop can be trusted, the message can be trusted, too.
-    pub fn previous_hop(&self) -> Option<&SectionInfo> {
-        self.proving_sections
-            .last()
-            .map(|ps| &ps.sec_info)
-            .or_else(|| self.src_section.as_ref())
-    }
-
-    /// Removes the last hop section from the message. Returns `true` if a hop was removed, and
-    /// `false` if there are no more hops left other than the sending section itself.
-    pub fn pop_previous_hop(&mut self) -> bool {
-        self.proving_sections.pop().is_some()
-    }
-
-    /// Returns the list of section infos from this message's proof chain.
-    pub fn section_infos(&self) -> impl Iterator<Item = &SectionInfo> {
-        self.src_section
-            .iter()
-            .chain(self.proving_sections.iter().map(|ps| &ps.sec_info))
-    }
-
-    /// Returns the chain of proving sections, from the recipient back to the one proving the
-    /// sending section.
-    pub fn proving_sections(&self) -> &Vec<ProvingSection> {
-        &self.proving_sections
-    }
-
     /// Returns the source section that signed the message itself.
     pub fn source_section(&self) -> Option<&SectionInfo> {
         self.src_section.as_ref()
-    }
-
-    /// Returns whether the message is signed by the given public ID.
-    #[cfg(test)]
-    pub fn signed_by(&self, pub_id: &PublicId) -> bool {
-        self.signatures.contains_id(pub_id)
     }
 
     /// Returns the number of nodes in the source authority.
@@ -229,26 +188,47 @@ impl SignedRoutingMessage {
     }
 
     /// Adds a proof if it is new, without validating it.
-    pub fn add_proof(&mut self, proof: Proof) {
-        if self.content.src.is_multiple() && self.is_sender(proof.pub_id()) {
-            let _ = self.signatures.add_proof(proof);
-        }
-    }
-
-    /// Adds the given signature if it is new, without validating it. If the collection of section
-    /// lists isn't empty, the signature is only added if `pub_id` is a member of the first section
-    /// list.
-    #[cfg(test)]
-    pub fn add_signature(&mut self, pub_id: PublicId, sig: Signature) {
-        if self.content.src.is_multiple() && self.is_sender(&pub_id) {
-            let _ = self.signatures.sigs.insert(pub_id, sig);
+    pub fn add_signature_share(
+        &mut self,
+        pk_share: BlsPublicKeyShare,
+        sig_share: BlsSignatureShare,
+    ) {
+        if let SecurityMetadata::Partial(ref mut sigs) = self.security_metadata {
+            let _ = sigs.insert(pk_share, sig_share);
         }
     }
 
     /// Adds all signatures from the given message, without validating them.
-    pub fn add_signatures(&mut self, msg: SignedRoutingMessage) {
+    pub fn add_signature_shares(&mut self, mut msg: SignedRoutingMessage) {
         if self.content.src.is_multiple() {
-            self.signatures.merge(msg.signatures);
+            if let (
+                SecurityMetadata::Partial(self_shares),
+                SecurityMetadata::Partial(other_shares),
+            ) = (&mut self.security_metadata, &mut msg.security_metadata)
+            {
+                self_shares.append(other_shares);
+            }
+        }
+    }
+
+    /// Combines the signatures into a single BLS signature
+    pub fn combine_signatures(&mut self, pk_set: &BlsPublicKeySet) {
+        if let SecurityMetadata::Partial(sigs) =
+            mem::replace(&mut self.security_metadata, SecurityMetadata::None)
+        {
+            if let Some(full_sig) =
+                pk_set.combine_signatures(sigs.iter().map(|(key, sig)| (*key, sig)))
+            {
+                self.security_metadata = SecurityMetadata::Signed(full_sig);
+            } else {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "Combining signatures failed on {:?}!",
+                    self
+                );
+            }
+        } else {
+            warn!("Tried to call combine_signatures on {:?}", self);
         }
     }
 
@@ -268,8 +248,8 @@ impl SignedRoutingMessage {
     }
 
     /// Returns whether there are enough signatures from the sender.
-    pub fn check_fully_signed(&mut self) -> bool {
-        if !self.has_enough_sigs() {
+    pub fn check_fully_signed(&mut self, pk_set: &BlsPublicKeySet) -> bool {
+        if !self.has_enough_sigs(pk_set) {
             return false;
         }
 
@@ -277,76 +257,73 @@ impl SignedRoutingMessage {
         // We also check (again) that all messages are from valid senders, because the message
         // may have been sent from another node, and we cannot trust that that node correctly
         // controlled which signatures were added.
-        let signed_bytes = match serialise(&self.content) {
-            Ok(serialised) => serialised,
-            Err(error) => {
-                warn!("Failed to serialise {:?}: {:?}", self, error);
+
+        let invalid_sigs = match self.security_metadata {
+            // unfortunately, `match`es had to be split because of the borrow checker;
+            // the two cases below can return early as they have nothing left to do
+            SecurityMetadata::None => {
                 return false;
             }
+            SecurityMetadata::Signed(_) | SecurityMetadata::Full(_) => {
+                return true;
+            }
+            // this is the only case in which we actually have to do further checks
+            SecurityMetadata::Partial(_) => {
+                let signed_bytes = match serialise(&self.content) {
+                    Ok(serialised) => serialised,
+                    Err(error) => {
+                        warn!("Failed to serialise {:?}: {:?}", self, error);
+                        return false;
+                    }
+                };
+                self.find_invalid_sigs(signed_bytes)
+            }
         };
-        for invalid_signature in &self.find_invalid_sigs(signed_bytes) {
-            let _ = self.signatures.remove(invalid_signature);
+
+        if let SecurityMetadata::Partial(ref mut sigs) = self.security_metadata {
+            // the mutable borrow in this case made it impossible to find the invalid sigs and
+            // check for enough sigs in the same match
+            for invalid_signature in invalid_sigs {
+                let _ = sigs.remove(&invalid_signature);
+            }
         }
 
-        self.has_enough_sigs()
-    }
-
-    // Returns true iff `pub_id` is in self.section_lists
-    fn is_sender(&self, pub_id: &PublicId) -> bool {
-        self.src_section
-            .as_ref()
-            .map_or(false, |si| si.members().contains(pub_id))
+        self.has_enough_sigs(pk_set)
     }
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
     // valid).
-    fn find_invalid_sigs(&self, signed_bytes: Vec<u8>) -> Vec<PublicId> {
-        let invalid = self
-            .signatures
-            .sigs
-            .iter()
-            .filter_map(|(pub_id, sig)| {
-                // Remove if not in sending nodes or signature is invalid:
-                let is_valid = if let Authority::Client { ref client_id, .. } = self.content.src {
-                    client_id == pub_id
-                        && client_id
-                            .signing_public_key()
-                            .verify_detached(sig, &signed_bytes)
-                } else {
-                    self.is_sender(pub_id)
-                        && pub_id
-                            .signing_public_key()
-                            .verify_detached(sig, &signed_bytes)
-                };
-                if is_valid {
-                    None
-                } else {
-                    Some(*pub_id)
+    fn find_invalid_sigs(&self, signed_bytes: Vec<u8>) -> Vec<BlsPublicKeyShare> {
+        match self.security_metadata {
+            SecurityMetadata::None | SecurityMetadata::Signed(_) | SecurityMetadata::Full(_) => {
+                vec![]
+            }
+            SecurityMetadata::Partial(ref sigs) => {
+                let invalid: Vec<_> = sigs
+                    .iter()
+                    .filter(|&(key, sig)| !key.verify(sig, &signed_bytes))
+                    .map(|(key, _)| *key)
+                    .collect();
+                if !invalid.is_empty() {
+                    debug!("{:?}: invalid signatures: {:?}", self, invalid);
                 }
-            })
-            .collect_vec();
-        if !invalid.is_empty() {
-            debug!("{:?}: invalid signatures: {:?}", self, invalid);
+                invalid
+            }
         }
-        invalid
     }
 
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_section`).
-    fn has_enough_sigs(&self) -> bool {
-        use crate::Authority::*;
-
+    fn has_enough_sigs(&self, pk_set: &BlsPublicKeySet) -> bool {
         // Only Clients are allowed to omit the src_section
         if !self.content.src.is_client() && self.src_section.is_none() {
             return false;
         }
 
-        match self.content.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | Section(_) | PrefixSection(_) => {
-                let valid_sigs = self.signatures.len();
-                valid_sigs * QUORUM_DENOMINATOR > self.src_size() * QUORUM_NUMERATOR
-            }
-            ManagedNode(_) | Client { .. } => self.signatures.len() == 1,
+        match &self.security_metadata {
+            SecurityMetadata::None => !self.content.src.is_multiple(),
+            SecurityMetadata::Partial(sig_shares) => sig_shares.len() > pk_set.threshold(),
+            SecurityMetadata::Signed(_) | SecurityMetadata::Full(_) => true,
         }
     }
 }
@@ -528,11 +505,17 @@ impl Debug for HopMessage {
 
 impl Debug for SignedRoutingMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        let security_metadata_str = match self.security_metadata {
+            SecurityMetadata::None => "None",
+            SecurityMetadata::Partial(_) => "Partial",
+            SecurityMetadata::Signed(_) => "Signed",
+            SecurityMetadata::Full(_) => "Full",
+        };
         write!(
             formatter,
-            "SignedRoutingMessage {{ content: {:?}, sending nodes: {:?}, signatures: {:?}, \
-             proving_sections: {:?} }}",
-            self.content, self.src_section, self.signatures, self.proving_sections
+            "SignedRoutingMessage {{ content: {:?}, sending nodes: {:?}, \
+             security_metadata: {:?} }}",
+            self.content, self.src_section, security_metadata_str
         )
     }
 }

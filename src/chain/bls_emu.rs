@@ -28,8 +28,8 @@ pub type SignatureShare = ::safe_crypto::Signature;
 
 pub struct SecretKeyShare(FullId);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct PublicKeyShare(PublicId);
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
+pub struct PublicKeyShare(pub PublicId);
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct Signature {
@@ -55,7 +55,6 @@ impl SecretKeyShare {
 }
 
 impl PublicKeyShare {
-    #[allow(unused)]
     pub fn verify<M: AsRef<[u8]>>(&self, sig: &SignatureShare, msg: M) -> bool {
         self.0
             .signing_public_key()
@@ -81,12 +80,10 @@ impl PublicKeySet {
         }
     }
 
-    #[allow(unused)]
     pub fn threshold(&self) -> usize {
         self.threshold
     }
 
-    #[allow(unused)]
     pub fn combine_signatures<'a, I>(&self, shares: I) -> Option<Signature>
     where
         I: IntoIterator<Item = (PublicKeyShare, &'a SignatureShare)>,

@@ -41,7 +41,7 @@ use crate::{
     types::MessageId,
     utils::{self, DisplayDuration, XorTargetInterval},
     xor_name::XorName,
-    ConnectionInfo, NetworkService,
+    BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -301,6 +301,10 @@ impl Elder {
         }
     }
 
+    fn public_key_set(&self) -> BlsPublicKeySet {
+        BlsPublicKeySet::from_section_info(self.chain.our_info().clone())
+    }
+
     fn handle_parsec_poke(&mut self, msg_version: u64, pub_id: PublicId) {
         self.send_parsec_gossip(Some((msg_version, pub_id)))
     }
@@ -493,7 +497,10 @@ impl Elder {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
+        if let Some(signed_msg) = self
+            .sig_accumulator
+            .add_proof(msg.clone(), &self.public_key_set())
+        {
             self.handle_signed_message(signed_msg)?;
         }
         Ok(())
@@ -505,32 +512,10 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
-        if signed_msg.routing_message().src.is_client() {
-            if signed_msg.previous_hop().is_some() {
-                warn!("{} Unexpected section infos in {:?}", self, signed_msg);
-                return Err(RoutingError::InvalidProvingSection);
-            }
-        } else {
+        if !signed_msg.routing_message().src.is_client() {
             // Inform our peers about any new sections.
-            if signed_msg
-                .section_infos()
-                .any(|si| self.chain.is_new_neighbour(si))
-            {
-                if let Some(si) = signed_msg.source_section() {
-                    // TODO: Why is `add_new_sections` still necessary? The vote should suffice.
-                    // TODO: This is enabled for relayed messages only because it considerably
-                    //       slows down the tests. Find out why, maybe enable it in more cases.
-                    if self.add_new_sections(signed_msg.section_infos()) {
-                        let ps = signed_msg.proving_sections().clone();
-                        if !self.in_authority(&signed_msg.routing_message().dst)
-                            || !self.is_pfx_successfully_polled()
-                        {
-                            self.vote_for_event(NetworkEvent::ProvingSections(ps, si.clone()));
-                        } else if self.is_pfx_successfully_polled() {
-                            self.add_to_proving_section_cache(ps.clone(), si.clone());
-                        }
-                    }
-                }
+            if let Some(si) = signed_msg.source_section() {
+                let _ = self.add_new_section(si);
             }
         }
 
@@ -582,16 +567,6 @@ impl Elder {
         }
 
         Ok(())
-    }
-
-    fn add_to_proving_section_cache(
-        &mut self,
-        proving_secs: Vec<ProvingSection>,
-        sec_info: SectionInfo,
-    ) {
-        if self.chain.is_new_neighbour(&sec_info) {
-            let _ = self.proving_section_cache.insert(sec_info, proving_secs);
-        }
     }
 
     fn remove_from_proving_section_cache(&mut self, sec_info: &SectionInfo) {
@@ -1221,16 +1196,6 @@ impl Elder {
         trace!("{} Sending {:?} to {:?}", self, content, dst);
 
         self.send_routing_message(src, dst, content)
-    }
-
-    /// Votes for all of the proving sections that are new to us.
-    fn add_new_sections<'a, I>(&mut self, sections: I) -> bool
-    where
-        I: IntoIterator<Item = &'a SectionInfo>,
-    {
-        sections
-            .into_iter()
-            .any(|sec_info| self.add_new_section(sec_info))
     }
 
     /// Votes for the section if it is new to us.
@@ -1897,7 +1862,10 @@ impl Bootstrapped for Elder {
                 .into_iter(),
         ) {
             if target == *self.name() {
-                if let Some(mut msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
+                if let Some(mut msg) = self
+                    .sig_accumulator
+                    .add_proof(signed_msg.clone(), &self.public_key_set())
+                {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
