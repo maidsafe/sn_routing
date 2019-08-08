@@ -7,13 +7,15 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 //! Types emulating the BLS functionality until proper BLS lands
-use super::{delivery_group_size, NetworkEvent, ProofSet, SectionInfo};
-use crate::id::{FullId, PublicId};
-use parsec;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt,
+use super::{NetworkEvent, ProofSet, SectionInfo};
+use crate::{
+    id::{FullId, PublicId},
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
+use parsec;
+#[cfg(test)]
+use std::collections::BTreeSet;
+use std::{collections::BTreeMap, fmt};
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
@@ -63,7 +65,7 @@ impl PublicKeyShare {
 }
 
 impl PublicKeySet {
-    #[allow(unused)]
+    #[cfg(test)]
     pub fn new(threshold: usize, keys: BTreeSet<PublicId>) -> Self {
         let sec_info = SectionInfo::new(keys, Default::default(), None).unwrap();
         Self {
@@ -73,7 +75,7 @@ impl PublicKeySet {
     }
 
     pub fn from_section_info(sec_info: SectionInfo) -> Self {
-        let threshold = delivery_group_size(sec_info.members().len()) - 1;
+        let threshold = sec_info.members().len() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR;
         Self {
             threshold,
             sec_info,
@@ -102,7 +104,7 @@ impl PublicKeySet {
         }
     }
 
-    #[allow(unused)]
+    #[cfg(test)]
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.clone())
     }
