@@ -694,6 +694,14 @@ mod tests {
     fn signed_routing_message_check_integrity() {
         let name: XorName = rand::random();
         let full_id = FullId::new();
+        let full_id_2 = FullId::new();
+        let prefix = Prefix::new(0, *full_id.public_id().name());
+        let pub_ids: BTreeSet<_> = vec![*full_id.public_id(), *full_id_2.public_id()]
+            .into_iter()
+            .collect();
+        let dummy_pk_set = BlsPublicKeySet::new(1, pub_ids);
+        let dummy_proof = SectionProofChain::from_genesis(dummy_pk_set.public_key());
+
         let msg = RoutingMessage {
             src: Authority::Client {
                 client_id: *full_id.public_id(),
@@ -704,7 +712,14 @@ mod tests {
                 message_id: MessageId::new(),
             },
         };
-        let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg.clone(), &full_id, None));
+        let mut signed_msg = unwrap!(SignedRoutingMessage::new(
+            msg.clone(),
+            &full_id,
+            None,
+            &prefix,
+            dummy_pk_set,
+            dummy_proof,
+        ));
 
         assert_eq!(msg, *signed_msg.routing_message());
         assert_eq!(1, signed_msg.signatures().expect("no signatures").len());
@@ -755,10 +770,18 @@ mod tests {
             None,
         ));
         let pk_set = BlsPublicKeySet::from_section_info(src_section.clone());
-        let mut signed_msg = unwrap!(SignedRoutingMessage::new(msg, &full_id_0, src_section));
+        let dummy_proof = SectionProofChain::from_genesis(pk_set.public_key());
+        let mut signed_msg = unwrap!(SignedRoutingMessage::new(
+            msg,
+            &full_id_0,
+            src_section,
+            &prefix,
+            pk_set,
+            dummy_proof
+        ));
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 1);
 
-        assert!(!signed_msg.check_fully_signed(&pk_set));
+        assert!(!signed_msg.check_fully_signed());
 
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
         for full_id in &[full_id_1, full_id_2] {
@@ -776,7 +799,7 @@ mod tests {
         let bad_sig = Signature::from_bytes([0; SIGNATURE_BYTES]);
         signed_msg.add_signature_share(BlsPublicKeyShare(*full_id_3.public_id()), bad_sig);
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 4);
-        assert!(signed_msg.check_fully_signed(&pk_set));
+        assert!(signed_msg.check_fully_signed());
 
         // Check the bad signature got removed (by check_fully_signed) properly.
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 3);

@@ -74,7 +74,7 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        chain::SectionInfo,
+        chain::{SectionInfo, SectionProofChain},
         id::{FullId, PublicId},
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
@@ -112,10 +112,15 @@ mod tests {
             };
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
             let sec_info = unwrap!(SectionInfo::new(all_ids, prefix, None));
+            let pk_set = BlsPublicKeySet::from_section_info(sec_info.clone());
+            let proof = SectionProofChain::from_genesis(pk_set.public_key());
             let signed_msg = unwrap!(SignedRoutingMessage::new(
                 routing_msg.clone(),
                 msg_sender_id,
-                sec_info.clone()
+                sec_info.clone(),
+                &prefix,
+                pk_set.clone(),
+                proof.clone(),
             ));
             let signature_msgs = other_ids
                 .map(|id| {
@@ -124,6 +129,9 @@ mod tests {
                             routing_msg.clone(),
                             id,
                             sec_info.clone(),
+                            &prefix,
+                            pk_set.clone(),
+                            proof.clone(),
                         ))),
                         msg_sender_id,
                     ))
@@ -139,7 +147,6 @@ mod tests {
 
     struct Env {
         msgs_and_sigs: Vec<MessageAndSignatures>,
-        pk_set: BlsPublicKeySet,
     }
 
     impl Env {
@@ -159,10 +166,8 @@ mod tests {
                     MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
                 })
                 .collect();
-            let pk_set = BlsPublicKeySet::new(4, pub_ids);
             Env {
                 msgs_and_sigs: msgs_and_sigs,
-                pk_set,
             }
         }
     }
@@ -177,7 +182,7 @@ mod tests {
         // Add each message with the section list added - none should accumulate.
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             let signed_msg = msg_and_sigs.signed_msg.clone();
-            let result = sig_accumulator.add_proof(signed_msg, &env.pk_set);
+            let result = sig_accumulator.add_proof(signed_msg);
             assert!(result.is_none());
         });
         let expected_msgs_count = env.msgs_and_sigs.len();
@@ -190,9 +195,7 @@ mod tests {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
                 let result = match signature_msg.content() {
-                    DirectMessage::MessageSignature(msg) => {
-                        sig_accumulator.add_proof(msg.clone(), &env.pk_set)
-                    }
+                    DirectMessage::MessageSignature(msg) => sig_accumulator.add_proof(msg.clone()),
                     ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
@@ -202,7 +205,7 @@ mod tests {
                         msg_and_sigs.signed_msg.routing_message(),
                         returned_msg.routing_message()
                     );
-                    assert!(returned_msg.check_fully_signed(&env.pk_set));
+                    assert!(returned_msg.check_fully_signed());
                     count += 1;
                 }
             });
