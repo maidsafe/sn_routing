@@ -132,7 +132,7 @@ impl RelocatingNode {
             | Merge(..)
             | UserMessage { .. }
             | NodeApproval { .. }
-            | AckMessage(..) => {
+            | AckMessage { .. } => {
                 warn!(
                     "{} Not joined yet. Not handling {:?} from {:?} to {:?}",
                     self, routing_msg.content, routing_msg.src, routing_msg.dst

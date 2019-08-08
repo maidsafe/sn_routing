@@ -453,7 +453,12 @@ pub enum MessageContent {
     /// Sent from Group Y to the joining node.
     NodeApproval(GenesisPfxInfo),
     /// Acknowledgement of a consensused section info.
-    AckMessage(SectionInfo),
+    AckMessage {
+        /// The prefix of our section when we acknowledge their SectionInfo of version ack_version.
+        src_prefix: Prefix<XorName>,
+        /// The version acknowledged.
+        ack_version: u64,
+    },
 }
 
 impl MessageContent {
@@ -533,7 +538,10 @@ impl Debug for MessageContent {
                 content, priority,
             ),
             NodeApproval(ref gen_info) => write!(formatter, "NodeApproval {{ {:?} }}", gen_info),
-            AckMessage(ref sec_info) => write!(formatter, "AckMessage({:?})", sec_info),
+            AckMessage {
+                ref src_prefix,
+                ref ack_version,
+            } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
         }
     }
 }

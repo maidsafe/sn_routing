@@ -574,7 +574,7 @@ impl Chain {
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_)
-            | NetworkEvent::AckMessage(_) => {
+            | NetworkEvent::AckMessage { .. } => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
             NetworkEvent::ProvingSections(_, _) => true,
@@ -740,6 +740,16 @@ impl Chain {
             .find(|pfx| pfx.is_compatible(&prefix))
         {
             let old_version = unwrap!(self.their_knowledge.remove(&pfx));
+
+            trace!(
+                "{} update_their_knowledge {:?}/{:?} to {:?}/{:?}",
+                self.our_id(),
+                pfx,
+                old_version,
+                prefix,
+                version
+            );
+
             let old_pfx_sibling = pfx.sibling();
             let mut current_pfx = prefix.sibling();
             while !self.their_knowledge.contains_key(&current_pfx) && current_pfx != old_pfx_sibling
@@ -1273,9 +1283,9 @@ impl Chain {
 
 #[cfg(feature = "mock_base")]
 impl Chain {
-    /// returns the list of versions in `their_knowledge`
-    pub fn get_their_knowldege_versions(&self) -> impl Iterator<Item = &u64> {
-        self.their_knowledge.values()
+    /// Returns their_knowledge
+    pub fn get_their_knowldege(&self) -> &BTreeMap<Prefix<XorName>, u64> {
+        &self.their_knowledge
     }
 }
 

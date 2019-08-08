@@ -13,8 +13,9 @@ use super::common::{Approved, Base, Bootstrapped, Relocated};
 use crate::{
     cache::Cache,
     chain::{
-        delivery_group_size, Chain, ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent,
-        OnlinePayload, PrefixChange, PrefixChangeOutcome, ProvingSection, SectionInfo,
+        delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
+        NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, ProvingSection,
+        SectionInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -656,9 +657,14 @@ impl Elder {
                 outbox.send_event(content.into_event(src, dst));
                 Ok(())
             }
-            (AckMessage(sec_info), Section(src), Section(dst)) => {
-                self.handle_ack_message(sec_info, src, dst)
-            }
+            (
+                AckMessage {
+                    src_prefix,
+                    ack_version,
+                },
+                Section(src),
+                Section(dst),
+            ) => self.handle_ack_message(src_prefix, ack_version, src, dst),
             (content, src, dst) => {
                 debug!(
                     "{} Unhandled routing message {:?} from {:?} to {:?}",
@@ -671,20 +677,27 @@ impl Elder {
 
     fn handle_ack_message(
         &mut self,
-        sec_info: SectionInfo,
+        src_prefix: Prefix<XorName>,
+        ack_version: u64,
         _src: XorName,
         _dst: XorName,
     ) -> Result<(), RoutingError> {
         // Prefix doesn't need to match, as we may get an ack for the section where we were before
         // splitting.
-        self.vote_for_event(NetworkEvent::AckMessage(sec_info));
+        self.vote_for_event(NetworkEvent::AckMessage(AckMessagePayload {
+            src_prefix,
+            ack_version,
+        }));
         Ok(())
     }
 
     fn send_section_info_ack(&mut self, sec_info: SectionInfo) {
         let src = Authority::Section(self.our_prefix().name());
         let dst = Authority::Section(sec_info.prefix().name());
-        let content = MessageContent::AckMessage(sec_info);
+        let content = MessageContent::AckMessage {
+            src_prefix: *self.our_prefix(),
+            ack_version: *sec_info.version(),
+        };
 
         let _ = self.send_routing_message(src, dst, content);
     }
@@ -1336,9 +1349,7 @@ impl Elder {
 
         debug!(
             "{}: Sending message {:?} via targets {:?}",
-            self,
-            signed_msg.routing_message(),
-            target_pub_ids
+            self, signed_msg, target_pub_ids
         );
 
         let targets: Vec<_> = target_pub_ids
@@ -2054,9 +2065,12 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_ack_message_event(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError> {
+    fn handle_ack_message_event(
+        &mut self,
+        ack_payload: AckMessagePayload,
+    ) -> Result<(), RoutingError> {
         self.chain
-            .update_their_knowledge(*sec_info.prefix(), *sec_info.version());
+            .update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
         Ok(())
     }
 

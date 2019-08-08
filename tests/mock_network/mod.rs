@@ -446,7 +446,11 @@ fn check_section_info_ack() {
     // sending out `section_info_ack`. Hence only one section shall consensus on it eventually.
     let num_of_consensus = nodes
         .iter()
-        .filter(|node| node.chain().get_their_knowldege_versions().count() > 0)
+        .filter(|node| {
+            node.chain()
+                .get_their_knowldege()
+                .contains_key(&node.chain().our_prefix().sibling())
+        })
         .count();
     assert!(num_of_consensus >= min_section_size);
     assert!(num_of_consensus < 2 * min_section_size);

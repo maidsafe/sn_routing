@@ -16,7 +16,8 @@ use super::{
 use crate::{
     cache::Cache,
     chain::{
-        Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, ProvingSection, SectionInfo,
+        AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload,
+        ProvingSection, SectionInfo,
     },
     error::RoutingError,
     event::Event,
@@ -402,7 +403,10 @@ impl Approved for Adult {
         }
     }
 
-    fn handle_ack_message_event(&mut self, _sec_info: SectionInfo) -> Result<(), RoutingError> {
+    fn handle_ack_message_event(
+        &mut self,
+        _ack_payload: AckMessagePayload,
+    ) -> Result<(), RoutingError> {
         debug!("{} - Unhandled UpdateSharedState event", self);
         Ok(())
     }
