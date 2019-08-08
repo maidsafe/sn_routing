@@ -9,8 +9,8 @@
 use super::Relocated;
 use crate::{
     chain::{
-        AckMessagePayload, Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof,
-        ProofSet, ProvingSection, SectionInfo,
+        Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet,
+        ProvingSection, SectionInfo,
     },
     error::RoutingError,
     id::PublicId,
@@ -66,12 +66,6 @@ pub trait Approved: Relocated {
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError>;
-
-    /// Handles an accumulated `UpdateSharedState` event.
-    fn handle_ack_message_event(
-        &mut self,
-        ack_payload: AckMessagePayload,
-    ) -> Result<(), RoutingError>;
 
     // Handles an accumulated `ExpectCandidate` event.
     // Context: a node is joining our section. Send the node our section. If the
@@ -238,7 +232,9 @@ pub trait Approved: Relocated {
                         transition => return Ok(transition),
                     }
                 }
-                NetworkEvent::AckMessage(payload) => self.handle_ack_message_event(payload)?,
+                NetworkEvent::AckMessage(_payload) => {
+                    // Update their_knowledge is handled within the chain.
+                }
                 NetworkEvent::ExpectCandidate(vote) => self.handle_expect_candidate_event(vote)?,
                 NetworkEvent::PurgeCandidate(old_public_id) => {
                     self.handle_purge_candidate_event(old_public_id)?
