@@ -80,6 +80,15 @@ impl HopMessage {
 
 /// Metadata needed for verification of the sender
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+pub struct PartialSecurityMetadata {
+    proof: SectionProofChain,
+    sender_prefix: Prefix<XorName>,
+    shares: BTreeMap<BlsPublicKeyShare, BlsSignatureShare>,
+    pk_set: BlsPublicKeySet,
+}
+
+/// Metadata needed for verification of the sender
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct FullSecurityMetadata {
     proof: SectionProofChain,
     sender_prefix: Prefix<XorName>,
@@ -87,7 +96,7 @@ pub struct FullSecurityMetadata {
 }
 
 impl FullSecurityMetadata {
-    pub fn verify_sig(&self, bytes: Vec<u8>) -> bool {
+    pub fn verify_sig(&self, bytes: &[u8]) -> bool {
         self.proof.last_public_key().verify(&self.signature, bytes)
     }
 
@@ -108,8 +117,7 @@ impl FullSecurityMetadata {
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
     None,
-    Partial(BTreeMap<BlsPublicKeyShare, BlsSignatureShare>),
-    Signed(BlsSignature),
+    Partial(PartialSecurityMetadata),
     Full(FullSecurityMetadata),
 }
 
@@ -133,16 +141,25 @@ impl SignedRoutingMessage {
         content: RoutingMessage,
         full_id: &FullId,
         src_section: T,
+        prefix: &Prefix<XorName>,
+        pk_set: BlsPublicKeySet,
+        proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
         let sk = full_id.signing_private_key();
         let mut signatures = BTreeMap::new();
         let pk_share = BlsPublicKeyShare(*full_id.public_id());
         let sig = content.to_signature(sk)?;
         let _ = signatures.insert(pk_share, sig);
+        let partial_metadata = PartialSecurityMetadata {
+            shares: signatures,
+            sender_prefix: *prefix,
+            pk_set,
+            proof,
+        };
         Ok(SignedRoutingMessage {
             content,
             src_section: src_section.into(),
-            security_metadata: SecurityMetadata::Partial(signatures),
+            security_metadata: SecurityMetadata::Partial(partial_metadata),
         })
     }
 
@@ -162,12 +179,10 @@ impl SignedRoutingMessage {
     pub fn check_integrity(&self) -> Result<()> {
         match self.security_metadata {
             SecurityMetadata::None => Ok(()),
-            SecurityMetadata::Partial(_) | SecurityMetadata::Signed(_) => {
-                Err(RoutingError::FailedSignature)
-            }
+            SecurityMetadata::Partial(_) => Err(RoutingError::FailedSignature),
             SecurityMetadata::Full(ref security_metadata) => {
                 let signed_bytes = serialise(&self.content)?;
-                if !security_metadata.verify_sig(signed_bytes) {
+                if !security_metadata.verify_sig(&signed_bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
                 if !security_metadata.validate_proof() {
@@ -185,7 +200,7 @@ impl SignedRoutingMessage {
                 chain.check_trust(security_metadata.prefix(), security_metadata.proof_chain())
             }
             SecurityMetadata::None => true,
-            _ => false,
+            SecurityMetadata::Partial(_) => false,
         }
     }
 
@@ -205,8 +220,8 @@ impl SignedRoutingMessage {
         pk_share: BlsPublicKeyShare,
         sig_share: BlsSignatureShare,
     ) {
-        if let SecurityMetadata::Partial(ref mut sigs) = self.security_metadata {
-            let _ = sigs.insert(pk_share, sig_share);
+        if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
+            let _ = partial.shares.insert(pk_share, sig_share);
         }
     }
 
@@ -214,57 +229,44 @@ impl SignedRoutingMessage {
     pub fn add_signature_shares(&mut self, mut msg: SignedRoutingMessage) {
         if self.content.src.is_multiple() {
             if let (
-                SecurityMetadata::Partial(self_shares),
-                SecurityMetadata::Partial(other_shares),
+                SecurityMetadata::Partial(self_partial),
+                SecurityMetadata::Partial(other_partial),
             ) = (&mut self.security_metadata, &mut msg.security_metadata)
             {
-                self_shares.append(other_shares);
+                self_partial.shares.append(&mut other_partial.shares);
             }
         }
     }
 
     /// Combines the signatures into a single BLS signature
-    pub fn combine_signatures(&mut self, pk_set: &BlsPublicKeySet) {
-        if let SecurityMetadata::Partial(sigs) =
-            mem::replace(&mut self.security_metadata, SecurityMetadata::None)
-        {
-            if let Some(full_sig) =
-                pk_set.combine_signatures(sigs.iter().map(|(key, sig)| (*key, sig)))
-            {
-                self.security_metadata = SecurityMetadata::Signed(full_sig);
-            } else {
+    pub fn combine_signatures(&mut self) {
+        match mem::replace(&mut self.security_metadata, SecurityMetadata::None) {
+            SecurityMetadata::Partial(partial) => {
+                if let Some(full_sig) = partial
+                    .pk_set
+                    .combine_signatures(partial.shares.iter().map(|(key, sig)| (*key, sig)))
+                {
+                    self.security_metadata = SecurityMetadata::Full(FullSecurityMetadata {
+                        proof: partial.proof,
+                        sender_prefix: partial.sender_prefix,
+                        signature: full_sig,
+                    });
+                } else {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "Combining signatures failed on {:?}!",
+                        self
+                    );
+                }
+            }
+            SecurityMetadata::Full(_) => {
                 log_or_panic!(
-                    LogLevel::Error,
-                    "Combining signatures failed on {:?}!",
+                    LogLevel::Warn,
+                    "Tried to call combine_signatures on {:?}",
                     self
                 );
             }
-        } else {
-            warn!("Tried to call combine_signatures on {:?}", self);
-        }
-    }
-
-    /// Generate and attach the full proof for the recipient
-    pub fn attach_proof(&mut self, chain: &Chain) {
-        if let SecurityMetadata::Signed(sig) =
-            mem::replace(&mut self.security_metadata, SecurityMetadata::None)
-        {
-            let signed_bytes = match serialise(&self.content) {
-                Ok(serialised) => serialised,
-                Err(error) => {
-                    warn!("Failed to serialise {:?}: {:?}", self, error);
-                    return;
-                }
-            };
-            let proof_chain = chain.prove(&self.content.dst, &sig, &signed_bytes);
-            let proof = FullSecurityMetadata {
-                proof: proof_chain,
-                sender_prefix: *chain.our_prefix(),
-                signature: sig,
-            };
-            self.security_metadata = SecurityMetadata::Full(proof);
-        } else {
-            warn!("Tried to call attach_proof on {:?}", self);
+            SecurityMetadata::None => (),
         }
     }
 
@@ -284,8 +286,8 @@ impl SignedRoutingMessage {
     }
 
     /// Returns whether there are enough signatures from the sender.
-    pub fn check_fully_signed(&mut self, pk_set: &BlsPublicKeySet) -> bool {
-        if !self.has_enough_sigs(pk_set) {
+    pub fn check_fully_signed(&mut self) -> bool {
+        if !self.has_enough_sigs() {
             return false;
         }
 
@@ -300,7 +302,7 @@ impl SignedRoutingMessage {
             SecurityMetadata::None => {
                 return false;
             }
-            SecurityMetadata::Signed(_) | SecurityMetadata::Full(_) => {
+            SecurityMetadata::Full(_) => {
                 return true;
             }
             // this is the only case in which we actually have to do further checks
@@ -312,32 +314,31 @@ impl SignedRoutingMessage {
                         return false;
                     }
                 };
-                self.find_invalid_sigs(signed_bytes)
+                self.find_invalid_sigs(&signed_bytes)
             }
         };
 
-        if let SecurityMetadata::Partial(ref mut sigs) = self.security_metadata {
+        if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
             // the mutable borrow in this case made it impossible to find the invalid sigs and
             // check for enough sigs in the same match
             for invalid_signature in invalid_sigs {
-                let _ = sigs.remove(&invalid_signature);
+                let _ = partial.shares.remove(&invalid_signature);
             }
         }
 
-        self.has_enough_sigs(pk_set)
+        self.has_enough_sigs()
     }
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
     // valid).
-    fn find_invalid_sigs(&self, signed_bytes: Vec<u8>) -> Vec<BlsPublicKeyShare> {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<BlsPublicKeyShare> {
         match self.security_metadata {
-            SecurityMetadata::None | SecurityMetadata::Signed(_) | SecurityMetadata::Full(_) => {
-                vec![]
-            }
-            SecurityMetadata::Partial(ref sigs) => {
-                let invalid: Vec<_> = sigs
+            SecurityMetadata::None | SecurityMetadata::Full(_) => vec![],
+            SecurityMetadata::Partial(ref partial) => {
+                let invalid: Vec<_> = partial
+                    .shares
                     .iter()
-                    .filter(|&(key, sig)| !key.verify(sig, &signed_bytes))
+                    .filter(|&(key, sig)| !key.verify(sig, signed_bytes))
                     .map(|(key, _)| *key)
                     .collect();
                 if !invalid.is_empty() {
@@ -350,7 +351,7 @@ impl SignedRoutingMessage {
 
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them; it also does not verify `self.src_section`).
-    fn has_enough_sigs(&self, pk_set: &BlsPublicKeySet) -> bool {
+    fn has_enough_sigs(&self) -> bool {
         // Only Clients are allowed to omit the src_section
         if !self.content.src.is_client() && self.src_section.is_none() {
             return false;
@@ -358,15 +359,15 @@ impl SignedRoutingMessage {
 
         match &self.security_metadata {
             SecurityMetadata::None => !self.content.src.is_multiple(),
-            SecurityMetadata::Partial(sig_shares) => sig_shares.len() > pk_set.threshold(),
-            SecurityMetadata::Signed(_) | SecurityMetadata::Full(_) => true,
+            SecurityMetadata::Partial(partial) => partial.shares.len() > partial.pk_set.threshold(),
+            SecurityMetadata::Full(_) => true,
         }
     }
 
     #[cfg(test)]
     pub fn signatures(&self) -> Option<&BTreeMap<BlsPublicKeyShare, BlsSignatureShare>> {
         match &self.security_metadata {
-            SecurityMetadata::Partial(sigs) => Some(sigs),
+            SecurityMetadata::Partial(partial) => Some(&partial.shares),
             _ => None,
         }
     }
@@ -552,7 +553,6 @@ impl Debug for SignedRoutingMessage {
         let security_metadata_str = match self.security_metadata {
             SecurityMetadata::None => "None",
             SecurityMetadata::Partial(_) => "Partial",
-            SecurityMetadata::Signed(_) => "Signed",
             SecurityMetadata::Full(_) => "Full",
         };
         write!(

@@ -497,11 +497,7 @@ impl Elder {
             return Err(RoutingError::UnknownConnection(pub_id));
         }
 
-        if let Some(mut signed_msg) = self
-            .sig_accumulator
-            .add_proof(msg.clone(), &self.public_key_set())
-        {
-            signed_msg.attach_proof(&self.chain);
+        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
             self.handle_signed_message(signed_msg)?;
         }
         Ok(())
@@ -1867,18 +1863,24 @@ impl Bootstrapped for Elder {
             return Ok(());
         }
 
-        let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, sending_sec)?;
+        let proof = self.chain.prove(&routing_msg.dst);
+        let pk_set = self.public_key_set();
+        let sender_prefix = self.chain.our_prefix();
+        let signed_msg = SignedRoutingMessage::new(
+            routing_msg,
+            &self.full_id,
+            sending_sec,
+            sender_prefix,
+            pk_set,
+            proof,
+        )?;
 
         for target in Iterator::flatten(
             self.get_signature_targets(&signed_msg.routing_message().src)
                 .into_iter(),
         ) {
             if target == *self.name() {
-                if let Some(mut msg) = self
-                    .sig_accumulator
-                    .add_proof(signed_msg.clone(), &self.public_key_set())
-                {
-                    msg.attach_proof(&self.chain);
+                if let Some(mut msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {

@@ -10,7 +10,6 @@ use crate::{
     messages::SignedRoutingMessage,
     sha3::Digest256,
     time::{Duration, Instant},
-    BlsPublicKeySet,
 };
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -27,11 +26,7 @@ pub struct SignatureAccumulator {
 impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
-    pub fn add_proof(
-        &mut self,
-        msg: SignedRoutingMessage,
-        pk_set: &BlsPublicKeySet,
-    ) -> Option<SignedRoutingMessage> {
+    pub fn add_proof(&mut self, msg: SignedRoutingMessage) -> Option<SignedRoutingMessage> {
         self.remove_expired();
         let hash = match msg.routing_message().hash() {
             Ok(hash) => hash,
@@ -40,13 +35,11 @@ impl SignatureAccumulator {
             }
         };
         if let Some(&mut (ref mut existing_msg, _)) = self.msgs.get_mut(&hash) {
-            // TODO: should we somehow merge other parts of the message? like the proving sections
-            // etc.
             existing_msg.add_signature_shares(msg);
         } else {
             let _ = self.msgs.insert(hash, (msg, Instant::now()));
         }
-        self.remove_if_complete(&hash, pk_set)
+        self.remove_if_complete(&hash)
     }
 
     fn remove_expired(&mut self) {
@@ -61,21 +54,17 @@ impl SignatureAccumulator {
         }
     }
 
-    fn remove_if_complete(
-        &mut self,
-        hash: &Digest256,
-        pk_set: &BlsPublicKeySet,
-    ) -> Option<SignedRoutingMessage> {
+    fn remove_if_complete(&mut self, hash: &Digest256) -> Option<SignedRoutingMessage> {
         match self.msgs.get_mut(hash) {
             None => return None,
             Some(&mut (ref mut msg, _)) => {
-                if !msg.check_fully_signed(pk_set) {
+                if !msg.check_fully_signed() {
                     return None;
                 }
             }
         }
         self.msgs.remove(hash).map(|(mut msg, _)| {
-            msg.combine_signatures(pk_set);
+            msg.combine_signatures();
             msg
         })
     }

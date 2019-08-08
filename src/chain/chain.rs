@@ -18,7 +18,7 @@ use crate::{
     sha3::Digest256,
     utils::LogIdent,
     utils::XorTargetInterval,
-    BlsPublicKey, BlsSignature, Prefix, XorName, Xorable,
+    BlsPublicKey, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -543,26 +543,9 @@ impl Chain {
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(
-        &self,
-        target: &Authority<XorName>,
-        signature: &BlsSignature,
-        data: &[u8],
-    ) -> SectionProofChain {
+    pub fn prove(&self, target: &Authority<XorName>) -> SectionProofChain {
         let first_index = self.proving_index(target);
-        let keys_len = self.state.our_history.len();
-        let last_index = self
-            .state
-            .our_history
-            .all_keys()
-            .rev()
-            .enumerate()
-            // .enumerate().rev() is impossible due to iter::Chain not implementing
-            // ExactSizeIterator
-            .map(|(index, key)| (keys_len - index, key))
-            .find(|(_, key)| key.verify(signature, data))
-            .map(|(index, _)| index)
-            .unwrap_or_else(|| self.state.our_history.last_index());
+        let last_index = self.state.our_history.last_index();
         self.state
             .our_history
             .slice(first_index as usize, last_index)
