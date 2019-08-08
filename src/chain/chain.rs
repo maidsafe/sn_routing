@@ -532,6 +532,7 @@ impl Chain {
 
     /// Returns the index of the public key in our_history that will be trusted by the target
     /// Authority
+    #[allow(unused)]
     fn proving_index(&self, target: &Authority<XorName>) -> u64 {
         self.state
             .their_knowledge
@@ -543,8 +544,9 @@ impl Chain {
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(&self, target: &Authority<XorName>) -> SectionProofChain {
-        let first_index = self.proving_index(target);
+    pub fn prove(&self, _target: &Authority<XorName>) -> SectionProofChain {
+        // TODO: change to self.proving_index(target); when their_knowledge is functioning properly
+        let first_index = 0;
         let last_index = self.state.our_history.last_index();
         self.state
             .our_history
