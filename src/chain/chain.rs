@@ -27,7 +27,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::iter;
 use std::mem;
-use unwrap::unwrap;
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -50,8 +49,6 @@ pub struct Chain {
     /// If we're a member of the section yet. This will be toggled once we get a `SectionInfo`
     /// block accumulated which bears `our_id` as one of the members
     is_member: bool,
-    /// Their knowledge of us
-    their_knowledge: BTreeMap<Prefix<XorName>, u64>,
     /// A map containing network events that have not been handled yet, together with their proofs
     /// that have been collected so far. We are still waiting for more proofs, or to reach a state
     /// where we can handle the event.
@@ -96,7 +93,6 @@ impl Chain {
             our_id,
             state: SharedState::new(gen_info.first_info),
             is_member,
-            their_knowledge: Default::default(),
             chain_accumulator: Default::default(),
             completed_events: Default::default(),
             event_cache: Default::default(),
@@ -245,6 +241,9 @@ impl Chain {
                         return Ok(None);
                     }
                 }
+            }
+            NetworkEvent::AckMessage(ref ack_payload) => {
+                self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
             NetworkEvent::OurMerge => {
                 // use new_info here as our_info might still be accumulating signatures
@@ -734,31 +733,14 @@ impl Chain {
 
     /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
     pub fn update_their_knowledge(&mut self, prefix: Prefix<XorName>, version: u64) {
-        if let Some(&pfx) = self
-            .their_knowledge
-            .keys()
-            .find(|pfx| pfx.is_compatible(&prefix))
-        {
-            let old_version = unwrap!(self.their_knowledge.remove(&pfx));
-
-            trace!(
-                "{} update_their_knowledge {:?}/{:?} to {:?}/{:?}",
-                self.our_id(),
-                pfx,
-                old_version,
-                prefix,
-                version
-            );
-
-            let old_pfx_sibling = pfx.sibling();
-            let mut current_pfx = prefix.sibling();
-            while !self.their_knowledge.contains_key(&current_pfx) && current_pfx != old_pfx_sibling
-            {
-                let _ = self.their_knowledge.insert(current_pfx, old_version);
-                current_pfx = current_pfx.popped().sibling();
-            }
-        }
-        let _ = self.their_knowledge.insert(prefix, version);
+        trace!(
+            "{:?} attempts to update their_knowledge of our section_info with version {:?} for \
+             prefix {:?} ",
+            self.our_id(),
+            version,
+            prefix
+        );
+        self.state.update_their_knowledge(prefix, version);
     }
 
     /// Updates `their_keys` in the shared state
@@ -1250,15 +1232,6 @@ impl Debug for Chain {
             writeln!(formatter, "\t {:?}\t {}", pfx, sec_info)?;
         }
 
-        writeln!(
-            formatter,
-            "\ttheir_knowledge: len {}",
-            self.their_knowledge.len()
-        )?;
-        for (pfx, version) in &self.their_knowledge {
-            writeln!(formatter, "\t{:?} knows our_version: {}", pfx, version)?;
-        }
-
         writeln!(formatter, "}}")
     }
 }
@@ -1285,7 +1258,7 @@ impl Chain {
 impl Chain {
     /// Returns their_knowledge
     pub fn get_their_knowldege(&self) -> &BTreeMap<Prefix<XorName>, u64> {
-        &self.their_knowledge
+        &self.state.get_their_knowledge()
     }
 }
 

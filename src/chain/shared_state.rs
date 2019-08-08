@@ -43,6 +43,8 @@ pub struct SharedState {
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
     pub their_keys: BTreeMap<Prefix<XorName>, BlsPublicKey>,
+    /// Other sections' knowledge of us
+    their_knowledge: BTreeMap<Prefix<XorName>, u64>,
 }
 
 impl SharedState {
@@ -58,6 +60,7 @@ impl SharedState {
             merging: Default::default(),
             our_history,
             their_keys: Default::default(),
+            their_knowledge: Default::default(),
         }
     }
 
@@ -69,7 +72,7 @@ impl SharedState {
             return Ok(());
         }
 
-        let (our_infos, our_history, neighbour_infos, their_keys) =
+        let (our_infos, our_history, neighbour_infos, their_keys, their_knowledge) =
             serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
@@ -105,11 +108,20 @@ impl SharedState {
                     their_keys
                 );
             }
+            if self.their_knowledge != their_knowledge {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different their_knowledge:\n{:?},\n{:?}",
+                    self.their_knowledge,
+                    their_knowledge
+                );
+            }
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
         self.neighbour_infos = neighbour_infos;
         self.their_keys = their_keys;
+        self.their_knowledge = their_knowledge;
 
         Ok(())
     }
@@ -120,6 +132,7 @@ impl SharedState {
             &self.our_history,
             &self.neighbour_infos,
             &self.their_keys,
+            &self.their_knowledge,
         ))?)
     }
 
@@ -220,10 +233,47 @@ impl SharedState {
         let _ = self.their_keys.insert(prefix, key);
     }
 
+    /// Updates the entry in `their_knowledge` for `prefix` to the `version`; if a split
+    /// occurred in the meantime, the versions for sections covering the rest of the address space
+    /// are initialised to the old version that was stored for their common ancestor
+    /// NOTE: the function as it is currently is not merge-safe.
+    pub fn update_their_knowledge(&mut self, prefix: Prefix<XorName>, version: u64) {
+        if let Some(&pfx) = self
+            .their_knowledge
+            .keys()
+            .find(|pfx| pfx.is_compatible(&prefix))
+        {
+            let old_version = unwrap!(self.their_knowledge.remove(&pfx));
+
+            trace!(
+                "    from {:?}/{:?} to {:?}/{:?}",
+                pfx,
+                old_version,
+                prefix,
+                version
+            );
+
+            let old_pfx_sibling = pfx.sibling();
+            let mut current_pfx = prefix.sibling();
+            while !self.their_knowledge.contains_key(&current_pfx) && current_pfx != old_pfx_sibling
+            {
+                let _ = self.their_knowledge.insert(current_pfx, old_version);
+                current_pfx = current_pfx.popped().sibling();
+            }
+        }
+        let _ = self.their_knowledge.insert(prefix, version);
+    }
+
     #[cfg(test)]
     /// Returns the reference to their_keys
     pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
         &self.their_keys
+    }
+
+    #[cfg(feature = "mock_base")]
+    /// Returns their_knowledge
+    pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
+        &self.their_knowledge
     }
 }
 

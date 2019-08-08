@@ -2065,15 +2065,6 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_ack_message_event(
-        &mut self,
-        ack_payload: AckMessagePayload,
-    ) -> Result<(), RoutingError> {
-        self.chain
-            .update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
-        Ok(())
-    }
-
     fn handle_section_info_event(
         &mut self,
         sec_info: SectionInfo,
