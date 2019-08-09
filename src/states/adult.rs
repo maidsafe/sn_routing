@@ -17,6 +17,7 @@ use crate::{
     cache::Cache,
     chain::{
         Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, ProvingSection, SectionInfo,
+        SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -400,6 +401,13 @@ impl Approved for Adult {
             debug!("{} - Unhandled SectionInfo event", self);
             Ok(Transition::Stay)
         }
+    }
+
+    fn handle_send_ack_message_event(
+        &mut self,
+        _ack_payload: SendAckMessagePayload,
+    ) -> Result<(), RoutingError> {
+        Ok(())
     }
 
     fn handle_our_merge_event(&mut self) -> Result<(), RoutingError> {

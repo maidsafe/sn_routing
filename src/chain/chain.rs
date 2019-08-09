@@ -536,7 +536,6 @@ impl Chain {
 
     /// Returns the index of the public key in our_history that will be trusted by the target
     /// Authority
-    #[allow(unused)]
     fn proving_index(&self, target: &Authority<XorName>) -> u64 {
         self.state
             .their_knowledge
@@ -548,9 +547,8 @@ impl Chain {
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(&self, _target: &Authority<XorName>) -> SectionProofChain {
-        // TODO: change to self.proving_index(target); when their_knowledge is functioning properly
-        let first_index = 0;
+    pub fn prove(&self, target: &Authority<XorName>) -> SectionProofChain {
+        let first_index = self.proving_index(target);
         self.state.our_history.slice_from(first_index as usize)
     }
 
@@ -615,8 +613,14 @@ impl Chain {
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_)
-            | NetworkEvent::AckMessage { .. } => {
+            | NetworkEvent::AckMessage(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
+            }
+            NetworkEvent::SendAckMessage(_) => {
+                // We may not reach consensus if malicious peer, but when we do we know all our
+                // nodes have updated `their_keys`.
+                self.state.change == PrefixChange::None
+                    && self.our_info().is_total_consensus(proofs)
             }
             NetworkEvent::ProvingSections(_, _) => true,
 

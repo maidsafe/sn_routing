@@ -15,7 +15,7 @@ use crate::{
     chain::{
         delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
         NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, ProvingSection,
-        SectionInfo,
+        SectionInfo, SendAckMessagePayload,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -435,7 +435,8 @@ impl Elder {
                 // Keep: Still relevant after prefix change.
                 NetworkEvent::NeighbourMerge(_)
                 | NetworkEvent::ProvingSections(_, _)
-                | NetworkEvent::AckMessage(_) => true,
+                | NetworkEvent::AckMessage(_)
+                | NetworkEvent::SendAckMessage(_) => true,
             })
             .for_each(|event| {
                 self.vote_for_event(event.clone());
@@ -673,15 +674,11 @@ impl Elder {
         Ok(())
     }
 
-    fn send_section_info_ack(&mut self, sec_info: SectionInfo) {
-        let src = Authority::Section(self.our_prefix().name());
-        let dst = Authority::Section(sec_info.prefix().name());
-        let content = MessageContent::AckMessage {
-            src_prefix: *self.our_prefix(),
+    fn vote_send_section_info_ack(&mut self, sec_info: SectionInfo) {
+        self.vote_for_event(NetworkEvent::SendAckMessage(SendAckMessagePayload {
+            ack_prefix: *sec_info.prefix(),
             ack_version: *sec_info.version(),
-        };
-
-        let _ = self.send_routing_message(src, dst, content);
+        }));
     }
 
     fn handle_candidate_approval(
@@ -2092,12 +2089,26 @@ impl Approved for Elder {
             // vote_for_event is expected to only generate a new vote if required.
             self.vote_for_event(sec_info.clone().into_network_event());
 
-            self.send_section_info_ack(sec_info)
+            self.vote_send_section_info_ack(sec_info)
         }
 
         let _ = self.merge_if_necessary();
 
         Ok(Transition::Stay)
+    }
+
+    fn handle_send_ack_message_event(
+        &mut self,
+        ack_payload: SendAckMessagePayload,
+    ) -> Result<(), RoutingError> {
+        let src = Authority::Section(self.our_prefix().name());
+        let dst = Authority::Section(ack_payload.ack_prefix.name());
+        let content = MessageContent::AckMessage {
+            src_prefix: *self.our_prefix(),
+            ack_version: ack_payload.ack_version,
+        };
+
+        self.send_routing_message(src, dst, content)
     }
 
     /// Handles an accumulated `ProvingSections` event.
