@@ -551,10 +551,7 @@ impl Chain {
     pub fn prove(&self, _target: &Authority<XorName>) -> SectionProofChain {
         // TODO: change to self.proving_index(target); when their_knowledge is functioning properly
         let first_index = 0;
-        let last_index = self.state.our_history.last_index();
-        self.state
-            .our_history
-            .slice(first_index as usize, last_index)
+        self.state.our_history.slice_from(first_index as usize)
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.

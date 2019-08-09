@@ -440,31 +440,25 @@ impl SectionProofChain {
             .unwrap_or(&self.genesis_pk)
     }
 
-    pub fn last_index(&self) -> usize {
-        self.blocks.len()
-    }
-
     pub fn all_keys(&self) -> impl DoubleEndedIterator<Item = &BlsPublicKey> {
         iter::once(&self.genesis_pk).chain(self.blocks.iter().map(|block| &block.key))
     }
 
-    pub fn len(&self) -> usize {
-        self.blocks.len() + 1
-    }
+    pub fn slice_from(&self, first_index: usize) -> SectionProofChain {
+        if first_index == 0 || self.blocks.is_empty() {
+            return self.clone();
+        }
 
-    pub fn slice(&self, first_index: usize, last_index: usize) -> SectionProofChain {
-        let genesis_pk = if first_index == 0 {
-            self.genesis_pk.clone()
-        } else {
-            self.blocks[first_index - 1].key.clone()
-        };
-        let blocks = if last_index == 0 {
+        let genesis_index = std::cmp::min(first_index, self.blocks.len()) - 1;
+        let genesis_pk = self.blocks[genesis_index].key.clone();
+
+        let block_first_index = genesis_index + 1;
+        let blocks = if block_first_index >= self.blocks.len() {
             vec![]
-        } else if last_index < self.blocks.len() {
-            self.blocks[first_index..last_index].to_vec()
         } else {
-            self.blocks[first_index..].to_vec()
+            self.blocks[block_first_index..].to_vec()
         };
+
         SectionProofChain { genesis_pk, blocks }
     }
 }
