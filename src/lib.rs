@@ -258,7 +258,11 @@ pub(crate) type NetworkBytes = std::rc::Rc<crate::messages::Message>;
 
 pub use self::quic_p2p::Config as NetworkConfig;
 pub(crate) use self::{
-    chain::bls_emu::{PublicKey as BlsPublicKey, Signature as BlsSignature},
+    chain::bls_emu::{
+        PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
+        PublicKeyShare as BlsPublicKeyShare, Signature as BlsSignature,
+        SignatureShare as BlsSignatureShare,
+    },
     network_service::NetworkService,
     quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p},
 };

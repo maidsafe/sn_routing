@@ -7,31 +7,33 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 //! Types emulating the BLS functionality until proper BLS lands
-use super::{delivery_group_size, NetworkEvent, ProofSet, SectionInfo};
-use crate::id::{FullId, PublicId};
-use parsec;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt,
+use super::{NetworkEvent, ProofSet, SectionInfo};
+use crate::{
+    id::{FullId, PublicId},
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
+use parsec;
+#[cfg(test)]
+use std::collections::BTreeSet;
+use std::{collections::BTreeMap, fmt};
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
     sec_info: SectionInfo,
     threshold: usize,
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKey(PublicKeySet);
 
 pub type SignatureShare = ::safe_crypto::Signature;
 
 pub struct SecretKeyShare(FullId);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct PublicKeyShare(PublicId);
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize, Debug)]
+pub struct PublicKeyShare(pub PublicId);
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct Signature {
     sigs: BTreeMap<PublicId, SignatureShare>,
 }
@@ -55,7 +57,6 @@ impl SecretKeyShare {
 }
 
 impl PublicKeyShare {
-    #[allow(unused)]
     pub fn verify<M: AsRef<[u8]>>(&self, sig: &SignatureShare, msg: M) -> bool {
         self.0
             .signing_public_key()
@@ -64,7 +65,7 @@ impl PublicKeyShare {
 }
 
 impl PublicKeySet {
-    #[allow(unused)]
+    #[cfg(test)]
     pub fn new(threshold: usize, keys: BTreeSet<PublicId>) -> Self {
         let sec_info = SectionInfo::new(keys, Default::default(), None).unwrap();
         Self {
@@ -74,19 +75,17 @@ impl PublicKeySet {
     }
 
     pub fn from_section_info(sec_info: SectionInfo) -> Self {
-        let threshold = delivery_group_size(sec_info.members().len()) - 1;
+        let threshold = sec_info.members().len() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR;
         Self {
             threshold,
             sec_info,
         }
     }
 
-    #[allow(unused)]
     pub fn threshold(&self) -> usize {
         self.threshold
     }
 
-    #[allow(unused)]
     pub fn combine_signatures<'a, I>(&self, shares: I) -> Option<Signature>
     where
         I: IntoIterator<Item = (PublicKeyShare, &'a SignatureShare)>,
@@ -105,7 +104,7 @@ impl PublicKeySet {
         }
     }
 
-    #[allow(unused)]
+    #[cfg(test)]
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.clone())
     }

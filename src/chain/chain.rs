@@ -9,7 +9,7 @@
 use super::{
     candidate::Candidate,
     shared_state::{PrefixChange, SectionProofBlock, SharedState},
-    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
+    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -491,6 +491,28 @@ impl Chain {
         }
     }
 
+    /// Return the keys we know
+    pub fn get_their_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &BlsPublicKey)> {
+        self.state.get_their_keys()
+    }
+
+    /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
+    /// for a prefix compatible with `prefix`
+    pub fn check_trust(&self, prefix: &Prefix<XorName>, proof_chain: &SectionProofChain) -> bool {
+        let filtered_keys: BTreeSet<_> = if prefix.is_compatible(self.our_prefix()) {
+            self.state.our_history.all_keys().collect()
+        } else {
+            self.state
+                .get_their_keys()
+                .filter(|&(pfx, _)| prefix.is_compatible(pfx))
+                .map(|(_, key)| key)
+                .collect()
+        };
+        proof_chain
+            .all_keys()
+            .any(|key| filtered_keys.contains(key))
+    }
+
     /// Returns `true` if the `SectionInfo` isn't known to us yet.
     pub fn is_new(&self, sec_info: &SectionInfo) -> bool {
         let is_newer = |si: &SectionInfo| {
@@ -510,6 +532,26 @@ impl Chain {
     /// Returns `true` if the `SectionInfo` isn't known to us yet and is a neighbouring section.
     pub fn is_new_neighbour(&self, sec_info: &SectionInfo) -> bool {
         self.our_prefix().is_neighbour(sec_info.prefix()) && self.is_new(sec_info)
+    }
+
+    /// Returns the index of the public key in our_history that will be trusted by the target
+    /// Authority
+    #[allow(unused)]
+    fn proving_index(&self, target: &Authority<XorName>) -> u64 {
+        self.state
+            .their_knowledge
+            .iter()
+            .find(|(prefix, _)| prefix.matches(&target.name()))
+            .map(|(_, index)| *index)
+            .unwrap_or(0)
+    }
+
+    /// Provide a SectionProofChain that proves the given signature to the section with a given
+    /// prefix
+    pub fn prove(&self, _target: &Authority<XorName>) -> SectionProofChain {
+        // TODO: change to self.proving_index(target); when their_knowledge is functioning properly
+        let first_index = 0;
+        self.state.our_history.slice_from(first_index as usize)
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
@@ -745,7 +787,7 @@ impl Chain {
 
     /// Updates `their_keys` in the shared state
     pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, bls_key: BlsPublicKey) {
-        self.state.update_their_keys(prefix, bls_key);
+        self.state.update_their_keys(prefix, bls_key, &self.our_id);
     }
 
     /// Returns whether we should split into two sections.

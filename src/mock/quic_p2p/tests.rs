@@ -442,7 +442,7 @@ fn packet_is_parsec_gossip() {
             message_id: MessageId::new(),
         },
     };
-    let msg = unwrap!(SignedRoutingMessage::new(msg, &full_id, None));
+    let msg = SignedRoutingMessage::insecure(msg, None);
     let msg = unwrap!(HopMessage::new(msg));
     let msg = Message::Hop(msg);
     assert!(!Packet::Message(NetworkBytes::from(serialise(&msg)), 0).is_parsec_gossip());

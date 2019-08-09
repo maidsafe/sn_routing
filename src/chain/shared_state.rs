@@ -7,16 +7,23 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{ProofSet, SectionInfo};
-use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
+use crate::{
+    error::RoutingError, id::PublicId, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName,
+};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
 use unwrap::unwrap;
+
+// Number of recent keys we keep: i.e how many other section churns we can handle before a
+// message send with a previous version of a section is no longer trusted.
+// With low churn rate, a ad hoc 10 should be big enough to avoid losing messages.
+const MAX_THEIR_RECENT_KEYS: usize = 10;
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
@@ -44,7 +51,9 @@ pub struct SharedState {
     /// BLS public keys of other sections
     pub their_keys: BTreeMap<Prefix<XorName>, BlsPublicKey>,
     /// Other sections' knowledge of us
-    their_knowledge: BTreeMap<Prefix<XorName>, u64>,
+    pub their_knowledge: BTreeMap<Prefix<XorName>, u64>,
+    /// Recent keys removed from their_keys
+    pub their_recent_keys: VecDeque<(Prefix<XorName>, BlsPublicKey)>,
 }
 
 impl SharedState {
@@ -61,6 +70,7 @@ impl SharedState {
             our_history,
             their_keys: Default::default(),
             their_knowledge: Default::default(),
+            their_recent_keys: Default::default(),
         }
     }
 
@@ -72,8 +82,14 @@ impl SharedState {
             return Ok(());
         }
 
-        let (our_infos, our_history, neighbour_infos, their_keys, their_knowledge) =
-            serialisation::deserialise(related_info)?;
+        let (
+            our_infos,
+            our_history,
+            neighbour_infos,
+            their_keys,
+            their_knowledge,
+            their_recent_keys,
+        ) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
             if self.our_infos != our_infos {
@@ -116,12 +132,21 @@ impl SharedState {
                     their_knowledge
                 );
             }
+            if self.their_recent_keys != their_recent_keys {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different their_recent_keys:\n{:?},\n{:?}",
+                    self.their_recent_keys,
+                    their_recent_keys
+                );
+            }
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
         self.neighbour_infos = neighbour_infos;
         self.their_keys = their_keys;
         self.their_knowledge = their_knowledge;
+        self.their_recent_keys = their_recent_keys;
 
         Ok(())
     }
@@ -133,6 +158,7 @@ impl SharedState {
             &self.neighbour_infos,
             &self.their_keys,
             &self.their_knowledge,
+            &self.their_recent_keys,
         ))?)
     }
 
@@ -216,13 +242,32 @@ impl SharedState {
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     /// NOTE: the function as it is currently is not merge-safe.
-    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, key: BlsPublicKey) {
+    pub fn update_their_keys(
+        &mut self,
+        prefix: Prefix<XorName>,
+        key: BlsPublicKey,
+        our_id: &PublicId,
+    ) {
         if let Some(&pfx) = self
             .their_keys
             .keys()
             .find(|pfx| pfx.is_compatible(&prefix))
         {
             let old_key = unwrap!(self.their_keys.remove(&pfx));
+            self.their_recent_keys.push_front((pfx, old_key.clone()));
+            if self.their_recent_keys.len() > MAX_THEIR_RECENT_KEYS {
+                let _ = self.their_recent_keys.pop_back();
+            }
+
+            trace!(
+                "{} update_their_keys {:?}/{:?} to {:?}/{:?}",
+                our_id,
+                pfx,
+                old_key,
+                prefix,
+                key
+            );
+
             let old_pfx_sibling = pfx.sibling();
             let mut current_pfx = prefix.sibling();
             while !self.their_keys.contains_key(&current_pfx) && current_pfx != old_pfx_sibling {
@@ -264,10 +309,11 @@ impl SharedState {
         let _ = self.their_knowledge.insert(prefix, version);
     }
 
-    #[cfg(test)]
-    /// Returns the reference to their_keys
-    pub fn get_their_keys(&self) -> &BTreeMap<Prefix<XorName>, BlsPublicKey> {
-        &self.their_keys
+    /// Returns the reference to their_keys and any recent keys we still hold.
+    pub fn get_their_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &BlsPublicKey)> {
+        self.their_keys
+            .iter()
+            .chain(self.their_recent_keys.iter().map(|(p, k)| (p, k)))
     }
 
     #[cfg(feature = "mock_base")]
@@ -326,10 +372,20 @@ where
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key: BlsPublicKey,
     sig: BlsSignature,
+}
+
+impl Debug for SectionProofBlock {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SectionProofBlock {{ key: {:?}, sig: .. }}",
+            self.key,
+        )
+    }
 }
 
 impl SectionProofBlock {
@@ -348,7 +404,7 @@ impl SectionProofBlock {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_pk: BlsPublicKey,
     blocks: Vec<SectionProofBlock>,
@@ -366,7 +422,6 @@ impl SectionProofChain {
         self.blocks.push(block);
     }
 
-    #[allow(unused)]
     pub fn validate(&self) -> bool {
         let mut current_pk = &self.genesis_pk;
         for block in &self.blocks {
@@ -377,15 +432,34 @@ impl SectionProofChain {
         }
         true
     }
-}
 
-impl Debug for SectionProofChain {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SectionProofChain(len = {})",
-            self.blocks.len() + 1
-        )
+    pub fn last_public_key(&self) -> &BlsPublicKey {
+        self.blocks
+            .last()
+            .map(|block| &block.key)
+            .unwrap_or(&self.genesis_pk)
+    }
+
+    pub fn all_keys(&self) -> impl DoubleEndedIterator<Item = &BlsPublicKey> {
+        iter::once(&self.genesis_pk).chain(self.blocks.iter().map(|block| &block.key))
+    }
+
+    pub fn slice_from(&self, first_index: usize) -> SectionProofChain {
+        if first_index == 0 || self.blocks.is_empty() {
+            return self.clone();
+        }
+
+        let genesis_index = std::cmp::min(first_index, self.blocks.len()) - 1;
+        let genesis_pk = self.blocks[genesis_index].key.clone();
+
+        let block_first_index = genesis_index + 1;
+        let blocks = if block_first_index >= self.blocks.len() {
+            vec![]
+        } else {
+            self.blocks[block_first_index..].to_vec()
+        };
+
+        SectionProofChain { genesis_pk, blocks }
     }
 }
 
@@ -393,7 +467,7 @@ impl Debug for SectionProofChain {
 mod test {
     use super::*;
     use crate::{chain::SectionInfo, BlsPublicKey, FullId, Prefix, XorName};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
     use std::str::FromStr;
     use unwrap::unwrap;
 
@@ -432,21 +506,31 @@ mod test {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
                 (pfx, keys_to_update[index].1.clone())
             })
-            .collect::<BTreeMap<_, _>>();
+            .collect::<Vec<_>>();
 
         let start_section = gen_section_info(unwrap!(Prefix::from_str(start_pfx)));
         let mut state = SharedState::new(start_section);
+        let our_id = *unwrap!(state.new_info.members().iter().next());
 
         for (pfx, key) in keys_to_update {
-            state.update_their_keys(pfx, key);
+            state.update_their_keys(pfx, key, &our_id);
         }
 
-        assert_eq!(state.get_their_keys(), &expected_keys);
+        let actual_keys = state
+            .get_their_keys()
+            .map(|(p, k)| (*p, k.clone()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(actual_keys, expected_keys);
     }
 
     #[test]
     fn single_prefix_multiple_updates() {
-        update_keys_and_check("0", vec!["1", "1", "1", "1"], vec![("1", 3)]);
+        update_keys_and_check(
+            "0",
+            vec!["1", "1", "1", "1"],
+            vec![("1", 3), ("1", 2), ("1", 1), ("1", 0)],
+        );
     }
 
     #[test]
@@ -454,7 +538,7 @@ mod test {
         update_keys_and_check(
             "0",
             vec!["10", "11", "101"],
-            vec![("100", 0), ("11", 1), ("101", 2)],
+            vec![("100", 0), ("101", 2), ("11", 1), ("10", 0)],
         );
     }
 
@@ -463,7 +547,7 @@ mod test {
         update_keys_and_check(
             "01", // Not the sibling of the single bit parent prefix of 111
             vec!["1", "111"],
-            vec![("111", 1), ("110", 0), ("10", 0)],
+            vec![("10", 0), ("110", 0), ("111", 1), ("1", 0)],
         );
     }
 
@@ -473,13 +557,14 @@ mod test {
             "0",
             vec!["1", "1011001"],
             vec![
-                ("11", 0),
                 ("100", 0),
                 ("1010", 0),
-                ("10111", 0),
-                ("101101", 0),
                 ("1011000", 0),
                 ("1011001", 1),
+                ("101101", 0),
+                ("10111", 0),
+                ("11", 0),
+                ("1", 0),
             ],
         );
     }

@@ -6,9 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::messages::SignedRoutingMessage;
-use crate::sha3::Digest256;
-use crate::time::{Duration, Instant};
+use crate::{
+    messages::SignedRoutingMessage,
+    sha3::Digest256,
+    time::{Duration, Instant},
+};
 use itertools::Itertools;
 use std::collections::HashMap;
 
@@ -33,9 +35,7 @@ impl SignatureAccumulator {
             }
         };
         if let Some(&mut (ref mut existing_msg, _)) = self.msgs.get_mut(&hash) {
-            // TODO: should we somehow merge other parts of the message? like the proving sections
-            // etc.
-            existing_msg.add_signatures(msg);
+            existing_msg.add_signature_shares(msg);
         } else {
             let _ = self.msgs.insert(hash, (msg, Instant::now()));
         }
@@ -63,7 +63,10 @@ impl SignatureAccumulator {
                 }
             }
         }
-        self.msgs.remove(hash).map(|(msg, _)| msg)
+        self.msgs.remove(hash).map(|(mut msg, _)| {
+            msg.combine_signatures();
+            msg
+        })
     }
 }
 
@@ -71,7 +74,7 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        chain::SectionInfo,
+        chain::{SectionInfo, SectionProofChain},
         id::{FullId, PublicId},
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
@@ -79,6 +82,7 @@ mod tests {
         },
         routing_table::{Authority, Prefix},
         types::MessageId,
+        BlsPublicKeySet,
     };
     use itertools::Itertools;
     use rand;
@@ -108,10 +112,15 @@ mod tests {
             };
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
             let sec_info = unwrap!(SectionInfo::new(all_ids, prefix, None));
+            let pk_set = BlsPublicKeySet::from_section_info(sec_info.clone());
+            let proof = SectionProofChain::from_genesis(pk_set.public_key());
             let signed_msg = unwrap!(SignedRoutingMessage::new(
                 routing_msg.clone(),
                 msg_sender_id,
-                sec_info.clone()
+                sec_info.clone(),
+                &prefix,
+                pk_set.clone(),
+                proof.clone(),
             ));
             let signature_msgs = other_ids
                 .map(|id| {
@@ -120,6 +129,9 @@ mod tests {
                             routing_msg.clone(),
                             id,
                             sec_info.clone(),
+                            &prefix,
+                            pk_set.clone(),
+                            proof.clone(),
                         ))),
                         msg_sender_id,
                     ))
@@ -177,6 +189,7 @@ mod tests {
         assert_eq!(sig_accumulator.msgs.len(), expected_msgs_count);
 
         // Add each message's signatures - each should accumulate once quorum has been reached.
+        let mut count = 0;
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             msg_and_sigs.signature_msgs.iter().foreach(|signature_msg| {
                 let old_num_msgs = sig_accumulator.msgs.len();
@@ -192,11 +205,13 @@ mod tests {
                         msg_and_sigs.signed_msg.routing_message(),
                         returned_msg.routing_message()
                     );
-                    unwrap!(returned_msg.check_integrity());
                     assert!(returned_msg.check_fully_signed());
+                    count += 1;
                 }
             });
         });
+
+        assert_eq!(count, expected_msgs_count);
 
         FakeClock::advance_time(ACCUMULATION_TIMEOUT.as_secs() * 1000 + 1000);
 
