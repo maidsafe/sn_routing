@@ -20,6 +20,9 @@ use std::{
 };
 use unwrap::unwrap;
 
+// Number of recent keys we keep: i.e how many other section churns we can handle before a
+// message send with a previous version of a section is no longer trusted.
+// With low churn rate, a ad hoc 10 should be big enough to avoid losing messages.
 const MAX_THEIR_RECENT_KEYS: usize = 10;
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
@@ -306,7 +309,7 @@ impl SharedState {
         let _ = self.their_knowledge.insert(prefix, version);
     }
 
-    /// Returns the reference to their_keys
+    /// Returns the reference to their_keys and any recent keys we still hold.
     pub fn get_their_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &BlsPublicKey)> {
         self.their_keys
             .iter()

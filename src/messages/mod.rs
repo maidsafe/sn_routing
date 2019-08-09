@@ -78,7 +78,9 @@ impl HopMessage {
     }
 }
 
-/// Metadata needed for verification of the sender
+/// Metadata needed for verification of the sender.
+/// Contain shares of the section signature before combining into a BLS signature
+/// and into a FullSecurityMetadata.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
     proof: SectionProofChain,
@@ -87,7 +89,7 @@ pub struct PartialSecurityMetadata {
     pk_set: BlsPublicKeySet,
 }
 
-/// Metadata needed for verification of the sender
+/// Metadata needed for verification of the sender.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct FullSecurityMetadata {
     proof: SectionProofChain,
