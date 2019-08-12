@@ -113,6 +113,11 @@ impl SectionInfo {
             > self.members.len() * QUORUM_NUMERATOR
     }
 
+    /// Returns `true` if the proofs are from all members of this section.
+    pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
+        proofs.ids().filter(|id| self.members.contains(id)).count() == self.members.len()
+    }
+
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
     pub fn is_successor_of(&self, other_info: &SectionInfo) -> bool {
         self.prev_hash.contains(&other_info.hash)

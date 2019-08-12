@@ -47,6 +47,14 @@ pub struct AckMessagePayload {
     pub ack_version: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct SendAckMessagePayload {
+    /// The prefix acknowledged.
+    pub ack_prefix: Prefix<XorName>,
+    /// The version acknowledged.
+    pub ack_version: u64,
+}
+
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
@@ -77,6 +85,9 @@ pub enum NetworkEvent {
 
     // Voted for received AckMessage to update their_knowledge
     AckMessage(AckMessagePayload),
+
+    // Voted for sending AckMessage (Require 100% consensus)
+    SendAckMessage(SendAckMessagePayload),
 }
 
 impl NetworkEvent {
@@ -140,6 +151,9 @@ impl Debug for NetworkEvent {
                 write!(formatter, "ProvingSections(_, {:?})", sec_info)
             }
             NetworkEvent::AckMessage(ref payload) => write!(formatter, "AckMessage({:?})", payload),
+            NetworkEvent::SendAckMessage(ref payload) => {
+                write!(formatter, "SendAckMessage({:?})", payload)
+            }
         }
     }
 }

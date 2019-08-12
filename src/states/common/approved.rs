@@ -10,7 +10,7 @@ use super::Relocated;
 use crate::{
     chain::{
         Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet,
-        ProvingSection, SectionInfo,
+        ProvingSection, SectionInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     id::PublicId,
@@ -66,6 +66,12 @@ pub trait Approved: Relocated {
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError>;
+
+    /// Handle an accumulated `SendAckMessage` event
+    fn handle_send_ack_message_event(
+        &mut self,
+        ack_payload: SendAckMessagePayload,
+    ) -> Result<(), RoutingError>;
 
     // Handles an accumulated `ExpectCandidate` event.
     // Context: a node is joining our section. Send the node our section. If the
@@ -234,6 +240,9 @@ pub trait Approved: Relocated {
                 }
                 NetworkEvent::AckMessage(_payload) => {
                     // Update their_knowledge is handled within the chain.
+                }
+                NetworkEvent::SendAckMessage(payload) => {
+                    self.handle_send_ack_message_event(payload)?
                 }
                 NetworkEvent::ExpectCandidate(vote) => self.handle_expect_candidate_event(vote)?,
                 NetworkEvent::PurgeCandidate(old_public_id) => {
