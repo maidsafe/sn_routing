@@ -2097,9 +2097,9 @@ impl Approved for Elder {
             // Vote for neighbour update if we haven't done so already.
             // vote_for_event is expected to only generate a new vote if required.
             self.vote_for_event(sec_info.clone().into_network_event());
-
-            self.vote_send_section_info_ack(sec_info)
         }
+
+        self.vote_send_section_info_ack(sec_info);
 
         let _ = self.merge_if_necessary();
 

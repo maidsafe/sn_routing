@@ -229,13 +229,12 @@ impl Chain {
 
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
-                if !sec_info.prefix().matches(self.our_id.name()) {
-                    self.update_their_keys(TheirKeyInfo {
-                        prefix: *sec_info.prefix(),
-                        version: *sec_info.version(),
-                        key: BlsPublicKey::from_section_info(&sec_info),
-                    });
-                }
+                self.update_their_keys(TheirKeyInfo {
+                    prefix: *sec_info.prefix(),
+                    version: *sec_info.version(),
+                    key: BlsPublicKey::from_section_info(&sec_info),
+                });
+
                 self.add_section_info(sec_info.clone(), proofs)?;
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
