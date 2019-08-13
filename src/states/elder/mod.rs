@@ -538,7 +538,7 @@ impl Elder {
                     "{} Untrusted SignedRoutingMessage: {:?} --- {:?}",
                     self,
                     signed_msg,
-                    self.chain.get_their_keys().collect::<Vec<_>>()
+                    self.chain.get_their_keys_info().collect::<Vec<_>>()
                 );
                 return Err(RoutingError::UntrustedMessage);
             }
@@ -675,10 +675,19 @@ impl Elder {
     }
 
     fn vote_send_section_info_ack(&mut self, sec_info: SectionInfo) {
-        self.vote_for_event(NetworkEvent::SendAckMessage(SendAckMessagePayload {
-            ack_prefix: *sec_info.prefix(),
-            ack_version: *sec_info.version(),
-        }));
+        let ack_prefix = *sec_info.prefix();
+        let ack_version = *sec_info.version();
+
+        if self
+            .chain
+            .get_their_keys_info()
+            .any(|(_, info)| info.prefix == ack_prefix && info.version == ack_version)
+        {
+            self.vote_for_event(NetworkEvent::SendAckMessage(SendAckMessagePayload {
+                ack_prefix,
+                ack_version,
+            }));
+        }
     }
 
     fn handle_candidate_approval(
