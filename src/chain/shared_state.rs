@@ -240,7 +240,7 @@ impl SharedState {
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     /// NOTE: the function as it is currently is not merge-safe.
-    pub fn update_their_keys(&mut self, key_info: TheirKeyInfo) {
+    pub fn update_their_keys(&mut self, key_info: &TheirKeyInfo) {
         if let Some((&old_pfx, old_version)) = self
             .their_keys
             .iter()
@@ -268,7 +268,7 @@ impl SharedState {
                 current_pfx = current_pfx.popped().sibling();
             }
         }
-        let _ = self.their_keys.insert(key_info.prefix, key_info);
+        let _ = self.their_keys.insert(key_info.prefix, key_info.clone());
     }
 
     /// Updates the entry in `their_knowledge` for `prefix` to the `version`; if a split
@@ -533,7 +533,7 @@ mod test {
         let mut state = SharedState::new(start_section);
 
         for (prefix, version, key) in keys_to_update.iter() {
-            state.update_their_keys(TheirKeyInfo {
+            state.update_their_keys(&TheirKeyInfo {
                 prefix: *prefix,
                 version: *version as u64,
                 key: key.clone(),

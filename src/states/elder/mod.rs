@@ -15,7 +15,7 @@ use crate::{
     chain::{
         delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
         NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, ProvingSection,
-        SectionInfo, SendAckMessagePayload,
+        SectionInfo, SendAckMessagePayload, TheirKeyInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -41,7 +41,7 @@ use crate::{
     types::MessageId,
     utils::{self, DisplayDuration, XorTargetInterval},
     xor_name::XorName,
-    BlsPublicKeySet, ConnectionInfo, NetworkService,
+    BlsPublicKey, BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -435,6 +435,7 @@ impl Elder {
                 // Keep: Still relevant after prefix change.
                 NetworkEvent::NeighbourMerge(_)
                 | NetworkEvent::ProvingSections(_, _)
+                | NetworkEvent::TheirKeyInfo(_)
                 | NetworkEvent::AckMessage(_)
                 | NetworkEvent::SendAckMessage(_) => true,
             })
@@ -537,12 +538,7 @@ impl Elder {
             }
             signed_msg.check_integrity()?;
 
-            if !signed_msg.routing_message().src.is_client() {
-                // Inform our peers about any new sections.
-                if let Some(si) = signed_msg.source_section() {
-                    let _ = self.add_new_section(si);
-                }
-            }
+            self.update_our_knowledge(&signed_msg);
 
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
@@ -674,19 +670,13 @@ impl Elder {
         Ok(())
     }
 
-    fn vote_send_section_info_ack(&mut self, sec_info: SectionInfo) {
-        let ack_prefix = *sec_info.prefix();
-        let ack_version = *sec_info.version();
+    fn vote_send_section_info_ack(&mut self, ack_payload: SendAckMessagePayload) {
+        let has_their_keys = self.chain.get_their_keys_info().any(|(_, info)| {
+            info.prefix == ack_payload.ack_prefix && info.version == ack_payload.ack_version
+        });
 
-        if self
-            .chain
-            .get_their_keys_info()
-            .any(|(_, info)| info.prefix == ack_prefix && info.version == ack_version)
-        {
-            self.vote_for_event(NetworkEvent::SendAckMessage(SendAckMessagePayload {
-                ack_prefix,
-                ack_version,
-            }));
+        if has_their_keys {
+            self.vote_for_event(NetworkEvent::SendAckMessage(ack_payload));
         }
     }
 
@@ -1200,6 +1190,32 @@ impl Elder {
         trace!("{} Sending {:?} to {:?}", self, content, dst);
 
         self.send_routing_message(src, dst, content)
+    }
+
+    fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
+        if signed_msg.routing_message().src.is_client() {
+            return;
+        }
+
+        let sec_info = if let Some(si) = signed_msg.source_section() {
+            si
+        } else {
+            return;
+        };
+
+        let new_key_info = self.chain.get_their_keys_info().any(|(_, info)| {
+            info.version < *sec_info.version() && info.prefix.is_compatible(sec_info.prefix())
+        });
+
+        if new_key_info {
+            self.vote_for_event(NetworkEvent::TheirKeyInfo(TheirKeyInfo {
+                prefix: *sec_info.prefix(),
+                version: *sec_info.version(),
+                key: BlsPublicKey::from_section_info(&sec_info),
+            }));
+        }
+
+        let _ = self.add_new_section(sec_info);
     }
 
     /// Votes for the section if it is new to us.
@@ -2090,6 +2106,13 @@ impl Approved for Elder {
 
         if self_sec_update {
             self.chain.reset_candidate_if_member_of(sec_info.members());
+
+            // Vote to update our self messages proof
+            self.vote_send_section_info_ack(SendAckMessagePayload {
+                ack_prefix: *sec_info.prefix(),
+                ack_version: *sec_info.version(),
+            });
+
             self.send_neighbour_infos();
         } else {
             self.remove_from_proving_section_cache(&sec_info);
@@ -2099,11 +2122,17 @@ impl Approved for Elder {
             self.vote_for_event(sec_info.clone().into_network_event());
         }
 
-        self.vote_send_section_info_ack(sec_info);
-
         let _ = self.merge_if_necessary();
 
         Ok(Transition::Stay)
+    }
+
+    fn handle_their_key_info_event(&mut self, key_info: TheirKeyInfo) -> Result<(), RoutingError> {
+        self.vote_send_section_info_ack(SendAckMessagePayload {
+            ack_prefix: key_info.prefix,
+            ack_version: key_info.version,
+        });
+        Ok(())
     }
 
     fn handle_send_ack_message_event(

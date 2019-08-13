@@ -17,7 +17,7 @@ use crate::{
     cache::Cache,
     chain::{
         Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, ProvingSection, SectionInfo,
-        SendAckMessagePayload,
+        SendAckMessagePayload, TheirKeyInfo,
     },
     error::RoutingError,
     event::Event,
@@ -401,6 +401,10 @@ impl Approved for Adult {
             debug!("{} - Unhandled SectionInfo event", self);
             Ok(Transition::Stay)
         }
+    }
+
+    fn handle_their_key_info_event(&mut self, _key_info: TheirKeyInfo) -> Result<(), RoutingError> {
+        Ok(())
     }
 
     fn handle_send_ack_message_event(
