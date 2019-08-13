@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::SectionInfo;
 use crate::error::Result;
 use crate::id::PublicId;
 use itertools::Itertools;
@@ -133,44 +132,6 @@ impl Debug for ProofSet {
             "ProofSet {{ {:?} }}",
             self.sigs.keys().collect_vec(),
         )
-    }
-}
-
-/// An element in a chain of sections, where each item's authenticity is proved by the next one.
-///
-/// A section proves the authenticity of another one if it's either its successor (i.e. the hash
-/// matches), or if there is a quorum of signatures.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
-pub struct ProvingSection {
-    /// The section proving the previous item's authenticity.
-    pub sec_info: SectionInfo,
-    /// If the section is the previous one's successor, this is `None`, otherwise a quorum.
-    pub signatures: Option<ProofSet>,
-}
-
-impl ProvingSection {
-    /// Creates a proving section for the given section's successor.
-    pub fn successor(sec_info: &SectionInfo) -> ProvingSection {
-        ProvingSection {
-            sec_info: sec_info.clone(),
-            signatures: None,
-        }
-    }
-
-    /// Creates a proving section with the given section and proofs.
-    pub fn signatures(sec_info: &SectionInfo, sigs: &ProofSet) -> ProvingSection {
-        ProvingSection {
-            sec_info: sec_info.clone(),
-            signatures: Some(sigs.clone()),
-        }
-    }
-
-    /// Returns `true` if `self` proves the authenticity of `sec_info`.
-    pub fn validate(&self, sec_info: &SectionInfo) -> bool {
-        match self.signatures {
-            None => self.sec_info.is_successor_of(sec_info),
-            Some(ref proofs) => self.sec_info.proves(sec_info, proofs),
-        }
     }
 }
 

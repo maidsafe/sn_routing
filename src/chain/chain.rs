@@ -264,8 +264,7 @@ impl Chain {
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_)
-            | NetworkEvent::SendAckMessage(_)
-            | NetworkEvent::ProvingSections(_, _) => (),
+            | NetworkEvent::SendAckMessage(_) => (),
         }
         Ok(Some(event))
     }
@@ -627,8 +626,6 @@ impl Chain {
                 self.state.change == PrefixChange::None
                     && self.our_info().is_total_consensus(proofs)
             }
-            NetworkEvent::ProvingSections(_, _) => true,
-
             NetworkEvent::OurMerge | NetworkEvent::NeighbourMerge(_) => {
                 self.our_info().is_quorum(proofs)
             }
