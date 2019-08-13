@@ -119,8 +119,10 @@ impl Debug for FullSecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "FullSecurityMetadata {{ sender_prefix: {:?}, proof: {:?}, .. }}",
-            self.sender_prefix, self.proof
+            "FullSecurityMetadata {{ sender_prefix: {:?}, proof.blocks_len: {}, proof: {:?}, .. }}",
+            self.sender_prefix,
+            self.proof.blocks_len(),
+            self.proof
         )
     }
 }

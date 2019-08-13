@@ -416,6 +416,10 @@ impl SectionProofChain {
         }
     }
 
+    pub fn blocks_len(&self) -> usize {
+        self.blocks.len()
+    }
+
     pub fn push(&mut self, block: SectionProofBlock) {
         self.blocks.push(block);
     }
