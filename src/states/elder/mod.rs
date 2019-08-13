@@ -510,13 +510,6 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
-        if !signed_msg.routing_message().src.is_client() {
-            // Inform our peers about any new sections.
-            if let Some(si) = signed_msg.source_section() {
-                let _ = self.add_new_section(si);
-            }
-        }
-
         let filter_res = self
             .routing_msg_filter
             .filter_incoming(signed_msg.routing_message());
@@ -543,6 +536,13 @@ impl Elder {
                 return Err(RoutingError::UntrustedMessage);
             }
             signed_msg.check_integrity()?;
+
+            if !signed_msg.routing_message().src.is_client() {
+                // Inform our peers about any new sections.
+                if let Some(si) = signed_msg.source_section() {
+                    let _ = self.add_new_section(si);
+                }
+            }
 
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
