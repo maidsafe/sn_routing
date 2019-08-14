@@ -10,7 +10,7 @@ use super::Relocated;
 use crate::{
     chain::{
         Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet,
-        ProvingSection, SectionInfo, SendAckMessagePayload,
+        ProvingSection, SectionInfo, SendAckMessagePayload, TheirKeyInfo,
     },
     error::RoutingError,
     id::PublicId,
@@ -66,6 +66,9 @@ pub trait Approved: Relocated {
         old_pfx: Prefix<XorName>,
         outbox: &mut EventBox,
     ) -> Result<Transition, RoutingError>;
+
+    /// Handle an accumulated `TheirKeyInfo` event
+    fn handle_their_key_info_event(&mut self, key_info: TheirKeyInfo) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `SendAckMessage` event
     fn handle_send_ack_message_event(
@@ -237,6 +240,9 @@ pub trait Approved: Relocated {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
+                }
+                NetworkEvent::TheirKeyInfo(key_info) => {
+                    self.handle_their_key_info_event(key_info)?
                 }
                 NetworkEvent::AckMessage(_payload) => {
                     // Update their_knowledge is handled within the chain.

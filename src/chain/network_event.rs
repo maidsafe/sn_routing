@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{ProofSet, ProvingSection, SectionInfo};
+use super::{ProofSet, ProvingSection, SectionInfo, TheirKeyInfo};
 use crate::id::PublicId;
 use crate::parsec;
 use crate::routing_table::Prefix;
@@ -83,6 +83,9 @@ pub enum NetworkEvent {
     /// A list of proofs for a neighbour section, starting from the current section.
     ProvingSections(Vec<ProvingSection>, SectionInfo),
 
+    // Voted for received message with keys to we can update their_keys
+    TheirKeyInfo(TheirKeyInfo),
+
     // Voted for received AckMessage to update their_knowledge
     AckMessage(AckMessagePayload),
 
@@ -149,6 +152,9 @@ impl Debug for NetworkEvent {
             NetworkEvent::PurgeCandidate(ref id) => write!(formatter, "PurgeCandidate({})", id),
             NetworkEvent::ProvingSections(_, ref sec_info) => {
                 write!(formatter, "ProvingSections(_, {:?})", sec_info)
+            }
+            NetworkEvent::TheirKeyInfo(ref payload) => {
+                write!(formatter, "TheirKeyInfo({:?})", payload)
             }
             NetworkEvent::AckMessage(ref payload) => write!(formatter, "AckMessage({:?})", payload),
             NetworkEvent::SendAckMessage(ref payload) => {

@@ -28,7 +28,7 @@ pub use self::{
     },
     proof::{Proof, ProofSet, ProvingSection},
     section_info::SectionInfo,
-    shared_state::{PrefixChange, SectionProofChain},
+    shared_state::{PrefixChange, SectionProofChain, TheirKeyInfo},
 };
 use std::fmt::{self, Debug, Formatter};
 

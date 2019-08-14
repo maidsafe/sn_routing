@@ -18,7 +18,7 @@ use crate::{
     sha3::Digest256,
     utils::LogIdent,
     utils::XorTargetInterval,
-    BlsPublicKey, Prefix, XorName, Xorable,
+    Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -229,19 +229,15 @@ impl Chain {
 
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
-                if !sec_info.prefix().matches(self.our_id.name()) {
-                    self.update_their_keys(TheirKeyInfo {
-                        prefix: *sec_info.prefix(),
-                        version: *sec_info.version(),
-                        key: BlsPublicKey::from_section_info(&sec_info),
-                    });
-                }
                 self.add_section_info(sec_info.clone(), proofs)?;
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
                         return Ok(None);
                     }
                 }
+            }
+            NetworkEvent::TheirKeyInfo(ref key_info) => {
+                self.update_their_keys(key_info);
             }
             NetworkEvent::AckMessage(ref ack_payload) => {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
@@ -262,7 +258,14 @@ impl Chain {
                 // TODO: Check that the section is known and not already merged.
                 let _ = self.state.merging.insert(digest);
             }
-            _ => (),
+            NetworkEvent::AddElder(_, _)
+            | NetworkEvent::RemoveElder(_)
+            | NetworkEvent::Online(_)
+            | NetworkEvent::Offline(_)
+            | NetworkEvent::ExpectCandidate(_)
+            | NetworkEvent::PurgeCandidate(_)
+            | NetworkEvent::SendAckMessage(_)
+            | NetworkEvent::ProvingSections(_, _) => (),
         }
         Ok(Some(event))
     }
@@ -614,6 +617,7 @@ impl Chain {
             | NetworkEvent::Offline(_)
             | NetworkEvent::ExpectCandidate(_)
             | NetworkEvent::PurgeCandidate(_)
+            | NetworkEvent::TheirKeyInfo(_)
             | NetworkEvent::AckMessage(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
@@ -729,6 +733,12 @@ impl Chain {
                     &sec_info,
                     proofs.clone(),
                 ));
+            self.update_their_keys(&TheirKeyInfo {
+                prefix: *sec_info.prefix(),
+                version: *sec_info.version(),
+                key: self.state.our_history.last_public_key().clone(),
+            });
+
             self.state.our_infos.push((sec_info.clone(), proofs));
             if !self.is_member && sec_info.members().contains(&self.our_id) {
                 self.is_member = true;
@@ -791,7 +801,7 @@ impl Chain {
     }
 
     /// Updates `their_keys` in the shared state
-    pub fn update_their_keys(&mut self, key_info: TheirKeyInfo) {
+    pub fn update_their_keys(&mut self, key_info: &TheirKeyInfo) {
         trace!(
             "{:?} attempts to update their_keys for {:?} ",
             self.our_id(),
