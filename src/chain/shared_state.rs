@@ -7,9 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{ProofSet, SectionInfo};
-use crate::{
-    error::RoutingError, id::PublicId, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName,
-};
+use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -49,11 +47,11 @@ pub struct SharedState {
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
-    pub their_keys: BTreeMap<Prefix<XorName>, BlsPublicKey>,
+    pub their_keys: BTreeMap<Prefix<XorName>, TheirKeyInfo>,
     /// Other sections' knowledge of us
     pub their_knowledge: BTreeMap<Prefix<XorName>, u64>,
     /// Recent keys removed from their_keys
-    pub their_recent_keys: VecDeque<(Prefix<XorName>, BlsPublicKey)>,
+    pub their_recent_keys: VecDeque<(Prefix<XorName>, TheirKeyInfo)>,
 }
 
 impl SharedState {
@@ -242,40 +240,35 @@ impl SharedState {
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     /// NOTE: the function as it is currently is not merge-safe.
-    pub fn update_their_keys(
-        &mut self,
-        prefix: Prefix<XorName>,
-        key: BlsPublicKey,
-        our_id: &PublicId,
-    ) {
-        if let Some(&pfx) = self
+    pub fn update_their_keys(&mut self, key_info: TheirKeyInfo) {
+        if let Some((&old_pfx, old_version)) = self
             .their_keys
-            .keys()
-            .find(|pfx| pfx.is_compatible(&prefix))
+            .iter()
+            .find(|(pfx, _)| pfx.is_compatible(&key_info.prefix))
+            .map(|(pfx, info)| (pfx, info.version))
         {
-            let old_key = unwrap!(self.their_keys.remove(&pfx));
-            self.their_recent_keys.push_front((pfx, old_key.clone()));
+            if old_version >= key_info.version || old_pfx.is_extension_of(&key_info.prefix) {
+                // Do not overwrite newer version or prefix extensions
+                return;
+            }
+
+            let old_key_info = unwrap!(self.their_keys.remove(&old_pfx));
+            self.their_recent_keys
+                .push_front((old_pfx, old_key_info.clone()));
             if self.their_recent_keys.len() > MAX_THEIR_RECENT_KEYS {
                 let _ = self.their_recent_keys.pop_back();
             }
 
-            trace!(
-                "{} update_their_keys {:?}/{:?} to {:?}/{:?}",
-                our_id,
-                pfx,
-                old_key,
-                prefix,
-                key
-            );
+            trace!("    from {:?} to {:?}", old_key_info, key_info);
 
-            let old_pfx_sibling = pfx.sibling();
-            let mut current_pfx = prefix.sibling();
+            let old_pfx_sibling = old_pfx.sibling();
+            let mut current_pfx = key_info.prefix.sibling();
             while !self.their_keys.contains_key(&current_pfx) && current_pfx != old_pfx_sibling {
-                let _ = self.their_keys.insert(current_pfx, old_key.clone());
+                let _ = self.their_keys.insert(current_pfx, old_key_info.clone());
                 current_pfx = current_pfx.popped().sibling();
             }
         }
-        let _ = self.their_keys.insert(prefix, key);
+        let _ = self.their_keys.insert(key_info.prefix, key_info);
     }
 
     /// Updates the entry in `their_knowledge` for `prefix` to the `version`; if a split
@@ -283,22 +276,27 @@ impl SharedState {
     /// are initialised to the old version that was stored for their common ancestor
     /// NOTE: the function as it is currently is not merge-safe.
     pub fn update_their_knowledge(&mut self, prefix: Prefix<XorName>, version: u64) {
-        if let Some(&pfx) = self
+        if let Some((&old_pfx, &old_version)) = self
             .their_knowledge
-            .keys()
-            .find(|pfx| pfx.is_compatible(&prefix))
+            .iter()
+            .find(|(pfx, _)| pfx.is_compatible(&prefix))
         {
-            let old_version = unwrap!(self.their_knowledge.remove(&pfx));
+            if old_version >= version || old_pfx.is_extension_of(&prefix) {
+                // Do not overwrite newer version or prefix extensions
+                return;
+            }
+
+            let _ = self.their_knowledge.remove(&old_pfx);
 
             trace!(
                 "    from {:?}/{:?} to {:?}/{:?}",
-                pfx,
+                old_pfx,
                 old_version,
                 prefix,
                 version
             );
 
-            let old_pfx_sibling = pfx.sibling();
+            let old_pfx_sibling = old_pfx.sibling();
             let mut current_pfx = prefix.sibling();
             while !self.their_knowledge.contains_key(&current_pfx) && current_pfx != old_pfx_sibling
             {
@@ -310,7 +308,7 @@ impl SharedState {
     }
 
     /// Returns the reference to their_keys and any recent keys we still hold.
-    pub fn get_their_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &BlsPublicKey)> {
+    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &TheirKeyInfo)> {
         self.their_keys
             .iter()
             .chain(self.their_recent_keys.iter().map(|(p, k)| (p, k)))
@@ -463,6 +461,13 @@ impl SectionProofChain {
     }
 }
 
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+pub struct TheirKeyInfo {
+    pub prefix: Prefix<XorName>,
+    pub version: u64,
+    pub key: BlsPublicKey,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -493,32 +498,54 @@ mod test {
     //           the index is the index in the `updates` vector, which should have generated the
     //           key we expect to get for the given prefix
     fn update_keys_and_check(start_pfx: &str, updates: Vec<&str>, expected: Vec<(&str, usize)>) {
+        update_keys_and_check_with_version(
+            start_pfx,
+            updates.into_iter().enumerate().collect(),
+            expected,
+        )
+    }
+
+    fn update_keys_and_check_with_version(
+        start_pfx: &str,
+        updates: Vec<(usize, &str)>,
+        expected: Vec<(&str, usize)>,
+    ) {
         let keys_to_update = updates
             .into_iter()
-            .map(|pfx_str| {
+            .map(|(version, pfx_str)| {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
-                (pfx, gen_pk(pfx))
+                (pfx, version, gen_pk(pfx))
             })
             .collect::<Vec<_>>();
         let expected_keys = expected
             .into_iter()
             .map(|(pfx_str, index)| {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
-                (pfx, keys_to_update[index].1.clone())
+                (pfx, Some(index)) // keys_to_update[index].2.clone())
             })
             .collect::<Vec<_>>();
 
         let start_section = gen_section_info(unwrap!(Prefix::from_str(start_pfx)));
         let mut state = SharedState::new(start_section);
-        let our_id = *unwrap!(state.new_info.members().iter().next());
 
-        for (pfx, key) in keys_to_update {
-            state.update_their_keys(pfx, key, &our_id);
+        for (prefix, version, key) in keys_to_update.iter() {
+            state.update_their_keys(TheirKeyInfo {
+                prefix: *prefix,
+                version: *version as u64,
+                key: key.clone(),
+            });
         }
 
         let actual_keys = state
-            .get_their_keys()
-            .map(|(p, k)| (*p, k.clone()))
+            .get_their_keys_info()
+            .map(|(p, info)| {
+                (
+                    *p,
+                    keys_to_update
+                        .iter()
+                        .position(|(_, _, key)| *key == info.key),
+                )
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(actual_keys, expected_keys);
@@ -534,10 +561,30 @@ mod test {
     }
 
     #[test]
+    fn single_prefix_multiple_updates_out_of_order() {
+        // Late version ignored
+        update_keys_and_check_with_version(
+            "0",
+            vec![(0, "1"), (2, "1"), (1, "1"), (3, "1")],
+            vec![("1", 3), ("1", 1), ("1", 0)],
+        );
+    }
+
+    #[test]
     fn simple_split() {
         update_keys_and_check(
             "0",
             vec!["10", "11", "101"],
+            vec![("100", 0), ("101", 2), ("11", 1), ("10", 0)],
+        );
+    }
+
+    #[test]
+    fn simple_split_out_of_order() {
+        // Late version ignored
+        update_keys_and_check_with_version(
+            "0",
+            vec![(5, "10"), (5, "11"), (7, "101"), (6, "10")],
             vec![("100", 0), ("101", 2), ("11", 1), ("10", 0)],
         );
     }

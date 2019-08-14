@@ -8,7 +8,7 @@
 
 use super::{
     candidate::Candidate,
-    shared_state::{PrefixChange, SectionProofBlock, SharedState},
+    shared_state::{PrefixChange, SectionProofBlock, SharedState, TheirKeyInfo},
     GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
 };
 use crate::{
@@ -230,10 +230,11 @@ impl Chain {
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
                 if !sec_info.prefix().matches(self.our_id.name()) {
-                    self.update_their_keys(
-                        *sec_info.prefix(),
-                        BlsPublicKey::from_section_info(&sec_info),
-                    );
+                    self.update_their_keys(TheirKeyInfo {
+                        prefix: *sec_info.prefix(),
+                        version: *sec_info.version(),
+                        key: BlsPublicKey::from_section_info(&sec_info),
+                    });
                 }
                 self.add_section_info(sec_info.clone(), proofs)?;
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
@@ -492,8 +493,8 @@ impl Chain {
     }
 
     /// Return the keys we know
-    pub fn get_their_keys(&self) -> impl Iterator<Item = (&Prefix<XorName>, &BlsPublicKey)> {
-        self.state.get_their_keys()
+    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &TheirKeyInfo)> {
+        self.state.get_their_keys_info()
     }
 
     /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
@@ -503,9 +504,9 @@ impl Chain {
             self.state.our_history.all_keys().collect()
         } else {
             self.state
-                .get_their_keys()
+                .get_their_keys_info()
                 .filter(|&(pfx, _)| prefix.is_compatible(pfx))
-                .map(|(_, key)| key)
+                .map(|(_, info)| &info.key)
                 .collect()
         };
         proof_chain
@@ -790,8 +791,13 @@ impl Chain {
     }
 
     /// Updates `their_keys` in the shared state
-    pub fn update_their_keys(&mut self, prefix: Prefix<XorName>, bls_key: BlsPublicKey) {
-        self.state.update_their_keys(prefix, bls_key, &self.our_id);
+    pub fn update_their_keys(&mut self, key_info: TheirKeyInfo) {
+        trace!(
+            "{:?} attempts to update their_keys for {:?} ",
+            self.our_id(),
+            key_info,
+        );
+        self.state.update_their_keys(key_info);
     }
 
     /// Returns whether we should split into two sections.
