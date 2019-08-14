@@ -443,7 +443,7 @@ impl Elder {
     fn send_neighbour_infos(&mut self) {
         self.chain.other_prefixes().iter().for_each(|pfx| {
             let payload = *self.chain.our_info().hash();
-            let src = Authority::ManagedNode(*self.full_id.public_id().name());
+            let src = Authority::Section(self.our_prefix().name());
             let dst = Authority::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(payload);
             if let Err(err) = self.send_routing_message(src, dst, content) {
@@ -603,7 +603,7 @@ impl Elder {
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
+            (NeighbourInfo(_digest), Section(_), PrefixSection(_)) => Ok(()),
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (UserMessage { content, .. }, src, dst) => {
                 outbox.send_event(content.into_event(src, dst));
