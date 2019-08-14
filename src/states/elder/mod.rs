@@ -14,8 +14,8 @@ use crate::{
     cache::Cache,
     chain::{
         delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
-        NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, ProvingSection,
-        SectionInfo, SendAckMessagePayload, TheirKeyInfo,
+        NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, SectionInfo,
+        SendAckMessagePayload, TheirKeyInfo,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -74,7 +74,6 @@ const CANDIDATE_STATUS_INTERVAL: Duration = Duration::from_secs(60);
 const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 /// Duration for which clients' IDs we disconnected from are retained.
 const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
-const PROVING_SECTION_CACHE_SIZE: usize = 100;
 
 pub struct ElderDetails {
     pub cache: Box<Cache>,
@@ -129,9 +128,6 @@ pub struct Elder {
     chain: Chain,
     #[cfg(feature = "mock_base")]
     ignore_candidate_info_counter: u8,
-    /// Cached proving sections used to in case a prefix change causes a section info not to
-    /// accumulate.
-    proving_section_cache: LruCache<SectionInfo, Vec<ProvingSection>>,
     pfx_is_successfully_polled: bool,
 }
 
@@ -227,7 +223,6 @@ impl Elder {
             chain: details.chain,
             #[cfg(feature = "mock_base")]
             ignore_candidate_info_counter: 0,
-            proving_section_cache: LruCache::with_capacity(PROVING_SECTION_CACHE_SIZE),
             pfx_is_successfully_polled: false,
         }
     }
@@ -434,7 +429,6 @@ impl Elder {
 
                 // Keep: Still relevant after prefix change.
                 NetworkEvent::NeighbourMerge(_)
-                | NetworkEvent::ProvingSections(_, _)
                 | NetworkEvent::TheirKeyInfo(_)
                 | NetworkEvent::AckMessage(_)
                 | NetworkEvent::SendAckMessage(_) => true,
@@ -442,10 +436,6 @@ impl Elder {
             .for_each(|event| {
                 self.vote_for_event(event.clone());
             });
-
-        // This also clears the cache, something that *might* be a problem during a multi stage
-        // merge.
-        self.vote_for_neighbours_in_proving_section_cache();
 
         Ok(())
     }
@@ -562,23 +552,6 @@ impl Elder {
         }
 
         Ok(())
-    }
-
-    fn remove_from_proving_section_cache(&mut self, sec_info: &SectionInfo) {
-        let _ = self.proving_section_cache.remove(&sec_info);
-    }
-
-    fn vote_for_neighbours_in_proving_section_cache(&mut self) {
-        self.proving_section_cache
-            .peek_iter()
-            .filter(|(si, _)| self.chain.is_new_neighbour(si))
-            .map(|(si, ps)| (si.clone(), ps.clone()))
-            .collect_vec()
-            .into_iter()
-            .for_each(|(si, ps)| {
-                self.vote_for_event(NetworkEvent::ProvingSections(ps, si));
-            });
-        self.proving_section_cache.clear();
     }
 
     fn dispatch_routing_message(
@@ -1226,26 +1199,6 @@ impl Elder {
         } else {
             false
         }
-    }
-
-    /// Returns `true` if the `SectionInfo` is known as trusted, or is the predecessor of a trusted
-    /// one.
-    fn is_trusted(&self, sec_info: &SectionInfo) -> Result<bool, RoutingError> {
-        if self.chain.is_trusted(sec_info, true) {
-            return Ok(true);
-        }
-        let is_proof =
-            |si: &SectionInfo| si == sec_info || si.prev_hash().contains(sec_info.hash());
-        Ok(self
-            .parsec_map
-            .our_unpolled_observations()
-            .filter_map(|obs| match obs {
-                parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(sec_info)) => {
-                    Some(sec_info)
-                }
-                _ => None,
-            })
-            .any(is_proof))
     }
 
     fn handle_merge(&mut self, digest: Digest256) -> Result<(), RoutingError> {
@@ -2115,8 +2068,6 @@ impl Approved for Elder {
 
             self.send_neighbour_infos();
         } else {
-            self.remove_from_proving_section_cache(&sec_info);
-
             // Vote for neighbour update if we haven't done so already.
             // vote_for_event is expected to only generate a new vote if required.
             self.vote_for_event(sec_info.clone().into_network_event());
@@ -2147,50 +2098,6 @@ impl Approved for Elder {
         };
 
         self.send_routing_message(src, dst, content)
-    }
-
-    /// Handles an accumulated `ProvingSections` event.
-    ///
-    /// Votes for all sections that it can verify using the the chain of proving sections.
-    fn handle_proving_sections_event(
-        &mut self,
-        proving_secs: Vec<ProvingSection>,
-        sec_info: SectionInfo,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_new_neighbour(&sec_info)
-            && !proving_secs
-                .iter()
-                .any(|ps| self.chain.is_new_neighbour(&ps.sec_info))
-        {
-            return Ok(()); // Nothing new to learn here.
-        }
-        let validates = |trusted: &Option<ProvingSection>, si: &SectionInfo| {
-            trusted.as_ref().map_or(false, |tps| {
-                let valid = tps.validate(&si);
-                if !valid {
-                    log_or_panic!(LogLevel::Info, "Received invalid proving section: {:?}", si);
-                }
-                valid
-            })
-        };
-        let mut trusted: Option<ProvingSection> = None;
-        for ps in proving_secs.into_iter().rev() {
-            if validates(&trusted, &ps.sec_info) || self.is_trusted(&ps.sec_info)? {
-                let _ = self.add_new_section(&ps.sec_info);
-                trusted = Some(ps);
-            }
-        }
-        if !(validates(&trusted, &sec_info) || self.is_trusted(&sec_info)?) {
-            trace!(
-                "{} Adding untrusted neighbour section info {:?}",
-                self,
-                &sec_info
-            );
-        }
-        // Always add section info until SMD is complete
-        // TODO: Fix for SMD.
-        let _ = self.add_new_section(&sec_info);
-        Ok(())
     }
 }
 

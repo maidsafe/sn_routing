@@ -9,8 +9,8 @@
 use super::Relocated;
 use crate::{
     chain::{
-        Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet,
-        ProvingSection, SectionInfo, SendAckMessagePayload, TheirKeyInfo,
+        Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
+        SendAckMessagePayload, TheirKeyInfo,
     },
     error::RoutingError,
     id::PublicId,
@@ -87,13 +87,6 @@ pub trait Approved: Relocated {
     /// Handles an accumulated `PurgeCandidate` event.
     fn handle_purge_candidate_event(&mut self, old_public_id: PublicId)
         -> Result<(), RoutingError>;
-
-    /// Handles an accumulated `ProvingSections` event.
-    fn handle_proving_sections_event(
-        &mut self,
-        proving_secs: Vec<ProvingSection>,
-        sec_info: SectionInfo,
-    ) -> Result<(), RoutingError>;
 
     fn handle_parsec_request(
         &mut self,
@@ -253,10 +246,6 @@ pub trait Approved: Relocated {
                 NetworkEvent::ExpectCandidate(vote) => self.handle_expect_candidate_event(vote)?,
                 NetworkEvent::PurgeCandidate(old_public_id) => {
                     self.handle_purge_candidate_event(old_public_id)?
-                }
-
-                NetworkEvent::ProvingSections(proving_secs, sec_info) => {
-                    self.handle_proving_sections_event(proving_secs, sec_info)?;
                 }
             }
 

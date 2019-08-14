@@ -26,7 +26,7 @@ pub use self::{
         AckMessagePayload, ExpectCandidatePayload, NetworkEvent, OnlinePayload,
         SendAckMessagePayload,
     },
-    proof::{Proof, ProofSet, ProvingSection},
+    proof::{Proof, ProofSet},
     section_info::SectionInfo,
     shared_state::{PrefixChange, SectionProofChain, TheirKeyInfo},
 };

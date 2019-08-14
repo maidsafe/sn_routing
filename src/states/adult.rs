@@ -16,7 +16,7 @@ use super::{
 use crate::{
     cache::Cache,
     chain::{
-        Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, ProvingSection, SectionInfo,
+        Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionInfo,
         SendAckMessagePayload, TheirKeyInfo,
     },
     error::RoutingError,
@@ -421,15 +421,6 @@ impl Approved for Adult {
 
     fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled NeighbourMerge event", self);
-        Ok(())
-    }
-
-    fn handle_proving_sections_event(
-        &mut self,
-        _: Vec<ProvingSection>,
-        _: SectionInfo,
-    ) -> Result<(), RoutingError> {
-        debug!("{} - Unhandled ProvingSections event", self);
         Ok(())
     }
 }
