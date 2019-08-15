@@ -150,7 +150,6 @@ pub trait Relocated: Bootstrapped {
             Err(error) => {
                 debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
                 self.add_node_failure(pub_id);
-                return;
             }
         }
     }
