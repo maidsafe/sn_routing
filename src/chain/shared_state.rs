@@ -6,8 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{ProofSet, SectionInfo};
-use crate::{error::RoutingError, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName};
+use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, NetworkEvent, ProofSet, SectionInfo};
+use crate::{
+    error::RoutingError, id::PublicId, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName,
+};
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -56,10 +58,10 @@ pub struct SharedState {
 
 impl SharedState {
     pub fn new(section_info: SectionInfo) -> Self {
-        let pk = BlsPublicKey::from_section_info(&section_info);
-        let our_history = SectionProofChain::from_genesis(pk);
-        let their_key_info = our_history.last_public_key().as_section_key_info();
-        let their_keys = iter::once((their_key_info.prefix, their_key_info)).collect();
+        let pk_info = SectionKeyInfo::from_section_info(&section_info);
+        let our_history = SectionProofChain::from_genesis(pk_info);
+        let their_key_info = our_history.last_public_key_info();
+        let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
 
         Self {
             new_info: section_info.clone(),
@@ -247,7 +249,8 @@ impl SharedState {
             ));
         self.our_infos.push((sec_info, proofs));
 
-        self.update_their_keys(&self.our_history.last_public_key().as_section_key_info());
+        let key_info = self.our_history.last_public_key_info().clone();
+        self.update_their_keys(&key_info);
     }
 
     /// Updates the entry in `their_keys` for `prefix` to the latest known key; if a split
@@ -258,10 +261,10 @@ impl SharedState {
         if let Some((&old_pfx, old_version)) = self
             .their_keys
             .iter()
-            .find(|(pfx, _)| pfx.is_compatible(&key_info.prefix))
-            .map(|(pfx, info)| (pfx, info.version))
+            .find(|(pfx, _)| pfx.is_compatible(key_info.prefix()))
+            .map(|(pfx, info)| (pfx, info.version()))
         {
-            if old_version >= key_info.version || old_pfx.is_extension_of(&key_info.prefix) {
+            if old_version >= key_info.version() || old_pfx.is_extension_of(key_info.prefix()) {
                 // Do not overwrite newer version or prefix extensions
                 return;
             }
@@ -276,13 +279,13 @@ impl SharedState {
             trace!("    from {:?} to {:?}", old_key_info, key_info);
 
             let old_pfx_sibling = old_pfx.sibling();
-            let mut current_pfx = key_info.prefix.sibling();
+            let mut current_pfx = key_info.prefix().sibling();
             while !self.their_keys.contains_key(&current_pfx) && current_pfx != old_pfx_sibling {
                 let _ = self.their_keys.insert(current_pfx, old_key_info.clone());
                 current_pfx = current_pfx.popped().sibling();
             }
         }
-        let _ = self.their_keys.insert(key_info.prefix, key_info.clone());
+        let _ = self.their_keys.insert(*key_info.prefix(), key_info.clone());
     }
 
     /// Updates the entry in `their_knowledge` for `prefix` to the `version`; if a split
@@ -386,7 +389,7 @@ where
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
-    key: BlsPublicKey,
+    key_info: SectionKeyInfo,
     sig: BlsSignature,
 }
 
@@ -394,38 +397,46 @@ impl Debug for SectionProofBlock {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SectionProofBlock {{ key: {:?}, sig: .. }}",
-            self.key,
+            "SectionProofBlock {{ key_info: {:?}, sig: .. }}",
+            self.key_info()
         )
     }
 }
 
 impl SectionProofBlock {
     pub fn from_sec_info_with_proofs(sec_info: &SectionInfo, proofs: ProofSet) -> Self {
-        let key = BlsPublicKey::from_section_info(sec_info);
+        let key_info = SectionKeyInfo::from_section_info(sec_info);
         let sig = BlsSignature::from_proof_set(proofs);
-        SectionProofBlock { key, sig }
+        SectionProofBlock { key_info, sig }
+    }
+
+    pub fn key_info(&self) -> &SectionKeyInfo {
+        &self.key_info
+    }
+
+    pub fn key(&self) -> &BlsPublicKey {
+        self.key_info.key()
     }
 
     pub fn verify_with_pk(&self, pk: &BlsPublicKey) -> bool {
-        let to_verify = self.key.as_event();
-        match serialisation::serialise(&to_verify) {
-            Ok(data) => pk.verify(&self.sig, data),
-            _ => false,
+        if let Some(to_verify) = self.key_info.serialise_for_signature() {
+            pk.verify(&self.sig, to_verify)
+        } else {
+            false
         }
     }
 }
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofChain {
-    genesis_pk: BlsPublicKey,
+    genesis_key_info: SectionKeyInfo,
     blocks: Vec<SectionProofBlock>,
 }
 
 impl SectionProofChain {
-    pub fn from_genesis(pk: BlsPublicKey) -> Self {
+    pub fn from_genesis(key_info: SectionKeyInfo) -> Self {
         Self {
-            genesis_pk: pk,
+            genesis_key_info: key_info,
             blocks: Vec::new(),
         }
     }
@@ -439,25 +450,29 @@ impl SectionProofChain {
     }
 
     pub fn validate(&self) -> bool {
-        let mut current_pk = &self.genesis_pk;
+        let mut current_pk = self.genesis_key_info.key();
         for block in &self.blocks {
             if !block.verify_with_pk(current_pk) {
                 return false;
             }
-            current_pk = &block.key;
+            current_pk = block.key();
         }
         true
     }
 
-    pub fn last_public_key(&self) -> &BlsPublicKey {
+    pub fn last_public_key_info(&self) -> &SectionKeyInfo {
         self.blocks
             .last()
-            .map(|block| &block.key)
-            .unwrap_or(&self.genesis_pk)
+            .map(|block| block.key_info())
+            .unwrap_or(&self.genesis_key_info)
     }
 
-    pub fn all_keys(&self) -> impl DoubleEndedIterator<Item = &BlsPublicKey> {
-        iter::once(&self.genesis_pk).chain(self.blocks.iter().map(|block| &block.key))
+    pub fn last_public_key(&self) -> &BlsPublicKey {
+        self.last_public_key_info().key()
+    }
+
+    pub fn all_key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
+        iter::once(&self.genesis_key_info).chain(self.blocks.iter().map(|block| block.key_info()))
     }
 
     pub fn slice_from(&self, first_index: usize) -> SectionProofChain {
@@ -466,7 +481,7 @@ impl SectionProofChain {
         }
 
         let genesis_index = std::cmp::min(first_index, self.blocks.len()) - 1;
-        let genesis_pk = self.blocks[genesis_index].key.clone();
+        let genesis_key_info = self.blocks[genesis_index].key_info().clone();
 
         let block_first_index = genesis_index + 1;
         let blocks = if block_first_index >= self.blocks.len() {
@@ -475,21 +490,64 @@ impl SectionProofChain {
             self.blocks[block_first_index..].to_vec()
         };
 
-        SectionProofChain { genesis_pk, blocks }
+        SectionProofChain {
+            genesis_key_info,
+            blocks,
+        }
     }
 }
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionKeyInfo {
-    pub prefix: Prefix<XorName>,
-    pub version: u64,
-    pub key: BlsPublicKey,
+    // Hold all the information that is signed. When switching to real BLS, SectionKeyInfo
+    // will hold the BlsPublicKey, prefix and version and will be the item to sign.
+    key_info_holder: BlsPublicKeyForSectionKeyInfo,
+}
+
+impl SectionKeyInfo {
+    pub fn from_section_info(sec_info: &SectionInfo) -> Self {
+        Self {
+            key_info_holder: BlsPublicKeyForSectionKeyInfo::from_section_info(sec_info),
+        }
+    }
+
+    pub fn key(&self) -> &BlsPublicKey {
+        self.key_info_holder.key()
+    }
+
+    pub fn prefix(&self) -> &Prefix<XorName> {
+        self.key_info_holder.internal_section_info().prefix()
+    }
+
+    pub fn version(&self) -> &u64 {
+        self.key_info_holder.internal_section_info().version()
+    }
+
+    pub fn serialise_for_signature(&self) -> Option<Vec<u8>> {
+        let payload_for_signature: parsec::Observation<NetworkEvent, PublicId> =
+            parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(
+                self.key_info_holder.internal_section_info().clone(),
+            ));
+        serialisation::serialise(&payload_for_signature).ok()
+    }
+}
+
+impl Debug for SectionKeyInfo {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SectionKeyInfo {{ prefix: {:?}, version: {:?}, key: {:?} }}",
+            self.prefix(),
+            self.version(),
+            self.key(),
+        )
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{chain::SectionInfo, BlsPublicKey, FullId, Prefix, XorName};
+    use crate::{chain::SectionInfo, FullId, Prefix, XorName};
     use std::collections::BTreeSet;
     use std::str::FromStr;
     use unwrap::unwrap;
@@ -527,8 +585,8 @@ mod test {
             .map(|(version, pfx_str)| {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
                 let sec_info = gen_section_info(pfx, version as u64);
-                let pk = BlsPublicKey::from_section_info(&sec_info);
-                (pk, sec_info)
+                let key_info = SectionKeyInfo::from_section_info(&sec_info);
+                (key_info, sec_info)
             })
             .collect::<Vec<_>>();
         let expected_keys = expected
@@ -547,8 +605,8 @@ mod test {
         //
         // Act
         //
-        for (key, _) in keys_to_update.iter().skip(1) {
-            state.update_their_keys(&key.as_section_key_info());
+        for (key_info, _) in keys_to_update.iter().skip(1) {
+            state.update_their_keys(key_info);
         }
 
         //
@@ -559,7 +617,9 @@ mod test {
             .map(|(p, info)| {
                 (
                     *p,
-                    keys_to_update.iter().position(|(key, _)| *key == info.key),
+                    keys_to_update
+                        .iter()
+                        .position(|(key_info, _)| key_info == info),
                 )
             })
             .collect::<Vec<_>>();

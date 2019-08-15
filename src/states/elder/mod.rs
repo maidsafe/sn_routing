@@ -41,7 +41,7 @@ use crate::{
     types::MessageId,
     utils::{self, DisplayDuration, XorTargetInterval},
     xor_name::XorName,
-    BlsPublicKey, BlsPublicKeySet, ConnectionInfo, NetworkService,
+    BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -645,7 +645,7 @@ impl Elder {
 
     fn vote_send_section_info_ack(&mut self, ack_payload: SendAckMessagePayload) {
         let has_their_keys = self.chain.get_their_keys_info().any(|(_, info)| {
-            info.prefix == ack_payload.ack_prefix && info.version == ack_payload.ack_version
+            *info.prefix() == ack_payload.ack_prefix && *info.version() == ack_payload.ack_version
         });
 
         if has_their_keys {
@@ -1170,25 +1170,23 @@ impl Elder {
             return;
         }
 
-        let sec_info = if let Some(si) = signed_msg.source_section() {
-            si
+        if let Some(sec_info) = signed_msg.source_section() {
+            let _ = self.add_new_section(sec_info);
+        }
+
+        let key_info = if let Some(key_info) = signed_msg.source_section_key_info() {
+            key_info
         } else {
             return;
         };
 
         let new_key_info = self.chain.get_their_keys_info().any(|(_, info)| {
-            info.version < *sec_info.version() && info.prefix.is_compatible(sec_info.prefix())
+            *info.version() < *key_info.version() && info.prefix().is_compatible(key_info.prefix())
         });
 
         if new_key_info {
-            self.vote_for_event(NetworkEvent::TheirKeyInfo(SectionKeyInfo {
-                prefix: *sec_info.prefix(),
-                version: *sec_info.version(),
-                key: BlsPublicKey::from_section_info(&sec_info),
-            }));
+            self.vote_for_event(NetworkEvent::TheirKeyInfo(key_info.clone()));
         }
-
-        let _ = self.add_new_section(sec_info);
     }
 
     /// Votes for the section if it is new to us.
@@ -1841,12 +1839,10 @@ impl Bootstrapped for Elder {
 
         let proof = self.chain.prove(&routing_msg.dst);
         let pk_set = self.public_key_set();
-        let sender_prefix = self.chain.our_prefix();
         let signed_msg = SignedRoutingMessage::new(
             routing_msg,
             &self.full_id,
             sending_sec,
-            sender_prefix,
             pk_set,
             proof,
         )?;
@@ -2083,8 +2079,8 @@ impl Approved for Elder {
         key_info: SectionKeyInfo,
     ) -> Result<(), RoutingError> {
         self.vote_send_section_info_ack(SendAckMessagePayload {
-            ack_prefix: key_info.prefix,
-            ack_version: key_info.version,
+            ack_prefix: *key_info.prefix(),
+            ack_version: *key_info.version(),
         });
         Ok(())
     }

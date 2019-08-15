@@ -500,17 +500,18 @@ impl Chain {
     }
 
     /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
-    /// for a prefix compatible with `prefix`
-    pub fn check_trust(&self, prefix: &Prefix<XorName>, proof_chain: &SectionProofChain) -> bool {
+    /// for a prefix compatible with proof_chain prefix.
+    pub fn check_trust(&self, proof_chain: &SectionProofChain) -> bool {
+        let last_prefix = proof_chain.last_public_key_info().prefix();
         let filtered_keys: BTreeSet<_> = self
             .state
             .get_their_keys_info()
-            .filter(|&(pfx, _)| prefix.is_compatible(pfx))
-            .map(|(_, info)| &info.key)
+            .filter(|&(pfx, _)| last_prefix.is_compatible(pfx))
+            .map(|(_, info)| info)
             .collect();
         proof_chain
-            .all_keys()
-            .any(|key| filtered_keys.contains(key))
+            .all_key_infos()
+            .any(|key_info| filtered_keys.contains(key_info))
     }
 
     /// Returns `true` if the `SectionInfo` isn't known to us yet.
