@@ -47,11 +47,11 @@ pub struct SharedState {
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
-    pub their_keys: BTreeMap<Prefix<XorName>, TheirKeyInfo>,
+    pub their_keys: BTreeMap<Prefix<XorName>, SectionKeyInfo>,
     /// Other sections' knowledge of us
     pub their_knowledge: BTreeMap<Prefix<XorName>, u64>,
     /// Recent keys removed from their_keys
-    pub their_recent_keys: VecDeque<(Prefix<XorName>, TheirKeyInfo)>,
+    pub their_recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
 }
 
 impl SharedState {
@@ -240,7 +240,7 @@ impl SharedState {
     /// occurred in the meantime, the keys for sections covering the rest of the address space are
     /// initialised to the old key that was stored for their common ancestor
     /// NOTE: the function as it is currently is not merge-safe.
-    pub fn update_their_keys(&mut self, key_info: &TheirKeyInfo) {
+    pub fn update_their_keys(&mut self, key_info: &SectionKeyInfo) {
         if let Some((&old_pfx, old_version)) = self
             .their_keys
             .iter()
@@ -308,7 +308,7 @@ impl SharedState {
     }
 
     /// Returns the reference to their_keys and any recent keys we still hold.
-    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &TheirKeyInfo)> {
+    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.their_keys
             .iter()
             .chain(self.their_recent_keys.iter().map(|(p, k)| (p, k)))
@@ -466,7 +466,7 @@ impl SectionProofChain {
 }
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct TheirKeyInfo {
+pub struct SectionKeyInfo {
     pub prefix: Prefix<XorName>,
     pub version: u64,
     pub key: BlsPublicKey,
@@ -533,7 +533,7 @@ mod test {
         let mut state = SharedState::new(start_section);
 
         for (prefix, version, key) in keys_to_update.iter() {
-            state.update_their_keys(&TheirKeyInfo {
+            state.update_their_keys(&SectionKeyInfo {
                 prefix: *prefix,
                 version: *version as u64,
                 key: key.clone(),

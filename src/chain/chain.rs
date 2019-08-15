@@ -8,7 +8,7 @@
 
 use super::{
     candidate::Candidate,
-    shared_state::{PrefixChange, SectionProofBlock, SharedState, TheirKeyInfo},
+    shared_state::{PrefixChange, SectionKeyInfo, SectionProofBlock, SharedState},
     GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
 };
 use crate::{
@@ -495,7 +495,7 @@ impl Chain {
     }
 
     /// Return the keys we know
-    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &TheirKeyInfo)> {
+    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.state.get_their_keys_info()
     }
 
@@ -730,7 +730,7 @@ impl Chain {
                     &sec_info,
                     proofs.clone(),
                 ));
-            self.update_their_keys(&TheirKeyInfo {
+            self.update_their_keys(&SectionKeyInfo {
                 prefix: *sec_info.prefix(),
                 version: *sec_info.version(),
                 key: self.state.our_history.last_public_key().clone(),
@@ -798,7 +798,7 @@ impl Chain {
     }
 
     /// Updates `their_keys` in the shared state
-    pub fn update_their_keys(&mut self, key_info: &TheirKeyInfo) {
+    pub fn update_their_keys(&mut self, key_info: &SectionKeyInfo) {
         trace!(
             "{:?} attempts to update their_keys for {:?} ",
             self.our_id(),

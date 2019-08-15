@@ -16,8 +16,8 @@ use super::{
 use crate::{
     cache::Cache,
     chain::{
-        Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionInfo,
-        SendAckMessagePayload, TheirKeyInfo,
+        Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionInfo, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -403,7 +403,10 @@ impl Approved for Adult {
         }
     }
 
-    fn handle_their_key_info_event(&mut self, _key_info: TheirKeyInfo) -> Result<(), RoutingError> {
+    fn handle_their_key_info_event(
+        &mut self,
+        _key_info: SectionKeyInfo,
+    ) -> Result<(), RoutingError> {
         Ok(())
     }
 

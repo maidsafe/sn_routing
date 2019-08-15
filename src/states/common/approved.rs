@@ -10,7 +10,7 @@ use super::Relocated;
 use crate::{
     chain::{
         Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
-        SendAckMessagePayload, TheirKeyInfo,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     id::PublicId,
@@ -68,7 +68,8 @@ pub trait Approved: Relocated {
     ) -> Result<Transition, RoutingError>;
 
     /// Handle an accumulated `TheirKeyInfo` event
-    fn handle_their_key_info_event(&mut self, key_info: TheirKeyInfo) -> Result<(), RoutingError>;
+    fn handle_their_key_info_event(&mut self, key_info: SectionKeyInfo)
+        -> Result<(), RoutingError>;
 
     /// Handle an accumulated `SendAckMessage` event
     fn handle_send_ack_message_event(

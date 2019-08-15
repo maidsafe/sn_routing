@@ -15,7 +15,7 @@ use crate::{
     chain::{
         delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
         NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, SectionInfo,
-        SendAckMessagePayload, TheirKeyInfo,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -1181,7 +1181,7 @@ impl Elder {
         });
 
         if new_key_info {
-            self.vote_for_event(NetworkEvent::TheirKeyInfo(TheirKeyInfo {
+            self.vote_for_event(NetworkEvent::TheirKeyInfo(SectionKeyInfo {
                 prefix: *sec_info.prefix(),
                 version: *sec_info.version(),
                 key: BlsPublicKey::from_section_info(&sec_info),
@@ -2078,7 +2078,10 @@ impl Approved for Elder {
         Ok(Transition::Stay)
     }
 
-    fn handle_their_key_info_event(&mut self, key_info: TheirKeyInfo) -> Result<(), RoutingError> {
+    fn handle_their_key_info_event(
+        &mut self,
+        key_info: SectionKeyInfo,
+    ) -> Result<(), RoutingError> {
         self.vote_send_section_info_ack(SendAckMessagePayload {
             ack_prefix: key_info.prefix,
             ack_version: key_info.version,
