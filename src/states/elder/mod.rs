@@ -442,10 +442,9 @@ impl Elder {
 
     fn send_neighbour_infos(&mut self) {
         self.chain.other_prefixes().iter().for_each(|pfx| {
-            let payload = *self.chain.our_info().hash();
             let src = Authority::Section(self.our_prefix().name());
             let dst = Authority::PrefixSection(*pfx);
-            let content = MessageContent::NeighbourInfo(payload);
+            let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
             if let Err(err) = self.send_routing_message(src, dst, content) {
                 debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
             }
@@ -603,7 +602,9 @@ impl Elder {
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(_digest), Section(_), PrefixSection(_)) => Ok(()),
+            (NeighbourInfo(sec_info), Section(_), PrefixSection(_)) => {
+                self.handle_neighbour_info(sec_info)
+            }
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (UserMessage { content, .. }, src, dst) => {
                 outbox.send_event(content.into_event(src, dst));
@@ -1170,10 +1171,6 @@ impl Elder {
             return;
         }
 
-        if let Some(sec_info) = signed_msg.source_section() {
-            let _ = self.add_new_section(sec_info);
-        }
-
         let key_info = if let Some(key_info) = signed_msg.source_section_key_info() {
             key_info
         } else {
@@ -1189,14 +1186,11 @@ impl Elder {
         }
     }
 
-    /// Votes for the section if it is new to us.
-    fn add_new_section(&mut self, sec_info: &SectionInfo) -> bool {
-        if self.chain.is_new_neighbour(sec_info) {
-            self.vote_for_event(sec_info.clone().into_network_event());
-            true
-        } else {
-            false
+    fn handle_neighbour_info(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError> {
+        if self.chain.is_new_neighbour(&sec_info) {
+            self.vote_for_event(sec_info.into_network_event());
         }
+        Ok(())
     }
 
     fn handle_merge(&mut self, digest: Digest256) -> Result<(), RoutingError> {
@@ -1819,16 +1813,9 @@ impl Bootstrapped for Elder {
             return Ok(());
         }
 
-        use crate::routing_table::Authority::*;
-        let sending_sec = match routing_msg.src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | ManagedNode(_) | Section(_)
-            | PrefixSection(_) => Some(self.chain.our_info().clone()),
-            Client { .. } => None,
-        };
-
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
-            let mut msg = SignedRoutingMessage::insecure(routing_msg.clone(), sending_sec.clone());
+            let mut msg = SignedRoutingMessage::insecure(routing_msg.clone());
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg)?;
             } else {
@@ -1839,13 +1826,7 @@ impl Bootstrapped for Elder {
 
         let proof = self.chain.prove(&routing_msg.dst);
         let pk_set = self.public_key_set();
-        let signed_msg = SignedRoutingMessage::new(
-            routing_msg,
-            &self.full_id,
-            sending_sec,
-            pk_set,
-            proof,
-        )?;
+        let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, pk_set, proof)?;
 
         for target in Iterator::flatten(
             self.get_signature_targets(&signed_msg.routing_message().src)

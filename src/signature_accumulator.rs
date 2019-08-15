@@ -118,7 +118,6 @@ mod tests {
             let signed_msg = unwrap!(SignedRoutingMessage::new(
                 routing_msg.clone(),
                 msg_sender_id,
-                sec_info.clone(),
                 pk_set.clone(),
                 proof.clone(),
             ));
@@ -128,7 +127,6 @@ mod tests {
                         DirectMessage::MessageSignature(unwrap!(SignedRoutingMessage::new(
                             routing_msg.clone(),
                             id,
-                            sec_info.clone(),
                             pk_set.clone(),
                             proof.clone(),
                         ))),
