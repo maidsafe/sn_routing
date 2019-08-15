@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 //! Types emulating the BLS functionality until proper BLS lands
-use super::{NetworkEvent, ProofSet, SectionInfo};
+use super::{NetworkEvent, ProofSet, SectionInfo, SectionKeyInfo};
 use crate::{
     id::{FullId, PublicId},
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
@@ -128,6 +128,17 @@ impl PublicKey {
 
     pub fn as_event(&self) -> parsec::Observation<NetworkEvent, PublicId> {
         parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(self.0.sec_info.clone()))
+    }
+
+    pub fn as_section_key_info(&self) -> SectionKeyInfo {
+        // Because of the current implementation all the required information is in the stored
+        // SectionInfo that is also trusted. When moving to real BLS, we will likely need to store
+        // and sign TheirKeyInfo into the SectionProofChain
+        SectionKeyInfo {
+            prefix: *self.0.sec_info.prefix(),
+            version: *self.0.sec_info.version(),
+            key: self.clone(),
+        }
     }
 }
 
