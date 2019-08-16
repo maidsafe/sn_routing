@@ -864,8 +864,11 @@ impl Chain {
                 }
 
                 // Remove older compatible neighbour prefixes.
+                // DO NOT SUPPORT MERGE: Not consider newer if the older one was extension (split).
                 let is_newer = |(other_pfx, other_sec_info): (&Prefix<XorName>, &SectionInfo)| {
-                    other_pfx.is_compatible(pfx) && other_sec_info.version() > sec_info.version()
+                    other_pfx.is_compatible(pfx)
+                        && other_sec_info.version() > sec_info.version()
+                        && !pfx.is_extension_of(other_pfx)
                 };
 
                 if self.state.neighbour_infos.iter().any(is_newer) {
