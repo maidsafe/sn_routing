@@ -342,7 +342,7 @@ mod unnamed {
 
     // ==========================   Program Options   =================================
     #[rustfmt::skip]
-    static USAGE: &'static str = "
+    static USAGE: &str = "
 Usage:
   ci_test -h
   ci_test [--output=<log_file>] [-c [<requests> [<batches>]]] [-f] [-d]
