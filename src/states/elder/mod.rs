@@ -76,7 +76,7 @@ const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
 pub struct ElderDetails {
-    pub cache: Box<Cache>,
+    pub cache: Box<dyn Cache>,
     pub chain: Chain,
     pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
@@ -99,7 +99,7 @@ pub struct Elder {
     msg_queue: VecDeque<RoutingMessage>,
     peer_map: PeerMap,
     peer_mgr: PeerManager,
-    response_cache: Box<Cache>,
+    response_cache: Box<dyn Cache>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
@@ -133,12 +133,12 @@ pub struct Elder {
 
 impl Elder {
     pub fn first(
-        cache: Box<Cache>,
+        cache: Box<dyn Cache>,
         network_service: NetworkService,
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
 
@@ -182,7 +182,7 @@ impl Elder {
         mut details: ElderDetails,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
         let mut elder = Self::new(details, false);
@@ -254,7 +254,7 @@ impl Elder {
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
         event_backlog: Vec<Event>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         debug!("{} - State changed to Elder.", self);
         trace!(
@@ -286,7 +286,7 @@ impl Elder {
         Ok(())
     }
 
-    fn handle_routing_messages(&mut self, outbox: &mut EventBox) {
+    fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) {
         while let Some(routing_msg) = self.msg_queue.pop_front() {
             if self.in_authority(&routing_msg.dst) {
                 if let Err(err) = self.dispatch_routing_message(routing_msg, outbox) {
@@ -328,7 +328,7 @@ impl Elder {
     // Connected peers which are valid need added to RT
     // Peers no longer required currently connected as PeerState::Routing are disconnected
     // Establish connection to peers missing from peer manager
-    fn update_peer_states(&mut self, outbox: &mut EventBox) {
+    fn update_peer_states(&mut self, outbox: &mut dyn EventBox) {
         let mut peers_to_add = Vec::new();
         let mut peers_to_remove = Vec::new();
 
@@ -556,7 +556,7 @@ impl Elder {
     fn dispatch_routing_message(
         &mut self,
         routing_msg: RoutingMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         use crate::messages::MessageContent::*;
         use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
@@ -658,7 +658,7 @@ impl Elder {
         &mut self,
         new_pub_id: PublicId,
         new_client_auth: Authority<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         // Once the joining node joined, it may receive the vote regarding itself.
         // Or a node may receive CandidateApproval before connection established.
@@ -872,7 +872,7 @@ impl Elder {
         Ok(())
     }
 
-    fn handle_connection_response(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+    fn handle_connection_response(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
         self.peer_mgr_mut().set_connected(pub_id);
         self.process_connection(pub_id, outbox);
     }
@@ -884,7 +884,7 @@ impl Elder {
         new_pub_id: &PublicId,
         signature_using_old: &Signature,
         new_client_auth: &Authority<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) {
         #[cfg(feature = "mock_base")]
         {
@@ -1448,7 +1448,7 @@ impl Elder {
     fn dropped_peer(
         &mut self,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
         try_reconnect: bool,
     ) -> bool {
         if self.peer_mgr.remove_peer_no_joining_checks(&pub_id) {
@@ -1613,7 +1613,7 @@ impl Base for Elder {
         }
     }
 
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
+    fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
         if self.tick_timer_token == token {
             self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
             self.remove_expired_peers();
@@ -1638,7 +1638,7 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn finish_handle_action(&mut self, outbox: &mut EventBox) -> Transition {
+    fn finish_handle_action(&mut self, outbox: &mut dyn EventBox) -> Transition {
         self.handle_routing_messages(outbox);
         Transition::Stay
     }
@@ -1651,7 +1651,7 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
 
         if self.peer_mgr.get_peer(&pub_id).is_none() {
@@ -1665,7 +1665,7 @@ impl Base for Elder {
         }
     }
 
-    fn finish_handle_network_event(&mut self, outbox: &mut EventBox) -> Transition {
+    fn finish_handle_network_event(&mut self, outbox: &mut dyn EventBox) -> Transition {
         self.handle_routing_messages(outbox);
         Transition::Stay
     }
@@ -1675,7 +1675,7 @@ impl Base for Elder {
         &mut self,
         msg: DirectMessage,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         self.check_direct_message_sender(&msg, &pub_id)?;
 
@@ -1736,7 +1736,7 @@ impl Base for Elder {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content, .. } = msg;
         self.handle_signed_message(content)
@@ -1882,7 +1882,7 @@ impl Relocated for Elder {
         &mut self.peer_mgr
     }
 
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
         if self.is_peer_valid(&pub_id) {
             self.add_node(&pub_id, outbox);
         }
@@ -1902,7 +1902,7 @@ impl Relocated for Elder {
         }
     }
 
-    fn send_event(&mut self, event: Event, outbox: &mut EventBox) {
+    fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
         outbox.send_event(event);
     }
 }
@@ -1928,7 +1928,7 @@ impl Approved for Elder {
         &mut self,
         new_pub_id: PublicId,
         client_auth: Authority<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let to_vote_infos = self.chain.add_member(new_pub_id)?;
         let _ = self.handle_candidate_approval(new_pub_id, client_auth, outbox);
@@ -1943,7 +1943,7 @@ impl Approved for Elder {
     fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let self_info = self.chain.remove_member(pub_id)?;
         self.vote_for_event(NetworkEvent::SectionInfo(self_info));
@@ -2014,7 +2014,7 @@ impl Approved for Elder {
         &mut self,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if sec_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;

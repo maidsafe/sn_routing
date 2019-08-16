@@ -41,7 +41,7 @@ use std::fmt::{self, Display, Formatter};
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct AdultDetails {
-    pub cache: Box<Cache>,
+    pub cache: Box<dyn Cache>,
     pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
@@ -55,7 +55,7 @@ pub struct AdultDetails {
 }
 
 pub struct Adult {
-    cache: Box<Cache>,
+    cache: Box<dyn Cache>,
     chain: Chain,
     network_service: NetworkService,
     event_backlog: Vec<Event>,
@@ -74,7 +74,7 @@ pub struct Adult {
 impl Adult {
     pub fn from_proving_node(
         details: AdultDetails,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let poke_timer_token = details.timer.schedule(POKE_TIMEOUT);
@@ -106,7 +106,7 @@ impl Adult {
         Ok(node)
     }
 
-    fn init(&mut self, outbox: &mut EventBox) -> Result<(), RoutingError> {
+    fn init(&mut self, outbox: &mut dyn EventBox) -> Result<(), RoutingError> {
         debug!("{} - State changed to Adult.", self);
 
         for msg in self.msg_backlog.drain(..).collect_vec() {
@@ -120,7 +120,7 @@ impl Adult {
         self,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         let details = ElderDetails {
             cache: self.cache,
@@ -145,7 +145,7 @@ impl Adult {
     fn dispatch_routing_message(
         &mut self,
         msg: RoutingMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         self.handle_routing_message(msg, outbox)
     }
@@ -220,7 +220,7 @@ impl Base for Adult {
         &mut self.peer_map
     }
 
-    fn handle_timeout(&mut self, token: u64, _: &mut EventBox) -> Transition {
+    fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.poke_timer_token == token {
             self.send_parsec_poke();
             self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
@@ -229,7 +229,7 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         RelocatedNotEstablished::handle_peer_lost(self, pub_id, outbox)
     }
 
@@ -237,7 +237,7 @@ impl Base for Adult {
         &mut self,
         msg: DirectMessage,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         self.check_direct_message_sender(&msg, &pub_id)?;
 
@@ -263,7 +263,7 @@ impl Base for Adult {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             self.dispatch_routing_message(routing_msg, outbox)?;
@@ -299,7 +299,7 @@ impl Relocated for Adult {
         &mut self.peer_mgr
     }
 
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox) {
+    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
         self.add_node(&pub_id, outbox);
     }
 
@@ -313,7 +313,7 @@ impl Relocated for Adult {
         self.disconnect_peer(pub_id)
     }
 
-    fn send_event(&mut self, event: Event, _: &mut EventBox) {
+    fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
     }
 }
@@ -355,7 +355,7 @@ impl Approved for Adult {
         &mut self,
         new_pub_id: PublicId,
         _: Authority<XorName>,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.chain.add_member(new_pub_id)?;
         Ok(())
@@ -364,7 +364,7 @@ impl Approved for Adult {
     fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.chain.remove_member(pub_id)?;
         Ok(())
@@ -393,7 +393,7 @@ impl Approved for Adult {
         &mut self,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if self.chain.is_member() {
             Ok(Transition::IntoElder { sec_info, old_pfx })

@@ -130,7 +130,7 @@ const SPLIT_BUFFER: usize = 1;
 
 // Immutable iterator over the entries of a `RoutingTable`.
 pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
-    inner: Box<Iterator<Item = &'a T> + 'a>,
+    inner: Box<dyn Iterator<Item = &'a T> + 'a>,
     our_name: T,
 }
 
@@ -288,7 +288,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     /// Create an iterator over all sections including our own.
-    pub fn all_sections_iter<'a>(&'a self) -> Box<Iterator<Item = SectionItem<T>> + 'a> {
+    pub fn all_sections_iter<'a>(&'a self) -> Box<dyn Iterator<Item = SectionItem<T>> + 'a> {
         let iter = self
             .sections
             .iter()

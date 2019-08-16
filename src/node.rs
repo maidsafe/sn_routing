@@ -87,7 +87,7 @@ macro_rules! impl_response {
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
-    cache: Box<Cache>,
+    cache: Box<dyn Cache>,
     first: bool,
     config: Option<Config>,
     network_config: Option<NetworkConfig>,
@@ -95,7 +95,7 @@ pub struct NodeBuilder {
 
 impl NodeBuilder {
     /// Configures the node to use the given request cache.
-    pub fn cache(self, cache: Box<Cache>) -> NodeBuilder {
+    pub fn cache(self, cache: Box<dyn Cache>) -> NodeBuilder {
         NodeBuilder { cache, ..self }
     }
 
@@ -146,7 +146,7 @@ impl NodeBuilder {
         })
     }
 
-    fn make_state_machine(self, outbox: &mut EventBox) -> (mpmc::Sender<Action>, StateMachine) {
+    fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
         let full_id = FullId::new();
         let config = self.config.unwrap_or_else(config_handler::get_config);
         let dev_config = config.dev.unwrap_or_default();

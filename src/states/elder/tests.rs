@@ -463,7 +463,7 @@ fn new_elder_state(
     min_section_size: usize,
     network_service: NetworkService,
     timer: Timer,
-    outbox: &mut EventBox,
+    outbox: &mut dyn EventBox,
 ) -> State {
     let public_id = *full_id.public_id();
 
@@ -499,7 +499,7 @@ fn make_state_machine(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
     min_section_size: usize,
-    outbox: &mut EventBox,
+    outbox: &mut dyn EventBox,
 ) -> StateMachine {
     let network = Network::new(min_section_size, None);
 

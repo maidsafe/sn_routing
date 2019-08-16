@@ -40,7 +40,7 @@ pub trait Base: Display {
         LogIdent::new(self)
     }
 
-    fn handle_peer_lost(&mut self, _pub_id: PublicId, _outbox: &mut EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, _pub_id: PublicId, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -48,16 +48,16 @@ pub trait Base: Display {
         &mut self,
         msg: DirectMessage,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
-    fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
+    fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
         match action {
             Action::ClientSendRequest {
                 dst,
@@ -121,7 +121,7 @@ pub trait Base: Display {
         Err(InterfaceError::InvalidState)
     }
 
-    fn handle_timeout(&mut self, _token: u64, _outbox: &mut EventBox) -> Transition {
+    fn handle_timeout(&mut self, _token: u64, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -132,11 +132,15 @@ pub trait Base: Display {
         );
     }
 
-    fn finish_handle_action(&mut self, _outbox: &mut EventBox) -> Transition {
+    fn finish_handle_action(&mut self, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
-    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut EventBox) -> Transition {
+    fn handle_network_event(
+        &mut self,
+        event: NetworkEvent,
+        outbox: &mut dyn EventBox,
+    ) -> Transition {
         use crate::NetworkEvent::*;
 
         let transition = match event {
@@ -172,7 +176,7 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn handle_bootstrap_failure(&mut self, _outbox: &mut EventBox) -> Transition {
+    fn handle_bootstrap_failure(&mut self, _outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Unhandled network event: BootstrapFailure", self);
         Transition::Stay
     }
@@ -180,7 +184,7 @@ pub trait Base: Display {
     fn handle_connected_to(
         &mut self,
         conn_info: ConnectionInfo,
-        _outbox: &mut EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Transition {
         self.peer_map_mut().connect(conn_info);
         Transition::Stay
@@ -189,7 +193,7 @@ pub trait Base: Display {
     fn handle_connection_failure(
         &mut self,
         peer_addr: SocketAddr,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, peer_addr);
 
@@ -205,7 +209,7 @@ pub trait Base: Display {
         &mut self,
         src_addr: SocketAddr,
         bytes: NetworkBytes,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Transition {
         let result = from_network_bytes(bytes)
             .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
@@ -224,7 +228,7 @@ pub trait Base: Display {
         &mut self,
         src_addr: SocketAddr,
         message: Message,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
             Message::Hop(msg) => self.handle_hop_message(msg, outbox),
@@ -241,7 +245,7 @@ pub trait Base: Display {
         peer_addr: SocketAddr,
         msg: NetworkBytes,
         token: Token,
-        _outbox: &mut EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Transition {
         let log_ident = LogIdent::new(self);
         self.network_service_mut()
@@ -254,7 +258,7 @@ pub trait Base: Display {
         peer_addr: SocketAddr,
         _msg: NetworkBytes,
         token: Token,
-        _outbox: &mut EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Transition {
         debug!(
             "{} Successfully sent message with ID {} to {:?}",
@@ -266,7 +270,7 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn finish_handle_network_event(&mut self, _outbox: &mut EventBox) -> Transition {
+    fn finish_handle_network_event(&mut self, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 

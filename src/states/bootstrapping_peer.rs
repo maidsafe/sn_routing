@@ -58,7 +58,7 @@ pub enum TargetState {
 pub struct BootstrappingPeer {
     action_sender: mpmc::Sender<Action>,
     bootstrap_connection: Option<(NodeInfo, u64)>,
-    cache: Box<Cache>,
+    cache: Box<dyn Cache>,
     network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
@@ -70,7 +70,7 @@ pub struct BootstrappingPeer {
 impl BootstrappingPeer {
     pub fn new(
         action_sender: mpmc::Sender<Action>,
-        cache: Box<Cache>,
+        cache: Box<dyn Cache>,
         target_state: TargetState,
         mut network_service: NetworkService,
         full_id: FullId,
@@ -95,7 +95,7 @@ impl BootstrappingPeer {
     pub fn into_target_state(
         self,
         proxy_pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         match self.target_state {
             TargetState::Client { msg_expiry_dur } => {
@@ -246,7 +246,7 @@ impl Base for BootstrappingPeer {
         Ok(())
     }
 
-    fn handle_timeout(&mut self, token: u64, _: &mut EventBox) -> Transition {
+    fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if let Some((node_info, bootstrap_token)) = self.bootstrap_connection.as_ref() {
             if *bootstrap_token == token {
                 debug!(
@@ -281,13 +281,17 @@ impl Base for BootstrappingPeer {
         Transition::Stay
     }
 
-    fn handle_bootstrap_failure(&mut self, outbox: &mut EventBox) -> Transition {
+    fn handle_bootstrap_failure(&mut self, outbox: &mut dyn EventBox) -> Transition {
         info!("{} Failed to bootstrap. Terminating.", self);
         outbox.send_event(Event::Terminated);
         Transition::Terminate
     }
 
-    fn handle_connection_failure(&mut self, peer_addr: SocketAddr, _: &mut EventBox) -> Transition {
+    fn handle_connection_failure(
+        &mut self,
+        peer_addr: SocketAddr,
+        _: &mut dyn EventBox,
+    ) -> Transition {
         let _ = self.peer_map_mut().disconnect(peer_addr);
 
         if let Some((node_info, _)) = self.bootstrap_connection.as_ref() {
@@ -304,7 +308,7 @@ impl Base for BootstrappingPeer {
         &mut self,
         msg: DirectMessage,
         pub_id: PublicId,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         use crate::messages::DirectMessage::*;
         match msg {
@@ -326,7 +330,7 @@ impl Base for BootstrappingPeer {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         debug!("{} - Unhandled hop message: {:?}", self, msg);
         Ok(Transition::Stay)
@@ -438,7 +442,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0], Event::Terminated);
     }
-    fn step_at_least_once(machine: &mut StateMachine, outbox: &mut EventBox) {
+    fn step_at_least_once(machine: &mut StateMachine, outbox: &mut dyn EventBox) {
         // Blocking step for the first one. Must not err.
         unwrap!(machine.step(outbox));
         // Exhaust any remaining step

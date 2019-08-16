@@ -47,7 +47,7 @@ const RESEND_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct ProvingNodeDetails {
     pub action_sender: mpmc::Sender<Action>,
-    pub cache: Box<Cache>,
+    pub cache: Box<dyn Cache>,
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
@@ -59,7 +59,7 @@ pub struct ProvingNodeDetails {
 }
 
 pub struct ProvingNode {
-    cache: Box<Cache>,
+    cache: Box<dyn Cache>,
     network_service: NetworkService,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
@@ -83,7 +83,7 @@ pub struct ProvingNode {
 impl ProvingNode {
     pub fn from_bootstrapping(
         details: ProvingNodeDetails,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let dev_config = config_handler::get_config().dev.unwrap_or_default();
 
@@ -125,7 +125,7 @@ impl ProvingNode {
         &mut self,
         our_section: BTreeSet<PublicId>,
         proxy_pub_id: &PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         self.resource_prover.start(self.disable_resource_proof);
 
@@ -157,7 +157,7 @@ impl ProvingNode {
     pub fn into_adult(
         self,
         gen_pfx_info: GenesisPfxInfo,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         let details = AdultDetails {
             cache: self.cache,
@@ -179,7 +179,7 @@ impl ProvingNode {
     fn dispatch_routing_message(
         &mut self,
         msg: RoutingMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
         match msg {
@@ -260,7 +260,7 @@ impl ProvingNode {
         self.send_direct_message(&pub_id, msg);
     }
 
-    fn resend_info(&mut self, outbox: &mut EventBox) -> Transition {
+    fn resend_info(&mut self, outbox: &mut dyn EventBox) -> Transition {
         let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
             *proxy_node_name
         } else {
@@ -323,7 +323,7 @@ impl Base for ProvingNode {
         &mut self.peer_map
     }
 
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
+    fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
         if self.resend_token == Some(token) {
             return self.resend_info(outbox);
         }
@@ -346,7 +346,7 @@ impl Base for ProvingNode {
         self.send_direct_message(&pub_id, msg);
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         let _ = self.resource_proofing_status.remove(&pub_id);
         RelocatedNotEstablished::handle_peer_lost(self, pub_id, outbox)
     }
@@ -355,7 +355,7 @@ impl Base for ProvingNode {
         &mut self,
         msg: DirectMessage,
         pub_id: PublicId,
-        _outbox: &mut EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         self.check_direct_message_sender(&msg, &pub_id)?;
 
@@ -396,7 +396,7 @@ impl Base for ProvingNode {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             self.dispatch_routing_message(routing_msg, outbox)
@@ -433,7 +433,7 @@ impl Relocated for ProvingNode {
         &mut self.peer_mgr
     }
 
-    fn process_connection(&mut self, pub_id: PublicId, _: &mut EventBox) {
+    fn process_connection(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
         self.send_candidate_info(pub_id)
     }
 
@@ -447,7 +447,7 @@ impl Relocated for ProvingNode {
         self.disconnect_peer(pub_id)
     }
 
-    fn send_event(&mut self, event: Event, _: &mut EventBox) {
+    fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
     }
 }

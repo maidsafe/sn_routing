@@ -49,7 +49,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn from_bootstrapping(details: ClientDetails, outbox: &mut EventBox) -> Self {
+    pub fn from_bootstrapping(details: ClientDetails, outbox: &mut dyn EventBox) -> Self {
         let client = Client {
             network_service: details.network_service,
             full_id: details.full_id,
@@ -70,7 +70,7 @@ impl Client {
     fn dispatch_routing_message(
         &mut self,
         routing_msg: RoutingMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Transition {
         match routing_msg.content {
             MessageContent::UserMessage { content, .. } => {
@@ -164,11 +164,11 @@ impl Base for Client {
         }
     }
 
-    fn handle_timeout(&mut self, _token: u64, _: &mut EventBox) -> Transition {
+    fn handle_timeout(&mut self, _token: u64, _: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {:?}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
@@ -184,7 +184,7 @@ impl Base for Client {
         &mut self,
         msg: DirectMessage,
         _: PublicId,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         debug!("{} Unhandled direct message: {:?}", self, msg);
         Ok(Transition::Stay)
@@ -193,7 +193,7 @@ impl Base for Client {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             Ok(self.dispatch_routing_message(routing_msg, outbox))

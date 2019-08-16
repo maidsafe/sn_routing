@@ -63,7 +63,7 @@ pub struct Client {
 impl Client {
     fn make_state_machine(
         keys: Option<FullId>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
         mut network_config: NetworkConfig,
         config: Option<Config>,
         msg_expiry_dur: Duration,

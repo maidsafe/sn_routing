@@ -220,7 +220,7 @@ impl ResourceProver {
         &mut self,
         token: u64,
         log_ident: LogIdent,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Option<Transition> {
         if self.get_approval_timer_token == Some(token) {
             self.handle_approval_timeout(log_ident, outbox);
@@ -249,7 +249,7 @@ impl ResourceProver {
         }
     }
 
-    fn handle_approval_timeout(&mut self, log_ident: LogIdent, outbox: &mut EventBox) {
+    fn handle_approval_timeout(&mut self, log_ident: LogIdent, outbox: &mut dyn EventBox) {
         let completed = self
             .response_parts
             .values()
