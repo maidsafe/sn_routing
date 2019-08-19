@@ -86,10 +86,15 @@ pub trait Relocated: Bootstrapped {
         &mut self,
         encrypted_their_conn_info: &[u8],
         their_pub_id: PublicId,
-        _src: Authority<XorName>,
+        src: Authority<XorName>,
         _dst: Authority<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        if src.single_signing_name() != Some(their_pub_id.name()) {
+            // Connection info not from the source node.
+            return Err(RoutingError::InvalidMessage);
+        }
+
         let shared_secret = self
             .full_id()
             .encrypting_private_key()

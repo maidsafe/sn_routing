@@ -8,6 +8,7 @@
 
 use super::{Prefix, Xorable};
 use crate::id::PublicId;
+use crate::xor_name::XorName;
 use std::fmt::{self, Binary, Debug, Display, Formatter};
 
 /// An entity that can act as a source or destination of a message.
@@ -92,6 +93,21 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
                 ref proxy_node_name,
                 ..
             } => *proxy_node_name,
+        }
+    }
+}
+
+impl Authority<XorName> {
+    /// provide the name mathching a single node's public key
+    pub fn single_signing_name(&self) -> Option<&XorName> {
+        match *self {
+            Authority::ClientManager(_)
+            | Authority::NaeManager(_)
+            | Authority::Section(_)
+            | Authority::PrefixSection(_)
+            | Authority::NodeManager(_) => None,
+            Authority::ManagedNode(ref name) => Some(name),
+            Authority::Client { ref client_id, .. } => Some(client_id.name()),
         }
     }
 }

@@ -135,12 +135,38 @@ impl Debug for FullSecurityMetadata {
     }
 }
 
+/// Metadata needed for verification of the single node sender.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+pub struct SingleSrcSecurityMetadata {
+    public_id: PublicId,
+    signature: Signature,
+}
+
+impl SingleSrcSecurityMetadata {
+    pub fn verify_sig(&self, bytes: &[u8]) -> bool {
+        self.public_id
+            .signing_public_key()
+            .verify_detached(&self.signature, bytes)
+    }
+}
+
+impl Debug for SingleSrcSecurityMetadata {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SingleSrcSecurityMetadata {{ public_id: {:?}, .. }}",
+            self.public_id
+        )
+    }
+}
+
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
     None,
     Partial(PartialSecurityMetadata),
     Full(FullSecurityMetadata),
+    Single(SingleSrcSecurityMetadata),
 }
 
 impl Debug for SecurityMetadata {
@@ -149,6 +175,7 @@ impl Debug for SecurityMetadata {
             SecurityMetadata::None => write!(formatter, "None"),
             SecurityMetadata::Partial(pmd) => write!(formatter, "{:?}", pmd),
             SecurityMetadata::Full(smd) => write!(formatter, "{:?}", smd),
+            SecurityMetadata::Single(smd) => write!(formatter, "{:?}", smd),
         }
     }
 }
@@ -187,6 +214,23 @@ impl SignedRoutingMessage {
         })
     }
 
+    /// Creates a `SignedRoutingMessage` security metadata from a single source
+    pub fn single_source(
+        content: RoutingMessage,
+        full_id: &FullId,
+    ) -> Result<SignedRoutingMessage> {
+        let sk = full_id.signing_private_key();
+        let single_metadata = SingleSrcSecurityMetadata {
+            public_id: *full_id.public_id(),
+            signature: content.to_signature(sk)?,
+        };
+
+        Ok(SignedRoutingMessage {
+            content,
+            security_metadata: SecurityMetadata::Single(single_metadata),
+        })
+    }
+
     /// Creates a `SignedRoutingMessage` without security metadata
     pub fn insecure(content: RoutingMessage) -> SignedRoutingMessage {
         SignedRoutingMessage {
@@ -200,6 +244,20 @@ impl SignedRoutingMessage {
         match self.security_metadata {
             SecurityMetadata::None => Ok(()),
             SecurityMetadata::Partial(_) => Err(RoutingError::FailedSignature),
+            SecurityMetadata::Single(ref security_metadata) => {
+                if self.content.src.single_signing_name()
+                    != Some(security_metadata.public_id.name())
+                {
+                    // Signature is not from the source node.
+                    return Err(RoutingError::InvalidMessage);
+                }
+
+                let signed_bytes = serialise(&self.content)?;
+                if !security_metadata.verify_sig(&signed_bytes) {
+                    return Err(RoutingError::FailedSignature);
+                }
+                Ok(())
+            }
             SecurityMetadata::Full(ref security_metadata) => {
                 let signed_bytes = serialise(&self.content)?;
                 if !security_metadata.verify_sig(&signed_bytes) {
@@ -219,7 +277,7 @@ impl SignedRoutingMessage {
             SecurityMetadata::Full(ref security_metadata) => {
                 chain.check_trust(security_metadata.proof_chain())
             }
-            SecurityMetadata::None => true,
+            SecurityMetadata::None | SecurityMetadata::Single(_) => true,
             SecurityMetadata::Partial(_) => false,
         }
     }
@@ -227,8 +285,9 @@ impl SignedRoutingMessage {
     /// Returns the security metadata validating the message.
     pub fn source_section_key_info(&self) -> Option<&SectionKeyInfo> {
         match self.security_metadata {
-            SecurityMetadata::None => None,
-            SecurityMetadata::Partial(_) => None,
+            SecurityMetadata::None | SecurityMetadata::Partial(_) | SecurityMetadata::Single(_) => {
+                None
+            }
             SecurityMetadata::Full(ref security_metadata) => {
                 Some(security_metadata.last_public_key_info())
             }
@@ -286,7 +345,7 @@ impl SignedRoutingMessage {
                     self
                 );
             }
-            SecurityMetadata::None => (),
+            SecurityMetadata::None | SecurityMetadata::Single(_) => (),
         }
     }
 
@@ -318,8 +377,8 @@ impl SignedRoutingMessage {
 
         let invalid_sigs = match self.security_metadata {
             // unfortunately, `match`es had to be split because of the borrow checker;
-            // the two cases below can return early as they have nothing left to do
-            SecurityMetadata::None => {
+            // the three cases below can return early as they have nothing left to do
+            SecurityMetadata::None | SecurityMetadata::Single(_) => {
                 return false;
             }
             SecurityMetadata::Full(_) => {
@@ -353,7 +412,9 @@ impl SignedRoutingMessage {
     // valid).
     fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<BlsPublicKeyShare> {
         match self.security_metadata {
-            SecurityMetadata::None | SecurityMetadata::Full(_) => vec![],
+            SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => {
+                vec![]
+            }
             SecurityMetadata::Partial(ref partial) => {
                 let invalid: Vec<_> = partial
                     .shares
@@ -375,7 +436,7 @@ impl SignedRoutingMessage {
         match &self.security_metadata {
             SecurityMetadata::None => !self.content.src.is_multiple(),
             SecurityMetadata::Partial(partial) => partial.shares.len() > partial.pk_set.threshold(),
-            SecurityMetadata::Full(_) => true,
+            SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => true,
         }
     }
 
