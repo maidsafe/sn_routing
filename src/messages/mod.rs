@@ -16,7 +16,7 @@ pub use self::{
     response::{AccountInfo, Response},
 };
 use crate::{
-    chain::{Chain, GenesisPfxInfo, SectionInfo, SectionProofChain},
+    chain::{Chain, GenesisPfxInfo, SectionInfo, SectionKeyInfo, SectionProofChain},
     error::{Result, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -84,16 +84,25 @@ impl HopMessage {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
     proof: SectionProofChain,
-    sender_prefix: Prefix<XorName>,
     shares: BTreeMap<BlsPublicKeyShare, BlsSignatureShare>,
     pk_set: BlsPublicKeySet,
+}
+
+impl Debug for PartialSecurityMetadata {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "PartialSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
+            self.proof.blocks_len(),
+            self.proof
+        )
+    }
 }
 
 /// Metadata needed for verification of the sender.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct FullSecurityMetadata {
     proof: SectionProofChain,
-    sender_prefix: Prefix<XorName>,
     signature: BlsSignature,
 }
 
@@ -102,12 +111,12 @@ impl FullSecurityMetadata {
         self.proof.last_public_key().verify(&self.signature, bytes)
     }
 
-    pub fn validate_proof(&self) -> bool {
-        self.proof.validate()
+    pub fn last_public_key_info(&self) -> &SectionKeyInfo {
+        self.proof.last_public_key_info()
     }
 
-    pub fn prefix(&self) -> &Prefix<XorName> {
-        &self.sender_prefix
+    pub fn validate_proof(&self) -> bool {
+        self.proof.validate()
     }
 
     pub fn proof_chain(&self) -> &SectionProofChain {
@@ -119,8 +128,7 @@ impl Debug for FullSecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "FullSecurityMetadata {{ sender_prefix: {:?}, proof.blocks_len: {}, proof: {:?}, .. }}",
-            self.sender_prefix,
+            "FullSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
             self.proof.blocks_len(),
             self.proof
         )
@@ -135,27 +143,31 @@ pub enum SecurityMetadata {
     Full(FullSecurityMetadata),
 }
 
+impl Debug for SecurityMetadata {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match &self {
+            SecurityMetadata::None => write!(formatter, "None"),
+            SecurityMetadata::Partial(pmd) => write!(formatter, "{:?}", pmd),
+            SecurityMetadata::Full(smd) => write!(formatter, "{:?}", smd),
+        }
+    }
+}
+
 /// Wrapper around a routing message, signed by the originator of the message.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SignedRoutingMessage {
     /// A request or response type message.
     content: RoutingMessage,
-    /// Nodes sending the message (those expected to sign it)
-    src_section: Option<SectionInfo>,
     /// Optional metadata for verifying the sender
     security_metadata: SecurityMetadata,
 }
 
 impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
-    ///
-    /// Requires the list `src_section` of nodes who should sign this message.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<T: Into<Option<SectionInfo>>>(
+    pub fn new(
         content: RoutingMessage,
         full_id: &FullId,
-        src_section: T,
-        prefix: &Prefix<XorName>,
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
@@ -166,25 +178,19 @@ impl SignedRoutingMessage {
         let _ = signatures.insert(pk_share, sig);
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
-            sender_prefix: *prefix,
             pk_set,
             proof,
         };
         Ok(SignedRoutingMessage {
             content,
-            src_section: src_section.into(),
             security_metadata: SecurityMetadata::Partial(partial_metadata),
         })
     }
 
     /// Creates a `SignedRoutingMessage` without security metadata
-    pub fn insecure<T: Into<Option<SectionInfo>>>(
-        content: RoutingMessage,
-        src_section: T,
-    ) -> SignedRoutingMessage {
+    pub fn insecure(content: RoutingMessage) -> SignedRoutingMessage {
         SignedRoutingMessage {
             content,
-            src_section: src_section.into(),
             security_metadata: SecurityMetadata::None,
         }
     }
@@ -211,21 +217,22 @@ impl SignedRoutingMessage {
     pub fn check_trust(&self, chain: &Chain) -> bool {
         match self.security_metadata {
             SecurityMetadata::Full(ref security_metadata) => {
-                chain.check_trust(security_metadata.prefix(), security_metadata.proof_chain())
+                chain.check_trust(security_metadata.proof_chain())
             }
             SecurityMetadata::None => true,
             SecurityMetadata::Partial(_) => false,
         }
     }
 
-    /// Returns the source section that signed the message itself.
-    pub fn source_section(&self) -> Option<&SectionInfo> {
-        self.src_section.as_ref()
-    }
-
-    /// Returns the number of nodes in the source authority.
-    pub fn src_size(&self) -> usize {
-        self.src_section.as_ref().map_or(0, |si| si.members().len())
+    /// Returns the security metadata validating the message.
+    pub fn source_section_key_info(&self) -> Option<&SectionKeyInfo> {
+        match self.security_metadata {
+            SecurityMetadata::None => None,
+            SecurityMetadata::Partial(_) => None,
+            SecurityMetadata::Full(ref security_metadata) => {
+                Some(security_metadata.last_public_key_info())
+            }
+        }
     }
 
     /// Adds a proof if it is new, without validating it.
@@ -262,7 +269,6 @@ impl SignedRoutingMessage {
                 {
                     self.security_metadata = SecurityMetadata::Full(FullSecurityMetadata {
                         proof: partial.proof,
-                        sender_prefix: partial.sender_prefix,
                         signature: full_sig,
                     });
                 } else {
@@ -364,13 +370,8 @@ impl SignedRoutingMessage {
     }
 
     // Returns true if there are enough signatures (note that this method does not verify the
-    // signatures, it only counts them; it also does not verify `self.src_section`).
+    // signatures, it only counts them).
     fn has_enough_sigs(&self) -> bool {
-        // Only Clients are allowed to omit the src_section
-        if !self.content.src.is_client() && self.src_section.is_none() {
-            return false;
-        }
-
         match &self.security_metadata {
             SecurityMetadata::None => !self.content.src.is_multiple(),
             SecurityMetadata::Partial(partial) => partial.shares.len() > partial.pk_set.threshold(),
@@ -516,9 +517,8 @@ pub enum MessageContent {
         /// The message's unique identifier.
         msg_id: MessageId,
     },
-    /// Inform neighbours about our new section. The payload is just a unique hash, as the actual
-    /// information is included in the `SignedMessage`'s proving sections anyway.
-    NeighbourInfo(Digest256),
+    /// Inform neighbours about our new section.
+    NeighbourInfo(SectionInfo),
     /// Inform neighbours that we need to merge, and that the successor of the section info with
     /// the given hash will be the merged section.
     Merge(Digest256),
@@ -564,16 +564,10 @@ impl Debug for HopMessage {
 
 impl Debug for SignedRoutingMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        let security_metadata_str = match &self.security_metadata {
-            SecurityMetadata::None => "None".to_owned(),
-            SecurityMetadata::Partial(_) => "Partial".to_owned(),
-            SecurityMetadata::Full(smd) => format!("{:?}", smd),
-        };
         write!(
             formatter,
-            "SignedRoutingMessage {{ content: {:?}, sending nodes: {:?}, \
-             security_metadata: {} }}",
-            self.content, self.src_section, security_metadata_str
+            "SignedRoutingMessage {{ content: {:?}, security_metadata: {:?} }}",
+            self.content, self.security_metadata
         )
     }
 }
@@ -582,14 +576,14 @@ impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
         match *self {
-            Relocate { ref message_id } => write!(formatter, "Relocate {{ {:?} }}", message_id),
+            Relocate { ref message_id } => write!(formatter, "Relocate({:?})", message_id),
             ExpectCandidate {
                 ref old_public_id,
                 ref old_client_auth,
                 ref message_id,
             } => write!(
                 formatter,
-                "ExpectCandidate {{ {:?}, {:?}, {:?} }}",
+                "ExpectCandidate({:?}, {:?}, {:?})",
                 old_public_id, old_client_auth, message_id
             ),
             ConnectionRequest {
@@ -598,7 +592,7 @@ impl Debug for MessageContent {
                 ..
             } => write!(
                 formatter,
-                "ConnectionRequest {{ {:?}, {:?}, .. }}",
+                "ConnectionRequest({:?}, {:?}, ..)",
                 pub_id, msg_id
             ),
             RelocateResponse {
@@ -607,12 +601,10 @@ impl Debug for MessageContent {
                 ref message_id,
             } => write!(
                 formatter,
-                "RelocateResponse {{ {:?}, {:?}, {:?} }}",
+                "RelocateResponse({:?}, {:?}, {:?})",
                 target_interval, section, message_id
             ),
-            NeighbourInfo(ref digest) => {
-                write!(formatter, "NeighbourInfo({:.14?})", HexFmt(digest),)
-            }
+            NeighbourInfo(ref sec_info) => write!(formatter, "NeighbourInfo({:?})", sec_info),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
             UserMessage {
                 ref content,
@@ -620,10 +612,10 @@ impl Debug for MessageContent {
                 ..
             } => write!(
                 formatter,
-                "UserMessage {{ content: {:?}, priority: {} }}",
+                "UserMessage(content: {:?}, priority: {})",
                 content, priority,
             ),
-            NodeApproval(ref gen_info) => write!(formatter, "NodeApproval {{ {:?} }}", gen_info),
+            NodeApproval(ref gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
             AckMessage {
                 ref src_prefix,
                 ref ack_version,
@@ -695,6 +687,7 @@ impl<'a> Display for UserMessageShortDisplay<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chain::SectionKeyInfo;
     use crate::data::ImmutableData;
     use crate::id::FullId;
     use crate::routing_table::{Authority, Prefix};
@@ -713,8 +706,10 @@ mod tests {
         let pub_ids: BTreeSet<_> = vec![*full_id.public_id(), *full_id_2.public_id()]
             .into_iter()
             .collect();
-        let dummy_pk_set = BlsPublicKeySet::new(1, pub_ids);
-        let dummy_proof = SectionProofChain::from_genesis(dummy_pk_set.public_key());
+        let dummy_sec_info = unwrap!(SectionInfo::new(pub_ids, prefix, None));
+        let dummy_pk_set = BlsPublicKeySet::from_section_info(dummy_sec_info.clone());
+        let dummy_key_info = SectionKeyInfo::from_section_info(&dummy_sec_info);
+        let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
 
         let msg = RoutingMessage {
             src: Authority::Client {
@@ -729,8 +724,6 @@ mod tests {
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
             msg.clone(),
             &full_id,
-            None,
-            &prefix,
             dummy_pk_set,
             dummy_proof,
         ));
@@ -784,12 +777,11 @@ mod tests {
             None,
         ));
         let pk_set = BlsPublicKeySet::from_section_info(src_section.clone());
-        let dummy_proof = SectionProofChain::from_genesis(pk_set.public_key());
+        let dummy_key_info = SectionKeyInfo::from_section_info(&src_section);
+        let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
             msg,
             &full_id_0,
-            src_section,
-            &prefix,
             pk_set,
             dummy_proof
         ));

@@ -7,14 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 //! Types emulating the BLS functionality until proper BLS lands
-use super::{NetworkEvent, ProofSet, SectionInfo, SectionKeyInfo};
+use super::{ProofSet, SectionInfo};
 use crate::{
     id::{FullId, PublicId},
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
-use parsec;
-#[cfg(test)]
-use std::collections::BTreeSet;
 use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
@@ -65,15 +62,6 @@ impl PublicKeyShare {
 }
 
 impl PublicKeySet {
-    #[cfg(test)]
-    pub fn new(threshold: usize, keys: BTreeSet<PublicId>) -> Self {
-        let sec_info = SectionInfo::new(keys, Default::default(), None).unwrap();
-        Self {
-            threshold,
-            sec_info,
-        }
-    }
-
     pub fn from_section_info(sec_info: SectionInfo) -> Self {
         let threshold = sec_info.members().len() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR;
         Self {
@@ -125,21 +113,6 @@ impl PublicKey {
             .count()
             > self.0.threshold
     }
-
-    pub fn as_event(&self) -> parsec::Observation<NetworkEvent, PublicId> {
-        parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(self.0.sec_info.clone()))
-    }
-
-    pub fn as_section_key_info(&self) -> SectionKeyInfo {
-        // Because of the current implementation all the required information is in the stored
-        // SectionInfo that is also trusted. When moving to real BLS, we will likely need to store
-        // and sign TheirKeyInfo into the SectionProofChain
-        SectionKeyInfo {
-            prefix: *self.0.sec_info.prefix(),
-            version: *self.0.sec_info.version(),
-            key: self.clone(),
-        }
-    }
 }
 
 impl fmt::Debug for PublicKey {
@@ -148,21 +121,39 @@ impl fmt::Debug for PublicKey {
     }
 }
 
+/// Allow SectionKeyInfo to access internal until we switch to real BLS where
+/// the signature verification will be done on the full SectionKeyInfo.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+pub(super) struct BlsPublicKeyForSectionKeyInfo(PublicKey);
+
+impl BlsPublicKeyForSectionKeyInfo {
+    pub fn from_section_info(sec_info: &SectionInfo) -> Self {
+        Self(PublicKey::from_section_info(sec_info))
+    }
+
+    pub fn key(&self) -> &PublicKey {
+        &self.0
+    }
+
+    pub fn internal_section_info(&self) -> &SectionInfo {
+        &(self.0).0.sec_info
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{chain::delivery_group_size, id::FullId};
+    use crate::id::FullId;
     use safe_crypto;
     use unwrap::unwrap;
 
     fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
         unwrap!(safe_crypto::init());
 
-        let threshold = delivery_group_size(size) - 1;
-
         let ids: Vec<_> = (0..size).map(|_| FullId::new()).collect();
         let pub_ids = ids.iter().map(|full_id| *full_id.public_id()).collect();
-        let pk_set = PublicKeySet::new(threshold, pub_ids);
+        let sec_info = unwrap!(SectionInfo::new(pub_ids, Default::default(), None));
+        let pk_set = PublicKeySet::from_section_info(sec_info);
 
         (pk_set, ids.into_iter().map(SecretKeyShare).collect())
     }
@@ -170,7 +161,7 @@ mod test {
     #[test]
     fn test_signature() {
         let section_size = 10;
-        let min_sigs = delivery_group_size(section_size);
+        let min_sigs = section_size * QUORUM_NUMERATOR / QUORUM_DENOMINATOR + 1;
 
         let (pk_set, sk_shares) = gen_section(section_size);
 

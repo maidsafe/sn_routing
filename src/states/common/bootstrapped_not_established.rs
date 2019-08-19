@@ -70,7 +70,7 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
             }
         };
 
-        let signed_msg = SignedRoutingMessage::insecure(routing_msg, None);
+        let signed_msg = SignedRoutingMessage::insecure(routing_msg);
 
         if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id) {
             let message = self.to_hop_message(signed_msg.clone())?;

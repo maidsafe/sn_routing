@@ -74,7 +74,7 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        chain::{SectionInfo, SectionProofChain},
+        chain::{SectionInfo, SectionKeyInfo, SectionProofChain},
         id::{FullId, PublicId},
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
@@ -113,12 +113,11 @@ mod tests {
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
             let sec_info = unwrap!(SectionInfo::new(all_ids, prefix, None));
             let pk_set = BlsPublicKeySet::from_section_info(sec_info.clone());
-            let proof = SectionProofChain::from_genesis(pk_set.public_key());
+            let key_info = SectionKeyInfo::from_section_info(&sec_info);
+            let proof = SectionProofChain::from_genesis(key_info);
             let signed_msg = unwrap!(SignedRoutingMessage::new(
                 routing_msg.clone(),
                 msg_sender_id,
-                sec_info.clone(),
-                &prefix,
                 pk_set.clone(),
                 proof.clone(),
             ));
@@ -128,8 +127,6 @@ mod tests {
                         DirectMessage::MessageSignature(unwrap!(SignedRoutingMessage::new(
                             routing_msg.clone(),
                             id,
-                            sec_info.clone(),
-                            &prefix,
                             pk_set.clone(),
                             proof.clone(),
                         ))),
