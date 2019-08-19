@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{ProofSet, SectionInfo, TheirKeyInfo};
+use super::{ProofSet, SectionInfo, SectionKeyInfo};
 use crate::id::PublicId;
 use crate::parsec;
 use crate::routing_table::Prefix;
@@ -81,7 +81,7 @@ pub enum NetworkEvent {
     PurgeCandidate(PublicId),
 
     // Voted for received message with keys to we can update their_keys
-    TheirKeyInfo(TheirKeyInfo),
+    TheirKeyInfo(SectionKeyInfo),
 
     // Voted for received AckMessage to update their_knowledge
     AckMessage(AckMessagePayload),

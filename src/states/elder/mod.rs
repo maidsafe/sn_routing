@@ -15,7 +15,7 @@ use crate::{
     chain::{
         delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
         NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, SectionInfo,
-        SendAckMessagePayload, TheirKeyInfo,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -443,7 +443,7 @@ impl Elder {
     fn send_neighbour_infos(&mut self) {
         self.chain.other_prefixes().iter().for_each(|pfx| {
             let payload = *self.chain.our_info().hash();
-            let src = Authority::ManagedNode(*self.full_id.public_id().name());
+            let src = Authority::Section(self.our_prefix().name());
             let dst = Authority::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(payload);
             if let Err(err) = self.send_routing_message(src, dst, content) {
@@ -603,7 +603,7 @@ impl Elder {
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(_digest), ManagedNode(_), PrefixSection(_)) => Ok(()),
+            (NeighbourInfo(_digest), Section(_), PrefixSection(_)) => Ok(()),
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (UserMessage { content, .. }, src, dst) => {
                 outbox.send_event(content.into_event(src, dst));
@@ -1181,7 +1181,7 @@ impl Elder {
         });
 
         if new_key_info {
-            self.vote_for_event(NetworkEvent::TheirKeyInfo(TheirKeyInfo {
+            self.vote_for_event(NetworkEvent::TheirKeyInfo(SectionKeyInfo {
                 prefix: *sec_info.prefix(),
                 version: *sec_info.version(),
                 key: BlsPublicKey::from_section_info(&sec_info),
@@ -2078,7 +2078,10 @@ impl Approved for Elder {
         Ok(Transition::Stay)
     }
 
-    fn handle_their_key_info_event(&mut self, key_info: TheirKeyInfo) -> Result<(), RoutingError> {
+    fn handle_their_key_info_event(
+        &mut self,
+        key_info: SectionKeyInfo,
+    ) -> Result<(), RoutingError> {
         self.vote_send_section_info_ack(SendAckMessagePayload {
             ack_prefix: key_info.prefix,
             ack_version: key_info.version,

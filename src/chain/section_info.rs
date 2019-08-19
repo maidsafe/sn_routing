@@ -142,6 +142,15 @@ impl SectionInfo {
         NetworkEvent::SectionInfo(self)
     }
 
+    #[cfg(test)]
+    pub fn new_for_test(
+        members: BTreeSet<PublicId>,
+        prefix: Prefix<XorName>,
+        version: u64,
+    ) -> Result<Self, RoutingError> {
+        Self::new_with_fields(members, version, prefix, BTreeSet::new())
+    }
+
     /// Creates a new instance with the given fields, and computes its hash.
     fn new_with_fields(
         members: BTreeSet<PublicId>,

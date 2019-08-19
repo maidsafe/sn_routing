@@ -8,7 +8,7 @@
 
 use super::{
     candidate::Candidate,
-    shared_state::{PrefixChange, SectionProofBlock, SharedState, TheirKeyInfo},
+    shared_state::{PrefixChange, SectionKeyInfo, SharedState},
     GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
 };
 use crate::{
@@ -495,22 +495,19 @@ impl Chain {
     }
 
     /// Return the keys we know
-    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &TheirKeyInfo)> {
+    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.state.get_their_keys_info()
     }
 
     /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
     /// for a prefix compatible with `prefix`
     pub fn check_trust(&self, prefix: &Prefix<XorName>, proof_chain: &SectionProofChain) -> bool {
-        let filtered_keys: BTreeSet<_> = if prefix.is_compatible(self.our_prefix()) {
-            self.state.our_history.all_keys().collect()
-        } else {
-            self.state
-                .get_their_keys_info()
-                .filter(|&(pfx, _)| prefix.is_compatible(pfx))
-                .map(|(_, info)| &info.key)
-                .collect()
-        };
+        let filtered_keys: BTreeSet<_> = self
+            .state
+            .get_their_keys_info()
+            .filter(|&(pfx, _)| prefix.is_compatible(pfx))
+            .map(|(_, info)| &info.key)
+            .collect();
         proof_chain
             .all_keys()
             .any(|key| filtered_keys.contains(key))
@@ -724,20 +721,10 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let pfx = *sec_info.prefix();
         if pfx.matches(self.our_id.name()) {
-            self.state
-                .our_history
-                .push(SectionProofBlock::from_sec_info_with_proofs(
-                    &sec_info,
-                    proofs.clone(),
-                ));
-            self.update_their_keys(&TheirKeyInfo {
-                prefix: *sec_info.prefix(),
-                version: *sec_info.version(),
-                key: self.state.our_history.last_public_key().clone(),
-            });
+            let is_new_member = !self.is_member && sec_info.members().contains(&self.our_id);
+            self.state.push_our_new_info(sec_info, proofs);
 
-            self.state.our_infos.push((sec_info.clone(), proofs));
-            if !self.is_member && sec_info.members().contains(&self.our_id) {
+            if is_new_member {
                 self.is_member = true;
             }
             self.check_and_clean_neighbour_infos(None);
@@ -798,7 +785,7 @@ impl Chain {
     }
 
     /// Updates `their_keys` in the shared state
-    pub fn update_their_keys(&mut self, key_info: &TheirKeyInfo) {
+    pub fn update_their_keys(&mut self, key_info: &SectionKeyInfo) {
         trace!(
             "{:?} attempts to update their_keys for {:?} ",
             self.our_id(),
@@ -864,8 +851,11 @@ impl Chain {
                 }
 
                 // Remove older compatible neighbour prefixes.
+                // DO NOT SUPPORT MERGE: Not consider newer if the older one was extension (split).
                 let is_newer = |(other_pfx, other_sec_info): (&Prefix<XorName>, &SectionInfo)| {
-                    other_pfx.is_compatible(pfx) && other_sec_info.version() > sec_info.version()
+                    other_pfx.is_compatible(pfx)
+                        && other_sec_info.version() > sec_info.version()
+                        && !pfx.is_extension_of(other_pfx)
                 };
 
                 if self.state.neighbour_infos.iter().any(is_newer) {
