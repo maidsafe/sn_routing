@@ -88,7 +88,7 @@ impl EventType {
 }
 
 impl State {
-    pub fn handle_action(&mut self, action: Action, outbox: &mut EventBox) -> Transition {
+    pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
         state_dispatch!(
             *self,
             ref mut state => state.handle_action(action, outbox),
@@ -96,7 +96,11 @@ impl State {
         )
     }
 
-    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut EventBox) -> Transition {
+    fn handle_network_event(
+        &mut self,
+        event: NetworkEvent,
+        outbox: &mut dyn EventBox,
+    ) -> Transition {
         state_dispatch!(
             *self,
             ref mut state => state.handle_network_event(event, outbox),
@@ -266,10 +270,10 @@ impl StateMachine {
     pub fn new<F>(
         init_state: F,
         network_config: NetworkConfig,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> (mpmc::Sender<Action>, Self)
     where
-        F: FnOnce(mpmc::Sender<Action>, NetworkService, Timer, &mut EventBox) -> State,
+        F: FnOnce(mpmc::Sender<Action>, NetworkService, Timer, &mut dyn EventBox) -> State,
     {
         let (network_tx, network_rx) = mpmc::unbounded();
         let (action_tx, action_rx) = mpmc::unbounded();
@@ -299,17 +303,17 @@ impl StateMachine {
         (action_tx, machine)
     }
 
-    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut EventBox) {
+    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
         let transition = self.state.handle_network_event(event, outbox);
         self.apply_transition(transition, outbox)
     }
 
-    fn handle_action(&mut self, action: Action, outbox: &mut EventBox) {
+    fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) {
         let transition = self.state.handle_action(action, outbox);
         self.apply_transition(transition, outbox)
     }
 
-    pub fn apply_transition(&mut self, transition: Transition, outbox: &mut EventBox) {
+    pub fn apply_transition(&mut self, transition: Transition, outbox: &mut dyn EventBox) {
         use self::Transition::*;
         match transition {
             Stay => (),
@@ -350,7 +354,7 @@ impl StateMachine {
     // TODO: remove the #[allow]s below once crossbeam-channel gets fixed
     #[allow(clippy::drop_copy)]
     #[allow(clippy::zero_ptr)]
-    pub fn step(&mut self, outbox: &mut EventBox) -> Result<(), mpmc::RecvError> {
+    pub fn step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::RecvError> {
         if self.is_running {
             mpmc::select! {
                 recv(self.network_rx) -> event => self.handle_network_event(event?, outbox),
@@ -376,7 +380,7 @@ impl StateMachine {
 #[cfg(not(feature = "mock_base"))]
 impl StateMachine {
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
-    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), mpmc::TryRecvError> {
+    pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
         if self.is_running {
             match self.network_rx.try_recv() {
                 Ok(event) => {
@@ -399,7 +403,7 @@ impl StateMachine {
 #[cfg(feature = "mock_base")]
 impl StateMachine {
     // Handle an event from the list and send any events produced for higher layers.
-    fn handle_event_from_list(&mut self, outbox: &mut EventBox) {
+    fn handle_event_from_list(&mut self, outbox: &mut dyn EventBox) {
         assert!(!self.events.is_empty());
         let event = self.events.remove(0);
         let transition = match event {
@@ -411,7 +415,7 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
-    pub fn try_step(&mut self, outbox: &mut EventBox) -> Result<(), mpmc::TryRecvError> {
+    pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
         use itertools::Itertools;
         use maidsafe_utilities::SeededRng;
         use rand::Rng;

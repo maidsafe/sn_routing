@@ -24,18 +24,18 @@ use crate::{
 pub trait Relocated: Bootstrapped {
     fn peer_mgr(&self) -> &PeerManager;
     fn peer_mgr_mut(&mut self) -> &mut PeerManager;
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut EventBox);
+    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox);
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
     fn add_node_success(&mut self, pub_id: &PublicId);
     fn add_node_failure(&mut self, pub_id: &PublicId);
-    fn send_event(&mut self, event: Event, outbox: &mut EventBox);
+    fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
 
     fn send_connection_request(
         &mut self,
         their_pub_id: PublicId,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if self.peer_mgr().is_connected(&their_pub_id) {
             debug!(
@@ -88,7 +88,7 @@ pub trait Relocated: Bootstrapped {
         their_pub_id: PublicId,
         _src: Authority<XorName>,
         _dst: Authority<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let shared_secret = self
             .full_id()
@@ -138,7 +138,7 @@ pub trait Relocated: Bootstrapped {
         }
     }
 
-    fn add_node(&mut self, pub_id: &PublicId, outbox: &mut EventBox) {
+    fn add_node(&mut self, pub_id: &PublicId, outbox: &mut dyn EventBox) {
         let log_ident = self.log_ident();
         match self.peer_mgr_mut().set_node(pub_id, &log_ident) {
             Ok(true) => {

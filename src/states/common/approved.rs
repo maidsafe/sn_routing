@@ -37,14 +37,14 @@ pub trait Approved: Relocated {
         &mut self,
         new_pub_id: PublicId,
         client_auth: Authority<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `RemoveElder` event.
     fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `Online` event.
@@ -64,7 +64,7 @@ pub trait Approved: Relocated {
         &mut self,
         sec_info: SectionInfo,
         old_pfx: Prefix<XorName>,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
     /// Handle an accumulated `TheirKeyInfo` event
@@ -94,7 +94,7 @@ pub trait Approved: Relocated {
         msg_version: u64,
         par_request: parsec::Request,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let log_ident = self.log_ident();
         let (response, poll) =
@@ -117,7 +117,7 @@ pub trait Approved: Relocated {
         msg_version: u64,
         par_response: parsec::Response,
         pub_id: PublicId,
-        outbox: &mut EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let log_ident = self.log_ident();
         if self
@@ -130,7 +130,7 @@ pub trait Approved: Relocated {
         }
     }
 
-    fn parsec_poll(&mut self, outbox: &mut EventBox) -> Result<Transition, RoutingError> {
+    fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         while let Some(block) = self.parsec_map_mut().poll() {
             let parsec_version = self.parsec_map_mut().last_version();
             match block.payload() {
@@ -209,7 +209,7 @@ pub trait Approved: Relocated {
         Ok(Transition::Stay)
     }
 
-    fn chain_poll(&mut self, outbox: &mut EventBox) -> Result<Transition, RoutingError> {
+    fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut our_pfx = *self.chain_mut().our_prefix();
         while let Some(event) = self.chain_mut().poll()? {
             trace!("{} Handle accumulated event: {:?}", self, event);

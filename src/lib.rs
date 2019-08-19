@@ -144,9 +144,7 @@
     // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
     // FIXME: Re-enable `redundant_field_names`.
     clippy::needless_pass_by_value,
-    clippy::redundant_field_names,
-    // FIXME: Remove this temporary fix to the build.
-    bare_trait_objects
+    clippy::redundant_field_names
 )]
 
 #[macro_use]

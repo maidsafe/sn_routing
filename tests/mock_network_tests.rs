@@ -50,9 +50,7 @@
     missing_debug_implementations,
     variant_size_differences,
     // FIXME: Re-enable `redundant_field_names`.
-    clippy::redundant_field_names,
-    // FIXME: Remove this temporary fix to the build.
-    bare_trait_objects
+    clippy::redundant_field_names
 )]
 
 #[macro_use]

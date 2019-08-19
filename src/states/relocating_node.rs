@@ -41,7 +41,7 @@ const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURAT
 
 pub struct RelocatingNodeDetails {
     pub action_sender: mpmc::Sender<Action>,
-    pub cache: Box<Cache>,
+    pub cache: Box<dyn Cache>,
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
@@ -55,7 +55,7 @@ pub struct RelocatingNode {
     network_service: NetworkService,
     full_id: FullId,
     /// Only held here to be passed eventually to the `Node` state.
-    cache: Box<Cache>,
+    cache: Box<dyn Cache>,
     min_section_size: usize,
     peer_map: PeerMap,
     proxy_pub_id: PublicId,
@@ -97,7 +97,7 @@ impl RelocatingNode {
         mut self,
         new_full_id: FullId,
         our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-        _outbox: &mut EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> State {
         // Disconnect from all currently connected peers.
         for peer in self.peer_map.remove_all() {
@@ -228,7 +228,7 @@ impl Base for RelocatingNode {
         &mut self.peer_map
     }
 
-    fn handle_timeout(&mut self, token: u64, outbox: &mut EventBox) -> Transition {
+    fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
         if self.relocation_timer_token == token {
             info!(
                 "{} - Failed to get relocated name from the network - restarting.",
@@ -240,7 +240,7 @@ impl Base for RelocatingNode {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
 
         if self.proxy_pub_id == pub_id {
@@ -256,7 +256,7 @@ impl Base for RelocatingNode {
         &mut self,
         msg: DirectMessage,
         _: PublicId,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         debug!("{} - Unhandled direct message: {:?}", self, msg);
         Ok(Transition::Stay)
@@ -265,7 +265,7 @@ impl Base for RelocatingNode {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        _: &mut EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if let Some(routing_msg) = self.filter_hop_message(msg)? {
             Ok(self.dispatch_routing_message(routing_msg))

@@ -128,7 +128,7 @@ impl TestNode {
         first_node: bool,
         network_config: Option<NetworkConfig>,
         endpoint: Option<SocketAddr>,
-        cache: Box<Cache>,
+        cache: Box<dyn Cache>,
     ) -> Self {
         let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
         network.set_next_addr(endpoint);
@@ -207,7 +207,7 @@ pub struct TestNodeBuilder<'a> {
     first_node: bool,
     network_config: Option<NetworkConfig>,
     endpoint: Option<SocketAddr>,
-    cache: Box<Cache>,
+    cache: Box<dyn Cache>,
 }
 
 impl<'a> TestNodeBuilder<'a> {
@@ -345,7 +345,7 @@ pub fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 pub fn poll_all_until(
     nodes: &mut [TestNode],
     clients: &mut [TestClient],
-    should_stop: &Fn(&[TestNode]) -> bool,
+    should_stop: &dyn Fn(&[TestNode]) -> bool,
 ) -> bool {
     assert!(!nodes.is_empty());
     let network = nodes[0].network().clone();
@@ -391,7 +391,7 @@ pub fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
 pub fn poll_and_resend_until(
     nodes: &mut [TestNode],
     clients: &mut [TestClient],
-    should_stop: &Fn(&[TestNode]) -> bool,
+    should_stop: &dyn Fn(&[TestNode]) -> bool,
     mut extra_advance: Option<u64>,
 ) {
     let mut fired_connecting_peer_timeout = false;
