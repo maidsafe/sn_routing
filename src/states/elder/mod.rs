@@ -1815,7 +1815,7 @@ impl Bootstrapped for Elder {
 
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
-            let mut msg = SignedRoutingMessage::insecure(routing_msg.clone());
+            let mut msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg)?;
             } else {
