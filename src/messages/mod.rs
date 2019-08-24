@@ -30,6 +30,7 @@ use hex_fmt::HexFmt;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{self, SecretSignKey, Signature};
+use tiny_keccak::sha3_256;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
@@ -470,7 +471,7 @@ impl RoutingMessage {
     /// Returns the message hash
     pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
-        Ok(safe_crypto::hash(&serialised_msg))
+        Ok(sha3_256(&serialised_msg))
     }
 
     /// Returns a signature for this message.

@@ -8,7 +8,7 @@
 
 use crate::{routing_table::Xorable, xor_name::XorName, Prefix};
 use itertools::Itertools;
-use safe_crypto;
+use tiny_keccak::sha3_256;
 use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
@@ -105,7 +105,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
         .flat_map(|close_node| close_node.0.iter())
         .cloned()
         .collect();
-    XorName(safe_crypto::hash(&combined))
+    XorName(sha3_256(&combined))
 }
 
 /// Calculate the interval for a node joining our section to generate a key for.
@@ -151,7 +151,7 @@ mod tests {
     use crate::routing_table::Xorable;
     use crate::xor_name::XorName;
     use rand;
-    use safe_crypto;
+    use tiny_keccak::sha3_256;
     use std::time::Duration;
 
     #[test]
@@ -192,7 +192,7 @@ mod tests {
             }
         }
 
-        let expected_relocated_name_one_node = XorName(safe_crypto::hash(&combined_one_node));
+        let expected_relocated_name_one_node = XorName(sha3_256(&combined_one_node));
 
         assert_eq!(
             actual_relocated_name_one_entry,
@@ -222,7 +222,7 @@ mod tests {
             combined.push(*i);
         }
 
-        let expected_relocated_name = XorName(safe_crypto::hash(&combined));
+        let expected_relocated_name = XorName(sha3_256(&combined));
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
@@ -235,7 +235,7 @@ mod tests {
         for i in &original_name.0 {
             invalid_combined.push(*i);
         }
-        let invalid_relocated_name = XorName(safe_crypto::hash(&invalid_combined));
+        let invalid_relocated_name = XorName(sha3_256(&invalid_combined));
         assert_ne!(invalid_relocated_name, actual_relocated_name);
     }
 }
