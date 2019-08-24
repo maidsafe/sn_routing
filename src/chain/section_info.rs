@@ -15,7 +15,7 @@ use crate::sha3::Digest256;
 use crate::XorName;
 use crate::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 use maidsafe_utilities::serialisation;
-use safe_crypto;
+use tiny_keccak::sha3_256;
 use serde::de::Error as SerdeDeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp;
@@ -160,7 +160,7 @@ impl SectionInfo {
     ) -> Result<Self, RoutingError> {
         let hash = {
             let fields = (&members, version, &prefix, &prev_hash);
-            safe_crypto::hash(&serialisation::serialise(&fields)?)
+            sha3_256(&serialisation::serialise(&fields)?)
         };
         Ok(SectionInfo {
             members,

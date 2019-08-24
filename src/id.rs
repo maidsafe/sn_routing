@@ -17,6 +17,7 @@ use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::ops::RangeInclusive;
+use tiny_keccak::sha3_256;
 
 /// Network identity component containing name, and public and private keys.
 // FIXME Remove the Clone-ability
@@ -200,7 +201,7 @@ impl PublicId {
     }
 
     fn name_from_key(public_sign_key: &PublicSignKey) -> XorName {
-        XorName(safe_crypto::hash(&public_sign_key.into_bytes()))
+        XorName(sha3_256(&public_sign_key.into_bytes()))
     }
 }
 

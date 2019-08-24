@@ -8,7 +8,7 @@
 
 use crate::xor_name::XorName;
 use maidsafe_utilities::serialisation;
-use safe_crypto;
+use tiny_keccak::sha3_256;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Formatter};
 
@@ -29,7 +29,7 @@ impl ImmutableData {
     /// Creates a new instance of `ImmutableData`
     pub fn new(value: Vec<u8>) -> ImmutableData {
         ImmutableData {
-            name: XorName(safe_crypto::hash(&value)),
+            name: XorName(sha3_256(&value)),
             value: value,
         }
     }
