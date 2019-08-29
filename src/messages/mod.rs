@@ -242,8 +242,9 @@ impl SignedRoutingMessage {
     /// Confirms the signatures.
     pub fn check_integrity(&self) -> Result<()> {
         match self.security_metadata {
-            SecurityMetadata::None => Ok(()),
-            SecurityMetadata::Partial(_) => Err(RoutingError::FailedSignature),
+            SecurityMetadata::None | SecurityMetadata::Partial(_) => {
+                Err(RoutingError::FailedSignature)
+            }
             SecurityMetadata::Single(ref security_metadata) => {
                 if self.content.src.single_signing_name()
                     != Some(security_metadata.public_id.name())
@@ -800,7 +801,7 @@ mod tests {
 
         signed_msg.security_metadata = SecurityMetadata::None;
 
-        assert!(signed_msg.check_integrity().is_ok());
+        assert!(signed_msg.check_integrity().is_err());
     }
 
     #[test]
