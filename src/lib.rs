@@ -161,7 +161,6 @@ mod cache;
 mod chain;
 mod client;
 mod client_error;
-mod common_types;
 mod config_handler;
 mod data;
 mod error;
@@ -195,8 +194,6 @@ pub(crate) mod parsec;
 /// SHA-3 type alias.
 pub mod sha3;
 
-/// Messaging infrastructure
-pub mod messaging;
 /// Structured Data Tag for Session Packet Type
 pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
@@ -223,7 +220,6 @@ pub use crate::{
     chain::Chain,
     client::Client,
     client_error::{ClientError, EntryError},
-    common_types::AccountPacket,
     config_handler::{Config, DevConfig},
     data::{
         Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
