@@ -33,8 +33,7 @@ use crate::{
 use crate::{utils::XorTargetInterval, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(not(feature = "mock_base"))]
-use safe_crypto;
-use safe_crypto::PublicSignKey;
+use crate::ed25519::PublicKey;
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
 use std::{
@@ -252,7 +251,7 @@ impl Node {
         PutMData {
             data: MutableData,
             msg_id: MessageId,
-            requester: PublicSignKey,
+            requester: PublicKey,
         },
         DEFAULT_PRIORITY
     );
@@ -264,7 +263,7 @@ impl Node {
                       tag: u64,
                       actions: BTreeMap<Vec<u8>, EntryAction>,
                       msg_id: MessageId,
-                      requester: PublicSignKey,
+                      requester: PublicKey,
                   },
                   DEFAULT_PRIORITY);
 
@@ -299,7 +298,7 @@ impl Node {
             permissions: PermissionSet,
             version: u64,
             msg_id: MessageId,
-            requester: PublicSignKey,
+            requester: PublicKey,
         },
         DEFAULT_PRIORITY
     );
@@ -313,7 +312,7 @@ impl Node {
             user: User,
             version: u64,
             msg_id: MessageId,
-            requester: PublicSignKey,
+            requester: PublicKey,
         },
         DEFAULT_PRIORITY
     );
@@ -323,7 +322,7 @@ impl Node {
                   ChangeMDataOwner {
                       name: XorName,
                       tag: u64,
-                      new_owners: BTreeSet<PublicSignKey>,
+                      new_owners: BTreeSet<PublicKey>,
                       version: u64,
                       msg_id: MessageId,
                   }, DEFAULT_PRIORITY);
@@ -492,7 +491,7 @@ impl Node {
     impl_response!(
         send_list_auth_keys_and_version_response,
         ListAuthKeysAndVersion,
-        (BTreeSet<PublicSignKey>, u64),
+        (BTreeSet<PublicKey>, u64),
         CLIENT_GET_PRIORITY
     );
 

@@ -10,7 +10,7 @@ use crate::error::Result;
 use crate::id::PublicId;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use safe_crypto::{SecretSignKey, Signature};
+use crate::ed25519::{Keypair, Signature};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
@@ -35,8 +35,8 @@ impl Proof {
 
     /// Create a new proof for `payload`
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<S: Serialize>(pub_id: PublicId, key: &SecretSignKey, payload: &S) -> Result<Self> {
-        let signature = key.sign_detached(&serialisation::serialise(&payload)?[..]);
+    pub fn new<S: Serialize>(pub_id: PublicId, key: &Keypair, payload: &S) -> Result<Self> {
+        let signature = key.sign(&serialisation::serialise(&payload)?[..]);
         Ok(Proof {
             pub_id,
             sig: signature,
@@ -48,8 +48,7 @@ impl Proof {
         match serialisation::serialise(payload) {
             Ok(data) => self
                 .pub_id
-                .signing_public_key()
-                .verify_detached(&self.sig, &data[..]),
+                .verify(&data[..], &self.sig),
             _ => false,
         }
     }
@@ -100,7 +99,7 @@ impl ProofSet {
     /// Validates `data` against all signatures.
     fn validate_signatures_for_bytes(&self, data: &[u8]) -> bool {
         let validate =
-            |(id, sig): (&PublicId, &Signature)| id.signing_public_key().verify_detached(sig, data);
+            |(id, sig): (&PublicId, &Signature)| id.verify(data, sig);
         self.sigs.iter().all(validate)
     }
 

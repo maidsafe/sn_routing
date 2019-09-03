@@ -31,7 +31,7 @@ use crossbeam_channel as mpmc;
 use maidsafe_utilities::thread::{self, Joiner};
 #[cfg(not(feature = "mock_base"))]
 use safe_crypto;
-use safe_crypto::PublicSignKey;
+use crate::ed25519::PublicKey;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::mpsc,
@@ -262,7 +262,7 @@ impl Client {
         dst: Authority<XorName>,
         data: MutableData,
         msg_id: MessageId,
-        requester: PublicSignKey,
+        requester: PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::PutMData {
             data: data,
@@ -281,7 +281,7 @@ impl Client {
         tag: u64,
         actions: BTreeMap<Vec<u8>, EntryAction>,
         msg_id: MessageId,
-        requester: PublicSignKey,
+        requester: PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::MutateMDataEntries {
             name: name,
@@ -341,7 +341,7 @@ impl Client {
         permissions: PermissionSet,
         version: u64,
         msg_id: MessageId,
-        requester: PublicSignKey,
+        requester: PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::SetMDataUserPermissions {
             name: name,
@@ -366,7 +366,7 @@ impl Client {
         user: User,
         version: u64,
         msg_id: MessageId,
-        requester: PublicSignKey,
+        requester: PublicKey,
     ) -> Result<(), InterfaceError> {
         let request = Request::DeleteMDataUserPermissions {
             name: name,
@@ -386,7 +386,7 @@ impl Client {
         dst: Authority<XorName>,
         name: XorName,
         tag: u64,
-        new_owners: BTreeSet<PublicSignKey>,
+        new_owners: BTreeSet<PublicKey>,
         version: u64,
         msg_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -415,7 +415,7 @@ impl Client {
     pub fn insert_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: PublicSignKey,
+        key: PublicKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {
@@ -432,7 +432,7 @@ impl Client {
     pub fn delete_auth_key(
         &mut self,
         dst: Authority<XorName>,
-        key: PublicSignKey,
+        key: PublicKey,
         version: u64,
         message_id: MessageId,
     ) -> Result<(), InterfaceError> {

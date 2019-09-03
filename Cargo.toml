@@ -35,6 +35,8 @@ serde_derive = "~1.0.25"
 term = "~0.4.6"
 unwrap = "~1.2.1"
 tiny-keccak = "1.4.4"
+tmp-ed25519 = { version = "1.0.0-pre.2", features =["serde"] }
+rand_os = "0.1.3" # Do not update as we need to update rand core
 
 [dev-dependencies]
 docopt = "~0.8.1"

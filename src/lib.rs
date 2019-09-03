@@ -122,7 +122,7 @@
     unused_parens,
     while_true,
     clippy::unicode_not_nfc,
-    clippy::wrong_pub_self_convention,
+    clippy::wStaticSecretrong_pub_self_convention,
     clippy::option_unwrap_used
 )]
 #![warn(
@@ -257,6 +257,7 @@ pub(crate) type NetworkBytes = bytes::Bytes;
 pub(crate) type NetworkBytes = std::rc::Rc<Message>;
 
 pub use self::quic_p2p::Config as NetworkConfig;
+pub(crate) use tmp_ed25519 as ed25519;
 pub(crate) use self::{
     chain::bls_emu::{
         PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,

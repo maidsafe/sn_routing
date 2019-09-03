@@ -50,7 +50,7 @@ use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use rand::{self, Rng};
-use safe_crypto::Signature;
+use crate::ed25519::Signature;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -150,7 +150,7 @@ impl Elder {
             first_state_serialized: Vec::new(),
             latest_info: SectionInfo::default(),
         };
-        let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
+        let parsec_map = ParsecMap::new(full_id.copy(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
         let peer_map = PeerMap::new();
         let peer_mgr = PeerManager::new(dev_config.disable_client_rate_limiter);
@@ -202,7 +202,7 @@ impl Elder {
 
         Self {
             network_service: details.network_service,
-            full_id: details.full_id.clone(),
+            full_id: details.full_id.copy(),
             is_first_node,
             msg_queue: details.msg_backlog.into_iter().collect(),
             peer_map: details.peer_map,
@@ -597,7 +597,7 @@ impl Elder {
             ) => self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id),
             (
                 ConnectionRequest {
-                    encrypted_conn_info,
+                    conn_info,
                     pub_id,
                     ..
                 },
@@ -606,13 +606,13 @@ impl Elder {
             )
             | (
                 ConnectionRequest {
-                    encrypted_conn_info,
+                    conn_info,
                     pub_id,
                     ..
                 },
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
-            ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
+            ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
             (NeighbourInfo(sec_info), Section(_), PrefixSection(_)) => {
                 self.handle_neighbour_info(sec_info)
             }
@@ -723,7 +723,7 @@ impl Elder {
     fn init_parsec(&mut self) {
         self.set_pfx_successfully_polled(false);
         self.parsec_map
-            .init(self.full_id.clone(), &self.gen_pfx_info, &self.log_ident())
+            .init(self.full_id.copy(), &self.gen_pfx_info, &self.log_ident())
     }
 
     fn handle_resource_proof_response(
@@ -1017,8 +1017,7 @@ impl Elder {
             }
         };
         if !old_pub_id
-            .signing_public_key()
-            .verify_detached(signature_using_old, &both_ids_serialised)
+            .verify( &both_ids_serialised,signature_using_old)
         {
             debug!(
                 "{} CandidateInfo from {}->{} has invalid old signature.",

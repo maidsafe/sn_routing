@@ -9,7 +9,7 @@
 use crate::client_error::ClientError;
 use crate::data::{ImmutableData, MutableData, PermissionSet, User, Value};
 use crate::types::MessageId as MsgId;
-use safe_crypto::PublicSignKey;
+use crate::ed25519::PublicKey;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Response message types
@@ -156,7 +156,7 @@ pub enum Response {
     /// Returns a list of authorised keys from MaidManager and the account version.
     ListAuthKeysAndVersion {
         /// Result of getting a list of authorised keys and version
-        res: Result<(BTreeSet<PublicSignKey>, u64), ClientError>,
+        res: Result<(BTreeSet<PublicKey>, u64), ClientError>,
         /// Unique message identifier
         msg_id: MsgId,
     },
