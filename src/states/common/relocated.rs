@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::bootstrapped::Bootstrapped;
+use maidsafe_utilities::serialisation::{serialise, deserialise };
 use crate::{
     error::RoutingError,
     event::Event,
@@ -49,21 +50,10 @@ pub trait Relocated: Bootstrapped {
             self.peer_mgr_mut().set_connecting(their_pub_id);
         }
 
-        let our_conn_info = self.our_connection_info()?;
-        let shared_secret = self
-            .full_id()
-            .encrypting_private_key()
-            .shared_secret(&their_pub_id.encrypting_public_key());
-        let encrypted_conn_info = shared_secret.encrypt(&our_conn_info).map_err(|err| {
-            debug!(
-                "{} - Failed to serialise our connection info for {:?}: {:?}.",
-                self, their_pub_id, err
-            );
-            err
-        })?;
+        let conn_info = serialise(&self.our_connection_info()?)?;
 
         let content = MessageContent::ConnectionRequest {
-            encrypted_conn_info,
+            conn_info,
             pub_id: *self.full_id().public_id(),
             msg_id: MessageId::new(),
         };
@@ -95,14 +85,7 @@ pub trait Relocated: Bootstrapped {
             return Err(RoutingError::InvalidMessage);
         }
 
-        let shared_secret = self
-            .full_id()
-            .encrypting_private_key()
-            .shared_secret(&their_pub_id.encrypting_public_key());
-        let their_conn_info: NodeInfo = shared_secret
-            .decrypt(encrypted_their_conn_info)
-            .map_err(RoutingError::Crypto)?;
-
+        let their_conn_info: NodeInfo = deserialise(encrypted_their_conn_info)?;
         debug!(
             "{} - Received connection info from {:?}.",
             self, their_pub_id

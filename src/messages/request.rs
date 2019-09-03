@@ -9,7 +9,7 @@
 use crate::data::{EntryAction, ImmutableData, MutableData, PermissionSet, User};
 use crate::types::MessageId as MsgId;
 use crate::xor_name::XorName;
-use safe_crypto::PublicSignKey;
+use crate::ed25519::PublicKey;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Request message types
@@ -56,7 +56,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: PublicSignKey,
+        requester: PublicKey,
     },
     /// Fetches a latest version number.
     GetMDataVersion {
@@ -131,7 +131,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: PublicSignKey,
+        requester: PublicKey,
     },
 
     // Permission Actions
@@ -170,7 +170,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: PublicSignKey,
+        requester: PublicKey,
     },
     /// Deletes a list of permissions for a particular User in the given MutableData.
     DeleteMDataUserPermissions {
@@ -185,7 +185,7 @@ pub enum Request {
         /// Unique message identifier
         msg_id: MsgId,
         /// Requester public key
-        requester: PublicSignKey,
+        requester: PublicKey,
     },
 
     // Ownership Actions
@@ -196,7 +196,7 @@ pub enum Request {
         /// Type tag
         tag: u64,
         /// A list of new owners
-        new_owners: BTreeSet<PublicSignKey>,
+        new_owners: BTreeSet<PublicKey>,
         /// Incremented version of MutableData
         version: u64,
         /// Unique message identifier
@@ -210,7 +210,7 @@ pub enum Request {
     /// Inserts an authorised key (for an app, user, etc.) to MaidManager.
     InsertAuthKey {
         /// Authorised key to be inserted
-        key: PublicSignKey,
+        key: PublicKey,
         /// Incremented version
         version: u64,
         /// Unique message identifier
@@ -219,7 +219,7 @@ pub enum Request {
     /// Deletes an authorised key from MaidManager.
     DeleteAuthKey {
         /// Authorised key to be deleted
-        key: PublicSignKey,
+        key: PublicKey,
         /// Incremented version
         version: u64,
         /// Unique message identifier

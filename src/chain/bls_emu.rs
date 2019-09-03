@@ -10,6 +10,7 @@
 use super::{ProofSet, SectionInfo};
 use crate::{
     id::{FullId, PublicId},
+    ed25519,
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{collections::BTreeMap, fmt};
@@ -23,7 +24,7 @@ pub struct PublicKeySet {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKey(PublicKeySet);
 
-pub type SignatureShare = ::safe_crypto::Signature;
+pub type SignatureShare = ed25519::Signature;
 
 pub struct SecretKeyShare(FullId);
 
@@ -49,15 +50,13 @@ impl SecretKeyShare {
 
     #[allow(unused)]
     pub fn sign<M: AsRef<[u8]>>(&self, message: M) -> SignatureShare {
-        self.0.signing_private_key().sign_detached(message.as_ref())
+        self.0.sign(message.as_ref())
     }
 }
 
 impl PublicKeyShare {
     pub fn verify<M: AsRef<[u8]>>(&self, sig: &SignatureShare, msg: M) -> bool {
-        self.0
-            .signing_public_key()
-            .verify_detached(sig, msg.as_ref())
+        self.0.verify(msg.as_ref(), sig)
     }
 }
 

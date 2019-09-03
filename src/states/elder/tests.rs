@@ -380,10 +380,10 @@ impl ElderUnderTest {
                 .shared_secret(their_pub_id.encrypting_public_key());
 
             let conn_info = self.candidate_node_info();
-            let encrypted_conn_info = unwrap!(shared_secret.encrypt(&conn_info));
+            let conn_info = unwrap!(shared_secret.encrypt(&conn_info));
 
             MessageContent::ConnectionRequest {
-                encrypted_conn_info,
+                conn_info,
                 pub_id: *new_full_id.public_id(),
                 msg_id: MessageId::new(),
             }

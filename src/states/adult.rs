@@ -79,7 +79,7 @@ impl Adult {
         let public_id = *details.full_id.public_id();
         let poke_timer_token = details.timer.schedule(POKE_TIMEOUT);
 
-        let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
+        let parsec_map = ParsecMap::new(details.full_id.copy(), &details.gen_pfx_info);
         let chain = Chain::new(
             details.min_section_size,
             public_id,

@@ -15,7 +15,7 @@ use crate::{
     xor_name::XorName,
 };
 use maidsafe_utilities::serialisation::serialise;
-use safe_crypto::Signature;
+use crate::ed25519::Signature;
 use std::{
     fmt::{self, Debug, Formatter},
     hash::{Hash, Hasher},
@@ -241,7 +241,7 @@ mod implementation {
 
     pub fn sign(src_full_id: &FullId, content: &DirectMessage) -> Result<Signature, RoutingError> {
         let serialised = serialise(content)?;
-        let signature = src_full_id.signing_private_key().sign_detached(&serialised);
+        let signature = src_full_id.sign(&serialised);
         Ok(signature)
     }
 
@@ -252,9 +252,7 @@ mod implementation {
     ) -> Result<(), RoutingError> {
         let serialised = serialise(content)?;
 
-        if src_id
-            .signing_public_key()
-            .verify_detached(signature, &serialised)
+        if src_id.verify(&serialised, signature)
         {
             Ok(())
         } else {

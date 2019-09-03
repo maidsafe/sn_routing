@@ -149,7 +149,7 @@ impl TestClient {
 
         let sign_keys = gen_sign_keypair();
         let encrypt_keys = gen_encrypt_keypair();
-        let full_id = FullId::with_keys(encrypt_keys, sign_keys);
+        let full_id = FullId::from_keys(encrypt_keys, sign_keys);
 
         TestClient {
             index,

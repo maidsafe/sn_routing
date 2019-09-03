@@ -29,7 +29,7 @@ use crate::{
 use hex_fmt::HexFmt;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
-use safe_crypto::{self, SecretSignKey, Signature};
+use crate::ed25519::{Keypair, Signature};
 use tiny_keccak::sha3_256;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -146,8 +146,7 @@ pub struct SingleSrcSecurityMetadata {
 impl SingleSrcSecurityMetadata {
     pub fn verify_sig(&self, bytes: &[u8]) -> bool {
         self.public_id
-            .signing_public_key()
-            .verify_detached(&self.signature, bytes)
+            .verify(bytes, &self.signature)
     }
 }
 
@@ -199,10 +198,9 @@ impl SignedRoutingMessage {
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
-        let sk = full_id.signing_private_key();
         let mut signatures = BTreeMap::new();
         let pk_share = BlsPublicKeyShare(*full_id.public_id());
-        let sig = content.to_signature(sk)?;
+        let sig = content.to_signature(&full_id.secret_keypair_ref())?;
         let _ = signatures.insert(pk_share, sig);
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
@@ -220,7 +218,7 @@ impl SignedRoutingMessage {
         content: RoutingMessage,
         full_id: &FullId,
     ) -> Result<SignedRoutingMessage> {
-        let sk = full_id.signing_private_key();
+        let sk = full_id.secret_keypair_ref();
         let single_metadata = SingleSrcSecurityMetadata {
             public_id: *full_id.public_id(),
             signature: content.to_signature(sk)?,
@@ -475,9 +473,9 @@ impl RoutingMessage {
     }
 
     /// Returns a signature for this message.
-    pub fn to_signature(&self, signing_key: &SecretSignKey) -> Result<Signature> {
+    pub fn to_signature(&self, signing_key: &Keypair) -> Result<Signature> {
         let serialised_msg = serialise(self)?;
-        let sig = signing_key.sign_detached(&serialised_msg);
+        let sig = signing_key.sign(&serialised_msg);
         Ok(sig)
     }
 }
@@ -576,7 +574,7 @@ pub enum MessageContent {
         /// The sender's public ID.
         pub_id: PublicId,
         /// Encrypted sender's connection info.
-        encrypted_conn_info: Vec<u8>,
+        conn_info: Vec<u8>,
         /// The message's unique identifier.
         msg_id: MessageId,
     },
