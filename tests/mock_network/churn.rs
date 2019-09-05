@@ -14,8 +14,8 @@ use super::{
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, Authority, Event, EventStream, ImmutableData, MessageId, NetworkConfig, Request,
-    XorName, XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    mock::Network, Authority, Event, EventStream, MessageId, NetworkConfig, Request, XorName,
+    XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -230,24 +230,29 @@ fn random_churn<R: Rng>(
     BTreeSet::new()
 }
 
-/// The entries of a Put request: the data ID, message ID, source and destination authority.
-type PutKey = (XorName, MessageId, Authority<XorName>, Authority<XorName>);
+#[derive(Eq, PartialEq, Hash, Debug)]
+struct MessageKey {
+    content: Vec<u8>,
+    msg_id: MessageId,
+    src: Authority<XorName>,
+    dst: Authority<XorName>,
+}
 
-/// A set of expectations: Which nodes, groups and sections are supposed to receive Put requests.
+/// A set of expectations: Which nodes, groups and sections are supposed to receive a request.
 #[derive(Default)]
-struct ExpectedPuts {
+struct Expectations {
     /// The Put requests expected to be received.
-    messages: HashSet<PutKey>,
+    messages: HashSet<MessageKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
     sections: HashMap<Authority<XorName>, HashSet<XorName>>,
 }
 
-impl ExpectedPuts {
+impl Expectations {
     /// Sends a request using the nodes specified by `src`, and adds the expectation. Panics if not
     /// enough nodes sent a section message, or if an individual sending node could not be found.
     fn send_and_expect(
         &mut self,
-        data: &ImmutableData,
+        content: &[u8],
         src: Authority<XorName>,
         dst: Authority<XorName>,
         nodes: &mut [TestNode],
@@ -256,15 +261,14 @@ impl ExpectedPuts {
         let msg_id = MessageId::new();
         let mut sent_count = 0;
         for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
-            if dst.is_client() {
-                unwrap!(node
-                    .inner
-                    .send_get_idata_response(src, dst, Ok(data.clone()), msg_id,));
-            } else {
-                unwrap!(node
-                    .inner
-                    .send_put_idata_request(src, dst, data.clone(), msg_id,));
-            }
+            unwrap!(node.inner.send_request(
+                src,
+                dst,
+                Request {
+                    content: content.to_vec(),
+                    msg_id
+                }
+            ));
             sent_count += 1;
         }
         if src.is_multiple() {
@@ -277,11 +281,20 @@ impl ExpectedPuts {
         } else {
             assert_eq!(sent_count, 1);
         }
-        self.expect(nodes, dst, (*data.name(), msg_id, src, dst));
+        self.expect(
+            nodes,
+            dst,
+            MessageKey {
+                content: content.to_vec(),
+                msg_id,
+                src,
+                dst,
+            },
+        )
     }
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
-    fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: PutKey) {
+    fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: MessageKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
             let section = nodes
@@ -318,16 +331,21 @@ impl ExpectedPuts {
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
                 if let Event::RequestReceived {
-                    request: Request::PutIData { data, msg_id },
+                    request: Request { content, msg_id },
                     src,
                     dst,
                 } = event
                 {
-                    let name = *data.name();
-                    let key = (name, msg_id, src, dst);
+                    let key = MessageKey {
+                        content,
+                        msg_id,
+                        src,
+                        dst,
+                    };
+
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
-                        if !self.sections.get(&key.3).map_or(false, checker) {
+                        if !self.sections.get(&key.dst).map_or(false, checker) {
                             if let Authority::NaeManager(_) = dst {
                                 trace!(
                                     "Unexpected request for node {}: {:?} / {:?}",
@@ -361,8 +379,8 @@ impl ExpectedPuts {
 
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
-            assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
-            let section_size = section_sizes[&key.3];
+            assert!(key.dst.is_multiple(), "Failed to receive request {:?}", key);
+            let section_size = section_sizes[&key.dst];
             let count = section_msgs_received.remove(&key).unwrap_or(0);
             assert!(
                 count * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
@@ -376,8 +394,8 @@ impl ExpectedPuts {
 }
 
 fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_size: usize) {
-    // Create random data ID and pick random sending and receiving nodes.
-    let data = ImmutableData::new(rng.gen_iter().take(100).collect());
+    // Create random content and pick random sending and receiving nodes.
+    let content: Vec<_> = rng.gen_iter().take(100).collect();
     let index0 = gen_range(rng, 0, nodes.len());
     let index1 = gen_range(rng, 0, nodes.len());
     let auth_n0 = Authority::ManagedNode(nodes[index0].name());
@@ -389,27 +407,27 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     // this makes sure we have two different sections if there exists more than one
     let auth_s1 = Authority::Section(!section_name);
 
-    let mut expected_puts = ExpectedPuts::default();
+    let mut expectations = Expectations::default();
 
     // Test messages from a node to itself, another node, a group and a section...
-    expected_puts.send_and_expect(&data, auth_n0, auth_n0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_n0, auth_n1, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_n0, auth_g0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_n0, auth_s0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_n0, auth_n0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_n0, auth_n1, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_n0, auth_g0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_n0, auth_s0, nodes, min_section_size);
     // ... and from a section to itself, another section, a group and a node...
-    expected_puts.send_and_expect(&data, auth_g0, auth_g0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_g0, auth_g1, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_g0, auth_s0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_g0, auth_n0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_g0, auth_g0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_g0, auth_g1, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_g0, auth_s0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_g0, auth_n0, nodes, min_section_size);
     // ... and from a section to itself, another section, a group and a node...
-    expected_puts.send_and_expect(&data, auth_s0, auth_s0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_s0, auth_s1, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_s0, auth_g0, nodes, min_section_size);
-    expected_puts.send_and_expect(&data, auth_s0, auth_n0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_s0, auth_s0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_s0, auth_s1, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_s0, auth_g0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_s0, auth_n0, nodes, min_section_size);
 
     poll_and_resend(nodes);
 
-    expected_puts.verify(nodes);
+    expectations.verify(nodes);
 }
 
 #[test]
@@ -507,7 +525,7 @@ fn messages_during_churn() {
         let new_indices = random_churn(&mut rng, &network, &mut nodes, max_prefixes_len);
 
         // Create random data and pick random sending and receiving nodes.
-        let data = ImmutableData::new(rng.gen_iter().take(100).collect());
+        let content: Vec<_> = rng.gen_iter().take(100).collect();
         let index0 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
         let index1 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
         let auth_n0 = Authority::ManagedNode(nodes[index0].name());
@@ -519,23 +537,23 @@ fn messages_during_churn() {
         // this makes sure we have two different sections if there exists more than one
         let auth_s1 = Authority::Section(!section_name);
 
-        let mut expected_puts = ExpectedPuts::default();
+        let mut expectations = Expectations::default();
 
         // Test messages from a node to itself, another node, a group and a section...
-        expected_puts.send_and_expect(&data, auth_n0, auth_n0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_n0, auth_n1, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_n0, auth_g0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_n0, auth_s0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_n0, auth_n0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_n0, auth_n1, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_n0, auth_g0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_n0, auth_s0, &mut nodes, min_section_size);
         // ... and from a group to itself, another group, a section and a node...
-        expected_puts.send_and_expect(&data, auth_g0, auth_g0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_g0, auth_g1, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_g0, auth_s0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_g0, auth_n0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_g0, auth_g0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_g0, auth_g1, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_g0, auth_s0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_g0, auth_n0, &mut nodes, min_section_size);
         // ... and from a section to itself, another section, a group and a node...
-        expected_puts.send_and_expect(&data, auth_s0, auth_s0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_s0, auth_s1, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_s0, auth_g0, &mut nodes, min_section_size);
-        expected_puts.send_and_expect(&data, auth_s0, auth_n0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_s0, auth_s0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_s0, auth_s1, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_s0, auth_g0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_s0, auth_n0, &mut nodes, min_section_size);
 
         poll_and_resend(&mut nodes);
         let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);
@@ -553,7 +571,7 @@ fn messages_during_churn() {
         if !added_names.is_empty() {
             warn!("Added nodes: {:?}", added_names);
         }
-        expected_puts.verify(&mut nodes);
+        expectations.verify(&mut nodes);
         verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 }

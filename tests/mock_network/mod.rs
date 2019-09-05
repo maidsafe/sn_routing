@@ -11,17 +11,16 @@ mod cache;
 mod churn;
 mod drop;
 mod merge;
-mod requests;
+mod messages;
 mod secure_message_delivery;
 mod utils;
 
 pub use self::utils::{
     add_connected_nodes_until_one_away_from_split, add_connected_nodes_until_split,
     clear_relocation_overrides, count_sections, create_connected_nodes,
-    create_connected_nodes_until_split, current_sections, gen_bytes, gen_immutable_data, gen_range,
-    gen_range_except, poll_all, poll_and_resend, poll_and_resend_until,
-    remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
-    verify_invariant_for_all_nodes, Nodes, TestNode,
+    create_connected_nodes_until_split, current_sections, gen_bytes, gen_range, gen_range_except,
+    poll_all, poll_and_resend, poll_and_resend_until, remove_nodes_which_failed_to_connect,
+    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, TestNode,
 };
 use fake_clock::FakeClock;
 use itertools::Itertools;

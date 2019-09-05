@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+/* TODO: This example makes no sense without client, remove it
+
 //! usage example (using default methods of connecting to the network):
 //!      starting the first node:       `key_value_store --first`
 //!      starting a passive node:       `key_value_store --node`
@@ -277,4 +279,9 @@ Options:
 #[cfg(not(feature = "mock_base"))]
 fn main() {
     unnamed::run_main()
+}
+*/
+
+fn main() {
+    panic!("This example is disabled and should be removed")
 }

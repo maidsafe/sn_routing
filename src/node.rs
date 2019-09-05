@@ -9,23 +9,17 @@
 use crate::{
     action::Action,
     cache::{Cache, NullCache},
-    client_error::ClientError,
     config_handler::{self, Config},
-    data::{EntryAction, ImmutableData, MutableData, PermissionSet, User, Value},
     error::{InterfaceError, RoutingError},
     event::Event,
     event_stream::{EventStepper, EventStream},
     id::{FullId, PublicId},
-    messages::{
-        AccountInfo, Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
-        RELOCATE_PRIORITY,
-    },
+    messages::{Request, Response, UserMessage},
     outbox::{EventBox, EventBuf},
     quic_p2p::OurType,
     routing_table::Authority,
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, TargetState},
-    types::MessageId,
     xor_name::XorName,
     NetworkConfig, MIN_SECTION_SIZE,
 };
@@ -34,56 +28,11 @@ use crate::{utils::XorTargetInterval, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(not(feature = "mock_base"))]
 use safe_crypto;
-use safe_crypto::PublicSignKey;
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::mpsc,
-};
+use std::sync::mpsc;
 #[cfg(feature = "mock_base")]
 use unwrap::unwrap;
-
-// Helper macro to implement request sending methods.
-macro_rules! impl_request {
-    ($method:ident, $message:ident { $($pname:ident : $ptype:ty),*, }, $priority:expr) => {
-        #[allow(missing_docs, clippy::too_many_arguments)]
-        pub fn $method(&mut self,
-                       src: Authority<XorName>,
-                       dst: Authority<XorName>,
-                       $($pname: $ptype),*)
-                       -> Result<(), InterfaceError> {
-            let msg = UserMessage::Request(Request::$message {
-                $($pname: $pname),*,
-            });
-
-            self.send_action(src, dst, msg, $priority)
-        }
-    };
-
-    ($method:ident, $message:ident { $($pname:ident : $ptype:ty),* }, $priority:expr) => {
-        impl_request!($method, $message { $($pname:$ptype),*, }, $priority);
-    };
-}
-
-// Helper macro to implement response sending methods.
-macro_rules! impl_response {
-    ($method:ident, $message:ident, $payload:ty, $priority:expr) => {
-        #[allow(missing_docs)]
-        pub fn $method(&mut self,
-                       src: Authority<XorName>,
-                       dst: Authority<XorName>,
-                       res: Result<$payload, ClientError>,
-                       msg_id: MessageId)
-                       -> Result<(), InterfaceError> {
-            let msg = UserMessage::Response(Response::$message {
-                res: res,
-                msg_id: msg_id,
-            });
-            self.send_action(src, dst, msg, $priority)
-        }
-    };
-}
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
@@ -214,320 +163,6 @@ impl Node {
         }
     }
 
-    /// Send a `GetIData` request to `dst` to retrieve data from the network.
-    impl_request!(
-        send_get_idata_request,
-        GetIData {
-            name: XorName,
-            msg_id: MessageId,
-        },
-        RELOCATE_PRIORITY
-    );
-
-    /// Send a `PutIData` request to `dst` to store data on the network.
-    impl_request!(
-        send_put_idata_request,
-        PutIData {
-            data: ImmutableData,
-            msg_id: MessageId,
-        },
-        DEFAULT_PRIORITY
-    );
-
-    /// Send a `GetMData` request to `dst` to retrieve data from the network.
-    /// Note: responses to this request are unlikely to accumulate during churn.
-    impl_request!(
-        send_get_mdata_request,
-        GetMData {
-            name: XorName,
-            tag: u64,
-            msg_id: MessageId,
-        },
-        RELOCATE_PRIORITY
-    );
-
-    /// Send a `PutMData` request.
-    impl_request!(
-        send_put_mdata_request,
-        PutMData {
-            data: MutableData,
-            msg_id: MessageId,
-            requester: PublicSignKey,
-        },
-        DEFAULT_PRIORITY
-    );
-
-    /// Send a `MutateMDataEntries` request.
-    impl_request!(send_mutate_mdata_entries_request,
-                  MutateMDataEntries {
-                      name: XorName,
-                      tag: u64,
-                      actions: BTreeMap<Vec<u8>, EntryAction>,
-                      msg_id: MessageId,
-                      requester: PublicSignKey,
-                  },
-                  DEFAULT_PRIORITY);
-
-    /// Send a `GetMDataShell` request.
-    impl_request!(
-        send_get_mdata_shell_request,
-        GetMDataShell {
-            name: XorName,
-            tag: u64,
-            msg_id: MessageId,
-        },
-        RELOCATE_PRIORITY
-    );
-
-    /// Send a `GetMDataValue` request.
-    impl_request!(send_get_mdata_value_request,
-                  GetMDataValue {
-                      name: XorName,
-                      tag: u64,
-                      key: Vec<u8>,
-                      msg_id: MessageId,
-                  },
-                  RELOCATE_PRIORITY);
-
-    /// Send a `SetMDataUserPermissions` request.
-    impl_request!(
-        send_set_mdata_user_permissions_request,
-        SetMDataUserPermissions {
-            name: XorName,
-            tag: u64,
-            user: User,
-            permissions: PermissionSet,
-            version: u64,
-            msg_id: MessageId,
-            requester: PublicSignKey,
-        },
-        DEFAULT_PRIORITY
-    );
-
-    /// Send a `DeleteMDataUserPermissions` request.
-    impl_request!(
-        send_delete_mdata_user_permissions_request,
-        DeleteMDataUserPermissions {
-            name: XorName,
-            tag: u64,
-            user: User,
-            version: u64,
-            msg_id: MessageId,
-            requester: PublicSignKey,
-        },
-        DEFAULT_PRIORITY
-    );
-
-    /// Send a `ChangeMDataOwner` request.
-    impl_request!(send_change_mdata_owner_request,
-                  ChangeMDataOwner {
-                      name: XorName,
-                      tag: u64,
-                      new_owners: BTreeSet<PublicSignKey>,
-                      version: u64,
-                      msg_id: MessageId,
-                  }, DEFAULT_PRIORITY);
-
-    /// Send a `Refresh` request from `src` to `dst` to trigger churn.
-    pub fn send_refresh_request(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        content: Vec<u8>,
-        msg_id: MessageId,
-    ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Request(Request::Refresh(content, msg_id));
-        self.send_action(src, dst, msg, RELOCATE_PRIORITY)
-    }
-
-    /// Respond to a `GetAccountInfo` request.
-    impl_response!(
-        send_get_account_info_response,
-        GetAccountInfo,
-        AccountInfo,
-        CLIENT_GET_PRIORITY
-    );
-
-    /// Respond to a `GetIData` request.
-    pub fn send_get_idata_response(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        res: Result<ImmutableData, ClientError>,
-        msg_id: MessageId,
-    ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetIData {
-            res: res,
-            msg_id: msg_id,
-        });
-
-        let priority = relocate_priority(&dst);
-        self.send_action(src, dst, msg, priority)
-    }
-
-    /// Respond to a `PutIData` request.
-    impl_response!(send_put_idata_response, PutIData, (), DEFAULT_PRIORITY);
-
-    /// Respond to a `GetMData` request.
-    /// Note: this response is unlikely to accumulate during churn.
-    pub fn send_get_mdata_response(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        res: Result<MutableData, ClientError>,
-        msg_id: MessageId,
-    ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetMData {
-            res: res,
-            msg_id: msg_id,
-        });
-
-        let priority = relocate_priority(&dst);
-        self.send_action(src, dst, msg, priority)
-    }
-
-    /// Respond to a `PutMData` request.
-    impl_response!(send_put_mdata_response, PutMData, (), DEFAULT_PRIORITY);
-
-    /// Respond to a `GetMDataVersion` request.
-    impl_response!(
-        send_get_mdata_version_response,
-        GetMDataVersion,
-        u64,
-        CLIENT_GET_PRIORITY
-    );
-
-    /// Respond to a `GetMDataShell` request.
-    pub fn send_get_mdata_shell_response(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        res: Result<MutableData, ClientError>,
-        msg_id: MessageId,
-    ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetMDataShell {
-            res: res,
-            msg_id: msg_id,
-        });
-
-        let priority = relocate_priority(&dst);
-        self.send_action(src, dst, msg, priority)
-    }
-
-    /// Respond to a `ListMDataEntries` request.
-    /// Note: this response is unlikely to accumulate during churn.
-    impl_response!(
-        send_list_mdata_entries_response,
-        ListMDataEntries,
-        BTreeMap<Vec<u8>, Value>,
-        CLIENT_GET_PRIORITY
-    );
-
-    /// Respond to a `ListMDataKeys` request.
-    /// Note: this response is unlikely to accumulate during churn.
-    impl_response!(
-        send_list_mdata_keys_response,
-        ListMDataKeys,
-        BTreeSet<Vec<u8>>,
-        CLIENT_GET_PRIORITY
-    );
-
-    /// Respond to a `ListMDataValues` request.
-    /// Note: this response is unlikely to accumulate during churn.
-    impl_response!(
-        send_list_mdata_values_response,
-        ListMDataValues,
-        Vec<Value>,
-        CLIENT_GET_PRIORITY
-    );
-
-    /// Respond to a `GetMDataValue` request.
-    pub fn send_get_mdata_value_response(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        res: Result<Value, ClientError>,
-        msg_id: MessageId,
-    ) -> Result<(), InterfaceError> {
-        let msg = UserMessage::Response(Response::GetMDataValue {
-            res: res,
-            msg_id: msg_id,
-        });
-
-        let priority = relocate_priority(&dst);
-        self.send_action(src, dst, msg, priority)
-    }
-
-    /// Respond to a `MutateMDataEntries` request.
-    impl_response!(
-        send_mutate_mdata_entries_response,
-        MutateMDataEntries,
-        (),
-        DEFAULT_PRIORITY
-    );
-
-    /// Respond to a `ListMDataPermissions` request.
-    impl_response!(send_list_mdata_permissions_response,
-                   ListMDataPermissions,
-                   BTreeMap<User, PermissionSet>,
-                   CLIENT_GET_PRIORITY);
-
-    /// Respond to a `ListMDataUserPermissions` request.
-    impl_response!(
-        send_list_mdata_user_permissions_response,
-        ListMDataUserPermissions,
-        PermissionSet,
-        CLIENT_GET_PRIORITY
-    );
-
-    /// Respond to a `SetMDataUserPermissions` request.
-    impl_response!(
-        send_set_mdata_user_permissions_response,
-        SetMDataUserPermissions,
-        (),
-        DEFAULT_PRIORITY
-    );
-
-    /// Respond to a `ListAuthKeysAndVersion` request.
-    impl_response!(
-        send_list_auth_keys_and_version_response,
-        ListAuthKeysAndVersion,
-        (BTreeSet<PublicSignKey>, u64),
-        CLIENT_GET_PRIORITY
-    );
-
-    /// Respond to a `InsertAuthKey` request.
-    impl_response!(
-        send_insert_auth_key_response,
-        InsertAuthKey,
-        (),
-        DEFAULT_PRIORITY
-    );
-
-    /// Respond to a `DeleteAuthKey` request.
-    impl_response!(
-        send_delete_auth_key_response,
-        DeleteAuthKey,
-        (),
-        DEFAULT_PRIORITY
-    );
-
-    /// Respond to a `DeleteMDataUserPermissions` request.
-    impl_response!(
-        send_delete_mdata_user_permissions_response,
-        DeleteMDataUserPermissions,
-        (),
-        DEFAULT_PRIORITY
-    );
-
-    /// Respond to a `ChangeMDataOwner` request.
-    impl_response!(
-        send_change_mdata_owner_response,
-        ChangeMDataOwner,
-        (),
-        DEFAULT_PRIORITY
-    );
-
     /// Returns the first `count` names of the nodes in the routing table which are closest
     /// to the given one.
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
@@ -544,12 +179,31 @@ impl Node {
         self.machine.current().min_section_size()
     }
 
-    fn send_action(
+    /// Send a user request message
+    pub fn send_request(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        msg: Request,
+    ) -> Result<(), InterfaceError> {
+        self.send_message(src, dst, UserMessage::Request(msg))
+    }
+
+    /// Send a user response message
+    pub fn send_response(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        msg: Response,
+    ) -> Result<(), InterfaceError> {
+        self.send_message(src, dst, UserMessage::Response(msg))
+    }
+
+    fn send_message(
         &mut self,
         src: Authority<XorName>,
         dst: Authority<XorName>,
         user_msg: UserMessage,
-        priority: u8,
     ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
@@ -558,7 +212,6 @@ impl Node {
             src: src,
             dst: dst,
             content: user_msg,
-            priority: priority,
             result_tx: self.interface_result_tx.clone(),
         };
 
@@ -681,15 +334,5 @@ impl Drop for Node {
             .current_mut()
             .handle_action(Action::Terminate, &mut self.event_buffer);
         let _ = self.event_buffer.take_all();
-    }
-}
-
-// Priority of messages that might be used during relocation/churn, depending
-// on the destination.
-fn relocate_priority(dst: &Authority<XorName>) -> u8 {
-    if dst.is_client() {
-        CLIENT_GET_PRIORITY
-    } else {
-        RELOCATE_PRIORITY
     }
 }

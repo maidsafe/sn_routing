@@ -12,13 +12,12 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Cache, Chain, Config, DevConfig, Event, EventStream, ImmutableData, NetworkConfig, Node,
-    NullCache, Prefix, PublicId, Request, Response, XorName, XorTargetInterval, Xorable,
+    Cache, Chain, Config, DevConfig, Event, EventStream, NetworkConfig, Node, NullCache, Prefix,
+    PublicId, Request, Response, XorName, XorTargetInterval, Xorable,
 };
 use std::{
-    cell::RefCell,
     cmp,
-    collections::{BTreeSet, HashMap},
+    collections::BTreeSet,
     iter,
     net::SocketAddr,
     ops::{Deref, DerefMut},
@@ -245,31 +244,20 @@ impl<'a> TestNodeBuilder<'a> {
 // -----  TestCache  -----
 
 #[derive(Default)]
-pub struct TestCache(RefCell<HashMap<XorName, ImmutableData>>);
+pub struct TestCache;
 
 impl TestCache {
     pub fn new() -> Self {
-        TestCache(RefCell::new(HashMap::new()))
+        TestCache
     }
 }
 
 impl Cache for TestCache {
-    fn get(&self, request: &Request) -> Option<Response> {
-        if let Request::GetIData { ref name, msg_id } = *request {
-            self.0.borrow().get(name).map(|data| Response::GetIData {
-                res: Ok(data.clone()),
-                msg_id: msg_id,
-            })
-        } else {
-            None
-        }
+    fn get(&self, _request: &Request) -> Option<Response> {
+        None
     }
 
-    fn put(&self, response: Response) {
-        if let Response::GetIData { res: Ok(data), .. } = response {
-            let _ = self.0.borrow_mut().insert(*data.name(), data);
-        }
-    }
+    fn put(&self, _response: Response) {}
 }
 
 // -----  poll_all, create_connected_...  -----
@@ -708,11 +696,6 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
 // Generate a vector of random bytes of the given length.
 pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
     rng.gen_iter().take(size).collect()
-}
-
-// Generate random immutable data with the given payload length.
-pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> ImmutableData {
-    ImmutableData::new(gen_bytes(rng, size))
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {

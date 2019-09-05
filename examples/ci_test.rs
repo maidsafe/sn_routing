@@ -8,6 +8,8 @@
 
 //! Run a local network with 'nodes' nodes sending 'requests' requests.
 
+/* TODO: This example makes no sense without client, remove it
+
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(
@@ -80,7 +82,7 @@ mod unnamed {
     use maidsafe_utilities::SeededRng;
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng, Rng, ThreadRng};
-    use routing::{MutableData, Value, MIN_SECTION_SIZE};
+    use routing::MIN_SECTION_SIZE;
     use safe_crypto::PublicSignKey;
     use std::collections::BTreeMap;
     use std::io::Write;
@@ -433,4 +435,9 @@ Options:
 #[cfg(not(feature = "mock_base"))]
 fn main() {
     unnamed::run_main()
+}
+*/
+
+fn main() {
+    panic!("This example is disabled and should be removed")
 }
