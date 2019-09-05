@@ -12,6 +12,8 @@ use crate::xor_name::XorName;
 use rand_os::OsRng;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::ops::RangeInclusive;
+use serde::de::Deserialize;
+use serde::{Deserializer, Serialize, Serializer};
 
 /// Network identity component containing name, and public and private keys.
 pub struct FullId {
@@ -105,7 +107,8 @@ impl Default for FullId {
 }
 
 /// Network identity component containing name and public key.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Serialize, Deserialize)]
+/// The name feild is memoized
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct PublicId {
     public_key: PublicKey,
     name: XorName,
@@ -130,6 +133,19 @@ impl parsec::PublicId for PublicId {
     }
 }
 
+impl Serialize for PublicId {
+    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
+        (&self.public_key).serialize(serialiser)
+    }
+}
+
+impl<'de> Deserialize<'de> for PublicId {
+    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
+        let public_key: PublicKey =
+            Deserialize::deserialize(deserialiser)?;
+        Ok(PublicId::new(public_key))
+    }
+}
 impl PublicId {
     /// Return initial/relocated name.
     pub fn name(&self) -> &XorName {
