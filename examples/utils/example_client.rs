@@ -8,9 +8,8 @@
 
 use routing::{
     Authority, Client, ClientError, Event, FullId, ImmutableData, MessageId, MutableData, Response,
-    Value, XorName,
+    Value, XorName, ed25519::PublicKey
 };
-use safe_crypto::{gen_encrypt_keypair, gen_sign_keypair, PublicSignKey};
 use std::collections::BTreeMap;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -80,9 +79,7 @@ impl ExampleClient {
         // Generate new key pairs. The client's name will be computed from them. This is a
         // requirement for clients: If the name does not match the keys, it will be rejected by the
         // network.
-        let sign_keys = gen_sign_keypair();
-        let encrypt_keys = gen_encrypt_keypair();
-        let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
+        let full_id = FullId::new();
         let mut client;
 
         // Try to connect the client to the network. If it fails, it probably means
@@ -90,7 +87,7 @@ impl ExampleClient {
         'outer: loop {
             client = unwrap!(Client::new(
                 sender.clone(),
-                Some(full_id.clone()),
+                Some(full_id.copy()),
                 None,
                 Duration::from_secs(90),
             ));
@@ -215,7 +212,7 @@ impl ExampleClient {
     }
 
     /// Returns the signing public key of this client.
-    pub fn signing_public_key(&self) -> &PublicSignKey {
+    pub fn signing_public_key(&self) -> &PublicKey {
         self.full_id.public_id().signing_public_key()
     }
 }

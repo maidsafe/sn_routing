@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    client::{Client, ClientDetails},
     common::Base,
     proving_node::{ProvingNode, ProvingNodeDetails},
     relocating_node::{RelocatingNode, RelocatingNodeDetails},
@@ -44,9 +43,6 @@ const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum TargetState {
-    Client {
-        msg_expiry_dur: Duration,
-    },
     RelocatingNode,
     ProvingNode {
         old_full_id: FullId,
@@ -98,20 +94,6 @@ impl BootstrappingPeer {
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         match self.target_state {
-            TargetState::Client { msg_expiry_dur } => {
-                Ok(State::Client(Client::from_bootstrapping(
-                    ClientDetails {
-                        network_service: self.network_service,
-                        full_id: self.full_id,
-                        min_section_size: self.min_section_size,
-                        msg_expiry_dur,
-                        peer_map: self.peer_map,
-                        proxy_pub_id,
-                        timer: self.timer,
-                    },
-                    outbox,
-                )))
-            }
             TargetState::RelocatingNode => {
                 let details = RelocatingNodeDetails {
                     action_sender: self.action_sender,
@@ -219,7 +201,6 @@ impl Base for BootstrappingPeer {
         &mut self,
         _: Authority<XorName>,
         _: Request,
-        _: u8,
     ) -> Result<(), InterfaceError> {
         warn!(
             "{} - Cannot handle ClientSendRequest - not bootstrapped.",
@@ -235,7 +216,6 @@ impl Base for BootstrappingPeer {
         _: Authority<XorName>,
         _: Authority<XorName>,
         _: UserMessage,
-        _: u8,
     ) -> Result<(), InterfaceError> {
         warn!(
             "{} - Cannot handle NodeSendMessage - not bootstrapped.",

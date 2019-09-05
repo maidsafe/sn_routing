@@ -1379,7 +1379,7 @@ mod tests {
             let _ = full_ids.get(member).map(|full_id| {
                 let proof = unwrap!(Proof::new(
                     *full_id.public_id(),
-                    full_id.signing_private_key(),
+                    full_id.secret_keypair_ref(),
                     payload,
                 ));
                 let _ = proofs.add_proof(proof);
