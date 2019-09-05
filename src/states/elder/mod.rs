@@ -775,12 +775,11 @@ impl Elder {
                 if let Some(response) = self.response_cache.get(request) {
                     debug!("{} Found cached response to {:?}", self, request);
 
-                    let priority = response.priority();
                     let src = Authority::ManagedNode(*self.name());
                     let dst = routing_msg.src;
                     let msg = UserMessage::Response(response);
 
-                    self.send_user_message(src, dst, msg, priority)?;
+                    self.send_user_message(src, dst, msg)?;
 
                     return Ok(true);
                 }
@@ -1261,9 +1260,8 @@ impl Elder {
         src: Authority<XorName>,
         dst: Authority<XorName>,
         content: UserMessage,
-        priority: u8,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message(src, dst, MessageContent::UserMessage { content, priority })
+        self.send_routing_message(src, dst, MessageContent::UserMessage { content})
     }
 
     // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
@@ -1604,9 +1602,8 @@ impl Base for Elder {
         src: Authority<XorName>,
         dst: Authority<XorName>,
         content: UserMessage,
-        priority: u8,
     ) -> Result<(), InterfaceError> {
-        match self.send_user_message(src, dst, content, priority) {
+        match self.send_user_message(src, dst, content) {
             Err(RoutingError::Interface(err)) => Err(err),
             Err(_) | Ok(()) => Ok(()),
         }

@@ -65,11 +65,10 @@ use maidsafe_utilities::thread::{self, Joiner};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use routing::{
-    Authority, Client, ClientError, Event, EventStream, FullId, MessageId, MutableData, Node,
-    Request, Response, Value, XorName, Xorable, MIN_SECTION_SIZE,
+    Authority, Client, ClientError, Event, EventStream, FullId, MessageId, Node,
+    Request, Response, XorName, Xorable, MIN_SECTION_SIZE,
 };
-use safe_crypto::{gen_encrypt_keypair, gen_sign_keypair};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::HashSet;
 #[cfg(target_os = "macos")]
 use std::io;
 use std::iter;
@@ -147,13 +146,11 @@ impl TestClient {
         let thread_name = format!("TestClient {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
-        let sign_keys = gen_sign_keypair();
-        let encrypt_keys = gen_encrypt_keypair();
-        let full_id = FullId::from_keys(encrypt_keys, sign_keys);
+        let full_id = FullId::new();
 
         TestClient {
             index,
-            full_id: full_id.clone(),
+            full_id: full_id.copy(),
             client: unwrap!(Client::new(
                 sender,
                 Some(full_id),
@@ -288,33 +285,20 @@ fn create_connected_nodes(
     }
     nodes
 }
-
-fn gen_mutable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> MutableData {
-    let tag = 10_000;
-
-    let num_entries = rng.gen_range(1, 10);
-    let entries: BTreeMap<_, _> = (0..num_entries)
-        .map(|_| {
-            let key: Vec<u8> = rng.gen_iter().take(10).collect();
-            let content: Vec<u8> = rng.gen_iter().take(10).collect();
-
-            (
-                key,
-                Value {
-                    content,
-                    entry_version: 0,
-                },
-            )
-        })
-        .collect();
-
-    let owner_pubkey = *full_id.public_id().signing_public_key();
-    let mut owners = BTreeSet::new();
-    let _ = owners.insert(owner_pubkey);
-
-    MutableData::new(rng.gen(), tag, Default::default(), entries, owners)
-        .expect("Cannot create structured data for test")
+#[derive(Clone)]
+pub struct MutableData {
+    key: Vec<u8>,
+    value: Vec<u8>
 }
+
+fn gen_mutable_data<R: Rng>(rng: &mut R) -> MutableData {
+            let key: Vec<u8> = rng.gen_iter().take(10).collect();
+            let value: Vec<u8> = rng.gen_iter().take(10).collect();
+
+            MutableData {
+                key: key,
+                value: value }
+                }
 
 fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
     node_names
@@ -337,7 +321,7 @@ fn core() {
         // request and response
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
         let client_key = *client.full_id().public_id().signing_public_key();
-        let data = gen_mutable_data(client.full_id(), &mut rng);
+        let data = gen_mutable_data(&mut rng);
         let message_id = MessageId::new();
 
         loop {
@@ -395,7 +379,7 @@ fn core() {
         let node_names = nodes.iter().map(TestNode::name).collect_vec();
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
         let client_key = *client.full_id().public_id().signing_public_key();
-        let data = gen_mutable_data(client.full_id(), &mut rng);
+        let data = gen_mutable_data(&mut rng);
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
@@ -441,7 +425,7 @@ fn core() {
         let node_names = nodes.iter().map(TestNode::name).collect_vec();
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
         let client_key = *client.full_id().public_id().signing_public_key();
-        let data = gen_mutable_data(client.full_id(), &mut rng);
+        let data = gen_mutable_data(&mut rng);
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
@@ -584,7 +568,7 @@ fn core() {
         // message from quorum - 1 section members
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
         let client_key = *client.full_id().public_id().signing_public_key();
-        let data = gen_mutable_data(client.full_id(), &mut rng);
+        let data = gen_mutable_data(&mut rng);
 
         while let Ok(test_event) = recv_with_timeout(
             &mut nodes,
@@ -654,7 +638,7 @@ fn core() {
         // message from more than quorum section members
         let mut client = TestClient::new(nodes.len(), event_sender.clone());
         let client_key = *client.full_id().public_id().signing_public_key();
-        let data = gen_mutable_data(client.full_id(), &mut rng);
+        let data = gen_mutable_data(&mut rng);
         let mut sent_ids = HashSet::new();
         let mut received_ids = HashSet::new();
 

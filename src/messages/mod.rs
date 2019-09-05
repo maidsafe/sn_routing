@@ -13,7 +13,7 @@ mod response;
 pub use self::{
     direct::{DirectMessage, SignedDirectMessage},
     request::Request,
-    response::{AccountInfo, Response},
+    response::Response,
 };
 use crate::{
     chain::{Chain, GenesisPfxInfo, SectionInfo, SectionKeyInfo, SectionProofChain},
@@ -36,15 +36,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     mem,
 };
-
-/// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
-/// critical to prevent data loss.
-pub const RELOCATE_PRIORITY: u8 = 1;
-/// Other requests have a lower priority: If they fail due to high traffic, the sender retries.
-pub const DEFAULT_PRIORITY: u8 = 2;
-/// `Get` requests from clients have the lowest priority: If bandwidth is insufficient, the network
-/// needs to prioritise maintaining its structure, data and consensus.
-pub const CLIENT_GET_PRIORITY: u8 = 3;
 
 /// Wrapper of all messages.
 ///
@@ -359,11 +350,6 @@ impl SignedRoutingMessage {
         &self.content
     }
 
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        self.content.priority()
-    }
-
     /// Returns whether there are enough signatures from the sender.
     pub fn check_fully_signed(&mut self) -> bool {
         if !self.has_enough_sigs() {
@@ -461,11 +447,6 @@ pub struct RoutingMessage {
 }
 
 impl RoutingMessage {
-    /// Returns the priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        self.content.priority()
-    }
-
     /// Returns the message hash
     pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
@@ -587,8 +568,6 @@ pub enum MessageContent {
     UserMessage {
         /// The content of the user message.
         content: UserMessage,
-        /// The message priority.
-        priority: u8,
     },
     /// Approves the joining node as a routing node.
     ///
@@ -601,16 +580,6 @@ pub enum MessageContent {
         /// The version acknowledged.
         ack_version: u64,
     },
-}
-
-impl MessageContent {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            MessageContent::UserMessage { priority, .. } => priority,
-            _ => 0,
-        }
-    }
 }
 
 impl Debug for HopMessage {
@@ -669,12 +638,11 @@ impl Debug for MessageContent {
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
             UserMessage {
                 ref content,
-                priority,
                 ..
             } => write!(
                 formatter,
-                "UserMessage(content: {:?}, priority: {})",
-                content, priority,
+                "UserMessage(content: {:?})",
+                content,
             ),
             NodeApproval(ref gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
             AckMessage {

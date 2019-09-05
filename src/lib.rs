@@ -159,10 +159,7 @@ mod macros;
 mod action;
 mod cache;
 mod chain;
-mod client;
-mod client_error;
 mod config_handler;
-mod data;
 mod error;
 mod event;
 mod event_stream;
@@ -218,19 +215,12 @@ pub use crate::routing_table::verify_network_invariant;
 pub use crate::{
     cache::{Cache, NullCache},
     chain::Chain,
-    client::Client,
-    client_error::{ClientError, EntryError},
     config_handler::{Config, DevConfig},
-    data::{
-        Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
-        MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-        NO_OWNER_PUB_KEY,
-    },
     error::{InterfaceError, RoutingError},
     event::Event,
     event_stream::EventStream,
     id::{FullId, PublicId},
-    messages::{AccountInfo, Request, Response},
+    messages::{Request, Response},
     node::{Node, NodeBuilder},
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable},
@@ -253,7 +243,7 @@ pub(crate) type NetworkBytes = bytes::Bytes;
 pub(crate) type NetworkBytes = std::rc::Rc<crate::messages::Message>;
 
 pub use self::quic_p2p::Config as NetworkConfig;
-pub(crate) use tmp_ed25519 as ed25519;
+pub use tmp_ed25519 as ed25519;
 pub(crate) use self::{
     chain::bls_emu::{
         PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,

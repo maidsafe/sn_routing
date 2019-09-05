@@ -148,7 +148,7 @@ mod tests {
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
         let payload = NetworkEvent::OurMerge;
-        let proof = unwrap!(Proof::new(pub_id, full_id.signing_private_key(), &payload));
+        let proof = unwrap!(Proof::new(pub_id, full_id.secret_keypair_ref(), &payload));
         assert!(proof.validate_signature(&payload));
     }
 
@@ -160,7 +160,7 @@ mod tests {
         let pub_id = *full_id.public_id();
         let payload = NetworkEvent::OurMerge;
         let other_payload = NetworkEvent::Offline(pub_id);
-        let proof = unwrap!(Proof::new(pub_id, full_id.signing_private_key(), &payload));
+        let proof = unwrap!(Proof::new(pub_id, full_id.secret_keypair_ref(), &payload));
         assert!(!proof.validate_signature(&other_payload));
     }
 }

@@ -27,13 +27,11 @@ pub enum Action {
         src: Authority<XorName>,
         dst: Authority<XorName>,
         content: UserMessage,
-        priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     ClientSendRequest {
         content: Request,
         dst: Authority<XorName>,
-        priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     GetId {

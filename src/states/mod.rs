@@ -8,7 +8,6 @@
 
 mod adult;
 mod bootstrapping_peer;
-mod client;
 pub mod common;
 mod elder;
 mod proving_node;
@@ -17,7 +16,6 @@ mod relocating_node;
 pub use self::{
     adult::Adult,
     bootstrapping_peer::{BootstrappingPeer, TargetState},
-    client::Client,
     elder::Elder,
     proving_node::ProvingNode,
     relocating_node::RelocatingNode,

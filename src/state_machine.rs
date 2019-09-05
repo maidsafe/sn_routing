@@ -14,7 +14,7 @@ use crate::{
     outbox::EventBox,
     routing_table::Prefix,
     states::common::Base,
-    states::{Adult, BootstrappingPeer, Client, Elder, ProvingNode, RelocatingNode},
+    states::{Adult, BootstrappingPeer, Elder, ProvingNode, RelocatingNode},
     timer::Timer,
     xor_name::XorName,
     NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
@@ -36,7 +36,6 @@ macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
             State::BootstrappingPeer($state) => $expr,
-            State::Client($state) => $expr,
             State::RelocatingNode($state) => $expr,
             State::ProvingNode($state) => $expr,
             State::Adult($state) => $expr,
@@ -60,7 +59,6 @@ pub struct StateMachine {
 #[allow(clippy::large_enum_variant)]
 pub enum State {
     BootstrappingPeer(BootstrappingPeer),
-    Client(Client),
     RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
     Adult(Adult),
