@@ -1398,7 +1398,7 @@ mod tests {
         for (pfx, size) in sections {
             let (info, ids) = gen_section_info(SecInfoGen::New(pfx, size));
             if our_id.is_none() {
-                our_id = Some(unwrap!(ids.values().next()).clone());
+                our_id = Some(unwrap!(ids.values().next()).copy());
             }
             full_ids.extend(ids);
             section_members.push(info);

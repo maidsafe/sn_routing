@@ -717,13 +717,12 @@ impl<'a> Display for UserMessageShortDisplay<'a> {
 mod tests {
     use super::*;
     use crate::chain::SectionKeyInfo;
-    use crate::data::ImmutableData;
     use crate::id::FullId;
     use crate::routing_table::{Authority, Prefix};
     use crate::types::MessageId;
     use crate::xor_name::XorName;
     use rand;
-    use safe_crypto::{self, Signature, SIGNATURE_BYTES};
+    use crate::ed25519::{Signature, SIGNATURE_LENGTH};
     use unwrap::unwrap;
 
     #[test]
@@ -778,19 +777,14 @@ mod tests {
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
         let full_id_3 = FullId::new();
-        let data_bytes: Vec<u8> = (0..10).collect();
-        let data = ImmutableData::new(data_bytes);
-        let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: MessageId::new(),
-        });
+        let data : Vec<u8> = (0..10).collect();
+        let user_msg = UserMessage::Request(Request::Vault(data, MessageId::new()));
         let name: XorName = rand::random();
         let msg = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
             content: MessageContent::UserMessage {
                 content: user_msg,
-                priority: 0,
             },
         };
 
@@ -822,7 +816,7 @@ mod tests {
         for full_id in &[full_id_1, full_id_2] {
             match signed_msg
                 .routing_message()
-                .to_signature(full_id.signing_private_key())
+                .to_signature(full_id.secret_keypair_ref())
             {
                 Ok(sig) => {
                     signed_msg.add_signature_share(BlsPublicKeyShare(*full_id.public_id()), sig);
@@ -831,7 +825,7 @@ mod tests {
             }
         }
 
-        let bad_sig = Signature::from_bytes([0; SIGNATURE_BYTES]);
+        let bad_sig = unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH]));
         signed_msg.add_signature_share(BlsPublicKeyShare(*full_id_3.public_id()), bad_sig);
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 4);
         assert!(signed_msg.check_fully_signed());
