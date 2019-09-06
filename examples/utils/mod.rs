@@ -8,8 +8,6 @@
 
 #![cfg(not(feature = "mock_base"))]
 
-mod example_client;
 mod example_node;
 
-pub use self::example_client::ExampleClient;
 pub use self::example_node::ExampleNode;

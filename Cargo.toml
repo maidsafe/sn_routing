@@ -53,6 +53,3 @@ mock = ["mock_parsec", "mock_serialise"]
 bench = false
 name = "key_value_store"
 
-[[example]]
-bench = false
-name = "ci_test"

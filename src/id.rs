@@ -146,6 +146,8 @@ impl<'de> Deserialize<'de> for PublicId {
         Ok(PublicId::new(public_key))
     }
 }
+
+
 impl PublicId {
     /// Return initial/relocated name.
     pub fn name(&self) -> &XorName {
@@ -182,13 +184,12 @@ impl PublicId {
 mod tests {
     use super::*;
     use maidsafe_utilities::serialisation;
-    use safe_crypto;
     use unwrap::unwrap;
 
     /// Confirm `PublicId` `Ord` trait favours name over sign keys.
     #[test]
+    #[ignore] // Find out if this is required
     fn public_id_order() {
-        unwrap!(safe_crypto::init());
 
         let pub_id_1 = *FullId::new().public_id();
         let pub_id_2;
@@ -205,7 +206,6 @@ mod tests {
 
     #[test]
     fn serialisation() {
-        unwrap!(safe_crypto::init());
 
         let full_id = FullId::new();
         let serialised = unwrap!(serialisation::serialise(full_id.public_id()));
