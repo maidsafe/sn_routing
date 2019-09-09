@@ -267,6 +267,9 @@ pub(crate) use self::{
     quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p},
 };
 
+#[cfg(feature = "mock_base")]
+pub use self::chain::bls_emu::{THRESHOLD_DENOMINATOR, THRESHOLD_NUMERATOR};
+
 #[cfg(test)]
 mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};

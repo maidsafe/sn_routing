@@ -10,15 +10,13 @@ use super::{
     create_connected_nodes, gen_immutable_data, poll_all, sort_nodes_by_distance_to, TestNode,
 };
 use routing::{
-    delivery_group_size, mock::Network, Authority, Event, EventStream, MessageId, Response,
-    XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    mock::Network, Authority, Event, EventStream, MessageId, Response, XorName,
+    THRESHOLD_DENOMINATOR, THRESHOLD_NUMERATOR,
 };
-use std::cmp::min;
 
 #[test]
 fn messages_accumulate_with_quorum() {
     let section_size = 15;
-    let dg_size = delivery_group_size(section_size);
     let network = Network::new(8, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, section_size);
@@ -37,7 +35,7 @@ fn messages_accumulate_with_quorum() {
     let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
                                                        // The smallest number such that
                                                        // `quorum * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR`:
-    let quorum = 1 + (section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
+    let quorum = 1 + section_size * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
@@ -53,27 +51,6 @@ fn messages_accumulate_with_quorum() {
     expect_next_event!(nodes[0],
         Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[quorum], &dst, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
-    expect_no_event!(nodes[0]);
-
-    // If there are `quorum` senders but they all only sent hashes, nothing can accumulate.
-    // Only after one of the first three nodes, which are closest to `src.name()`, has sent the full
-    // message, it accumulates.
-    let message_id = MessageId::new();
-    for node in nodes
-        .iter_mut()
-        .skip(dg_size)
-        .take(min(quorum, section_size - dg_size))
-    {
-        send(node, &dst, message_id);
-    }
-    let _ = poll_all(&mut nodes, &mut []);
-    expect_no_event!(nodes[0]);
-    send(&mut nodes[0], &dst, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
-    expect_next_event!(nodes[0],
-        Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
-    send(&mut nodes[1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
 
@@ -96,33 +73,6 @@ fn messages_accumulate_with_quorum() {
             Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
     }
     send(&mut nodes[quorum], &dst_grp, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut *nodes {
-        expect_no_event!(node);
-    }
-
-    // If there are `quorum` senders but they all only sent hashes, nothing can accumulate.
-    // Only after `nodes[0]`, which is closest to `src.name()`, has sent the full message, it
-    // accumulates.
-    let message_id = MessageId::new();
-    for node in nodes
-        .iter_mut()
-        .skip(dg_size)
-        .take(min(quorum, section_size - dg_size))
-    {
-        send(node, &dst_grp, message_id);
-    }
-    let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut *nodes {
-        expect_no_event!(node);
-    }
-    send(&mut nodes[0], &dst_grp, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut *nodes {
-        expect_next_event!(node,
-            Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
-    }
-    send(&mut nodes[1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut *nodes {
         expect_no_event!(node);

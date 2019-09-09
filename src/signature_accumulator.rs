@@ -209,7 +209,11 @@ mod tests {
             });
         });
 
-        assert_eq!(count, expected_msgs_count);
+        // we expect every message to accumulate twice - as we will accumulate 8 signatures, and 3
+        // are enough to construct a fully signed message; once we get the first 3 signatures, the
+        // message will accumulate, get removed from the accumulator, and the remaining 5 sigs are
+        // enough for it to accumulate again
+        assert_eq!(count, expected_msgs_count * 2);
 
         FakeClock::advance_time(ACCUMULATION_TIMEOUT.as_secs() * 1000 + 1000);
 

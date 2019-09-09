@@ -11,8 +11,11 @@ use super::{ProofSet, SectionInfo};
 use crate::id::{FullId, PublicId};
 use std::{collections::BTreeMap, fmt};
 
-const THRESHOLD_NUMERATOR: usize = 1;
-const THRESHOLD_DENOMINATOR: usize = 3;
+/// The BLS scheme will require more than `THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR`
+/// shares in order to construct a full key or signature.
+pub const THRESHOLD_NUMERATOR: usize = 1;
+/// See `THRESHOLD_NUMERATOR`.
+pub const THRESHOLD_DENOMINATOR: usize = 3;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
