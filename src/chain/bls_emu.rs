@@ -8,11 +8,11 @@
 
 //! Types emulating the BLS functionality until proper BLS lands
 use super::{ProofSet, SectionInfo};
-use crate::{
-    id::{FullId, PublicId},
-    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
-};
+use crate::id::{FullId, PublicId};
 use std::{collections::BTreeMap, fmt};
+
+const THRESHOLD_NUMERATOR: usize = 1;
+const THRESHOLD_DENOMINATOR: usize = 3;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
@@ -63,7 +63,7 @@ impl PublicKeyShare {
 
 impl PublicKeySet {
     pub fn from_section_info(sec_info: SectionInfo) -> Self {
-        let threshold = sec_info.members().len() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR;
+        let threshold = sec_info.members().len() * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
         Self {
             threshold,
             sec_info,
@@ -161,7 +161,7 @@ mod test {
     #[test]
     fn test_signature() {
         let section_size = 10;
-        let min_sigs = section_size * QUORUM_NUMERATOR / QUORUM_DENOMINATOR + 1;
+        let min_sigs = section_size * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR + 1;
 
         let (pk_set, sk_shares) = gen_section(section_size);
 
