@@ -12,6 +12,7 @@ mod churn;
 mod drop;
 mod merge;
 mod requests;
+mod secure_message_delivery;
 mod utils;
 
 pub use self::utils::{

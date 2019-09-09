@@ -240,7 +240,11 @@ pub use crate::{
 };
 #[cfg(feature = "mock_base")]
 pub use crate::{
-    chain::{delivery_group_size, verify_chain_invariant},
+    chain::{
+        bls_key_set_from_section_info, delivery_group_size, section_info_for_test,
+        section_proof_chain_from_section_info, verify_chain_invariant,
+    },
+    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     peer_manager::test_consts,
 };
 #[cfg(not(feature = "mock_base"))]
@@ -250,7 +254,7 @@ use quic_p2p;
 #[cfg(not(feature = "mock_serialise"))]
 pub(crate) type NetworkBytes = bytes::Bytes;
 #[cfg(feature = "mock_serialise")]
-pub(crate) type NetworkBytes = std::rc::Rc<crate::messages::Message>;
+pub(crate) type NetworkBytes = std::rc::Rc<Message>;
 
 pub use self::quic_p2p::Config as NetworkConfig;
 pub(crate) use self::{
