@@ -71,6 +71,7 @@ impl SignatureAccumulator {
 }
 
 #[cfg(test)]
+#[cfg(feature = "mock_base")]
 mod tests {
     use super::*;
     use crate::{

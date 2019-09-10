@@ -219,7 +219,7 @@ impl SignedDirectMessage {
     }
 
     /// Content of the message.
-    #[cfg(any(test, feature = "mock_serialise"))]
+    #[cfg(any(all(test, feature = "mock_base"), feature = "mock_serialise"))]
     pub fn content(&self) -> &DirectMessage {
         &self.content
     }
