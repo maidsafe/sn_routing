@@ -30,6 +30,10 @@ pub use self::{
     section_info::SectionInfo,
     shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},
 };
+#[cfg(feature = "mock_base")]
+use crate::{error::RoutingError, BlsPublicKeySet, Prefix, PublicId, XorName};
+#[cfg(feature = "mock_base")]
+use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -49,4 +53,26 @@ impl Debug for GenesisPfxInfo {
             self.latest_info.version(),
         )
     }
+}
+
+#[cfg(feature = "mock_base")]
+/// Test helper to create arbitrary proof.
+pub fn section_proof_chain_from_section_info(section_info: &SectionInfo) -> SectionProofChain {
+    SectionProofChain::from_genesis(SectionKeyInfo::from_section_info(&section_info))
+}
+
+#[cfg(feature = "mock_base")]
+/// Test helper to create arbitrary BLS key set.
+pub fn bls_key_set_from_section_info(section_info: SectionInfo) -> BlsPublicKeySet {
+    BlsPublicKeySet::from_section_info(section_info)
+}
+
+#[cfg(feature = "mock_base")]
+/// Test helper to create arbitrary section info.
+pub fn section_info_for_test(
+    members: BTreeSet<PublicId>,
+    prefix: Prefix<XorName>,
+    version: u64,
+) -> Result<SectionInfo, RoutingError> {
+    SectionInfo::new_for_test(members, prefix, version)
 }

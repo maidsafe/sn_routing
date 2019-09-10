@@ -142,7 +142,7 @@ impl SectionInfo {
         NetworkEvent::SectionInfo(self)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mock_base"))]
     pub fn new_for_test(
         members: BTreeSet<PublicId>,
         prefix: Prefix<XorName>,

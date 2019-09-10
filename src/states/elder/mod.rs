@@ -10,6 +10,8 @@
 mod tests;
 
 use super::common::{Approved, Base, Bootstrapped, Relocated};
+#[cfg(feature = "mock_base")]
+use crate::messages::Message;
 use crate::{
     cache::Cache,
     chain::{
@@ -525,7 +527,16 @@ impl Elder {
                 );
                 return Err(RoutingError::UntrustedMessage);
             }
-            signed_msg.check_integrity()?;
+            if let Err(err) = signed_msg.check_integrity() {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} Invalid integrity ({:?}) SignedRoutingMessage: {:?}",
+                    self,
+                    err,
+                    signed_msg,
+                );
+                return Err(err);
+            }
 
             self.update_our_knowledge(&signed_msg);
 
@@ -1791,6 +1802,15 @@ impl Elder {
 
     pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
         self.peer_map.identify(pub_id, peer_addr)
+    }
+
+    pub fn send_msg_to_targets(
+        &mut self,
+        dst_targets: &[PublicId],
+        dg_size: usize,
+        message: Message,
+    ) {
+        self.send_message_to_targets(dst_targets, dg_size, message)
     }
 }
 
