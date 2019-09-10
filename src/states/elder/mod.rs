@@ -392,6 +392,7 @@ impl Elder {
                 | AccumulatingEvent::RemoveElder(_)
                 | AccumulatingEvent::Online(_)
                 | AccumulatingEvent::ExpectCandidate(_)
+                | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::PurgeCandidate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.

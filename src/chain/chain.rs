@@ -263,6 +263,9 @@ impl Chain {
                 // TODO: Check that the section is known and not already merged.
                 let _ = self.state.merging.insert(digest);
             }
+            AccumulatingEvent::ParsecPrune => {
+                unimplemented!();
+            }
             AccumulatingEvent::AddElder(_, _)
             | AccumulatingEvent::RemoveElder(_)
             | AccumulatingEvent::Online(_)
@@ -606,6 +609,7 @@ impl Chain {
             | AccumulatingEvent::ExpectCandidate(_)
             | AccumulatingEvent::PurgeCandidate(_)
             | AccumulatingEvent::TheirKeyInfo(_)
+            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }

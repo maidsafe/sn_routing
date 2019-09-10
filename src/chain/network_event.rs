@@ -110,6 +110,9 @@ pub enum AccumulatingEvent {
 
     // Voted for sending AckMessage (Require 100% consensus)
     SendAckMessage(SendAckMessagePayload),
+
+    // Prune the gossip graph.
+    ParsecPrune,
 }
 
 impl AccumulatingEvent {
@@ -174,6 +177,7 @@ impl Debug for AccumulatingEvent {
             AccumulatingEvent::SendAckMessage(ref payload) => {
                 write!(formatter, "SendAckMessage({:?})", payload)
             }
+            AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
         }
     }
 }
