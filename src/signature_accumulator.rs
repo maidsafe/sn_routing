@@ -20,7 +20,7 @@ pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    msgs: HashMap<Digest256, (SignedRoutingMessage, Instant)>,
+    msgs: HashMap<Digest256, (Option<SignedRoutingMessage>, Instant)>,
 }
 
 impl SignatureAccumulator {
@@ -35,9 +35,11 @@ impl SignatureAccumulator {
             }
         };
         if let Some(&mut (ref mut existing_msg, _)) = self.msgs.get_mut(&hash) {
-            existing_msg.add_signature_shares(msg);
+            if let Some(existing_msg) = existing_msg {
+                existing_msg.add_signature_shares(msg);
+            }
         } else {
-            let _ = self.msgs.insert(hash, (msg, Instant::now()));
+            let _ = self.msgs.insert(hash, (Some(msg), Instant::now()));
         }
         self.remove_if_complete(&hash)
     }
@@ -55,17 +57,15 @@ impl SignatureAccumulator {
     }
 
     fn remove_if_complete(&mut self, hash: &Digest256) -> Option<SignedRoutingMessage> {
-        match self.msgs.get_mut(hash) {
-            None => return None,
-            Some(&mut (ref mut msg, _)) => {
-                if !msg.check_fully_signed() {
-                    return None;
-                }
+        self.msgs.get_mut(hash).and_then(|&mut (ref mut msg, _)| {
+            if !msg.as_mut().map_or(false, |msg| msg.check_fully_signed()) {
+                None
+            } else {
+                msg.take().map(|mut msg| {
+                    msg.combine_signatures();
+                    msg
+                })
             }
-        }
-        self.msgs.remove(hash).map(|(mut msg, _)| {
-            msg.combine_signatures();
-            msg
         })
     }
 }
@@ -198,7 +198,9 @@ mod tests {
                 };
 
                 if let Some(mut returned_msg) = result {
-                    assert_eq!(sig_accumulator.msgs.len(), old_num_msgs - 1);
+                    // the message hash is not being removed upon accumulation, only when it
+                    // expires
+                    assert_eq!(sig_accumulator.msgs.len(), old_num_msgs);
                     assert_eq!(
                         msg_and_sigs.signed_msg.routing_message(),
                         returned_msg.routing_message()
@@ -209,11 +211,7 @@ mod tests {
             });
         });
 
-        // we expect every message to accumulate twice - as we will accumulate 8 signatures, and 3
-        // are enough to construct a fully signed message; once we get the first 3 signatures, the
-        // message will accumulate, get removed from the accumulator, and the remaining 5 sigs are
-        // enough for it to accumulate again
-        assert_eq!(count, expected_msgs_count * 2);
+        assert_eq!(count, expected_msgs_count);
 
         FakeClock::advance_time(ACCUMULATION_TIMEOUT.as_secs() * 1000 + 1000);
 
