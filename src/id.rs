@@ -7,15 +7,18 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::ed25519::{Keypair as EDKeypair, PublicKey as EDPublicKey, Signature as EDSignature};
-use threshold_crypto::{PublicKey as EncPublicKey, SecretKey as EncSecretKey,
-                        PublicKeyShare, SecretKeyShare, SignatureShare, Ciphertext};
 use crate::parsec;
 use crate::xor_name::XorName;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rand_os::OsRng;
-use std::fmt::{self, Debug, Display, Formatter};
-use std::ops::RangeInclusive;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
+use std::fmt::{self, Debug, Display, Formatter};
+use std::ops::RangeInclusive;
+use threshold_crypto::{
+    Ciphertext, PublicKey as EncPublicKey, PublicKeyShare, SecretKey as EncSecretKey,
+    SecretKeyShare, SignatureShare,
+};
 
 /// Network identity component containing name, and public and private keys.
 #[allow(unused)] // until bls_emu is refactored
@@ -36,7 +39,7 @@ impl FullId {
             public_id: PublicId::new(keypair.public.clone(), sk.public_key(), None),
             keypair: keypair,
             enc_secret_key: sk,
-            sec_key_share : None,
+            sec_key_share: None,
         }
     }
 
@@ -59,8 +62,10 @@ impl FullId {
     }
 
     /// Decrpt a message encrypted with our EncPublicKey
-    pub fn decrypt(&self, msg : &Ciphertext) -> Option<Vec<u8>> {
-        if !msg.verify() { return None; } // prevent chosen-ciphertext attacks.
+    pub fn decrypt(&self, msg: &Ciphertext) -> Option<Vec<u8>> {
+        if !msg.verify() {
+            return None;
+        } // prevent chosen-ciphertext attacks.
         self.enc_secret_key.decrypt(&msg)
     }
 
@@ -90,11 +95,12 @@ impl FullId {
         self.keypair.sign(message)
     }
     /// Sign with the BLS `SecretKeyShare`
-    pub fn threshold_sign(&self, message : &[u8]) -> Option<SignatureShare> {
-        if let Some(key) = self.sec_key_share.as_ref() { return Some(key.sign(message)); }
+    pub fn threshold_sign(&self, message: &[u8]) -> Option<SignatureShare> {
+        if let Some(key) = self.sec_key_share.as_ref() {
+            return Some(key.sign(message));
+        }
         None
     }
-
 }
 
 impl parsec::SecretId for FullId {
@@ -107,14 +113,23 @@ impl parsec::SecretId for FullId {
     fn sign_detached(&self, data: &[u8]) -> <Self::PublicId as parsec::PublicId>::Signature {
         self.ed_sign(data)
     }
-    // TODO FIME remove
     fn encrypt<M: AsRef<[u8]>>(&self, _to: &Self::PublicId, msg: M) -> Option<Vec<u8>> {
-        Some(msg.as_ref().to_vec())
+        if let Some(m) = &self.public_id.encrypt(msg.as_ref()) {
+            match serialise(&m) {
+                Ok(c) => return Some(c),
+                Err(_) => return None,
+            }
+        }
+        None
     }
 
     // TODO FIME remove
     fn decrypt(&self, _from: &Self::PublicId, ct: &[u8]) -> Option<Vec<u8>> {
-        Some(ct.as_ref().to_vec())
+        let c: Ciphertext = match deserialise(ct) {
+            Ok(x) => x,
+            Err(_) => return None,
+        };
+        self.decrypt(&c)
     }
 }
 
@@ -161,13 +176,14 @@ impl Serialize for PublicId {
 
 impl<'de> Deserialize<'de> for PublicId {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (public_key, enc_public_key, pub_key_share) : (EDPublicKey, EncPublicKey, Option<PublicKeyShare>) =
-
-            Deserialize::deserialize(deserialiser)?;
+        let (public_key, enc_public_key, pub_key_share): (
+            EDPublicKey,
+            EncPublicKey,
+            Option<PublicKeyShare>,
+        ) = Deserialize::deserialize(deserialiser)?;
         Ok(PublicId::new(public_key, enc_public_key, pub_key_share))
     }
 }
-
 
 impl PublicId {
     /// Return initial/relocated name.
@@ -188,8 +204,20 @@ impl PublicId {
     pub fn age(&self) -> u8 {
         0u8
     }
+    /// Encrypt to this Id
+    pub fn encrypt(&self, msg: &[u8]) -> Option<Vec<u8>> {
+        let m = self.enc_public_key.encrypt(&msg);
+        match serialise(&m) {
+            Ok(c) => return Some(c),
+            Err(_) => return None,
+        }
+    }
 
-    fn new(public_key: EDPublicKey, enc_public_key : EncPublicKey, pub_key_share: Option<PublicKeyShare>) -> PublicId {
+    fn new(
+        public_key: EDPublicKey,
+        enc_public_key: EncPublicKey,
+        pub_key_share: Option<PublicKeyShare>,
+    ) -> PublicId {
         PublicId {
             public_key: public_key,
             name: Self::name_from_key(&public_key),
@@ -206,14 +234,12 @@ impl PublicId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maidsafe_utilities::serialisation;
     use unwrap::unwrap;
 
     /// Confirm `PublicId` `Ord` trait favours name over sign keys.
     #[test]
     #[ignore] // Find out if this is required
     fn public_id_order() {
-
         let pub_id_1 = *FullId::new().public_id();
         let pub_id_2;
         loop {
@@ -229,10 +255,9 @@ mod tests {
 
     #[test]
     fn serialisation() {
-
         let full_id = FullId::new();
-        let serialised = unwrap!(serialisation::serialise(full_id.public_id()));
-        let parsed = unwrap!(serialisation::deserialise(&serialised));
+        let serialised = unwrap!(serialise(full_id.public_id()));
+        let parsed = unwrap!(deserialise(&serialised));
         assert_eq!(*full_id.public_id(), parsed);
     }
 }
