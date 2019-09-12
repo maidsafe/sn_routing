@@ -50,7 +50,7 @@ impl SecretKeyShare {
 
     #[allow(unused)]
     pub fn sign<M: AsRef<[u8]>>(&self, message: M) -> SignatureShare {
-        self.0.sign(message.as_ref())
+        self.0.ed_sign(message.as_ref())
     }
 }
 

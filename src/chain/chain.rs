@@ -1383,8 +1383,7 @@ mod tests {
         for member in members {
             let _ = full_ids.get(member).map(|full_id| {
                 let proof = unwrap!(Proof::new(
-                    *full_id.public_id(),
-                    full_id.secret_keypair_ref(),
+                    full_id,
                     payload,
                 ));
                 let _ = proofs.add_proof(proof);
@@ -1470,7 +1469,7 @@ mod tests {
         let p_10 = Prefix::from_str("10").unwrap();
         let (mut chain, mut full_ids) =
             gen_chain(MIN_SECTION_SIZE, vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
-        for _ in 0..1000 {
+        for _ in 0..100 {
             let (new_info, new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();
                 let info = rng.choose(&old_info).expect("neighbour infos");

@@ -241,7 +241,7 @@ mod implementation {
 
     pub fn sign(src_full_id: &FullId, content: &DirectMessage) -> Result<Signature, RoutingError> {
         let serialised = serialise(content)?;
-        let signature = src_full_id.sign(&serialised);
+        let signature = src_full_id.ed_sign(&serialised);
         Ok(signature)
     }
 

@@ -7,10 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::Result;
-use crate::id::PublicId;
+use crate::id::{FullId, PublicId};
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use crate::ed25519::{Keypair, Signature};
+use crate::ed25519::Signature;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
@@ -35,10 +35,10 @@ impl Proof {
 
     /// Create a new proof for `payload`
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<S: Serialize>(pub_id: PublicId, key: &Keypair, payload: &S) -> Result<Self> {
-        let signature = key.sign(&serialisation::serialise(&payload)?[..]);
+    pub fn new<S: Serialize>(id: &FullId, payload: &S) -> Result<Self> {
+        let signature = id.ed_sign(&serialisation::serialise(&payload)?[..]);
         Ok(Proof {
-            pub_id,
+            pub_id: *id.public_id(),
             sig: signature,
         })
     }
@@ -146,9 +146,8 @@ mod tests {
     fn confirm_proof() {
         unwrap!(safe_crypto::init());
         let full_id = FullId::new();
-        let pub_id = *full_id.public_id();
         let payload = NetworkEvent::OurMerge;
-        let proof = unwrap!(Proof::new(pub_id, full_id.secret_keypair_ref(), &payload));
+        let proof = unwrap!(Proof::new(&full_id, &payload));
         assert!(proof.validate_signature(&payload));
     }
 
@@ -160,7 +159,7 @@ mod tests {
         let pub_id = *full_id.public_id();
         let payload = NetworkEvent::OurMerge;
         let other_payload = NetworkEvent::Offline(pub_id);
-        let proof = unwrap!(Proof::new(pub_id, full_id.secret_keypair_ref(), &payload));
+        let proof = unwrap!(Proof::new(&full_id, &payload));
         assert!(!proof.validate_signature(&other_payload));
     }
 }
