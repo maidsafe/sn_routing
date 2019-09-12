@@ -20,6 +20,7 @@ pub(super) struct ChainAccumulator {
     // FIXME: Purge votes that are older than a given period.
     chain_accumulator: BTreeMap<NetworkEvent, ProofSet>,
     /// Events that were handled: Further incoming proofs for these can be ignored.
+    /// When an event is completed, it cannot be or inserted in chain_accumulator.
     completed_events: BTreeSet<NetworkEvent>,
 }
 
@@ -76,9 +77,7 @@ impl ChainAccumulator {
         RemainingEvents {
             cached_events: chain_acc
                 .into_iter()
-                .filter(|&(ref event, ref proofs)| {
-                    !completed_events.contains(event) && proofs.contains_id(our_id)
-                })
+                .filter(|&(_, ref proofs)| proofs.contains_id(our_id))
                 .map(|(event, _)| event)
                 .collect(),
             completed_events,
