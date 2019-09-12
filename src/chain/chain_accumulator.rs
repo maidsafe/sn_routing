@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{NetworkEvent, ProofSet};
+use super::{NetworkEvent, Proof, ProofSet};
 use crate::id::PublicId;
 use log::LogLevel;
 use std::collections::{BTreeMap, BTreeSet};
@@ -45,15 +45,21 @@ impl ChainAccumulator {
         Ok(())
     }
 
-    pub fn entry_or_default(&mut self, event: &NetworkEvent) -> Result<&mut ProofSet, InsertError> {
+    pub fn add_proof(&mut self, event: &NetworkEvent, proof: Proof) -> Result<(), InsertError> {
         if self.completed_events.contains(event) {
             return Err(InsertError::AlreadyComplete);
         }
 
-        Ok(self
+        if !self
             .chain_accumulator
             .entry(event.clone())
-            .or_insert_with(ProofSet::new))
+            .or_insert_with(ProofSet::new)
+            .add_proof(proof)
+        {
+            return Err(InsertError::ReplacedAlreadyInserted);
+        }
+
+        Ok(())
     }
 
     pub fn poll_event(&mut self, event: NetworkEvent) -> Option<(NetworkEvent, ProofSet)> {
@@ -121,6 +127,15 @@ mod test {
         )
     }
 
+    fn get_first_proof(proofs: &ProofSet) -> Proof {
+        let (pub_id, sig) = unwrap!(proofs.sigs.iter().next());
+
+        Proof {
+            pub_id: *pub_id,
+            sig: *sig,
+        }
+    }
+
     fn incomplete_events(acc: &ChainAccumulator) -> Vec<(NetworkEvent, ProofSet)> {
         acc.incomplete_events()
             .map(|(e, p)| (e.clone(), p.clone()))
@@ -183,40 +198,39 @@ mod test {
     }
 
     #[test]
-    fn entry_or_default() {
+    fn add_proof() {
         let (event, proofs) = test_event_and_proof_set();
+        let proof = get_first_proof(&proofs);
 
         let mut acc = ChainAccumulator::default();
-        let result = acc.entry_or_default(&event).map(|p| {
-            *p = proofs.clone();
-        });
+        let result = acc.add_proof(&event, proof);
 
         assert_eq!(result, Ok(()));
         assert_eq!(incomplete_events(&acc), vec![(event, proofs)]);
     }
 
     #[test]
-    fn re_entry_or_default() {
+    fn re_add_proof() {
         let (event, proofs) = test_event_and_proof_set();
+        let proof = get_first_proof(&proofs);
         let mut acc = ChainAccumulator::default();
-        let _ = acc.entry_or_default(&event).map(|p| {
-            *p = proofs.clone();
-        });
+        let _ = acc.add_proof(&event, proof);
 
-        let result = acc.entry_or_default(&event).map(|p| p.clone());
+        let result = acc.add_proof(&event, proof);
 
-        assert_eq!(result, Ok(proofs.clone()));
+        assert_eq!(result, Err(InsertError::ReplacedAlreadyInserted));
         assert_eq!(incomplete_events(&acc), vec![(event, proofs)]);
     }
 
     #[test]
-    fn re_entry_or_default_after_poll() {
-        let (event, _proofs) = test_event_and_proof_set();
+    fn re_add_proof_after_poll() {
+        let (event, proofs) = test_event_and_proof_set();
+        let proof = get_first_proof(&proofs);
         let mut acc = ChainAccumulator::default();
-        let _ = acc.entry_or_default(&event);
+        let _ = acc.add_proof(&event, proof);
         let _ = acc.poll_event(event.clone());
 
-        let result = acc.entry_or_default(&event).map(|p| p.clone());
+        let result = acc.add_proof(&event, proof);
 
         assert_eq!(result, Err(InsertError::AlreadyComplete));
         assert_eq!(incomplete_events(&acc), vec![]);

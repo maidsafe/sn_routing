@@ -184,15 +184,11 @@ impl Chain {
             return Ok(());
         }
 
-        match self
-            .chain_accumulator
-            .entry_or_default(event)
-            .map(|proofset| proofset.add_proof(proof))
-        {
-            Err(InsertError::AlreadyComplete) | Err(InsertError::ReplacedAlreadyInserted) => {
+        match self.chain_accumulator.add_proof(event, proof) {
+            Err(InsertError::AlreadyComplete) => {
                 // Ignore further votes for completed events.
             }
-            Ok(false) => {
+            Err(InsertError::ReplacedAlreadyInserted) => {
                 // TODO: If detecting duplicate vote from peer, penalise.
                 log_or_panic!(
                     LogLevel::Warn,
@@ -202,7 +198,7 @@ impl Chain {
                     self.chain_accumulator.incomplete_events().collect_vec()
                 );
             }
-            Ok(true) => {
+            Ok(()) => {
                 // Proof added.
             }
         }
