@@ -20,7 +20,7 @@ use maidsafe_utilities::serialisation;
 use parsec as inner;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
-    fmt,
+    fmt, mem,
 };
 
 #[cfg(feature = "mock_parsec")]
@@ -34,6 +34,9 @@ pub type Block = inner::Block<chain::NetworkEvent, id::PublicId>;
 pub type Parsec = inner::Parsec<chain::NetworkEvent, FullId>;
 pub type Request = inner::Request<chain::NetworkEvent, id::PublicId>;
 pub type Response = inner::Response<chain::NetworkEvent, id::PublicId>;
+
+// The maximum number of parsec instances to store.
+const MAX_PARSECS: usize = 10;
 
 // Limit in production
 #[cfg(all(not(feature = "mock_parsec"), not(feature = "mock_base")))]
@@ -90,14 +93,8 @@ impl ParsecMap {
     }
 
     pub fn init(&mut self, full_id: FullId, gen_pfx_info: &GenesisPfxInfo, log_ident: &LogIdent) {
-        if let Entry::Vacant(entry) = self.map.entry(*gen_pfx_info.first_info.version()) {
-            let _ = entry.insert(create(full_id, gen_pfx_info));
-            self.size_counter = ParsecSizeCounter::default();
-            info!(
-                "{}: Init new Parsec, genesis = {:?}",
-                log_ident, gen_pfx_info
-            );
-        }
+        self.add_new(full_id, gen_pfx_info, log_ident);
+        self.remove_old();
     }
 
     pub fn handle_request(
@@ -245,6 +242,27 @@ impl ParsecMap {
                 PARSEC_SIZE_LIMIT,
             );
         }
+    }
+
+    fn add_new(&mut self, full_id: FullId, gen_pfx_info: &GenesisPfxInfo, log_ident: &LogIdent) {
+        if let Entry::Vacant(entry) = self.map.entry(*gen_pfx_info.first_info.version()) {
+            let _ = entry.insert(create(full_id, gen_pfx_info));
+            self.size_counter = ParsecSizeCounter::default();
+            info!(
+                "{}: Init new Parsec, genesis = {:?}",
+                log_ident, gen_pfx_info
+            );
+        }
+    }
+
+    fn remove_old(&mut self) {
+        let parsec_map = mem::replace(&mut self.map, Default::default());
+        self.map = parsec_map
+            .into_iter()
+            .rev()
+            .take(MAX_PARSECS)
+            .rev()
+            .collect();
     }
 }
 
