@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{observation::Observation, NetworkEvent, Proof, PublicId};
+use super::{observation::Observation, DkgResult, DkgResultWrapper, NetworkEvent, Proof, PublicId};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
@@ -26,6 +26,17 @@ impl<T: NetworkEvent, P: PublicId> Block<T, P> {
         Self {
             payload: observation,
             proofs: proofs.into_iter().cloned().collect(),
+        }
+    }
+
+    /// Create a `Block` with no signatures for a single DkgResult
+    pub(super) fn new_dkg(participants: BTreeSet<P>, dkg_result: DkgResult) -> Self {
+        Self {
+            payload: Rc::new(Observation::DkgResult {
+                participants,
+                dkg_result: DkgResultWrapper(dkg_result),
+            }),
+            proofs: BTreeSet::new(),
         }
     }
 

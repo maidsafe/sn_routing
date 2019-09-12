@@ -28,11 +28,14 @@ parsec = { git = "https://github.com/maidsafe/parsec", rev = "226e9e25" }
 quic-p2p = "~0.2.0"
 quick-error = "~1.2.0"
 rand = "~0.3.16"
+# rand in the version used by threshold_crypto, for compatibility
+rand_threshold_crypto = { package = "rand", version = "~0.6.5" }
 resource_proof = "~0.6.0"
 safe_crypto = "~0.7.0"
 serde = "~1.0.25"
 serde_derive = "~1.0.25"
 term = "~0.4.6"
+threshold_crypto = "~0.3.2"
 unwrap = "~1.2.1"
 
 [dev-dependencies]

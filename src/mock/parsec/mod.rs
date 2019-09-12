@@ -9,6 +9,7 @@
 //! Mock implementation of Parsec
 
 mod block;
+mod key_gen;
 mod observation;
 mod state;
 #[cfg(test)]
@@ -18,10 +19,11 @@ pub use self::{
     block::Block,
     observation::{ConsensusMode, Observation},
 };
-pub use parsec::{NetworkEvent, Proof, PublicId, SecretId};
+pub use parsec::{DkgResult, DkgResultWrapper, NetworkEvent, Proof, PublicId, SecretId};
 
 use self::{observation::ObservationHolder, state::SectionState};
 use crate::sha3::Digest256;
+use rand::Rng;
 use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
@@ -41,6 +43,7 @@ pub struct Parsec<T: NetworkEvent, S: SecretId> {
     first_unconsensused: usize,
     first_unpolled: usize,
     observations: BTreeMap<ObservationHolder<T, S::PublicId>, ObservationInfo>,
+    rng: Box<dyn Rng>,
 }
 
 impl<T, S> Parsec<T, S>
@@ -55,7 +58,7 @@ where
         genesis_group: &BTreeSet<S::PublicId>,
         genesis_related_info: Vec<u8>,
         consensus_mode: ConsensusMode,
-        _secure_rng: Box<dyn rand::Rng>,
+        secure_rng: Box<dyn Rng>,
     ) -> Self {
         let mut parsec = Self {
             section_hash,
@@ -65,6 +68,7 @@ where
             first_unconsensused: 0,
             first_unpolled: 0,
             observations: BTreeMap::new(),
+            rng: secure_rng,
         };
 
         parsec
@@ -82,7 +86,7 @@ where
         genesis_group: &BTreeSet<S::PublicId>,
         _section: &BTreeSet<S::PublicId>,
         consensus_mode: ConsensusMode,
-        _secure_rng: Box<dyn rand::Rng>,
+        secure_rng: Box<dyn Rng>,
     ) -> Self {
         Self {
             section_hash,
@@ -92,6 +96,7 @@ where
             first_unconsensused: 0,
             first_unpolled: 0,
             observations: BTreeMap::new(),
+            rng: secure_rng,
         }
     }
 
@@ -153,14 +158,30 @@ where
 
     pub fn poll(&mut self) -> Option<Block<T, S::PublicId>> {
         state::with(self.section_hash, |state| {
-            if let Some((block, holder)) = state.get_block(self.first_unpolled) {
+            if let Some((block, holder)) = state
+                .get_block(self.first_unpolled)
+                .map(|(block, holder)| (block.clone(), holder.clone()))
+            {
                 self.first_unpolled += 1;
                 self.observations
                     .entry(holder.clone())
                     .or_insert_with(ObservationInfo::new)
                     .state = ConsensusState::Polled;
 
-                Some(block.clone())
+                // Simulate DKG: if the consensused payload is `StartDkg`, transform it into
+                // `DkgResult` using trusted dealer.
+                match block.payload() {
+                    Observation::StartDkg(participants) => {
+                        let dkg_result = state.get_or_generate_keys(
+                            &mut self.rng,
+                            self.our_id.public_id(),
+                            participants.clone(),
+                        );
+
+                        Some(Block::new_dkg(participants.clone(), dkg_result))
+                    }
+                    _ => Some(block),
+                }
             } else {
                 None
             }
