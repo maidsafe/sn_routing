@@ -36,32 +36,36 @@ pub type Parsec = inner::Parsec<chain::NetworkEvent, FullId>;
 pub type Request = inner::Request<chain::NetworkEvent, id::PublicId>;
 pub type Response = inner::Response<chain::NetworkEvent, id::PublicId>;
 
-// TODO: we'll set PARSEC_SIZE_LIMIT to 1 GB once it's used outside of mock_parsec
-//#[cfg(not(feature = "mock_parsec"))]
-//const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
+#[cfg(not(feature = "mock_parsec"))]
+const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
 // Mock parsec request/responses are much smaller, so we need a lower limit.
-// TODO: once it's used outside of tests, this should be changed to cfg(feature = "mock_parsec")
-#[cfg(all(test, feature = "mock_parsec"))]
+#[cfg(feature = "mock_parsec")]
 const PARSEC_SIZE_LIMIT: u64 = 100;
 
 // Keep track of size in case we need to prune.
 #[derive(Default, Debug, PartialEq, Eq)]
-struct ParsecSizeCounter(u64);
+struct ParsecSizeCounter {
+    size_counter: u64,
+    pruning_voted_for: bool,
+}
 
 impl ParsecSizeCounter {
     fn increase_size(&mut self, size: u64) {
-        self.0 += size;
+        self.size_counter += size;
     }
 
-    #[cfg(all(test, feature = "mock_parsec"))]
     fn needs_pruning(&self) -> bool {
-        self.0 > PARSEC_SIZE_LIMIT
+        self.size_counter > PARSEC_SIZE_LIMIT && !self.pruning_voted_for
+    }
+
+    fn set_pruning_voted_for(&mut self) {
+        self.pruning_voted_for = true;
     }
 }
 
 impl fmt::Display for ParsecSizeCounter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "size: {}", self.0)
+        write!(f, "size: {}", self.size_counter)
     }
 }
 
@@ -220,6 +224,14 @@ impl ParsecMap {
         parsec.has_unpolled_observations()
     }
 
+    pub fn needs_pruning(&self) -> bool {
+        self.size_counter.needs_pruning()
+    }
+
+    pub fn set_pruning_voted_for(&mut self) {
+        self.size_counter.set_pruning_voted_for();
+    }
+
     fn count_size(&mut self, size: u64, msg_version: u64, log_ident: &LogIdent) {
         if self.last_version() == msg_version && self.map.contains_key(&msg_version) {
             self.size_counter.increase_size(size);
@@ -229,11 +241,6 @@ impl ParsecMap {
                 self.size_counter,
             );
         }
-    }
-
-    #[cfg(all(test, feature = "mock_parsec"))]
-    fn needs_pruning(&self) -> bool {
-        self.size_counter.needs_pruning()
     }
 }
 
@@ -413,7 +420,7 @@ mod tests {
         msg: T,
         parsec_age: u64,
         prune_needed: bool,
-    ) {
+    ) -> ParsecMap {
         let full_id = FullId::new();
         let pub_id = full_id.public_id();
         let number_of_parsecs = 2;
@@ -429,32 +436,51 @@ mod tests {
         msg.handle(&mut parsec_map, msg_version, pub_id, &log_ident);
         assert_eq!(parsec_map.needs_pruning(), prune_needed);
 
-        // Add another parsec should always reset `needs_pruning()`
-        add_to_parsec_map(&mut parsec_map, number_of_parsecs + 1);
-        assert_eq!(parsec_map.needs_pruning(), false);
+        parsec_map
     }
 
     #[test]
     fn prune_not_required_for_resp_to_old_parsec() {
         let parsec_age = 1;
-        check_prune_needed_after_msg(Response::new(), parsec_age, false);
+        let _ = check_prune_needed_after_msg(Response::new(), parsec_age, false);
     }
 
     #[test]
     fn prune_required_for_resp_to_latest_parsec() {
         let parsec_age = 0;
-        check_prune_needed_after_msg(Response::new(), parsec_age, true);
+        let _ = check_prune_needed_after_msg(Response::new(), parsec_age, true);
     }
 
     #[test]
     fn prune_not_required_for_req_to_old_parsec() {
         let parsec_age = 1;
-        check_prune_needed_after_msg(Request::new(), parsec_age, false);
+        let _ = check_prune_needed_after_msg(Request::new(), parsec_age, false);
     }
 
     #[test]
     fn prune_required_for_req_to_latest_parsec() {
         let parsec_age = 0;
-        check_prune_needed_after_msg(Request::new(), parsec_age, true);
+        let _ = check_prune_needed_after_msg(Request::new(), parsec_age, true);
+    }
+
+    #[test]
+    fn prune_required_is_reset_on_adding_parsec() {
+        let parsec_age = 0;
+        let mut parsec_map = check_prune_needed_after_msg(Response::new(), parsec_age, true);
+
+        assert_eq!(parsec_map.needs_pruning(), true);
+        let number_of_parsecs = 2;
+        add_to_parsec_map(&mut parsec_map, number_of_parsecs + 1);
+        assert_eq!(parsec_map.needs_pruning(), false);
+    }
+
+    #[test]
+    fn prune_required_is_reset_on_voting() {
+        let parsec_age = 0;
+        let mut parsec_map = check_prune_needed_after_msg(Response::new(), parsec_age, true);
+
+        assert_eq!(parsec_map.needs_pruning(), true);
+        parsec_map.set_pruning_voted_for();
+        assert_eq!(parsec_map.needs_pruning(), false);
     }
 }

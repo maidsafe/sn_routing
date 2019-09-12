@@ -264,7 +264,10 @@ impl Chain {
                 let _ = self.state.merging.insert(digest);
             }
             AccumulatingEvent::ParsecPrune => {
-                unimplemented!();
+                info!(
+                    "{} Handling accumulated {:?} not yet implemented, ignoring.",
+                    self, event
+                );
             }
             AccumulatingEvent::AddElder(_, _)
             | AccumulatingEvent::RemoveElder(_)

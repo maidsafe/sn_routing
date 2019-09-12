@@ -256,7 +256,10 @@ pub trait Approved: Relocated {
                     self.handle_purge_candidate_event(old_public_id)?
                 }
                 AccumulatingEvent::ParsecPrune => {
-                    unimplemented!();
+                    info!(
+                        "{} Handling chain {:?} not yet implemented, ignoring.",
+                        self, event
+                    );
                 }
             }
 
