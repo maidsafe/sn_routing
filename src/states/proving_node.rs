@@ -230,7 +230,7 @@ impl ProvingNode {
             };
             let signature_using_old = self
                 .old_full_id
-                .sign(&both_ids_serialised);
+                .ed_sign(&both_ids_serialised);
 
             let proxy_node_name = if let Some(name) = self.peer_mgr.get_proxy_name() {
                 *name
