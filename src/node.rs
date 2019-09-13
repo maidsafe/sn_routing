@@ -70,7 +70,6 @@ impl NodeBuilder {
         // If we're not in a test environment where we might want to manually seed the crypto RNG
         // then seed randomly.
         #[cfg(not(feature = "mock_base"))]
-        safe_crypto::init()?;
 
         let mut ev_buffer = EventBuf::new();
 
