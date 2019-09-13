@@ -11,6 +11,7 @@ pub(crate) mod bls_emu;
 mod candidate;
 #[allow(clippy::module_inception)]
 mod chain;
+mod chain_accumulator;
 mod network_event;
 mod proof;
 mod section_info;

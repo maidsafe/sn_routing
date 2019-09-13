@@ -8,6 +8,7 @@
 
 use super::{
     candidate::Candidate,
+    chain_accumulator::{ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
     GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
 };
@@ -23,10 +24,13 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::{self, Debug, Display, Formatter};
-use std::iter;
-use std::mem;
+#[cfg(feature = "mock_base")]
+use std::collections::BTreeMap;
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Debug, Display, Formatter},
+    iter, mem,
+};
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -49,13 +53,8 @@ pub struct Chain {
     /// If we're a member of the section yet. This will be toggled once we get a `SectionInfo`
     /// block accumulated which bears `our_id` as one of the members
     is_member: bool,
-    /// A map containing network events that have not been handled yet, together with their proofs
-    /// that have been collected so far. We are still waiting for more proofs, or to reach a state
-    /// where we can handle the event.
-    // FIXME: Purge votes that are older than a given period.
-    chain_accumulator: BTreeMap<NetworkEvent, ProofSet>,
-    /// Events that were handled: Further incoming proofs for these can be ignored.
-    completed_events: BTreeSet<NetworkEvent>,
+    /// Accumulate NetworkEvent that do not have yet enough vote/proofs.
+    chain_accumulator: ChainAccumulator,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
     event_cache: BTreeSet<NetworkEvent>,
     /// Current consensused candidate.
@@ -94,7 +93,6 @@ impl Chain {
             state: SharedState::new(gen_info.first_info),
             is_member,
             chain_accumulator: Default::default(),
-            completed_events: Default::default(),
             event_cache: Default::default(),
             candidate: Candidate::None,
         }
@@ -147,25 +145,25 @@ impl Chain {
             return Ok(());
         }
 
-        if self.completed_events.contains(event) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} Duplicate membership change event.",
-                self
-            );
-            return Ok(());
-        }
-
-        if self
+        match self
             .chain_accumulator
-            .insert(event.clone(), proof_set)
-            .is_some()
+            .insert_with_proof_set(event, proof_set)
         {
-            log_or_panic!(
-                LogLevel::Warn,
-                "{} Ejected existing ProofSet while handling membership mutation.",
-                self
-            );
+            Err(InsertError::AlreadyComplete) => {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} Duplicate membership change event.",
+                    self
+                );
+            }
+            Err(InsertError::ReplacedAlreadyInserted) => {
+                log_or_panic!(
+                    LogLevel::Warn,
+                    "{} Ejected existing ProofSet while handling membership mutation.",
+                    self
+                );
+            }
+            Ok(()) => (),
         }
 
         Ok(())
@@ -186,24 +184,23 @@ impl Chain {
             return Ok(());
         }
 
-        if self.completed_events.contains(event) {
-            return Ok(());
-        }
-
-        if !self
-            .chain_accumulator
-            .entry(event.clone())
-            .or_insert_with(ProofSet::new)
-            .add_proof(proof)
-        {
-            // TODO: If detecting duplicate vote from peer, penalise.
-            log_or_panic!(
-                LogLevel::Warn,
-                "{} Duplicate proof for {:?} in chain accumulator. {:?}",
-                self,
-                event,
-                self.chain_accumulator
-            );
+        match self.chain_accumulator.add_proof(event, proof) {
+            Err(InsertError::AlreadyComplete) => {
+                // Ignore further votes for completed events.
+            }
+            Err(InsertError::ReplacedAlreadyInserted) => {
+                // TODO: If detecting duplicate vote from peer, penalise.
+                log_or_panic!(
+                    LogLevel::Warn,
+                    "{} Duplicate proof for {:?} in chain accumulator. {:?}",
+                    self,
+                    event,
+                    self.chain_accumulator.incomplete_events().collect_vec()
+                );
+            }
+            Ok(()) => {
+                // Proof added.
+            }
         }
         Ok(())
     }
@@ -213,19 +210,21 @@ impl Chain {
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
     pub fn poll(&mut self) -> Result<Option<NetworkEvent>, RoutingError> {
-        let opt_event_proofs = self
-            .chain_accumulator
-            .iter()
-            .find(|&(event, proofs)| self.is_valid_transition(event, proofs))
-            .map(|(event, proofs)| (event.clone(), proofs.clone()));
-        let (event, proofs) = match opt_event_proofs {
-            None => return Ok(None),
-            Some((event, proofs)) => (event, proofs),
+        let (event, proofs) = {
+            let opt_event = self
+                .chain_accumulator
+                .incomplete_events()
+                .find(|(event, proofs)| self.is_valid_transition(event, proofs))
+                .map(|(event, _)| event.clone());
+
+            let opt_event_proofs =
+                opt_event.and_then(|event| self.chain_accumulator.poll_event(event));
+
+            match opt_event_proofs {
+                None => return Ok(None),
+                Some((event, proofs)) => (event, proofs),
+            }
         };
-        if !self.completed_events.insert(event.clone()) {
-            log_or_panic!(LogLevel::Warn, "Duplicate insert in completed events.");
-        }
-        let _ = self.chain_accumulator.remove(&event);
 
         match event {
             NetworkEvent::SectionInfo(ref sec_info) => {
@@ -384,8 +383,7 @@ impl Chain {
         self.check_and_clean_neighbour_infos(None);
         self.state.change = PrefixChange::None;
 
-        let completed_events = mem::replace(&mut self.completed_events, Default::default());
-        let chain_acc = mem::replace(&mut self.chain_accumulator, Default::default());
+        let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
         let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
@@ -404,16 +402,13 @@ impl Chain {
                 first_state_serialized: self.get_genesis_related_info()?,
                 latest_info: Default::default(),
             },
-            cached_events: chain_acc
+            cached_events: remaining
+                .cached_events
                 .into_iter()
-                .filter(|&(ref event, ref proofs)| {
-                    !completed_events.contains(event) && proofs.contains_id(&self.our_id)
-                })
-                .map(|(event, _)| event)
                 .chain(event_cache)
                 .chain(merges)
                 .collect(),
-            completed_events,
+            completed_events: remaining.completed_events,
         })
     }
 
@@ -874,7 +869,7 @@ impl Chain {
     /// Returns all network events that we have signed but haven't accumulated yet.
     fn signed_events(&self) -> impl Iterator<Item = &NetworkEvent> {
         self.chain_accumulator
-            .iter()
+            .incomplete_events()
             .filter(move |(_, proofs)| proofs.contains_id(&self.our_id))
             .map(|(event, _)| event)
     }
