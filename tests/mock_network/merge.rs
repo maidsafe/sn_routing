@@ -19,7 +19,7 @@ fn merge(prefix_lengths: Vec<usize>) {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
+    let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 
     // Drop nodes from a section with the shortest prefix until we get a merge event for the empty
@@ -99,7 +99,7 @@ fn concurrent_merge() {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     rng.shuffle(&mut nodes);
 
@@ -165,7 +165,7 @@ fn merge_drop_multiple_nodes() {
     );
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     rng.shuffle(&mut nodes);
 

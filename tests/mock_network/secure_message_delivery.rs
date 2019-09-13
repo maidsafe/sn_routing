@@ -46,7 +46,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     //
     let min_section_size = 3;
     let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let their_node_pos = 0;
     let their_prefix = get_prefix(&nodes[their_node_pos]);

@@ -12,8 +12,8 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Cache, Chain, Config, DevConfig, Event, EventStream, NetworkConfig, Node, NullCache, Prefix,
-    PublicId, Request, Response, XorName, XorTargetInterval, Xorable,
+    Chain, Config, DevConfig, Event, EventStream, NetworkConfig, Node, Prefix, PublicId, XorName,
+    XorTargetInterval, Xorable,
 };
 use std::{
     cmp,
@@ -113,7 +113,6 @@ impl TestNode {
             first_node: false,
             network_config: None,
             endpoint: None,
-            cache: Box::new(NullCache),
         }
     }
 
@@ -122,16 +121,12 @@ impl TestNode {
         first_node: bool,
         network_config: Option<NetworkConfig>,
         endpoint: Option<SocketAddr>,
-        cache: Box<dyn Cache>,
     ) -> Self {
         let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
         network.set_next_addr(endpoint);
 
         let config = create_config(network);
-        let builder = Node::builder()
-            .cache(cache)
-            .first(first_node)
-            .config(config);
+        let builder = Node::builder().first(first_node).config(config);
         let builder = if let Some(network_config) = network_config {
             builder.network_config(network_config)
         } else {
@@ -201,7 +196,6 @@ pub struct TestNodeBuilder<'a> {
     first_node: bool,
     network_config: Option<NetworkConfig>,
     endpoint: Option<SocketAddr>,
-    cache: Box<dyn Cache>,
 }
 
 impl<'a> TestNodeBuilder<'a> {
@@ -220,44 +214,14 @@ impl<'a> TestNodeBuilder<'a> {
         self
     }
 
-    pub fn cache(mut self, use_cache: bool) -> Self {
-        self.cache = if use_cache {
-            Box::new(TestCache::new())
-        } else {
-            Box::new(NullCache)
-        };
-
-        self
-    }
-
     pub fn create(self) -> TestNode {
         TestNode::new(
             self.network,
             self.first_node,
             self.network_config,
             self.endpoint,
-            self.cache,
         )
     }
-}
-
-// -----  TestCache  -----
-
-#[derive(Default)]
-pub struct TestCache;
-
-impl TestCache {
-    pub fn new() -> Self {
-        TestCache
-    }
-}
-
-impl Cache for TestCache {
-    fn get(&self, _request: &Request) -> Option<Response> {
-        None
-    }
-
-    fn put(&self, _response: Response) {}
 }
 
 // -----  poll_all, create_connected_...  -----
@@ -365,10 +329,6 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
 }
 
 pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
-    create_connected_nodes_with_cache(network, size, false)
-}
-
-pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cache: bool) -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -377,7 +337,6 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
         TestNode::builder(network)
             .first()
             .endpoint(endpoint)
-            .cache(use_cache)
             .create(),
     );
     let _ = nodes[0].poll();
@@ -386,12 +345,7 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
         let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
-        nodes.push(
-            TestNode::builder(network)
-                .network_config(config)
-                .cache(use_cache)
-                .create(),
-        );
+        nodes.push(TestNode::builder(network).network_config(config).create());
 
         poll_and_resend(&mut nodes);
         verify_invariant_for_all_nodes(&network, &mut nodes);
@@ -425,17 +379,13 @@ pub fn create_connected_nodes_with_cache(network: &Network, size: usize, use_cac
     Nodes(nodes)
 }
 
-pub fn create_connected_nodes_until_split(
-    network: &Network,
-    prefix_lengths: Vec<usize>,
-    use_cache: bool,
-) -> Nodes {
+pub fn create_connected_nodes_until_split(network: &Network, prefix_lengths: Vec<usize>) -> Nodes {
     // Start first node.
-    let mut nodes = vec![TestNode::builder(network).first().cache(use_cache).create()];
+    let mut nodes = vec![TestNode::builder(network).first().create()];
     let _ = nodes[0].poll();
     expect_next_event!(nodes[0], Event::Connected);
 
-    add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, use_cache);
+    add_connected_nodes_until_split(network, &mut nodes, prefix_lengths);
     Nodes(nodes)
 }
 
@@ -453,7 +403,6 @@ pub fn add_connected_nodes_until_split(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     mut prefix_lengths: Vec<usize>,
-    use_cache: bool,
 ) {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
@@ -470,7 +419,7 @@ pub fn add_connected_nodes_until_split(
         .iter()
         .map(|prefix| (*prefix, min_split_size))
         .collect_vec();
-    add_nodes_to_prefixes(network, nodes, &prefixes_new_count, use_cache);
+    add_nodes_to_prefixes(network, nodes, &prefixes_new_count);
 
     // If recursive splits are added to Routing (https://maidsafe.atlassian.net/browse/MAID-1861)
     // this next step can be removed.
@@ -502,7 +451,7 @@ pub fn add_connected_nodes_until_split(
             }
         }
         if let Some(prefix_to_split) = found_prefix {
-            add_node_to_section(network, nodes, &prefix_to_split, &mut rng, use_cache);
+            add_node_to_section(network, nodes, &prefix_to_split, &mut rng);
         } else {
             break;
         }
@@ -540,12 +489,11 @@ pub fn add_connected_nodes_until_one_away_from_split(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_to_nearly_split: &[Prefix<XorName>],
-    use_cache: bool,
 ) -> Vec<Prefix<XorName>> {
     let (prefixes_and_counts, prefixes_to_add_to_split) =
         prefixes_and_count_to_split_with_only_one_extra_node(nodes, prefixes_to_nearly_split);
 
-    add_connected_nodes_until_sized(network, nodes, &prefixes_and_counts, use_cache);
+    add_connected_nodes_until_sized(network, nodes, &prefixes_and_counts);
     prefixes_to_add_to_split
 }
 
@@ -554,11 +502,10 @@ fn add_connected_nodes_until_sized(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
-    use_cache: bool,
 ) {
     clear_all_event_queues(nodes, |_| {});
 
-    add_nodes_to_prefixes(network, nodes, prefixes_new_count, use_cache);
+    add_nodes_to_prefixes(network, nodes, prefixes_new_count);
 
     clear_all_event_queues(nodes, |_| {});
     clear_relocation_overrides(nodes);
@@ -574,7 +521,6 @@ fn add_nodes_to_prefixes(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
-    use_cache: bool,
 ) {
     let mut rng = network.new_rng();
 
@@ -595,7 +541,7 @@ fn add_nodes_to_prefixes(
         );
         let to_add_count = target_count - num_in_section;
         for _ in 0..to_add_count {
-            add_node_to_section(network, nodes, prefix, &mut rng, use_cache);
+            add_node_to_section(network, nodes, prefix, &mut rng);
         }
     }
 }
@@ -751,7 +697,6 @@ fn add_node_to_section<T: Rng>(
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
     rng: &mut T,
-    use_cache: bool,
 ) {
     let relocation_name = prefix.substituted_in(rng.gen());
     nodes.iter_mut().for_each(|node| {
@@ -761,12 +706,7 @@ fn add_node_to_section<T: Rng>(
     });
 
     let config = NetworkConfig::node().with_hard_coded_contacts(iter::once(nodes[0].endpoint()));
-    nodes.push(
-        TestNode::builder(network)
-            .network_config(config)
-            .cache(use_cache)
-            .create(),
-    );
+    nodes.push(TestNode::builder(network).network_config(config).create());
     poll_and_resend(nodes);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
     assert!(prefix.matches(&nodes[nodes.len() - 1].name()));

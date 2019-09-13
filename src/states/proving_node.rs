@@ -14,7 +14,6 @@ use super::{
 };
 use crate::{
     action::Action,
-    cache::Cache,
     chain::GenesisPfxInfo,
     config_handler,
     error::RoutingError,
@@ -47,7 +46,6 @@ const RESEND_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct ProvingNodeDetails {
     pub action_sender: mpmc::Sender<Action>,
-    pub cache: Box<dyn Cache>,
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
@@ -59,7 +57,6 @@ pub struct ProvingNodeDetails {
 }
 
 pub struct ProvingNode {
-    cache: Box<dyn Cache>,
     network_service: NetworkService,
     /// Whether resource proof is disabled.
     disable_resource_proof: bool,
@@ -98,7 +95,6 @@ impl ProvingNode {
         );
 
         let mut node = Self {
-            cache: details.cache,
             network_service: details.network_service,
             event_backlog: Vec::new(),
             full_id: details.full_id,
@@ -160,7 +156,6 @@ impl ProvingNode {
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         let details = AdultDetails {
-            cache: self.cache,
             network_service: self.network_service,
             event_backlog: self.event_backlog,
             full_id: self.full_id,

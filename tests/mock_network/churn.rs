@@ -518,7 +518,7 @@ fn messages_during_churn() {
     let mut rng = network.new_rng();
     let prefixes = vec![2, 2, 2, 3, 3];
     let max_prefixes_len = prefixes.len() * 2;
-    let mut nodes = create_connected_nodes_until_split(&network, prefixes, false);
+    let mut nodes = create_connected_nodes_until_split(&network, prefixes);
 
     for i in 0..50 {
         warn!("Iteration {}. Prefixes: {:?}", i, current_sections(&nodes));

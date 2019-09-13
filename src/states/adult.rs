@@ -14,7 +14,6 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    cache::Cache,
     chain::{
         Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionInfo, SectionKeyInfo,
         SendAckMessagePayload,
@@ -41,7 +40,6 @@ use std::fmt::{self, Display, Formatter};
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct AdultDetails {
-    pub cache: Box<dyn Cache>,
     pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
@@ -55,7 +53,6 @@ pub struct AdultDetails {
 }
 
 pub struct Adult {
-    cache: Box<dyn Cache>,
     chain: Chain,
     network_service: NetworkService,
     event_backlog: Vec<Event>,
@@ -87,7 +84,6 @@ impl Adult {
         );
 
         let mut node = Self {
-            cache: details.cache,
             chain,
             network_service: details.network_service,
             event_backlog: details.event_backlog,
@@ -123,7 +119,6 @@ impl Adult {
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         let details = ElderDetails {
-            cache: self.cache,
             chain: self.chain,
             network_service: self.network_service,
             event_backlog: self.event_backlog,

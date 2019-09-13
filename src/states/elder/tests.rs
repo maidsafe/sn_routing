@@ -15,7 +15,6 @@
 
 use super::*;
 use crate::{
-    cache::NullCache,
     messages::DirectMessage,
     mock::Network,
     outbox::{EventBox, EventBuf},
@@ -471,10 +470,8 @@ fn new_elder_state(
     let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
     let peer_map = PeerMap::new();
     let peer_mgr = PeerManager::new(false);
-    let cache = Box::new(NullCache);
 
     let details = ElderDetails {
-        cache,
         chain,
         network_service,
         event_backlog: Vec::new(),

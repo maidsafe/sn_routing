@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod accumulate;
-mod cache;
 mod churn;
 mod drop;
 mod merge;
@@ -218,7 +217,7 @@ fn multiple_joining_nodes() {
 #[test]
 fn multi_split() {
     let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
@@ -313,7 +312,7 @@ fn simultaneous_joining_nodes(
 fn simultaneous_joining_nodes_two_sections() {
     // Create a network with two sections:
     let network = Network::new(MIN_SECTION_SIZE, None);
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -340,7 +339,7 @@ fn simultaneous_joining_nodes_two_sections() {
 fn simultaneous_joining_nodes_two_sections_switch_section() {
     // Create a network with two sections:
     let network = Network::new(MIN_SECTION_SIZE, None);
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -371,7 +370,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
     // Create a network with three sections:
     let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     // The created sections
     let sections = current_sections(&nodes).into_iter().collect_vec();
@@ -384,7 +383,6 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
         &network,
         &mut nodes,
         &[small_prefix],
-        false
     )
     .first());
 
@@ -434,7 +432,7 @@ fn check_section_info_ack() {
     //
     // Act
     //
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], true);
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
     let node_with_sibling_knowledge: Vec<_> = nodes
         .iter()
         .filter(|node| {

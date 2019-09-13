@@ -12,7 +12,6 @@ use super::{
 };
 use crate::{
     action::Action,
-    cache::Cache,
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
@@ -41,7 +40,6 @@ const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURAT
 
 pub struct RelocatingNodeDetails {
     pub action_sender: mpmc::Sender<Action>,
-    pub cache: Box<dyn Cache>,
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
@@ -54,8 +52,6 @@ pub struct RelocatingNode {
     action_sender: mpmc::Sender<Action>,
     network_service: NetworkService,
     full_id: FullId,
-    /// Only held here to be passed eventually to the `Node` state.
-    cache: Box<dyn Cache>,
     min_section_size: usize,
     peer_map: PeerMap,
     proxy_pub_id: PublicId,
@@ -73,7 +69,6 @@ impl RelocatingNode {
             action_sender: details.action_sender,
             network_service: details.network_service,
             full_id: details.full_id,
-            cache: details.cache,
             min_section_size: details.min_section_size,
             peer_map: details.peer_map,
             proxy_pub_id: details.proxy_pub_id,
@@ -113,7 +108,6 @@ impl RelocatingNode {
 
         State::BootstrappingPeer(BootstrappingPeer::new(
             self.action_sender,
-            self.cache,
             target_state,
             self.network_service,
             new_full_id,
