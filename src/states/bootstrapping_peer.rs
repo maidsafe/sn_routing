@@ -13,7 +13,6 @@ use super::{
 };
 use crate::{
     action::Action,
-    cache::Cache,
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -54,7 +53,6 @@ pub enum TargetState {
 pub struct BootstrappingPeer {
     action_sender: mpmc::Sender<Action>,
     bootstrap_connection: Option<(NodeInfo, u64)>,
-    cache: Box<dyn Cache>,
     network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
@@ -66,7 +64,6 @@ pub struct BootstrappingPeer {
 impl BootstrappingPeer {
     pub fn new(
         action_sender: mpmc::Sender<Action>,
-        cache: Box<dyn Cache>,
         target_state: TargetState,
         mut network_service: NetworkService,
         full_id: FullId,
@@ -77,7 +74,6 @@ impl BootstrappingPeer {
 
         Self {
             action_sender,
-            cache: cache,
             network_service,
             full_id,
             min_section_size,
@@ -97,7 +93,6 @@ impl BootstrappingPeer {
             TargetState::RelocatingNode => {
                 let details = RelocatingNodeDetails {
                     action_sender: self.action_sender,
-                    cache: self.cache,
                     network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,
@@ -120,7 +115,6 @@ impl BootstrappingPeer {
             } => {
                 let details = ProvingNodeDetails {
                     action_sender: self.action_sender,
-                    cache: self.cache,
                     network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,

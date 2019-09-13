@@ -157,7 +157,6 @@ extern crate serde_derive;
 mod macros;
 
 mod action;
-mod cache;
 mod chain;
 mod config_handler;
 mod error;
@@ -213,7 +212,6 @@ use crate::mock::quic_p2p;
 #[cfg(any(test, feature = "mock_base"))]
 pub use crate::routing_table::verify_network_invariant;
 pub use crate::{
-    cache::{Cache, NullCache},
     chain::Chain,
     config_handler::{Config, DevConfig},
     error::{InterfaceError, RoutingError},

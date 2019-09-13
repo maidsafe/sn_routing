@@ -13,7 +13,6 @@ use super::common::{Approved, Base, Bootstrapped, Relocated};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
-    cache::Cache,
     chain::{
         delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
         NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, SectionInfo,
@@ -78,7 +77,6 @@ const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
 pub struct ElderDetails {
-    pub cache: Box<dyn Cache>,
     pub chain: Chain,
     pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
@@ -101,7 +99,6 @@ pub struct Elder {
     msg_queue: VecDeque<RoutingMessage>,
     peer_map: PeerMap,
     peer_mgr: PeerManager,
-    response_cache: Box<dyn Cache>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
@@ -135,7 +132,6 @@ pub struct Elder {
 
 impl Elder {
     pub fn first(
-        cache: Box<dyn Cache>,
         network_service: NetworkService,
         full_id: FullId,
         min_section_size: usize,
@@ -156,7 +152,6 @@ impl Elder {
         let peer_mgr = PeerManager::new(dev_config.disable_client_rate_limiter);
 
         let details = ElderDetails {
-            cache,
             chain,
             network_service,
             event_backlog: Vec::new(),
@@ -207,7 +202,6 @@ impl Elder {
             msg_queue: details.msg_backlog.into_iter().collect(),
             peer_map: details.peer_map,
             peer_mgr: details.peer_mgr,
-            response_cache: details.cache,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator: Default::default(),
             tick_timer_token: tick_timer_token,
@@ -553,9 +547,6 @@ impl Elder {
             return Ok(());
         }
 
-        if self.respond_from_cache(signed_msg.routing_message())? {
-            return Ok(());
-        }
 
         if let Err(error) = self.send_signed_message(&mut signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
@@ -770,39 +761,6 @@ impl Elder {
         }
     }
 
-    fn respond_from_cache(&mut self, routing_msg: &RoutingMessage) -> Result<bool, RoutingError> {
-        let content = if let MessageContent::UserMessage { ref content, .. } = routing_msg.content {
-            if content.is_cacheable() {
-                content
-            } else {
-                return Ok(false);
-            }
-        } else {
-            return Ok(false);
-        };
-
-        match content {
-            UserMessage::Request(request) => {
-                if let Some(response) = self.response_cache.get(request) {
-                    debug!("{} Found cached response to {:?}", self, request);
-
-                    let src = Authority::ManagedNode(*self.name());
-                    let dst = routing_msg.src;
-                    let msg = UserMessage::Response(response);
-
-                    self.send_user_message(src, dst, msg)?;
-
-                    return Ok(true);
-                }
-            }
-            UserMessage::Response(response) => {
-                debug!("{} Putting {:?} in cache", self, response);
-                self.response_cache.put(response.clone());
-            }
-        }
-
-        Ok(false)
-    }
 
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {

@@ -8,7 +8,6 @@
 
 use crate::{
     action::Action,
-    cache::{Cache, NullCache},
     config_handler::{self, Config},
     error::{InterfaceError, RoutingError},
     event::Event,
@@ -33,17 +32,12 @@ use unwrap::unwrap;
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
-    cache: Box<dyn Cache>,
     first: bool,
     config: Option<Config>,
     network_config: Option<NetworkConfig>,
 }
 
 impl NodeBuilder {
-    /// Configures the node to use the given request cache.
-    pub fn cache(self, cache: Box<dyn Cache>) -> NodeBuilder {
-        NodeBuilder { cache, ..self }
-    }
 
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> NodeBuilder {
@@ -99,7 +93,6 @@ impl NodeBuilder {
         let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
         let first = self.first;
-        let cache = self.cache;
 
         let mut network_config = self.network_config.unwrap_or_default();
         network_config.our_type = OurType::Node;
@@ -108,7 +101,6 @@ impl NodeBuilder {
             move |action_sender, network_service, timer, outbox| {
                 if first {
                     states::Elder::first(
-                        cache,
                         network_service,
                         full_id,
                         min_section_size,
@@ -120,7 +112,6 @@ impl NodeBuilder {
                 } else {
                     State::BootstrappingPeer(BootstrappingPeer::new(
                         action_sender,
-                        cache,
                         TargetState::RelocatingNode,
                         network_service,
                         full_id,
@@ -154,7 +145,6 @@ impl Node {
     /// Creates a new builder to configure and create a `Node`.
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
-            cache: Box::new(NullCache),
             first: false,
             config: None,
             network_config: None,
