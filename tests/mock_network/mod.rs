@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod accumulate;
-mod cache;
 mod churn;
 mod drop;
 mod merge;

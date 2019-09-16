@@ -264,10 +264,10 @@ mod implementation {
 #[cfg(feature = "mock_serialise")]
 mod implementation {
     use super::*;
-    use safe_crypto::SIGNATURE_BYTES;
+    use crate::ed25519::SIGNATURE_LENGTH;
 
     pub fn sign(_: &FullId, _: &DirectMessage) -> Result<Signature, RoutingError> {
-        Ok(Signature::from_bytes([0; SIGNATURE_BYTES]))
+        Ok(Signature::from_bytes(&[0; SIGNATURE_LENGTH]).unwrap())
     }
 
     pub fn verify(_: &PublicId, _: &Signature, _: &DirectMessage) -> Result<(), RoutingError> {

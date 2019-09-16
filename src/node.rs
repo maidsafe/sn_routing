@@ -57,9 +57,6 @@ impl NodeBuilder {
     ///
     /// The initial `Node` object will have newly generated keys.
     pub fn create(self) -> Result<Node, RoutingError> {
-        // If we're not in a test environment where we might want to manually seed the crypto RNG
-        // then seed randomly.
-        #[cfg(not(feature = "mock_base"))]
 
         let mut ev_buffer = EventBuf::new();
 

@@ -5,6 +5,8 @@
 *.rsproj
 tags*
 *bootstrap.cache
+.undodir*
+Session.vim
 build/
 build-tests/
 target/

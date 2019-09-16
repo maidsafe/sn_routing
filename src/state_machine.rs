@@ -167,7 +167,6 @@ impl State {
             State::Adult(ref state) => Some(state.chain()),
             State::Elder(ref state) => Some(state.chain()),
             State::BootstrappingPeer(_)
-            | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_)
             | State::Terminated => None,
@@ -193,7 +192,6 @@ impl State {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
             State::BootstrappingPeer(_) | State::Terminated => vec![],
-            State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
             State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
             State::Adult(ref mut state) => state.get_timed_out_tokens(),
@@ -205,7 +203,6 @@ impl State {
         match *self {
             State::Terminated
             | State::BootstrappingPeer(_)
-            | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_) => false,
             State::Adult(ref state) => state.has_unpolled_observations(),

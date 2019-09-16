@@ -138,6 +138,8 @@ pub enum RoutingError {
     ExceedsRateLimit(MessageId),
     /// Invalid configuration
     ConfigError(ConfigFileHandlerError),
+    /// Sig error
+    SignatureError(crate::ed25519::SignatureError),
     /// Invalid chain
     Chain,
     /// We received a signed message with a previous hop's section info that we don't know.
@@ -151,6 +153,12 @@ pub enum RoutingError {
 impl From<RoutingTableError> for RoutingError {
     fn from(error: RoutingTableError) -> RoutingError {
         RoutingError::RoutingTable(error)
+    }
+}
+
+impl From<crate::ed25519::SignatureError> for RoutingError {
+    fn from(error: crate::ed25519::SignatureError) -> RoutingError {
+        RoutingError::SignatureError(error)
     }
 }
 

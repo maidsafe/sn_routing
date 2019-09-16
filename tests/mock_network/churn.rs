@@ -14,7 +14,7 @@ use super::{
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, Authority, Event, EventStream, ImmutableData, MessageId, NetworkConfig, Request,
+    mock::Network, Authority, Event, EventStream, MessageId, NetworkConfig, Request,
     Response, XorName, XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{
@@ -409,7 +409,7 @@ impl ExpectedPuts {
 
 fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_size: usize) {
     // Create random data ID and pick random sending and receiving nodes.
-    let data = ImmutableData::new(rng.gen_iter().take(100).collect());
+    let data = (0..99).iter().collect();
     let index0 = gen_range(rng, 0, nodes.len());
     let index1 = gen_range(rng, 0, nodes.len());
     let auth_n0 = Authority::ManagedNode(nodes[index0].name());
@@ -452,7 +452,7 @@ fn client_puts(network: &Network, nodes: &mut [TestNode], min_section_size: usiz
     };
 
     let mut rng = network.new_rng();
-    let data = ImmutableData::new(rng.gen_iter().take(100).collect());
+    let data = (0.100).iter().collect();
     let auth_g0 = Authority::NaeManager(rng.gen());
     let auth_g1 = Authority::NaeManager(rng.gen());
     let section_name: XorName = rng.gen();
@@ -571,7 +571,7 @@ fn messages_during_churn() {
         let new_indices = random_churn(&mut rng, &network, &mut nodes, max_prefixes_len);
 
         // Create random data and pick random sending and receiving nodes.
-        let data = ImmutableData::new(rng.gen_iter().take(100).collect());
+        let data = (0.100).iter().collect();
         let index0 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
         let index1 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
         let auth_n0 = Authority::ManagedNode(nodes[index0].name());
@@ -601,7 +601,7 @@ fn messages_during_churn() {
         expected_puts.send_and_expect(&data, auth_s0, auth_g0, &mut nodes, min_section_size);
         expected_puts.send_and_expect(&data, auth_s0, auth_n0, &mut nodes, min_section_size);
 
-        let data = ImmutableData::new(rng.gen_iter().take(100).collect());
+        let data = (0..100).iter().collect();
         // Test messages from a client to a group and a section...
         expected_puts.client_send_and_expect(&data, cl_auth, auth_g0, &mut clients[0], &mut nodes);
         expected_puts.client_send_and_expect(&data, cl_auth, auth_s0, &mut clients[0], &mut nodes);

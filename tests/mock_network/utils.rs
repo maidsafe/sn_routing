@@ -12,8 +12,8 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Cache, Chain, Client, Config, DevConfig, Event, EventStream, FullId, ImmutableData,
-    NetworkConfig, Node, NullCache, Prefix, PublicId, Request, Response, XorName,
+    Chain, Config, DevConfig, Event, EventStream, FullId,
+    NetworkConfig, Node, Prefix, PublicId, Request, Response, XorName,
     XorTargetInterval, Xorable,
 };
 use std::{
@@ -38,6 +38,23 @@ const CLIENT_MSG_EXPIRY_DUR_SECS: u64 = 90;
 
 // ----- Typs -----
 type PrefixAndSize = (Prefix<XorName>, usize);
+
+/// test dummy data
+pub struct ImmutableData  {
+    pub content : Vec<u8>,
+}
+impl ImmutableData {
+pub fn new<R: Rng>(rng: &mut R, size: usize) -> ImmutableData {
+    let content = rng.gen_iter().take(size).collect();
+        ImmutableData {
+            content: content,
+        }
+    }
+    pub fn name(&self) -> Vec<u8> {
+        self.content()
+    }
+}
+
 
 // -----  Random number generation  -----
 
@@ -119,7 +136,6 @@ impl TestNode {
             first_node: false,
             network_config: None,
             endpoint: None,
-            cache: Box::new(NullCache),
         }
     }
 
@@ -128,14 +144,12 @@ impl TestNode {
         first_node: bool,
         network_config: Option<NetworkConfig>,
         endpoint: Option<SocketAddr>,
-        cache: Box<dyn Cache>,
     ) -> Self {
         let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
         network.set_next_addr(endpoint);
 
         let config = create_config(network);
         let builder = Node::builder()
-            .cache(cache)
             .first(first_node)
             .config(config);
         let builder = if let Some(network_config) = network_config {
@@ -207,7 +221,6 @@ pub struct TestNodeBuilder<'a> {
     first_node: bool,
     network_config: Option<NetworkConfig>,
     endpoint: Option<SocketAddr>,
-    cache: Box<dyn Cache>,
 }
 
 impl<'a> TestNodeBuilder<'a> {
@@ -223,16 +236,6 @@ impl<'a> TestNodeBuilder<'a> {
 
     pub fn endpoint(mut self, endpoint: SocketAddr) -> Self {
         self.endpoint = Some(endpoint);
-        self
-    }
-
-    pub fn cache(mut self, use_cache: bool) -> Self {
-        self.cache = if use_cache {
-            Box::new(TestCache::new())
-        } else {
-            Box::new(NullCache)
-        };
-
         self
     }
 
@@ -274,63 +277,34 @@ impl TestClient {
         Self::new_impl(network, network_config, endpoint, full_id, duration)
     }
 
-    fn new_impl(
-        network: &Network,
-        network_config: Option<NetworkConfig>,
-        endpoint: Option<SocketAddr>,
-        full_id: FullId,
-        duration: Duration,
-    ) -> Self {
-        let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
-        network.set_next_addr(endpoint);
-
-        let client = unwrap!(Client::new(
-            Some(full_id.clone()),
-            network_config,
-            create_config(network),
-            duration,
-        ));
-
-        TestClient {
-            inner: client,
-            full_id: full_id,
-        }
-    }
-
+    // fn new_impl(
+    //     network: &Network,
+    //     network_config: Option<NetworkConfig>,
+    //     endpoint: Option<SocketAddr>,
+    //     full_id: FullId,
+    //     duration: Duration,
+    // ) -> Self {
+    //     let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
+    //     network.set_next_addr(endpoint);
+    //
+    //     let client = unwrap!(Client::new(
+    //         Some(full_id.clone()),
+    //         network_config,
+    //         create_config(network),
+    //         duration,
+    //     ));
+    //
+    //     TestClient {
+    //         inner: client,
+    //         full_id: full_id,
+    //     }
+    // }
+    //
     pub fn name(&self) -> XorName {
         *unwrap!(self.inner.id()).name()
     }
 }
 
-// -----  TestCache  -----
-
-#[derive(Default)]
-pub struct TestCache(RefCell<HashMap<XorName, ImmutableData>>);
-
-impl TestCache {
-    pub fn new() -> Self {
-        TestCache(RefCell::new(HashMap::new()))
-    }
-}
-
-impl Cache for TestCache {
-    fn get(&self, request: &Request) -> Option<Response> {
-        if let Request::GetIData { ref name, msg_id } = *request {
-            self.0.borrow().get(name).map(|data| Response::GetIData {
-                res: Ok(data.clone()),
-                msg_id: msg_id,
-            })
-        } else {
-            None
-        }
-    }
-
-    fn put(&self, response: Response) {
-        if let Response::GetIData { res: Ok(data), .. } = response {
-            let _ = self.0.borrow_mut().insert(*data.name(), data);
-        }
-    }
-}
 
 // -----  poll_all, create_connected_...  -----
 
@@ -799,7 +773,7 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
 
 // Generate random immutable data with the given payload length.
 pub fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> ImmutableData {
-    ImmutableData::new(gen_bytes(rng, size))
+    ImmutableData::new(rng, size)
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {

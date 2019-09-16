@@ -15,7 +15,6 @@
 
 use super::*;
 use crate::{
-    cache::NullCache,
     messages::DirectMessage,
     mock::Network,
     outbox::{EventBox, EventBuf},
@@ -24,6 +23,7 @@ use crate::{
     xor_name::XOR_NAME_LEN,
     NetworkConfig, NetworkService,
 };
+ use maidsafe_utilities::serialisation::serialise;
 use std::net::SocketAddr;
 use unwrap::unwrap;
 use utils::LogIdent;
@@ -112,13 +112,13 @@ impl ElderUnderTest {
             latest_info: SectionInfo::default(),
         };
 
-        let full_id = full_ids[0].clone();
+        let full_id = full_ids[0].copy();
         let machine = make_state_machine(&full_id, &gen_pfx_info, min_section_size, &mut ev_buffer);
 
-        let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
+        let other_full_ids = full_ids[1..].iter().map(|x| x.copy()).collect_vec();
         let other_parsec_map = other_full_ids
             .iter()
-            .map(|full_id| ParsecMap::new(full_id.clone(), &gen_pfx_info))
+            .map(|full_id| ParsecMap::new(full_id.copy(), &gen_pfx_info))
             .collect_vec();
 
         let mut elder_test = Self {
@@ -375,12 +375,7 @@ impl ElderUnderTest {
         let dst = Authority::ManagedNode(*their_pub_id.name());
 
         let content = {
-            let shared_secret = new_full_id
-                .encrypting_private_key()
-                .shared_secret(their_pub_id.encrypting_public_key());
-
-            let conn_info = self.candidate_node_info();
-            let conn_info = unwrap!(shared_secret.encrypt(&conn_info));
+            let conn_info = serialise(&self.candidate_node_info()).expect("cannot serialise");
 
             MessageContent::ConnectionRequest {
                 conn_info,
@@ -411,8 +406,8 @@ impl ElderUnderTest {
             old_full_id
         };
 
-        let to_sign = unwrap!(serialisation::serialise(&both_ids));
-        let signature_using_old = old_signing_id.signing_private_key().sign_detached(&to_sign);
+        let to_sign = unwrap!(serialise(&both_ids));
+        let signature_using_old = old_signing_id.ed_sign(&to_sign);
 
         (
             DirectMessage::CandidateInfo {
@@ -460,25 +455,22 @@ impl ElderUnderTest {
 fn new_elder_state(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
-    min_section_size: usize,
     network_service: NetworkService,
     timer: Timer,
     outbox: &mut dyn EventBox,
 ) -> State {
     let public_id = *full_id.public_id();
 
-    let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
-    let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+    let parsec_map = ParsecMap::new(full_id.copy(), gen_pfx_info);
+    let chain = Chain::new(public_id, gen_pfx_info.clone());
     let peer_map = PeerMap::new();
     let peer_mgr = PeerManager::new(false);
-    let cache = Box::new(NullCache);
 
     let details = ElderDetails {
-        cache,
         chain,
         network_service,
         event_backlog: Vec::new(),
-        full_id: full_id.clone(),
+        full_id: full_id.copy(),
         gen_pfx_info: gen_pfx_info.clone(),
         msg_backlog: Vec::new(),
         parsec_map,
@@ -513,7 +505,6 @@ fn make_state_machine(
             new_elder_state(
                 full_id,
                 gen_pfx_info,
-                min_section_size,
                 network_service,
                 timer,
                 outbox2,
