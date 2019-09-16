@@ -17,12 +17,11 @@ use crate::{
     states::{Adult, BootstrappingPeer, Elder, ProvingNode, RelocatingNode},
     timer::Timer,
     xor_name::XorName,
-    NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
+    NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
 use crate::{routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
-use log::LogLevel;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Display, Formatter},
@@ -122,19 +121,6 @@ impl State {
         )
     }
 
-    pub fn min_section_size(&self) -> usize {
-        state_dispatch!(
-            *self,
-            ref state => state.min_section_size(),
-            Terminated => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Can't get min_section_size when Terminated."
-                );
-                MIN_SECTION_SIZE
-            }
-        )
-    }
 
     fn replace_with<F, E>(&mut self, f: F)
     where

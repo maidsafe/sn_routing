@@ -14,6 +14,7 @@ use routing::{
     THRESHOLD_DENOMINATOR, THRESHOLD_NUMERATOR,
 };
 
+
 #[test]
 fn messages_accumulate_with_quorum() {
     let section_size = 15;

@@ -78,7 +78,6 @@ impl Adult {
 
         let parsec_map = ParsecMap::new(details.full_id.copy(), &details.gen_pfx_info);
         let chain = Chain::new(
-            details.min_section_size,
             public_id,
             details.gen_pfx_info.clone(),
         );
@@ -204,7 +203,7 @@ impl Base for Adult {
     }
 
     fn min_section_size(&self) -> usize {
-        self.chain.min_sec_size()
+        crate::ELDER_SIZE
     }
 
     fn peer_map(&self) -> &PeerMap {

@@ -8,7 +8,6 @@
 
 use crate::{
     action::Action,
-    config_handler::{self, Config},
     error::{InterfaceError, RoutingError},
     event::Event,
     event_stream::EventStepper,
@@ -18,12 +17,12 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, TargetState},
     xor_name::XorName,
-    NetworkConfig, MIN_SECTION_SIZE,
+    NetworkConfig,
+    ELDER_SIZE,
 };
 #[cfg(feature = "mock_base")]
 use crate::{utils::XorTargetInterval, Chain};
 use crossbeam_channel as mpmc;
-#[cfg(not(feature = "mock_base"))]
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
 use std::sync::mpsc;
@@ -33,7 +32,6 @@ use unwrap::unwrap;
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
     first: bool,
-    config: Option<Config>,
     network_config: Option<NetworkConfig>,
 }
 
@@ -42,14 +40,6 @@ impl NodeBuilder {
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> NodeBuilder {
         NodeBuilder { first, ..self }
-    }
-
-    /// The node will use the configuration options from `config` rather than defaults.
-    pub fn config(self, config: Config) -> NodeBuilder {
-        NodeBuilder {
-            config: Some(config),
-            ..self
-        }
     }
 
     /// The node will use the given network config rather than default.
@@ -87,9 +77,6 @@ impl NodeBuilder {
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
         let full_id = FullId::new();
-        let config = self.config.unwrap_or_else(config_handler::get_config);
-        let dev_config = config.dev.unwrap_or_default();
-        let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
 
         let first = self.first;
 
@@ -102,7 +89,6 @@ impl NodeBuilder {
                     states::Elder::first(
                         network_service,
                         full_id,
-                        min_section_size,
                         timer,
                         outbox,
                     )
@@ -114,7 +100,7 @@ impl NodeBuilder {
                         TargetState::RelocatingNode,
                         network_service,
                         full_id,
-                        min_section_size,
+                        ELDER_SIZE,
                         timer,
                     ))
                 }
@@ -145,7 +131,6 @@ impl Node {
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
             first: false,
-            config: None,
             network_config: None,
         }
     }
@@ -161,10 +146,6 @@ impl Node {
         self.machine.current().id().ok_or(RoutingError::Terminated)
     }
 
-    /// Returns the minimum section size this vault is using.
-    pub fn min_section_size(&self) -> usize {
-        self.machine.current().min_section_size()
-    }
 }
 
 impl EventStepper for Node {

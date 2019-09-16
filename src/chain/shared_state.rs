@@ -215,31 +215,6 @@ impl SharedState {
         }
     }
 
-    /// Returns `true` if we should merge.
-    pub(super) fn should_vote_for_merge<'a, I>(
-        &self,
-        min_section_size: usize,
-        neighbour_infos: I,
-    ) -> bool
-    where
-        I: IntoIterator<Item = &'a SectionInfo>,
-    {
-        let pfx = self.our_prefix();
-        if pfx.is_empty() || self.change == PrefixChange::Splitting {
-            return false;
-        }
-
-        if self.our_info().members().len() < min_section_size {
-            return true;
-        }
-
-        let needs_merge = |si: &SectionInfo| {
-            pfx.is_compatible(&si.prefix().sibling())
-                && (si.members().len() < min_section_size || self.merging.contains(si.hash()))
-        };
-
-        neighbour_infos.into_iter().any(needs_merge)
-    }
 
     pub fn push_our_new_info(&mut self, sec_info: SectionInfo, proofs: ProofSet) {
         self.our_history

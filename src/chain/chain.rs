@@ -32,9 +32,6 @@ use std::{
     iter, mem,
 };
 
-/// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
-/// protect against rapid splitting and merging in the face of moderate churn.
-const SPLIT_BUFFER: usize = 1;
 
 /// Returns the delivery group size based on the section size `n`
 pub fn delivery_group_size(n: usize) -> usize {
@@ -44,8 +41,6 @@ pub fn delivery_group_size(n: usize) -> usize {
 
 /// Data chain.
 pub struct Chain {
-    /// Minimum number of nodes we consider acceptable in a section
-    min_sec_size: usize,
     /// This node's public ID.
     our_id: PublicId,
     /// The shared state of the section.
@@ -63,15 +58,11 @@ pub struct Chain {
 
 #[allow(clippy::len_without_is_empty)]
 impl Chain {
-    /// Returns the minimum section size.
-    pub fn min_sec_size(&self) -> usize {
-        self.min_sec_size
-    }
 
     /// Returns the number of nodes which need to exist in each subsection of a given section to
     /// allow it to be split.
     pub fn min_split_size(&self) -> usize {
-        self.min_sec_size + SPLIT_BUFFER
+    crate::SECTION_SPLIT_SIZE
     }
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
@@ -84,11 +75,10 @@ impl Chain {
     }
 
     /// Create a new chain given genesis information
-    pub fn new(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
+    pub fn new(our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_member = gen_info.first_info.members().contains(&our_id);
         Self {
-            min_sec_size,
             our_id,
             state: SharedState::new(gen_info.first_info),
             is_member,
@@ -334,12 +324,12 @@ impl Chain {
             Some(&self.state.new_info),
         )?;
 
-        if self.state.new_info.members().len() < self.min_sec_size {
+        if self.state.new_info.members().len() < crate::ELDER_SIZE{
             // set to merge state to prevent extending chain any further.
             // We'd still not Vote for OurMerge until we've updated our_infos
             self.state.change = PrefixChange::Merging;
             panic!(
-                "Merge not supported: remove_member < min_sec_size {:?}: {:?}",
+                "Merge not supported: remove_member < elder_size {:?}: {:?}",
                 self.our_id(),
                 self.state.new_info
             );
@@ -358,11 +348,6 @@ impl Chain {
         self.state.is_self_merge_ready()
     }
 
-    /// Returns `true` if we should merge.
-    pub fn should_vote_for_merge(&self) -> bool {
-        self.state
-            .should_vote_for_merge(self.min_sec_size, self.neighbour_infos())
-    }
 
     /// Check inside the `neighbour_infos` failing which inside the chain accumulator if we have a
     /// SectionInfo with our proof for it that can validate the given SectionInfo as its next link
@@ -792,7 +777,7 @@ impl Chain {
 
     /// Returns whether we should split into two sections.
     fn should_split(&self, members: &BTreeSet<PublicId>) -> Result<bool, RoutingError> {
-        if self.state.change != PrefixChange::None || self.should_vote_for_merge() {
+        if self.state.change != PrefixChange::None  {
             return Ok(false);
         }
 
@@ -1319,7 +1304,7 @@ mod tests {
     use super::super::{GenesisPfxInfo, Proof, ProofSet, SectionInfo};
     use super::Chain;
     use crate::id::{FullId, PublicId};
-    use crate::{Prefix, XorName, MIN_SECTION_SIZE};
+    use crate::{Prefix, XorName};
     use rand::{thread_rng, Rng};
     use serde::Serialize;
     use std::collections::{BTreeSet, HashMap};
@@ -1387,7 +1372,7 @@ mod tests {
         proofs
     }
 
-    fn gen_chain<T>(min_sec_size: usize, sections: T) -> (Chain, HashMap<PublicId, FullId>)
+    fn gen_chain<T>(sections: T) -> (Chain, HashMap<PublicId, FullId>)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -1414,7 +1399,7 @@ mod tests {
             latest_info: Default::default(),
         };
 
-        let mut chain = Chain::new(min_sec_size, *our_id.public_id(), genesis_info);
+        let mut chain = Chain::new(*our_id.public_id(), genesis_info);
 
         for neighbour_info in sections_iter {
             let proofs = gen_proofs(&full_ids, &our_members, &neighbour_info);
@@ -1427,7 +1412,6 @@ mod tests {
     #[test]
     fn generate_chain() {
         let (chain, _ids) = gen_chain(
-            MIN_SECTION_SIZE,
             vec![
                 (Prefix::from_str("00").unwrap(), 8),
                 (Prefix::from_str("01").unwrap(), 8),
@@ -1463,7 +1447,7 @@ mod tests {
         let p_01 = Prefix::from_str("01").unwrap();
         let p_10 = Prefix::from_str("10").unwrap();
         let (mut chain, mut full_ids) =
-            gen_chain(MIN_SECTION_SIZE, vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
+            gen_chain(vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
         for _ in 0..100 {
             let (new_info, new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();

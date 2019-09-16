@@ -149,11 +149,6 @@ pub(crate) mod parsec;
 /// SHA-3 type alias.
 pub mod sha3;
 
-/// Structured Data Tag for Session Packet Type
-pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
-/// Structured Data Tag for DNS Packet Type
-pub const TYPE_TAG_DNS_PACKET: u64 = 5;
-
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
 /// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
@@ -161,10 +156,12 @@ pub const QUORUM_NUMERATOR: usize = 2;
 /// See `QUORUM_NUMERATOR`.
 pub const QUORUM_DENOMINATOR: usize = 3;
 
-/// Default minimal section size.
-pub const MIN_SECTION_SIZE: usize = 3;
-/// Key of an account data in the account packet
-pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
+/// Default section size that will cause a section to split
+pub const SECTION_SPLIT_SIZE : usize = 200;
+/// We add Infants untill we get to this size. To this point Infants do affect churn
+pub const SECTION_SAFE_SIZE : usize = 100;
+/// Total num of elders per section
+pub const ELDER_SIZE : usize = 7;
 
 #[cfg(feature = "mock_base")]
 use crate::mock::quic_p2p;

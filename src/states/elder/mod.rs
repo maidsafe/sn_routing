@@ -134,7 +134,6 @@ impl Elder {
     pub fn first(
         network_service: NetworkService,
         full_id: FullId,
-        min_section_size: usize,
         timer: Timer,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
@@ -147,7 +146,7 @@ impl Elder {
             latest_info: SectionInfo::default(),
         };
         let parsec_map = ParsecMap::new(full_id.copy(), &gen_pfx_info);
-        let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+        let chain = Chain::new(public_id, gen_pfx_info.clone());
         let peer_map = PeerMap::new();
         let peer_mgr = PeerManager::new(dev_config.disable_client_rate_limiter);
 
@@ -315,10 +314,7 @@ impl Elder {
         }
         if let Some(merged_info) = self.chain.try_merge()? {
             self.vote_for_event(NetworkEvent::SectionInfo(merged_info));
-        } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
-            self.vote_for_event(NetworkEvent::OurMerge);
-        }
-        Ok(())
+        }        Ok(())
     }
 
     // Connected peers which are valid need added to RT
@@ -1555,7 +1551,7 @@ impl Base for Elder {
     }
 
     fn min_section_size(&self) -> usize {
-        self.chain.min_sec_size()
+        crate::ELDER_SIZE
     }
 
     fn peer_map(&self) -> &PeerMap {
