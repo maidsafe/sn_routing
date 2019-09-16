@@ -9,10 +9,12 @@
 //! Shared state for all mock parsec instances within a single test.
 
 use super::{
+    key_gen::KeyGen,
     observation::{ObservationHolder, ObservationState},
-    Block, ConsensusMode, NetworkEvent, PublicId, SecretId,
+    Block, ConsensusMode, DkgResult, NetworkEvent, PublicId, SecretId,
 };
 use crate::sha3::Digest256;
+use rand::Rng;
 use std::{
     any::Any,
     cell::RefCell,
@@ -31,6 +33,7 @@ pub(super) struct SectionState<T: NetworkEvent, P: PublicId> {
     // consensus at the same time.
     unconsensused_observations: Vec<ObservationHolder<T, P>>,
     blocks: Vec<(Block<T, P>, ObservationHolder<T, P>)>,
+    key_gen: KeyGen<P>,
 }
 
 impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
@@ -39,6 +42,7 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
             observations: BTreeMap::new(),
             unconsensused_observations: Vec::new(),
             blocks: Vec::new(),
+            key_gen: KeyGen::new(),
         }
     }
 
@@ -87,6 +91,17 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
 
     pub fn has_unconsensused_observations(&self) -> bool {
         !self.unconsensused_observations.is_empty()
+    }
+
+    /// Returns the result of a fake Distributed Key Generation for the given set of participants.
+    /// Note: this uses trusted dealer under the hood, no actual DKG is taking place.
+    pub fn get_or_generate_keys(
+        &mut self,
+        rng: &mut impl Rng,
+        our_id: &P,
+        participants: BTreeSet<P>,
+    ) -> DkgResult {
+        self.key_gen.get_or_generate(rng, our_id, participants)
     }
 }
 

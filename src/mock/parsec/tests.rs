@@ -7,15 +7,17 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    init_mock, Block, ConsensusMode, NetworkEvent, Observation, Parsec, PublicId, Request,
-    Response, SecretId,
+    init_mock, Block, ConsensusMode, DkgResult, NetworkEvent, Observation, Parsec, PublicId,
+    Request, Response, SecretId,
 };
+use itertools::Itertools;
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Formatter},
+    iter,
     ops::{Deref, DerefMut},
 };
 use unwrap::unwrap;
@@ -202,7 +204,7 @@ fn reevaluate_previously_insufficient_votes() {
     // Drain the `Genesis` blocks.
     gossip_all(&mut nodes);
     for node in &mut nodes {
-        for _ in poll_all(node) {}
+        poll_all(node).consume()
     }
 
     // 3 votes to Remove(Dave) - should not get consensus yet.
@@ -218,6 +220,86 @@ fn reevaluate_previously_insufficient_votes() {
 
     // We should now get consensus on Remove(Dave) too.
     assert_consensus_on_remove(&mut nodes, dave);
+}
+
+// Distributed key generation
+#[test]
+fn dkg() {
+    init_mock();
+
+    let mut nodes: Vec<_> = create_nodes(5, ConsensusMode::Single).collect();
+
+    // Drain the `Genesis` blocks.
+    gossip_all(&mut nodes);
+    for node in &mut nodes {
+        poll_all(node).consume()
+    }
+
+    // Start the DKG (the first four existing nodes)
+    let participants: BTreeSet<_> = nodes
+        .iter()
+        .take(4)
+        .map(Parsec::our_pub_id)
+        .cloned()
+        .collect();
+
+    vote_for(&mut nodes, Observation::StartDkg(participants.clone()));
+    gossip_all(&mut nodes);
+
+    let mut public_key_sets = BTreeSet::new();
+    let mut secret_key_shares = BTreeMap::new();
+
+    for node in &mut nodes {
+        let (actual_participants, actual_dkg_result) = extract_dkg_result(node);
+        assert_eq!(actual_participants, participants);
+
+        // Only the participants receive the secret key share
+        if let Some(secret_key_share) = actual_dkg_result.secret_key_share {
+            let _ = secret_key_shares.insert(*node.our_pub_id(), secret_key_share);
+        }
+
+        let _ = public_key_sets.insert(actual_dkg_result.public_key_set);
+    }
+
+    // Verify only the participants received secret key share
+    let actual_participants: BTreeSet<_> = secret_key_shares.keys().cloned().collect();
+    assert_eq!(actual_participants, participants);
+
+    // Verify public key sets are all identical
+    assert_eq!(public_key_sets.len(), 1);
+
+    // Verify the secret key shares are generated correctly so that threshold signatures work.
+    // There are four participants which means the threshold is one, so we need at least two
+    // participants to create a valid signature.
+    let message = b"hello world";
+    let public_key_set = unwrap!(public_key_sets.into_iter().next());
+
+    // First verify that one participant is not enough to create a valid signature.
+    for (index, id) in participants.iter().enumerate() {
+        let secret_key_share = unwrap!(secret_key_shares.get(id));
+        let sig_share = secret_key_share.sign(message);
+
+        assert_eq!(
+            public_key_set.combine_signatures(iter::once((index, &sig_share))),
+            Err(threshold_crypto::error::Error::NotEnoughShares)
+        );
+    }
+
+    // Then verify that any two are enough.
+    for ((a_index, a_sig_share), (b_index, b_sig_share)) in participants
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            let secret_key_share = unwrap!(secret_key_shares.get(id));
+            let sig_share = secret_key_share.sign(message);
+            (index, sig_share)
+        })
+        .tuple_combinations()
+    {
+        let sig = unwrap!(public_key_set
+            .combine_signatures(vec![(a_index, &a_sig_share), (b_index, &b_sig_share)]));
+        assert!(public_key_set.public_key().verify(&sig, message));
+    }
 }
 
 #[test]
@@ -621,6 +703,16 @@ where
     }
 }
 
+fn extract_dkg_result(node: &mut Parsec<Payload, PeerId>) -> (BTreeSet<PeerId>, DkgResult) {
+    match unwrap!(node.poll()).payload() {
+        Observation::DkgResult {
+            participants,
+            dkg_result,
+        } => (participants.clone(), dkg_result.0.clone()),
+        x => panic!("Unexpected block {:?}", x),
+    }
+}
+
 enum MessageContent {
     Request(Request<Payload, PeerId>),
     Response(Response<Payload, PeerId>),
@@ -633,6 +725,13 @@ struct Message {
 }
 
 struct PollAll<'a>(&'a mut Parsec<Payload, PeerId>);
+
+impl<'a> PollAll<'a> {
+    // Drain all blocks and throw them away.
+    fn consume(self) {
+        for _ in self {}
+    }
+}
 
 impl<'a> Iterator for PollAll<'a> {
     type Item = Block<Payload, PeerId>;
