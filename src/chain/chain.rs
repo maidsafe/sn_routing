@@ -293,6 +293,7 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
+            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
@@ -569,7 +570,10 @@ impl Chain {
     }
 
     /// Gets the data needed to initialise a new Parsec instance
-    pub fn prepare_parsec_reset(&mut self) -> Result<ParsecResetData, RoutingError> {
+    pub fn prepare_parsec_reset(
+        &mut self,
+        parsec_version: u64,
+    ) -> Result<ParsecResetData, RoutingError> {
         let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
         let merges = mem::replace(&mut self.state.merging, Default::default())
@@ -584,6 +588,7 @@ impl Chain {
                 first_state_serialized: self.get_genesis_related_info()?,
                 first_ages: self.get_age_counters(),
                 latest_info: Default::default(),
+                parsec_version,
             },
             cached_events: remaining
                 .cached_events
@@ -597,7 +602,10 @@ impl Chain {
 
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
     /// cached and currently accumulated events.
-    pub fn finalise_prefix_change(&mut self) -> Result<ParsecResetData, RoutingError> {
+    pub fn finalise_prefix_change(
+        &mut self,
+        parsec_version: u64,
+    ) -> Result<ParsecResetData, RoutingError> {
         // Clear any relocation overrides
         #[cfg(feature = "mock_base")]
         {
@@ -612,7 +620,7 @@ impl Chain {
         info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
         trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
 
-        self.prepare_parsec_reset()
+        self.prepare_parsec_reset(parsec_version)
     }
 
     /// Returns our public ID
@@ -819,6 +827,11 @@ impl Chain {
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
         let members = self.our_info().member_ids();
         self.chain_accumulator.check_vote_status(members)
+    }
+
+    /// Returns whether a churning is in progress.
+    pub fn is_churn_in_progress(&self) -> bool {
+        self.churn_in_progress
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
@@ -1680,6 +1693,7 @@ mod tests {
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: Default::default(),
+            parsec_version: 0,
         };
 
         let mut chain = Chain::new(

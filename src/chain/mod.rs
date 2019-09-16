@@ -45,16 +45,18 @@ pub struct GenesisPfxInfo {
     pub first_state_serialized: Vec<u8>,
     pub first_ages: BTreeMap<PublicId, AgeCounter>,
     pub latest_info: EldersInfo,
+    pub parsec_version: u64,
 }
 
 impl Debug for GenesisPfxInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "GenesisPfxInfo({:?}, gen_version: {}, latest_version: {})",
+            "GenesisPfxInfo({:?}, gen_version: {}, latest_version: {}, parsec_version {})",
             self.first_info.prefix(),
             self.first_info.version(),
             self.latest_info.version(),
+            self.parsec_version,
         )
     }
 }

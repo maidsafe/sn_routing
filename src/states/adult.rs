@@ -214,7 +214,7 @@ impl Adult {
     // Can also just be a single target once node-ageing makes Offline votes Opaque which should
     // remove invalid test failures for unaccumulated parsec::Remove blocks.
     fn send_parsec_poke(&mut self) {
-        let version = *self.gen_pfx_info.first_info.version();
+        let version = self.gen_pfx_info.parsec_version;
         let recipients = self
             .gen_pfx_info
             .latest_info
@@ -605,6 +605,11 @@ impl Approved for Adult {
 
     fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled NeighbourMerge event", self);
+        Ok(())
+    }
+
+    fn handle_prune(&mut self) -> Result<(), RoutingError> {
+        debug!("{} - Unhandled ParsecPrune event", self);
         Ok(())
     }
 }

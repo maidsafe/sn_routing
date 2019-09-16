@@ -120,6 +120,7 @@ impl Elder {
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
+            parsec_version: 0,
         };
         let parsec_map = ParsecMap::new(&mut rng, full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(
@@ -468,12 +469,16 @@ impl Elder {
     }
 
     fn reset_parsec(&mut self) -> Result<(), RoutingError> {
-        let reset_data = self.chain.prepare_parsec_reset()?;
+        let reset_data = self
+            .chain
+            .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
         self.reset_parsec_with_data(reset_data)
     }
 
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
-        let reset_data = self.chain.finalise_prefix_change()?;
+        let reset_data = self
+            .chain
+            .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
         self.reset_parsec_with_data(reset_data)
     }
 
@@ -672,6 +677,7 @@ impl Elder {
             first_state_serialized: Default::default(),
             first_ages: self.gen_pfx_info.first_ages.clone(),
             latest_info: self.chain.our_info().clone(),
+            parsec_version: self.gen_pfx_info.parsec_version,
         };
 
         let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
@@ -1568,6 +1574,26 @@ impl Approved for Elder {
 
     fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
         self.merge_if_necessary()
+    }
+
+    fn handle_prune(&mut self) -> Result<(), RoutingError> {
+        if self.chain.prefix_change() != PrefixChange::None {
+            log_or_panic!(
+                LogLevel::Warn,
+                "{} Tring to prune parsec during prefix change.",
+                self
+            );
+            return Ok(());
+        }
+        if self.chain.is_churn_in_progress() {
+            debug!(
+                "{} - Trying to carry out parsec pruning during churning.",
+                self
+            );
+            return Ok(());
+        }
+        info!("{} - handle parsec prune.", self);
+        self.reset_parsec()
     }
 
     fn handle_section_info_event(
