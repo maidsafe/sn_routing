@@ -27,9 +27,7 @@ fn smoke() {
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
 
-    let mut genesis_group = BTreeSet::new();
-    let _ = genesis_group.insert(alice_id);
-    let _ = genesis_group.insert(bob_id);
+    let genesis_group: BTreeSet<_> = vec![alice_id, bob_id].into_iter().collect();
 
     let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Supermajority);
     alice
@@ -79,9 +77,7 @@ fn add_peer() {
     let bob_id = PeerId(1);
     let carol_id = PeerId(2);
 
-    let mut genesis_group = BTreeSet::new();
-    let _ = genesis_group.insert(bob_id);
-    let _ = genesis_group.insert(carol_id);
+    let genesis_group: BTreeSet<_> = vec![bob_id, carol_id].into_iter().collect();
 
     let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Supermajority);
     let mut carol = from_genesis(carol_id, &genesis_group, ConsensusMode::Supermajority);
@@ -148,9 +144,7 @@ fn consensus_mode_single() {
     let alice_id = PeerId(0);
     let bob_id = PeerId(1);
 
-    let mut genesis_group = BTreeSet::new();
-    let _ = genesis_group.insert(alice_id);
-    let _ = genesis_group.insert(bob_id);
+    let genesis_group: BTreeSet<_> = vec![alice_id, bob_id].into_iter().collect();
 
     // First start parsec and cast votes with different payloads.
     // They should all get consensused after Genesis block.
@@ -224,6 +218,73 @@ fn reevaluate_previously_insufficient_votes() {
 
     // We should now get consensus on Remove(Dave) too.
     assert_consensus_on_remove(&mut nodes, dave);
+}
+
+#[test]
+fn newly_joined_node_does_not_cause_premature_consensus() {
+    init_mock();
+
+    // Create the genesis group.
+    let genesis_group: BTreeSet<_> = vec![PeerId(0), PeerId(1)].into_iter().collect();
+
+    let mut nodes: Vec<_> = genesis_group
+        .iter()
+        .cloned()
+        .map(|id| from_genesis(id, &genesis_group, ConsensusMode::Supermajority))
+        .collect();
+
+    // Add Carol so the section has more nodes than the size of the genesis group.
+    let carol = from_existing(
+        PeerId(2),
+        &genesis_group,
+        &genesis_group,
+        ConsensusMode::Supermajority,
+    );
+    vote_for_add(&mut nodes, *carol.our_pub_id());
+    nodes.push(carol);
+    gossip_all(&mut nodes);
+
+    // Add two votes for an observation. It is not enough for consensus.
+    let observation = Observation::OpaquePayload(Payload(0));
+    vote_for(&mut nodes[..2], observation.clone());
+    gossip_all(&mut nodes);
+
+    // Add Dave. This is the node that will try to trigger the premature consensus.
+    let section: BTreeSet<_> = nodes
+        .iter()
+        .map(|node| node.our_pub_id())
+        .cloned()
+        .collect();
+    let dave = from_existing(
+        PeerId(3),
+        &genesis_group,
+        &section,
+        ConsensusMode::Supermajority,
+    );
+    vote_for_add(&mut nodes, *dave.our_pub_id());
+    nodes.push(dave);
+
+    // When Dave receives his first gossip, it triggers the consensus computation. The opaque
+    // payload is the first unconsensused observation so the computation will start with it. Dave
+    // knows only two peers and the observation has two votes so Dave might think it is enough for
+    // consensus.
+    gossip_all(&mut nodes);
+
+    // However the observation does not really have enough votes, so no consensus should be reached
+    // yet.
+    for node in &mut nodes {
+        for block in poll_all(node) {
+            assert_ne!(*block.payload(), observation)
+        }
+    }
+
+    // Add one more vote and verify the consensus is now reached.
+    unwrap!(nodes[2].vote_for(observation.clone()));
+    gossip_all(&mut nodes);
+
+    for node in &mut nodes {
+        assert_eq!(unwrap!(node.poll()).payload(), &observation)
+    }
 }
 
 #[test]
@@ -504,6 +565,19 @@ where
     for node in nodes {
         unwrap!(node.vote_for(observation.clone()))
     }
+}
+
+fn vote_for_add<'a, I>(nodes: I, peer_to_add: PeerId)
+where
+    I: IntoIterator<Item = &'a mut Parsec<Payload, PeerId>>,
+{
+    vote_for(
+        nodes,
+        Observation::Add {
+            peer_id: peer_to_add,
+            related_info: vec![],
+        },
+    )
 }
 
 fn vote_for_remove<'a, I>(nodes: I, peer_to_remove: PeerId)

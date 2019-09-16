@@ -192,6 +192,10 @@ where
     }
 
     fn compute_consensus(&mut self, state: &mut SectionState<T, S::PublicId>) {
+        // Call `update_blocks` once, to allow this node to catch up to the previously consensused
+        // blocks.
+        let _ = self.update_blocks(state);
+
         loop {
             state.compute_consensus(&self.peer_list, self.consensus_mode);
 
