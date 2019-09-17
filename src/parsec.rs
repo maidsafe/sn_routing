@@ -49,10 +49,10 @@ const MAX_PARSECS: usize = 10;
 const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
 // Limit in integration tests
 #[cfg(all(feature = "mock_base", not(feature = "mock_parsec")))]
-const PARSEC_SIZE_LIMIT: u64 = 10_000_000;
+const PARSEC_SIZE_LIMIT: u64 = 20_000_000;
 // Limit for integration tests with mock-parsec
 #[cfg(feature = "mock_parsec")]
-const PARSEC_SIZE_LIMIT: u64 = 100;
+const PARSEC_SIZE_LIMIT: u64 = 500;
 
 // Keep track of size in case we need to prune.
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -228,17 +228,6 @@ impl ParsecMap {
             .flatten()
     }
 
-    #[cfg(feature = "mock_base")]
-    pub fn has_unpolled_observations(&self) -> bool {
-        let parsec = if let Some(parsec) = self.map.values().last() {
-            parsec
-        } else {
-            return false;
-        };
-
-        parsec.has_unpolled_observations()
-    }
-
     pub fn needs_pruning(&self) -> bool {
         self.size_counter.needs_pruning()
     }
@@ -284,6 +273,23 @@ impl ParsecMap {
             .take(MAX_PARSECS)
             .rev()
             .collect();
+    }
+}
+
+#[cfg(feature = "mock_base")]
+impl ParsecMap {
+    pub fn has_unpolled_observations(&self) -> bool {
+        let parsec = if let Some(parsec) = self.map.values().last() {
+            parsec
+        } else {
+            return false;
+        };
+
+        parsec.has_unpolled_observations()
+    }
+
+    pub fn get_size(&self) -> u64 {
+        self.size_counter.size_counter
     }
 }
 

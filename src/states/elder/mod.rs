@@ -1472,6 +1472,10 @@ impl Elder {
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
+
+    pub fn parsec_last_version(&self) -> u64 {
+        self.parsec_map.last_version()
+    }
 }
 
 impl Approved for Elder {

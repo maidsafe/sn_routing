@@ -536,38 +536,59 @@ fn check_section_info_ack() {
 }
 
 #[test]
-#[ignore] // Will be fixed or removed when proper pruning lands
-fn vote_prune() {
-    // Create a small network to keep all nodes in a single section. Then repeatedly add and remove
-    // nodes (while making sure no split happens) to cause lot of parsec traffic which should make
-    // the parsec graphs to grow sufficiently so prune is triggered and accumulated.
-
-    let max_section_size = 2 * LOWERED_ELDER_SIZE;
-    let steps = 10;
-
+fn carry_out_parsec_pruning() {
+    let init_network_size = 7;
+    let elder_size = 8;
+    let safe_section_size = 8;
     let network = Network::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        safe_section_size: LOWERED_ELDER_SIZE,
+        elder_size,
+        safe_section_size,
     });
-    let mut nodes = create_connected_nodes(&network, max_section_size);
+    let mut nodes = create_connected_nodes(&network, init_network_size);
+    poll_and_resend(&mut nodes);
 
-    for _ in 0..steps {
-        if nodes.len() < max_section_size {
-            // Add node
-            let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-            let node = TestNode::builder(&network).network_config(config).create();
-            nodes.push(node);
-        } else {
-            // Remove node
-            let _ = nodes.pop();
-        }
+    let parsec_versions = |nodes: &Nodes| {
+        nodes
+            .iter()
+            .map(|node| unwrap!(node.inner.elder_state()).parsec_last_version())
+            .collect_vec()
+    };
 
+    let initial_parsec_versions = parsec_versions(&nodes);
+
+    let mut rng = network.new_rng();
+    // Keeps polling and dispatching user data till trigger a pruning.
+    let max_gossips = 1_000;
+    for _ in 0..max_gossips {
+        let event: Vec<_> = rng.gen_iter().take(10_000).collect();
+        nodes.iter_mut().for_each(|node| {
+            let _ = node
+                .inner
+                .elder_state_mut()
+                .map(|state| state.vote_for_user_event(event.clone()));
+        });
         poll_and_resend(&mut nodes);
+
+        let new_parsec_versions = parsec_versions(&nodes);
+        if initial_parsec_versions
+            .iter()
+            .zip(new_parsec_versions.iter())
+            .all(|(vi, vn)| vi < vn)
+        {
+            break;
+        }
     }
 
-    assert!(nodes
-        .iter()
-        .all(|node| unwrap!(node.inner.parsec_prune_accumulated()) > 0));
+    let expected = initial_parsec_versions.iter().map(|v| v + 1).collect_vec();
+    let actual = parsec_versions(&nodes);
+    assert_eq!(expected, actual);
+
+    let node = create_node_with_contact(&network, &mut nodes[0]);
+    nodes.push(node);
+
+    poll_and_resend(&mut nodes);
+
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
 #[test]

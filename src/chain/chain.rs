@@ -60,9 +60,6 @@ pub struct Chain {
     chain_accumulator: ChainAccumulator,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
     event_cache: BTreeSet<NetworkEvent>,
-    /// Temporary. Counting the accumulated prune events. Only used in tests until tests that
-    /// actually tests pruning is in place.
-    parsec_prune_accumulated: usize,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
 }
@@ -116,7 +113,6 @@ impl Chain {
             is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
-            parsec_prune_accumulated: 0,
             churn_in_progress: false,
         }
     }
@@ -275,14 +271,6 @@ impl Chain {
             AccumulatingEvent::NeighbourMerge(digest) => {
                 // TODO: Check that the section is known and not already merged.
                 let _ = self.state.merging.insert(digest);
-            }
-            AccumulatingEvent::ParsecPrune => {
-                info!(
-                    "{} Handling accumulated {:?} not yet implemented, ignoring.",
-                    self, event
-                );
-                // TODO: remove once we have real integration tests of `ParsecPrune` accumulating.
-                self.parsec_prune_accumulated += 1;
             }
             AccumulatingEvent::Relocate(_) => {
                 self.churn_in_progress = false;
@@ -1530,12 +1518,6 @@ impl Chain {
     /// Returns their_knowledge
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         &self.state.get_their_knowledge()
-    }
-
-    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
-    /// implemented acting on the accumulated events.
-    pub fn parsec_prune_accumulated(&self) -> usize {
-        self.parsec_prune_accumulated
     }
 
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.

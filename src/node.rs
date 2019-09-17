@@ -483,12 +483,6 @@ impl Node {
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
     }
-
-    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
-    /// implemented acting on the accumulated events, at which point this function will be removed.
-    pub fn parsec_prune_accumulated(&self) -> Option<usize> {
-        self.chain().map(Chain::parsec_prune_accumulated)
-    }
 }
 
 #[cfg(feature = "mock_base")]
