@@ -370,7 +370,11 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_online_event(&mut self, _: OnlinePayload) -> Result<(), RoutingError> {
+    fn handle_online_event(
+        &mut self,
+        _: OnlinePayload,
+        _: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         Ok(())
     }
 

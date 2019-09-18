@@ -665,39 +665,35 @@ impl Elder {
         }
     }
 
+    // Send NodeApproval to the current candidate which promotes them to Adult and allows them to
+    // passively participate in parsec consensus (that is, they can receive gossip and poll
+    // consensused blocks out of parsec, but they can't vote yet)
     fn handle_candidate_approval(
         &mut self,
         new_pub_id: PublicId,
         new_client_auth: Authority<XorName>,
         outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        // Once the joining node joined, it may receive the vote regarding itself.
-        // Or a node may receive CandidateApproval before connection established.
-        // If we are not connected to the candidate, we do not want to add them
-        // to our RT.
-        // This will flag peer as valid if its found in peer_mgr regardless of their
-        // connection status to us.
-        let is_connected = if self.peer_mgr.get_peer(&new_pub_id).is_some() {
-            true
-        } else {
-            trace!(
-                "{} No peer with name {}",
-                self.log_ident(),
-                new_pub_id.name()
-            );
-
-            let src = Authority::ManagedNode(*self.name());
-            let _ = self.send_connection_request(new_pub_id, src, new_client_auth, outbox);
-
-            false
-        };
-
+    ) {
         info!(
             "{} Our section with {:?} has approved candidate {}.",
             self,
             self.our_prefix(),
             new_pub_id
         );
+
+        // Make sure we are connected to the candidate
+        if self.peer_mgr.get_peer(&new_pub_id).is_none() {
+            trace!(
+                "{} - Not yet connected to {} - sending connection request.",
+                self,
+                new_pub_id
+            );
+
+            let src = Authority::ManagedNode(*self.name());
+            let _ = self.send_connection_request(new_pub_id, src, new_client_auth, outbox);
+        };
+
+        self.peer_mgr.reset_candidate();
 
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
@@ -713,11 +709,6 @@ impl Elder {
                 self, new_pub_id, error
             );
         }
-
-        if is_connected {
-            self.add_node(&new_pub_id, outbox);
-        }
-        Ok(())
     }
 
     fn init_parsec(&mut self) {
@@ -1947,11 +1938,18 @@ impl Approved for Elder {
     fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        client_auth: Authority<XorName>,
+        _new_client_auth: Authority<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let to_vote_infos = self.chain.add_member(new_pub_id)?;
-        let _ = self.handle_candidate_approval(new_pub_id, client_auth, outbox);
+
+        // If we are connected to the new elder, mark it as a full node already. Otherwise the
+        // connection request to them should have been already sent and we mark them as full node
+        // when we receive the response.
+        if self.peer_mgr.get_peer(&new_pub_id).is_some() {
+            self.add_node(&new_pub_id, outbox);
+        };
+
         to_vote_infos
             .into_iter()
             .map(NetworkEvent::SectionInfo)
@@ -1975,9 +1973,22 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_online_event(&mut self, online_payload: OnlinePayload) -> Result<(), RoutingError> {
+    fn handle_online_event(
+        &mut self,
+        online_payload: OnlinePayload,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         if self.chain.try_accept_candidate_as_member(&online_payload) {
-            self.peer_mgr.reset_candidate();
+            let OnlinePayload {
+                new_public_id,
+                client_auth,
+                ..
+            } = online_payload;
+
+            self.handle_candidate_approval(new_public_id, client_auth, outbox);
+
+            // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
+
             self.vote_for_event(NetworkEvent::AddElder(
                 online_payload.new_public_id,
                 online_payload.client_auth,
