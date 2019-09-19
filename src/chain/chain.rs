@@ -8,9 +8,10 @@
 
 use super::{
     candidate::Candidate,
-    chain_accumulator::{AccumulatingEvent, ChainAccumulator, InsertError},
+    chain_accumulator::{ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
+    AccumulatingEvent, GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
+    SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -125,8 +126,8 @@ impl Chain {
         event: &NetworkEvent,
         proof_set: ProofSet,
     ) -> Result<(), RoutingError> {
-        match event {
-            NetworkEvent::AddElder(_, _) | NetworkEvent::RemoveElder(_) => (),
+        match event.payload {
+            AccumulatingEvent::AddElder(_, _) | AccumulatingEvent::RemoveElder(_) => (),
             _ => {
                 log_or_panic!(
                     LogLevel::Error,
@@ -233,7 +234,7 @@ impl Chain {
 
         match event {
             AccumulatingEvent::SectionInfo(ref sec_info) => {
-                self.add_section_info(sec_info.clone(), proofs.into_proof_set())?;
+                self.add_section_info(sec_info.clone(), proofs.into_parsec_proof_set())?;
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
                         return Ok(None);
@@ -358,7 +359,7 @@ impl Chain {
         self.state.try_merge()
     }
 
-    /// Returns `true` if we have accumulated self `NetworkEvent::OurMerge`.
+    /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.
     pub fn is_self_merge_ready(&self) -> bool {
         self.state.is_self_merge_ready()
     }
@@ -393,7 +394,7 @@ impl Chain {
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
         let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
-            .map(NetworkEvent::NeighbourMerge);
+            .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
 
         info!(
             "finalise_prefix_change: {:?}, {:?}, state: {:?}",
@@ -561,8 +562,8 @@ impl Chain {
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
     fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
-        let si = match *event {
-            NetworkEvent::SectionInfo(ref si, _) => si,
+        let si = match event.payload {
+            AccumulatingEvent::SectionInfo(ref si) => si,
             _ => return false,
         };
 
@@ -649,11 +650,11 @@ impl Chain {
     fn can_handle_vote(&self, event: &NetworkEvent) -> bool {
         // TODO: is the merge state check even needed in the following match?
         // we only seem to set self.state = Merging after accumulation of OurMerge
-        match (self.state.change, event) {
+        match (self.state.change, &event.payload) {
             (PrefixChange::None, _)
-            | (PrefixChange::Merging, NetworkEvent::OurMerge)
-            | (PrefixChange::Merging, NetworkEvent::NeighbourMerge(_)) => true,
-            (_, NetworkEvent::SectionInfo(sec_info, _)) => {
+            | (PrefixChange::Merging, AccumulatingEvent::OurMerge)
+            | (PrefixChange::Merging, AccumulatingEvent::NeighbourMerge(_)) => true,
+            (_, AccumulatingEvent::SectionInfo(sec_info)) => {
                 if sec_info.prefix().is_compatible(self.our_prefix())
                     && sec_info.version() > self.state.new_info.version()
                 {

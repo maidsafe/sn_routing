@@ -190,7 +190,7 @@ impl SharedState {
             .map(|(sec_info, _)| sec_info)
     }
 
-    /// Returns `true` if we have accumulated self `NetworkEvent::OurMerge`.
+    /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.
     pub(super) fn is_self_merge_ready(&self) -> bool {
         self.merging.contains(self.our_info().hash())
     }
@@ -525,10 +525,12 @@ impl SectionKeyInfo {
 
     pub fn serialise_for_signature(&self) -> Option<Vec<u8>> {
         let payload_for_signature: parsec::Observation<NetworkEvent, PublicId> =
-            parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(
-                self.key_info_holder.internal_section_info().clone(),
-                None,
-            ));
+            parsec::Observation::OpaquePayload(
+                self.key_info_holder
+                    .internal_section_info()
+                    .clone()
+                    .into_network_event(),
+            );
         serialisation::serialise(&payload_for_signature).ok()
     }
 }

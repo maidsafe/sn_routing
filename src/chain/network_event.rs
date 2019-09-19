@@ -69,7 +69,7 @@ pub struct SectionInfoSigPayload {
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub enum NetworkEvent {
+pub enum AccumulatingEvent {
     /// Add new elder once we agreed to add a candidate
     AddElder(PublicId, Authority<XorName>),
     /// Remove elder once we agreed to remove the peer
@@ -82,7 +82,7 @@ pub enum NetworkEvent {
 
     OurMerge,
     NeighbourMerge(Digest256),
-    SectionInfo(SectionInfo, Option<SectionInfoSigPayload>),
+    SectionInfo(SectionInfo),
 
     /// Voted for received ExpectCandidate Message.
     ExpectCandidate(ExpectCandidatePayload),
@@ -100,23 +100,98 @@ pub enum NetworkEvent {
     SendAckMessage(SendAckMessagePayload),
 }
 
+impl AccumulatingEvent {
+    pub fn from_network_event(
+        event: NetworkEvent,
+    ) -> (AccumulatingEvent, Option<SectionInfoSigPayload>) {
+        (event.payload, event.signature)
+    }
+
+    pub fn into_network_event(self) -> NetworkEvent {
+        NetworkEvent {
+            payload: self,
+            signature: None,
+        }
+    }
+
+    pub fn into_network_event_with(self, signature: Option<SectionInfoSigPayload>) -> NetworkEvent {
+        NetworkEvent {
+            payload: self,
+            signature,
+        }
+    }
+
+    pub fn section_info(&self) -> Option<&SectionInfo> {
+        match *self {
+            AccumulatingEvent::SectionInfo(ref self_si) => Some(self_si),
+            _ => None,
+        }
+    }
+}
+
+impl Debug for AccumulatingEvent {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match self {
+            AccumulatingEvent::AddElder(ref id, _) => write!(formatter, "AddElder({}, _)", id),
+            AccumulatingEvent::RemoveElder(ref id) => write!(formatter, "RemoveElder({})", id),
+            AccumulatingEvent::Online(ref payload) => write!(
+                formatter,
+                "Online(new:{}, old:{})",
+                payload.new_public_id, payload.old_public_id
+            ),
+            AccumulatingEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
+            AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
+            AccumulatingEvent::NeighbourMerge(ref digest) => {
+                write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
+            }
+            AccumulatingEvent::SectionInfo(ref sec_info) => {
+                write!(formatter, "SectionInfo({:?})", sec_info)
+            }
+            AccumulatingEvent::ExpectCandidate(ref vote) => {
+                write!(formatter, "ExpectCandidate({:?})", vote)
+            }
+            AccumulatingEvent::PurgeCandidate(ref id) => {
+                write!(formatter, "PurgeCandidate({})", id)
+            }
+            AccumulatingEvent::TheirKeyInfo(ref payload) => {
+                write!(formatter, "TheirKeyInfo({:?})", payload)
+            }
+            AccumulatingEvent::AckMessage(ref payload) => {
+                write!(formatter, "AckMessage({:?})", payload)
+            }
+            AccumulatingEvent::SendAckMessage(ref payload) => {
+                write!(formatter, "SendAckMessage({:?})", payload)
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct NetworkEvent {
+    pub payload: AccumulatingEvent,
+    pub signature: Option<SectionInfoSigPayload>,
+}
+
 impl NetworkEvent {
     /// Returns the payload if this is a `SectionInfo` event.
     pub fn section_info(&self) -> Option<&SectionInfo> {
-        match *self {
-            NetworkEvent::SectionInfo(ref self_si, _) => Some(self_si),
-            _ => None,
-        }
+        self.payload.section_info()
     }
 
     /// Convert `NetworkEvent` into a Parsec Observation
     pub fn into_obs(self) -> Result<parsec::Observation<NetworkEvent, PublicId>, RoutingError> {
         Ok(match self {
-            NetworkEvent::AddElder(id, auth) => parsec::Observation::Add {
+            NetworkEvent {
+                payload: AccumulatingEvent::AddElder(id, auth),
+                ..
+            } => parsec::Observation::Add {
                 peer_id: id,
                 related_info: serialise(&auth)?,
             },
-            NetworkEvent::RemoveElder(id) => parsec::Observation::Remove {
+            NetworkEvent {
+                payload: AccumulatingEvent::RemoveElder(id),
+                ..
+            } => parsec::Observation::Remove {
                 peer_id: id,
                 related_info: Default::default(),
             },
@@ -129,33 +204,10 @@ impl parsec::NetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match self {
-            NetworkEvent::AddElder(ref id, _) => write!(formatter, "AddElder({}, _)", id),
-            NetworkEvent::RemoveElder(ref id) => write!(formatter, "RemoveElder({})", id),
-            NetworkEvent::Online(ref payload) => write!(
-                formatter,
-                "Online(new:{}, old:{})",
-                payload.new_public_id, payload.old_public_id
-            ),
-            NetworkEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
-            NetworkEvent::OurMerge => write!(formatter, "OurMerge"),
-            NetworkEvent::NeighbourMerge(ref digest) => {
-                write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
-            }
-            NetworkEvent::SectionInfo(ref sec_info, sig) => {
-                write!(formatter, "SectionInfo({:?}, {})", sec_info, sig.is_some())
-            }
-            NetworkEvent::ExpectCandidate(ref vote) => {
-                write!(formatter, "ExpectCandidate({:?})", vote)
-            }
-            NetworkEvent::PurgeCandidate(ref id) => write!(formatter, "PurgeCandidate({})", id),
-            NetworkEvent::TheirKeyInfo(ref payload) => {
-                write!(formatter, "TheirKeyInfo({:?})", payload)
-            }
-            NetworkEvent::AckMessage(ref payload) => write!(formatter, "AckMessage({:?})", payload),
-            NetworkEvent::SendAckMessage(ref payload) => {
-                write!(formatter, "SendAckMessage({:?})", payload)
-            }
+        if self.signature.is_some() {
+            write!(formatter, "{:?}(signature)", self.payload)
+        } else {
+            self.payload.fmt(formatter)
         }
     }
 }

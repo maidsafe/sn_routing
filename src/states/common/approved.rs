@@ -9,8 +9,8 @@
 use super::Relocated;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof,
-        ProofSet, SectionInfo, SectionKeyInfo, SendAckMessagePayload,
+        AccumulatingEvent, Chain, ExpectCandidatePayload, OnlinePayload, Proof, ProofSet,
+        SectionInfo, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     id::PublicId,
@@ -179,16 +179,17 @@ pub trait Approved: Relocated {
                     peer_id,
                     related_info,
                 } => {
-                    let event = NetworkEvent::AddElder(
+                    let event = AccumulatingEvent::AddElder(
                         *peer_id,
                         serialisation::deserialise(&related_info)?,
-                    );
+                    )
+                    .into_network_event();
                     let proof_set = to_proof_set(&block);
                     trace!("{} Parsec Add {}: - {}", self, parsec_version, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;
                 }
                 Observation::Remove { peer_id, .. } => {
-                    let event = NetworkEvent::RemoveElder(*peer_id);
+                    let event = AccumulatingEvent::RemoveElder(*peer_id).into_network_event();
                     let proof_set = to_proof_set(&block);
                     trace!("{} Parsec Remove {}: - {}", self, parsec_version, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;

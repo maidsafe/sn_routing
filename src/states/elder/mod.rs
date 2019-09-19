@@ -258,14 +258,10 @@ impl Elder {
 
         // We have just become established. Now we can supply our votes for all latest neighbour
         // infos that have accumulated so far.
-        let neighbour_info_events = self
-            .chain
-            .neighbour_infos()
-            .map(|info| info.clone().into_network_event())
-            .collect_vec();
+        let neighbour_infos = self.chain.neighbour_infos().cloned().collect_vec();
 
-        neighbour_info_events.into_iter().for_each(|event| {
-            self.vote_for_event(event);
+        neighbour_infos.into_iter().for_each(|info| {
+            self.vote_for_section_info(info);
         });
 
         // Send `Event::Connected` first and then any backlogged events from previous states.
@@ -311,9 +307,9 @@ impl Elder {
             }
         }
         if let Some(merged_info) = self.chain.try_merge()? {
-            self.vote_for_event(NetworkEvent::SectionInfo(merged_info, None));
+            self.vote_for_section_info(merged_info);
         } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
-            self.vote_for_event(NetworkEvent::OurMerge);
+            self.vote_for_event(AccumulatingEvent::OurMerge);
         }
         Ok(())
     }
@@ -382,7 +378,9 @@ impl Elder {
 
         for obs in drained_obs {
             let event = match obs {
-                parsec::Observation::Remove { peer_id, .. } => NetworkEvent::Offline(peer_id),
+                parsec::Observation::Remove { peer_id, .. } => {
+                    AccumulatingEvent::Offline(peer_id).into_network_event()
+                }
                 parsec::Observation::OpaquePayload(event) => event.clone(),
 
                 parsec::Observation::Genesis { .. }
@@ -398,39 +396,38 @@ impl Elder {
 
         cached_events
             .iter()
-            .filter(|event| match **event {
+            .filter(|event| match event.payload {
                 // Only re-vote not yet accumulated events and still relevant to our new prefix.
-                NetworkEvent::Offline(pub_id) => {
-                    let (event, _sig) = AccumulatingEvent::from_network_event((*event).clone());
-                    our_pfx.matches(pub_id.name()) && !completed_events.contains(&event)
+                AccumulatingEvent::Offline(pub_id) => {
+                    our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
                 }
 
                 // Drop candidates that have not completed:
                 // Called peer_manager.remove_candidate reset the candidate so it can be shared by
                 // all nodes: Because new node may not have voted for it, Forget the votes in
                 // flight as well.
-                NetworkEvent::AddElder(_, _)
-                | NetworkEvent::RemoveElder(_)
-                | NetworkEvent::Online(_)
-                | NetworkEvent::ExpectCandidate(_)
-                | NetworkEvent::PurgeCandidate(_) => false,
+                AccumulatingEvent::AddElder(_, _)
+                | AccumulatingEvent::RemoveElder(_)
+                | AccumulatingEvent::Online(_)
+                | AccumulatingEvent::ExpectCandidate(_)
+                | AccumulatingEvent::PurgeCandidate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
-                NetworkEvent::SectionInfo(ref sec_info, _) => {
+                AccumulatingEvent::SectionInfo(ref sec_info) => {
                     our_pfx.is_neighbour(sec_info.prefix())
                 }
 
                 // Drop: condition may have changed.
-                NetworkEvent::OurMerge => false,
+                AccumulatingEvent::OurMerge => false,
 
                 // Keep: Still relevant after prefix change.
-                NetworkEvent::NeighbourMerge(_)
-                | NetworkEvent::TheirKeyInfo(_)
-                | NetworkEvent::AckMessage(_)
-                | NetworkEvent::SendAckMessage(_) => true,
+                AccumulatingEvent::NeighbourMerge(_)
+                | AccumulatingEvent::TheirKeyInfo(_)
+                | AccumulatingEvent::AckMessage(_)
+                | AccumulatingEvent::SendAckMessage(_) => true,
             })
             .for_each(|event| {
-                self.vote_for_event(event.clone());
+                self.vote_for_network_event(event.clone());
             });
 
         Ok(())
@@ -638,7 +635,7 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         // Prefix doesn't need to match, as we may get an ack for the section where we were before
         // splitting.
-        self.vote_for_event(NetworkEvent::AckMessage(AckMessagePayload {
+        self.vote_for_event(AccumulatingEvent::AckMessage(AckMessagePayload {
             src_prefix,
             ack_version,
         }));
@@ -651,7 +648,7 @@ impl Elder {
         });
 
         if has_their_keys {
-            self.vote_for_event(NetworkEvent::SendAckMessage(ack_payload));
+            self.vote_for_event(AccumulatingEvent::SendAckMessage(ack_payload));
         }
     }
 
@@ -1028,7 +1025,7 @@ impl Elder {
         dst_name: XorName,
         message_id: MessageId,
     ) -> Result<(), RoutingError> {
-        self.vote_for_event(NetworkEvent::ExpectCandidate(ExpectCandidatePayload {
+        self.vote_for_event(AccumulatingEvent::ExpectCandidate(ExpectCandidatePayload {
             old_public_id,
             old_client_auth,
             dst_name,
@@ -1139,19 +1136,19 @@ impl Elder {
         });
 
         if new_key_info {
-            self.vote_for_event(NetworkEvent::TheirKeyInfo(key_info.clone()));
+            self.vote_for_event(AccumulatingEvent::TheirKeyInfo(key_info.clone()));
         }
     }
 
     fn handle_neighbour_info(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&sec_info) {
-            self.vote_for_event(sec_info.into_network_event());
+            self.vote_for_section_info(sec_info);
         }
         Ok(())
     }
 
     fn handle_merge(&mut self, digest: Digest256) -> Result<(), RoutingError> {
-        self.vote_for_event(NetworkEvent::NeighbourMerge(digest));
+        self.vote_for_event(AccumulatingEvent::NeighbourMerge(digest));
         Ok(())
     }
 
@@ -1205,10 +1202,18 @@ impl Elder {
                 self.our_prefix()
             );
         }
-        self.vote_for_event(NetworkEvent::Online(online_payload));
+        self.vote_for_event(AccumulatingEvent::Online(online_payload));
     }
 
-    fn vote_for_event(&mut self, event: NetworkEvent) {
+    fn vote_for_event(&mut self, event: AccumulatingEvent) {
+        self.vote_for_network_event(event.into_network_event())
+    }
+
+    fn vote_for_section_info(&mut self, info: SectionInfo) {
+        self.vote_for_network_event(info.into_network_event())
+    }
+
+    fn vote_for_network_event(&mut self, event: NetworkEvent) {
         trace!("{} Vote for Event {:?}", self, event);
         self.parsec_map.vote_for(event, &self.log_ident())
     }
@@ -1412,7 +1417,7 @@ impl Elder {
             outbox.send_event(Event::NodeLost(*pub_id.name()));
 
             if self.chain.our_info().members().contains(&pub_id) {
-                self.vote_for_event(NetworkEvent::Offline(pub_id));
+                self.vote_for_event(AccumulatingEvent::Offline(pub_id));
             }
         }
 
@@ -1452,7 +1457,7 @@ impl Elder {
     fn remove_expired_peers(&mut self) {
         if self.peer_mgr.expired_candidate_once() {
             if let Some(expired_id) = self.chain.candidate_old_public_id().cloned() {
-                self.vote_for_event(NetworkEvent::PurgeCandidate(expired_id));
+                self.vote_for_event(AccumulatingEvent::PurgeCandidate(expired_id));
             }
         }
 
@@ -1462,7 +1467,7 @@ impl Elder {
             // expired peers.
             self.disconnect_peer(&pub_id);
             if self.chain.our_info().members().contains(&pub_id) {
-                self.vote_for_event(NetworkEvent::Offline(pub_id));
+                self.vote_for_event(AccumulatingEvent::Offline(pub_id));
             }
         }
     }
@@ -1905,8 +1910,7 @@ impl Approved for Elder {
 
         to_vote_infos
             .into_iter()
-            .map(|info| NetworkEvent::SectionInfo(info, None))
-            .for_each(|sec_info| self.vote_for_event(sec_info));
+            .for_each(|sec_info| self.vote_for_section_info(sec_info));
 
         Ok(())
     }
@@ -1917,7 +1921,7 @@ impl Approved for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let self_info = self.chain.remove_member(pub_id)?;
-        self.vote_for_event(NetworkEvent::SectionInfo(self_info, None));
+        self.vote_for_section_info(self_info);
         if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
             let _ = self.dropped_peer(pub_id, outbox, false);
             self.disconnect_peer(&pub_id);
@@ -1942,7 +1946,7 @@ impl Approved for Elder {
 
             // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-            self.vote_for_event(NetworkEvent::AddElder(
+            self.vote_for_event(AccumulatingEvent::AddElder(
                 online_payload.new_public_id,
                 online_payload.client_auth,
             ));
@@ -1951,7 +1955,7 @@ impl Approved for Elder {
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        self.vote_for_event(NetworkEvent::RemoveElder(pub_id));
+        self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
         Ok(())
     }
 
@@ -2031,7 +2035,7 @@ impl Approved for Elder {
         } else {
             // Vote for neighbour update if we haven't done so already.
             // vote_for_event is expected to only generate a new vote if required.
-            self.vote_for_event(sec_info.clone().into_network_event());
+            self.vote_for_section_info(sec_info);
         }
 
         let _ = self.merge_if_necessary();

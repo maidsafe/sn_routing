@@ -6,13 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    AckMessagePayload, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet,
-    SectionInfo, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
-};
+use super::{AccumulatingEvent, NetworkEvent, Proof, ProofSet, SectionInfoSigPayload};
 use crate::id::PublicId;
-use crate::sha3::Digest256;
-use crate::{Authority, XorName};
 use log::LogLevel;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
@@ -97,95 +92,10 @@ impl ChainAccumulator {
                 .into_iter()
                 .filter(|&(_, ref proofs)| proofs.parsec_proofs.contains_id(our_id))
                 .map(|(event, proofs)| {
-                    event.convert_to_network_event(proofs.into_sig_shares().remove(our_id))
+                    event.into_network_event_with(proofs.into_sig_shares().remove(our_id))
                 })
                 .collect(),
             completed_events,
-        }
-    }
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub enum AccumulatingEvent {
-    /// Add new elder once we agreed to add a candidate
-    AddElder(PublicId, Authority<XorName>),
-    /// Remove elder once we agreed to remove the peer
-    RemoveElder(PublicId),
-
-    /// Voted for candidate that pass resource proof
-    Online(OnlinePayload),
-    /// Voted for candidate we no longer consider online.
-    Offline(PublicId),
-
-    OurMerge,
-    NeighbourMerge(Digest256),
-    SectionInfo(SectionInfo),
-
-    /// Voted for received ExpectCandidate Message.
-    ExpectCandidate(ExpectCandidatePayload),
-
-    // Voted for timeout expired for this candidate old_public_id.
-    PurgeCandidate(PublicId),
-
-    // Voted for received message with keys to we can update their_keys
-    TheirKeyInfo(SectionKeyInfo),
-
-    // Voted for received AckMessage to update their_knowledge
-    AckMessage(AckMessagePayload),
-
-    // Voted for sending AckMessage (Require 100% consensus)
-    SendAckMessage(SendAckMessagePayload),
-}
-
-impl AccumulatingEvent {
-    pub fn from_network_event(
-        event: NetworkEvent,
-    ) -> (AccumulatingEvent, Option<SectionInfoSigPayload>) {
-        let accumulating_event = match event {
-            NetworkEvent::SectionInfo(sec_info, sig) => {
-                return (AccumulatingEvent::SectionInfo(sec_info), sig)
-            }
-
-            NetworkEvent::AddElder(id, aux) => AccumulatingEvent::AddElder(id, aux),
-            NetworkEvent::RemoveElder(id) => AccumulatingEvent::RemoveElder(id),
-            NetworkEvent::Online(payload) => AccumulatingEvent::Online(payload),
-            NetworkEvent::Offline(id) => AccumulatingEvent::Offline(id),
-            NetworkEvent::OurMerge => AccumulatingEvent::OurMerge,
-            NetworkEvent::NeighbourMerge(digest) => AccumulatingEvent::NeighbourMerge(digest),
-            NetworkEvent::ExpectCandidate(vote) => AccumulatingEvent::ExpectCandidate(vote),
-            NetworkEvent::PurgeCandidate(id) => AccumulatingEvent::PurgeCandidate(id),
-            NetworkEvent::TheirKeyInfo(payload) => AccumulatingEvent::TheirKeyInfo(payload),
-            NetworkEvent::AckMessage(payload) => AccumulatingEvent::AckMessage(payload),
-            NetworkEvent::SendAckMessage(payload) => AccumulatingEvent::SendAckMessage(payload),
-        };
-
-        (accumulating_event, None)
-    }
-
-    pub fn convert_to_network_event(self, sig: Option<SectionInfoSigPayload>) -> NetworkEvent {
-        match self {
-            AccumulatingEvent::SectionInfo(sec_info) => NetworkEvent::SectionInfo(sec_info, sig),
-
-            AccumulatingEvent::AddElder(id, aux) => NetworkEvent::AddElder(id, aux),
-            AccumulatingEvent::RemoveElder(id) => NetworkEvent::RemoveElder(id),
-            AccumulatingEvent::Online(payload) => NetworkEvent::Online(payload),
-            AccumulatingEvent::Offline(id) => NetworkEvent::Offline(id),
-            AccumulatingEvent::OurMerge => NetworkEvent::OurMerge,
-            AccumulatingEvent::NeighbourMerge(digest) => NetworkEvent::NeighbourMerge(digest),
-            AccumulatingEvent::ExpectCandidate(vote) => NetworkEvent::ExpectCandidate(vote),
-            AccumulatingEvent::PurgeCandidate(id) => NetworkEvent::PurgeCandidate(id),
-            AccumulatingEvent::TheirKeyInfo(payload) => NetworkEvent::TheirKeyInfo(payload),
-            AccumulatingEvent::AckMessage(payload) => NetworkEvent::AckMessage(payload),
-            AccumulatingEvent::SendAckMessage(payload) => NetworkEvent::SendAckMessage(payload),
-        }
-    }
-
-    /// Returns the payload if this is a `SectionInfo` event.
-    pub fn section_info(&self) -> Option<&SectionInfo> {
-        match *self {
-            AccumulatingEvent::SectionInfo(ref self_si) => Some(self_si),
-            _ => None,
         }
     }
 }
@@ -223,7 +133,7 @@ impl AccumulatingProof {
         &self.parsec_proofs
     }
 
-    pub fn into_proof_set(self) -> ProofSet {
+    pub fn into_parsec_proof_set(self) -> ProofSet {
         self.parsec_proofs
     }
 
@@ -249,6 +159,7 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
+    use super::super::SectionInfo;
     use super::*;
     use crate::{id::FullId, BlsPublicKeySet, BlsPublicKeyShare};
     use parsec::SecretId;
@@ -304,7 +215,7 @@ mod test {
             EventType::NoSignature => TestData {
                 our_id: *id.public_id(),
                 event: AccumulatingEvent::OurMerge,
-                network_event: NetworkEvent::OurMerge,
+                network_event: AccumulatingEvent::OurMerge.into_network_event(),
                 first_proof,
                 proofs: proofs.clone(),
                 acc_proofs: AccumulatingProof {
@@ -320,10 +231,8 @@ mod test {
                 TestData {
                     our_id: *id.public_id(),
                     event: AccumulatingEvent::SectionInfo(sec_info.clone()),
-                    network_event: NetworkEvent::SectionInfo(
-                        sec_info.clone(),
-                        Some(sig_payload.clone()),
-                    ),
+                    network_event: AccumulatingEvent::SectionInfo(sec_info.clone())
+                        .into_network_event_with(Some(sig_payload.clone())),
                     first_proof,
                     proofs: proofs.clone(),
                     acc_proofs: AccumulatingProof {

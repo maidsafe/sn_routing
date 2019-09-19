@@ -137,7 +137,7 @@ impl Debug for ProofSet {
 
 #[cfg(test)]
 mod tests {
-    use super::super::NetworkEvent;
+    use super::super::AccumulatingEvent;
     use super::Proof;
     use crate::id::FullId;
     use safe_crypto;
@@ -148,7 +148,7 @@ mod tests {
         unwrap!(safe_crypto::init());
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
-        let payload = NetworkEvent::OurMerge;
+        let payload = AccumulatingEvent::OurMerge;
         let proof = unwrap!(Proof::new(pub_id, full_id.signing_private_key(), &payload));
         assert!(proof.validate_signature(&payload));
     }
@@ -159,8 +159,8 @@ mod tests {
         unwrap!(safe_crypto::init());
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
-        let payload = NetworkEvent::OurMerge;
-        let other_payload = NetworkEvent::Offline(pub_id);
+        let payload = AccumulatingEvent::OurMerge;
+        let other_payload = AccumulatingEvent::Offline(pub_id);
         let proof = unwrap!(Proof::new(pub_id, full_id.signing_private_key(), &payload));
         assert!(!proof.validate_signature(&other_payload));
     }
