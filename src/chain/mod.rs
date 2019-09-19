@@ -23,9 +23,10 @@ mod test_utils;
 pub use self::test_utils::verify_chain_invariant;
 pub use self::{
     chain::{delivery_group_size, Chain, PrefixChangeOutcome},
+    chain_accumulator::AccumulatingEvent,
     network_event::{
         AckMessagePayload, ExpectCandidatePayload, NetworkEvent, OnlinePayload,
-        SendAckMessagePayload,
+        SectionInfoSigPayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
     section_info::SectionInfo,

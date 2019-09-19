@@ -9,8 +9,8 @@
 use super::Relocated;
 use crate::{
     chain::{
-        Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
-        SectionKeyInfo, SendAckMessagePayload,
+        AccumulatingEvent, Chain, ExpectCandidatePayload, NetworkEvent, OnlinePayload, Proof,
+        ProofSet, SectionInfo, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     id::PublicId,
@@ -219,37 +219,39 @@ pub trait Approved: Relocated {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
-                NetworkEvent::AddElder(pub_id, client_auth) => {
+                AccumulatingEvent::AddElder(pub_id, client_auth) => {
                     self.handle_add_elder_event(pub_id, client_auth, outbox)?;
                 }
-                NetworkEvent::RemoveElder(pub_id) => {
+                AccumulatingEvent::RemoveElder(pub_id) => {
                     self.handle_remove_elder_event(pub_id, outbox)?;
                 }
-                NetworkEvent::Online(info) => {
+                AccumulatingEvent::Online(info) => {
                     self.handle_online_event(info, outbox)?;
                 }
-                NetworkEvent::Offline(pub_id) => {
+                AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id)?;
                 }
-                NetworkEvent::OurMerge => self.handle_our_merge_event()?,
-                NetworkEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
-                NetworkEvent::SectionInfo(sec_info) => {
+                AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
+                AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
+                AccumulatingEvent::SectionInfo(sec_info) => {
                     match self.handle_section_info_event(sec_info, our_pfx, outbox)? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
                 }
-                NetworkEvent::TheirKeyInfo(key_info) => {
+                AccumulatingEvent::TheirKeyInfo(key_info) => {
                     self.handle_their_key_info_event(key_info)?
                 }
-                NetworkEvent::AckMessage(_payload) => {
+                AccumulatingEvent::AckMessage(_payload) => {
                     // Update their_knowledge is handled within the chain.
                 }
-                NetworkEvent::SendAckMessage(payload) => {
+                AccumulatingEvent::SendAckMessage(payload) => {
                     self.handle_send_ack_message_event(payload)?
                 }
-                NetworkEvent::ExpectCandidate(vote) => self.handle_expect_candidate_event(vote)?,
-                NetworkEvent::PurgeCandidate(old_public_id) => {
+                AccumulatingEvent::ExpectCandidate(vote) => {
+                    self.handle_expect_candidate_event(vote)?
+                }
+                AccumulatingEvent::PurgeCandidate(old_public_id) => {
                     self.handle_purge_candidate_event(old_public_id)?
                 }
             }

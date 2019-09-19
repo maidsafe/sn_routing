@@ -127,7 +127,7 @@ impl SectionInfo {
     /// `other_event`.
     pub fn proves(&self, other_info: &SectionInfo, proofs: &ProofSet) -> bool {
         let other_event: parsec::Observation<NetworkEvent, PublicId> =
-            parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(other_info.clone()));
+            parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(other_info.clone(), None));
         self.is_quorum(proofs) && proofs.validate_signatures(&other_event)
     }
 
@@ -139,7 +139,7 @@ impl SectionInfo {
 
     /// To NetworkEvent::SectionInfo event
     pub fn into_network_event(self) -> NetworkEvent {
-        NetworkEvent::SectionInfo(self)
+        NetworkEvent::SectionInfo(self, None)
     }
 
     #[cfg(any(test, feature = "mock_base"))]

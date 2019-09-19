@@ -221,7 +221,7 @@ impl ElderUnderTest {
     fn accumulate_section_info_if_vote(&mut self, section_info_payload: SectionInfo) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&NetworkEvent::SectionInfo(section_info_payload)],
+            &[&NetworkEvent::SectionInfo(section_info_payload, None)],
         );
     }
 

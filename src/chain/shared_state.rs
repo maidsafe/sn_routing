@@ -527,6 +527,7 @@ impl SectionKeyInfo {
         let payload_for_signature: parsec::Observation<NetworkEvent, PublicId> =
             parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(
                 self.key_info_holder.internal_section_info().clone(),
+                None,
             ));
         serialisation::serialise(&payload_for_signature).ok()
     }

@@ -14,9 +14,9 @@ use super::common::{Approved, Base, Bootstrapped, Relocated};
 use crate::messages::Message;
 use crate::{
     chain::{
-        delivery_group_size, AckMessagePayload, Chain, ExpectCandidatePayload, GenesisPfxInfo,
-        NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome, SectionInfo,
-        SectionKeyInfo, SendAckMessagePayload,
+        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, ExpectCandidatePayload,
+        GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
+        SectionInfo, SectionKeyInfo, SendAckMessagePayload,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -311,7 +311,7 @@ impl Elder {
             }
         }
         if let Some(merged_info) = self.chain.try_merge()? {
-            self.vote_for_event(NetworkEvent::SectionInfo(merged_info));
+            self.vote_for_event(NetworkEvent::SectionInfo(merged_info, None));
         } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
             self.vote_for_event(NetworkEvent::OurMerge);
         }
@@ -401,7 +401,8 @@ impl Elder {
             .filter(|event| match **event {
                 // Only re-vote not yet accumulated events and still relevant to our new prefix.
                 NetworkEvent::Offline(pub_id) => {
-                    our_pfx.matches(pub_id.name()) && !completed_events.contains(event)
+                    let (event, _sig) = AccumulatingEvent::from_network_event((*event).clone());
+                    our_pfx.matches(pub_id.name()) && !completed_events.contains(&event)
                 }
 
                 // Drop candidates that have not completed:
@@ -415,7 +416,9 @@ impl Elder {
                 | NetworkEvent::PurgeCandidate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
-                NetworkEvent::SectionInfo(ref sec_info) => our_pfx.is_neighbour(sec_info.prefix()),
+                NetworkEvent::SectionInfo(ref sec_info, _) => {
+                    our_pfx.is_neighbour(sec_info.prefix())
+                }
 
                 // Drop: condition may have changed.
                 NetworkEvent::OurMerge => false,
@@ -1902,7 +1905,7 @@ impl Approved for Elder {
 
         to_vote_infos
             .into_iter()
-            .map(NetworkEvent::SectionInfo)
+            .map(|info| NetworkEvent::SectionInfo(info, None))
             .for_each(|sec_info| self.vote_for_event(sec_info));
 
         Ok(())
@@ -1914,7 +1917,7 @@ impl Approved for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let self_info = self.chain.remove_member(pub_id)?;
-        self.vote_for_event(NetworkEvent::SectionInfo(self_info));
+        self.vote_for_event(NetworkEvent::SectionInfo(self_info, None));
         if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
             let _ = self.dropped_peer(pub_id, outbox, false);
             self.disconnect_peer(&pub_id);

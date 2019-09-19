@@ -6,13 +6,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{ProofSet, SectionInfo, SectionKeyInfo};
+use super::{SectionInfo, SectionKeyInfo};
 use crate::id::PublicId;
 use crate::parsec;
 use crate::routing_table::Prefix;
 use crate::sha3::Digest256;
 use crate::types::MessageId;
-use crate::{Authority, RoutingError, XorName};
+use crate::{
+    Authority, BlsPublicKeySet, BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
+};
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt::{self, Debug, Formatter};
@@ -55,6 +57,14 @@ pub struct SendAckMessagePayload {
     pub ack_version: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct SectionInfoSigPayload {
+    /// The signature share signing the SectionInfo.
+    pub share: (BlsPublicKeyShare, BlsSignatureShare),
+    /// The key set to combine shares.
+    pub pk_set: BlsPublicKeySet,
+}
+
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
@@ -72,7 +82,7 @@ pub enum NetworkEvent {
 
     OurMerge,
     NeighbourMerge(Digest256),
-    SectionInfo(SectionInfo),
+    SectionInfo(SectionInfo, Option<SectionInfoSigPayload>),
 
     /// Voted for received ExpectCandidate Message.
     ExpectCandidate(ExpectCandidatePayload),
@@ -91,18 +101,10 @@ pub enum NetworkEvent {
 }
 
 impl NetworkEvent {
-    /// Checks if the given `SectionInfo` is a valid successor of `self`.
-    pub fn proves_successor_info(&self, their_si: &SectionInfo, proofs: &ProofSet) -> bool {
-        match *self {
-            NetworkEvent::SectionInfo(ref self_si) => self_si.proves_successor(their_si, proofs),
-            _ => false,
-        }
-    }
-
     /// Returns the payload if this is a `SectionInfo` event.
     pub fn section_info(&self) -> Option<&SectionInfo> {
         match *self {
-            NetworkEvent::SectionInfo(ref self_si) => Some(self_si),
+            NetworkEvent::SectionInfo(ref self_si, _) => Some(self_si),
             _ => None,
         }
     }
@@ -140,8 +142,8 @@ impl Debug for NetworkEvent {
             NetworkEvent::NeighbourMerge(ref digest) => {
                 write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
             }
-            NetworkEvent::SectionInfo(ref sec_info) => {
-                write!(formatter, "SectionInfo({:?})", sec_info)
+            NetworkEvent::SectionInfo(ref sec_info, sig) => {
+                write!(formatter, "SectionInfo({:?}, {})", sec_info, sig.is_some())
             }
             NetworkEvent::ExpectCandidate(ref vote) => {
                 write!(formatter, "ExpectCandidate({:?})", vote)
