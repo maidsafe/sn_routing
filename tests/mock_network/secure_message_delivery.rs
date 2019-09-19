@@ -88,7 +88,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     // and detect an invalid signature or proof.
     //
     send_message(&mut nodes, our_node_pos, their_node_pos, message);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
 }
 
 #[test]

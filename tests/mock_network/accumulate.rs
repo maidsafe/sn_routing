@@ -44,14 +44,14 @@ fn messages_accumulate_with_quorum() {
     for node in nodes.iter_mut().take(quorum - 1) {
         send(node, &dst, message_id);
     }
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
     expect_no_event!(nodes[0]);
     send(&mut nodes[quorum - 1], &dst, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
     expect_next_event!(nodes[0],
         Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
     send(&mut nodes[quorum], &dst, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
     expect_no_event!(nodes[0]);
 
     let dst_grp = Authority::Section(src.name()); // The whole section.
@@ -62,18 +62,18 @@ fn messages_accumulate_with_quorum() {
     for node in nodes.iter_mut().take(quorum - 1) {
         send(node, &dst_grp, message_id);
     }
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
     for node in &mut *nodes {
         expect_no_event!(node);
     }
     send(&mut nodes[quorum - 1], &dst_grp, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
     for node in &mut *nodes {
         expect_next_event!(node,
             Event::ResponseReceived { response: Response::GetIData { res: Ok(_), .. }, .. });
     }
     send(&mut nodes[quorum], &dst_grp, message_id);
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
     for node in &mut *nodes {
         expect_no_event!(node);
     }

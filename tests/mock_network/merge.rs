@@ -47,7 +47,7 @@ fn merge(prefix_lengths: Vec<usize>) {
             current_sections(&nodes)
         );
         drop(removed);
-        poll_and_resend(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes);
         let mut merge_events_missing = nodes.len();
         for node in &mut *nodes {
             while let Ok(event) = node.try_next_ev() {
@@ -134,7 +134,7 @@ fn concurrent_merge() {
         for _ in min_section_size..len {
             let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
             drop(nodes.remove(index));
-            poll_and_resend(&mut nodes, &mut []);
+            poll_and_resend(&mut nodes);
         }
     }
 
@@ -149,7 +149,7 @@ fn concurrent_merge() {
     }
 
     // Poll the nodes, check the invariant and ensure the network has merged to 3 sections.
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     assert_eq!(count_sections(&nodes), 3);
 }
@@ -178,7 +178,7 @@ fn merge_drop_multiple_nodes() {
     for _ in min_section_size..len {
         let index = unwrap!(nodes.iter().position(matches_prefix));
         drop(nodes.remove(index));
-        poll_and_resend(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes);
     }
 
     // The sections shouldn't have merged yet.
@@ -190,7 +190,7 @@ fn merge_drop_multiple_nodes() {
         drop(nodes.remove(index));
     }
 
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     assert_eq!(count_sections(&nodes), 1);
 }

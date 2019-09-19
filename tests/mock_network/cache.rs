@@ -6,10 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    create_connected_clients, create_connected_nodes_until_split, gen_immutable_data, poll_all,
-    TestNode,
-};
+/* TODO: remove these tests because caching is going to be removed from routing.
+
+use super::{create_connected_nodes_until_split, gen_immutable_data, poll_all, TestNode};
 use fake_clock::FakeClock;
 use rand::Rng;
 use routing::{
@@ -61,7 +60,7 @@ fn response_caching() {
     // in the NAE manager section of the data.
     unwrap!(clients[0].inner.get_idata(dst, data_id, message_id));
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes);
 
     for node in &mut *nodes {
         loop {
@@ -139,3 +138,4 @@ fn response_caching() {
         expect_no_event!(node);
     }
 }
+*/

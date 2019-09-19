@@ -7,15 +7,15 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    clear_relocation_overrides, count_sections, create_connected_clients, create_connected_nodes,
+    clear_relocation_overrides, count_sections, create_connected_nodes,
     create_connected_nodes_until_split, current_sections, gen_range, gen_range_except,
-    poll_and_resend, verify_invariant_for_all_nodes, TestClient, TestNode,
+    poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, Authority, Event, EventStream, ImmutableData, MessageId, NetworkConfig, Request,
-    Response, XorName, XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    XorName, XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -184,7 +184,7 @@ fn add_nodes_and_poll<R: Rng>(
     allow_add_failure: bool,
 ) -> BTreeSet<XorName> {
     let new_indices = add_nodes(rng, &network, nodes, allow_add_failure);
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
     let (added_names, failed_indices) = check_added_indices(nodes, new_indices);
 
     if !allow_add_failure && !failed_indices.is_empty() {
@@ -197,7 +197,7 @@ fn add_nodes_and_poll<R: Rng>(
     }
 
     clear_relocation_overrides(nodes);
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
     shuffle_nodes(rng, nodes);
 
     added_names
@@ -280,20 +280,6 @@ impl ExpectedPuts {
         self.expect(nodes, dst, (*data.name(), msg_id, src, dst));
     }
 
-    /// Sends a request from the client, and adds the expectation.
-    fn client_send_and_expect(
-        &mut self,
-        data: &ImmutableData,
-        client_auth: Authority<XorName>,
-        dst: Authority<XorName>,
-        client: &mut TestClient,
-        nodes: &mut [TestNode],
-    ) {
-        let msg_id = MessageId::new();
-        unwrap!(client.inner.put_idata(dst, data.clone(), msg_id));
-        self.expect(nodes, dst, (*data.name(), msg_id, client_auth, dst));
-    }
-
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
     fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: PutKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
@@ -309,7 +295,7 @@ impl ExpectedPuts {
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &mut [TestNode], clients: &mut [TestClient]) {
+    fn verify(mut self, nodes: &mut [TestNode]) {
         // The minimum of the section lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the smaller of the section sizes.
@@ -372,25 +358,7 @@ impl ExpectedPuts {
                 }
             }
         }
-        for client in clients {
-            while let Ok(event) = client.inner.try_next_ev() {
-                if let Event::ResponseReceived {
-                    response: Response::GetIData { res, msg_id },
-                    src,
-                    dst,
-                } = event
-                {
-                    let data = unwrap!(res);
-                    let key = (*data.name(), msg_id, src, dst);
-                    assert!(
-                        self.messages.remove(&key),
-                        "Unexpected response for client {}: {:?}",
-                        client.name(),
-                        key
-                    );
-                }
-            }
-        }
+
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
             assert!(key.3.is_multiple(), "Failed to receive request {:?}", key);
@@ -439,34 +407,9 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     expected_puts.send_and_expect(&data, auth_s0, auth_g0, nodes, min_section_size);
     expected_puts.send_and_expect(&data, auth_s0, auth_n0, nodes, min_section_size);
 
-    poll_and_resend(nodes, &mut []);
+    poll_and_resend(nodes);
 
-    expected_puts.verify(nodes, &mut []);
-}
-
-fn client_puts(network: &Network, nodes: &mut [TestNode], min_section_size: usize) {
-    let mut clients = create_connected_clients(network, nodes, 1);
-    let cl_auth = Authority::Client {
-        client_id: *clients[0].full_id.public_id(),
-        proxy_node_name: nodes[0].name(),
-    };
-
-    let mut rng = network.new_rng();
-    let data = ImmutableData::new(rng.gen_iter().take(100).collect());
-    let auth_g0 = Authority::NaeManager(rng.gen());
-    let auth_g1 = Authority::NaeManager(rng.gen());
-    let section_name: XorName = rng.gen();
-    let auth_s0 = Authority::Section(section_name);
-
-    let mut expected_puts = ExpectedPuts::default();
-    // Test messages from a client to a group and a section...
-    expected_puts.client_send_and_expect(&data, cl_auth, auth_g0, &mut clients[0], nodes);
-    expected_puts.client_send_and_expect(&data, cl_auth, auth_s0, &mut clients[0], nodes);
-    // ... and from group to the client
-    expected_puts.send_and_expect(&data, auth_g1, cl_auth, nodes, min_section_size);
-
-    poll_and_resend(nodes, &mut clients);
-    expected_puts.verify(nodes, &mut clients);
+    expected_puts.verify(nodes);
 }
 
 #[test]
@@ -520,7 +463,6 @@ fn aggressive_churn() {
         verify_invariant_for_all_nodes(&network, &mut nodes);
 
         send_and_receive(&mut rng, &mut nodes, min_section_size);
-        client_puts(&network, &mut nodes, min_section_size);
         warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
 
@@ -537,10 +479,9 @@ fn aggressive_churn() {
         }
 
         warn!("Dropping random nodes. Dropped: {:?}", dropped_nodes);
-        poll_and_resend(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes);
         verify_invariant_for_all_nodes(&network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
-        client_puts(&network, &mut nodes, min_section_size);
         shuffle_nodes(&mut rng, &mut nodes);
         warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
     }
@@ -560,11 +501,6 @@ fn messages_during_churn() {
     let prefixes = vec![2, 2, 2, 3, 3];
     let max_prefixes_len = prefixes.len() * 2;
     let mut nodes = create_connected_nodes_until_split(&network, prefixes, false);
-    let mut clients = create_connected_clients(&network, &mut nodes, 1);
-    let cl_auth = Authority::Client {
-        client_id: *clients[0].full_id.public_id(),
-        proxy_node_name: nodes[0].name(),
-    };
 
     for i in 0..50 {
         warn!("Iteration {}. Prefixes: {:?}", i, current_sections(&nodes));
@@ -601,14 +537,7 @@ fn messages_during_churn() {
         expected_puts.send_and_expect(&data, auth_s0, auth_g0, &mut nodes, min_section_size);
         expected_puts.send_and_expect(&data, auth_s0, auth_n0, &mut nodes, min_section_size);
 
-        let data = ImmutableData::new(rng.gen_iter().take(100).collect());
-        // Test messages from a client to a group and a section...
-        expected_puts.client_send_and_expect(&data, cl_auth, auth_g0, &mut clients[0], &mut nodes);
-        expected_puts.client_send_and_expect(&data, cl_auth, auth_s0, &mut clients[0], &mut nodes);
-        // ... and from group to the client
-        expected_puts.send_and_expect(&data, auth_g1, cl_auth, &mut nodes, min_section_size);
-
-        poll_and_resend(&mut nodes, &mut clients);
+        poll_and_resend(&mut nodes);
         let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);
         assert!(
             failed_indices.is_empty(),
@@ -624,7 +553,7 @@ fn messages_during_churn() {
         if !added_names.is_empty() {
             warn!("Added nodes: {:?}", added_names);
         }
-        expected_puts.verify(&mut nodes, &mut clients);
+        expected_puts.verify(&mut nodes);
         verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 }

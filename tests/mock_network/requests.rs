@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_clients, create_connected_nodes, gen_immutable_data, poll_all};
+use super::{create_connected_nodes, gen_immutable_data, poll_all};
+use rand::Rng;
 use routing::{
     mock::Network, Authority, ClientError, Event, EventStream, MessageId, Request, Response,
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
@@ -19,18 +20,19 @@ fn successful_put_request() {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size + 1);
-    let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
-    let dst = Authority::ClientManager(clients[0].name());
+    let sender_index = rng.gen_range(0, nodes.len());
+    let src = Authority::ManagedNode(nodes[sender_index].name());
+
+    let dst = Authority::ClientManager(rng.gen());
     let data = gen_immutable_data(&mut rng, 1024);
     let message_id = MessageId::new();
-
-    assert!(clients[0]
+    assert!(nodes[sender_index]
         .inner
-        .put_idata(dst, data.clone(), message_id)
+        .send_put_idata_request(src, dst, data.clone(), message_id)
         .is_ok());
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes);
 
     let mut request_received_count = 0;
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
@@ -65,18 +67,19 @@ fn successful_get_request() {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size + 1);
-    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let sender_index = rng.gen_range(0, nodes.len());
 
     let data = gen_immutable_data(&mut rng, 1024);
+    let src = Authority::ManagedNode(nodes[sender_index].name());
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
-
-    assert!(clients[0]
+    assert!(nodes[sender_index]
         .inner
-        .get_idata(dst, *data.name(), message_id)
+        .send_get_idata_request(src, dst, *data.name(), message_id)
         .is_ok());
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes);
 
     let mut request_received_count = 0;
 
@@ -113,29 +116,27 @@ fn successful_get_request() {
 
     assert!(request_received_count >= quorum);
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes);
 
     let mut response_received_count = 0;
 
-    for client in &mut clients {
-        loop {
-            match client.inner.try_next_ev() {
-                Ok(Event::ResponseReceived {
-                    response:
-                        Response::GetIData {
-                            res: Ok(ref res_data),
-                            msg_id: ref res_message_id,
-                        },
-                    ..
-                }) => {
-                    response_received_count += 1;
-                    if data == *res_data && message_id == *res_message_id {
-                        break;
-                    }
+    loop {
+        match nodes[sender_index].inner.try_next_ev() {
+            Ok(Event::ResponseReceived {
+                response:
+                    Response::GetIData {
+                        res: Ok(ref res_data),
+                        msg_id: ref res_message_id,
+                    },
+                ..
+            }) => {
+                response_received_count += 1;
+                if data == *res_data && message_id == *res_message_id {
+                    break;
                 }
-                Ok(_) => (),
-                _ => panic!("Event::ResponseReceived not received"),
             }
+            Ok(_) => (),
+            _ => panic!("Event::ResponseReceived not received"),
         }
     }
 
@@ -149,18 +150,20 @@ fn failed_get_request() {
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, min_section_size + 1);
-    let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let data = gen_immutable_data(&mut rng, 1024);
     let dst = Authority::NaeManager(*data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
+    let sender_index = rng.gen_range(0, nodes.len());
+    let src = Authority::ManagedNode(nodes[sender_index].name());
+
+    assert!(nodes[sender_index]
         .inner
-        .get_idata(dst, *data.name(), message_id)
+        .send_get_idata_request(src, dst, *data.name(), message_id)
         .is_ok());
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes);
 
     let mut request_received_count = 0;
 
@@ -197,29 +200,27 @@ fn failed_get_request() {
 
     assert!(request_received_count >= quorum);
 
-    let _ = poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes);
 
     let mut response_received_count = 0;
 
-    for client in &mut clients {
-        loop {
-            match client.inner.try_next_ev() {
-                Ok(Event::ResponseReceived {
-                    response:
-                        Response::GetIData {
-                            res: Err(_),
-                            msg_id: ref res_message_id,
-                        },
-                    ..
-                }) => {
-                    response_received_count += 1;
-                    if message_id == *res_message_id {
-                        break;
-                    }
+    loop {
+        match nodes[sender_index].inner.try_next_ev() {
+            Ok(Event::ResponseReceived {
+                response:
+                    Response::GetIData {
+                        res: Err(_),
+                        msg_id: ref res_message_id,
+                    },
+                ..
+            }) => {
+                response_received_count += 1;
+                if message_id == *res_message_id {
+                    break;
                 }
-                Ok(_) => (),
-                _ => panic!("Event::ResponseReceived not received"),
             }
+            Ok(_) => (),
+            _ => panic!("Event::ResponseReceived not received"),
         }
     }
 

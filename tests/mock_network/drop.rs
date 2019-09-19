@@ -22,7 +22,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
     // Using poll_all instead of poll_and_resend here to specifically only detect
     // the NodeLost event getting triggered by the remaining nodes.
-    let _ = poll_all(nodes, &mut []);
+    let _ = poll_all(nodes);
 
     for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
         loop {
@@ -44,7 +44,7 @@ fn node_drops() {
 
     // Trigger poll_and_resend to allow remaining nodes to gossip and
     // update their chain accordingly.
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
