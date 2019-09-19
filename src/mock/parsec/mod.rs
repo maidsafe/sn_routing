@@ -256,21 +256,23 @@ where
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-pub struct Request<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>);
+// Contains an additional `u8` so that the size is > 0. This is needed when counting sizes to
+// determine parsec graph pruning.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Default)]
+pub struct Request<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>, u8);
 
 impl<T: NetworkEvent, P: PublicId> Request<T, P> {
-    fn new() -> Self {
-        Request(PhantomData)
+    pub fn new() -> Self {
+        Request(PhantomData, 1)
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug)]
-pub struct Response<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>);
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Default)]
+pub struct Response<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>, u8);
 
 impl<T: NetworkEvent, P: PublicId> Response<T, P> {
-    fn new() -> Self {
-        Response(PhantomData)
+    pub fn new() -> Self {
+        Response(PhantomData, 1)
     }
 }
 
