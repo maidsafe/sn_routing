@@ -16,7 +16,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Request, UserMessage},
+    messages::{DirectMessage, HopMessage},
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
@@ -191,30 +191,13 @@ impl Base for BootstrappingPeer {
         &mut self.peer_map
     }
 
-    fn handle_client_send_request(
-        &mut self,
-        _: Authority<XorName>,
-        _: Request,
-    ) -> Result<(), InterfaceError> {
-        warn!(
-            "{} - Cannot handle ClientSendRequest - not bootstrapped.",
-            self
-        );
-        // TODO: return Err here eventually. Returning Ok for now to
-        // preserve the pre-refactor behaviour.
-        Ok(())
-    }
-
-    fn handle_node_send_message(
+    fn handle_send_message(
         &mut self,
         _: Authority<XorName>,
         _: Authority<XorName>,
-        _: UserMessage,
+        _: Vec<u8>,
     ) -> Result<(), InterfaceError> {
-        warn!(
-            "{} - Cannot handle NodeSendMessage - not bootstrapped.",
-            self
-        );
+        warn!("{} - Cannot handle SendMessage - not bootstrapped.", self);
         // TODO: return Err here eventually. Returning Ok for now to
         // preserve the pre-refactor behaviour.
         Ok(())

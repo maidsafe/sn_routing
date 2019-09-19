@@ -13,7 +13,6 @@ use crate::{
     event::Event,
     event_stream::{EventStepper, EventStream},
     id::{FullId, PublicId},
-    messages::{Request, Response, UserMessage},
     outbox::{EventBox, EventBuf},
     quic_p2p::OurType,
     routing_table::Authority,
@@ -41,7 +40,6 @@ pub struct NodeBuilder {
 }
 
 impl NodeBuilder {
-
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> NodeBuilder {
         NodeBuilder { first, ..self }
@@ -103,15 +101,9 @@ impl NodeBuilder {
         StateMachine::new(
             move |action_sender, network_service, timer, outbox| {
                 if first {
-                    states::Elder::first(
-                        network_service,
-                        full_id,
-                        min_section_size,
-                        timer,
-                        outbox,
-                    )
-                    .map(State::Elder)
-                    .unwrap_or(State::Terminated)
+                    states::Elder::first(network_service, full_id, min_section_size, timer, outbox)
+                        .map(State::Elder)
+                        .unwrap_or(State::Terminated)
                 } else {
                     State::BootstrappingPeer(BootstrappingPeer::new(
                         action_sender,
@@ -169,39 +161,20 @@ impl Node {
         self.machine.current().min_section_size()
     }
 
-    /// Send a user request message
-    pub fn send_request(
+    /// Send a message.
+    pub fn send_message(
         &mut self,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        msg: Request,
-    ) -> Result<(), InterfaceError> {
-        self.send_message(src, dst, UserMessage::Request(msg))
-    }
-
-    /// Send a user response message
-    pub fn send_response(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        msg: Response,
-    ) -> Result<(), InterfaceError> {
-        self.send_message(src, dst, UserMessage::Response(msg))
-    }
-
-    fn send_message(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        user_msg: UserMessage,
+        content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
-        let action = Action::NodeSendMessage {
+        let action = Action::SendMessage {
             src: src,
             dst: dst,
-            content: user_msg,
+            content,
             result_tx: self.interface_result_tx.clone(),
         };
 

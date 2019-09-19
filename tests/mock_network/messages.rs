@@ -8,10 +8,7 @@
 
 use super::{create_connected_nodes, poll_all};
 use rand::Rng;
-use routing::{
-    mock::Network, Authority, Event, EventStream, MessageId, Request, Response, QUORUM_DENOMINATOR,
-    QUORUM_NUMERATOR,
-};
+use routing::{mock::Network, Authority, Event, EventStream, QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
 
 #[test]
 fn send() {
@@ -24,48 +21,34 @@ fn send() {
     let sender_index = rng.gen_range(0, nodes.len());
     let src = Authority::ManagedNode(nodes[sender_index].name());
     let dst = Authority::NaeManager(rng.gen());
-
     let content: Vec<_> = rng.gen_iter().take(1024).collect();
-    let msg_id = MessageId::new();
-
     assert!(nodes[sender_index]
         .inner
-        .send_request(
-            src,
-            dst,
-            Request {
-                content: content.clone(),
-                msg_id
-            }
-        )
+        .send_message(src, dst, content.clone())
         .is_ok());
 
     let _ = poll_all(&mut nodes);
 
-    let mut request_received_count = 0;
+    let mut message_received_count = 0;
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::RequestReceived {
-                    request:
-                        Request {
-                            content: ref req_content,
-                            msg_id: ref req_msg_id,
-                        },
+                Ok(Event::MessageReceived {
+                    content: ref req_content,
                     ..
                 }) => {
-                    request_received_count += 1;
-                    if content == *req_content && msg_id == *req_msg_id {
+                    message_received_count += 1;
+                    if content == *req_content {
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::RequestReceived not received"),
+                _ => panic!("Event::MessageReceived not received"),
             }
         }
     }
 
-    assert!(request_received_count >= quorum);
+    assert!(message_received_count >= quorum);
 }
 
 #[test]
@@ -83,18 +66,9 @@ fn send_and_receive() {
     let req_content: Vec<_> = rng.gen_iter().take(10).collect();
     let res_content: Vec<_> = rng.gen_iter().take(11).collect();
 
-    let msg_id = MessageId::new();
-
     assert!(nodes[sender_index]
         .inner
-        .send_request(
-            src,
-            dst,
-            Request {
-                content: req_content.clone(),
-                msg_id
-            }
-        )
+        .send_message(src, dst, req_content.clone())
         .is_ok());
 
     let _ = poll_all(&mut nodes);
@@ -104,32 +78,17 @@ fn send_and_receive() {
     for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
         loop {
             match node.try_next_ev() {
-                Ok(Event::RequestReceived {
-                    request:
-                        Request {
-                            content,
-                            msg_id: req_msg_id,
-                        },
-                    src,
-                    dst,
-                }) => {
+                Ok(Event::MessageReceived { content, src, dst }) => {
                     request_received_count += 1;
-                    if req_content == content && msg_id == req_msg_id {
-                        if let Err(err) = node.inner.send_response(
-                            dst,
-                            src,
-                            Response {
-                                content: res_content.clone(),
-                                msg_id: req_msg_id,
-                            },
-                        ) {
-                            trace!("Failed to send GetIData success response: {:?}", err);
+                    if req_content == content {
+                        if let Err(err) = node.inner.send_message(dst, src, res_content.clone()) {
+                            trace!("Failed to send message: {:?}", err);
                         }
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::RequestReceived not received"),
+                _ => panic!("Event::MessageReceived not received"),
             }
         }
     }
@@ -142,21 +101,14 @@ fn send_and_receive() {
 
     loop {
         match nodes[sender_index].inner.try_next_ev() {
-            Ok(Event::ResponseReceived {
-                response:
-                    Response {
-                        content,
-                        msg_id: res_msg_id,
-                    },
-                ..
-            }) => {
+            Ok(Event::MessageReceived { content, .. }) => {
                 response_received_count += 1;
-                if res_content == content && msg_id == res_msg_id {
+                if res_content == content {
                     break;
                 }
             }
             Ok(_) => (),
-            _ => panic!("Event::ResponseReceived not received"),
+            _ => panic!("Event::MessageReceived not received"),
         }
     }
 

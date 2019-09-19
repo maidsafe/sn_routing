@@ -12,7 +12,6 @@ pub use self::direct::{DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, GenesisPfxInfo, SectionInfo, SectionKeyInfo, SectionProofChain},
     error::{Result, RoutingError},
-    event::Event,
     id::{FullId, PublicId},
     routing_table::{Authority, Prefix},
     sha3::Digest256,
@@ -26,7 +25,7 @@ use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{self, Debug, Formatter},
     mem,
 };
 
@@ -560,7 +559,7 @@ pub enum MessageContent {
     /// the given hash will be the merged section.
     Merge(Digest256),
     /// User-facing message
-    UserMessage(UserMessage),
+    UserMessage(Vec<u8>),
     /// Approves the joining node as a routing node.
     ///
     /// Sent from Group Y to the joining node.
@@ -638,81 +637,6 @@ impl Debug for MessageContent {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize)]
-/// A user-visible message: a `Request` or `Response`.
-pub enum UserMessage {
-    /// A user-visible request message.
-    Request(Request),
-    /// A user-visible response message.
-    Response(Response),
-}
-
-impl UserMessage {
-    /// Returns an event indicating that this message was received with the given source and
-    /// destination authorities.
-    pub fn into_event(self, src: Authority<XorName>, dst: Authority<XorName>) -> Event {
-        match self {
-            UserMessage::Request(request) => Event::RequestReceived {
-                request: request,
-                src: src,
-                dst: dst,
-            },
-            UserMessage::Response(response) => Event::ResponseReceived {
-                response: response,
-                src: src,
-                dst: dst,
-            },
-        }
-    }
-
-    /// The unique message ID of this `UserMessage`.
-    pub fn message_id(&self) -> &MessageId {
-        match *self {
-            UserMessage::Request(ref request) => &request.msg_id,
-            UserMessage::Response(ref response) => &response.msg_id,
-        }
-    }
-
-    pub fn is_cacheable(&self) -> bool {
-        false
-    }
-
-    /// Returns an object that implements `Display` for printing short, simplified representation of
-    /// `UserMessage`.
-    pub fn short_display(&self) -> UserMessageShortDisplay {
-        UserMessageShortDisplay(self)
-    }
-}
-
-pub struct UserMessageShortDisplay<'a>(&'a UserMessage);
-
-impl<'a> Display for UserMessageShortDisplay<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self.0 {
-            UserMessage::Request(ref r) => write!(f, "Request {{ {:?} }}", r.msg_id),
-            UserMessage::Response(ref r) => write!(f, "Response {{ {:?} }}", r.msg_id),
-        }
-    }
-}
-
-/// User request
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize)]
-pub struct Request {
-    /// Message content
-    pub content: Vec<u8>,
-    /// Message id
-    pub msg_id: MessageId,
-}
-
-/// User response
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize)]
-pub struct Response {
-    /// Message content
-    pub content: Vec<u8>,
-    /// Message id
-    pub msg_id: MessageId,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -778,15 +702,11 @@ mod tests {
         let full_id_2 = FullId::new();
         let full_id_3 = FullId::new();
         let content = (0..10).collect();
-        let user_msg = UserMessage::Request(Request {
-            content,
-            msg_id: MessageId::new(),
-        });
         let name: XorName = rand::random();
         let msg = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::UserMessage(user_msg),
+            content: MessageContent::UserMessage(content),
         };
 
         let src_section_nodes = vec![

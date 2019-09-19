@@ -22,10 +22,7 @@ use crate::{
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{
-        DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage,
-        UserMessage,
-    },
+    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
     outbox::EventBox,
     parsec::{self, ParsecMap},
     peer_manager::{Peer, PeerManager, PeerState},
@@ -547,7 +544,6 @@ impl Elder {
             return Ok(());
         }
 
-
         if let Err(error) = self.send_signed_message(&mut signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
@@ -609,7 +605,7 @@ impl Elder {
             }
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (UserMessage(content), src, dst) => {
-                outbox.send_event(content.into_event(src, dst));
+                outbox.send_event(Event::MessageReceived { content, src, dst });
                 Ok(())
             }
             (
@@ -751,7 +747,6 @@ impl Elder {
             }
         }
     }
-
 
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
@@ -1220,7 +1215,7 @@ impl Elder {
         &mut self,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        content: UserMessage,
+        content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         self.send_routing_message(src, dst, MessageContent::UserMessage(content))
     }
@@ -1558,11 +1553,11 @@ impl Base for Elder {
         &mut self.peer_map
     }
 
-    fn handle_node_send_message(
+    fn handle_send_message(
         &mut self,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        content: UserMessage,
+        content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         match self.send_user_message(src, dst, content) {
             Err(RoutingError::Interface(err)) => Err(err),

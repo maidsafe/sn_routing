@@ -172,7 +172,6 @@ pub use crate::{
     event::Event,
     event_stream::EventStream,
     id::{FullId, PublicId},
-    messages::{Request, Response},
     node::{Node, NodeBuilder},
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable},

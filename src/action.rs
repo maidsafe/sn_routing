@@ -8,9 +8,10 @@
 
 use crate::error::InterfaceError;
 use crate::id::PublicId;
-use crate::messages::{DirectMessage, Request, UserMessage};
+use crate::messages::DirectMessage;
 use crate::routing_table::Authority;
 use crate::xor_name::XorName;
+use hex_fmt::HexFmt;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 
@@ -23,15 +24,10 @@ use std::sync::mpsc::Sender;
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Action {
-    NodeSendMessage {
+    SendMessage {
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        content: UserMessage,
-        result_tx: Sender<Result<(), InterfaceError>>,
-    },
-    ClientSendRequest {
-        content: Request,
-        dst: Authority<XorName>,
+        content: Vec<u8>,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     GetId {
@@ -47,19 +43,10 @@ pub enum Action {
 impl Debug for Action {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Action::NodeSendMessage { ref content, .. } => write!(
+            Action::SendMessage { ref content, .. } => write!(
                 formatter,
-                "Action::NodeSendMessage {{ {:?}, result_tx }}",
-                content
-            ),
-            Action::ClientSendRequest {
-                ref content,
-                ref dst,
-                ..
-            } => write!(
-                formatter,
-                "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
-                content, dst
+                "Action::SendMessage {{ \"{:<8}\", result_tx }}",
+                HexFmt(content)
             ),
             Action::GetId { .. } => write!(formatter, "Action::GetId"),
             Action::HandleTimeout(token) => write!(formatter, "Action::HandleTimeout({})", token),

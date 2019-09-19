@@ -6,10 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::messages::{Request, Response};
 use crate::routing_table::Authority;
 use crate::routing_table::Prefix;
 use crate::xor_name::XorName;
+use hex_fmt::HexFmt;
 use std::fmt::{self, Debug, Formatter};
 
 /// An Event raised by a `Node` or `Client` via its event sender.
@@ -23,22 +23,13 @@ use std::fmt::{self, Debug, Formatter};
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
-    /// Received a request message.
-    RequestReceived {
-        /// The request message.
-        request: Request,
-        /// The source authority that sent the request.
+    /// Received a message.
+    MessageReceived {
+        /// The content of the message.
+        content: Vec<u8>,
+        /// The source authority that sent the message.
         src: Authority<XorName>,
-        /// The destination authority that receives the request.
-        dst: Authority<XorName>,
-    },
-    /// Received a response message.
-    ResponseReceived {
-        /// The response message.
-        response: Response,
-        /// The source authority that sent the response.
-        src: Authority<XorName>,
-        /// The destination authority that receives the response.
+        /// The destination authority that receives the message.
         dst: Authority<XorName>,
     },
     /// A node has connected to us.
@@ -64,23 +55,16 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::RequestReceived {
-                ref request,
+            Event::MessageReceived {
+                ref content,
                 ref src,
                 ref dst,
             } => write!(
                 formatter,
-                "Event::RequestReceived {{ request: {:?}, src: {:?}, dst: {:?} }}",
-                request, src, dst
-            ),
-            Event::ResponseReceived {
-                ref response,
-                ref src,
-                ref dst,
-            } => write!(
-                formatter,
-                "Event::ResponseReceived {{ response: {:?}, src: {:?}, dst: {:?} }}",
-                response, src, dst
+                "Event::MessageReceived {{ content: \"{:<8}\", src: {:?}, dst: {:?} }}",
+                HexFmt(content),
+                src,
+                dst
             ),
             Event::NodeAdded(ref node_name) => {
                 write!(formatter, "Event::NodeAdded({:?})", node_name)

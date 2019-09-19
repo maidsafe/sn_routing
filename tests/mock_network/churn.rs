@@ -14,8 +14,8 @@ use super::{
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, Authority, Event, EventStream, MessageId, NetworkConfig, Request, XorName,
-    XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    mock::Network, Authority, Event, EventStream, NetworkConfig, XorName, XorTargetInterval,
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -233,7 +233,6 @@ fn random_churn<R: Rng>(
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct MessageKey {
     content: Vec<u8>,
-    msg_id: MessageId,
     src: Authority<XorName>,
     dst: Authority<XorName>,
 }
@@ -258,17 +257,9 @@ impl Expectations {
         nodes: &mut [TestNode],
         min_section_size: usize,
     ) {
-        let msg_id = MessageId::new();
         let mut sent_count = 0;
         for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
-            unwrap!(node.inner.send_request(
-                src,
-                dst,
-                Request {
-                    content: content.to_vec(),
-                    msg_id
-                }
-            ));
+            unwrap!(node.inner.send_message(src, dst, content.to_vec()));
             sent_count += 1;
         }
         if src.is_multiple() {
@@ -286,7 +277,6 @@ impl Expectations {
             dst,
             MessageKey {
                 content: content.to_vec(),
-                msg_id,
                 src,
                 dst,
             },
@@ -330,18 +320,8 @@ impl Expectations {
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
         for node in nodes {
             while let Ok(event) = node.try_next_ev() {
-                if let Event::RequestReceived {
-                    request: Request { content, msg_id },
-                    src,
-                    dst,
-                } = event
-                {
-                    let key = MessageKey {
-                        content,
-                        msg_id,
-                        src,
-                        dst,
-                    };
+                if let Event::MessageReceived { content, src, dst } = event {
+                    let key = MessageKey { content, src, dst };
 
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
