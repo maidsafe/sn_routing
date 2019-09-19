@@ -48,7 +48,11 @@ pub trait Approved: Relocated {
     ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `Online` event.
-    fn handle_online_event(&mut self, online_payload: OnlinePayload) -> Result<(), RoutingError>;
+    fn handle_online_event(
+        &mut self,
+        online_payload: OnlinePayload,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `Offline` event.
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError>;
@@ -222,7 +226,7 @@ pub trait Approved: Relocated {
                     self.handle_remove_elder_event(pub_id, outbox)?;
                 }
                 NetworkEvent::Online(info) => {
-                    self.handle_online_event(info)?;
+                    self.handle_online_event(info, outbox)?;
                 }
                 NetworkEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id)?;
