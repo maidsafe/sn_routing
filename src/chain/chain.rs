@@ -370,19 +370,6 @@ impl Chain {
             .should_vote_for_merge(self.min_sec_size, self.neighbour_infos())
     }
 
-    /// Check inside the `neighbour_infos` failing which inside the chain accumulator if we have a
-    /// SectionInfo with our proof for it that can validate the given SectionInfo as its next link
-    pub fn is_valid_neighbour_info(&self, sec_info: &SectionInfo, proofs: &ProofSet) -> bool {
-        self.compatible_neighbour_info(sec_info)
-            .map_or(false, |n_info| {
-                n_info == sec_info || n_info.proves_successor(sec_info, proofs)
-            })
-            || self
-                .signed_events()
-                .filter_map(|ni_event| ni_event.section_info())
-                .any(|si_event| si_event.proves_successor(sec_info, proofs))
-    }
-
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
     /// cached and currently accumulated events.
     pub fn finalise_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
@@ -606,12 +593,10 @@ impl Chain {
                 }
 
                 // Ensure our infos is forming an unbroken sequence.
-                if info.prefix().matches(self.our_id.name()) {
-                    return info.is_successor_of(self.our_info())
-                        && self.our_info().is_quorum(proofs);
-                }
+                let is_sequence_ok = !info.prefix().matches(self.our_id.name())
+                    || info.is_successor_of(self.our_info());
 
-                self.our_info().is_quorum(proofs)
+                is_sequence_ok && self.our_info().is_quorum(proofs)
             }
 
             AccumulatingEvent::AddElder(_, _)
@@ -739,13 +724,6 @@ impl Chain {
             let ppfx = sec_info.prefix().popped();
             let spfx = sec_info.prefix().sibling();
             let new_sec_info_version = *sec_info.version();
-            let sec_info = self
-                .state
-                .our_infos()
-                .rev()
-                .find(|our_info| our_info.is_quorum(&proofs))
-                .map(|_| sec_info)
-                .ok_or(RoutingError::InvalidMessage)?;
 
             if let Some(old_sec_info) = self.state.neighbour_infos.insert(pfx, sec_info) {
                 if *old_sec_info.version() > new_sec_info_version {

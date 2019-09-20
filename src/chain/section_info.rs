@@ -9,7 +9,6 @@
 use super::{AccumulatingEvent, NetworkEvent, ProofSet};
 use crate::error::RoutingError;
 use crate::id::PublicId;
-use crate::parsec;
 use crate::routing_table::Prefix;
 use crate::sha3::Digest256;
 use crate::XorName;
@@ -121,20 +120,6 @@ impl SectionInfo {
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
     pub fn is_successor_of(&self, other_info: &SectionInfo) -> bool {
         self.prev_hash.contains(&other_info.hash)
-    }
-
-    /// Returns `true` if the `proofs` are a quorum of `self` and valid signatures of
-    /// `other_event`.
-    pub fn proves(&self, other_info: &SectionInfo, proofs: &ProofSet) -> bool {
-        let other_event: parsec::Observation<NetworkEvent, PublicId> =
-            parsec::Observation::OpaquePayload(other_info.clone().into_network_event());
-        self.is_quorum(proofs) && proofs.validate_signatures(&other_event)
-    }
-
-    /// Returns `true` if the `proofs` are a quorum of `self` and valid signatures of
-    /// `other_event`, and if `other_info` is a valid successor of `self`.
-    pub fn proves_successor(&self, other_info: &SectionInfo, proofs: &ProofSet) -> bool {
-        other_info.is_successor_of(self) && self.proves(other_info, proofs)
     }
 
     /// To AccumulatingEvent::SectionInfo event
