@@ -35,54 +35,8 @@
 //!
 //! # Usage
 //!
-//! A decentralised service based on the `routing` library uses `Client` to send requests to the
-//! network of nodes and receive responses.
-//!
 //! `Node` is used to handle and send requests within that network, and to implement its
 //! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
-//!
-//!
-//! ## Client creation
-//!
-//! A client's name is a hash of its public keys. Upon creation, the client will attempt to connect
-//! to the network through any node, and exchange public keys with it. That node becomes a
-//! bootstrap node for the client, and messages to and from the client will be routed over it.
-//!
-//! ```no_run
-//! # #![allow(unused)]
-//! use std::sync::mpsc;
-//! use routing::{Client, Event, FullId};
-//!
-//! let (sender, receiver) = mpsc::channel::<Event>();
-//! let full_id = FullId::new(); // Generate new keys.
-//! # #[cfg(not(feature = "mock_base"))]
-//! let client = Client::new(sender, Some(full_id), None).unwrap();
-//! ```
-//!
-//! Messages can be sent using the methods of `client`, and received as `Event`s from the
-//! `receiver`.
-//!
-//!
-//! ## Node creation
-//!
-//! Creating a node looks even simpler:
-//!
-//! ```no_run
-//! # #![allow(unused)]
-//! use routing::Node;
-//!
-//! let node = Node::builder().create().unwrap();
-//! ```
-//!
-//! Upon creation, the node will first connect to the network as a client. Once it has client
-//! status, it requests a new name from the network, and then integrates itself in the network with
-//! that new name, adding close nodes to its routing table.
-//!
-//! Messages can be sent using the methods of `node`, and received as `Event`s from the `receiver`.
-//! The node can act as an individual node or as part of a section or group authority. Sending a
-//! message as a section or group authority only has an effect if sufficiently many other nodes in
-//! that authority send the same message.
-//!
 //!
 //! # Sequence diagrams
 //!
@@ -157,12 +111,8 @@ extern crate serde_derive;
 mod macros;
 
 mod action;
-mod cache;
 mod chain;
-mod client;
-mod client_error;
 mod config_handler;
-mod data;
 mod error;
 mod event;
 mod event_stream;
@@ -216,21 +166,12 @@ use crate::mock::quic_p2p;
 #[cfg(any(test, feature = "mock_base"))]
 pub use crate::routing_table::verify_network_invariant;
 pub use crate::{
-    cache::{Cache, NullCache},
     chain::Chain,
-    client::Client,
-    client_error::{ClientError, EntryError},
     config_handler::{Config, DevConfig},
-    data::{
-        Action, EntryAction, EntryActions, ImmutableData, MutableData, PermissionSet, User, Value,
-        MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, MAX_MUTABLE_DATA_ENTRIES, MAX_MUTABLE_DATA_SIZE_IN_BYTES,
-        NO_OWNER_PUB_KEY,
-    },
     error::{InterfaceError, RoutingError},
     event::Event,
     event_stream::EventStream,
     id::{FullId, PublicId},
-    messages::{AccountInfo, Request, Response},
     node::{Node, NodeBuilder},
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable},

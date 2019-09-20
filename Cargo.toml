@@ -48,11 +48,3 @@ mock_base = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "pa
 mock_parsec = ["mock_base"]
 mock_serialise = ["mock_base"]
 mock = ["mock_parsec", "mock_serialise"]
-
-[[example]]
-bench = false
-name = "key_value_store"
-
-[[example]]
-bench = false
-name = "ci_test"

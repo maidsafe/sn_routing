@@ -7,21 +7,19 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod accumulate;
-mod cache;
 mod churn;
 mod drop;
 mod merge;
-mod requests;
+mod messages;
 mod secure_message_delivery;
 mod utils;
 
 pub use self::utils::{
     add_connected_nodes_until_one_away_from_split, add_connected_nodes_until_split,
-    clear_relocation_overrides, count_sections, create_connected_clients, create_connected_nodes,
-    create_connected_nodes_until_split, current_sections, gen_bytes, gen_immutable_data, gen_range,
-    gen_range_except, poll_all, poll_and_resend, poll_and_resend_until,
-    remove_nodes_which_failed_to_connect, sort_nodes_by_distance_to,
-    verify_invariant_for_all_nodes, Nodes, TestClient, TestNode,
+    clear_relocation_overrides, count_sections, create_connected_nodes,
+    create_connected_nodes_until_split, current_sections, gen_bytes, gen_range, gen_range_except,
+    poll_all, poll_and_resend, poll_and_resend_until, remove_nodes_which_failed_to_connect,
+    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, TestNode,
 };
 use fake_clock::FakeClock;
 use itertools::Itertools;
@@ -73,7 +71,7 @@ fn disconnect_on_rebootstrap() {
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[1].endpoint());
     nodes.push(TestNode::builder(&network).network_config(config).create());
-    let _ = poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes);
 
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
     assert!(!network.is_connected(&nodes[2].endpoint(), &nodes[1].endpoint()));
@@ -95,12 +93,7 @@ fn candidate_timeout_resource_proof() {
 
     // Initiate connection until the candidate switch to ProvingNode:
     info!("Candidate joining name: {}", nodes[0].name());
-    poll_and_resend_until(
-        &mut nodes,
-        &mut [],
-        &|nodes| nodes[0].inner.is_proving_node(),
-        None,
-    );
+    poll_and_resend_until(&mut nodes, &|nodes| nodes[0].inner.is_proving_node(), None);
     let proving_node = nodes.remove(0);
 
     assert!(
@@ -110,7 +103,7 @@ fn candidate_timeout_resource_proof() {
 
     // Continue without the joining node until all nodes idle:
     info!("Candidate new name: {}", proving_node.name());
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
 
     assert_eq!(
         nodes.iter().map(TestNode::name).collect_vec(),
@@ -120,7 +113,7 @@ fn candidate_timeout_resource_proof() {
 
     // Continue after candidate time out:
     FakeClock::advance_time(1000 * test_consts::CANDIDATE_EXPIRED_TIMEOUT_SECS);
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
 
     assert_eq!(
         Vec::<XorName>::new(),
@@ -153,13 +146,6 @@ fn more_than_section_size_nodes() {
 }
 
 #[test]
-fn client_connects_to_nodes() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE + 1);
-    let _ = create_connected_clients(&network, &mut nodes, 1);
-}
-
-#[test]
 fn node_joins_in_front() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, 2 * MIN_SECTION_SIZE);
@@ -170,7 +156,7 @@ fn node_joins_in_front() {
             .network_config(network_config)
             .create(),
     );
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
 
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
@@ -187,7 +173,7 @@ fn joining_node_with_ignoring_candidate_info() {
     }
     nodes.push(TestNode::builder(&network).network_config(config).create());
     let dummy = |_nodes: &[TestNode]| false;
-    poll_and_resend_until(&mut nodes, &mut [], &dummy, Some(20));
+    poll_and_resend_until(&mut nodes, &dummy, Some(20));
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
@@ -211,7 +197,7 @@ fn multiple_joining_nodes() {
             );
         }
 
-        poll_and_resend(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes);
         let removed_count = remove_nodes_which_failed_to_connect(&mut nodes, count);
         let nodes_added: Vec<_> = nodes
             .iter()
@@ -231,7 +217,7 @@ fn multiple_joining_nodes() {
 #[test]
 fn multi_split() {
     let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
@@ -303,7 +289,7 @@ fn simultaneous_joining_nodes(
     // Add new nodes and process until complete
     //
     nodes.extend(nodes_to_add.into_iter());
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
 
     //
     // Assert
@@ -326,7 +312,7 @@ fn simultaneous_joining_nodes(
 fn simultaneous_joining_nodes_two_sections() {
     // Create a network with two sections:
     let network = Network::new(MIN_SECTION_SIZE, None);
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -353,7 +339,7 @@ fn simultaneous_joining_nodes_two_sections() {
 fn simultaneous_joining_nodes_two_sections_switch_section() {
     // Create a network with two sections:
     let network = Network::new(MIN_SECTION_SIZE, None);
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -384,7 +370,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
     // Create a network with three sections:
     let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     // The created sections
     let sections = current_sections(&nodes).into_iter().collect_vec();
@@ -397,7 +383,6 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
         &network,
         &mut nodes,
         &[small_prefix],
-        false
     )
     .first());
 
@@ -447,7 +432,7 @@ fn check_section_info_ack() {
     //
     // Act
     //
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1], true);
+    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
     let node_with_sibling_knowledge: Vec<_> = nodes
         .iter()
         .filter(|node| {

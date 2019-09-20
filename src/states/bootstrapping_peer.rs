@@ -7,18 +7,16 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    client::{Client, ClientDetails},
     common::Base,
     proving_node::{ProvingNode, ProvingNodeDetails},
     relocating_node::{RelocatingNode, RelocatingNodeDetails},
 };
 use crate::{
     action::Action,
-    cache::Cache,
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Request, UserMessage},
+    messages::{DirectMessage, HopMessage},
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
@@ -44,9 +42,6 @@ const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum TargetState {
-    Client {
-        msg_expiry_dur: Duration,
-    },
     RelocatingNode,
     ProvingNode {
         old_full_id: FullId,
@@ -58,7 +53,6 @@ pub enum TargetState {
 pub struct BootstrappingPeer {
     action_sender: mpmc::Sender<Action>,
     bootstrap_connection: Option<(NodeInfo, u64)>,
-    cache: Box<dyn Cache>,
     network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
@@ -70,7 +64,6 @@ pub struct BootstrappingPeer {
 impl BootstrappingPeer {
     pub fn new(
         action_sender: mpmc::Sender<Action>,
-        cache: Box<dyn Cache>,
         target_state: TargetState,
         mut network_service: NetworkService,
         full_id: FullId,
@@ -81,7 +74,6 @@ impl BootstrappingPeer {
 
         Self {
             action_sender,
-            cache: cache,
             network_service,
             full_id,
             min_section_size,
@@ -98,24 +90,9 @@ impl BootstrappingPeer {
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         match self.target_state {
-            TargetState::Client { msg_expiry_dur } => {
-                Ok(State::Client(Client::from_bootstrapping(
-                    ClientDetails {
-                        network_service: self.network_service,
-                        full_id: self.full_id,
-                        min_section_size: self.min_section_size,
-                        msg_expiry_dur,
-                        peer_map: self.peer_map,
-                        proxy_pub_id,
-                        timer: self.timer,
-                    },
-                    outbox,
-                )))
-            }
             TargetState::RelocatingNode => {
                 let details = RelocatingNodeDetails {
                     action_sender: self.action_sender,
-                    cache: self.cache,
                     network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,
@@ -138,7 +115,6 @@ impl BootstrappingPeer {
             } => {
                 let details = ProvingNodeDetails {
                     action_sender: self.action_sender,
-                    cache: self.cache,
                     network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,
@@ -215,32 +191,13 @@ impl Base for BootstrappingPeer {
         &mut self.peer_map
     }
 
-    fn handle_client_send_request(
-        &mut self,
-        _: Authority<XorName>,
-        _: Request,
-        _: u8,
-    ) -> Result<(), InterfaceError> {
-        warn!(
-            "{} - Cannot handle ClientSendRequest - not bootstrapped.",
-            self
-        );
-        // TODO: return Err here eventually. Returning Ok for now to
-        // preserve the pre-refactor behaviour.
-        Ok(())
-    }
-
-    fn handle_node_send_message(
+    fn handle_send_message(
         &mut self,
         _: Authority<XorName>,
         _: Authority<XorName>,
-        _: UserMessage,
-        _: u8,
+        _: Vec<u8>,
     ) -> Result<(), InterfaceError> {
-        warn!(
-            "{} - Cannot handle NodeSendMessage - not bootstrapped.",
-            self
-        );
+        warn!("{} - Cannot handle SendMessage - not bootstrapped.", self);
         // TODO: return Err here eventually. Returning Ok for now to
         // preserve the pre-refactor behaviour.
         Ok(())
@@ -347,9 +304,9 @@ impl Display for BootstrappingPeer {
 mod tests {
     use super::*;
     use crate::{
-        cache::NullCache, id::FullId, messages::Message, mock::Network, outbox::EventBuf,
-        quic_p2p::Builder, state_machine::StateMachine, states::common::from_network_bytes,
-        NetworkConfig, NetworkEvent,
+        id::FullId, messages::Message, mock::Network, outbox::EventBuf, quic_p2p::Builder,
+        state_machine::StateMachine, states::common::from_network_bytes, NetworkConfig,
+        NetworkEvent,
     };
     use crossbeam_channel as mpmc;
     use unwrap::unwrap;
@@ -363,31 +320,28 @@ mod tests {
 
         // Start a bare-bones network service.
         let (event_tx, event_rx) = mpmc::unbounded();
-        let node_endpoint = network.gen_next_addr();
-        let node_network_service = unwrap!(Builder::new(event_tx).build());
+        let node_a_endpoint = network.gen_next_addr();
+        let node_a_network_service = unwrap!(Builder::new(event_tx).build());
 
         // Construct a `StateMachine` which will start in the `BootstrappingPeer` state and
         // bootstrap off the network service above.
-        let config = NetworkConfig::client().with_hard_coded_contact(node_endpoint);
-        let client_endpoint = network.gen_next_addr();
-        let client_full_id = FullId::new();
-        let mut client_outbox = EventBuf::new();
-        let mut client_state_machine = StateMachine::new(
+        let config = NetworkConfig::client().with_hard_coded_contact(node_a_endpoint);
+        let node_b_endpoint = network.gen_next_addr();
+        let node_b_full_id = FullId::new();
+        let mut node_b_outbox = EventBuf::new();
+        let mut node_b_state_machine = StateMachine::new(
             move |action_tx, network_service, timer, _outbox2| {
                 State::BootstrappingPeer(BootstrappingPeer::new(
                     action_tx,
-                    Box::new(NullCache),
-                    TargetState::Client {
-                        msg_expiry_dur: Duration::from_secs(60),
-                    },
+                    TargetState::RelocatingNode,
                     network_service,
-                    client_full_id,
+                    node_b_full_id,
                     min_section_size,
                     timer,
                 ))
             },
             config,
-            &mut client_outbox,
+            &mut node_b_outbox,
         )
         .1;
 
@@ -403,12 +357,12 @@ mod tests {
         // The state machine should have received the `BootstrappedTo` event and this will have
         // caused it to send a `BootstrapRequest` message.
         network.poll();
-        step_at_least_once(&mut client_state_machine, &mut client_outbox);
+        step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
 
         // Check the network service received the `BootstrapRequest`
         network.poll();
         if let NetworkEvent::NewMessage { peer_addr, msg } = unwrap!(event_rx.try_recv()) {
-            assert_eq!(peer_addr, client_endpoint);
+            assert_eq!(peer_addr, node_b_endpoint);
 
             let ok = match unwrap!(from_network_bytes(msg)) {
                 Message::Direct(msg) => match *msg.content() {
@@ -426,19 +380,19 @@ mod tests {
         }
 
         // Drop the network service...
-        drop(node_network_service);
+        drop(node_a_network_service);
         network.poll();
 
         // ...which triggers `ConnectionFailure` on the state machine which then attempts to
         // rebootstrap..
-        step_at_least_once(&mut client_state_machine, &mut client_outbox);
-        assert!(client_outbox.take_all().is_empty());
+        step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
+        assert!(node_b_outbox.take_all().is_empty());
         network.poll();
 
         // ... but there is no one to bootstrap to, so the bootstrap fails which causes the state
         // machine to terminate.
-        step_at_least_once(&mut client_state_machine, &mut client_outbox);
-        let events = client_outbox.take_all();
+        step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
+        let events = node_b_outbox.take_all();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0], Event::Terminated);
     }

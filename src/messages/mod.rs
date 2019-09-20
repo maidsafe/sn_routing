@@ -7,18 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod direct;
-mod request;
-mod response;
 
-pub use self::{
-    direct::{DirectMessage, SignedDirectMessage},
-    request::Request,
-    response::{AccountInfo, Response},
-};
+pub use self::direct::{DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, GenesisPfxInfo, SectionInfo, SectionKeyInfo, SectionProofChain},
     error::{Result, RoutingError},
-    event::Event,
     id::{FullId, PublicId},
     routing_table::{Authority, Prefix},
     sha3::Digest256,
@@ -32,18 +25,9 @@ use maidsafe_utilities::serialisation::serialise;
 use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{self, Debug, Formatter},
     mem,
 };
-
-/// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
-/// critical to prevent data loss.
-pub const RELOCATE_PRIORITY: u8 = 1;
-/// Other requests have a lower priority: If they fail due to high traffic, the sender retries.
-pub const DEFAULT_PRIORITY: u8 = 2;
-/// `Get` requests from clients have the lowest priority: If bandwidth is insufficient, the network
-/// needs to prioritise maintaining its structure, data and consensus.
-pub const CLIENT_GET_PRIORITY: u8 = 3;
 
 /// Wrapper of all messages.
 ///
@@ -360,11 +344,6 @@ impl SignedRoutingMessage {
         &self.content
     }
 
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        self.content.priority()
-    }
-
     /// Returns whether there are enough signatures from the sender.
     pub fn check_fully_signed(&mut self) -> bool {
         if !self.has_enough_sigs() {
@@ -462,11 +441,6 @@ pub struct RoutingMessage {
 }
 
 impl RoutingMessage {
-    /// Returns the priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        self.content.priority()
-    }
-
     /// Returns the message hash
     pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
@@ -584,13 +558,8 @@ pub enum MessageContent {
     /// Inform neighbours that we need to merge, and that the successor of the section info with
     /// the given hash will be the merged section.
     Merge(Digest256),
-    /// Part of a user-facing message
-    UserMessage {
-        /// The content of the user message.
-        content: UserMessage,
-        /// The message priority.
-        priority: u8,
-    },
+    /// User-facing message
+    UserMessage(Vec<u8>),
     /// Approves the joining node as a routing node.
     ///
     /// Sent from Group Y to the joining node.
@@ -602,16 +571,6 @@ pub enum MessageContent {
         /// The version acknowledged.
         ack_version: u64,
     },
-}
-
-impl MessageContent {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            MessageContent::UserMessage { priority, .. } => priority,
-            _ => 0,
-        }
-    }
 }
 
 impl Debug for HopMessage {
@@ -668,15 +627,7 @@ impl Debug for MessageContent {
             ),
             NeighbourInfo(ref sec_info) => write!(formatter, "NeighbourInfo({:?})", sec_info),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
-            UserMessage {
-                ref content,
-                priority,
-                ..
-            } => write!(
-                formatter,
-                "UserMessage(content: {:?}, priority: {})",
-                content, priority,
-            ),
+            UserMessage(ref content) => write!(formatter, "UserMessage({:?})", content,),
             NodeApproval(ref gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
             AckMessage {
                 ref src_prefix,
@@ -686,71 +637,10 @@ impl Debug for MessageContent {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize)]
-/// A user-visible message: a `Request` or `Response`.
-pub enum UserMessage {
-    /// A user-visible request message.
-    Request(Request),
-    /// A user-visible response message.
-    Response(Response),
-}
-
-impl UserMessage {
-    /// Returns an event indicating that this message was received with the given source and
-    /// destination authorities.
-    pub fn into_event(self, src: Authority<XorName>, dst: Authority<XorName>) -> Event {
-        match self {
-            UserMessage::Request(request) => Event::RequestReceived {
-                request: request,
-                src: src,
-                dst: dst,
-            },
-            UserMessage::Response(response) => Event::ResponseReceived {
-                response: response,
-                src: src,
-                dst: dst,
-            },
-        }
-    }
-
-    /// The unique message ID of this `UserMessage`.
-    pub fn message_id(&self) -> &MessageId {
-        match *self {
-            UserMessage::Request(ref request) => request.message_id(),
-            UserMessage::Response(ref response) => response.message_id(),
-        }
-    }
-
-    pub fn is_cacheable(&self) -> bool {
-        match *self {
-            UserMessage::Request(ref request) => request.is_cacheable(),
-            UserMessage::Response(ref response) => response.is_cacheable(),
-        }
-    }
-
-    /// Returns an object that implements `Display` for printing short, simplified representation of
-    /// `UserMessage`.
-    pub fn short_display(&self) -> UserMessageShortDisplay {
-        UserMessageShortDisplay(self)
-    }
-}
-
-pub struct UserMessageShortDisplay<'a>(&'a UserMessage);
-
-impl<'a> Display for UserMessageShortDisplay<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self.0 {
-            UserMessage::Request(ref r) => write!(f, "Request {{ {:?} }}", r.message_id()),
-            UserMessage::Response(ref r) => write!(f, "Response {{ {:?} }}", r.message_id()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chain::SectionKeyInfo;
-    use crate::data::ImmutableData;
     use crate::id::FullId;
     use crate::routing_table::{Authority, Prefix};
     use crate::types::MessageId;
@@ -811,20 +701,12 @@ mod tests {
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
         let full_id_3 = FullId::new();
-        let data_bytes: Vec<u8> = (0..10).collect();
-        let data = ImmutableData::new(data_bytes);
-        let user_msg = UserMessage::Request(Request::PutIData {
-            data: data,
-            msg_id: MessageId::new(),
-        });
+        let content = (0..10).collect();
         let name: XorName = rand::random();
         let msg = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::UserMessage {
-                content: user_msg,
-                priority: 0,
-            },
+            content: MessageContent::UserMessage(content),
         };
 
         let src_section_nodes = vec![

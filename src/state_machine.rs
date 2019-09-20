@@ -14,7 +14,7 @@ use crate::{
     outbox::EventBox,
     routing_table::Prefix,
     states::common::Base,
-    states::{Adult, BootstrappingPeer, Client, Elder, ProvingNode, RelocatingNode},
+    states::{Adult, BootstrappingPeer, Elder, ProvingNode, RelocatingNode},
     timer::Timer,
     xor_name::XorName,
     NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
@@ -36,7 +36,6 @@ macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
             State::BootstrappingPeer($state) => $expr,
-            State::Client($state) => $expr,
             State::RelocatingNode($state) => $expr,
             State::ProvingNode($state) => $expr,
             State::Adult($state) => $expr,
@@ -60,7 +59,6 @@ pub struct StateMachine {
 #[allow(clippy::large_enum_variant)]
 pub enum State {
     BootstrappingPeer(BootstrappingPeer),
-    Client(Client),
     RelocatingNode(RelocatingNode),
     ProvingNode(ProvingNode),
     Adult(Adult),
@@ -183,7 +181,6 @@ impl State {
             State::Adult(ref state) => Some(state.chain()),
             State::Elder(ref state) => Some(state.chain()),
             State::BootstrappingPeer(_)
-            | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_)
             | State::Terminated => None,
@@ -209,7 +206,6 @@ impl State {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
             State::BootstrappingPeer(_) | State::Terminated => vec![],
-            State::Client(ref mut state) => state.get_timed_out_tokens(),
             State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
             State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
             State::Adult(ref mut state) => state.get_timed_out_tokens(),
@@ -221,7 +217,6 @@ impl State {
         match *self {
             State::Terminated
             | State::BootstrappingPeer(_)
-            | State::Client(_)
             | State::RelocatingNode(_)
             | State::ProvingNode(_) => false,
             State::Adult(ref state) => state.has_unpolled_observations(),

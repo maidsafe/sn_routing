@@ -19,7 +19,7 @@ fn merge(prefix_lengths: Vec<usize>) {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths, false);
+    let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 
     // Drop nodes from a section with the shortest prefix until we get a merge event for the empty
@@ -47,7 +47,7 @@ fn merge(prefix_lengths: Vec<usize>) {
             current_sections(&nodes)
         );
         drop(removed);
-        poll_and_resend(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes);
         let mut merge_events_missing = nodes.len();
         for node in &mut *nodes {
             while let Ok(event) = node.try_next_ev() {
@@ -99,7 +99,7 @@ fn concurrent_merge() {
     let min_section_size = 4;
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     rng.shuffle(&mut nodes);
 
@@ -134,7 +134,7 @@ fn concurrent_merge() {
         for _ in min_section_size..len {
             let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
             drop(nodes.remove(index));
-            poll_and_resend(&mut nodes, &mut []);
+            poll_and_resend(&mut nodes);
         }
     }
 
@@ -149,7 +149,7 @@ fn concurrent_merge() {
     }
 
     // Poll the nodes, check the invariant and ensure the network has merged to 3 sections.
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     assert_eq!(count_sections(&nodes), 3);
 }
@@ -165,7 +165,7 @@ fn merge_drop_multiple_nodes() {
     );
     let network = Network::new(min_section_size, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1], false);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     rng.shuffle(&mut nodes);
 
@@ -178,7 +178,7 @@ fn merge_drop_multiple_nodes() {
     for _ in min_section_size..len {
         let index = unwrap!(nodes.iter().position(matches_prefix));
         drop(nodes.remove(index));
-        poll_and_resend(&mut nodes, &mut []);
+        poll_and_resend(&mut nodes);
     }
 
     // The sections shouldn't have merged yet.
@@ -190,7 +190,7 @@ fn merge_drop_multiple_nodes() {
         drop(nodes.remove(index));
     }
 
-    poll_and_resend(&mut nodes, &mut []);
+    poll_and_resend(&mut nodes);
     verify_invariant_for_all_nodes(&network, &mut nodes);
     assert_eq!(count_sections(&nodes), 1);
 }

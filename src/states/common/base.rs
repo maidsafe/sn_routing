@@ -10,10 +10,7 @@ use crate::{
     action::Action,
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
-    messages::{
-        DirectMessage, HopMessage, Message, Request, SignedDirectMessage, SignedRoutingMessage,
-        UserMessage,
-    },
+    messages::{DirectMessage, HopMessage, Message, SignedDirectMessage, SignedRoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::{NodeInfo, Token},
@@ -59,23 +56,13 @@ pub trait Base: Display {
 
     fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
         match action {
-            Action::ClientSendRequest {
-                dst,
-                content,
-                priority,
-                result_tx,
-            } => {
-                let result = self.handle_client_send_request(dst, content, priority);
-                let _ = result_tx.send(result);
-            }
-            Action::NodeSendMessage {
+            Action::SendMessage {
                 src,
                 dst,
                 content,
-                priority,
                 result_tx,
             } => {
-                let result = self.handle_node_send_message(src, dst, content, priority);
+                let result = self.handle_send_message(src, dst, content);
                 let _ = result_tx.send(result);
             }
             Action::GetId { result_tx } => {
@@ -97,27 +84,13 @@ pub trait Base: Display {
         self.finish_handle_action(outbox)
     }
 
-    fn handle_client_send_request(
-        &mut self,
-        _dst: Authority<XorName>,
-        _content: Request,
-        _priority: u8,
-    ) -> Result<(), InterfaceError> {
-        warn!(
-            "{} - Cannot handle ClientSendRequest - invalid state.",
-            self
-        );
-        Err(InterfaceError::InvalidState)
-    }
-
-    fn handle_node_send_message(
+    fn handle_send_message(
         &mut self,
         _src: Authority<XorName>,
         _dst: Authority<XorName>,
-        _content: UserMessage,
-        _priority: u8,
+        _content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
-        warn!("{} - Cannot handle NodeSendMessage - invalid state.", self);
+        warn!("{} - Cannot handle SendMessage - invalid state.", self);
         Err(InterfaceError::InvalidState)
     }
 
