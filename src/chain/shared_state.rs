@@ -6,9 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, NetworkEvent, ProofSet, SectionInfo};
+use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, SectionInfo};
 use crate::{
-    error::RoutingError, id::PublicId, sha3::Digest256, BlsPublicKey, BlsSignature, Prefix, XorName,
+    error::RoutingError, sha3::Digest256, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix,
+    XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -40,7 +41,7 @@ pub struct SharedState {
     /// Any change (split or merge) to the section that is currently in progress.
     pub change: PrefixChange,
     // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
-    pub split_cache: Option<(SectionInfo, ProofSet)>,
+    pub split_cache: Option<(SectionInfo, AccumulatingProof)>,
     /// The set of section info hashes that are currently merging.
     pub merging: BTreeSet<Digest256>,
     /// Our section's key history for Secure Message Delivery
@@ -237,16 +238,26 @@ impl SharedState {
         neighbour_infos.into_iter().any(needs_merge)
     }
 
-    pub fn push_our_new_info(&mut self, sec_info: SectionInfo, proofs: ProofSet) {
-        self.our_history
-            .push(SectionProofBlock::from_sec_info_with_proofs(
-                &sec_info,
-                proofs.clone(),
-            ));
+    pub fn push_our_new_info(
+        &mut self,
+        sec_info: SectionInfo,
+        proofs: AccumulatingProof,
+        pk_set: &BlsPublicKeySet,
+    ) -> Result<(), RoutingError> {
+        let proof_block = if let Some(proof_block) =
+            SectionProofBlock::from_sec_info_with_proofs(&sec_info, proofs, pk_set)
+        {
+            proof_block
+        } else {
+            return Err(RoutingError::InvalidNewSectionInfo);
+        };
+
+        self.our_history.push(proof_block);
         self.our_infos.push(sec_info);
 
         let key_info = self.our_history.last_public_key_info().clone();
         self.update_their_keys(&key_info);
+        Ok(())
     }
 
     /// Updates the entry in `their_keys` for `prefix` to the latest known key; if a split
@@ -400,10 +411,21 @@ impl Debug for SectionProofBlock {
 }
 
 impl SectionProofBlock {
-    pub fn from_sec_info_with_proofs(sec_info: &SectionInfo, proofs: ProofSet) -> Self {
+    pub fn from_sec_info_with_proofs(
+        sec_info: &SectionInfo,
+        proofs: AccumulatingProof,
+        pk_set: &BlsPublicKeySet,
+    ) -> Option<Self> {
         let key_info = SectionKeyInfo::from_section_info(sec_info);
-        let sig = BlsSignature::from_proof_set(proofs);
-        SectionProofBlock { key_info, sig }
+
+        let sig_shares = proofs.into_sig_shares();
+        let sig = pk_set.combine_signatures(
+            sig_shares
+                .values()
+                .map(|sig_payload| (sig_payload.pub_key_share, &sig_payload.sig_share)),
+        );
+
+        sig.map(|sig| SectionProofBlock { key_info, sig })
     }
 
     pub fn key_info(&self) -> &SectionKeyInfo {
@@ -520,14 +542,7 @@ impl SectionKeyInfo {
     }
 
     pub fn serialise_for_signature(&self) -> Option<Vec<u8>> {
-        let payload_for_signature: parsec::Observation<NetworkEvent, PublicId> =
-            parsec::Observation::OpaquePayload(
-                self.key_info_holder
-                    .internal_section_info()
-                    .clone()
-                    .into_network_event(),
-            );
-        serialisation::serialise(&payload_for_signature).ok()
+        serialisation::serialise(self.key_info_holder.internal_section_info()).ok()
     }
 }
 

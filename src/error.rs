@@ -149,6 +149,8 @@ pub enum RoutingError {
     UntrustedMessage,
     /// Crypto related error.
     Crypto(safe_crypto::Error),
+    /// A new SectionInfo is invalid.
+    InvalidNewSectionInfo,
 }
 
 impl From<RoutingTableError> for RoutingError {

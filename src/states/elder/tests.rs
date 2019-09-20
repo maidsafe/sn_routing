@@ -143,9 +143,16 @@ impl ElderUnderTest {
         for event in events {
             self.other_parsec_map
                 .iter_mut()
+                .zip(self.other_full_ids.iter())
                 .take(count)
-                .for_each(|parsec| {
-                    parsec.vote_for((*event).clone().into_network_event(), &LogIdent::new(&0))
+                .for_each(|(parsec, full_id)| {
+                    let sig_event = event
+                        .section_info()
+                        .map(|sec_info| unwrap!(SectionInfoSigPayload::new(sec_info, &full_id)));
+                    parsec.vote_for(
+                        (*event).clone().into_network_event_with(sig_event),
+                        &LogIdent::new(&0),
+                    )
                 });
         }
     }

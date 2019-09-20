@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{SectionInfo, SectionKeyInfo};
-use crate::id::PublicId;
+use super::{Proof, SectionInfo, SectionKeyInfo};
+use crate::id::{FullId, PublicId};
 use crate::parsec;
 use crate::routing_table::Prefix;
 use crate::sha3::Digest256;
@@ -61,6 +61,20 @@ pub struct SectionInfoSigPayload {
     pub pub_key_share: BlsPublicKeyShare,
     /// The signature share signing the SectionInfo.
     pub sig_share: BlsSignatureShare,
+}
+
+impl SectionInfoSigPayload {
+    pub fn new(
+        info: &SectionInfo,
+        full_id: &FullId,
+    ) -> Result<SectionInfoSigPayload, RoutingError> {
+        let proof = Proof::new(*full_id.public_id(), full_id.signing_private_key(), &info)?;
+
+        Ok(SectionInfoSigPayload {
+            pub_key_share: BlsPublicKeyShare(proof.pub_id),
+            sig_share: proof.sig,
+        })
+    }
 }
 
 /// Routing Network events

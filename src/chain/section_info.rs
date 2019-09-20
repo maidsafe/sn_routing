@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, NetworkEvent, ProofSet};
+use super::{AccumulatingEvent, NetworkEvent, ProofSet, SectionInfoSigPayload};
 use crate::error::RoutingError;
 use crate::id::PublicId;
 use crate::routing_table::Prefix;
@@ -123,8 +123,8 @@ impl SectionInfo {
     }
 
     /// To AccumulatingEvent::SectionInfo event
-    pub fn into_network_event(self) -> NetworkEvent {
-        AccumulatingEvent::SectionInfo(self).into_network_event()
+    pub fn into_network_event_with(self, signature: Option<SectionInfoSigPayload>) -> NetworkEvent {
+        AccumulatingEvent::SectionInfo(self).into_network_event_with(signature)
     }
 
     #[cfg(any(test, feature = "mock_base"))]
