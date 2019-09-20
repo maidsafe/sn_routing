@@ -30,15 +30,12 @@ const MAX_THEIR_RECENT_KEYS: usize = 10;
 pub struct SharedState {
     /// The new self section info, that doesn't necessarily have a full set of signatures yet.
     pub new_info: SectionInfo,
-    /// The latest few fully signed infos of our own sections, each with signatures by the previous
-    /// one. This is included in every message we relay.
-    /// This is not a `BTreeSet` just now as it is ordered according to the sequence of pushes into
-    /// it.
-    pub our_infos: NonEmptyList<(SectionInfo, ProofSet)>,
-    /// Maps our neighbours' prefixes to their latest signed section infos, together with the
-    /// signatures by some version of our own section. Note that after a split, the neighbour's
-    /// latest section info could be the one from the pre-split parent section, so the value's
-    /// prefix doesn't always match the key.
+    /// The latest few fully signed infos of our own sections.
+    /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
+    pub our_infos: NonEmptyList<SectionInfo>,
+    /// Maps our neighbours' prefixes to their latest signed section infos.
+    /// Note that after a split, the neighbour's latest section info could be the one from the
+    /// pre-split parent section, so the value's prefix doesn't always match the key.
     pub neighbour_infos: BTreeMap<Prefix<XorName>, SectionInfo>,
     /// Any change (split or merge) to the section that is currently in progress.
     pub change: PrefixChange,
@@ -65,7 +62,7 @@ impl SharedState {
 
         Self {
             new_info: section_info.clone(),
-            our_infos: NonEmptyList::new((section_info, Default::default())),
+            our_infos: NonEmptyList::new(section_info),
             neighbour_infos: Default::default(),
             change: PrefixChange::None,
             split_cache: None,
@@ -166,12 +163,12 @@ impl SharedState {
     }
 
     pub fn our_infos(&self) -> impl Iterator<Item = &SectionInfo> + DoubleEndedIterator {
-        self.our_infos.iter().map(|(si, _)| si)
+        self.our_infos.iter()
     }
 
     /// Returns our own current section info.
     pub fn our_info(&self) -> &SectionInfo {
-        &self.our_infos.last().0
+        &self.our_infos.last()
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
@@ -186,8 +183,7 @@ impl SharedState {
     pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&SectionInfo> {
         self.our_infos
             .iter()
-            .find(|(sec_info, _)| sec_info.hash() == hash)
-            .map(|(sec_info, _)| sec_info)
+            .find(|sec_info| sec_info.hash() == hash)
     }
 
     /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.
@@ -247,7 +243,7 @@ impl SharedState {
                 &sec_info,
                 proofs.clone(),
             ));
-        self.our_infos.push((sec_info, proofs));
+        self.our_infos.push(sec_info);
 
         let key_info = self.our_history.last_public_key_info().clone();
         self.update_their_keys(&key_info);
