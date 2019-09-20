@@ -30,38 +30,37 @@ pub use self::{
 //      ┌───────────────┐
 //      │ Bootstrapping │──────────┐
 //      └───────────────┘          │
-//        │     │     ▲            │
-//        │     │     │            │
-//        │     ▼     │            ▼
-//        │   ┌────────────────┐ ┌─────────────┐
-//        │   │ RelocatingNode │ │ ProvingNode │
-//        │   └────────────────┘ └─────────────┘
-//        │                        │
-//        │                        │
-//        │                        ▼
-//        │                      ┌───────┐
-//        │                      │ Adult │
-//        │                      └───────┘
-//        │                        │
-//        │                        │
-//        ▼                        ▼
-// ┌────────┐                    ┌───────┐
-// │ Client │                    │ Elder │
-// └────────┘                    └───────┘
+//              │     ▲            │
+//              │     │            │
+//              ▼     │            ▼
+//            ┌────────────────┐ ┌─────────────┐
+//            │ RelocatingNode │ │ ProvingNode │
+//            └────────────────┘ └─────────────┘
+//                                 │
+//                                 │
+//                                 ▼
+//                               ┌───────┐
+//                               │ Adult │
+//                               └───────┘
+//                                 │
+//                                 │
+//                                 ▼
+//                               ┌───────┐
+//                               │ Elder │
+//                               └───────┘
 //
 //
 // # Common traits
 //                              Bootstrapping
-//                              │   Client
-//                              │   │   RelocatingNode
-//                              │   │   │   ProvingNode
-//                              │   │   │   │   Adult
-//                              │   │   │   │   │   Elder
-//                              │   │   │   │   │   │
-// Base                         *   *   *   *   *   *
-// Bootstrapped                     *   *   *   *   *
-// BootstrappedNotEstablished       *   *   *   *
-// Relocated                                *   *   *
-// RelocatedNotEstablished                  *   *
-// Approved                                     *   *
+//                              │   RelocatingNode
+//                              │   │   ProvingNode
+//                              │   │   │   Adult
+//                              │   │   │   │   Elder
+//                              │   │   │   │   │
+// Base                         *   *   *   *   *
+// Bootstrapped                     *   *   *   *
+// BootstrappedNotEstablished       *   *   *
+// Relocated                            *   *   *
+// RelocatedNotEstablished              *   *
+// Approved                                 *   *
 //
