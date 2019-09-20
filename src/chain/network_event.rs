@@ -12,9 +12,7 @@ use crate::parsec;
 use crate::routing_table::Prefix;
 use crate::sha3::Digest256;
 use crate::types::MessageId;
-use crate::{
-    Authority, BlsPublicKeySet, BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
-};
+use crate::{Authority, BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName};
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt::{self, Debug, Formatter};
@@ -59,10 +57,10 @@ pub struct SendAckMessagePayload {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct SectionInfoSigPayload {
+    /// The public key share for that signature share
+    pub pub_key_share: BlsPublicKeyShare,
     /// The signature share signing the SectionInfo.
-    pub share: (BlsPublicKeyShare, BlsSignatureShare),
-    /// The key set to combine shares.
-    pub pk_set: BlsPublicKeySet,
+    pub sig_share: BlsSignatureShare,
 }
 
 /// Routing Network events

@@ -161,7 +161,7 @@ pub struct RemainingEvents {
 mod test {
     use super::super::SectionInfo;
     use super::*;
-    use crate::{id::FullId, BlsPublicKeySet, BlsPublicKeyShare};
+    use crate::{id::FullId, BlsPublicKeyShare};
     use parsec::SecretId;
     use std::iter;
     use unwrap::unwrap;
@@ -192,8 +192,8 @@ mod test {
     fn random_section_info_sig_payload() -> SectionInfoSigPayload {
         let (id, first_proof) = random_ids_and_proof();
         SectionInfoSigPayload {
-            share: (BlsPublicKeyShare(*id.public_id()), first_proof.sig),
-            pk_set: BlsPublicKeySet::from_section_info(empty_section_info()),
+            pub_key_share: BlsPublicKeyShare(*id.public_id()),
+            sig_share: first_proof.sig,
         }
     }
 
