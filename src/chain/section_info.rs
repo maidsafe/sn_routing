@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{NetworkEvent, ProofSet};
+use super::{AccumulatingEvent, NetworkEvent, ProofSet};
 use crate::error::RoutingError;
 use crate::id::PublicId;
 use crate::parsec;
@@ -127,7 +127,7 @@ impl SectionInfo {
     /// `other_event`.
     pub fn proves(&self, other_info: &SectionInfo, proofs: &ProofSet) -> bool {
         let other_event: parsec::Observation<NetworkEvent, PublicId> =
-            parsec::Observation::OpaquePayload(NetworkEvent::SectionInfo(other_info.clone()));
+            parsec::Observation::OpaquePayload(other_info.clone().into_network_event());
         self.is_quorum(proofs) && proofs.validate_signatures(&other_event)
     }
 
@@ -137,9 +137,9 @@ impl SectionInfo {
         other_info.is_successor_of(self) && self.proves(other_info, proofs)
     }
 
-    /// To NetworkEvent::SectionInfo event
+    /// To AccumulatingEvent::SectionInfo event
     pub fn into_network_event(self) -> NetworkEvent {
-        NetworkEvent::SectionInfo(self)
+        AccumulatingEvent::SectionInfo(self).into_network_event()
     }
 
     #[cfg(any(test, feature = "mock_base"))]

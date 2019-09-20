@@ -10,7 +10,8 @@ use super::{
     candidate::Candidate,
     chain_accumulator::{ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo, SectionProofChain,
+    AccumulatingEvent, GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
+    SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -125,8 +126,8 @@ impl Chain {
         event: &NetworkEvent,
         proof_set: ProofSet,
     ) -> Result<(), RoutingError> {
-        match event {
-            NetworkEvent::AddElder(_, _) | NetworkEvent::RemoveElder(_) => (),
+        match event.payload {
+            AccumulatingEvent::AddElder(_, _) | AccumulatingEvent::RemoveElder(_) => (),
             _ => {
                 log_or_panic!(
                     LogLevel::Error,
@@ -145,9 +146,10 @@ impl Chain {
             return Ok(());
         }
 
+        let (acc_event, _signature) = AccumulatingEvent::from_network_event(event.clone());
         match self
             .chain_accumulator
-            .insert_with_proof_set(event, proof_set)
+            .insert_with_proof_set(acc_event, proof_set)
         {
             Err(InsertError::AlreadyComplete) => {
                 log_or_panic!(
@@ -184,7 +186,11 @@ impl Chain {
             return Ok(());
         }
 
-        match self.chain_accumulator.add_proof(event, proof) {
+        let (acc_event, signature) = AccumulatingEvent::from_network_event(event.clone());
+        match self
+            .chain_accumulator
+            .add_proof(acc_event, proof, signature)
+        {
             Err(InsertError::AlreadyComplete) => {
                 // Ignore further votes for completed events.
             }
@@ -209,12 +215,12 @@ impl Chain {
     ///
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll(&mut self) -> Result<Option<NetworkEvent>, RoutingError> {
+    pub fn poll(&mut self) -> Result<Option<AccumulatingEvent>, RoutingError> {
         let (event, proofs) = {
             let opt_event = self
                 .chain_accumulator
                 .incomplete_events()
-                .find(|(event, proofs)| self.is_valid_transition(event, proofs))
+                .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
                 .map(|(event, _)| event.clone());
 
             let opt_event_proofs =
@@ -227,43 +233,43 @@ impl Chain {
         };
 
         match event {
-            NetworkEvent::SectionInfo(ref sec_info) => {
-                self.add_section_info(sec_info.clone(), proofs)?;
+            AccumulatingEvent::SectionInfo(ref sec_info) => {
+                self.add_section_info(sec_info.clone(), proofs.into_parsec_proof_set())?;
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
                         return Ok(None);
                     }
                 }
             }
-            NetworkEvent::TheirKeyInfo(ref key_info) => {
+            AccumulatingEvent::TheirKeyInfo(ref key_info) => {
                 self.update_their_keys(key_info);
             }
-            NetworkEvent::AckMessage(ref ack_payload) => {
+            AccumulatingEvent::AckMessage(ref ack_payload) => {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
-            NetworkEvent::OurMerge => {
+            AccumulatingEvent::OurMerge => {
                 // use new_info here as our_info might still be accumulating signatures
                 // and we'd want to perform the merge eventually with our current latest state.
                 let our_hash = *self.state.new_info.hash();
                 let _ = self.state.merging.insert(our_hash);
                 self.state.change = PrefixChange::Merging;
                 panic!(
-                    "Merge not supported: NetworkEvent::OurMerge {:?}: {:?}",
+                    "Merge not supported: AccumulatingEvent::OurMerge {:?}: {:?}",
                     self.our_id(),
                     self.state.new_info
                 );
             }
-            NetworkEvent::NeighbourMerge(digest) => {
+            AccumulatingEvent::NeighbourMerge(digest) => {
                 // TODO: Check that the section is known and not already merged.
                 let _ = self.state.merging.insert(digest);
             }
-            NetworkEvent::AddElder(_, _)
-            | NetworkEvent::RemoveElder(_)
-            | NetworkEvent::Online(_)
-            | NetworkEvent::Offline(_)
-            | NetworkEvent::ExpectCandidate(_)
-            | NetworkEvent::PurgeCandidate(_)
-            | NetworkEvent::SendAckMessage(_) => (),
+            AccumulatingEvent::AddElder(_, _)
+            | AccumulatingEvent::RemoveElder(_)
+            | AccumulatingEvent::Online(_)
+            | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::ExpectCandidate(_)
+            | AccumulatingEvent::PurgeCandidate(_)
+            | AccumulatingEvent::SendAckMessage(_) => (),
         }
         Ok(Some(event))
     }
@@ -353,7 +359,7 @@ impl Chain {
         self.state.try_merge()
     }
 
-    /// Returns `true` if we have accumulated self `NetworkEvent::OurMerge`.
+    /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.
     pub fn is_self_merge_ready(&self) -> bool {
         self.state.is_self_merge_ready()
     }
@@ -373,7 +379,8 @@ impl Chain {
             })
             || self
                 .signed_events()
-                .any(|ni_event| ni_event.proves_successor_info(sec_info, proofs))
+                .filter_map(|ni_event| ni_event.section_info())
+                .any(|si_event| si_event.proves_successor(sec_info, proofs))
     }
 
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
@@ -387,7 +394,7 @@ impl Chain {
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
         let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
-            .map(NetworkEvent::NeighbourMerge);
+            .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
 
         info!(
             "finalise_prefix_change: {:?}, {:?}, state: {:?}",
@@ -478,7 +485,9 @@ impl Chain {
     /// accumulated yet.
     pub fn is_trusted(&self, sec_info: &SectionInfo, check_signed: bool) -> bool {
         let is_proof = |si: &SectionInfo| si == sec_info || si.is_successor_of(sec_info);
-        let mut signed = self.signed_events().filter_map(NetworkEvent::section_info);
+        let mut signed = self
+            .signed_events()
+            .filter_map(AccumulatingEvent::section_info);
         if check_signed && signed.any(is_proof) {
             return true;
         }
@@ -514,7 +523,9 @@ impl Chain {
         let is_newer = |si: &SectionInfo| {
             si.version() >= sec_info.version() && si.prefix().is_compatible(sec_info.prefix())
         };
-        let mut signed = self.signed_events().filter_map(NetworkEvent::section_info);
+        let mut signed = self
+            .signed_events()
+            .filter_map(AccumulatingEvent::section_info);
         if signed.any(is_newer) {
             return false;
         }
@@ -551,8 +562,8 @@ impl Chain {
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
     fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
-        let si = match *event {
-            NetworkEvent::SectionInfo(ref si) => si,
+        let si = match event.payload {
+            AccumulatingEvent::SectionInfo(ref si) => si,
             _ => return false,
         };
 
@@ -578,9 +589,9 @@ impl Chain {
     /// `SectionInfo` in our_infos/neighbour_infos OR if its a valid neighbour pfx
     /// we do not currently have in our chain.
     /// Returns `true` for other types of `NetworkEvent`.
-    fn is_valid_transition(&self, network_event: &NetworkEvent, proofs: &ProofSet) -> bool {
+    fn is_valid_transition(&self, network_event: &AccumulatingEvent, proofs: &ProofSet) -> bool {
         match *network_event {
-            NetworkEvent::SectionInfo(ref info) => {
+            AccumulatingEvent::SectionInfo(ref info) => {
                 // Reject any info we have a newer compatible info for.
                 let is_newer = |i: &SectionInfo| {
                     info.prefix().is_compatible(i.prefix()) && i.version() >= info.version()
@@ -603,23 +614,23 @@ impl Chain {
                 self.our_info().is_quorum(proofs)
             }
 
-            NetworkEvent::AddElder(_, _)
-            | NetworkEvent::RemoveElder(_)
-            | NetworkEvent::Online(_)
-            | NetworkEvent::Offline(_)
-            | NetworkEvent::ExpectCandidate(_)
-            | NetworkEvent::PurgeCandidate(_)
-            | NetworkEvent::TheirKeyInfo(_)
-            | NetworkEvent::AckMessage(_) => {
+            AccumulatingEvent::AddElder(_, _)
+            | AccumulatingEvent::RemoveElder(_)
+            | AccumulatingEvent::Online(_)
+            | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::ExpectCandidate(_)
+            | AccumulatingEvent::PurgeCandidate(_)
+            | AccumulatingEvent::TheirKeyInfo(_)
+            | AccumulatingEvent::AckMessage(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
-            NetworkEvent::SendAckMessage(_) => {
+            AccumulatingEvent::SendAckMessage(_) => {
                 // We may not reach consensus if malicious peer, but when we do we know all our
                 // nodes have updated `their_keys`.
                 self.state.change == PrefixChange::None
                     && self.our_info().is_total_consensus(proofs)
             }
-            NetworkEvent::OurMerge | NetworkEvent::NeighbourMerge(_) => {
+            AccumulatingEvent::OurMerge | AccumulatingEvent::NeighbourMerge(_) => {
                 self.our_info().is_quorum(proofs)
             }
         }
@@ -639,11 +650,11 @@ impl Chain {
     fn can_handle_vote(&self, event: &NetworkEvent) -> bool {
         // TODO: is the merge state check even needed in the following match?
         // we only seem to set self.state = Merging after accumulation of OurMerge
-        match (self.state.change, event) {
+        match (self.state.change, &event.payload) {
             (PrefixChange::None, _)
-            | (PrefixChange::Merging, NetworkEvent::OurMerge)
-            | (PrefixChange::Merging, NetworkEvent::NeighbourMerge(_)) => true,
-            (_, NetworkEvent::SectionInfo(sec_info)) => {
+            | (PrefixChange::Merging, AccumulatingEvent::OurMerge)
+            | (PrefixChange::Merging, AccumulatingEvent::NeighbourMerge(_)) => true,
+            (_, AccumulatingEvent::SectionInfo(sec_info)) => {
                 if sec_info.prefix().is_compatible(self.our_prefix())
                     && sec_info.version() > self.state.new_info.version()
                 {
@@ -867,7 +878,7 @@ impl Chain {
     }
 
     /// Returns all network events that we have signed but haven't accumulated yet.
-    fn signed_events(&self) -> impl Iterator<Item = &NetworkEvent> {
+    fn signed_events(&self) -> impl Iterator<Item = &AccumulatingEvent> {
         self.chain_accumulator
             .incomplete_events()
             .filter(move |(_, proofs)| proofs.contains_id(&self.our_id))
@@ -1254,7 +1265,7 @@ pub struct PrefixChangeOutcome {
     /// The cached events that should be revoted.
     pub cached_events: BTreeSet<NetworkEvent>,
     /// The completed events.
-    pub completed_events: BTreeSet<NetworkEvent>,
+    pub completed_events: BTreeSet<AccumulatingEvent>,
 }
 
 impl Debug for Chain {

@@ -139,12 +139,14 @@ impl ElderUnderTest {
         unwrap!(self.machine.current().elder_state())
     }
 
-    fn n_vote_for(&mut self, count: usize, events: &[&NetworkEvent]) {
+    fn n_vote_for(&mut self, count: usize, events: &[&AccumulatingEvent]) {
         for event in events {
             self.other_parsec_map
                 .iter_mut()
                 .take(count)
-                .for_each(|parsec| parsec.vote_for((*event).clone(), &LogIdent::new(&0)));
+                .for_each(|parsec| {
+                    parsec.vote_for((*event).clone().into_network_event(), &LogIdent::new(&0))
+                });
         }
     }
 
@@ -157,7 +159,7 @@ impl ElderUnderTest {
     fn n_vote_for_gossipped(
         &mut self,
         count: usize,
-        events: &[&NetworkEvent],
+        events: &[&AccumulatingEvent],
     ) -> Result<(), RoutingError> {
         self.n_vote_for(count, events);
         self.create_gossip()
@@ -190,28 +192,28 @@ impl ElderUnderTest {
     ) {
         let _ = self.n_vote_for_gossipped(
             count,
-            &[&NetworkEvent::ExpectCandidate(payload_expect.clone())],
+            &[&AccumulatingEvent::ExpectCandidate(payload_expect.clone())],
         );
     }
 
     fn accumulate_purge_candidate(&mut self, purge_payload: PublicId) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&NetworkEvent::PurgeCandidate(purge_payload)],
+            &[&AccumulatingEvent::PurgeCandidate(purge_payload)],
         );
     }
 
     fn accumulate_online(&mut self, online_payload: OnlinePayload) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&NetworkEvent::Online(online_payload)],
+            &[&AccumulatingEvent::Online(online_payload)],
         );
     }
 
     fn accumulate_add_elder_if_vote(&mut self, online_payload: OnlinePayload) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&NetworkEvent::AddElder(
+            &[&AccumulatingEvent::AddElder(
                 online_payload.new_public_id,
                 online_payload.client_auth,
             )],
@@ -221,21 +223,21 @@ impl ElderUnderTest {
     fn accumulate_section_info_if_vote(&mut self, section_info_payload: SectionInfo) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&NetworkEvent::SectionInfo(section_info_payload)],
+            &[&AccumulatingEvent::SectionInfo(section_info_payload)],
         );
     }
 
     fn accumulate_offline(&mut self, offline_payload: PublicId) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&NetworkEvent::Offline(offline_payload)],
+            &[&AccumulatingEvent::Offline(offline_payload)],
         );
     }
 
     fn accumulate_remove_elder_if_vote(&mut self, offline_payload: PublicId) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&NetworkEvent::RemoveElder(offline_payload)],
+            &[&AccumulatingEvent::RemoveElder(offline_payload)],
         );
     }
 
