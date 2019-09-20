@@ -27,10 +27,6 @@ pub struct NetworkService {
 }
 
 impl NetworkService {
-    pub fn service(&self) -> &QuicP2p {
-        &self.quic_p2p
-    }
-
     pub fn service_mut(&mut self) -> &mut QuicP2p {
         &mut self.quic_p2p
     }

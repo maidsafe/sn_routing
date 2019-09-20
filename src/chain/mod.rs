@@ -22,6 +22,7 @@ mod test_utils;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test_utils::verify_chain_invariant;
 pub use self::{
+    candidate::CANDIDATE_EXPIRED_TIMEOUT,
     chain::{delivery_group_size, Chain, PrefixChangeOutcome},
     network_event::{
         AccumulatingEvent, AckMessagePayload, ExpectCandidatePayload, NetworkEvent, OnlinePayload,

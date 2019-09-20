@@ -18,7 +18,6 @@ use crate::{
     messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
-    resource_prover::RESOURCE_PROOF_DURATION,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
@@ -36,7 +35,7 @@ use std::{
 };
 
 /// Total time to wait for `RelocateResponse`.
-const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60 + RESOURCE_PROOF_DURATION.as_secs());
+const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct RelocatingNodeDetails {
     pub action_sender: mpmc::Sender<Action>,

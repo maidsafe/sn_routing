@@ -7,9 +7,17 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::OnlinePayload;
-use crate::{id::PublicId, utils::LogIdent, utils::XorTargetInterval};
+use crate::{
+    id::PublicId,
+    time::{Duration, Instant},
+    utils::LogIdent,
+    utils::XorTargetInterval,
+};
 use log::LogLevel;
 use std::collections::BTreeSet;
+
+/// Duration after which a candidate is considered as expired.
+pub const CANDIDATE_EXPIRED_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// A candidate (if any) may be in different stages of the resource proof process.
 /// When we consensus to accept them for resource proof, move to `AcceptedForResourceProof`
@@ -17,16 +25,18 @@ use std::collections::BTreeSet;
 /// If we consensus to refuse them: reset to None.
 /// If we consensus to accept them: move to ApprovedWaitingSectionInfo until we are available to
 /// accept a new candidate, at which point reset to None.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Candidate {
     /// No-one is currently in the resource proof process.
     /// We can take on a new candidate on consensus of an `ExpectCandidate` event.
     None,
-    /// We accepted a candidate to perform resource proof in this section. We are waiting for
-    /// them to send their `CandidateInfo` before starting the actual resource proof.
-    AcceptedForResourceProof {
+    /// We accepted a candidate for joining this section. We are waiting for them to send their
+    /// `CandidateInfo`.
+    Accepted {
         target_interval: XorTargetInterval,
         old_public_id: PublicId,
+        timestamp: Instant,
+        expired_once: bool,
     },
     /// We consensused the candidate online. We are waiting for the SectionInfo to consensus
     /// and this new node to start handling events before allowing a new candidate.
@@ -53,30 +63,25 @@ impl Candidate {
         }
     }
 
-    /// Our section decided that the candidate should be resource proofed next.
+    /// Accept the peer as candidate for joining our section.
     /// Pre-condition: is_none.
-    pub fn accept_for_resource_proof(
-        &mut self,
-        old_public_id: PublicId,
-        target_interval: XorTargetInterval,
-    ) {
+    pub fn accept(&mut self, old_public_id: PublicId, target_interval: XorTargetInterval) {
         if !self.is_none() {
-            log_or_panic!(
-                LogLevel::Error,
-                "accept_as_candidate when processing one already"
-            );
+            log_or_panic!(LogLevel::Error, "accept when processing one already");
         }
 
-        *self = Candidate::AcceptedForResourceProof {
+        *self = Candidate::Accepted {
             old_public_id: old_public_id,
             target_interval: target_interval,
+            timestamp: Instant::now(),
+            expired_once: false,
         };
     }
 
-    /// Try to accept as memeber.
+    /// Try to approve the candidate - that is - accept them as new memeber.
     /// If the candidate was already purged or is unexpected, return false.
     /// Otherwise marks the candidate as `ApprovedWaitingSectionInfo`.
-    pub fn try_accept_as_member(&mut self, online_payload: &OnlinePayload) -> bool {
+    pub fn try_approve(&mut self, online_payload: &OnlinePayload) -> bool {
         if self.old_public_id() == Some(&online_payload.old_public_id) {
             // Known candidate was accepted.
             // Ignore any information that could be different stored in candidate.
@@ -104,7 +109,7 @@ impl Candidate {
     pub fn old_public_id(&self) -> Option<&PublicId> {
         match self {
             Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => None,
-            Candidate::AcceptedForResourceProof { old_public_id, .. } => Some(old_public_id),
+            Candidate::Accepted { old_public_id, .. } => Some(old_public_id),
         }
     }
 
@@ -112,7 +117,7 @@ impl Candidate {
     fn target_interval(&self) -> Option<&XorTargetInterval> {
         match self {
             Candidate::None | Candidate::ApprovedWaitingSectionInfo { .. } => None,
-            Candidate::AcceptedForResourceProof {
+            Candidate::Accepted {
                 target_interval, ..
             } => Some(target_interval),
         }
@@ -123,7 +128,7 @@ impl Candidate {
         let log_prefix = format!("{} Shared Candidate Status - ", log_ident);
         match self {
             Candidate::None => trace!("{}No candidate is currently being handled.", log_prefix),
-            Candidate::AcceptedForResourceProof {
+            Candidate::Accepted {
                 ref old_public_id, ..
             } => trace!(
                 "{}{} Accepted as candidate.",

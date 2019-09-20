@@ -211,22 +211,22 @@ impl Node {
         self.machine.current().chain()
     }
 
-    /// Returns this node state.
-    pub fn node_state(&self) -> Option<&crate::states::Elder> {
+    /// Returns the underlying Elder state.
+    pub fn elder_state(&self) -> Option<&crate::states::Elder> {
         self.machine.current().elder_state()
     }
 
-    /// Returns this node mut state.
-    pub fn node_state_mut(&mut self) -> Option<&mut crate::states::Elder> {
+    /// Returns mutable reference to the underlying Elder state.
+    pub fn elder_state_mut(&mut self) -> Option<&mut crate::states::Elder> {
         self.machine.current_mut().elder_state_mut()
     }
 
-    /// Returns this node state unwraped: assume state is Elder.
-    pub fn node_state_unchecked(&self) -> &crate::states::Elder {
-        unwrap!(self.node_state(), "Should be State::Elder")
+    /// Returns the underlying Elder state unwrapped - panics if not Elder.
+    pub fn elder_state_unchecked(&self) -> &crate::states::Elder {
+        unwrap!(self.elder_state(), "Should be State::Elder")
     }
 
-    /// Returns whether the current state is `ProvingNode`.
+    /// Returns the underlying ProvingNode state.
     pub fn proving_node_state(&self) -> Option<&crate::states::ProvingNode> {
         match *self.machine.current() {
             State::ProvingNode(ref state) => Some(state),
@@ -235,8 +235,8 @@ impl Node {
     }
 
     /// Returns whether the current state is `Node`.
-    pub fn is_node(&self) -> bool {
-        self.node_state().is_some()
+    pub fn is_elder(&self) -> bool {
+        self.elder_state().is_some()
     }
 
     /// Returns whether the current state is `ProvingNode`.
@@ -247,14 +247,14 @@ impl Node {
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
         let _ = self
-            .node_state_mut()
+            .elder_state_mut()
             .map(|state| state.set_next_relocation_dst(dst));
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
     pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
         let _ = self
-            .node_state_mut()
+            .elder_state_mut()
             .map(|state| state.set_next_relocation_interval(interval));
     }
 
@@ -265,7 +265,7 @@ impl Node {
 
     /// Indicates if a given `PublicId` is in the peer manager as a Node
     pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
-        self.node_state()
+        self.elder_state()
             .map(|state| state.is_node_peer(pub_id))
             .unwrap_or(false)
     }
@@ -278,7 +278,7 @@ impl Node {
     /// Sets a counter to be used ignoring certain number of `CandidateInfo`.
     pub fn set_ignore_candidate_info_counter(&mut self, counter: u8) {
         let _ = self
-            .node_state_mut()
+            .elder_state_mut()
             .map(|state| state.set_ignore_candidate_info_counter(counter));
     }
 }

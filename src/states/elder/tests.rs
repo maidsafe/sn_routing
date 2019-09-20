@@ -267,12 +267,8 @@ impl ElderUnderTest {
         self.elder_state().has_unpolled_observations()
     }
 
-    fn has_resource_proof_candidate(&self) -> bool {
-        self.elder_state().has_resource_proof_candidate()
-    }
-
-    fn has_candidate_info(&self) -> bool {
-        self.elder_state().peer_mgr().has_candidate_info()
+    fn has_candidate(&self) -> bool {
+        self.elder_state().has_candidate()
     }
 
     fn is_candidate_a_valid_peer(&self) -> bool {
@@ -539,7 +535,7 @@ fn construct() {
     let elder_test = ElderUnderTest::new();
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -551,7 +547,7 @@ fn accumulate_expect_candidate() {
     elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -564,7 +560,7 @@ fn not_accumulate_expect_candidate_with_message() {
     let _ = elder_test.create_gossip();
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -578,7 +574,7 @@ fn accumulate_expect_candidate_with_message() {
     elder_test.accumulate_expect_candidate_if_vote(elder_test.expect_candidate_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -592,7 +588,7 @@ fn accumulate_purge_candidate() {
     elder_test.accumulate_purge_candidate(elder_test.purge_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -605,7 +601,7 @@ fn accumulate_online_candidate_only_do_not_remove_candidate() {
     elder_test.accumulate_online(elder_test.online_payload());
 
     assert!(elder_test.has_unpolled_observations());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -620,7 +616,7 @@ fn accumulate_online_candidate_then_add_elder_only_do_not_remove_candidate() {
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(elder_test.is_candidate_a_valid_peer());
 }
 
@@ -636,7 +632,7 @@ fn accumulate_online_candidate_then_add_elder_then_section_info_remove_candidate
     elder_test.accumulate_section_info_if_vote(new_section_info);
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.has_candidate());
     assert!(elder_test.is_candidate_a_valid_peer());
 }
 
@@ -651,7 +647,7 @@ fn accumulate_online_then_purge_then_add_elder_for_candidate() {
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(elder_test.is_candidate_a_valid_peer());
 }
 
@@ -668,7 +664,7 @@ fn accumulate_online_then_purge_then_add_elder_then_section_info_for_candidate()
     elder_test.accumulate_section_info_if_vote(new_section_info);
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.has_candidate());
     assert!(elder_test.is_candidate_a_valid_peer());
 }
 
@@ -683,7 +679,7 @@ fn accumulate_purge_then_online_for_candidate() {
     elder_test.accumulate_online(elder_test.online_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_resource_proof_candidate());
+    assert!(!elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -748,8 +744,7 @@ fn candidate_info_message_in_interval() {
     elder_test.handle_connected_to_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
-    assert!(elder_test.has_candidate_info());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -764,8 +759,7 @@ fn candidate_info_message_not_in_interval() {
     elder_test.handle_connected_to_candidate();
     let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
-    assert!(!elder_test.has_candidate_info());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -781,8 +775,7 @@ fn candidate_info_message_bad_signature() {
     let _ = elder_test
         .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
 
-    assert!(!elder_test.has_candidate_info());
-    assert!(elder_test.has_resource_proof_candidate());
+    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 

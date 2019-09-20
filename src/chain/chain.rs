@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    candidate::Candidate,
+    candidate::{Candidate, CANDIDATE_EXPIRED_TIMEOUT},
     chain_accumulator::{ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
     AccumulatingEvent, GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
@@ -1208,7 +1208,7 @@ impl Chain {
     }
 
     /// Return true if already has a candidate
-    pub fn has_resource_proof_candidate(&self) -> bool {
+    pub fn has_candidate(&self) -> bool {
         !self.candidate.is_none()
     }
 
@@ -1237,19 +1237,34 @@ impl Chain {
         old_pub_id: PublicId,
         target_interval: XorTargetInterval,
     ) {
-        self.candidate
-            .accept_for_resource_proof(old_pub_id, target_interval)
+        self.candidate.accept(old_pub_id, target_interval)
     }
 
     /// Handle consensus on `Online`. Marks the candidate as `ApprovedWaitingSectionInfo`.
     /// If the candidate was already purged or is unexpected, return false.
-    pub fn try_accept_candidate_as_member(&mut self, online_payload: &OnlinePayload) -> bool {
-        self.candidate.try_accept_as_member(online_payload)
+    pub fn try_approve_candidate(&mut self, online_payload: &OnlinePayload) -> bool {
+        self.candidate.try_approve(online_payload)
     }
 
     /// The public id of the candidate we are waiting to approve.
     pub fn candidate_old_public_id(&self) -> Option<&PublicId> {
         self.candidate.old_public_id()
+    }
+
+    /// Return old public id of expired candidate only once
+    pub fn expire_candidate_once(&mut self) -> Option<PublicId> {
+        match self.candidate {
+            Candidate::Accepted {
+                old_public_id,
+                timestamp,
+                ref mut expired_once,
+                ..
+            } if !*expired_once && timestamp.elapsed() > CANDIDATE_EXPIRED_TIMEOUT => {
+                *expired_once = true;
+                Some(old_public_id)
+            }
+            _ => None,
+        }
     }
 
     /// Logs info about ongoing candidate state, if any.
