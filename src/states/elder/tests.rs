@@ -504,7 +504,7 @@ fn make_state_machine(
     let _ = network.gen_next_addr();
 
     StateMachine::new(
-        move |_action_sender, network_service, timer, outbox2| {
+        move |network_service, timer, outbox2| {
             new_elder_state(
                 full_id,
                 gen_pfx_info,

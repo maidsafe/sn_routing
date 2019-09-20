@@ -99,14 +99,13 @@ impl NodeBuilder {
         network_config.our_type = OurType::Node;
 
         StateMachine::new(
-            move |action_sender, network_service, timer, outbox| {
+            move |network_service, timer, outbox| {
                 if first {
                     states::Elder::first(network_service, full_id, min_section_size, timer, outbox)
                         .map(State::Elder)
                         .unwrap_or(State::Terminated)
                 } else {
                     State::BootstrappingPeer(BootstrappingPeer::new(
-                        action_sender,
                         TargetState::RelocatingNode,
                         network_service,
                         full_id,

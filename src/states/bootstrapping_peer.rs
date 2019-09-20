@@ -12,7 +12,6 @@ use super::{
     relocating_node::{RelocatingNode, RelocatingNodeDetails},
 };
 use crate::{
-    action::Action,
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -27,7 +26,6 @@ use crate::{
     xor_name::XorName,
     NetworkService,
 };
-use crossbeam_channel as mpmc;
 use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
@@ -51,7 +49,6 @@ pub enum TargetState {
 
 // State of Client or Node while bootstrapping.
 pub struct BootstrappingPeer {
-    action_sender: mpmc::Sender<Action>,
     bootstrap_connection: Option<(NodeInfo, u64)>,
     network_service: NetworkService,
     full_id: FullId,
@@ -63,7 +60,6 @@ pub struct BootstrappingPeer {
 
 impl BootstrappingPeer {
     pub fn new(
-        action_sender: mpmc::Sender<Action>,
         target_state: TargetState,
         mut network_service: NetworkService,
         full_id: FullId,
@@ -73,7 +69,6 @@ impl BootstrappingPeer {
         network_service.service_mut().bootstrap();
 
         Self {
-            action_sender,
             network_service,
             full_id,
             min_section_size,
@@ -92,7 +87,6 @@ impl BootstrappingPeer {
         match self.target_state {
             TargetState::RelocatingNode => {
                 let details = RelocatingNodeDetails {
-                    action_sender: self.action_sender,
                     network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,
@@ -114,7 +108,6 @@ impl BootstrappingPeer {
                 ..
             } => {
                 let details = ProvingNodeDetails {
-                    action_sender: self.action_sender,
                     network_service: self.network_service,
                     full_id: self.full_id,
                     min_section_size: self.min_section_size,
@@ -329,10 +322,9 @@ mod tests {
         let node_b_endpoint = network.gen_next_addr();
         let node_b_full_id = FullId::new();
         let mut node_b_outbox = EventBuf::new();
-        let mut node_b_state_machine = StateMachine::new(
-            move |action_tx, network_service, timer, _outbox2| {
+        let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
+            move |network_service, timer, _outbox2| {
                 State::BootstrappingPeer(BootstrappingPeer::new(
-                    action_tx,
                     TargetState::RelocatingNode,
                     network_service,
                     node_b_full_id,
@@ -342,8 +334,7 @@ mod tests {
             },
             config,
             &mut node_b_outbox,
-        )
-        .1;
+        );
 
         // Check the network service received `ConnectedTo`.
         network.poll();
@@ -396,6 +387,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0], Event::Terminated);
     }
+
     fn step_at_least_once(machine: &mut StateMachine, outbox: &mut dyn EventBox) {
         // Blocking step for the first one. Must not err.
         unwrap!(machine.step(outbox));

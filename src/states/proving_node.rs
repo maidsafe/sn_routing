@@ -13,7 +13,6 @@ use super::{
     },
 };
 use crate::{
-    action::Action,
     chain::GenesisPfxInfo,
     config_handler,
     error::RoutingError,
@@ -32,7 +31,6 @@ use crate::{
     xor_name::XorName,
     NetworkService,
 };
-use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
 use std::time::Duration;
 use std::{
@@ -43,7 +41,6 @@ use std::{
 const RESEND_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct ProvingNodeDetails {
-    pub action_sender: mpmc::Sender<Action>,
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,

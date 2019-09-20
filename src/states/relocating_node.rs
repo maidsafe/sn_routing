@@ -11,7 +11,6 @@ use super::{
     BootstrappingPeer, TargetState,
 };
 use crate::{
-    action::Action,
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
@@ -27,7 +26,6 @@ use crate::{
     xor_name::XorName,
     NetworkService, XorTargetInterval,
 };
-use crossbeam_channel as mpmc;
 use log::LogLevel;
 use std::{
     collections::BTreeSet,
@@ -38,7 +36,6 @@ use std::{
 const RELOCATE_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct RelocatingNodeDetails {
-    pub action_sender: mpmc::Sender<Action>,
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
@@ -48,7 +45,6 @@ pub struct RelocatingNodeDetails {
 }
 
 pub struct RelocatingNode {
-    action_sender: mpmc::Sender<Action>,
     network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
@@ -65,7 +61,6 @@ impl RelocatingNode {
     pub fn from_bootstrapping(details: RelocatingNodeDetails) -> Result<Self, RoutingError> {
         let relocation_timer_token = details.timer.schedule(RELOCATE_TIMEOUT);
         let mut node = Self {
-            action_sender: details.action_sender,
             network_service: details.network_service,
             full_id: details.full_id,
             min_section_size: details.min_section_size,
@@ -106,7 +101,6 @@ impl RelocatingNode {
         };
 
         State::BootstrappingPeer(BootstrappingPeer::new(
-            self.action_sender,
             target_state,
             self.network_service,
             new_full_id,

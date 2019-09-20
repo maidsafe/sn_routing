@@ -216,6 +216,7 @@ impl SignedRoutingMessage {
     }
 
     /// Creates a `SignedRoutingMessage` without security metadata
+    #[cfg(all(test, feature = "mock_base"))]
     pub fn insecure(content: RoutingMessage) -> SignedRoutingMessage {
         SignedRoutingMessage {
             content,
@@ -280,6 +281,7 @@ impl SignedRoutingMessage {
     }
 
     /// Adds a proof if it is new, without validating it.
+    #[cfg(test)]
     pub fn add_signature_share(
         &mut self,
         pk_share: BlsPublicKeyShare,
