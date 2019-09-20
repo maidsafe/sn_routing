@@ -246,14 +246,6 @@ impl Elder {
             self.chain.prefixes()
         );
 
-        // We have just become established. Now we can supply our votes for all latest neighbour
-        // infos that have accumulated so far.
-        let neighbour_infos = self.chain.neighbour_infos().cloned().collect_vec();
-
-        neighbour_infos.into_iter().for_each(|info| {
-            self.vote_for_section_info(info);
-        });
-
         // Send `Event::Connected` first and then any backlogged events from previous states.
         for event in iter::once(Event::Connected).chain(event_backlog) {
             self.send_event(event, outbox);
@@ -1870,10 +1862,6 @@ impl Approved for Elder {
             });
 
             self.send_neighbour_infos();
-        } else {
-            // Vote for neighbour update if we haven't done so already.
-            // vote_for_event is expected to only generate a new vote if required.
-            self.vote_for_section_info(sec_info);
         }
 
         let _ = self.merge_if_necessary();
