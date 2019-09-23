@@ -268,7 +268,7 @@ impl StateMachine {
         outbox: &mut dyn EventBox,
     ) -> (mpmc::Sender<Action>, Self)
     where
-        F: FnOnce(mpmc::Sender<Action>, NetworkService, Timer, &mut dyn EventBox) -> State,
+        F: FnOnce(NetworkService, Timer, &mut dyn EventBox) -> State,
     {
         let (network_tx, network_rx) = mpmc::unbounded();
         let (action_tx, action_rx) = mpmc::unbounded();
@@ -281,7 +281,7 @@ impl StateMachine {
         );
 
         let timer = Timer::new(action_tx.clone());
-        let state = init_state(action_tx.clone(), network_service, timer, outbox);
+        let state = init_state(network_service, timer, outbox);
         let is_running = match state {
             State::Terminated => false,
             _ => true,

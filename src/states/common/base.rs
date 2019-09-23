@@ -73,9 +73,6 @@ pub trait Base: Display {
                     return Transition::Terminate;
                 }
             }
-            Action::TakeResourceProofResult(pub_id, messages) => {
-                self.handle_resource_proof_result(pub_id, messages);
-            }
             Action::Terminate => {
                 return Transition::Terminate;
             }
@@ -96,13 +93,6 @@ pub trait Base: Display {
 
     fn handle_timeout(&mut self, _token: u64, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
-    }
-
-    fn handle_resource_proof_result(&mut self, _pub_id: PublicId, _messages: Vec<DirectMessage>) {
-        error!(
-            "{} - Action::ResourceProofResult received by invalid state",
-            self
-        );
     }
 
     fn finish_handle_action(&mut self, _outbox: &mut dyn EventBox) -> Transition {

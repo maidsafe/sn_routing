@@ -8,7 +8,6 @@
 
 use crate::error::InterfaceError;
 use crate::id::PublicId;
-use crate::messages::DirectMessage;
 use crate::routing_table::Authority;
 use crate::xor_name::XorName;
 use hex_fmt::HexFmt;
@@ -34,9 +33,6 @@ pub enum Action {
         result_tx: Sender<PublicId>,
     },
     HandleTimeout(u64),
-    // Used to pass the messages created as a result of handling a resource proof request from the
-    // worker thread back to the main event loop.
-    TakeResourceProofResult(PublicId, Vec<DirectMessage>),
     Terminate,
 }
 
@@ -50,11 +46,6 @@ impl Debug for Action {
             ),
             Action::GetId { .. } => write!(formatter, "Action::GetId"),
             Action::HandleTimeout(token) => write!(formatter, "Action::HandleTimeout({})", token),
-            Action::TakeResourceProofResult(pub_id, _) => write!(
-                formatter,
-                "Action::TakeResourceProofResult({:?}, ...)",
-                pub_id
-            ),
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }
     }

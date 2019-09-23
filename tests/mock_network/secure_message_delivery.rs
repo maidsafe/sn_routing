@@ -27,7 +27,7 @@ fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
     let targets = vec![*unwrap!(nodes[dst].inner.chain()).our_id()];
     let _ = nodes[src]
         .inner
-        .node_state_mut()
+        .elder_state_mut()
         .map(|state| state.send_msg_to_targets(&targets, 1, message));
 }
 

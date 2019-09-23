@@ -37,7 +37,7 @@ use crate::{
     time::{Duration, Instant},
     timer::Timer,
     types::MessageId,
-    utils::{self, DisplayDuration, XorTargetInterval},
+    utils::{self, XorTargetInterval},
     xor_name::XorName,
     BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
@@ -45,7 +45,6 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use rand::{self, Rng};
 use safe_crypto::Signature;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
@@ -62,10 +61,6 @@ const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 //const MAX_IDLE_ROUNDS: u64 = 100;
 //const TICK_TIMEOUT_SECS: u64 = 60;
-/// The number of required leading zero bits for the resource proof
-const RESOURCE_PROOF_DIFFICULTY: u8 = 0;
-/// The total size of the resource proof data.
-const RESOURCE_PROOF_TARGET_SIZE: usize = 250 * 1024 * 1024;
 /// Interval between displaying info about current candidate.
 const CANDIDATE_STATUS_INTERVAL: Duration = Duration::from_secs(60);
 /// Duration for which all clients on a given IP will be blocked from joining this node.
@@ -116,8 +111,6 @@ pub struct Elder {
     dropped_clients: LruCache<PublicId, ()>,
     /// Proxy client traffic handled
     proxy_load_amount: u64,
-    /// Whether resource proof is disabled.
-    disable_resource_proof: bool,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
@@ -185,8 +178,6 @@ impl Elder {
     }
 
     fn new(details: ElderDetails, is_first_node: bool) -> Self {
-        let dev_config = config_handler::get_config().dev.unwrap_or_default();
-
         let timer = details.timer;
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
@@ -209,7 +200,6 @@ impl Elder {
             banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
-            disable_resource_proof: dev_config.disable_resource_proof,
             parsec_map: details.parsec_map,
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
@@ -704,50 +694,6 @@ impl Elder {
             .init(self.full_id.clone(), &self.gen_pfx_info, &self.log_ident())
     }
 
-    fn handle_resource_proof_response(
-        &mut self,
-        pub_id: PublicId,
-        part_index: usize,
-        part_count: usize,
-        proof: Vec<u8>,
-        leading_zero_bytes: u64,
-    ) {
-        match self.peer_mgr.verify_candidate(
-            &pub_id,
-            part_index,
-            part_count,
-            proof,
-            leading_zero_bytes,
-        ) {
-            Err(error) => {
-                debug!(
-                    "{} Failed to verify candidate {}: {:?}",
-                    self, pub_id, error
-                );
-            }
-            Ok((None, elapsed)) => {
-                trace!(
-                    "{} Candidate {} provided part for challenge in {}.",
-                    self,
-                    &pub_id,
-                    elapsed.display_secs(),
-                );
-                self.send_direct_message(&pub_id, DirectMessage::ResourceProofResponseReceipt);
-            }
-            Ok((Some(online_payload), elapsed)) => {
-                info!(
-                    "{} Candidate {} passed our challenge in {}. Voting approval \
-                     to our section with {:?}.",
-                    self,
-                    pub_id,
-                    elapsed.display_secs(),
-                    self.our_prefix()
-                );
-                self.vote_candidate_approval(online_payload);
-            }
-        }
-    }
-
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
         let conn_info = match self.peer_map().get_connection_info(&pub_id) {
@@ -834,10 +780,10 @@ impl Elder {
     #[allow(clippy::too_many_arguments)]
     fn handle_candidate_info(
         &mut self,
-        old_pub_id: &PublicId,
-        new_pub_id: &PublicId,
-        signature_using_old: &Signature,
-        new_client_auth: &Authority<XorName>,
+        old_pub_id: PublicId,
+        new_pub_id: PublicId,
+        signature_using_old: Signature,
+        new_client_auth: Authority<XorName>,
         outbox: &mut dyn EventBox,
     ) {
         #[cfg(feature = "mock_base")]
@@ -848,101 +794,50 @@ impl Elder {
             }
         }
         debug!(
-            "{} Handling CandidateInfo from {}->{}.",
+            "{} - Handling CandidateInfo from {}->{}.",
             self, old_pub_id, new_pub_id
         );
 
-        if !self.is_candidate_info_valid(old_pub_id, new_pub_id, signature_using_old) {
+        if !self.is_candidate_info_valid(&old_pub_id, &new_pub_id, &signature_using_old) {
             warn!(
-                "{} Signature check failed in CandidateInfo, so dropping peer {:?}.",
+                "{} - Signature check failed in CandidateInfo, so dropping peer {:?}.",
                 self, new_pub_id
             );
-            self.disconnect_peer(new_pub_id);
+            self.disconnect_peer(&new_pub_id);
             return;
         }
 
         // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateInfo, it
         // might have not yet handled its NodeApproval message. Check and handle accordingly here
-        if self.peer_mgr.is_connected(new_pub_id) && self.is_peer_valid(new_pub_id) {
-            self.process_connection(*new_pub_id, outbox);
+        if self.peer_mgr.is_connected(&new_pub_id) && self.is_peer_valid(&new_pub_id) {
+            self.process_connection(new_pub_id, outbox);
             return;
         }
 
-        let (difficulty, target_size) = if self.disable_resource_proof
-            || self.is_peer_hard_coded(new_pub_id)
-            || self.peer_mgr.is_or_was_joining_node(new_pub_id)
-        {
-            (0, 1)
-        } else {
-            (
-                RESOURCE_PROOF_DIFFICULTY,
-                RESOURCE_PROOF_TARGET_SIZE / (self.chain.our_section().len() + 1),
-            )
-        };
-
-        let seed: Vec<u8> = if cfg!(feature = "mock_base") {
-            vec![5u8; 4]
-        } else {
-            rand::thread_rng().gen_iter().take(10).collect()
-        };
-
         let target_interval =
-            if let Some(interval) = self.chain.matching_candidate_target_interval(old_pub_id) {
+            if let Some(interval) = self.chain.matching_candidate_target_interval(&old_pub_id) {
                 interval
             } else {
                 debug!(
-                    "{} Ignore CandidateInfo: we are not waiting for candidate {}->{}.",
+                    "{} - Ignore CandidateInfo: we are not waiting for candidate {}->{}.",
                     self, old_pub_id, new_pub_id
                 );
                 return;
             };
 
-        match self.peer_mgr.handle_candidate_info(
-            OnlinePayload {
-                old_public_id: *old_pub_id,
-                new_public_id: *new_pub_id,
-                client_auth: *new_client_auth,
-            },
-            target_interval,
-            target_size,
-            difficulty,
-            seed.clone(),
-            &self.log_ident(),
-        ) {
-            Ok(true) => {
-                let msg = DirectMessage::ResourceProof {
-                    seed: seed,
-                    target_size: target_size,
-                    difficulty: difficulty,
-                };
-                info!(
-                    "{} Sending resource proof challenge to candidate {}->{}",
-                    self, old_pub_id, new_pub_id
-                );
-                self.send_direct_message(new_pub_id, msg);
-            }
-            Ok(false) => {
-                if !self.is_peer_valid(new_pub_id) {
-                    debug!(
-                        "{} Ignore CandidateInfo from invalid candidate {}->{}.",
-                        self, old_pub_id, new_pub_id
-                    );
-                    return;
-                }
-                info!(
-                    "{} Adding candidate {}->{} to routing table without sending resource \
-                     proof challenge as section has already approved it.",
-                    self, old_pub_id, new_pub_id
-                );
-                self.add_node(new_pub_id, outbox);
-            }
-            Err(error) => {
-                debug!(
-                    "{} Ignore CandidateInfo {}->{}: {:?}.",
-                    self, old_pub_id, new_pub_id, error
-                );
-            }
+        if !target_interval.contains(new_pub_id.name()) {
+            debug!(
+                "{} - Ignore CandidateInfo: new ID {} is not within the required target range.",
+                self, new_pub_id
+            );
+            return;
         }
+
+        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
+            old_public_id: old_pub_id,
+            new_public_id: new_pub_id,
+            client_auth: new_client_auth,
+        }));
     }
 
     fn is_candidate_info_valid(
@@ -1075,7 +970,7 @@ impl Elder {
         &mut self,
         vote: &ExpectCandidatePayload,
     ) -> Option<XorTargetInterval> {
-        if self.chain.has_resource_proof_candidate() {
+        if self.chain.has_candidate() {
             return None;
         }
 
@@ -1177,32 +1072,6 @@ impl Elder {
         if let Some(msg) = self.parsec_map.create_gossip(version, &gossip_target) {
             self.send_direct_message(&gossip_target, msg);
         }
-    }
-
-    fn vote_candidate_approval(&mut self, online_payload: OnlinePayload) {
-        if !self.peer_mgr.is_connected(&online_payload.new_public_id) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} Not connected to {}: Not voting candidate Online.",
-                self.log_ident(),
-                online_payload.new_public_id.name()
-            );
-            return;
-        }
-
-        if !self
-            .our_prefix()
-            .matches(online_payload.new_public_id.name())
-        {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} About to vote for {} which does not match self pfx: {:?}",
-                self,
-                online_payload.new_public_id.name(),
-                self.our_prefix()
-            );
-        }
-        self.vote_for_event(AccumulatingEvent::Online(online_payload));
     }
 
     fn vote_for_event(&mut self, event: AccumulatingEvent) {
@@ -1455,7 +1324,7 @@ impl Elder {
     }
 
     fn remove_expired_peers(&mut self) {
-        if self.peer_mgr.expired_candidate_once() {
+        if self.peer_mgr.expire_candidate_once() {
             if let Some(expired_id) = self.chain.candidate_old_public_id().cloned() {
                 self.vote_for_event(AccumulatingEvent::PurgeCandidate(expired_id));
             }
@@ -1504,22 +1373,6 @@ impl Elder {
         let _ = self.banned_client_ips.insert(ip, ());
         let _ = self.dropped_clients.insert(*pub_id, ());
         self.disconnect_peer(pub_id);
-    }
-
-    // Is the peer among our hard-coded contacts?
-    fn is_peer_hard_coded(&self, pub_id: &PublicId) -> bool {
-        self.peer_map
-            .get_connection_info(pub_id)
-            .and_then(|conn_info| match conn_info {
-                ConnectionInfo::Node { node_info } => Some(node_info),
-                ConnectionInfo::Client { .. } => None,
-            })
-            .map(|node_info| {
-                self.network_service
-                    .service()
-                    .is_hard_coded_contact(node_info)
-            })
-            .unwrap_or(false)
     }
 }
 
@@ -1583,7 +1436,6 @@ impl Base for Elder {
         } else if self.candidate_status_token == token {
             self.candidate_status_token = self.timer.schedule(CANDIDATE_STATUS_INTERVAL);
             self.chain.show_candidate_status(&self.log_ident());
-            self.peer_mgr.show_candidate_status(&self.log_ident());
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
@@ -1653,30 +1505,16 @@ impl Base for Elder {
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             CandidateInfo {
-                ref old_public_id,
-                ref signature_using_old,
-                ref new_client_auth,
+                old_public_id,
+                signature_using_old,
+                new_client_auth,
             } => {
                 self.handle_candidate_info(
                     old_public_id,
-                    &pub_id,
+                    pub_id,
                     signature_using_old,
                     new_client_auth,
                     outbox,
-                );
-            }
-            ResourceProofResponse {
-                part_index,
-                part_count,
-                proof,
-                leading_zero_bytes,
-            } => {
-                self.handle_resource_proof_response(
-                    pub_id,
-                    part_index,
-                    part_count,
-                    proof,
-                    leading_zero_bytes,
                 );
             }
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
@@ -1686,7 +1524,7 @@ impl Base for Elder {
             ParsecResponse(version, par_response) => {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
-            BootstrapResponse(_) | ResourceProof { .. } | ResourceProofResponseReceipt => {
+            BootstrapResponse(_) => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }
@@ -1737,8 +1575,8 @@ impl Elder {
         self.peer_mgr.get_peer(pub_id).map_or(false, Peer::is_node)
     }
 
-    pub fn has_resource_proof_candidate(&self) -> bool {
-        self.chain.has_resource_proof_candidate()
+    pub fn has_candidate(&self) -> bool {
+        self.chain.has_candidate()
     }
 
     pub fn set_ignore_candidate_info_counter(&mut self, counter: u8) {
@@ -1935,7 +1773,7 @@ impl Approved for Elder {
         online_payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if self.chain.try_accept_candidate_as_member(&online_payload) {
+        if self.chain.try_approve_candidate(&online_payload) {
             let OnlinePayload {
                 new_public_id,
                 client_auth,

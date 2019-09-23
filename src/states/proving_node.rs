@@ -13,7 +13,6 @@ use super::{
     },
 };
 use crate::{
-    action::Action,
     chain::GenesisPfxInfo,
     config_handler,
     error::RoutingError,
@@ -23,7 +22,6 @@ use crate::{
     outbox::EventBox,
     peer_manager::{PeerManager, PeerState},
     peer_map::PeerMap,
-    resource_prover::ResourceProver,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::State,
@@ -33,9 +31,7 @@ use crate::{
     xor_name::XorName,
     NetworkService,
 };
-use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
-use std::collections::btree_map::BTreeMap;
 use std::time::Duration;
 use std::{
     collections::BTreeSet,
@@ -45,7 +41,6 @@ use std::{
 const RESEND_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct ProvingNodeDetails {
-    pub action_sender: mpmc::Sender<Action>,
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub min_section_size: usize,
@@ -58,8 +53,6 @@ pub struct ProvingNodeDetails {
 
 pub struct ProvingNode {
     network_service: NetworkService,
-    /// Whether resource proof is disabled.
-    disable_resource_proof: bool,
     event_backlog: Vec<Event>,
     full_id: FullId,
     joining_prefix: Prefix<XorName>,
@@ -68,12 +61,11 @@ pub struct ProvingNode {
     msg_backlog: Vec<RoutingMessage>,
     /// ID from before relocating.
     old_full_id: FullId,
+    our_section: BTreeSet<PublicId>,
     peer_map: PeerMap,
     peer_mgr: PeerManager,
-    resource_prover: ResourceProver,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
-    resource_proofing_status: BTreeMap<PublicId, bool>,
     resend_token: Option<u64>,
 }
 
@@ -87,31 +79,22 @@ impl ProvingNode {
         let mut peer_mgr = PeerManager::new(dev_config.disable_client_rate_limiter);
         peer_mgr.insert_peer(details.proxy_pub_id, PeerState::Proxy);
 
-        let challenger_count = details.our_section.1.len();
-        let resource_prover = ResourceProver::new(
-            details.action_sender,
-            details.timer.clone(),
-            challenger_count,
-        );
-
         let mut node = Self {
             network_service: details.network_service,
             event_backlog: Vec::new(),
             full_id: details.full_id,
             min_section_size: details.min_section_size,
             msg_backlog: Vec::new(),
+            old_full_id: details.old_full_id,
+            our_section: details.our_section.1,
             peer_map: details.peer_map,
             peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: details.timer,
-            disable_resource_proof: dev_config.disable_resource_proof,
             joining_prefix: details.our_section.0,
-            old_full_id: details.old_full_id,
-            resource_prover,
-            resource_proofing_status: BTreeMap::new(),
             resend_token: None,
         };
-        node.init(details.our_section.1, &details.proxy_pub_id, outbox)?;
+        node.init(&details.proxy_pub_id, outbox)?;
         Ok(node)
     }
 
@@ -119,17 +102,14 @@ impl ProvingNode {
     /// `our_section` to then start the candidate approval process.
     fn init(
         &mut self,
-        our_section: BTreeSet<PublicId>,
         proxy_pub_id: &PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.resource_prover.start(self.disable_resource_proof);
-
         trace!("{} Relocation completed.", self);
         info!(
             "{} Received relocation section. Establishing connections to {} peers.",
             self,
-            our_section.len()
+            self.our_section.len()
         );
 
         let src = Authority::Client {
@@ -137,7 +117,7 @@ impl ProvingNode {
             proxy_node_name: *proxy_pub_id.name(),
         };
 
-        for pub_id in our_section {
+        for pub_id in self.our_section.clone() {
             debug!(
                 "{} Sending ConnectionRequest to {:?} on Relocation response.",
                 self, pub_id
@@ -196,13 +176,10 @@ impl ProvingNode {
     }
 
     fn handle_node_approval(&mut self, gen_pfx_info: GenesisPfxInfo) -> Transition {
-        self.resource_prover.handle_approval();
         info!(
-            "{} Resource proof challenges completed. This node has been approved to join the \
-             network!",
+            "{} - This node has been approved to join the network!",
             self
         );
-
         Transition::IntoAdult { gen_pfx_info }
     }
 
@@ -250,16 +227,14 @@ impl ProvingNode {
             }
         };
 
-        let _ = self.resource_proofing_status.insert(pub_id, false);
-
         self.send_direct_message(&pub_id, msg);
     }
 
-    fn resend_info(&mut self, outbox: &mut dyn EventBox) -> Transition {
+    fn resend_candidate_info(&mut self, outbox: &mut dyn EventBox) -> Transition {
         let proxy_node_name = if let Some(proxy_node_name) = self.peer_mgr.get_proxy_name() {
             *proxy_node_name
         } else {
-            warn!("{} No proxy found, cannot resend info.", self);
+            warn!("{} No proxy found, cannot resend candidate info.", self);
             return Transition::Stay;
         };
         let src = Authority::Client {
@@ -267,15 +242,17 @@ impl ProvingNode {
             proxy_node_name,
         };
 
-        for (pub_id, resource_proofing) in self.resource_proofing_status.clone() {
-            if !self.peer_mgr.is_connected(&pub_id) {
+        for pub_id in self.our_section.clone() {
+            if self.peer_mgr.is_connected(&pub_id) {
+                self.send_candidate_info(pub_id);
+            } else {
                 let dst = Authority::ManagedNode(*pub_id.name());
                 let _ = self.send_connection_request(pub_id, src, dst, outbox);
-            } else if !resource_proofing {
-                self.send_candidate_info(pub_id);
             }
         }
+
         self.resend_token = Some(self.timer.schedule(RESEND_TIMEOUT));
+
         Transition::Stay
     }
 
@@ -320,29 +297,13 @@ impl Base for ProvingNode {
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
         if self.resend_token == Some(token) {
-            return self.resend_info(outbox);
-        }
-
-        let log_ident = self.log_ident();
-        if let Some(transition) = self
-            .resource_prover
-            .handle_timeout(token, log_ident, outbox)
-        {
-            transition
+            self.resend_candidate_info(outbox)
         } else {
             Transition::Stay
         }
     }
 
-    fn handle_resource_proof_result(&mut self, pub_id: PublicId, messages: Vec<DirectMessage>) {
-        let msg = self
-            .resource_prover
-            .handle_action_res_proof(pub_id, messages);
-        self.send_direct_message(&pub_id, msg);
-    }
-
     fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
-        let _ = self.resource_proofing_status.remove(&pub_id);
         RelocatedNotEstablished::handle_peer_lost(self, pub_id, outbox)
     }
 
@@ -357,28 +318,6 @@ impl Base for ProvingNode {
         use crate::messages::DirectMessage::*;
         match msg {
             ConnectionResponse => self.handle_connection_response(pub_id),
-            ResourceProof {
-                seed,
-                target_size,
-                difficulty,
-            } => {
-                let log_ident = self.log_ident();
-                self.resource_prover.handle_request(
-                    pub_id,
-                    seed,
-                    target_size,
-                    difficulty,
-                    log_ident,
-                );
-                if let Some(status) = self.resource_proofing_status.get_mut(&pub_id) {
-                    *status = true;
-                }
-            }
-            ResourceProofResponseReceipt => {
-                if let Some(msg) = self.resource_prover.handle_receipt(pub_id) {
-                    self.send_direct_message(&pub_id, msg);
-                }
-            }
             BootstrapRequest => self.handle_bootstrap_request(pub_id),
             _ => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);

@@ -126,7 +126,7 @@ fn add_nodes<R: Rng>(
         .iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            if !node.inner.is_node() {
+            if !node.inner.is_elder() {
                 Some(index)
             } else {
                 None

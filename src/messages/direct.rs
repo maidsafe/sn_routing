@@ -50,33 +50,6 @@ pub enum DirectMessage {
         /// Client authority from after relocation.
         new_client_auth: Authority<XorName>,
     },
-    /// Request a proof to be provided by the joining node.
-    ///
-    /// This is sent from member of Group Y to the joining node.
-    ResourceProof {
-        /// seed of proof
-        seed: Vec<u8>,
-        /// size of the proof
-        target_size: usize,
-        /// leading zero bits of the hash of the proof
-        difficulty: u8,
-    },
-    /// Provide a proof to the network
-    ///
-    /// This is sent from the joining node to member of Group Y
-    ResourceProofResponse {
-        /// The index of this part of the resource proof.
-        part_index: usize,
-        /// The total number of parts.
-        part_count: usize,
-        /// Proof to be presented
-        proof: Vec<u8>,
-        /// Claimed leading zero bytes to be added to proof's header so that the hash matches
-        /// the difficulty requirement
-        leading_zero_bytes: u64,
-    },
-    /// Receipt of a part of a ResourceProofResponse
-    ResourceProofResponseReceipt,
     /// Poke a node to send us the first gossip request
     ParsecPoke(u64),
     /// Parsec request message
@@ -94,30 +67,6 @@ impl Debug for DirectMessage {
             BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
             CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
-            ResourceProof {
-                ref seed,
-                ref target_size,
-                ref difficulty,
-            } => write!(
-                formatter,
-                "ResourceProof {{ seed: {:?}, target_size: {:?}, difficulty: {:?} }}",
-                seed, target_size, difficulty
-            ),
-            ResourceProofResponse {
-                part_index,
-                part_count,
-                ref proof,
-                leading_zero_bytes,
-            } => write!(
-                formatter,
-                "ResourceProofResponse {{ part {}/{}, proof_len: {:?}, leading_zero_bytes: \
-                 {:?} }}",
-                part_index + 1,
-                part_count,
-                proof.len(),
-                leading_zero_bytes
-            ),
-            ResourceProofResponseReceipt => write!(formatter, "ResourceProofResponseReceipt"),
             ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
@@ -140,7 +89,7 @@ impl Hash for DirectMessage {
             MessageSignature(ref msg) => {
                 msg.hash(state);
             }
-            BootstrapRequest | ConnectionResponse | ResourceProofResponseReceipt => (),
+            BootstrapRequest | ConnectionResponse => (),
             BootstrapResponse(ref result) => result.hash(state),
             CandidateInfo {
                 ref old_public_id,
@@ -150,26 +99,6 @@ impl Hash for DirectMessage {
                 old_public_id.hash(state);
                 signature_using_old.hash(state);
                 new_client_auth.hash(state);
-            }
-            ResourceProof {
-                ref seed,
-                target_size,
-                difficulty,
-            } => {
-                seed.hash(state);
-                target_size.hash(state);
-                difficulty.hash(state);
-            }
-            ResourceProofResponse {
-                part_index,
-                part_count,
-                ref proof,
-                leading_zero_bytes,
-            } => {
-                part_index.hash(state);
-                part_count.hash(state);
-                proof.hash(state);
-                leading_zero_bytes.hash(state);
             }
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, ref request) => {

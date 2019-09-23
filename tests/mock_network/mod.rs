@@ -36,11 +36,7 @@ pub const MIN_SECTION_SIZE: usize = 3;
 fn nodes_with_candidate(nodes: &[TestNode]) -> Vec<XorName> {
     nodes
         .iter()
-        .filter(|node| {
-            node.inner
-                .node_state_unchecked()
-                .has_resource_proof_candidate()
-        })
+        .filter(|node| node.inner.elder_state_unchecked().has_candidate())
         .map(TestNode::name)
         .collect()
 }
@@ -80,7 +76,7 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
-fn candidate_timeout_resource_proof() {
+fn candidate_expiration() {
     let network = Network::new(MIN_SECTION_SIZE, None);
     let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
     let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
@@ -101,9 +97,17 @@ fn candidate_timeout_resource_proof() {
         "Accepted as candidate"
     );
 
-    // Continue without the joining node until all nodes idle:
+    // Continue without the joining node until all nodes accept the candidate:
     info!("Candidate new name: {}", proving_node.name());
-    poll_and_resend(&mut nodes);
+    poll_and_resend_until(
+        &mut nodes,
+        &|nodes| {
+            nodes
+                .iter()
+                .all(|node| node.inner.elder_state_unchecked().has_candidate())
+        },
+        None,
+    );
 
     assert_eq!(
         nodes.iter().map(TestNode::name).collect_vec(),
@@ -297,7 +301,7 @@ fn simultaneous_joining_nodes(
     //
     let non_full_nodes = nodes
         .iter()
-        .filter(|node| !node.inner.is_node())
+        .filter(|node| !node.inner.is_elder())
         .map(TestNode::name)
         .collect_vec();
     assert!(
