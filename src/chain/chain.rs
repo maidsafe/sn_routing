@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    candidate::{Candidate, CANDIDATE_EXPIRED_TIMEOUT},
+    candidate::Candidate,
     chain_accumulator::{ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
     AccumulatingEvent, GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
@@ -1249,22 +1249,6 @@ impl Chain {
     /// The public id of the candidate we are waiting to approve.
     pub fn candidate_old_public_id(&self) -> Option<&PublicId> {
         self.candidate.old_public_id()
-    }
-
-    /// Return old public id of expired candidate only once
-    pub fn expire_candidate_once(&mut self) -> Option<PublicId> {
-        match self.candidate {
-            Candidate::Accepted {
-                old_public_id,
-                timestamp,
-                ref mut expired_once,
-                ..
-            } if !*expired_once && timestamp.elapsed() > CANDIDATE_EXPIRED_TIMEOUT => {
-                *expired_once = true;
-                Some(old_public_id)
-            }
-            _ => None,
-        }
     }
 
     /// Logs info about ongoing candidate state, if any.

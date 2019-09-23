@@ -363,6 +363,7 @@ impl Elder {
         } = self.chain.finalise_prefix_change()?;
         self.gen_pfx_info = gen_pfx_info;
         self.chain.reset_candidate();
+        self.peer_mgr.reset_candidate();
         self.init_parsec(); // We don't reset the chain on prefix change.
 
         for obs in drained_obs {
@@ -668,6 +669,8 @@ impl Elder {
             let src = Authority::ManagedNode(*self.name());
             let _ = self.send_connection_request(new_pub_id, src, new_client_auth, outbox);
         };
+
+        self.peer_mgr.reset_candidate();
 
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
@@ -977,6 +980,7 @@ impl Elder {
 
         self.chain
             .accept_as_candidate(vote.old_public_id, target_interval.clone());
+        self.peer_mgr.accept_as_candidate();
 
         Some(target_interval)
     }
@@ -1320,8 +1324,10 @@ impl Elder {
     }
 
     fn remove_expired_peers(&mut self) {
-        if let Some(expired_id) = self.chain.expire_candidate_once() {
-            self.vote_for_event(AccumulatingEvent::PurgeCandidate(expired_id));
+        if self.peer_mgr.expire_candidate_once() {
+            if let Some(expired_id) = self.chain.candidate_old_public_id().cloned() {
+                self.vote_for_event(AccumulatingEvent::PurgeCandidate(expired_id));
+            }
         }
 
         for pub_id in self.peer_mgr.remove_expired_peers() {
@@ -1825,6 +1831,7 @@ impl Approved for Elder {
             .is_some()
         {
             self.chain.reset_candidate();
+            self.peer_mgr.reset_candidate();
         }
         Ok(())
     }

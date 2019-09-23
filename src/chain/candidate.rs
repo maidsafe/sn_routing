@@ -7,17 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::OnlinePayload;
-use crate::{
-    id::PublicId,
-    time::{Duration, Instant},
-    utils::LogIdent,
-    utils::XorTargetInterval,
-};
+use crate::{id::PublicId, utils::LogIdent, utils::XorTargetInterval};
 use log::LogLevel;
 use std::collections::BTreeSet;
-
-/// Duration after which a candidate is considered as expired.
-pub const CANDIDATE_EXPIRED_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// A candidate (if any) may be in different stages of the resource proof process.
 /// When we consensus to accept them for resource proof, move to `AcceptedForResourceProof`
@@ -35,8 +27,6 @@ pub enum Candidate {
     Accepted {
         target_interval: XorTargetInterval,
         old_public_id: PublicId,
-        timestamp: Instant,
-        expired_once: bool,
     },
     /// We consensused the candidate online. We are waiting for the SectionInfo to consensus
     /// and this new node to start handling events before allowing a new candidate.
@@ -73,8 +63,6 @@ impl Candidate {
         *self = Candidate::Accepted {
             old_public_id: old_public_id,
             target_interval: target_interval,
-            timestamp: Instant::now(),
-            expired_once: false,
         };
     }
 
