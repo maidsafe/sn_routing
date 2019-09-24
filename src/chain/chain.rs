@@ -14,10 +14,10 @@ use super::{
     SectionProofChain,
 };
 use crate::{
+    crypto::Digest256,
     error::RoutingError,
     id::PublicId,
     routing_table::{Authority, Error},
-    sha3::Digest256,
     utils::LogIdent,
     utils::XorTargetInterval,
     BlsPublicKeySet, Prefix, XorName, Xorable,

@@ -7,19 +7,20 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{AccumulatingEvent, NetworkEvent, ProofSet, SectionInfoSigPayload};
-use crate::error::RoutingError;
-use crate::id::PublicId;
-use crate::routing_table::Prefix;
-use crate::sha3::Digest256;
-use crate::XorName;
-use crate::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
+use crate::{
+    crypto::{self, Digest256},
+    error::RoutingError,
+    id::PublicId,
+    routing_table::Prefix,
+    XorName, {QUORUM_DENOMINATOR, QUORUM_NUMERATOR},
+};
 use maidsafe_utilities::serialisation;
-use safe_crypto;
-use serde::de::Error as SerdeDeError;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::cmp;
-use std::collections::BTreeSet;
-use std::fmt::{self, Debug, Display, Formatter};
+use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
+use std::{
+    cmp,
+    collections::BTreeSet,
+    fmt::{self, Debug, Display, Formatter},
+};
 
 /// The configuration of a section at one point in time. Each node is always a member of exactly
 /// one current section, but a new `SectionInfo` is created whenever the section changes, due to a
@@ -145,7 +146,7 @@ impl SectionInfo {
     ) -> Result<Self, RoutingError> {
         let hash = {
             let fields = (&members, version, &prefix, &prev_hash);
-            safe_crypto::hash(&serialisation::serialise(&fields)?)
+            crypto::hash(&serialisation::serialise(&fields)?)
         };
         Ok(SectionInfo {
             members,

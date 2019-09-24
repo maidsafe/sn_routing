@@ -22,7 +22,7 @@ pub use self::{
 pub use parsec::{DkgResult, DkgResultWrapper, NetworkEvent, Proof, PublicId, SecretId};
 
 use self::{observation::ObservationHolder, state::SectionState};
-use crate::sha3::Digest256;
+use crate::crypto::Digest256;
 use rand::Rng;
 use std::{
     collections::{BTreeMap, BTreeSet},

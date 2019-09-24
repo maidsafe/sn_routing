@@ -113,6 +113,7 @@ mod macros;
 mod action;
 mod chain;
 mod config_handler;
+mod crypto;
 mod error;
 mod event;
 mod event_stream;
@@ -139,9 +140,6 @@ mod xor_name;
 #[cfg(feature = "mock_base")]
 pub mod mock;
 pub(crate) mod parsec;
-
-/// SHA-3 type alias.
-pub mod sha3;
 
 /// Structured Data Tag for Session Packet Type
 pub const TYPE_TAG_SESSION_PACKET: u64 = 0;

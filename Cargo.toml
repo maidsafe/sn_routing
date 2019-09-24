@@ -35,6 +35,7 @@ safe_crypto = "~0.8.0"
 serde = "~1.0.25"
 serde_derive = "~1.0.25"
 term = "~0.4.6"
+tiny-keccak = "~1.5.0"
 threshold_crypto = "~0.3.2"
 unwrap = "~1.2.1"
 

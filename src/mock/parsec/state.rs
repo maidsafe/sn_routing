@@ -13,7 +13,7 @@ use super::{
     observation::{ObservationHolder, ObservationState},
     Block, ConsensusMode, DkgResult, NetworkEvent, PublicId, SecretId,
 };
-use crate::sha3::Digest256;
+use crate::crypto::Digest256;
 use rand::Rng;
 use std::{
     any::Any,

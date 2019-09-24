@@ -6,8 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::parsec;
-use crate::xor_name::XorName;
+use crate::{crypto, parsec, xor_name::XorName};
 use safe_crypto;
 use safe_crypto::{
     gen_encrypt_keypair, gen_sign_keypair, PublicEncryptKey, PublicSignKey, SecretEncryptKey,
@@ -200,7 +199,7 @@ impl PublicId {
     }
 
     fn name_from_key(public_sign_key: &PublicSignKey) -> XorName {
-        XorName(safe_crypto::hash(&public_sign_key.into_bytes()))
+        XorName(crypto::hash(&public_sign_key.into_bytes()))
     }
 }
 

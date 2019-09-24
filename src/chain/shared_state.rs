@@ -8,7 +8,7 @@
 
 use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, SectionInfo};
 use crate::{
-    error::RoutingError, sha3::Digest256, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix,
+    crypto::Digest256, error::RoutingError, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix,
     XorName,
 };
 use itertools::Itertools;

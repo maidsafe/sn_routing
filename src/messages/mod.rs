@@ -11,10 +11,10 @@ mod direct;
 pub use self::direct::{DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, GenesisPfxInfo, SectionInfo, SectionKeyInfo, SectionProofChain},
+    crypto::{self, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     routing_table::{Authority, Prefix},
-    sha3::Digest256,
     types::MessageId,
     xor_name::XorName,
     BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare, XorTargetInterval,
@@ -444,7 +444,7 @@ impl RoutingMessage {
     /// Returns the message hash
     pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
-        Ok(safe_crypto::hash(&serialised_msg))
+        Ok(crypto::hash(&serialised_msg))
     }
 
     /// Returns a signature for this message.
