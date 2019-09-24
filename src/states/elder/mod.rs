@@ -16,7 +16,7 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, ExpectCandidatePayload,
         GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
-        SectionInfo, SectionKeyInfo, SendAckMessagePayload,
+        SectionInfo, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
     },
     config_handler,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -246,14 +246,6 @@ impl Elder {
             self.chain.prefixes()
         );
 
-        // We have just become established. Now we can supply our votes for all latest neighbour
-        // infos that have accumulated so far.
-        let neighbour_infos = self.chain.neighbour_infos().cloned().collect_vec();
-
-        neighbour_infos.into_iter().for_each(|info| {
-            self.vote_for_section_info(info);
-        });
-
         // Send `Event::Connected` first and then any backlogged events from previous states.
         for event in iter::once(Event::Connected).chain(event_backlog) {
             self.send_event(event, outbox);
@@ -276,7 +268,7 @@ impl Elder {
     }
 
     fn public_key_set(&self) -> BlsPublicKeySet {
-        BlsPublicKeySet::from_section_info(self.chain.our_info().clone())
+        self.chain.public_key_set()
     }
 
     fn handle_parsec_poke(&mut self, msg_version: u64, pub_id: PublicId) {
@@ -297,7 +289,7 @@ impl Elder {
             }
         }
         if let Some(merged_info) = self.chain.try_merge()? {
-            self.vote_for_section_info(merged_info);
+            self.vote_for_section_info(merged_info)?;
         } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
             self.vote_for_event(AccumulatingEvent::OurMerge);
         }
@@ -1037,7 +1029,7 @@ impl Elder {
 
     fn handle_neighbour_info(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&sec_info) {
-            self.vote_for_section_info(sec_info);
+            self.vote_for_section_info(sec_info)?;
         }
         Ok(())
     }
@@ -1078,8 +1070,10 @@ impl Elder {
         self.vote_for_network_event(event.into_network_event())
     }
 
-    fn vote_for_section_info(&mut self, info: SectionInfo) {
-        self.vote_for_network_event(info.into_network_event())
+    fn vote_for_section_info(&mut self, info: SectionInfo) -> Result<(), RoutingError> {
+        let signature_payload = SectionInfoSigPayload::new(&info, &self.full_id)?;
+        self.vote_for_network_event(info.into_network_event_with(Some(signature_payload)));
+        Ok(())
     }
 
     fn vote_for_network_event(&mut self, event: NetworkEvent) {
@@ -1746,9 +1740,9 @@ impl Approved for Elder {
             self.add_node(&new_pub_id, outbox);
         };
 
-        to_vote_infos
-            .into_iter()
-            .for_each(|sec_info| self.vote_for_section_info(sec_info));
+        for sec_info in to_vote_infos.into_iter() {
+            self.vote_for_section_info(sec_info)?;
+        }
 
         Ok(())
     }
@@ -1759,7 +1753,7 @@ impl Approved for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let self_info = self.chain.remove_member(pub_id)?;
-        self.vote_for_section_info(self_info);
+        self.vote_for_section_info(self_info)?;
         if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
             let _ = self.dropped_peer(pub_id, outbox, false);
             self.disconnect_peer(&pub_id);
@@ -1870,10 +1864,6 @@ impl Approved for Elder {
             });
 
             self.send_neighbour_infos();
-        } else {
-            // Vote for neighbour update if we haven't done so already.
-            // vote_for_event is expected to only generate a new vote if required.
-            self.vote_for_section_info(sec_info);
         }
 
         let _ = self.merge_if_necessary();

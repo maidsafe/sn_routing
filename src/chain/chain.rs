@@ -8,7 +8,7 @@
 
 use super::{
     candidate::Candidate,
-    chain_accumulator::{ChainAccumulator, InsertError},
+    chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
     AccumulatingEvent, GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet, SectionInfo,
     SectionProofChain,
@@ -20,7 +20,7 @@ use crate::{
     sha3::Digest256,
     utils::LogIdent,
     utils::XorTargetInterval,
-    Prefix, XorName, Xorable,
+    BlsPublicKeySet, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -234,7 +234,7 @@ impl Chain {
 
         match event {
             AccumulatingEvent::SectionInfo(ref sec_info) => {
-                self.add_section_info(sec_info.clone(), proofs.into_parsec_proof_set())?;
+                self.add_section_info(sec_info.clone(), proofs)?;
                 if let Some((ref cached_sec_info, _)) = self.state.split_cache {
                     if cached_sec_info == sec_info {
                         return Ok(None);
@@ -368,19 +368,6 @@ impl Chain {
     pub fn should_vote_for_merge(&self) -> bool {
         self.state
             .should_vote_for_merge(self.min_sec_size, self.neighbour_infos())
-    }
-
-    /// Check inside the `neighbour_infos` failing which inside the chain accumulator if we have a
-    /// SectionInfo with our proof for it that can validate the given SectionInfo as its next link
-    pub fn is_valid_neighbour_info(&self, sec_info: &SectionInfo, proofs: &ProofSet) -> bool {
-        self.compatible_neighbour_info(sec_info)
-            .map_or(false, |n_info| {
-                n_info == sec_info || n_info.proves_successor(sec_info, proofs)
-            })
-            || self
-                .signed_events()
-                .filter_map(|ni_event| ni_event.section_info())
-                .any(|si_event| si_event.proves_successor(sec_info, proofs))
     }
 
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
@@ -606,12 +593,10 @@ impl Chain {
                 }
 
                 // Ensure our infos is forming an unbroken sequence.
-                if info.prefix().matches(self.our_id.name()) {
-                    return info.is_successor_of(self.our_info())
-                        && self.our_info().is_quorum(proofs);
-                }
+                let is_sequence_ok = !info.prefix().matches(self.our_id.name())
+                    || info.is_successor_of(self.our_info());
 
-                self.our_info().is_quorum(proofs)
+                is_sequence_ok && self.our_info().is_quorum(proofs)
             }
 
             AccumulatingEvent::AddElder(_, _)
@@ -692,7 +677,7 @@ impl Chain {
     fn add_section_info(
         &mut self,
         sec_info: SectionInfo,
-        proofs: ProofSet,
+        proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
         // Split handling alone. wouldn't cater to merge
         if sec_info.prefix().is_extension_of(self.our_prefix()) {
@@ -724,12 +709,13 @@ impl Chain {
     fn do_add_section_info(
         &mut self,
         sec_info: SectionInfo,
-        proofs: ProofSet,
+        proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
         let pfx = *sec_info.prefix();
         if pfx.matches(self.our_id.name()) {
             let is_new_member = !self.is_member && sec_info.members().contains(&self.our_id);
-            self.state.push_our_new_info(sec_info, proofs);
+            let pk_set = self.public_key_set();
+            self.state.push_our_new_info(sec_info, proofs, &pk_set)?;
 
             if is_new_member {
                 self.is_member = true;
@@ -739,13 +725,6 @@ impl Chain {
             let ppfx = sec_info.prefix().popped();
             let spfx = sec_info.prefix().sibling();
             let new_sec_info_version = *sec_info.version();
-            let sec_info = self
-                .state
-                .our_infos()
-                .rev()
-                .find(|our_info| our_info.is_quorum(&proofs))
-                .map(|_| sec_info)
-                .ok_or(RoutingError::InvalidMessage)?;
 
             if let Some(old_sec_info) = self.state.neighbour_infos.insert(pfx, sec_info) {
                 if *old_sec_info.version() > new_sec_info_version {
@@ -777,6 +756,10 @@ impl Chain {
             self.check_and_clean_neighbour_infos(Some(&pfx));
         }
         Ok(())
+    }
+
+    pub(crate) fn public_key_set(&self) -> BlsPublicKeySet {
+        BlsPublicKeySet::from_section_info(self.our_info().clone())
     }
 
     /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
@@ -1326,7 +1309,7 @@ impl Chain {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{GenesisPfxInfo, Proof, ProofSet, SectionInfo};
+    use super::super::{AccumulatingProof, GenesisPfxInfo, Proof, ProofSet, SectionInfo};
     use super::Chain;
     use crate::id::{FullId, PublicId};
     use crate::{Prefix, XorName, MIN_SECTION_SIZE};
@@ -1379,7 +1362,7 @@ mod tests {
         full_ids: &HashMap<PublicId, FullId>,
         members: I,
         payload: &S,
-    ) -> ProofSet
+    ) -> AccumulatingProof
     where
         S: Serialize,
         I: IntoIterator<Item = &'a PublicId>,
@@ -1395,7 +1378,7 @@ mod tests {
                 let _ = proofs.add_proof(proof);
             });
         }
-        proofs
+        AccumulatingProof::from_proof_set(proofs)
     }
 
     fn gen_chain<T>(min_sec_size: usize, sections: T) -> (Chain, HashMap<PublicId, FullId>)
