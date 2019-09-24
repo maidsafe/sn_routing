@@ -260,13 +260,10 @@ fn gen_secret_encryption_key() -> encryption::SecretKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use safe_crypto;
     use unwrap::unwrap;
 
     #[test]
     fn serialisation() {
-        unwrap!(safe_crypto::init());
-
         let full_id = FullId::new();
         let serialised = unwrap!(serialise(full_id.public_id()));
         let parsed = unwrap!(deserialise(&serialised));

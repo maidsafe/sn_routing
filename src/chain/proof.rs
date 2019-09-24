@@ -137,12 +137,10 @@ mod tests {
     use super::super::AccumulatingEvent;
     use super::Proof;
     use crate::id::FullId;
-    use safe_crypto;
     use unwrap::unwrap;
 
     #[test]
     fn confirm_proof() {
-        unwrap!(safe_crypto::init());
         let full_id = FullId::new();
         let payload = AccumulatingEvent::OurMerge;
         let proof = unwrap!(Proof::new(&full_id, &payload));
@@ -152,7 +150,6 @@ mod tests {
     #[test]
     #[ignore] // Enable once sig checks are enabled
     fn bad_construction() {
-        unwrap!(safe_crypto::init());
         let full_id = FullId::new();
         let pub_id = *full_id.public_id();
         let payload = AccumulatingEvent::OurMerge;

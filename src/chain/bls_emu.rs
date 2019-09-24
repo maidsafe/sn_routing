@@ -143,12 +143,9 @@ impl BlsPublicKeyForSectionKeyInfo {
 mod test {
     use super::*;
     use crate::id::FullId;
-    use safe_crypto;
     use unwrap::unwrap;
 
     fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
-        unwrap!(safe_crypto::init());
-
         let ids: Vec<_> = (0..size).map(|_| FullId::new()).collect();
         let pub_ids = ids.iter().map(|full_id| *full_id.public_id()).collect();
         let sec_info = unwrap!(SectionInfo::new(pub_ids, Default::default(), None));
