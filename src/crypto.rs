@@ -24,3 +24,8 @@ pub mod signing {
         expanded_secret_key.sign(msg, public_key)
     }
 }
+
+/// Encryption and decryption
+pub mod encryption {
+    pub use threshold_crypto::{Ciphertext, PublicKey, SecretKey};
+}
