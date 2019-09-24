@@ -23,6 +23,7 @@ use crate::{
     xor_name::XOR_NAME_LEN,
     NetworkConfig, NetworkService,
 };
+use maidsafe_utilities::serialisation;
 use std::net::SocketAddr;
 use unwrap::unwrap;
 use utils::LogIdent;
@@ -379,12 +380,8 @@ impl ElderUnderTest {
         let dst = Authority::ManagedNode(*their_pub_id.name());
 
         let content = {
-            let shared_secret = new_full_id
-                .encrypting_private_key()
-                .shared_secret(their_pub_id.encrypting_public_key());
-
             let conn_info = self.candidate_node_info();
-            let encrypted_conn_info = unwrap!(shared_secret.encrypt(&conn_info));
+            let encrypted_conn_info = unwrap!(serialisation::serialise(&conn_info));
 
             MessageContent::ConnectionRequest {
                 encrypted_conn_info,
@@ -416,7 +413,7 @@ impl ElderUnderTest {
         };
 
         let to_sign = unwrap!(serialisation::serialise(&both_ids));
-        let signature_using_old = old_signing_id.signing_private_key().sign_detached(&to_sign);
+        let signature_using_old = old_signing_id.sign(&to_sign);
 
         (
             DirectMessage::CandidateInfo {

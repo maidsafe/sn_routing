@@ -69,7 +69,7 @@ impl SectionInfoSigPayload {
         info: &SectionInfo,
         full_id: &FullId,
     ) -> Result<SectionInfoSigPayload, RoutingError> {
-        let proof = Proof::new(*full_id.public_id(), full_id.signing_private_key(), &info)?;
+        let proof = Proof::new(full_id, &info)?;
 
         Ok(SectionInfoSigPayload {
             pub_key_share: BlsPublicKeyShare(proof.pub_id),

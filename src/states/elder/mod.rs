@@ -19,7 +19,7 @@ use crate::{
         SectionInfo, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
     },
     config_handler,
-    crypto::Digest256,
+    crypto::{signing::Signature, Digest256},
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -45,7 +45,6 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use safe_crypto::Signature;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -847,10 +846,7 @@ impl Elder {
                 return false;
             }
         };
-        if !old_pub_id
-            .signing_public_key()
-            .verify_detached(signature_using_old, &both_ids_serialised)
-        {
+        if !old_pub_id.verify(&both_ids_serialised, signature_using_old) {
             debug!(
                 "{} CandidateInfo from {}->{} has invalid old signature.",
                 self, old_pub_id, new_pub_id

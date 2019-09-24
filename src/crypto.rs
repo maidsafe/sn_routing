@@ -13,3 +13,14 @@ pub use tiny_keccak::sha3_256 as hash;
 
 /// SHA3-256 hash digest.
 pub type Digest256 = [u8; 32];
+
+/// Signing and verification.
+pub mod signing {
+    use ed25519_dalek::ExpandedSecretKey;
+    pub use ed25519_dalek::{PublicKey, SecretKey, Signature, SIGNATURE_LENGTH};
+
+    pub fn sign(msg: &[u8], public_key: &PublicKey, secret_key: &SecretKey) -> Signature {
+        let expanded_secret_key = ExpandedSecretKey::from(secret_key);
+        expanded_secret_key.sign(msg, public_key)
+    }
+}

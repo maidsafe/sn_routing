@@ -8,6 +8,9 @@
 
 use crate::{crypto, routing_table::Xorable, xor_name::XorName, Prefix};
 use itertools::Itertools;
+#[cfg(any(test, feature = "mock_base"))]
+use maidsafe_utilities::SeededRng;
+use rand::{OsRng, Rng};
 use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
@@ -132,9 +135,6 @@ pub fn calculate_relocation_interval(
 
 #[cfg(any(test, feature = "mock_base"))]
 pub fn rand_index(exclusive_max: usize) -> usize {
-    use maidsafe_utilities::SeededRng;
-    use rand::Rng;
-
     let mut rng = SeededRng::thread_rng();
     rng.gen::<usize>() % exclusive_max
 }
@@ -143,6 +143,34 @@ pub fn rand_index(exclusive_max: usize) -> usize {
 pub fn rand_index(exclusive_max: usize) -> usize {
     ::rand::random::<usize>() % exclusive_max
 }
+
+// Note: routing uses different version of the rand crate than threshold_crypto. This is a
+// compatibility adapter between the two.
+pub struct RngCompat<R>(pub R);
+
+impl<R: Rng> rand_crypto::RngCore for RngCompat<R> {
+    fn next_u32(&mut self) -> u32 {
+        self.0.next_u32()
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0.next_u64()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.0.fill_bytes(dest)
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_crypto::Error> {
+        self.0.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl rand_crypto::CryptoRng for RngCompat<OsRng> {}
+
+#[cfg(any(test, feature = "mock_base"))]
+impl rand_crypto::CryptoRng for RngCompat<SeededRng> {}
 
 #[cfg(test)]
 mod tests {

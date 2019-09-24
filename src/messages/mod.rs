@@ -11,7 +11,7 @@ mod direct;
 pub use self::direct::{DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, GenesisPfxInfo, SectionInfo, SectionKeyInfo, SectionProofChain},
-    crypto::{self, Digest256},
+    crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     routing_table::{Authority, Prefix},
@@ -22,7 +22,6 @@ use crate::{
 use hex_fmt::HexFmt;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
-use safe_crypto::{self, SecretSignKey, Signature};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Formatter},
@@ -128,9 +127,7 @@ pub struct SingleSrcSecurityMetadata {
 
 impl SingleSrcSecurityMetadata {
     pub fn verify_sig(&self, bytes: &[u8]) -> bool {
-        self.public_id
-            .signing_public_key()
-            .verify_detached(&self.signature, bytes)
+        self.public_id.verify(bytes, &self.signature)
     }
 }
 
@@ -182,10 +179,9 @@ impl SignedRoutingMessage {
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
-        let sk = full_id.signing_private_key();
         let mut signatures = BTreeMap::new();
         let pk_share = BlsPublicKeyShare(*full_id.public_id());
-        let sig = content.to_signature(sk)?;
+        let sig = content.to_signature(full_id)?;
         let _ = signatures.insert(pk_share, sig);
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
@@ -203,10 +199,9 @@ impl SignedRoutingMessage {
         content: RoutingMessage,
         full_id: &FullId,
     ) -> Result<SignedRoutingMessage> {
-        let sk = full_id.signing_private_key();
         let single_metadata = SingleSrcSecurityMetadata {
             public_id: *full_id.public_id(),
-            signature: content.to_signature(sk)?,
+            signature: content.to_signature(full_id)?,
         };
 
         Ok(SignedRoutingMessage {
@@ -448,9 +443,9 @@ impl RoutingMessage {
     }
 
     /// Returns a signature for this message.
-    pub fn to_signature(&self, signing_key: &SecretSignKey) -> Result<Signature> {
+    pub fn to_signature(&self, full_id: &FullId) -> Result<Signature> {
         let serialised_msg = serialise(self)?;
-        let sig = signing_key.sign_detached(&serialised_msg);
+        let sig = full_id.sign(&serialised_msg);
         Ok(sig)
     }
 }
@@ -640,13 +635,15 @@ impl Debug for MessageContent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::SectionKeyInfo;
-    use crate::id::FullId;
-    use crate::routing_table::{Authority, Prefix};
-    use crate::types::MessageId;
-    use crate::xor_name::XorName;
+    use crate::{
+        chain::SectionKeyInfo,
+        crypto::signing::{Signature, SIGNATURE_LENGTH},
+        id::FullId,
+        routing_table::{Authority, Prefix},
+        types::MessageId,
+        xor_name::XorName,
+    };
     use rand;
-    use safe_crypto::{self, Signature, SIGNATURE_BYTES};
     use unwrap::unwrap;
 
     #[test]
@@ -735,10 +732,7 @@ mod tests {
 
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
         for full_id in &[full_id_1, full_id_2] {
-            match signed_msg
-                .routing_message()
-                .to_signature(full_id.signing_private_key())
-            {
+            match signed_msg.routing_message().to_signature(full_id) {
                 Ok(sig) => {
                     signed_msg.add_signature_share(BlsPublicKeyShare(*full_id.public_id()), sig);
                 }
@@ -746,7 +740,7 @@ mod tests {
             }
         }
 
-        let bad_sig = Signature::from_bytes([0; SIGNATURE_BYTES]);
+        let bad_sig = unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH]));
         signed_msg.add_signature_share(BlsPublicKeyShare(*full_id_3.public_id()), bad_sig);
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 4);
         assert!(signed_msg.check_fully_signed());

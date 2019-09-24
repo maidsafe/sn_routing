@@ -6,11 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::error::Result;
-use crate::id::PublicId;
+use crate::{
+    crypto::signing::Signature,
+    error::Result,
+    id::{FullId, PublicId},
+};
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use safe_crypto::{SecretSignKey, Signature};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
@@ -35,21 +37,18 @@ impl Proof {
 
     /// Create a new proof for `payload`
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<S: Serialize>(pub_id: PublicId, key: &SecretSignKey, payload: &S) -> Result<Self> {
-        let signature = key.sign_detached(&serialisation::serialise(&payload)?[..]);
+    pub fn new<S: Serialize>(full_id: &FullId, payload: &S) -> Result<Self> {
+        let sig = full_id.sign(&serialisation::serialise(&payload)?[..]);
         Ok(Proof {
-            pub_id,
-            sig: signature,
+            pub_id: *full_id.public_id(),
+            sig,
         })
     }
 
     /// Validates `payload` against this `Proof`'s `key` and `sig`.
     pub fn validate_signature<S: Serialize>(&self, payload: &S) -> bool {
         match serialisation::serialise(payload) {
-            Ok(data) => self
-                .pub_id
-                .signing_public_key()
-                .verify_detached(&self.sig, &data[..]),
+            Ok(data) => self.pub_id.verify(&data[..], &self.sig),
             _ => false,
         }
     }
@@ -99,9 +98,7 @@ impl ProofSet {
 
     /// Validates `data` against all signatures.
     fn validate_signatures_for_bytes(&self, data: &[u8]) -> bool {
-        let validate =
-            |(id, sig): (&PublicId, &Signature)| id.signing_public_key().verify_detached(sig, data);
-        self.sigs.iter().all(validate)
+        self.sigs.iter().all(|(id, sig)| id.verify(data, sig))
     }
 
     /// Returns an iterator of all public IDs that have signed.
@@ -147,9 +144,8 @@ mod tests {
     fn confirm_proof() {
         unwrap!(safe_crypto::init());
         let full_id = FullId::new();
-        let pub_id = *full_id.public_id();
         let payload = AccumulatingEvent::OurMerge;
-        let proof = unwrap!(Proof::new(pub_id, full_id.signing_private_key(), &payload));
+        let proof = unwrap!(Proof::new(&full_id, &payload));
         assert!(proof.validate_signature(&payload));
     }
 
@@ -161,7 +157,7 @@ mod tests {
         let pub_id = *full_id.public_id();
         let payload = AccumulatingEvent::OurMerge;
         let other_payload = AccumulatingEvent::Offline(pub_id);
-        let proof = unwrap!(Proof::new(pub_id, full_id.signing_private_key(), &payload));
+        let proof = unwrap!(Proof::new(&full_id, &payload));
         assert!(!proof.validate_signature(&other_payload));
     }
 }

@@ -20,6 +20,7 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 /// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
 /// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(N),
