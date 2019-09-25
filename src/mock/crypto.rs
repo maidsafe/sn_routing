@@ -159,6 +159,10 @@ pub mod encryption {
 
             Ciphertext(ciphertext)
         }
+
+        pub fn encrypt_with_rng<R: Rng, M: AsRef<[u8]>>(&self, _rng: &mut R, msg: M) -> Ciphertext {
+            self.encrypt(msg)
+        }
     }
 
     pub struct SecretKey([u8; KEY_LENGTH]);

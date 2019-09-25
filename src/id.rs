@@ -102,7 +102,7 @@ impl parsec::SecretId for FullId {
     }
 
     fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, plaintext: M) -> Option<Vec<u8>> {
-        serialise(&to.public_encryption_key().encrypt(plaintext)).ok()
+        serialise(&encrypt(to.public_encryption_key(), plaintext)).ok()
     }
 
     fn decrypt(&self, _from: &Self::PublicId, ciphertext: &[u8]) -> Option<Vec<u8>> {
@@ -251,6 +251,26 @@ fn gen_secret_encryption_key() -> encryption::SecretKey {
 
     let rng = SeededRng::thread_rng();
     RngCompat(rng).gen()
+}
+
+#[cfg(not(any(test, feature = "mock_base")))]
+fn encrypt<M: AsRef<[u8]>>(
+    public_key: &encryption::PublicKey,
+    plaintext: M,
+) -> encryption::Ciphertext {
+    // Note: this uses OsRng under the hood.
+    public_key.encrypt(plaintext)
+}
+
+#[cfg(any(test, feature = "mock_base"))]
+fn encrypt<M: AsRef<[u8]>>(
+    public_key: &encryption::PublicKey,
+    plaintext: M,
+) -> encryption::Ciphertext {
+    use maidsafe_utilities::SeededRng;
+
+    let mut rng = RngCompat(SeededRng::thread_rng());
+    public_key.encrypt_with_rng(&mut rng, plaintext)
 }
 
 #[cfg(test)]
