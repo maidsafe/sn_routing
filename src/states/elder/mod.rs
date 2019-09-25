@@ -566,22 +566,18 @@ impl Elder {
             ) => self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id),
             (
                 ConnectionRequest {
-                    encrypted_conn_info,
-                    pub_id,
-                    ..
+                    conn_info, pub_id, ..
                 },
                 src @ Client { .. },
                 dst @ ManagedNode(_),
             )
             | (
                 ConnectionRequest {
-                    encrypted_conn_info,
-                    pub_id,
-                    ..
+                    conn_info, pub_id, ..
                 },
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
-            ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
+            ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
             (NeighbourInfo(sec_info), Section(_), PrefixSection(_)) => {
                 self.handle_neighbour_info(sec_info)
             }

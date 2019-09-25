@@ -536,8 +536,8 @@ pub enum MessageContent {
     ConnectionRequest {
         /// The sender's public ID.
         pub_id: PublicId,
-        /// Encrypted sender's connection info.
-        encrypted_conn_info: Vec<u8>,
+        /// Sender's connection info.
+        conn_info: Vec<u8>,
         /// The message's unique identifier.
         msg_id: MessageId,
     },

@@ -381,10 +381,10 @@ impl ElderUnderTest {
 
         let content = {
             let conn_info = self.candidate_node_info();
-            let encrypted_conn_info = unwrap!(serialisation::serialise(&conn_info));
+            let conn_info = unwrap!(serialisation::serialise(&conn_info));
 
             MessageContent::ConnectionRequest {
-                encrypted_conn_info,
+                conn_info,
                 pub_id: *new_full_id.public_id(),
                 msg_id: MessageId::new(),
             }

@@ -52,7 +52,7 @@ pub trait Relocated: Bootstrapped {
 
         let conn_info = serialise(&self.our_connection_info()?)?;
         let content = MessageContent::ConnectionRequest {
-            encrypted_conn_info: conn_info,
+            conn_info,
             pub_id: *self.full_id().public_id(),
             msg_id: MessageId::new(),
         };
