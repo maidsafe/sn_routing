@@ -56,12 +56,7 @@ impl Proof {
 
 impl Debug for Proof {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "Proof{{ {:?}, age: {}, sig: ... }}",
-            self.pub_id.name(),
-            self.pub_id.age()
-        )
+        write!(formatter, "Proof{{ {:?}, sig: ... }}", self.pub_id.name(),)
     }
 }
 

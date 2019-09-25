@@ -146,7 +146,7 @@ impl SectionInfo {
     ) -> Result<Self, RoutingError> {
         let hash = {
             let fields = (&members, version, &prefix, &prev_hash);
-            crypto::hash(&serialisation::serialise(&fields)?)
+            crypto::sha3_256(&serialisation::serialise(&fields)?)
         };
         Ok(SectionInfo {
             members,

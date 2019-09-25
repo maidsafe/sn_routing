@@ -36,7 +36,7 @@ impl FullId {
         let secret_encryption_key = gen_secret_encryption_key();
         let public_encryption_key = secret_encryption_key.public_key();
 
-        let public_id = PublicId::new(0, public_signing_key, public_encryption_key);
+        let public_id = PublicId::new(public_signing_key, public_encryption_key);
 
         FullId {
             public_id,
@@ -60,7 +60,7 @@ impl FullId {
                 let public_encryption_key = secret_encryption_key.public_key();
 
                 return Self {
-                    public_id: PublicId::new(0, public_signing_key, public_encryption_key),
+                    public_id: PublicId::new(public_signing_key, public_encryption_key),
                     secret_keys: Rc::new(SecretKeys {
                         signing: secret_signing_key,
                         encryption: secret_encryption_key,
@@ -125,10 +125,9 @@ struct SecretKeys {
 /// Network identity component containing name and public keys.
 ///
 /// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
-/// `public_sign_key` when deserialising.
+/// `public_signing_key` when deserialising.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct PublicId {
-    age: u8,
     name: XorName,
     public_signing_key: signing::PublicKey,
     public_encryption_key: encryption::PublicKey,
@@ -148,24 +147,14 @@ impl Display for PublicId {
 
 impl Serialize for PublicId {
     fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
-        (
-            self.age,
-            &self.public_signing_key,
-            &self.public_encryption_key,
-        )
-            .serialize(serialiser)
+        (&self.public_signing_key, &self.public_encryption_key).serialize(serialiser)
     }
 }
 
 impl<'de> Deserialize<'de> for PublicId {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (age, public_signing_key, public_encryption_key) =
-            Deserialize::deserialize(deserialiser)?;
-        Ok(PublicId::new(
-            age,
-            public_signing_key,
-            public_encryption_key,
-        ))
+        let (public_signing_key, public_encryption_key) = Deserialize::deserialize(deserialiser)?;
+        Ok(PublicId::new(public_signing_key, public_encryption_key))
     }
 }
 
@@ -178,11 +167,6 @@ impl parsec::PublicId for PublicId {
 }
 
 impl PublicId {
-    /// Returns age.
-    pub fn age(&self) -> u8 {
-        self.age
-    }
-
     /// Returns initial/relocated name.
     pub fn name(&self) -> &XorName {
         &self.name
@@ -204,12 +188,10 @@ impl PublicId {
     }
 
     fn new(
-        age: u8,
         public_signing_key: signing::PublicKey,
         public_encryption_key: encryption::PublicKey,
     ) -> PublicId {
         PublicId {
-            age,
             name: name_from_key(&public_signing_key),
             public_signing_key,
             public_encryption_key,

@@ -181,7 +181,7 @@ impl SignedRoutingMessage {
     ) -> Result<SignedRoutingMessage> {
         let mut signatures = BTreeMap::new();
         let pk_share = BlsPublicKeyShare(*full_id.public_id());
-        let sig = content.to_signature(full_id)?;
+        let sig = full_id.sign(&serialise(&content)?);
         let _ = signatures.insert(pk_share, sig);
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
@@ -201,7 +201,7 @@ impl SignedRoutingMessage {
     ) -> Result<SignedRoutingMessage> {
         let single_metadata = SingleSrcSecurityMetadata {
             public_id: *full_id.public_id(),
-            signature: content.to_signature(full_id)?,
+            signature: full_id.sign(&serialise(&content)?),
         };
 
         Ok(SignedRoutingMessage {
@@ -439,14 +439,7 @@ impl RoutingMessage {
     /// Returns the message hash
     pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
-        Ok(crypto::hash(&serialised_msg))
-    }
-
-    /// Returns a signature for this message.
-    pub fn to_signature(&self, full_id: &FullId) -> Result<Signature> {
-        let serialised_msg = serialise(self)?;
-        let sig = full_id.sign(&serialised_msg);
-        Ok(sig)
+        Ok(crypto::sha3_256(&serialised_msg))
     }
 }
 
@@ -732,12 +725,8 @@ mod tests {
 
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
         for full_id in &[full_id_1, full_id_2] {
-            match signed_msg.routing_message().to_signature(full_id) {
-                Ok(sig) => {
-                    signed_msg.add_signature_share(BlsPublicKeyShare(*full_id.public_id()), sig);
-                }
-                err => panic!("Unexpected error: {:?}", err),
-            }
+            let sig = full_id.sign(&unwrap!(serialise(signed_msg.routing_message())));
+            signed_msg.add_signature_share(BlsPublicKeyShare(*full_id.public_id()), sig);
         }
 
         let bad_sig = unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH]));

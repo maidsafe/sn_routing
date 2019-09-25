@@ -10,7 +10,7 @@
 
 pub type Digest256 = [u8; 32];
 // Note: using the real thing here as it seems to be already fast enough for tests.
-pub use tiny_keccak::sha3_256 as hash;
+pub use tiny_keccak::sha3_256;
 
 pub mod signing {
     pub use ed25519_dalek::SIGNATURE_LENGTH;

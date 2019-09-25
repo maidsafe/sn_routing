@@ -9,7 +9,7 @@
 //! Cryptographic primitives.
 
 /// SHA3-256 hash function.
-pub use tiny_keccak::sha3_256 as hash;
+pub use tiny_keccak::sha3_256;
 
 /// SHA3-256 hash digest.
 pub type Digest256 = [u8; 32];
