@@ -392,6 +392,7 @@ impl Elder {
                 | AccumulatingEvent::RemoveElder(_)
                 | AccumulatingEvent::Online(_)
                 | AccumulatingEvent::ExpectCandidate(_)
+                | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::PurgeCandidate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
@@ -1063,6 +1064,11 @@ impl Elder {
 
         if let Some(msg) = self.parsec_map.create_gossip(version, &gossip_target) {
             self.send_direct_message(&gossip_target, msg);
+        }
+
+        if self.parsec_map.needs_pruning() {
+            self.vote_for_event(AccumulatingEvent::ParsecPrune);
+            self.parsec_map_mut().set_pruning_voted_for();
         }
     }
 

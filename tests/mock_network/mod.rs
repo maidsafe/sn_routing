@@ -453,3 +453,14 @@ fn check_section_info_ack() {
     let expected_all: Vec<_> = nodes.iter().map(|node| node.id()).collect();
     assert_eq!(node_with_sibling_knowledge, expected_all);
 }
+
+#[test]
+fn vote_prune() {
+    // Create a network with a single large section, this is will trigger parsec pruning
+    let min_section_size = 3;
+    let network = Network::new(min_section_size, None);
+    let nodes = create_connected_nodes(&network, 10 * min_section_size);
+    assert!(nodes
+        .iter()
+        .any(|node| node.chain().parsec_prune_accumulated() > 0));
+}

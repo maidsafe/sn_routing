@@ -255,6 +255,12 @@ pub trait Approved: Relocated {
                 AccumulatingEvent::PurgeCandidate(old_public_id) => {
                     self.handle_purge_candidate_event(old_public_id)?
                 }
+                AccumulatingEvent::ParsecPrune => {
+                    info!(
+                        "{} Handling chain {:?} not yet implemented, ignoring.",
+                        self, event
+                    );
+                }
             }
 
             our_pfx = *self.chain_mut().our_prefix();

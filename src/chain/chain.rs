@@ -60,6 +60,9 @@ pub struct Chain {
     event_cache: BTreeSet<NetworkEvent>,
     /// Current consensused candidate.
     candidate: Candidate,
+    /// Temporary. Counting the accumulated prune events. Only used in tests until tests that
+    /// actually tests pruning is in place.
+    parsec_prune_accumulated: usize,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -96,6 +99,7 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             candidate: Candidate::None,
+            parsec_prune_accumulated: 0,
         }
     }
 
@@ -262,6 +266,14 @@ impl Chain {
             AccumulatingEvent::NeighbourMerge(digest) => {
                 // TODO: Check that the section is known and not already merged.
                 let _ = self.state.merging.insert(digest);
+            }
+            AccumulatingEvent::ParsecPrune => {
+                info!(
+                    "{} Handling accumulated {:?} not yet implemented, ignoring.",
+                    self, event
+                );
+                // TODO: remove once we have real integration tests of `ParsecPrune` accumulating.
+                self.parsec_prune_accumulated += 1;
             }
             AccumulatingEvent::AddElder(_, _)
             | AccumulatingEvent::RemoveElder(_)
@@ -606,6 +618,7 @@ impl Chain {
             | AccumulatingEvent::ExpectCandidate(_)
             | AccumulatingEvent::PurgeCandidate(_)
             | AccumulatingEvent::TheirKeyInfo(_)
+            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
@@ -1237,6 +1250,12 @@ impl Chain {
     /// Logs info about ongoing candidate state, if any.
     pub fn show_candidate_status(&self, log_ident: &LogIdent) {
         self.candidate.show_status(log_ident)
+    }
+
+    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
+    /// implemented acting on the accumulated events.
+    pub fn parsec_prune_accumulated(&self) -> usize {
+        self.parsec_prune_accumulated
     }
 }
 
