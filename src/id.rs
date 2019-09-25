@@ -107,10 +107,6 @@ impl parsec::SecretId for FullId {
 
     fn decrypt(&self, _from: &Self::PublicId, ciphertext: &[u8]) -> Option<Vec<u8>> {
         let ciphertext: encryption::Ciphertext = deserialise(ciphertext).ok()?;
-        if !ciphertext.verify() {
-            return None;
-        }
-
         self.secret_keys.encryption.decrypt(&ciphertext)
     }
 }

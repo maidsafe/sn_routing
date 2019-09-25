@@ -46,6 +46,7 @@ serde_json = "~1.0.8"
 
 [features]
 mock_base = ["lru_time_cache/fake_clock", "parsec/mock", "parsec/malice-detection", "fxhash"]
+mock_crypto = ["mock_base"]
 mock_parsec = ["mock_base"]
 mock_serialise = ["mock_base"]
-mock = ["mock_parsec", "mock_serialise"]
+mock = ["mock_crypto", "mock_parsec", "mock_serialise"]

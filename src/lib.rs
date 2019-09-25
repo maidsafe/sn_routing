@@ -113,6 +113,7 @@ mod macros;
 mod action;
 mod chain;
 mod config_handler;
+#[cfg(not(feature = "mock_crypto"))]
 mod crypto;
 mod error;
 mod event;
@@ -204,6 +205,9 @@ pub(crate) use self::{
     network_service::NetworkService,
     quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p},
 };
+
+#[cfg(feature = "mock_crypto")]
+pub(crate) use self::mock::crypto;
 
 #[cfg(test)]
 mod tests {
