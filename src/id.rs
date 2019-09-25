@@ -9,10 +9,11 @@
 use crate::{
     crypto::{encryption, signing},
     parsec,
-    utils::RngCompat,
+    utils::{self, RngCompat},
     xor_name::XorName,
 };
 use maidsafe_utilities::serialisation::{deserialise, serialise};
+use rand_crypto::Rng;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Display, Formatter};
@@ -30,10 +31,12 @@ pub struct FullId {
 impl FullId {
     /// Construct a `FullId` with newly generated keys.
     pub fn new() -> FullId {
-        let secret_signing_key = gen_secret_signing_key();
+        let mut rng = RngCompat(utils::new_rng());
+
+        let secret_signing_key = signing::SecretKey::generate(&mut rng);
         let public_signing_key = signing::PublicKey::from(&secret_signing_key);
 
-        let secret_encryption_key = gen_secret_encryption_key();
+        let secret_encryption_key: encryption::SecretKey = rng.gen();
         let public_encryption_key = secret_encryption_key.public_key();
 
         let public_id = PublicId::new(public_signing_key, public_encryption_key);
@@ -50,13 +53,15 @@ impl FullId {
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
     /// FIXME(Fraser) - time limit this function? Document behaviour
     pub fn within_range(range: &RangeInclusive<XorName>) -> FullId {
+        let mut rng = RngCompat(utils::new_rng());
+
         loop {
-            let secret_signing_key = gen_secret_signing_key();
+            let secret_signing_key = signing::SecretKey::generate(&mut rng);
             let public_signing_key = signing::PublicKey::from(&secret_signing_key);
             let name = name_from_key(&public_signing_key);
 
             if range.contains(&name) {
-                let secret_encryption_key = gen_secret_encryption_key();
+                let secret_encryption_key: encryption::SecretKey = rng.gen();
                 let public_encryption_key = secret_encryption_key.public_key();
 
                 return Self {
@@ -102,7 +107,11 @@ impl parsec::SecretId for FullId {
     }
 
     fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, plaintext: M) -> Option<Vec<u8>> {
-        serialise(&encrypt(to.public_encryption_key(), plaintext)).ok()
+        let mut rng = RngCompat(utils::new_rng());
+        let ciphertext = to
+            .public_encryption_key
+            .encrypt_with_rng(&mut rng, plaintext);
+        serialise(&ciphertext).ok()
     }
 
     fn decrypt(&self, _from: &Self::PublicId, ciphertext: &[u8]) -> Option<Vec<u8>> {
@@ -201,58 +210,6 @@ impl PublicId {
 
 fn name_from_key(public_key: &signing::PublicKey) -> XorName {
     XorName(public_key.to_bytes())
-}
-
-#[cfg(not(any(test, feature = "mock_base")))]
-fn gen_secret_signing_key() -> signing::SecretKey {
-    use rand::OsRng;
-    let rng = OsRng::new().expect("Cannot generate random data, unsafe to continue");
-    signing::SecretKey::generate(&mut RngCompat(rng))
-}
-
-#[cfg(any(test, feature = "mock_base"))]
-fn gen_secret_signing_key() -> signing::SecretKey {
-    use maidsafe_utilities::SeededRng;
-    let rng = SeededRng::thread_rng();
-    signing::SecretKey::generate(&mut RngCompat(rng))
-}
-
-#[cfg(not(any(test, feature = "mock_base")))]
-fn gen_secret_encryption_key() -> encryption::SecretKey {
-    use rand::OsRng;
-    use rand_crypto::Rng;
-
-    let rng = OsRng::new().expect("Cannot generate random data, unsafe to continue");
-    RngCompat(rng).gen()
-}
-
-#[cfg(any(test, feature = "mock_base"))]
-fn gen_secret_encryption_key() -> encryption::SecretKey {
-    use maidsafe_utilities::SeededRng;
-    use rand_crypto::Rng;
-
-    let rng = SeededRng::thread_rng();
-    RngCompat(rng).gen()
-}
-
-#[cfg(not(any(test, feature = "mock_base")))]
-fn encrypt<M: AsRef<[u8]>>(
-    public_key: &encryption::PublicKey,
-    plaintext: M,
-) -> encryption::Ciphertext {
-    // Note: this uses OsRng under the hood.
-    public_key.encrypt(plaintext)
-}
-
-#[cfg(any(test, feature = "mock_base"))]
-fn encrypt<M: AsRef<[u8]>>(
-    public_key: &encryption::PublicKey,
-    plaintext: M,
-) -> encryption::Ciphertext {
-    use maidsafe_utilities::SeededRng;
-
-    let mut rng = RngCompat(SeededRng::thread_rng());
-    public_key.encrypt_with_rng(&mut rng, plaintext)
 }
 
 #[cfg(test)]

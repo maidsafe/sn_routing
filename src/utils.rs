@@ -169,8 +169,26 @@ impl<R: Rng> rand_crypto::RngCore for RngCompat<R> {
 
 impl rand_crypto::CryptoRng for RngCompat<OsRng> {}
 
+// Note: `SeededRng` is not really a CSPRNG (it uses xor-shift under the hood), but that is OK as
+// this is used only in tests.
 #[cfg(any(test, feature = "mock_base"))]
 impl rand_crypto::CryptoRng for RngCompat<SeededRng> {}
+
+// Create new Rng instance. Use `SeededRng` in test/mock, to allow reproducible test results and
+// to avoid opening too many file handles which could happen on some platforms if we used `OsRng`.
+#[cfg(any(test, feature = "mock_base"))]
+pub fn new_rng() -> SeededRng {
+    SeededRng::thread_rng()
+}
+
+// Create new Rng instance. Use `OsRng` in production for maximum cryptographic security.
+#[cfg(not(any(test, feature = "mock_base")))]
+pub fn new_rng() -> OsRng {
+    match OsRng::new() {
+        Ok(rng) => rng,
+        Err(error) => panic!("Failed to create OsRng: {:?}", error),
+    }
+}
 
 #[cfg(test)]
 mod tests {

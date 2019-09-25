@@ -12,13 +12,12 @@ use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
     messages::DirectMessage,
-    utils::LogIdent,
+    utils::{self, LogIdent},
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 #[cfg(not(feature = "mock_parsec"))]
 use parsec as inner;
-use rand::Rng;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt,
@@ -251,7 +250,7 @@ impl ParsecMap {
 
 /// Create Parsec instance.
 fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
-    let rng = new_rng();
+    let rng = Box::new(utils::new_rng());
 
     if gen_pfx_info
         .first_info
@@ -277,29 +276,6 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
             ConsensusMode::Single,
             rng,
         )
-    }
-}
-
-// Create new Rng instance.
-//
-// In production, use `OsRng` for maximum cryptographic security.
-//
-// In test, use a weaker rng to prevent creating too many open file handles (as each `OsRng`
-// instance might internally contain a handle to /dev/random or similar). This avoid a bug with too
-// many open files which sometimes happens because some test create lot of nodes and each node has
-// its own rng.
-fn new_rng() -> Box<dyn Rng> {
-    if cfg!(feature = "mock_base") {
-        use maidsafe_utilities::SeededRng;
-        Box::new(SeededRng::thread_rng())
-    } else {
-        use rand::os::OsRng;
-        let rng = match OsRng::new() {
-            Ok(rng) => rng,
-            Err(error) => panic!("Failed to create OsRng: {:?}", error),
-        };
-
-        Box::new(rng)
     }
 }
 
