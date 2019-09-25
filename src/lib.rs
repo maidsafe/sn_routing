@@ -142,11 +142,6 @@ mod xor_name;
 pub mod mock;
 pub(crate) mod parsec;
 
-/// Structured Data Tag for Session Packet Type
-pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
-/// Structured Data Tag for DNS Packet Type
-pub const TYPE_TAG_DNS_PACKET: u64 = 5;
-
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
 /// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
@@ -156,8 +151,15 @@ pub const QUORUM_DENOMINATOR: usize = 3;
 
 /// Default minimal section size.
 pub const MIN_SECTION_SIZE: usize = 3;
-/// Key of an account data in the account packet
-pub const ACC_LOGIN_ENTRY_KEY: &[u8] = b"Login";
+
+/// Minimal safe section size. Routing will keep add nodes until the section reaches this size.
+/// More nodes might be added if requested by the upper layers.
+/// This number also detemines when split happens - if both post-split sections would have at least
+/// this number of nodes.
+pub const SAFE_SECTION_SIZE: usize = 100;
+
+/// Number of elders per section.
+pub const ELDER_SIZE: usize = 7;
 
 #[cfg(feature = "mock_base")]
 use crate::mock::quic_p2p;
