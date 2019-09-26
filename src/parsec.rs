@@ -36,9 +36,13 @@ pub type Parsec = inner::Parsec<chain::NetworkEvent, FullId>;
 pub type Request = inner::Request<chain::NetworkEvent, id::PublicId>;
 pub type Response = inner::Response<chain::NetworkEvent, id::PublicId>;
 
-#[cfg(not(feature = "mock_parsec"))]
+// Limit in production
+#[cfg(all(not(feature = "mock_parsec"), not(feature = "mock_base")))]
 const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
-// Mock parsec request/responses are much smaller, so we need a lower limit.
+// Limit in integration tests
+#[cfg(all(feature = "mock_base", not(feature = "mock_parsec")))]
+const PARSEC_SIZE_LIMIT: u64 = 200_000;
+// Limit for integration tests with mock-parsec
 #[cfg(feature = "mock_parsec")]
 const PARSEC_SIZE_LIMIT: u64 = 100;
 
@@ -65,7 +69,7 @@ impl ParsecSizeCounter {
 
 impl fmt::Display for ParsecSizeCounter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "size: {}", self.size_counter)
+        write!(f, "{}", self.size_counter)
     }
 }
 
@@ -236,9 +240,10 @@ impl ParsecMap {
         if self.last_version() == msg_version && self.map.contains_key(&msg_version) {
             self.size_counter.increase_size(size);
             trace!(
-                "{} - Parsec size is now estimated to: {}.",
+                "{} - Parsec size is now estimated to: {} / {}.",
                 log_ident,
                 self.size_counter,
+                PARSEC_SIZE_LIMIT,
             );
         }
     }
