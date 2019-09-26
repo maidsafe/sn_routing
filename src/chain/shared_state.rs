@@ -6,10 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, SectionInfo};
+use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, MemberInfo, SectionInfo};
 use crate::{
-    crypto::Digest256, error::RoutingError, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix,
-    XorName,
+    crypto::Digest256, error::RoutingError, id::PublicId, BlsPublicKey, BlsPublicKeySet,
+    BlsSignature, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -34,6 +34,8 @@ pub struct SharedState {
     /// The latest few fully signed infos of our own sections.
     /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
     pub our_infos: NonEmptyList<SectionInfo>,
+    /// Info about all members of our section - elders, adults and infants.
+    pub our_members: BTreeMap<PublicId, MemberInfo>,
     /// Maps our neighbours' prefixes to their latest signed section infos.
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
@@ -65,6 +67,7 @@ impl SharedState {
             new_info: section_info.clone(),
             our_infos: NonEmptyList::new(section_info),
             neighbour_infos: Default::default(),
+            our_members: Default::default(),
             change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
@@ -86,6 +89,7 @@ impl SharedState {
         let (
             our_infos,
             our_history,
+            our_members,
             neighbour_infos,
             their_keys,
             their_knowledge,
@@ -107,6 +111,14 @@ impl SharedState {
                     "update_with_genesis_related_info different our_history:\n{:?},\n{:?}",
                     self.our_history,
                     our_history
+                );
+            }
+            if self.our_members != our_members {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "update_with_genesis_related_info different our_members:\n{:?},\n{:?}",
+                    self.our_members,
+                    our_members
                 );
             }
             if self.neighbour_infos != neighbour_infos {
@@ -144,6 +156,7 @@ impl SharedState {
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
+        self.our_members = our_members;
         self.neighbour_infos = neighbour_infos;
         self.their_keys = their_keys;
         self.their_knowledge = their_knowledge;
@@ -156,6 +169,7 @@ impl SharedState {
         Ok(serialisation::serialise(&(
             &self.our_infos,
             &self.our_history,
+            &self.our_members,
             &self.neighbour_infos,
             &self.their_keys,
             &self.their_knowledge,
@@ -185,6 +199,12 @@ impl SharedState {
         self.our_infos
             .iter()
             .find(|sec_info| sec_info.hash() == hash)
+    }
+
+    /// Returns our member infos.
+    #[allow(unused)]
+    pub fn our_members(&self) -> &BTreeMap<PublicId, MemberInfo> {
+        &self.our_members
     }
 
     /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.
