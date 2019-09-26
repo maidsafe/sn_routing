@@ -8,7 +8,7 @@
 
 mod direct;
 
-pub use self::direct::{DirectMessage, SignedDirectMessage};
+pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
     crypto::{self, signing::Signature, Digest256},

@@ -99,23 +99,19 @@ impl PeerMap {
         Some(conn_info)
     }
 
-    // Removes all peers. Returns an iterator over the connection infos of the removed peers.
-    pub fn remove_all<'a>(&'a mut self) -> impl Iterator<Item = ConnectionInfo> + 'a {
-        self.reverse.clear();
-        self.forward.drain().map(|(_, conn_info)| conn_info).chain(
-            self.pending
-                .drain()
-                .map(|(socket_addr, peer_type)| peer_type.into_connection_info(socket_addr)),
-        )
-    }
-
     // Get connection info of the peer with the given public id.
     pub fn get_connection_info<'a>(&'a self, pub_id: &PublicId) -> Option<&'a ConnectionInfo> {
         self.forward.get(pub_id)
     }
 
+    // Returns an iterator over the public IDs of connected peers
     pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
         self.forward.keys()
+    }
+
+    // Returns `true` if we have the connection info for a given public ID
+    pub fn has(&self, pub_id: &PublicId) -> bool {
+        self.forward.contains_key(pub_id)
     }
 }
 

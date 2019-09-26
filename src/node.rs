@@ -17,7 +17,7 @@ use crate::{
     quic_p2p::OurType,
     routing_table::Authority,
     state_machine::{State, StateMachine},
-    states::{self, BootstrappingPeer, TargetState},
+    states::{self, BootstrappingPeer},
     xor_name::XorName,
     NetworkConfig, MIN_SECTION_SIZE,
 };
@@ -106,7 +106,6 @@ impl NodeBuilder {
                         .unwrap_or(State::Terminated)
                 } else {
                     State::BootstrappingPeer(BootstrappingPeer::new(
-                        TargetState::RelocatingNode,
                         network_service,
                         full_id,
                         min_section_size,

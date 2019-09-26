@@ -231,14 +231,6 @@ impl PeerManager {
             .map_or(false, Peer::is_or_was_joining_node)
     }
 
-    /// Returns the proxy node's name if we have a proxy.
-    pub fn get_proxy_name(&self) -> Option<&XorName> {
-        self.peers
-            .iter()
-            .find(|(_, peer)| peer.state == PeerState::Proxy)
-            .map(|(pub_id, _)| pub_id.name())
-    }
-
     /// Returns whether the candidate has expired
     pub fn expire_candidate_once(&mut self) -> bool {
         if let Some(candidate) = self.candidate.as_mut() {

@@ -998,7 +998,7 @@ impl Chain {
 
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
-    fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
+    pub(crate) fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
         let mut best_pfx = *self.our_prefix();
         let mut best_info = self.our_info();
         for (pfx, info) in &self.state.neighbour_infos {

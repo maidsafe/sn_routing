@@ -22,7 +22,10 @@ use crate::{
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
+    messages::{
+        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
+        SignedRoutingMessage,
+    },
     outbox::EventBox,
     parsec::{self, ParsecMap},
     pause::PausedState,
@@ -764,7 +767,9 @@ impl Elder {
                 );
                 self.send_direct_message(
                     &pub_id,
-                    DirectMessage::BootstrapResponse(Err(BootstrapResponseError::ClientLimit)),
+                    DirectMessage::BootstrapResponse(BootstrapResponse::Error(
+                        BootstrapResponseError::ClientLimit,
+                    )),
                 );
                 self.disconnect_peer(&pub_id);
                 return Ok(());
@@ -784,7 +789,9 @@ impl Elder {
             );
             self.send_direct_message(
                 &pub_id,
-                DirectMessage::BootstrapResponse(Err(BootstrapResponseError::TooFewPeers)),
+                DirectMessage::BootstrapResponse(BootstrapResponse::Error(
+                    BootstrapResponseError::TooFewPeers,
+                )),
             );
             self.disconnect_peer(&pub_id);
             return Ok(());
@@ -793,14 +800,52 @@ impl Elder {
         self.peer_mgr.handle_bootstrap_request(pub_id, &conn_info);
         let _ = self.dropped_clients.remove(&pub_id);
 
-        self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(Ok(())));
+        self.respond_to_bootstrap_request(&pub_id);
 
         Ok(())
+    }
+
+    fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId) {
+        let get_node_infos = |node_names: BTreeSet<XorName>| {
+            node_names
+                .into_iter()
+                .filter_map(|xor_name| self.peer_mgr.get_pub_id(&xor_name))
+                .filter_map(|pub_id| match self.peer_map.get_connection_info(pub_id) {
+                    Some(ConnectionInfo::Node { node_info }) => Some(node_info.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let response = if self.our_prefix().matches(pub_id.name()) {
+            let mut node_infos: Vec<_> = get_node_infos(self.chain.our_section());
+            if let Ok(our_info) = self.our_connection_info() {
+                node_infos.push(our_info);
+            }
+            trace!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
+            BootstrapResponse::Join(node_infos)
+        } else {
+            let node_infos = get_node_infos(self.chain.closest_section(pub_id.name()).1);
+            trace!(
+                "{} - Sending BootstrapResponse::Rebootstrap to {}",
+                self,
+                pub_id
+            );
+            BootstrapResponse::Rebootstrap(node_infos)
+        };
+        self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(response));
     }
 
     fn handle_connection_response(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
         self.peer_mgr_mut().set_connected(pub_id);
         self.process_connection(pub_id, outbox);
+    }
+
+    fn handle_join_request(&mut self, pub_id: PublicId) {
+        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
+            old_public_id: pub_id,
+            new_public_id: pub_id,
+            client_auth: Authority::ManagedNode(*pub_id.name()),
+        }));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1144,7 +1189,21 @@ impl Elder {
             }
         }
 
-        let (target_pub_ids, dg_size) = self.get_targets(signed_msg.routing_message())?;
+        // If the message is to a single node and we have the connection info for this node, don't
+        // go through the routing table
+        let single_target = if let Authority::ManagedNode(node_name) = dst {
+            self.peer_mgr
+                .get_pub_id(&node_name)
+                .filter(|node_id| self.peer_map.has(&node_id))
+        } else {
+            None
+        };
+
+        let (target_pub_ids, dg_size) = if let Some(target) = single_target {
+            (vec![*target], 1)
+        } else {
+            self.get_targets(signed_msg.routing_message())?
+        };
 
         debug!(
             "{}: Sending message {:?} via targets {:?}",
@@ -1534,6 +1593,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
+            JoinRequest => self.handle_join_request(pub_id),
             CandidateInfo {
                 old_public_id,
                 signature_using_old,
@@ -1803,22 +1863,22 @@ impl Approved for Elder {
         online_payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if self.chain.try_approve_candidate(&online_payload) {
-            let OnlinePayload {
-                new_public_id,
-                client_auth,
-                ..
-            } = online_payload;
+        //if self.chain.try_approve_candidate(&online_payload) {
+        let OnlinePayload {
+            new_public_id,
+            client_auth,
+            ..
+        } = online_payload;
 
-            self.handle_candidate_approval(new_public_id, client_auth, outbox);
+        self.handle_candidate_approval(new_public_id, client_auth, outbox);
 
-            // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
+        // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-            self.vote_for_event(AccumulatingEvent::AddElder(
-                online_payload.new_public_id,
-                online_payload.client_auth,
-            ));
-        }
+        self.vote_for_event(AccumulatingEvent::AddElder(
+            online_payload.new_public_id,
+            online_payload.client_auth,
+        ));
+        //}
         Ok(())
     }
 

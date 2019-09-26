@@ -11,7 +11,7 @@ use crate::{
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::PublicId,
-    messages::{DirectMessage, RoutingMessage},
+    messages::{BootstrapResponse, DirectMessage, RoutingMessage},
     outbox::EventBox,
     peer_manager::{Peer, PeerState},
     routing_table::Prefix,
@@ -104,7 +104,9 @@ pub trait RelocatedNotEstablished: Relocated {
 
         self.send_direct_message(
             &pub_id,
-            DirectMessage::BootstrapResponse(Err(BootstrapResponseError::NotApproved)),
+            DirectMessage::BootstrapResponse(BootstrapResponse::Error(
+                BootstrapResponseError::NotApproved,
+            )),
         );
         self.disconnect_peer(&pub_id);
     }

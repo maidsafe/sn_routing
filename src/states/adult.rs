@@ -69,7 +69,7 @@ pub struct Adult {
 }
 
 impl Adult {
-    pub fn from_proving_node(
+    pub fn from_joining_peer(
         details: AdultDetails,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {

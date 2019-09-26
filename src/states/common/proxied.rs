@@ -11,19 +11,6 @@
 use crate::{error::RoutingError, id::PublicId, peer_manager::PeerManager, xor_name::XorName};
 use std::fmt::Display;
 
-pub fn get_proxy_public_id<'a, T: Display>(
-    label: &T,
-    proxy_pub_id: &'a PublicId,
-    proxy_name: &XorName,
-) -> Result<&'a PublicId, RoutingError> {
-    if proxy_pub_id.name() == proxy_name {
-        Ok(proxy_pub_id)
-    } else {
-        error!("{} Unable to find connection to proxy node.", label);
-        Err(RoutingError::ProxyConnectionNotFound)
-    }
-}
-
 pub fn find_proxy_public_id<'a, T: Display>(
     label: &T,
     peer_mgr: &'a PeerManager,
