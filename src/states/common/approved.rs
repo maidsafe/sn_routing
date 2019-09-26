@@ -9,8 +9,8 @@
 use super::Relocated;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, ExpectCandidatePayload, OnlinePayload, Proof, ProofSet,
-        SectionInfo, SectionKeyInfo, SendAckMessagePayload,
+        AccumulatingEvent, Chain, EldersInfo, ExpectCandidatePayload, OnlinePayload, Proof,
+        ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     id::PublicId,
@@ -66,7 +66,7 @@ pub trait Approved: Relocated {
     /// Handles an accumulated `SectionInfo` event.
     fn handle_section_info_event(
         &mut self,
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
@@ -234,8 +234,8 @@ pub trait Approved: Relocated {
                 }
                 AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
                 AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
-                AccumulatingEvent::SectionInfo(sec_info) => {
-                    match self.handle_section_info_event(sec_info, our_pfx, outbox)? {
+                AccumulatingEvent::SectionInfo(elders_info) => {
+                    match self.handle_section_info_event(elders_info, our_pfx, outbox)? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }

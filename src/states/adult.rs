@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionInfo, SectionKeyInfo,
+        Chain, EldersInfo, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionKeyInfo,
         SendAckMessagePayload,
     },
     error::RoutingError,
@@ -114,7 +114,7 @@ impl Adult {
 
     pub fn into_elder(
         self,
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
@@ -134,7 +134,7 @@ impl Adult {
             timer: self.timer,
         };
 
-        Elder::from_adult(details, sec_info, old_pfx, outbox).map(State::Elder)
+        Elder::from_adult(details, elders_info, old_pfx, outbox).map(State::Elder)
     }
 
     fn dispatch_routing_message(
@@ -390,12 +390,15 @@ impl Approved for Adult {
 
     fn handle_section_info_event(
         &mut self,
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if self.chain.is_member() {
-            Ok(Transition::IntoElder { sec_info, old_pfx })
+            Ok(Transition::IntoElder {
+                elders_info,
+                old_pfx,
+            })
         } else {
             debug!("{} - Unhandled SectionInfo event", self);
             Ok(Transition::Stay)

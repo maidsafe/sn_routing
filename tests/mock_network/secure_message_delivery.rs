@@ -8,8 +8,8 @@
 
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
-    bls_key_set_from_section_info, mock::Network, section_info_for_test,
-    section_proof_chain_from_section_info, Authority, FullId, HopMessage, Message, MessageContent,
+    bls_key_set_from_elders_info, elders_info_for_test, mock::Network,
+    section_proof_chain_from_elders_info, Authority, FullId, HopMessage, Message, MessageContent,
     Prefix, RoutingMessage, SignedRoutingMessage, XorName,
 };
 use std::collections::BTreeSet;
@@ -56,7 +56,7 @@ fn message_with_invalid_security(fail_type: FailType) {
 
     let fake_full = FullId::new();
     let members: BTreeSet<_> = iter::once(*fake_full.public_id()).collect();
-    let new_info = unwrap!(section_info_for_test(members, our_prefix, 10001,));
+    let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001,));
 
     let routing_msg = RoutingMessage {
         src: Authority::Section(our_prefix.name()),
@@ -68,9 +68,9 @@ fn message_with_invalid_security(fail_type: FailType) {
         let proof = match fail_type {
             FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos].inner.chain())
                 .prove(&Authority::PrefixSection(their_prefix)),
-            FailType::UntrustedProofValidSig => section_proof_chain_from_section_info(&new_info),
+            FailType::UntrustedProofValidSig => section_proof_chain_from_elders_info(&new_info),
         };
-        let pk_set = bls_key_set_from_section_info(new_info);
+        let pk_set = bls_key_set_from_elders_info(new_info);
 
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
             routing_msg.clone(),

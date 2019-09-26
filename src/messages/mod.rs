@@ -10,7 +10,7 @@ mod direct;
 
 pub use self::direct::{DirectMessage, SignedDirectMessage};
 use crate::{
-    chain::{Chain, GenesisPfxInfo, SectionInfo, SectionKeyInfo, SectionProofChain},
+    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
@@ -542,7 +542,7 @@ pub enum MessageContent {
         msg_id: MessageId,
     },
     /// Inform neighbours about our new section.
-    NeighbourInfo(SectionInfo),
+    NeighbourInfo(EldersInfo),
     /// Inform neighbours that we need to merge, and that the successor of the section info with
     /// the given hash will be the merged section.
     Merge(Digest256),
@@ -554,7 +554,7 @@ pub enum MessageContent {
     NodeApproval(GenesisPfxInfo),
     /// Acknowledgement of a consensused section info.
     AckMessage {
-        /// The prefix of our section when we acknowledge their SectionInfo of version ack_version.
+        /// The prefix of our section when we acknowledge their EldersInfo of version ack_version.
         src_prefix: Prefix<XorName>,
         /// The version acknowledged.
         ack_version: u64,
@@ -613,7 +613,7 @@ impl Debug for MessageContent {
                 "RelocateResponse({:?}, {:?}, {:?})",
                 target_interval, section, message_id
             ),
-            NeighbourInfo(ref sec_info) => write!(formatter, "NeighbourInfo({:?})", sec_info),
+            NeighbourInfo(ref info) => write!(formatter, "NeighbourInfo({:?})", info),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
             UserMessage(ref content) => write!(formatter, "UserMessage({:?})", content,),
             NodeApproval(ref gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
@@ -648,9 +648,9 @@ mod tests {
         let pub_ids: BTreeSet<_> = vec![*full_id.public_id(), *full_id_2.public_id()]
             .into_iter()
             .collect();
-        let dummy_sec_info = unwrap!(SectionInfo::new(pub_ids, prefix, None));
-        let dummy_pk_set = BlsPublicKeySet::from_section_info(dummy_sec_info.clone());
-        let dummy_key_info = SectionKeyInfo::from_section_info(&dummy_sec_info);
+        let dummy_elders_info = unwrap!(EldersInfo::new(pub_ids, prefix, None));
+        let dummy_pk_set = BlsPublicKeySet::from_elders_info(dummy_elders_info.clone());
+        let dummy_key_info = SectionKeyInfo::from_elders_info(&dummy_elders_info);
         let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
 
         let msg = RoutingMessage {
@@ -705,13 +705,13 @@ mod tests {
             *full_id_2.public_id(),
             *full_id_3.public_id(),
         ];
-        let src_section = unwrap!(SectionInfo::new(
+        let src_section = unwrap!(EldersInfo::new(
             src_section_nodes.into_iter().collect(),
             prefix,
             None,
         ));
-        let pk_set = BlsPublicKeySet::from_section_info(src_section.clone());
-        let dummy_key_info = SectionKeyInfo::from_section_info(&src_section);
+        let pk_set = BlsPublicKeySet::from_elders_info(src_section.clone());
+        let dummy_key_info = SectionKeyInfo::from_elders_info(&src_section);
         let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
             msg,

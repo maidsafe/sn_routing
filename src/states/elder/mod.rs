@@ -14,9 +14,9 @@ use super::common::{Approved, Base, Bootstrapped, Relocated};
 use crate::messages::Message;
 use crate::{
     chain::{
-        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, ExpectCandidatePayload,
-        GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
-        SectionInfo, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
+        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersInfo,
+        ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
+        PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
     },
     config_handler,
     crypto::{signing::Signature, Digest256},
@@ -131,9 +131,9 @@ impl Elder {
 
         let public_id = *full_id.public_id();
         let gen_pfx_info = GenesisPfxInfo {
-            first_info: create_first_section_info(public_id)?,
+            first_info: create_first_elders_info(public_id)?,
             first_state_serialized: Vec::new(),
-            latest_info: SectionInfo::default(),
+            latest_info: EldersInfo::default(),
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
@@ -166,13 +166,13 @@ impl Elder {
 
     pub fn from_adult(
         mut details: ElderDetails,
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
         let mut elder = Self::new(details, false);
-        elder.init(sec_info, old_pfx, event_backlog, outbox)?;
+        elder.init(elders_info, old_pfx, event_backlog, outbox)?;
         Ok(elder)
     }
 
@@ -233,7 +233,7 @@ impl Elder {
     // Initialise regular node
     fn init(
         &mut self,
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         event_backlog: Vec<Event>,
         outbox: &mut dyn EventBox,
@@ -251,7 +251,7 @@ impl Elder {
         }
 
         // Handle the SectionInfo event which triggered us becoming established node.
-        let _ = self.handle_section_info_event(sec_info, old_pfx, outbox)?;
+        let _ = self.handle_section_info_event(elders_info, old_pfx, outbox)?;
 
         Ok(())
     }
@@ -395,8 +395,8 @@ impl Elder {
                 | AccumulatingEvent::PurgeCandidate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
-                AccumulatingEvent::SectionInfo(ref sec_info) => {
-                    our_pfx.is_neighbour(sec_info.prefix())
+                AccumulatingEvent::SectionInfo(ref elders_info) => {
+                    our_pfx.is_neighbour(elders_info.prefix())
                 }
 
                 // Drop: condition may have changed.
@@ -578,8 +578,8 @@ impl Elder {
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
             ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(sec_info), Section(_), PrefixSection(_)) => {
-                self.handle_neighbour_info(sec_info)
+            (NeighbourInfo(elders_info), Section(_), PrefixSection(_)) => {
+                self.handle_neighbour_info(elders_info)
             }
             (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
             (UserMessage(content), src, dst) => {
@@ -1020,9 +1020,9 @@ impl Elder {
         }
     }
 
-    fn handle_neighbour_info(&mut self, sec_info: SectionInfo) -> Result<(), RoutingError> {
-        if self.chain.is_new_neighbour(&sec_info) {
-            self.vote_for_section_info(sec_info)?;
+    fn handle_neighbour_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
+        if self.chain.is_new_neighbour(&elders_info) {
+            self.vote_for_section_info(elders_info)?;
         }
         Ok(())
     }
@@ -1068,7 +1068,7 @@ impl Elder {
         self.vote_for_network_event(event.into_network_event())
     }
 
-    fn vote_for_section_info(&mut self, info: SectionInfo) -> Result<(), RoutingError> {
+    fn vote_for_section_info(&mut self, info: EldersInfo) -> Result<(), RoutingError> {
         let signature_payload = SectionInfoSigPayload::new(&info, &self.full_id)?;
         self.vote_for_network_event(info.into_network_event_with(Some(signature_payload)));
         Ok(())
@@ -1738,8 +1738,8 @@ impl Approved for Elder {
             self.add_node(&new_pub_id, outbox);
         };
 
-        for sec_info in to_vote_infos.into_iter() {
-            self.vote_for_section_info(sec_info)?;
+        for info in to_vote_infos {
+            self.vote_for_section_info(info)?;
         }
 
         Ok(())
@@ -1830,35 +1830,36 @@ impl Approved for Elder {
 
     fn handle_section_info_event(
         &mut self,
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if sec_info.prefix().is_extension_of(&old_pfx) {
+        if elders_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
-            self.send_event(Event::SectionSplit(*sec_info.prefix()), outbox);
+            self.send_event(Event::SectionSplit(*elders_info.prefix()), outbox);
             // After a section split, the normal `send_neighbour_infos` action for the neighbouring
             // section will be triggered here (and only here).  Meanwhile own section's sending
             // action will be triggered at the other place later on (`self_sec_update` is true).
-            if !sec_info.prefix().matches(self.name()) {
+            if !elders_info.prefix().matches(self.name()) {
                 self.send_neighbour_infos();
             }
-        } else if old_pfx.is_extension_of(sec_info.prefix()) {
+        } else if old_pfx.is_extension_of(elders_info.prefix()) {
             self.finalise_prefix_change()?;
-            self.send_event(Event::SectionMerged(*sec_info.prefix()), outbox);
+            self.send_event(Event::SectionMerged(*elders_info.prefix()), outbox);
         }
 
-        let self_sec_update = sec_info.prefix().matches(self.name());
+        let self_sec_update = elders_info.prefix().matches(self.name());
 
         self.update_peer_states(outbox);
 
         if self_sec_update {
-            self.chain.reset_candidate_if_member_of(sec_info.members());
+            self.chain
+                .reset_candidate_if_member_of(elders_info.members());
 
             // Vote to update our self messages proof
             self.vote_send_section_info_ack(SendAckMessagePayload {
-                ack_prefix: *sec_info.prefix(),
-                ack_version: *sec_info.version(),
+                ack_prefix: *elders_info.prefix(),
+                ack_version: *elders_info.version(),
             });
 
             self.send_neighbour_infos();
@@ -1901,16 +1902,16 @@ impl Display for Elder {
     }
 }
 
-// Create `SectionInfo` for the first node.
-fn create_first_section_info(public_id: PublicId) -> Result<SectionInfo, RoutingError> {
-    SectionInfo::new(
+// Create `EldersInfo` for the first node.
+fn create_first_elders_info(public_id: PublicId) -> Result<EldersInfo, RoutingError> {
+    EldersInfo::new(
         iter::once(public_id).collect(),
         *DEFAULT_PREFIX,
         iter::empty(),
     )
     .map_err(|err| {
         error!(
-            "FirstNode({:?}) - Failed to create first SectionInfo: {:?}",
+            "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
             public_id.name(),
             err
         );

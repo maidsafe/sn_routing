@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Chain, PrefixChange, SectionInfo};
+use super::{Chain, EldersInfo, PrefixChange};
 use crate::{Prefix, XorName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter;
@@ -104,7 +104,7 @@ fn verify_single_chain(chain: &Chain, min_section_size: usize) {
         panic!(
             "Some sections in the chain aren't neighbours of our section: {:?}",
             iter::once(chain.our_info().prefix())
-                .chain(chain.neighbour_infos().map(SectionInfo::prefix))
+                .chain(chain.neighbour_infos().map(EldersInfo::prefix))
                 .collect::<Vec<_>>()
         );
     }
@@ -112,7 +112,7 @@ fn verify_single_chain(chain: &Chain, min_section_size: usize) {
         panic!(
             "Some neighbours aren't fully covered by the chain: {:?}",
             iter::once(chain.our_info().prefix())
-                .chain(chain.neighbour_infos().map(SectionInfo::prefix))
+                .chain(chain.neighbour_infos().map(EldersInfo::prefix))
                 .collect::<Vec<_>>()
         );
     }
@@ -124,12 +124,12 @@ pub fn verify_chain_invariant<'a, T>(chains: T, min_section_size: usize)
 where
     T: IntoIterator<Item = &'a Chain>,
 {
-    let mut sections: BTreeMap<Prefix<XorName>, (XorName, SectionInfo)> = BTreeMap::new();
+    let mut sections: BTreeMap<Prefix<XorName>, (XorName, EldersInfo)> = BTreeMap::new();
 
     for chain in chains {
         verify_single_chain(chain, min_section_size);
         for prefix in iter::once(chain.our_info().prefix())
-            .chain(chain.neighbour_infos().map(SectionInfo::prefix))
+            .chain(chain.neighbour_infos().map(EldersInfo::prefix))
         {
             let section_content = chain
                 .get_section(prefix)

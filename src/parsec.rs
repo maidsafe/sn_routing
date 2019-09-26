@@ -282,7 +282,7 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests {
     use super::*;
-    use crate::{chain::SectionInfo, routing_table::Prefix, xor_name::XorName};
+    use crate::{chain::EldersInfo, routing_table::Prefix, xor_name::XorName};
     use serde::Serialize;
     use unwrap::unwrap;
 
@@ -306,15 +306,15 @@ mod tests {
 
     fn create_gen_pfx_info(full_ids: Vec<FullId>, version: u64) -> GenesisPfxInfo {
         let members = full_ids.iter().map(|id| *id.public_id()).collect();
-        let section_info = unwrap!(SectionInfo::new_for_test(
+        let elders_info = unwrap!(EldersInfo::new_for_test(
             members,
             Prefix::<XorName>::default(),
             version
         ));
         GenesisPfxInfo {
-            first_info: section_info,
+            first_info: elders_info,
             first_state_serialized: Vec::new(),
-            latest_info: SectionInfo::default(),
+            latest_info: EldersInfo::default(),
         }
     }
 

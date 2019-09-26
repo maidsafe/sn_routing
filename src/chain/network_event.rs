@@ -6,8 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{SectionInfo, SectionKeyInfo};
-use crate::chain::Proof;
+use super::{EldersInfo, Proof, SectionKeyInfo};
 use crate::crypto::Digest256;
 use crate::id::{FullId, PublicId};
 use crate::parsec;
@@ -65,10 +64,7 @@ pub struct SectionInfoSigPayload {
 }
 
 impl SectionInfoSigPayload {
-    pub fn new(
-        info: &SectionInfo,
-        full_id: &FullId,
-    ) -> Result<SectionInfoSigPayload, RoutingError> {
+    pub fn new(info: &EldersInfo, full_id: &FullId) -> Result<SectionInfoSigPayload, RoutingError> {
         let proof = Proof::new(full_id, &info)?;
 
         Ok(SectionInfoSigPayload {
@@ -95,7 +91,7 @@ pub enum AccumulatingEvent {
 
     OurMerge,
     NeighbourMerge(Digest256),
-    SectionInfo(SectionInfo),
+    SectionInfo(EldersInfo),
 
     /// Voted for received ExpectCandidate Message.
     ExpectCandidate(ExpectCandidatePayload),
@@ -137,9 +133,9 @@ impl AccumulatingEvent {
         }
     }
 
-    pub fn section_info(&self) -> Option<&SectionInfo> {
-        match *self {
-            AccumulatingEvent::SectionInfo(ref self_si) => Some(self_si),
+    pub fn elders_info(&self) -> Option<&EldersInfo> {
+        match self {
+            AccumulatingEvent::SectionInfo(info) => Some(info),
             _ => None,
         }
     }
@@ -160,8 +156,8 @@ impl Debug for AccumulatingEvent {
             AccumulatingEvent::NeighbourMerge(ref digest) => {
                 write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
             }
-            AccumulatingEvent::SectionInfo(ref sec_info) => {
-                write!(formatter, "SectionInfo({:?})", sec_info)
+            AccumulatingEvent::SectionInfo(ref info) => {
+                write!(formatter, "SectionInfo({:?})", info)
             }
             AccumulatingEvent::ExpectCandidate(ref vote) => {
                 write!(formatter, "ExpectCandidate({:?})", vote)
@@ -191,8 +187,8 @@ pub struct NetworkEvent {
 
 impl NetworkEvent {
     /// Returns the payload if this is a `SectionInfo` event.
-    pub fn section_info(&self) -> Option<&SectionInfo> {
-        self.payload.section_info()
+    pub fn elders_info(&self) -> Option<&EldersInfo> {
+        self.payload.elders_info()
     }
 
     /// Convert `NetworkEvent` into a Parsec Observation

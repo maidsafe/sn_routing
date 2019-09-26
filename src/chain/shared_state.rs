@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, MemberInfo, SectionInfo};
+use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, EldersInfo, MemberInfo};
 use crate::{
     crypto::Digest256, error::RoutingError, id::PublicId, BlsPublicKey, BlsPublicKeySet,
     BlsSignature, Prefix, XorName,
@@ -29,21 +29,21 @@ const MAX_THEIR_RECENT_KEYS: usize = 10;
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SharedState {
-    /// The new self section info, that doesn't necessarily have a full set of signatures yet.
-    pub new_info: SectionInfo,
+    /// The new self elders info, that doesn't necessarily have a full set of signatures yet.
+    pub new_info: EldersInfo,
     /// The latest few fully signed infos of our own sections.
     /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
-    pub our_infos: NonEmptyList<SectionInfo>,
+    pub our_infos: NonEmptyList<EldersInfo>,
     /// Info about all members of our section - elders, adults and infants.
     pub our_members: BTreeMap<PublicId, MemberInfo>,
-    /// Maps our neighbours' prefixes to their latest signed section infos.
+    /// Maps our neighbours' prefixes to their latest signed elders infos.
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
-    pub neighbour_infos: BTreeMap<Prefix<XorName>, SectionInfo>,
+    pub neighbour_infos: BTreeMap<Prefix<XorName>, EldersInfo>,
     /// Any change (split or merge) to the section that is currently in progress.
     pub change: PrefixChange,
-    // The accumulated `SectionInfo`(self or sibling) and proofs during a split pfx change.
-    pub split_cache: Option<(SectionInfo, AccumulatingProof)>,
+    // The accumulated `EldersInfo`(self or sibling) and proofs during a split pfx change.
+    pub split_cache: Option<(EldersInfo, AccumulatingProof)>,
     /// The set of section info hashes that are currently merging.
     pub merging: BTreeSet<Digest256>,
     /// Our section's key history for Secure Message Delivery
@@ -57,15 +57,15 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(section_info: SectionInfo) -> Self {
-        let pk_info = SectionKeyInfo::from_section_info(&section_info);
+    pub fn new(elders_info: EldersInfo) -> Self {
+        let pk_info = SectionKeyInfo::from_elders_info(&elders_info);
         let our_history = SectionProofChain::from_genesis(pk_info);
         let their_key_info = our_history.last_public_key_info();
         let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
 
         Self {
-            new_info: section_info.clone(),
-            our_infos: NonEmptyList::new(section_info),
+            new_info: elders_info.clone(),
+            our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
             our_members: Default::default(),
             change: PrefixChange::None,
@@ -177,12 +177,12 @@ impl SharedState {
         ))?)
     }
 
-    pub fn our_infos(&self) -> impl Iterator<Item = &SectionInfo> + DoubleEndedIterator {
+    pub fn our_infos(&self) -> impl Iterator<Item = &EldersInfo> + DoubleEndedIterator {
         self.our_infos.iter()
     }
 
     /// Returns our own current section info.
-    pub fn our_info(&self) -> &SectionInfo {
+    pub fn our_info(&self) -> &EldersInfo {
         &self.our_infos.last()
     }
 
@@ -195,10 +195,8 @@ impl SharedState {
     }
 
     /// Returns our section info with the given hash, if it exists.
-    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&SectionInfo> {
-        self.our_infos
-            .iter()
-            .find(|sec_info| sec_info.hash() == hash)
+    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
+        self.our_infos.iter().find(|info| info.hash() == hash)
     }
 
     /// Returns our member infos.
@@ -213,9 +211,9 @@ impl SharedState {
     }
 
     /// Returns the next section info if both we and our sibling have signalled for merging.
-    pub(super) fn try_merge(&mut self) -> Result<Option<SectionInfo>, RoutingError> {
+    pub(super) fn try_merge(&mut self) -> Result<Option<EldersInfo>, RoutingError> {
         let their_info = match self.neighbour_infos.get(&self.our_prefix().sibling()) {
-            Some(sec_info) => sec_info,
+            Some(info) => info,
             None => return Ok(None),
         };
 
@@ -239,7 +237,7 @@ impl SharedState {
         neighbour_infos: I,
     ) -> bool
     where
-        I: IntoIterator<Item = &'a SectionInfo>,
+        I: IntoIterator<Item = &'a EldersInfo>,
     {
         let pfx = self.our_prefix();
         if pfx.is_empty() || self.change == PrefixChange::Splitting {
@@ -250,7 +248,7 @@ impl SharedState {
             return true;
         }
 
-        let needs_merge = |si: &SectionInfo| {
+        let needs_merge = |si: &EldersInfo| {
             pfx.is_compatible(&si.prefix().sibling())
                 && (si.members().len() < min_section_size || self.merging.contains(si.hash()))
         };
@@ -260,12 +258,12 @@ impl SharedState {
 
     pub fn push_our_new_info(
         &mut self,
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         proofs: AccumulatingProof,
         pk_set: &BlsPublicKeySet,
     ) -> Result<(), RoutingError> {
         let proof_block = if let Some(proof_block) =
-            SectionProofBlock::from_sec_info_with_proofs(&sec_info, proofs, pk_set)
+            SectionProofBlock::from_elders_info_with_proofs(&elders_info, proofs, pk_set)
         {
             proof_block
         } else {
@@ -273,7 +271,7 @@ impl SharedState {
         };
 
         self.our_history.push(proof_block);
-        self.our_infos.push(sec_info);
+        self.our_infos.push(elders_info);
 
         let key_info = self.our_history.last_public_key_info().clone();
         self.update_their_keys(&key_info);
@@ -431,12 +429,12 @@ impl Debug for SectionProofBlock {
 }
 
 impl SectionProofBlock {
-    pub fn from_sec_info_with_proofs(
-        sec_info: &SectionInfo,
+    pub fn from_elders_info_with_proofs(
+        elders_info: &EldersInfo,
         proofs: AccumulatingProof,
         pk_set: &BlsPublicKeySet,
     ) -> Option<Self> {
-        let key_info = SectionKeyInfo::from_section_info(sec_info);
+        let key_info = SectionKeyInfo::from_elders_info(elders_info);
 
         let sig_shares = proofs.into_sig_shares();
         let sig = pk_set.combine_signatures(
@@ -543,9 +541,9 @@ pub struct SectionKeyInfo {
 }
 
 impl SectionKeyInfo {
-    pub fn from_section_info(sec_info: &SectionInfo) -> Self {
+    pub fn from_elders_info(info: &EldersInfo) -> Self {
         Self {
-            key_info_holder: BlsPublicKeyForSectionKeyInfo::from_section_info(sec_info),
+            key_info_holder: BlsPublicKeyForSectionKeyInfo::from_elders_info(info),
         }
     }
 
@@ -554,15 +552,15 @@ impl SectionKeyInfo {
     }
 
     pub fn prefix(&self) -> &Prefix<XorName> {
-        self.key_info_holder.internal_section_info().prefix()
+        self.key_info_holder.internal_elders_info().prefix()
     }
 
     pub fn version(&self) -> &u64 {
-        self.key_info_holder.internal_section_info().version()
+        self.key_info_holder.internal_elders_info().version()
     }
 
     pub fn serialise_for_signature(&self) -> Option<Vec<u8>> {
-        serialisation::serialise(self.key_info_holder.internal_section_info()).ok()
+        serialisation::serialise(self.key_info_holder.internal_elders_info()).ok()
     }
 }
 
@@ -581,19 +579,19 @@ impl Debug for SectionKeyInfo {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{chain::SectionInfo, FullId, Prefix, XorName};
+    use crate::{chain::EldersInfo, FullId, Prefix, XorName};
     use std::collections::BTreeSet;
     use std::str::FromStr;
     use unwrap::unwrap;
 
-    fn gen_section_info(pfx: Prefix<XorName>, version: u64) -> SectionInfo {
+    fn gen_elders_info(pfx: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;
         let mut members = BTreeSet::new();
         for _ in 0..sec_size {
             let id = FullId::within_range(&pfx.range_inclusive());
             let _ = members.insert(*id.public_id());
         }
-        unwrap!(SectionInfo::new_for_test(members, pfx, version))
+        unwrap!(EldersInfo::new_for_test(members, pfx, version))
     }
 
     // start_pfx: the prefix of our section as string
@@ -618,9 +616,9 @@ mod test {
             .into_iter()
             .map(|(version, pfx_str)| {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
-                let sec_info = gen_section_info(pfx, version as u64);
-                let key_info = SectionKeyInfo::from_section_info(&sec_info);
-                (key_info, sec_info)
+                let elders_info = gen_elders_info(pfx, version as u64);
+                let key_info = SectionKeyInfo::from_elders_info(&elders_info);
+                (key_info, elders_info)
             })
             .collect::<Vec<_>>();
         let expected_keys = expected
