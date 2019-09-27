@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, EldersInfo, MemberInfo};
+use super::{
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, EldersInfo, MemberInfo,
+    MemberPersona, MemberState,
+};
 use crate::{
     crypto::Digest256, error::RoutingError, id::PublicId, BlsPublicKey, BlsPublicKeySet,
     BlsSignature, Prefix, XorName,
@@ -63,11 +66,25 @@ impl SharedState {
         let their_key_info = our_history.last_public_key_info();
         let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
 
+        let our_members = elders_info
+            .members()
+            .iter()
+            .copied()
+            .map(|pub_id| {
+                let info = MemberInfo {
+                    persona: MemberPersona::Elder,
+                    age: 0,
+                    state: MemberState::Joined,
+                };
+                (pub_id, info)
+            })
+            .collect();
+
         Self {
             new_info: elders_info.clone(),
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
-            our_members: Default::default(),
+            our_members,
             change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
@@ -203,6 +220,14 @@ impl SharedState {
     #[allow(unused)]
     pub fn our_members(&self) -> &BTreeMap<PublicId, MemberInfo> {
         &self.our_members
+    }
+
+    /// Remove all entries from `out_members` whose name does not match `prefix`.
+    pub fn remove_our_members_not_matching_prefix(&mut self, prefix: &Prefix<XorName>) {
+        self.our_members = mem::replace(&mut self.our_members, BTreeMap::new())
+            .into_iter()
+            .filter(|(pub_id, _)| prefix.matches(pub_id.name()))
+            .collect();
     }
 
     /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.

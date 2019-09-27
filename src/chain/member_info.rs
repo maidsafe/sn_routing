@@ -14,6 +14,16 @@ pub struct MemberInfo {
     pub state: MemberState,
 }
 
+impl Default for MemberInfo {
+    fn default() -> Self {
+        Self {
+            persona: MemberPersona::Infant,
+            age: 0,
+            state: MemberState::Joined,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum MemberPersona {
     #[allow(unused)]

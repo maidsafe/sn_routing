@@ -10,8 +10,8 @@ use super::{
     candidate::Candidate,
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatingEvent, EldersInfo, GenesisPfxInfo, NetworkEvent, OnlinePayload, Proof, ProofSet,
-    SectionProofChain,
+    AccumulatingEvent, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState, NetworkEvent,
+    OnlinePayload, Proof, ProofSet, SectionProofChain,
 };
 use crate::{
     crypto::Digest256,
@@ -306,17 +306,22 @@ impl Chain {
             );
         }
 
-        let mut members = self.state.new_info.members().clone();
-        let _ = members.insert(pub_id);
+        let info = self.state.our_members.entry(pub_id).or_default();
+        info.persona = MemberPersona::Elder;
+        info.state = MemberState::Joined;
 
-        if self.should_split(&members)? {
-            let (our_info, other_info) = self.split_self(members.clone())?;
+        let mut elders = self.state.new_info.members().clone();
+        let _ = elders.insert(pub_id);
+
+        // TODO: the split decision should be based on the number of all members, not just elders.
+        if self.should_split(&elders)? {
+            let (our_info, other_info) = self.split_self(elders.clone())?;
             self.state.change = PrefixChange::Splitting;
             return Ok(vec![our_info, other_info]);
         }
 
         self.state.new_info = EldersInfo::new(
-            members,
+            elders,
             *self.state.new_info.prefix(),
             Some(&self.state.new_info),
         )?;
@@ -343,11 +348,24 @@ impl Chain {
             );
         }
 
-        let mut members = self.state.new_info.members().clone();
-        let _ = members.remove(&pub_id);
+        match self.state.our_members.get_mut(&pub_id) {
+            Some(info) => {
+                info.state = MemberState::Left;
+            }
+            None => {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "Removed peer not {} present in our_members",
+                    pub_id
+                );
+            }
+        }
+
+        let mut elders = self.state.new_info.members().clone();
+        let _ = elders.remove(&pub_id);
 
         self.state.new_info = EldersInfo::new(
-            members,
+            elders,
             *self.state.new_info.prefix(),
             Some(&self.state.new_info),
         )?;
@@ -832,6 +850,8 @@ impl Chain {
         let other_info = EldersInfo::new(other_section, other_prefix, Some(&self.state.new_info))?;
 
         self.state.new_info = our_new_info.clone();
+        self.state
+            .remove_our_members_not_matching_prefix(&our_prefix);
 
         Ok((our_new_info, other_info))
     }
