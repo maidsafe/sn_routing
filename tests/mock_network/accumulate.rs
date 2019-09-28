@@ -9,8 +9,7 @@
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
 use routing::{
-    mock::Network, Authority, Event, EventStream, XorName, THRESHOLD_DENOMINATOR,
-    THRESHOLD_NUMERATOR,
+    mock::Network, Authority, Event, EventStream, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 
 #[test]
@@ -31,7 +30,7 @@ fn messages_accumulate_with_quorum() {
     let content = gen_bytes(&mut rng, 8);
 
     // The smallest number such that `quorum * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR`:
-    let quorum = 1 + section_size * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
+    let quorum = 1 + (section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
