@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, fmt};
 
 /// The BLS scheme will require more than `THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR`
 /// shares in order to construct a full key or signature.
-pub const THRESHOLD_NUMERATOR: usize = 1;
+pub const THRESHOLD_NUMERATOR: usize = 2;
 /// See `THRESHOLD_NUMERATOR`.
 pub const THRESHOLD_DENOMINATOR: usize = 3;
 

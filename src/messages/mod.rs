@@ -394,9 +394,7 @@ impl SignedRoutingMessage {
     // valid).
     fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<BlsPublicKeyShare> {
         match self.security_metadata {
-            SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => {
-                vec![]
-            }
+            SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => vec![],
             SecurityMetadata::Partial(ref partial) => {
                 let invalid: Vec<_> = partial
                     .shares
