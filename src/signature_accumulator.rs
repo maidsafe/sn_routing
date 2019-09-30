@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    crypto::Digest256,
     messages::SignedRoutingMessage,
-    sha3::Digest256,
     time::{Duration, Instant},
 };
 use itertools::Itertools;

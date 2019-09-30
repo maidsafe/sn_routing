@@ -19,6 +19,7 @@ use crate::{
         SectionInfo, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
     },
     config_handler,
+    crypto::{signing::Signature, Digest256},
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -31,7 +32,6 @@ use crate::{
     routing_message_filter::{FilteringResult, RoutingMessageFilter},
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
-    sha3::Digest256,
     signature_accumulator::SignatureAccumulator,
     state_machine::Transition,
     time::{Duration, Instant},
@@ -45,7 +45,6 @@ use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use safe_crypto::Signature;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -567,22 +566,18 @@ impl Elder {
             ) => self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id),
             (
                 ConnectionRequest {
-                    encrypted_conn_info,
-                    pub_id,
-                    ..
+                    conn_info, pub_id, ..
                 },
                 src @ Client { .. },
                 dst @ ManagedNode(_),
             )
             | (
                 ConnectionRequest {
-                    encrypted_conn_info,
-                    pub_id,
-                    ..
+                    conn_info, pub_id, ..
                 },
                 src @ ManagedNode(_),
                 dst @ ManagedNode(_),
-            ) => self.handle_connection_request(&encrypted_conn_info, pub_id, src, dst, outbox),
+            ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
             (NeighbourInfo(sec_info), Section(_), PrefixSection(_)) => {
                 self.handle_neighbour_info(sec_info)
             }
@@ -847,10 +842,7 @@ impl Elder {
                 return false;
             }
         };
-        if !old_pub_id
-            .signing_public_key()
-            .verify_detached(signature_using_old, &both_ids_serialised)
-        {
+        if !old_pub_id.verify(&both_ids_serialised, signature_using_old) {
             debug!(
                 "{} CandidateInfo from {}->{} has invalid old signature.",
                 self, old_pub_id, new_pub_id

@@ -24,8 +24,6 @@ use crate::{
 #[cfg(feature = "mock_base")]
 use crate::{utils::XorTargetInterval, Chain};
 use crossbeam_channel as mpmc;
-#[cfg(not(feature = "mock_base"))]
-use safe_crypto;
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
 use std::sync::mpsc;
@@ -68,11 +66,6 @@ impl NodeBuilder {
     ///
     /// The initial `Node` object will have newly generated keys.
     pub fn create(self) -> Result<Node, RoutingError> {
-        // If we're not in a test environment where we might want to manually seed the crypto RNG
-        // then seed randomly.
-        #[cfg(not(feature = "mock_base"))]
-        safe_crypto::init()?;
-
         let mut ev_buffer = EventBuf::new();
 
         // start the handler for routing without a restriction to become a full node

@@ -692,17 +692,16 @@ fn gen_message() -> NetworkBytes {
             id::FullId,
             messages::{DirectMessage, Message, SignedDirectMessage},
         };
-        use lazy_static::lazy_static;
 
-        lazy_static! {
-            static ref FULL_ID: FullId = FullId::new();
+        thread_local! {
+            static FULL_ID: FullId = FullId::new();
         }
 
         // The actual content of the message doesn't matter for the purposes of these tests, only
         // that it is unique. Let's use `DirectMessage::ParsecPoke` as it is the simplest message
         // that carries some data.
         let content = DirectMessage::ParsecPoke(num as u64);
-        let message = unwrap!(SignedDirectMessage::new(content, &*FULL_ID));
+        let message = FULL_ID.with(|full_id| unwrap!(SignedDirectMessage::new(content, full_id)));
         NetworkBytes::new(Message::Direct(message))
     }
 

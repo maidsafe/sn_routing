@@ -200,10 +200,7 @@ impl ProvingNode {
                     return;
                 }
             };
-            let signature_using_old = self
-                .old_full_id
-                .signing_private_key()
-                .sign_detached(&both_ids_serialised);
+            let signature_using_old = self.old_full_id.sign(&both_ids_serialised);
 
             let proxy_node_name = if let Some(name) = self.peer_mgr.get_proxy_name() {
                 *name

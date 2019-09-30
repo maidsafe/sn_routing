@@ -6,9 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{routing_table::Xorable, xor_name::XorName, Prefix};
+use crate::{crypto, routing_table::Xorable, xor_name::XorName, Prefix};
 use itertools::Itertools;
-use safe_crypto;
+#[cfg(any(test, feature = "mock_base"))]
+use maidsafe_utilities::SeededRng;
+use rand::{OsRng, Rng};
 use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
@@ -105,7 +107,7 @@ pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &Xo
         .flat_map(|close_node| close_node.0.iter())
         .cloned()
         .collect();
-    XorName(safe_crypto::hash(&combined))
+    XorName(crypto::sha3_256(&combined))
 }
 
 /// Calculate the interval for a node joining our section to generate a key for.
@@ -133,9 +135,6 @@ pub fn calculate_relocation_interval(
 
 #[cfg(any(test, feature = "mock_base"))]
 pub fn rand_index(exclusive_max: usize) -> usize {
-    use maidsafe_utilities::SeededRng;
-    use rand::Rng;
-
     let mut rng = SeededRng::thread_rng();
     rng.gen::<usize>() % exclusive_max
 }
@@ -145,13 +144,57 @@ pub fn rand_index(exclusive_max: usize) -> usize {
     ::rand::random::<usize>() % exclusive_max
 }
 
+// Note: routing uses different version of the rand crate than threshold_crypto. This is a
+// compatibility adapter between the two.
+pub struct RngCompat<R>(pub R);
+
+impl<R: Rng> rand_crypto::RngCore for RngCompat<R> {
+    fn next_u32(&mut self) -> u32 {
+        self.0.next_u32()
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0.next_u64()
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.0.fill_bytes(dest)
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_crypto::Error> {
+        self.0.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+impl rand_crypto::CryptoRng for RngCompat<OsRng> {}
+
+// Note: `SeededRng` is not really a CSPRNG (it uses xor-shift under the hood), but that is OK as
+// this is used only in tests.
+#[cfg(any(test, feature = "mock_base"))]
+impl rand_crypto::CryptoRng for RngCompat<SeededRng> {}
+
+// Create new Rng instance. Use `SeededRng` in test/mock, to allow reproducible test results and
+// to avoid opening too many file handles which could happen on some platforms if we used `OsRng`.
+#[cfg(any(test, feature = "mock_base"))]
+pub fn new_rng() -> SeededRng {
+    SeededRng::thread_rng()
+}
+
+// Create new Rng instance. Use `OsRng` in production for maximum cryptographic security.
+#[cfg(not(any(test, feature = "mock_base")))]
+pub fn new_rng() -> OsRng {
+    match OsRng::new() {
+        Ok(rng) => rng,
+        Err(error) => panic!("Failed to create OsRng: {:?}", error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::DisplayDuration;
-    use crate::routing_table::Xorable;
-    use crate::xor_name::XorName;
+    use crate::{crypto, routing_table::Xorable, xor_name::XorName};
     use rand;
-    use safe_crypto;
     use std::time::Duration;
 
     #[test]
@@ -192,7 +235,7 @@ mod tests {
             }
         }
 
-        let expected_relocated_name_one_node = XorName(safe_crypto::hash(&combined_one_node));
+        let expected_relocated_name_one_node = XorName(crypto::sha3_256(&combined_one_node));
 
         assert_eq!(
             actual_relocated_name_one_entry,
@@ -222,7 +265,7 @@ mod tests {
             combined.push(*i);
         }
 
-        let expected_relocated_name = XorName(safe_crypto::hash(&combined));
+        let expected_relocated_name = XorName(crypto::sha3_256(&combined));
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
@@ -235,7 +278,7 @@ mod tests {
         for i in &original_name.0 {
             invalid_combined.push(*i);
         }
-        let invalid_relocated_name = XorName(safe_crypto::hash(&invalid_combined));
+        let invalid_relocated_name = XorName(crypto::sha3_256(&invalid_combined));
         assert_ne!(invalid_relocated_name, actual_relocated_name);
     }
 }

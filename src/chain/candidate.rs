@@ -18,6 +18,7 @@ use std::collections::BTreeSet;
 /// If we consensus to accept them: move to ApprovedWaitingSectionInfo until we are available to
 /// accept a new candidate, at which point reset to None.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Candidate {
     /// No-one is currently in the resource proof process.
     /// We can take on a new candidate on consensus of an `ExpectCandidate` event.

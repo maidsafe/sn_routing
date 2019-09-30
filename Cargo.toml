@@ -28,13 +28,14 @@ parsec = { git = "https://github.com/maidsafe/parsec", rev = "fbefc42d" }
 quic-p2p = "~0.2.0"
 quick-error = "~1.2.0"
 rand = "~0.3.16"
-# rand in the version used by threshold_crypto, for compatibility
-rand_threshold_crypto = { package = "rand", version = "~0.6.5" }
+# rand in the version used by threshold_crypto and ed25519_dalek crates, for compatibility
+rand_crypto = { package = "rand", version = "~0.6.5" }
 resource_proof = "~0.8.0"
-safe_crypto = "~0.8.0"
 serde = "~1.0.25"
 serde_derive = "~1.0.25"
 term = "~0.4.6"
+tiny-keccak = "~1.5.0"
+ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.2", features = ["serde"] }
 threshold_crypto = "~0.3.2"
 unwrap = "~1.2.1"
 
@@ -44,7 +45,8 @@ libc = "~0.2.29"
 serde_json = "~1.0.8"
 
 [features]
-mock_base = ["lru_time_cache/fake_clock", "safe_crypto/mock", "parsec/mock", "parsec/malice-detection", "fxhash"]
+mock_base = ["lru_time_cache/fake_clock", "parsec/mock", "parsec/malice-detection", "fxhash"]
+mock_crypto = ["mock_base"]
 mock_parsec = ["mock_base"]
 mock_serialise = ["mock_base"]
-mock = ["mock_parsec", "mock_serialise"]
+mock = ["mock_crypto", "mock_parsec", "mock_serialise"]

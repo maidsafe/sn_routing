@@ -14,10 +14,10 @@ use super::{
     SectionProofChain,
 };
 use crate::{
+    crypto::Digest256,
     error::RoutingError,
     id::PublicId,
     routing_table::{Authority, Error},
-    sha3::Digest256,
     utils::LogIdent,
     utils::XorTargetInterval,
     BlsPublicKeySet, Prefix, XorName, Xorable,
@@ -1389,11 +1389,7 @@ mod tests {
         let mut proofs = ProofSet::new();
         for member in members {
             let _ = full_ids.get(member).map(|full_id| {
-                let proof = unwrap!(Proof::new(
-                    *full_id.public_id(),
-                    full_id.signing_private_key(),
-                    payload,
-                ));
+                let proof = unwrap!(Proof::new(full_id, payload,));
                 let _ = proofs.add_proof(proof);
             });
         }

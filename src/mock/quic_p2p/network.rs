@@ -21,7 +21,6 @@ use std::{
     rc::{Rc, Weak},
     sync::Once,
 };
-use unwrap::unwrap;
 
 const IP_BASE: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const PORT: u16 = 9999;
@@ -37,15 +36,13 @@ pub struct Network(Rc<RefCell<Inner>>);
 impl Network {
     /// Construct new mock network.
     pub fn new(min_section_size: usize, seed: Option<[u32; 4]>) -> Self {
-        let mut rng = if let Some(seed) = seed {
+        let rng = if let Some(seed) = seed {
             SeededRng::from_seed(seed)
         } else {
             SeededRng::new()
         };
 
         PRINT_SEED.call_once(|| println!("{:?}", rng));
-
-        unwrap!(safe_crypto::init_with_rng(&mut rng));
 
         #[cfg(feature = "mock_parsec")]
         parsec::init_mock();

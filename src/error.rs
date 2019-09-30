@@ -12,7 +12,6 @@ use config_file_handler::Error as ConfigFileHandlerError;
 use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
 use quick_error::quick_error;
-use safe_crypto;
 use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
@@ -147,8 +146,6 @@ pub enum RoutingError {
     InvalidProvingSection,
     /// A signed message could not be trusted
     UntrustedMessage,
-    /// Crypto related error.
-    Crypto(safe_crypto::Error),
     /// A new SectionInfo is invalid.
     InvalidNewSectionInfo,
 }
@@ -198,12 +195,6 @@ impl From<serialisation::SerialisationError> for RoutingError {
 impl From<ConfigFileHandlerError> for RoutingError {
     fn from(error: ConfigFileHandlerError) -> RoutingError {
         RoutingError::ConfigError(error)
-    }
-}
-
-impl From<safe_crypto::Error> for RoutingError {
-    fn from(error: safe_crypto::Error) -> RoutingError {
-        RoutingError::Crypto(error)
     }
 }
 

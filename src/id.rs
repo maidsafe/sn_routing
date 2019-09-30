@@ -6,64 +6,72 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::parsec;
-use crate::xor_name::XorName;
-use safe_crypto;
-use safe_crypto::{
-    gen_encrypt_keypair, gen_sign_keypair, PublicEncryptKey, PublicSignKey, SecretEncryptKey,
-    SecretSignKey, Signature,
+use crate::{
+    crypto::{encryption, signing},
+    parsec,
+    utils::{self, RngCompat},
+    xor_name::XorName,
 };
+use maidsafe_utilities::serialisation::{deserialise, serialise};
+use rand_crypto::Rng;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::fmt::{self, Debug, Display, Formatter};
-use std::ops::RangeInclusive;
+use std::{ops::RangeInclusive, rc::Rc};
 
 /// Network identity component containing name, and public and private keys.
-// FIXME Remove the Clone-ability
 #[derive(Clone)]
 pub struct FullId {
     public_id: PublicId,
-    private_encrypt_key: SecretEncryptKey,
-    private_sign_key: SecretSignKey,
+    // Keep the secret keys in Rc to allow Clone while also preventing multiple copies to exist in
+    // memory which might be unsafe.
+    secret_keys: Rc<SecretKeys>,
 }
 
 impl FullId {
     /// Construct a `FullId` with newly generated keys.
     pub fn new() -> FullId {
-        let encrypt_keys = gen_encrypt_keypair();
-        let sign_keys = gen_sign_keypair();
-        FullId {
-            public_id: PublicId::new(0, encrypt_keys.0, sign_keys.0),
-            private_encrypt_key: encrypt_keys.1,
-            private_sign_key: sign_keys.1,
-        }
-    }
+        let mut rng = RngCompat(utils::new_rng());
 
-    /// Construct with given keys (client requirement).
-    pub fn with_keys(
-        encrypt_keys: (PublicEncryptKey, SecretEncryptKey),
-        sign_keys: (PublicSignKey, SecretSignKey),
-    ) -> FullId {
-        // TODO Verify that pub/priv key pairs match
+        let secret_signing_key = signing::SecretKey::generate(&mut rng);
+        let public_signing_key = signing::PublicKey::from(&secret_signing_key);
+
+        let secret_encryption_key: encryption::SecretKey = rng.gen();
+        let public_encryption_key = secret_encryption_key.public_key();
+
+        let public_id = PublicId::new(public_signing_key, public_encryption_key);
+
         FullId {
-            public_id: PublicId::new(0, encrypt_keys.0, sign_keys.0),
-            private_encrypt_key: encrypt_keys.1,
-            private_sign_key: sign_keys.1,
+            public_id,
+            secret_keys: Rc::new(SecretKeys {
+                signing: secret_signing_key,
+                encryption: secret_encryption_key,
+            }),
         }
     }
 
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
     /// FIXME(Fraser) - time limit this function? Document behaviour
     pub fn within_range(range: &RangeInclusive<XorName>) -> FullId {
-        let mut sign_keys = gen_sign_keypair();
+        let mut rng = RngCompat(utils::new_rng());
+
         loop {
-            let name = PublicId::name_from_key(&sign_keys.0);
+            let secret_signing_key = signing::SecretKey::generate(&mut rng);
+            let public_signing_key = signing::PublicKey::from(&secret_signing_key);
+            let name = name_from_key(&public_signing_key);
+
             if range.contains(&name) {
-                let encrypt_keys = gen_encrypt_keypair();
-                let full_id = FullId::with_keys(encrypt_keys, sign_keys);
-                return full_id;
+                let secret_encryption_key: encryption::SecretKey = rng.gen();
+                let public_encryption_key = secret_encryption_key.public_key();
+
+                return Self {
+                    public_id: PublicId::new(public_signing_key, public_encryption_key),
+                    secret_keys: Rc::new(SecretKeys {
+                        signing: secret_signing_key,
+                        encryption: secret_encryption_key,
+                    }),
+                };
             }
-            sign_keys = gen_sign_keypair();
         }
     }
 
@@ -77,14 +85,13 @@ impl FullId {
         &mut self.public_id
     }
 
-    /// Secret signing key.
-    pub fn signing_private_key(&self) -> &SecretSignKey {
-        &self.private_sign_key
-    }
-
-    /// Private encryption key.
-    pub fn encrypting_private_key(&self) -> &SecretEncryptKey {
-        &self.private_encrypt_key
+    /// Sign a message.
+    pub fn sign(&self, message: &[u8]) -> signing::Signature {
+        signing::sign(
+            message,
+            self.public_id.public_signing_key(),
+            &self.secret_keys.signing,
+        )
     }
 }
 
@@ -96,21 +103,20 @@ impl parsec::SecretId for FullId {
     }
 
     fn sign_detached(&self, data: &[u8]) -> <Self::PublicId as parsec::PublicId>::Signature {
-        self.signing_private_key().sign_detached(data)
+        self.sign(data)
     }
 
-    fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, msg: M) -> Option<Vec<u8>> {
-        let shared_secret = self
-            .encrypting_private_key()
-            .shared_secret(to.encrypting_public_key());
-        shared_secret.encrypt_bytes(msg.as_ref()).ok()
+    fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, plaintext: M) -> Option<Vec<u8>> {
+        let mut rng = RngCompat(utils::new_rng());
+        let ciphertext = to
+            .public_encryption_key
+            .encrypt_with_rng(&mut rng, plaintext);
+        serialise(&ciphertext).ok()
     }
 
-    fn decrypt(&self, from: &Self::PublicId, ct: &[u8]) -> Option<Vec<u8>> {
-        let shared_secret = self
-            .encrypting_private_key()
-            .shared_secret(from.encrypting_public_key());
-        shared_secret.decrypt_bytes(ct).ok()
+    fn decrypt(&self, _from: &Self::PublicId, ciphertext: &[u8]) -> Option<Vec<u8>> {
+        let ciphertext: encryption::Ciphertext = deserialise(ciphertext).ok()?;
+        self.secret_keys.encryption.decrypt(&ciphertext)
     }
 }
 
@@ -120,16 +126,20 @@ impl Default for FullId {
     }
 }
 
+struct SecretKeys {
+    signing: signing::SecretKey,
+    encryption: encryption::SecretKey,
+}
+
 /// Network identity component containing name and public keys.
 ///
 /// Note that the `name` member is omitted when serialising `PublicId` and is calculated from the
-/// `public_sign_key` when deserialising.
+/// `public_signing_key` when deserialising.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct PublicId {
-    age: u8,
     name: XorName,
-    public_sign_key: PublicSignKey,
-    public_encrypt_key: PublicEncryptKey,
+    public_signing_key: signing::PublicKey,
+    public_encryption_key: encryption::PublicKey,
 }
 
 impl Debug for PublicId {
@@ -146,98 +156,72 @@ impl Display for PublicId {
 
 impl Serialize for PublicId {
     fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
-        (self.age, &self.public_sign_key, &self.public_encrypt_key).serialize(serialiser)
+        (&self.public_signing_key, &self.public_encryption_key).serialize(serialiser)
     }
 }
 
 impl<'de> Deserialize<'de> for PublicId {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (age, public_sign_key, public_encrypt_key): (u8, PublicSignKey, PublicEncryptKey) =
-            Deserialize::deserialize(deserialiser)?;
-        Ok(PublicId::new(age, public_encrypt_key, public_sign_key))
+        let (public_signing_key, public_encryption_key) = Deserialize::deserialize(deserialiser)?;
+        Ok(PublicId::new(public_signing_key, public_encryption_key))
     }
 }
 
 impl parsec::PublicId for PublicId {
-    type Signature = Signature;
+    type Signature = signing::Signature;
+
     fn verify_signature(&self, signature: &Self::Signature, data: &[u8]) -> bool {
-        self.signing_public_key().verify_detached(signature, data)
+        self.verify(data, signature)
     }
 }
 
 impl PublicId {
-    /// Return age.
-    pub fn age(&self) -> u8 {
-        self.age
-    }
-
-    /// Return initial/relocated name.
+    /// Returns initial/relocated name.
     pub fn name(&self) -> &XorName {
         &self.name
     }
 
-    /// Return public encrypting key.
-    pub fn encrypting_public_key(&self) -> &PublicEncryptKey {
-        &self.public_encrypt_key
+    /// Verifies this id signed a message
+    pub fn verify(&self, message: &[u8], sig: &signing::Signature) -> bool {
+        self.public_signing_key.verify(message, sig).is_ok()
     }
 
-    /// Return public signing key.
-    pub fn signing_public_key(&self) -> &PublicSignKey {
-        &self.public_sign_key
+    /// Returns public signing key.
+    pub fn public_signing_key(&self) -> &signing::PublicKey {
+        &self.public_signing_key
+    }
+
+    /// Returns public encryption key.
+    pub fn public_encryption_key(&self) -> &encryption::PublicKey {
+        &self.public_encryption_key
     }
 
     fn new(
-        age: u8,
-        public_encrypt_key: PublicEncryptKey,
-        public_sign_key: PublicSignKey,
+        public_signing_key: signing::PublicKey,
+        public_encryption_key: encryption::PublicKey,
     ) -> PublicId {
         PublicId {
-            age,
-            name: Self::name_from_key(&public_sign_key),
-            public_sign_key,
-            public_encrypt_key,
+            name: name_from_key(&public_signing_key),
+            public_signing_key,
+            public_encryption_key,
         }
     }
+}
 
-    fn name_from_key(public_sign_key: &PublicSignKey) -> XorName {
-        XorName(safe_crypto::hash(&public_sign_key.into_bytes()))
-    }
+fn name_from_key(public_key: &signing::PublicKey) -> XorName {
+    XorName(public_key.to_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maidsafe_utilities::serialisation;
-    use safe_crypto;
     use unwrap::unwrap;
-
-    /// Confirm `PublicId` `Ord` trait favours name over sign or encryption keys.
-    #[test]
-    fn public_id_order() {
-        unwrap!(safe_crypto::init());
-
-        let pub_id_1 = *FullId::new().public_id();
-        let pub_id_2;
-        loop {
-            let temp_pub_id = *FullId::new().public_id();
-            if temp_pub_id.name() > pub_id_1.name()
-                && temp_pub_id.public_sign_key < pub_id_1.public_sign_key
-                && temp_pub_id.public_encrypt_key < pub_id_1.public_encrypt_key
-            {
-                pub_id_2 = temp_pub_id;
-                break;
-            }
-        }
-        assert!(pub_id_1 < pub_id_2);
-    }
 
     #[test]
     fn serialisation() {
-        unwrap!(safe_crypto::init());
-
         let full_id = FullId::new();
-        let serialised = unwrap!(serialisation::serialise(full_id.public_id()));
-        let parsed = unwrap!(serialisation::deserialise(&serialised));
+        let serialised = unwrap!(serialise(full_id.public_id()));
+        let parsed = unwrap!(deserialise(&serialised));
         assert_eq!(*full_id.public_id(), parsed);
     }
 }

@@ -58,7 +58,7 @@ pub trait RelocatedNotEstablished: Relocated {
             RoutingMessage {
                 content:
                     ConnectionRequest {
-                        encrypted_conn_info,
+                        conn_info,
                         pub_id,
                         msg_id,
                     },
@@ -66,17 +66,11 @@ pub trait RelocatedNotEstablished: Relocated {
                 dst: ManagedNode(_),
             } => {
                 if self.our_prefix().matches(&src_name) {
-                    self.handle_connection_request(
-                        &encrypted_conn_info,
-                        pub_id,
-                        msg.src,
-                        msg.dst,
-                        outbox,
-                    )
+                    self.handle_connection_request(&conn_info, pub_id, msg.src, msg.dst, outbox)
                 } else {
                     self.add_message_to_backlog(RoutingMessage {
                         content: ConnectionRequest {
-                            encrypted_conn_info,
+                            conn_info,
                             pub_id,
                             msg_id,
                         },

@@ -9,6 +9,7 @@
 //! Types emulating the BLS functionality until proper BLS lands
 use super::{ProofSet, SectionInfo};
 use crate::{
+    crypto,
     id::{FullId, PublicId},
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
@@ -23,7 +24,7 @@ pub struct PublicKeySet {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKey(PublicKeySet);
 
-pub type SignatureShare = ::safe_crypto::Signature;
+pub type SignatureShare = crypto::signing::Signature;
 
 pub struct SecretKeyShare(FullId);
 
@@ -49,15 +50,13 @@ impl SecretKeyShare {
 
     #[allow(unused)]
     pub fn sign<M: AsRef<[u8]>>(&self, message: M) -> SignatureShare {
-        self.0.signing_private_key().sign_detached(message.as_ref())
+        self.0.sign(message.as_ref())
     }
 }
 
 impl PublicKeyShare {
     pub fn verify<M: AsRef<[u8]>>(&self, sig: &SignatureShare, msg: M) -> bool {
-        self.0
-            .signing_public_key()
-            .verify_detached(sig, msg.as_ref())
+        self.0.verify(msg.as_ref(), sig)
     }
 }
 
@@ -144,12 +143,9 @@ impl BlsPublicKeyForSectionKeyInfo {
 mod test {
     use super::*;
     use crate::id::FullId;
-    use safe_crypto;
     use unwrap::unwrap;
 
     fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
-        unwrap!(safe_crypto::init());
-
         let ids: Vec<_> = (0..size).map(|_| FullId::new()).collect();
         let pub_ids = ids.iter().map(|full_id| *full_id.public_id()).collect();
         let sec_info = unwrap!(SectionInfo::new(pub_ids, Default::default(), None));

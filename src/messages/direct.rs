@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    crypto::signing::Signature,
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
     messages::SignedRoutingMessage,
@@ -15,7 +16,6 @@ use crate::{
     xor_name::XorName,
 };
 use maidsafe_utilities::serialisation::serialise;
-use safe_crypto::Signature;
 use std::{
     fmt::{self, Debug, Formatter},
     hash::{Hash, Hasher},
@@ -170,7 +170,7 @@ mod implementation {
 
     pub fn sign(src_full_id: &FullId, content: &DirectMessage) -> Result<Signature, RoutingError> {
         let serialised = serialise(content)?;
-        let signature = src_full_id.signing_private_key().sign_detached(&serialised);
+        let signature = src_full_id.sign(&serialised);
         Ok(signature)
     }
 
@@ -181,10 +181,7 @@ mod implementation {
     ) -> Result<(), RoutingError> {
         let serialised = serialise(content)?;
 
-        if src_id
-            .signing_public_key()
-            .verify_detached(signature, &serialised)
-        {
+        if src_id.verify(&serialised, signature) {
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -195,10 +192,11 @@ mod implementation {
 #[cfg(feature = "mock_serialise")]
 mod implementation {
     use super::*;
-    use safe_crypto::SIGNATURE_BYTES;
+    use crate::crypto::signing::SIGNATURE_LENGTH;
+    use unwrap::unwrap;
 
     pub fn sign(_: &FullId, _: &DirectMessage) -> Result<Signature, RoutingError> {
-        Ok(Signature::from_bytes([0; SIGNATURE_BYTES]))
+        Ok(unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH])))
     }
 
     pub fn verify(_: &PublicId, _: &Signature, _: &DirectMessage) -> Result<(), RoutingError> {
