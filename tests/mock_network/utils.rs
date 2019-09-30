@@ -12,8 +12,8 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Chain, Config, DevConfig, Event, EventStream, NetworkConfig, Node, Prefix, PublicId, XorName,
-    XorTargetInterval, Xorable,
+    Chain, Config, DevConfig, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder, Prefix,
+    PublicId, XorName, XorTargetInterval, Xorable,
 };
 use std::{
     cmp,
@@ -109,35 +109,9 @@ pub struct TestNode {
 impl TestNode {
     pub fn builder(network: &Network) -> TestNodeBuilder {
         TestNodeBuilder {
+            inner: Node::builder(),
             network: network,
-            first_node: false,
-            network_config: None,
             endpoint: None,
-        }
-    }
-
-    pub fn new(
-        network: &Network,
-        first_node: bool,
-        network_config: Option<NetworkConfig>,
-        endpoint: Option<SocketAddr>,
-    ) -> Self {
-        let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
-        network.set_next_addr(endpoint);
-
-        let config = create_config(network);
-        let builder = Node::builder().first(first_node).config(config);
-        let builder = if let Some(network_config) = network_config {
-            builder.network_config(network_config)
-        } else {
-            builder
-        };
-        let node = unwrap!(builder.create());
-
-        TestNode {
-            inner: node,
-            network: network.clone(),
-            endpoint,
         }
     }
 
@@ -192,35 +166,54 @@ pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
 }
 
 pub struct TestNodeBuilder<'a> {
+    inner: NodeBuilder,
     network: &'a Network,
-    first_node: bool,
-    network_config: Option<NetworkConfig>,
     endpoint: Option<SocketAddr>,
 }
 
 impl<'a> TestNodeBuilder<'a> {
-    pub fn first(mut self) -> Self {
-        self.first_node = true;
-        self
+    pub fn first(self) -> Self {
+        Self {
+            inner: self.inner.first(true),
+            ..self
+        }
     }
 
-    pub fn network_config(mut self, config: NetworkConfig) -> Self {
-        self.network_config = Some(config);
-        self
+    pub fn network_config(self, config: NetworkConfig) -> Self {
+        Self {
+            inner: self.inner.network_config(config),
+            ..self
+        }
     }
 
-    pub fn endpoint(mut self, endpoint: SocketAddr) -> Self {
-        self.endpoint = Some(endpoint);
-        self
+    pub fn endpoint(self, endpoint: SocketAddr) -> Self {
+        Self {
+            endpoint: Some(endpoint),
+            ..self
+        }
+    }
+
+    // TODO: remove the `unused` attribute when we add a "rejoin" test.
+    #[allow(unused)]
+    pub fn full_id(mut self, full_id: FullId) -> Self {
+        Self {
+            inner: self.inner.full_id(full_id),
+            ..self
+        }
     }
 
     pub fn create(self) -> TestNode {
-        TestNode::new(
-            self.network,
-            self.first_node,
-            self.network_config,
-            self.endpoint,
-        )
+        let endpoint = self.endpoint.unwrap_or_else(|| self.network.gen_addr());
+        self.network.set_next_addr(endpoint);
+
+        let config = create_config(self.network);
+        let inner = unwrap!(self.inner.config(config).create());
+
+        TestNode {
+            inner,
+            network: self.network.clone(),
+            endpoint,
+        }
     }
 }
 
