@@ -244,22 +244,9 @@ impl Node {
         unwrap!(self.elder_state(), "Should be State::Elder")
     }
 
-    /// Returns the underlying ProvingNode state.
-    pub fn proving_node_state(&self) -> Option<&crate::states::ProvingNode> {
-        match *self.machine.current() {
-            State::ProvingNode(ref state) => Some(state),
-            _ => None,
-        }
-    }
-
     /// Returns whether the current state is `Node`.
     pub fn is_elder(&self) -> bool {
         self.elder_state().is_some()
-    }
-
-    /// Returns whether the current state is `ProvingNode`.
-    pub fn is_proving_node(&self) -> bool {
-        self.proving_node_state().is_some()
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.

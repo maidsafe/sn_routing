@@ -347,7 +347,6 @@ mod tests {
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
             move |network_service, timer, _outbox2| {
                 State::BootstrappingPeer(BootstrappingPeer::new(
-                    TargetState::RelocatingNode,
                     network_service,
                     node_b_full_id,
                     min_section_size,

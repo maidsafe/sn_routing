@@ -135,6 +135,11 @@ impl JoiningPeer {
         );
         Transition::IntoAdult { gen_pfx_info }
     }
+
+    #[cfg(feature = "mock_base")]
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
+    }
 }
 
 impl Base for JoiningPeer {
