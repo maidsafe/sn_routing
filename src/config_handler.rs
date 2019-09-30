@@ -19,12 +19,8 @@ pub struct Config {
 /// Extra configuration options intended for developers
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct DevConfig {
-    /// Allow multiple nodes to run on a single machine or LAN
-    pub allow_multiple_lan_nodes: bool,
     /// Disables rate limiting and disables single client per IP restriction
     pub disable_client_rate_limiter: bool,
-    /// Disables requirement to provide a resource proof to bootstrap
-    pub disable_resource_proof: bool,
     /// Overrides default `MIN_SECTION_SIZE`
     pub min_section_size: Option<usize>,
 }
