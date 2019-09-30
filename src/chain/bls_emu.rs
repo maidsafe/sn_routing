@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 //! Types emulating the BLS functionality until proper BLS lands
-use super::{ProofSet, SectionInfo};
+use super::{EldersInfo, ProofSet};
 use crate::{
     crypto,
     id::{FullId, PublicId},
@@ -17,7 +17,7 @@ use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
-    sec_info: SectionInfo,
+    elders_info: EldersInfo,
     threshold: usize,
 }
 
@@ -61,11 +61,11 @@ impl PublicKeyShare {
 }
 
 impl PublicKeySet {
-    pub fn from_section_info(sec_info: SectionInfo) -> Self {
-        let threshold = sec_info.members().len() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR;
+    pub fn from_elders_info(elders_info: EldersInfo) -> Self {
+        let threshold = elders_info.members().len() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR;
         Self {
             threshold,
-            sec_info,
+            elders_info,
         }
     }
 
@@ -79,7 +79,7 @@ impl PublicKeySet {
     {
         let sigs: BTreeMap<_, _> = shares
             .into_iter()
-            .filter(|(pk, _ss)| self.sec_info.members().contains(&pk.0))
+            .filter(|(pk, _ss)| self.elders_info.members().contains(&pk.0))
             .map(|(pk, ss)| (pk.0, *ss))
             .collect();
         // In the BLS scheme, more than `threshold` valid signatures are needed to obtain a
@@ -98,15 +98,15 @@ impl PublicKeySet {
 }
 
 impl PublicKey {
-    pub fn from_section_info(sec_info: &SectionInfo) -> Self {
-        PublicKey(PublicKeySet::from_section_info(sec_info.clone()))
+    pub fn from_elders_info(elders_info: &EldersInfo) -> Self {
+        PublicKey(PublicKeySet::from_elders_info(elders_info.clone()))
     }
 
     pub fn verify<M: AsRef<[u8]>>(&self, sig: &Signature, msg: M) -> bool {
         sig.sigs
             .iter()
             .filter(|&(pk, ss)| {
-                self.0.sec_info.members().contains(pk)
+                self.0.elders_info.members().contains(pk)
                     && PublicKeyShare(*pk).verify(ss, msg.as_ref())
             })
             .count()
@@ -116,7 +116,7 @@ impl PublicKey {
 
 impl fmt::Debug for PublicKey {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "BLS-PublicKey({:?})", self.0.sec_info)
+        write!(formatter, "BLS-PublicKey({:?})", self.0.elders_info)
     }
 }
 
@@ -126,16 +126,16 @@ impl fmt::Debug for PublicKey {
 pub(super) struct BlsPublicKeyForSectionKeyInfo(PublicKey);
 
 impl BlsPublicKeyForSectionKeyInfo {
-    pub fn from_section_info(sec_info: &SectionInfo) -> Self {
-        Self(PublicKey::from_section_info(sec_info))
+    pub fn from_elders_info(elders_info: &EldersInfo) -> Self {
+        Self(PublicKey::from_elders_info(elders_info))
     }
 
     pub fn key(&self) -> &PublicKey {
         &self.0
     }
 
-    pub fn internal_section_info(&self) -> &SectionInfo {
-        &(self.0).0.sec_info
+    pub fn internal_elders_info(&self) -> &EldersInfo {
+        &(self.0).0.elders_info
     }
 }
 
@@ -148,8 +148,8 @@ mod test {
     fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
         let ids: Vec<_> = (0..size).map(|_| FullId::new()).collect();
         let pub_ids = ids.iter().map(|full_id| *full_id.public_id()).collect();
-        let sec_info = unwrap!(SectionInfo::new(pub_ids, Default::default(), None));
-        let pk_set = PublicKeySet::from_section_info(sec_info);
+        let elders_info = unwrap!(EldersInfo::new(pub_ids, Default::default(), None));
+        let pk_set = PublicKeySet::from_elders_info(elders_info);
 
         (pk_set, ids.into_iter().map(SecretKeyShare).collect())
     }

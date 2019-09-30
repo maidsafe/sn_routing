@@ -8,7 +8,7 @@
 
 use crate::{
     action::Action,
-    chain::{GenesisPfxInfo, SectionInfo},
+    chain::{EldersInfo, GenesisPfxInfo},
     id::{FullId, PublicId},
     network_service::NetworkBuilder,
     outbox::EventBox,
@@ -253,7 +253,7 @@ pub enum Transition {
     },
     // `Adult` state transition to `Elder`.
     IntoElder {
-        sec_info: SectionInfo,
+        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
     },
     Terminate,
@@ -329,8 +329,11 @@ impl StateMachine {
                 State::ProvingNode(src) => src.into_adult(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
-            IntoElder { sec_info, old_pfx } => self.state.replace_with(|state| match state {
-                State::Adult(src) => src.into_elder(sec_info, old_pfx, outbox),
+            IntoElder {
+                elders_info,
+                old_pfx,
+            } => self.state.replace_with(|state| match state {
+                State::Adult(src) => src.into_elder(elders_info, old_pfx, outbox),
                 _ => unreachable!(),
             }),
             Terminate => self.terminate(),

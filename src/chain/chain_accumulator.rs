@@ -159,7 +159,7 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
-    use super::super::SectionInfo;
+    use super::super::EldersInfo;
     use super::*;
     use crate::{id::FullId, BlsPublicKeyShare};
     use parsec::SecretId;
@@ -181,8 +181,8 @@ mod test {
         NoSignature,
     }
 
-    fn empty_section_info() -> SectionInfo {
-        unwrap!(SectionInfo::new_for_test(
+    fn empty_elders_info() -> EldersInfo {
+        unwrap!(EldersInfo::new_for_test(
             Default::default(),
             Default::default(),
             Default::default(),
@@ -225,13 +225,13 @@ mod test {
                 signature: None,
             },
             EventType::WithSignature => {
-                let sec_info = empty_section_info();
+                let elders_info = empty_elders_info();
                 let sig_payload = random_section_info_sig_payload();
 
                 TestData {
                     our_id: *id.public_id(),
-                    event: AccumulatingEvent::SectionInfo(sec_info.clone()),
-                    network_event: AccumulatingEvent::SectionInfo(sec_info.clone())
+                    event: AccumulatingEvent::SectionInfo(elders_info.clone()),
+                    network_event: AccumulatingEvent::SectionInfo(elders_info.clone())
                         .into_network_event_with(Some(sig_payload.clone())),
                     first_proof,
                     proofs: proofs.clone(),

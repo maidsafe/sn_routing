@@ -22,15 +22,15 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 
-/// The configuration of a section at one point in time. Each node is always a member of exactly
-/// one current section, but a new `SectionInfo` is created whenever the section changes, due to a
-/// node being added or removed, or the section splitting or merging.
+/// The information about all elders of a section at one point in time. Each elder is always a
+/// member of exactly one current section, but a new `EldersInfo` is created whenever the elders
+/// change, due to an elder being added or removed, or the section splitting or merging.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct SectionInfo {
-    /// The complete list of the section's members' IDs.
+pub struct EldersInfo {
+    /// The complete list of the section's elders' IDs.
     members: BTreeSet<PublicId>,
-    /// The section version. This increases monotonically whenever the section changes.
-    /// Thus `SectionInfo`s with compatible prefixes always have different versions.
+    /// The section version. This increases monotonically whenever the set of elders changes.
+    /// Thus `EldersInfo`s with compatible prefixes always have different versions.
     version: u64,
     /// The section prefix. It matches all the members' names.
     prefix: Prefix<XorName>,
@@ -41,13 +41,13 @@ pub struct SectionInfo {
     hash: Digest256,
 }
 
-impl Serialize for SectionInfo {
+impl Serialize for EldersInfo {
     fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
         (&self.members, self.version, &self.prefix, &self.prev_hash).serialize(serialiser)
     }
 }
 
-impl<'de> Deserialize<'de> for SectionInfo {
+impl<'de> Deserialize<'de> for EldersInfo {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
         let (members, version, prefix, prev_hash): (
             BTreeSet<PublicId>,
@@ -56,14 +56,14 @@ impl<'de> Deserialize<'de> for SectionInfo {
             BTreeSet<Digest256>,
         ) = Deserialize::deserialize(deserialiser)?;
         Self::new_with_fields(members, version, prefix, prev_hash)
-            .map_err(|err| D::Error::custom(format!("failed to construct section info: {:?}", err)))
+            .map_err(|err| D::Error::custom(format!("failed to construct elders info: {:?}", err)))
     }
 }
 
-impl SectionInfo {
+impl EldersInfo {
     /// Creates a `SectionInfo` with the given members, prefix and predecessors.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<'a, I: IntoIterator<Item = &'a SectionInfo>>(
+    pub fn new<'a, I: IntoIterator<Item = &'a Self>>(
         members: BTreeSet<PublicId>,
         prefix: Prefix<XorName>,
         prev: I,
@@ -77,8 +77,8 @@ impl SectionInfo {
         Self::new_with_fields(members, version, prefix, prev_hash)
     }
 
-    /// Creates a new `SectionInfo` by merging this and the other one.
-    pub fn merge(&self, other: &SectionInfo) -> Result<Self, RoutingError> {
+    /// Creates a new `EldersInfo` by merging this and the other one.
+    pub fn merge(&self, other: &Self) -> Result<Self, RoutingError> {
         let members = self.members.iter().chain(&other.members).cloned().collect();
         Self::new(members, self.prefix.popped(), vec![self, other])
     }
@@ -119,7 +119,7 @@ impl SectionInfo {
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
-    pub fn is_successor_of(&self, other_info: &SectionInfo) -> bool {
+    pub fn is_successor_of(&self, other_info: &Self) -> bool {
         self.prev_hash.contains(&other_info.hash)
     }
 
@@ -148,7 +148,7 @@ impl SectionInfo {
             let fields = (&members, version, &prefix, &prev_hash);
             crypto::sha3_256(&serialisation::serialise(&fields)?)
         };
-        Ok(SectionInfo {
+        Ok(Self {
             members,
             version,
             prefix,
@@ -158,11 +158,11 @@ impl SectionInfo {
     }
 }
 
-impl Debug for SectionInfo {
+impl Debug for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SectionInfo(prefix: {:?}, members: {:?}, prev_hash_len: {}, version: {})",
+            "EldersInfo(prefix: {:?}, members: {:?}, prev_hash_len: {}, version: {})",
             self.prefix,
             self.members,
             self.prev_hash.len(),
@@ -171,9 +171,9 @@ impl Debug for SectionInfo {
     }
 }
 
-impl Display for SectionInfo {
+impl Display for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        writeln!(formatter, "SectionInfo {{")?;
+        writeln!(formatter, "EldersInfo {{")?;
         writeln!(formatter, "\t\tprefix: {:?},", self.prefix)?;
         writeln!(formatter, "\t\tversion: {:?},", self.version)?;
         writeln!(formatter, "\t\tprev_hash_len: {},", self.prev_hash.len())?;

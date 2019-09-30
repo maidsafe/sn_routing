@@ -12,9 +12,10 @@ mod candidate;
 #[allow(clippy::module_inception)]
 mod chain;
 mod chain_accumulator;
+mod elders_info;
+mod member_info;
 mod network_event;
 mod proof;
-mod section_info;
 mod shared_state;
 #[cfg(any(test, feature = "mock_base"))]
 mod test_utils;
@@ -24,12 +25,13 @@ pub use self::test_utils::verify_chain_invariant;
 pub use self::{
     chain::{delivery_group_size, Chain, PrefixChangeOutcome},
     chain_accumulator::AccumulatingProof,
+    elders_info::EldersInfo,
+    member_info::{MemberInfo, MemberPersona, MemberState},
     network_event::{
         AccumulatingEvent, AckMessagePayload, ExpectCandidatePayload, NetworkEvent, OnlinePayload,
         SectionInfoSigPayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
-    section_info::SectionInfo,
     shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},
 };
 #[cfg(feature = "mock_base")]
@@ -40,9 +42,9 @@ use std::fmt::{self, Debug, Formatter};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
-    pub first_info: SectionInfo,
+    pub first_info: EldersInfo,
     pub first_state_serialized: Vec<u8>,
-    pub latest_info: SectionInfo,
+    pub latest_info: EldersInfo,
 }
 
 impl Debug for GenesisPfxInfo {
@@ -59,22 +61,22 @@ impl Debug for GenesisPfxInfo {
 
 #[cfg(feature = "mock_base")]
 /// Test helper to create arbitrary proof.
-pub fn section_proof_chain_from_section_info(section_info: &SectionInfo) -> SectionProofChain {
-    SectionProofChain::from_genesis(SectionKeyInfo::from_section_info(&section_info))
+pub fn section_proof_chain_from_elders_info(elders_info: &EldersInfo) -> SectionProofChain {
+    SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(&elders_info))
 }
 
 #[cfg(feature = "mock_base")]
 /// Test helper to create arbitrary BLS key set.
-pub fn bls_key_set_from_section_info(section_info: SectionInfo) -> BlsPublicKeySet {
-    BlsPublicKeySet::from_section_info(section_info)
+pub fn bls_key_set_from_elders_info(elders_info: EldersInfo) -> BlsPublicKeySet {
+    BlsPublicKeySet::from_elders_info(elders_info)
 }
 
 #[cfg(feature = "mock_base")]
-/// Test helper to create arbitrary section info.
-pub fn section_info_for_test(
+/// Test helper to create arbitrary elders nfo.
+pub fn elders_info_for_test(
     members: BTreeSet<PublicId>,
     prefix: Prefix<XorName>,
     version: u64,
-) -> Result<SectionInfo, RoutingError> {
-    SectionInfo::new_for_test(members, prefix, version)
+) -> Result<EldersInfo, RoutingError> {
+    EldersInfo::new_for_test(members, prefix, version)
 }
