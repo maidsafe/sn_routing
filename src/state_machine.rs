@@ -239,11 +239,13 @@ impl State {
 #[allow(clippy::large_enum_variant)]
 pub enum Transition {
     Stay,
-    // `Bootstrapping` state transitioning to `JoiningPeer`
+    // `BootstrappingPeer` state transitioning to `JoiningPeer`
     IntoJoining {
         node_infos: Vec<NodeInfo>,
     },
-    // `ProvingNode` state transitioning to `Adult`.
+    // `JoiningPeer` failing to join and transitioning back to `BootstrappingPeer`
+    Rebootstrap,
+    // `JoiningPeer` state transitioning to `Adult`.
     IntoAdult {
         gen_pfx_info: GenesisPfxInfo,
     },
@@ -339,6 +341,10 @@ impl StateMachine {
             Stay => (),
             IntoJoining { node_infos } => self.state.replace_with(|state| match state {
                 State::BootstrappingPeer(src) => src.into_joining(node_infos, outbox),
+                _ => unreachable!(),
+            }),
+            Rebootstrap => self.state.replace_with(|state| match state {
+                State::JoiningPeer(src) => src.into_bootstrapping(),
                 _ => unreachable!(),
             }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {

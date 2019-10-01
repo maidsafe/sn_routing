@@ -99,6 +99,16 @@ impl PeerMap {
         Some(conn_info)
     }
 
+    // Removes all peers. Returns an iterator over the connection infos of the removed peers.
+    pub fn remove_all<'a>(&'a mut self) -> impl Iterator<Item = ConnectionInfo> + 'a {
+        self.reverse.clear();
+        self.forward.drain().map(|(_, conn_info)| conn_info).chain(
+            self.pending
+                .drain()
+                .map(|(socket_addr, peer_type)| peer_type.into_connection_info(socket_addr)),
+        )
+    }
+
     // Get connection info of the peer with the given public id.
     pub fn get_connection_info<'a>(&'a self, pub_id: &PublicId) -> Option<&'a ConnectionInfo> {
         self.forward.get(pub_id)

@@ -8,6 +8,7 @@
 
 use super::{
     adult::{Adult, AdultDetails},
+    bootstrapping_peer::BootstrappingPeer,
     common::{Base, Bootstrapped, BootstrappedNotEstablished},
 };
 use crate::{
@@ -30,7 +31,11 @@ use crate::{
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
+    time::Duration,
 };
+
+// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
+const JOIN_TIMEOUT: Duration = Duration::from_secs(20);
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
@@ -40,6 +45,7 @@ pub struct JoiningPeer {
     min_section_size: usize,
     peer_map: PeerMap,
     timer: Timer,
+    join_token: u64,
 }
 
 impl JoiningPeer {
@@ -51,6 +57,8 @@ impl JoiningPeer {
         peer_map: PeerMap,
         node_infos: Vec<NodeInfo>,
     ) -> Self {
+        let join_token = timer.schedule(JOIN_TIMEOUT);
+
         let mut joining_peer = Self {
             network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -58,6 +66,7 @@ impl JoiningPeer {
             min_section_size,
             timer: timer,
             peer_map,
+            join_token,
         };
 
         for node_info in node_infos {
@@ -91,6 +100,15 @@ impl JoiningPeer {
             timer: self.timer,
         };
         Adult::from_joining_peer(details, outbox).map(State::Adult)
+    }
+
+    pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
+        Ok(State::BootstrappingPeer(BootstrappingPeer::new(
+            self.network_service,
+            self.full_id,
+            self.min_section_size,
+            self.timer,
+        )))
     }
 
     fn send_join_request(&mut self, dst: NodeInfo) {
@@ -181,6 +199,26 @@ impl Base for JoiningPeer {
         // TODO: return Err here eventually. Returning Ok for now to
         // preserve the pre-refactor behaviour.
         Ok(())
+    }
+
+    fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
+        if self.join_token == token {
+            debug!("{} - Timeout when trying to join a section.", self);
+
+            for peer_addr in self
+                .peer_map
+                .remove_all()
+                .map(|conn_info| conn_info.peer_addr())
+            {
+                self.network_service
+                    .service_mut()
+                    .disconnect_from(peer_addr);
+            }
+
+            return Transition::Rebootstrap;
+        }
+
+        Transition::Stay
     }
 
     fn handle_connection_failure(
