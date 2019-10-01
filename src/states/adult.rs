@@ -39,7 +39,7 @@ use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
-const ADD_TIMEOUT: Duration = Duration::from_secs(60);
+const ADD_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,

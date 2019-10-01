@@ -35,7 +35,7 @@ use std::{
 };
 
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const JOIN_TIMEOUT: Duration = Duration::from_secs(20);
+const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
