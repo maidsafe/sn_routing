@@ -29,7 +29,9 @@ pub trait RelocatedNotEstablished: Relocated {
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         match self.peer_mgr().get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::Connected) | Some(PeerState::Proxy) => return Ok(()),
+            Some(PeerState::Node { .. }) | Some(PeerState::Connected) | Some(PeerState::Proxy) => {
+                return Ok(())
+            }
             Some(PeerState::Connecting) => {
                 if let DirectMessage::ConnectionResponse = msg {
                     return Ok(());
