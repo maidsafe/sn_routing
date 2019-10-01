@@ -103,7 +103,6 @@ impl EventStream for TestNode {
 pub struct TestNode {
     pub inner: Node,
     network: Network,
-    endpoint: SocketAddr,
 }
 
 impl TestNode {
@@ -111,12 +110,11 @@ impl TestNode {
         TestNodeBuilder {
             inner: Node::builder(),
             network: network,
-            endpoint: None,
         }
     }
 
-    pub fn endpoint(&self) -> SocketAddr {
-        self.endpoint
+    pub fn endpoint(&mut self) -> SocketAddr {
+        unwrap!(self.inner.our_connection_info()).peer_addr
     }
 
     pub fn id(&self) -> PublicId {
@@ -168,7 +166,6 @@ pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
 pub struct TestNodeBuilder<'a> {
     inner: NodeBuilder,
     network: &'a Network,
-    endpoint: Option<SocketAddr>,
 }
 
 impl<'a> TestNodeBuilder<'a> {
@@ -186,13 +183,6 @@ impl<'a> TestNodeBuilder<'a> {
         }
     }
 
-    pub fn endpoint(self, endpoint: SocketAddr) -> Self {
-        Self {
-            endpoint: Some(endpoint),
-            ..self
-        }
-    }
-
     // TODO: remove the `unused` attribute when we add a "rejoin" test.
     #[allow(unused)]
     pub fn full_id(mut self, full_id: FullId) -> Self {
@@ -203,16 +193,12 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let endpoint = self.endpoint.unwrap_or_else(|| self.network.gen_addr());
-        self.network.set_next_addr(endpoint);
-
         let config = create_config(self.network);
         let inner = unwrap!(self.inner.config(config).create());
 
         TestNode {
             inner,
             network: self.network.clone(),
-            endpoint,
         }
     }
 }
@@ -325,14 +311,9 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    let endpoint = network.gen_addr();
-    nodes.push(
-        TestNode::builder(network)
-            .first()
-            .endpoint(endpoint)
-            .create(),
-    );
+    nodes.push(TestNode::builder(network).first().create());
     let _ = nodes[0].poll();
+    let endpoint = nodes[0].endpoint();
     info!("Seed node: {}", nodes[0].inner);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.

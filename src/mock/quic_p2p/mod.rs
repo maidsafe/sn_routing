@@ -17,7 +17,13 @@ pub use quic_p2p::Token;
 use self::node::Node;
 use crate::NetworkBytes;
 use crossbeam_channel::Sender;
-use std::{cell::RefCell, collections::HashSet, iter, net::SocketAddr, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    iter,
+    net::{IpAddr, SocketAddr},
+    rc::Rc,
+};
 
 /// Builder for `QuickP2p`.
 pub struct Builder {
@@ -132,22 +138,26 @@ pub struct Config {
     pub hard_coded_contacts: HashSet<NodeInfo>,
     /// Type of our `QuicP2p` instance: node or client.
     pub our_type: OurType,
+    /// Port to listen to.
+    pub ip: Option<IpAddr>,
+    /// IP address to listen to.
+    pub port: Option<u16>,
 }
 
 impl Config {
     /// Create `Config` for node.
     pub fn node() -> Self {
         Self {
-            hard_coded_contacts: HashSet::new(),
             our_type: OurType::Node,
+            ..Self::default()
         }
     }
 
     /// Create `Config` for client.
     pub fn client() -> Self {
         Self {
-            hard_coded_contacts: HashSet::new(),
             our_type: OurType::Client,
+            ..Self::default()
         }
     }
 
@@ -169,6 +179,15 @@ impl Config {
         T: Into<NodeInfo>,
     {
         self.with_hard_coded_contacts(iter::once(contact))
+    }
+
+    /// Set the endpoint (IP + port) to use.
+    pub fn with_endpoint(self, addr: SocketAddr) -> Self {
+        Self {
+            ip: Some(addr.ip()),
+            port: Some(addr.port()),
+            ..self
+        }
     }
 }
 

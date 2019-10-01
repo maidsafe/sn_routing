@@ -505,8 +505,6 @@ fn make_state_machine(
     let endpoint = network.gen_addr();
     let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
 
-    let _ = network.gen_next_addr();
-
     StateMachine::new(
         move |network_service, timer, outbox2| {
             new_elder_state(

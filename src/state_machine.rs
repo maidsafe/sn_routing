@@ -22,7 +22,7 @@ use crate::{
     NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{routing_table::Authority, Chain};
+use crate::{quic_p2p::NodeInfo, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use log::LogLevel;
 use std::{
@@ -231,6 +231,14 @@ impl State {
             *self,
             ref state => state.in_authority(auth),
             Terminated => false
+        )
+    }
+
+    pub fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+        state_dispatch!(
+            self,
+            state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
+            Terminated => Err(RoutingError::InvalidStateForOperation)
         )
     }
 }

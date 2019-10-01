@@ -276,7 +276,8 @@ fn simultaneous_joining_nodes(
                         nodes_with_prefix_mut(&mut nodes, &setup.proxy_prefix).collect_vec();
                     rng.shuffle(&mut compatible_proxies);
 
-                    NetworkConfig::node().with_hard_coded_contact(unwrap!(nodes.first()).endpoint())
+                    NetworkConfig::node()
+                        .with_hard_coded_contact(unwrap!(nodes.first_mut()).endpoint())
                 };
 
                 let node = TestNode::builder(&network).network_config(config).create();
