@@ -476,10 +476,10 @@ fn new_elder_state(
     let details = ElderDetails {
         chain,
         network_service,
-        event_backlog: Vec::new(),
+        event_backlog: Default::default(),
         full_id: full_id.clone(),
         gen_pfx_info: gen_pfx_info.clone(),
-        msg_backlog: Vec::new(),
+        msg_queue: Default::default(),
         parsec_map,
         peer_map,
         peer_mgr,

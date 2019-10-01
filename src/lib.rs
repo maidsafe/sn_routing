@@ -124,6 +124,7 @@ mod messages;
 mod network_service;
 mod node;
 mod outbox;
+mod pause;
 mod peer_manager;
 mod peer_map;
 mod routing_message_filter;

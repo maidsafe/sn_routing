@@ -14,7 +14,6 @@
 use crate::event::Event;
 use std::collections::VecDeque;
 use std::default::Default;
-use std::mem;
 
 /// An event dispatcher. Collects things to deliver and "sends".
 ///
@@ -49,8 +48,9 @@ impl EventBuf {
     }
 
     /// Extract the list of events (swapping in an empty list)
+    #[cfg(all(test, feature = "mock_base"))]
     pub fn take_all(&mut self) -> VecDeque<Event> {
-        mem::replace(&mut self.events, Default::default())
+        std::mem::replace(&mut self.events, Default::default())
     }
 }
 

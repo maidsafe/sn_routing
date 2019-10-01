@@ -9,9 +9,11 @@
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo},
+    error::RoutingError,
     id::{FullId, PublicId},
     network_service::NetworkBuilder,
     outbox::EventBox,
+    pause::PausedState,
     routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, ProvingNode, RelocatingNode},
@@ -296,6 +298,25 @@ impl StateMachine {
         };
 
         (action_tx, machine)
+    }
+
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
+        // TODO: should we allow pausing from other states too?
+        match self.state {
+            State::Elder(state) => Ok(state.pause()),
+            _ => Err(RoutingError::InvalidStateForOperation),
+        }
+    }
+
+    pub fn resume(state: PausedState, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, Self) {
+        let network_config = state.network_config.clone();
+        Self::new(
+            move |network_service, timer, _outbox| {
+                State::Elder(Elder::resume(state, network_service, timer))
+            },
+            network_config,
+            outbox,
+        )
     }
 
     fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {

@@ -72,6 +72,10 @@ impl NetworkService {
             self.quic_p2p.send(tgt, msg, token);
         }
     }
+
+    pub fn config(&self) -> NetworkConfig {
+        self.quic_p2p.config()
+    }
 }
 
 pub struct NetworkBuilder {

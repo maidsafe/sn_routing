@@ -26,6 +26,7 @@ use crate::{
     messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
     outbox::EventBox,
     parsec::{self, ParsecMap},
+    pause::PausedState,
     peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
@@ -73,7 +74,7 @@ pub struct ElderDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_backlog: Vec<RoutingMessage>,
+    pub msg_queue: VecDeque<RoutingMessage>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
     pub peer_mgr: PeerManager,
@@ -146,7 +147,7 @@ impl Elder {
             event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
-            msg_backlog: Vec::new(),
+            msg_queue: VecDeque::new(),
             parsec_map,
             peer_map,
             peer_mgr,
@@ -154,7 +155,7 @@ impl Elder {
             timer,
         };
 
-        let node = Self::new(details, true);
+        let node = Self::new(details, true, Default::default());
 
         debug!("{} - State changed to Node.", node);
         info!("{} - Started a new network as a seed node.", node);
@@ -171,12 +172,51 @@ impl Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
-        let mut elder = Self::new(details, false);
+        let mut elder = Self::new(details, false, Default::default());
         elder.init(elders_info, old_pfx, event_backlog, outbox)?;
         Ok(elder)
     }
 
-    fn new(details: ElderDetails, is_first_node: bool) -> Self {
+    pub fn pause(self) -> PausedState {
+        PausedState {
+            chain: self.chain,
+            full_id: self.full_id,
+            gen_pfx_info: self.gen_pfx_info,
+            msg_filter: self.routing_msg_filter,
+            msg_queue: self.msg_queue,
+            network_config: self.network_service.config(),
+            parsec_map: self.parsec_map,
+            peer_map: self.peer_map,
+            peer_mgr: self.peer_mgr,
+            sig_accumulator: self.sig_accumulator,
+        }
+    }
+
+    pub fn resume(state: PausedState, network_service: NetworkService, timer: Timer) -> Self {
+        Self::new(
+            ElderDetails {
+                chain: state.chain,
+                network_service,
+                event_backlog: Vec::new(),
+                full_id: state.full_id,
+                gen_pfx_info: state.gen_pfx_info,
+                msg_queue: state.msg_queue,
+                parsec_map: state.parsec_map,
+                peer_map: state.peer_map,
+                peer_mgr: state.peer_mgr,
+                routing_msg_filter: state.msg_filter,
+                timer,
+            },
+            false,
+            state.sig_accumulator,
+        )
+    }
+
+    fn new(
+        details: ElderDetails,
+        is_first_node: bool,
+        sig_accumulator: SignatureAccumulator,
+    ) -> Self {
         let timer = details.timer;
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
@@ -186,12 +226,12 @@ impl Elder {
             network_service: details.network_service,
             full_id: details.full_id.clone(),
             is_first_node,
-            msg_queue: details.msg_backlog.into_iter().collect(),
+            msg_queue: details.msg_queue.into_iter().collect(),
             peer_map: details.peer_map,
             peer_mgr: details.peer_mgr,
             routing_msg_filter: details.routing_msg_filter,
-            sig_accumulator: Default::default(),
-            tick_timer_token: tick_timer_token,
+            sig_accumulator,
+            tick_timer_token,
             timer: timer,
             next_relocation_dst: None,
             next_relocation_interval: None,

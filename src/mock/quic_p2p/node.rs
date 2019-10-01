@@ -230,6 +230,10 @@ impl Node {
         self.peers.get(addr).is_some()
     }
 
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
     fn fire_event(&self, event: Event) {
         let _ = self.event_tx.send(event);
     }

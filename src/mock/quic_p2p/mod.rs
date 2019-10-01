@@ -102,6 +102,11 @@ impl QuicP2p {
         true
     }
 
+    /// Returns the config used to create this instance.
+    pub fn config(&self) -> Config {
+        self.inner.borrow().config().clone()
+    }
+
     fn new(event_tx: Sender<Event>, config: Config) -> Self {
         Self {
             inner: Node::new(event_tx, config),
@@ -121,7 +126,7 @@ impl QuicP2p {
 }
 
 /// Configuration for `QuicP2p`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Config {
     /// Hard-coded contacts.
     pub hard_coded_contacts: HashSet<NodeInfo>,

@@ -14,6 +14,7 @@ use crate::{
     event_stream::{EventStepper, EventStream},
     id::{FullId, PublicId},
     outbox::{EventBox, EventBuf},
+    pause::PausedState,
     quic_p2p::OurType,
     routing_table::Authority,
     state_machine::{State, StateMachine},
@@ -144,6 +145,25 @@ impl Node {
             config: None,
             network_config: None,
             full_id: None,
+        }
+    }
+
+    /// Pauses the node in order to be upgraded and/or restarted.
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
+        self.machine.pause()
+    }
+
+    /// Resume previously paused node.
+    pub fn resume(state: PausedState) -> Self {
+        let (interface_result_tx, interface_result_rx) = mpsc::channel();
+        let mut event_buffer = EventBuf::new();
+        let (_, machine) = StateMachine::resume(state, &mut event_buffer);
+
+        Self {
+            interface_result_tx,
+            interface_result_rx,
+            machine,
+            event_buffer,
         }
     }
 
@@ -289,15 +309,5 @@ impl Node {
 impl Display for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         self.machine.fmt(formatter)
-    }
-}
-
-impl Drop for Node {
-    fn drop(&mut self) {
-        let _ = self
-            .machine
-            .current_mut()
-            .handle_action(Action::Terminate, &mut self.event_buffer);
-        let _ = self.event_buffer.take_all();
     }
 }

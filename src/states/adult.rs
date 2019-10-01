@@ -124,7 +124,7 @@ impl Adult {
             event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            msg_backlog: self.msg_backlog,
+            msg_queue: self.msg_backlog.into_iter().collect(),
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
             peer_mgr: self.peer_mgr,
