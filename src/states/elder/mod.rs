@@ -177,26 +177,27 @@ impl Elder {
         Ok(elder)
     }
 
-    pub fn pause(self) -> PausedState {
-        PausedState {
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
+        Ok(PausedState {
             chain: self.chain,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: self.routing_msg_filter,
             msg_queue: self.msg_queue,
-            network_config: self.network_service.config(),
+            network_service: self.network_service,
+            network_rx: None,
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
             peer_mgr: self.peer_mgr,
             sig_accumulator: self.sig_accumulator,
-        }
+        })
     }
 
-    pub fn resume(state: PausedState, network_service: NetworkService, timer: Timer) -> Self {
+    pub fn resume(state: PausedState, timer: Timer) -> Self {
         Self::new(
             ElderDetails {
                 chain: state.chain,
-                network_service,
+                network_service: state.network_service,
                 event_backlog: Vec::new(),
                 full_id: state.full_id,
                 gen_pfx_info: state.gen_pfx_info,

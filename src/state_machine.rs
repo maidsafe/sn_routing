@@ -271,7 +271,6 @@ pub enum Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    #[allow(clippy::new_ret_no_self)]
     pub fn new<F>(
         init_state: F,
         network_config: NetworkConfig,
@@ -280,8 +279,8 @@ impl StateMachine {
     where
         F: FnOnce(NetworkService, Timer, &mut dyn EventBox) -> State,
     {
-        let (network_tx, network_rx) = mpmc::unbounded();
         let (action_tx, action_rx) = mpmc::unbounded();
+        let (network_tx, network_rx) = mpmc::unbounded();
 
         let network_service = unwrap!(
             NetworkBuilder::new(network_tx)
@@ -297,10 +296,10 @@ impl StateMachine {
             _ => true,
         };
         let machine = StateMachine {
-            state: state,
+            state,
             network_rx,
             action_rx,
-            is_running: is_running,
+            is_running,
             #[cfg(feature = "mock_base")]
             events: Vec::new(),
         };
@@ -311,20 +310,31 @@ impl StateMachine {
     pub fn pause(self) -> Result<PausedState, RoutingError> {
         // TODO: should we allow pausing from other states too?
         match self.state {
-            State::Elder(state) => Ok(state.pause()),
+            State::Elder(state) => {
+                let mut state = state.pause()?;
+                state.network_rx = Some(self.network_rx);
+                Ok(state)
+            }
             _ => Err(RoutingError::InvalidStateForOperation),
         }
     }
 
-    pub fn resume(state: PausedState, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, Self) {
-        let network_config = state.network_config.clone();
-        Self::new(
-            move |network_service, timer, _outbox| {
-                State::Elder(Elder::resume(state, network_service, timer))
-            },
-            network_config,
-            outbox,
-        )
+    pub fn resume(mut state: PausedState) -> (mpmc::Sender<Action>, Self) {
+        let (action_tx, action_rx) = mpmc::unbounded();
+        let network_rx = state.network_rx.take().expect("PausedState is incomplete");
+
+        let timer = Timer::new(action_tx.clone());
+        let state = State::Elder(Elder::resume(state, timer));
+        let machine = StateMachine {
+            state,
+            network_rx,
+            action_rx,
+            is_running: true,
+            #[cfg(feature = "mock_base")]
+            events: Vec::new(),
+        };
+
+        (action_tx, machine)
     }
 
     fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {

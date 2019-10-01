@@ -156,8 +156,8 @@ impl Node {
     /// Resume previously paused node.
     pub fn resume(state: PausedState) -> Self {
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
-        let mut event_buffer = EventBuf::new();
-        let (_, machine) = StateMachine::resume(state, &mut event_buffer);
+        let event_buffer = EventBuf::new();
+        let (_, machine) = StateMachine::resume(state);
 
         Self {
             interface_result_tx,

@@ -106,7 +106,8 @@ macro_rules! expect_any_event {
     };
 }
 
-/// Expects that the node raised no event, panics otherwise (ignores ticks).
+/// Expects that the node did not raise an even matching the given pattern, panics otherwise
+/// (ignores ticks). If no pattern given, expects that no event (except ticks) were raised.
 macro_rules! expect_no_event {
     ($node:expr) => {{
         match $node.inner.try_next_ev() {
@@ -115,6 +116,22 @@ macro_rules! expect_no_event {
             other => panic!("Expected no event at {}, got {:?}", $node.name(), other),
         }
     }};
+
+    ($node:expr, $pattern:pat) => {
+        loop {
+            match $node.inner.try_next_ev() {
+                Ok(event @ $pattern) => panic!(
+                    "Expected no event matching {} at {}, got {:?}",
+                    stringify!($pattern),
+                    $node.name(),
+                    event
+                ),
+                Ok(_) => (),
+                Err(crossbeam_channel::TryRecvError::Empty) => break,
+                Err(error) => panic!("Unexpected error {:?}", error),
+            }
+        }
+    };
 }
 
 mod mock_network;

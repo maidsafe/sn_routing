@@ -12,8 +12,8 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Chain, Config, DevConfig, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder, Prefix,
-    PublicId, XorName, XorTargetInterval, Xorable,
+    Chain, Config, DevConfig, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder,
+    PausedState, Prefix, PublicId, XorName, XorTargetInterval, Xorable,
 };
 use std::{
     cmp,
@@ -110,6 +110,13 @@ impl TestNode {
         TestNodeBuilder {
             inner: Node::builder(),
             network: network,
+        }
+    }
+
+    pub fn resume(network: &Network, state: PausedState) -> Self {
+        Self {
+            inner: Node::resume(state),
+            network: network.clone(),
         }
     }
 
