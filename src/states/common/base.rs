@@ -69,11 +69,12 @@ pub trait Base: Display {
             Action::GetId { result_tx } => {
                 let _ = result_tx.send(*self.id());
             }
-            Action::HandleTimeout(token) => {
-                if let Transition::Terminate = self.handle_timeout(token, outbox) {
-                    return Transition::Terminate;
+            Action::HandleTimeout(token) => match self.handle_timeout(token, outbox) {
+                Transition::Stay => (),
+                transition => {
+                    return transition;
                 }
-            }
+            },
             Action::Terminate => {
                 return Transition::Terminate;
             }
