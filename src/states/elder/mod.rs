@@ -18,7 +18,7 @@ use crate::{
         ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
         PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
     },
-    crypto::{signing::Signature, Digest256},
+    crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -47,7 +47,6 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use lru_time_cache::LruCache;
-use maidsafe_utilities::serialisation;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -848,94 +847,6 @@ impl Elder {
         }));
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn handle_candidate_info(
-        &mut self,
-        old_pub_id: PublicId,
-        new_pub_id: PublicId,
-        signature_using_old: Signature,
-        new_client_auth: Authority<XorName>,
-        outbox: &mut dyn EventBox,
-    ) {
-        #[cfg(feature = "mock_base")]
-        {
-            if self.ignore_candidate_info_counter > 0 {
-                self.ignore_candidate_info_counter -= 1;
-                return;
-            }
-        }
-        debug!(
-            "{} - Handling CandidateInfo from {}->{}.",
-            self, old_pub_id, new_pub_id
-        );
-
-        if !self.is_candidate_info_valid(&old_pub_id, &new_pub_id, &signature_using_old) {
-            warn!(
-                "{} - Signature check failed in CandidateInfo, so dropping peer {:?}.",
-                self, new_pub_id
-            );
-            self.disconnect_peer(&new_pub_id);
-            return;
-        }
-
-        // If this is a valid node in peer_mgr but the Candidate has sent us a CandidateInfo, it
-        // might have not yet handled its NodeApproval message. Check and handle accordingly here
-        if self.peer_mgr.is_connected(&new_pub_id) && self.is_peer_valid(&new_pub_id) {
-            self.process_connection(new_pub_id, outbox);
-            return;
-        }
-
-        let target_interval =
-            if let Some(interval) = self.chain.matching_candidate_target_interval(&old_pub_id) {
-                interval
-            } else {
-                debug!(
-                    "{} - Ignore CandidateInfo: we are not waiting for candidate {}->{}.",
-                    self, old_pub_id, new_pub_id
-                );
-                return;
-            };
-
-        if !target_interval.contains(new_pub_id.name()) {
-            debug!(
-                "{} - Ignore CandidateInfo: new ID {} is not within the required target range.",
-                self, new_pub_id
-            );
-            return;
-        }
-
-        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
-            old_public_id: old_pub_id,
-            new_public_id: new_pub_id,
-            client_auth: new_client_auth,
-        }));
-    }
-
-    fn is_candidate_info_valid(
-        &self,
-        old_pub_id: &PublicId,
-        new_pub_id: &PublicId,
-        signature_using_old: &Signature,
-    ) -> bool {
-        let both_ids = (*old_pub_id, *new_pub_id);
-        let both_ids_serialised = match serialisation::serialise(&both_ids) {
-            Ok(result) => result,
-            Err(error) => {
-                error!("{} - Failed to serialise public IDs: {:?}", self, error);
-                return false;
-            }
-        };
-        if !old_pub_id.verify(&both_ids_serialised, signature_using_old) {
-            debug!(
-                "{} CandidateInfo from {}->{} has invalid old signature.",
-                self, old_pub_id, new_pub_id
-            );
-            return false;
-        }
-
-        true
-    }
-
     // Received by X; From A -> X
     fn handle_relocate_request(
         &mut self,
@@ -1594,19 +1505,6 @@ impl Base for Elder {
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             JoinRequest => self.handle_join_request(pub_id),
-            CandidateInfo {
-                old_public_id,
-                signature_using_old,
-                new_client_auth,
-            } => {
-                self.handle_candidate_info(
-                    old_public_id,
-                    pub_id,
-                    signature_using_old,
-                    new_client_auth,
-                    outbox,
-                );
-            }
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, pub_id, outbox);

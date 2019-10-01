@@ -13,8 +13,6 @@ use crate::{
     messages::SignedRoutingMessage,
     parsec,
     quic_p2p::NodeInfo,
-    routing_table::Authority,
-    xor_name::XorName,
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::{
@@ -44,16 +42,6 @@ pub enum DirectMessage {
     /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
     ConnectionResponse,
-    /// Sent from a node which is still joining the network to another node, to allow the latter to
-    /// add the former to its routing table.
-    CandidateInfo {
-        /// `PublicId` from before relocation.
-        old_public_id: PublicId,
-        /// Signature of both old and new `PublicId`s using the pre-relocation key.
-        signature_using_old: Signature,
-        /// Client authority from after relocation.
-        new_client_auth: Authority<XorName>,
-    },
     /// Poke a node to send us the first gossip request
     ParsecPoke(u64),
     /// Parsec request message
@@ -87,7 +75,6 @@ impl Debug for DirectMessage {
             }
             JoinRequest => write!(formatter, "JoinRequest"),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
-            CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
             ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
@@ -112,15 +99,6 @@ impl Hash for DirectMessage {
             }
             BootstrapRequest | ConnectionResponse | JoinRequest => (),
             BootstrapResponse(ref response) => response.hash(state),
-            CandidateInfo {
-                ref old_public_id,
-                ref signature_using_old,
-                ref new_client_auth,
-            } => {
-                old_public_id.hash(state);
-                signature_using_old.hash(state);
-                new_client_auth.hash(state);
-            }
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, ref request) => {
                 version.hash(state);

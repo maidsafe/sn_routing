@@ -393,41 +393,6 @@ impl ElderUnderTest {
         RoutingMessage { src, dst, content }
     }
 
-    fn candidate_info_message(&self) -> (DirectMessage, PublicId) {
-        self.candidate_info_message_use_wrong_old_signature(false)
-    }
-
-    fn candidate_info_message_use_wrong_old_signature(
-        &self,
-        use_bad_sig: bool,
-    ) -> (DirectMessage, PublicId) {
-        let old_full_id = &self.candidate_info.old_full_id;
-        let new_full_id = &self.candidate_info.new_full_id;
-
-        let both_ids = (old_full_id.public_id(), new_full_id.public_id());
-
-        let old_signing_id = if use_bad_sig {
-            new_full_id
-        } else {
-            old_full_id
-        };
-
-        let to_sign = unwrap!(serialisation::serialise(&both_ids));
-        let signature_using_old = old_signing_id.sign(&to_sign);
-
-        (
-            DirectMessage::CandidateInfo {
-                old_public_id: *old_full_id.public_id(),
-                signature_using_old,
-                new_client_auth: Authority::Client {
-                    client_id: *new_full_id.public_id(),
-                    proxy_node_name: *self.candidate_info.new_proxy_id.public_id().name(),
-                },
-            },
-            *new_full_id.public_id(),
-        )
-    }
-
     fn candidate_node_info(&self) -> NodeInfo {
         let peer_addr = unwrap!("198.51.100.0:5555".parse());
         NodeInfo {
@@ -741,6 +706,7 @@ fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
 }
 
 #[test]
+#[ignore]
 // Candidate now show info
 fn candidate_info_message_in_interval() {
     let mut elder_test = ElderUnderTest::new();
@@ -749,13 +715,14 @@ fn candidate_info_message_in_interval() {
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
     elder_test.handle_connected_to_candidate();
-    let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
+    //let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
+#[ignore]
 // Candidate info in wrong interval: Candidate not modifed - require purge event to remove
 fn candidate_info_message_not_in_interval() {
     let mut elder_test = ElderUnderTest::new();
@@ -764,13 +731,14 @@ fn candidate_info_message_not_in_interval() {
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
     elder_test.handle_connected_to_candidate();
-    let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
+    //let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
 
     assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
+#[ignore]
 // Candidate info that is not trustworthy is not trusted.
 fn candidate_info_message_bad_signature() {
     let mut elder_test = ElderUnderTest::new();
@@ -779,8 +747,8 @@ fn candidate_info_message_bad_signature() {
 
     let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
     elder_test.handle_connected_to_candidate();
-    let _ = elder_test
-        .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
+    //let _ = elder_test
+    //    .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
 
     assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
