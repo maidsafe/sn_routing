@@ -23,7 +23,7 @@ use crate::{
     NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{quic_p2p::NodeInfo, routing_table::Authority, Chain};
+use crate::{routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use log::LogLevel;
 use std::{
