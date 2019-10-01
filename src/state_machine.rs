@@ -345,6 +345,7 @@ impl StateMachine {
             }),
             Rebootstrap => self.state.replace_with(|state| match state {
                 State::JoiningPeer(src) => src.into_bootstrapping(),
+                State::Adult(src) => src.into_bootstrapping(),
                 _ => unreachable!(),
             }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {

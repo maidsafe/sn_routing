@@ -107,7 +107,7 @@ impl JoiningPeer {
     pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
-            self.full_id,
+            FullId::new(),
             self.min_section_size,
             self.timer,
         )))

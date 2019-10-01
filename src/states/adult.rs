@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
+    bootstrapping_peer::BootstrappingPeer,
     common::{
         proxied, Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
         RelocatedNotEstablished,
@@ -38,6 +39,7 @@ use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
+const ADD_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -64,6 +66,7 @@ pub struct Adult {
     peer_map: PeerMap,
     peer_mgr: PeerManager,
     poke_timer_token: u64,
+    add_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
 }
@@ -75,6 +78,7 @@ impl Adult {
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let poke_timer_token = details.timer.schedule(POKE_TIMEOUT);
+        let add_timer_token = details.timer.schedule(ADD_TIMEOUT);
 
         let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
         let chain = Chain::new(
@@ -96,6 +100,7 @@ impl Adult {
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             poke_timer_token,
+            add_timer_token,
         };
 
         node.init(outbox)?;
@@ -110,6 +115,16 @@ impl Adult {
         }
 
         Ok(())
+    }
+
+    pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
+        let min_section_size = self.min_section_size();
+        Ok(State::BootstrappingPeer(BootstrappingPeer::new(
+            self.network_service,
+            FullId::new(),
+            min_section_size,
+            self.timer,
+        )))
     }
 
     pub fn into_elder(
@@ -219,6 +234,20 @@ impl Base for Adult {
         if self.poke_timer_token == token {
             self.send_parsec_poke();
             self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
+        } else if self.add_timer_token == token {
+            debug!("{} - Timeout when trying to join a section.", self);
+
+            for peer_addr in self
+                .peer_map
+                .remove_all()
+                .map(|conn_info| conn_info.peer_addr())
+            {
+                self.network_service
+                    .service_mut()
+                    .disconnect_from(peer_addr);
+            }
+
+            return Transition::Rebootstrap;
         }
 
         Transition::Stay
