@@ -41,6 +41,7 @@ const JOIN_TIMEOUT: Duration = Duration::from_secs(20);
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
+    msg_backlog: Vec<RoutingMessage>,
     full_id: FullId,
     min_section_size: usize,
     peer_map: PeerMap,
@@ -62,6 +63,7 @@ impl JoiningPeer {
         let mut joining_peer = Self {
             network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
+            msg_backlog: vec![],
             full_id,
             min_section_size,
             timer: timer,
@@ -93,7 +95,7 @@ impl JoiningPeer {
             full_id: self.full_id,
             gen_pfx_info,
             min_section_size: self.min_section_size,
-            msg_backlog: vec![],
+            msg_backlog: self.msg_backlog,
             peer_map: self.peer_map,
             peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
@@ -140,7 +142,11 @@ impl JoiningPeer {
                 dst: ManagedNode { .. },
             } => Ok(self.handle_node_approval(gen_info)),
             _ => {
-                debug!("{} - Unhandled routing message: {:?}", self, msg);
+                debug!(
+                    "{} - Unhandled routing message, adding to backlog: {:?}",
+                    self, msg
+                );
+                self.msg_backlog.push(msg);
                 Ok(Transition::Stay)
             }
         }
