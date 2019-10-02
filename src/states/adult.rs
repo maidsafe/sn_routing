@@ -15,9 +15,7 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    chain::{
-        Chain, EldersInfo, GenesisPfxInfo, OnlinePayload, SectionKeyInfo, SendAckMessagePayload,
-    },
+    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload},
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
@@ -377,7 +375,6 @@ impl Approved for Adult {
     fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        _: Authority<XorName>,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.chain.add_member(new_pub_id)?;
@@ -395,7 +392,7 @@ impl Approved for Adult {
 
     fn handle_online_event(
         &mut self,
-        _: OnlinePayload,
+        _: PublicId,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         Ok(())

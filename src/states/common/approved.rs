@@ -9,7 +9,7 @@
 use super::Relocated;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersInfo, OnlinePayload, Proof, ProofSet, SectionKeyInfo,
+        AccumulatingEvent, Chain, EldersInfo, Proof, ProofSet, SectionKeyInfo,
         SendAckMessagePayload,
     },
     error::RoutingError,
@@ -19,10 +19,8 @@ use crate::{
     routing_table::Prefix,
     state_machine::Transition,
     xor_name::XorName,
-    Authority,
 };
 use log::LogLevel;
-use maidsafe_utilities::serialisation;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Relocated {
@@ -36,7 +34,6 @@ pub trait Approved: Relocated {
     fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        client_auth: Authority<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -50,7 +47,7 @@ pub trait Approved: Relocated {
     /// Handles an accumulated `Online` event.
     fn handle_online_event(
         &mut self,
-        online_payload: OnlinePayload,
+        pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -163,15 +160,8 @@ pub trait Approved: Relocated {
                         self.chain_mut().handle_opaque_event(event, proof)?;
                     }
                 }
-                Observation::Add {
-                    peer_id,
-                    related_info,
-                } => {
-                    let event = AccumulatingEvent::AddElder(
-                        *peer_id,
-                        serialisation::deserialise(&related_info)?,
-                    )
-                    .into_network_event();
+                Observation::Add { peer_id, .. } => {
+                    let event = AccumulatingEvent::AddElder(*peer_id).into_network_event();
                     let proof_set = to_proof_set(&block);
                     trace!("{} Parsec Add {}: - {}", self, parsec_version, peer_id);
                     self.chain_mut().handle_churn_event(&event, proof_set)?;
@@ -208,8 +198,8 @@ pub trait Approved: Relocated {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
-                AccumulatingEvent::AddElder(pub_id, client_auth) => {
-                    self.handle_add_elder_event(pub_id, client_auth, outbox)?;
+                AccumulatingEvent::AddElder(pub_id) => {
+                    self.handle_add_elder_event(pub_id, outbox)?;
                 }
                 AccumulatingEvent::RemoveElder(pub_id) => {
                     self.handle_remove_elder_event(pub_id, outbox)?;

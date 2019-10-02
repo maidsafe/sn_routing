@@ -125,7 +125,7 @@ impl Chain {
         proof_set: ProofSet,
     ) -> Result<(), RoutingError> {
         match event.payload {
-            AccumulatingEvent::AddElder(_, _) | AccumulatingEvent::RemoveElder(_) => (),
+            AccumulatingEvent::AddElder(_) | AccumulatingEvent::RemoveElder(_) => (),
             _ => {
                 log_or_panic!(
                     LogLevel::Error,
@@ -269,7 +269,7 @@ impl Chain {
                 // TODO: remove once we have real integration tests of `ParsecPrune` accumulating.
                 self.parsec_prune_accumulated += 1;
             }
-            AccumulatingEvent::AddElder(_, _)
+            AccumulatingEvent::AddElder(_)
             | AccumulatingEvent::RemoveElder(_)
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
@@ -621,7 +621,7 @@ impl Chain {
                 is_sequence_ok && self.our_info().is_quorum(proofs)
             }
 
-            AccumulatingEvent::AddElder(_, _)
+            AccumulatingEvent::AddElder(_)
             | AccumulatingEvent::RemoveElder(_)
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)

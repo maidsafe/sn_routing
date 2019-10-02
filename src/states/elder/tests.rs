@@ -162,20 +162,17 @@ impl ElderUnderTest {
         self.create_gossip()
     }
 
-    fn accumulate_online(&mut self, online_payload: OnlinePayload) {
+    fn accumulate_online(&mut self, public_id: PublicId) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&AccumulatingEvent::Online(online_payload)],
+            &[&AccumulatingEvent::Online(public_id)],
         );
     }
 
-    fn accumulate_add_elder_if_vote(&mut self, online_payload: OnlinePayload) {
+    fn accumulate_add_elder_if_vote(&mut self, public_id: PublicId) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&AccumulatingEvent::AddElder(
-                online_payload.new_public_id,
-                online_payload.client_auth,
-            )],
+            &[&AccumulatingEvent::AddElder(public_id)],
         );
     }
 
@@ -255,16 +252,8 @@ impl ElderUnderTest {
         }
     }
 
-    fn online_payload(&self) -> OnlinePayload {
-        let client_auth = Authority::Client {
-            client_id: *self.candidate_info.full_id.public_id(),
-            proxy_node_name: *self.candidate_info.full_id.public_id().name(),
-        };
-        OnlinePayload {
-            new_public_id: *self.candidate_info.full_id.public_id(),
-            client_auth,
-            old_public_id: *self.candidate_info.full_id.public_id(),
-        }
+    fn online_payload(&self) -> PublicId {
+        *self.candidate_info.full_id.public_id()
     }
 
     fn offline_payload(&self) -> PublicId {

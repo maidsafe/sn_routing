@@ -11,20 +11,9 @@ use crate::crypto::Digest256;
 use crate::id::{FullId, PublicId};
 use crate::parsec;
 use crate::routing_table::Prefix;
-use crate::{Authority, BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName};
+use crate::{BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName};
 use hex_fmt::HexFmt;
-use maidsafe_utilities::serialisation::serialise;
 use std::fmt::{self, Debug, Formatter};
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct OnlinePayload {
-    /// The joining node's new public ID.
-    pub new_public_id: PublicId,
-    /// The joining node's previous public ID.
-    pub old_public_id: PublicId,
-    /// The joining node's current authority.
-    pub client_auth: Authority<XorName>,
-}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct AckMessagePayload {
@@ -67,12 +56,12 @@ impl SectionInfoSigPayload {
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
     /// Add new elder once we agreed to add a candidate
-    AddElder(PublicId, Authority<XorName>),
+    AddElder(PublicId),
     /// Remove elder once we agreed to remove the peer
     RemoveElder(PublicId),
 
     /// Voted for candidate that pass resource proof
-    Online(OnlinePayload),
+    Online(PublicId),
     /// Voted for candidate we no longer consider online.
     Offline(PublicId),
 
@@ -125,13 +114,9 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            AccumulatingEvent::AddElder(ref id, _) => write!(formatter, "AddElder({}, _)", id),
+            AccumulatingEvent::AddElder(ref id) => write!(formatter, "AddElder({})", id),
             AccumulatingEvent::RemoveElder(ref id) => write!(formatter, "RemoveElder({})", id),
-            AccumulatingEvent::Online(ref payload) => write!(
-                formatter,
-                "Online(new:{}, old:{})",
-                payload.new_public_id, payload.old_public_id
-            ),
+            AccumulatingEvent::Online(ref id) => write!(formatter, "Online({})", id),
             AccumulatingEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
             AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
             AccumulatingEvent::NeighbourMerge(ref digest) => {
@@ -170,11 +155,11 @@ impl NetworkEvent {
     pub fn into_obs(self) -> Result<parsec::Observation<NetworkEvent, PublicId>, RoutingError> {
         Ok(match self {
             NetworkEvent {
-                payload: AccumulatingEvent::AddElder(id, auth),
+                payload: AccumulatingEvent::AddElder(id),
                 ..
             } => parsec::Observation::Add {
                 peer_id: id,
-                related_info: serialise(&auth)?,
+                related_info: Default::default(),
             },
             NetworkEvent {
                 payload: AccumulatingEvent::RemoveElder(id),

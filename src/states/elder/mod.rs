@@ -15,8 +15,8 @@ use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
-        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
+        GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -414,7 +414,7 @@ impl Elder {
                 // Called peer_manager.remove_candidate reset the candidate so it can be shared by
                 // all nodes: Because new node may not have voted for it, Forget the votes in
                 // flight as well.
-                AccumulatingEvent::AddElder(_, _)
+                AccumulatingEvent::AddElder(_)
                 | AccumulatingEvent::RemoveElder(_)
                 | AccumulatingEvent::Online(_)
                 | AccumulatingEvent::ParsecPrune => false,
@@ -641,29 +641,26 @@ impl Elder {
     // Send NodeApproval to the current candidate which promotes them to Adult and allows them to
     // passively participate in parsec consensus (that is, they can receive gossip and poll
     // consensused blocks out of parsec, but they can't vote yet)
-    fn handle_candidate_approval(
-        &mut self,
-        new_pub_id: PublicId,
-        new_client_auth: Authority<XorName>,
-        outbox: &mut dyn EventBox,
-    ) {
+    fn handle_candidate_approval(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
         info!(
             "{} Our section with {:?} has approved candidate {}.",
             self,
             self.our_prefix(),
-            new_pub_id
+            pub_id
         );
 
+        let dst = Authority::ManagedNode(*pub_id.name());
+
         // Make sure we are connected to the candidate
-        if self.peer_mgr.get_peer(&new_pub_id).is_none() {
+        if self.peer_mgr.get_peer(&pub_id).is_none() {
             trace!(
                 "{} - Not yet connected to {} - sending connection request.",
                 self,
-                new_pub_id
+                pub_id
             );
 
             let src = Authority::ManagedNode(*self.name());
-            let _ = self.send_connection_request(new_pub_id, src, new_client_auth, outbox);
+            let _ = self.send_connection_request(pub_id, src, dst, outbox);
         };
 
         let trimmed_info = GenesisPfxInfo {
@@ -674,10 +671,10 @@ impl Elder {
 
         let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
         let content = MessageContent::NodeApproval(trimmed_info);
-        if let Err(error) = self.send_routing_message(src, new_client_auth, content) {
+        if let Err(error) = self.send_routing_message(src, dst, content) {
             debug!(
                 "{} Failed sending NodeApproval to {}: {:?}",
-                self, new_pub_id, error
+                self, pub_id, error
             );
         }
     }
@@ -806,11 +803,7 @@ impl Elder {
     }
 
     fn handle_join_request(&mut self, pub_id: PublicId) {
-        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
-            old_public_id: pub_id,
-            new_public_id: pub_id,
-            client_auth: Authority::ManagedNode(*pub_id.name()),
-        }));
+        self.vote_for_event(AccumulatingEvent::Online(pub_id));
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -1524,7 +1517,6 @@ impl Approved for Elder {
     fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        _new_client_auth: Authority<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let to_vote_infos = self.chain.add_member(new_pub_id)?;
@@ -1560,25 +1552,15 @@ impl Approved for Elder {
 
     fn handle_online_event(
         &mut self,
-        online_payload: OnlinePayload,
+        public_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        //if self.chain.try_approve_candidate(&online_payload) {
-        let OnlinePayload {
-            new_public_id,
-            client_auth,
-            ..
-        } = online_payload;
-
-        self.handle_candidate_approval(new_public_id, client_auth, outbox);
+        self.handle_candidate_approval(public_id, outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(
-            online_payload.new_public_id,
-            online_payload.client_auth,
-        ));
-        //}
+        self.vote_for_event(AccumulatingEvent::AddElder(public_id));
+
         Ok(())
     }
 
