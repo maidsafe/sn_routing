@@ -55,8 +55,6 @@ pub enum PeerState {
     JoiningNode,
     /// We are connected to the peer who is a full node.
     Node { was_joining: bool },
-    /// We are connected to the peer who is our proxy node.
-    Proxy,
 }
 
 impl<'a> From<&'a ConnectionInfo> for PeerState {
@@ -95,7 +93,6 @@ impl Peer {
         match self.state {
             PeerState::Connecting => false,
             PeerState::Connected
-            | PeerState::Proxy
             | PeerState::Client { .. }
             | PeerState::JoiningNode
             | PeerState::Node { .. } => true,
@@ -107,7 +104,7 @@ impl Peer {
     fn is_expired(&self) -> bool {
         let timeout = match self.state {
             PeerState::Connecting => CONNECTING_PEER_TIMEOUT_SECS,
-            PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
+            PeerState::JoiningNode => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
             PeerState::Client { .. } | PeerState::Node { .. } => {
                 return false;
@@ -123,11 +120,6 @@ impl Peer {
             PeerState::Node { .. } => true,
             _ => false,
         }
-    }
-
-    /// Returns whether the peer is our proxy node.
-    fn is_proxy(&self) -> bool {
-        self.state == PeerState::Proxy
     }
 
     // If the peer is a client, return its IP, otherwise returns `None`.
@@ -197,11 +189,6 @@ impl PeerManager {
     /// Returns an iterator over all connected peers.
     pub fn connected_peers(&self) -> impl Iterator<Item = (&PublicId, &Peer)> {
         self.peers.iter().filter(|(_, peer)| peer.is_connected())
-    }
-
-    /// Returns if the given peer is our proxy node.
-    pub fn is_proxy(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, Peer::is_proxy)
     }
 
     /// Returns if the given peer is or was a joining node.

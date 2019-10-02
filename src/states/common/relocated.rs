@@ -108,8 +108,6 @@ pub trait Relocated: Bootstrapped {
             .map_or(false, Peer::is_node)
         {
             debug!("{} Not disconnecting node {}.", self, pub_id);
-        } else if self.peer_mgr().is_proxy(pub_id) {
-            debug!("{} Not disconnecting proxy node {}.", self, pub_id);
         } else if self.peer_mgr().is_or_was_joining_node(pub_id) {
             debug!("{} Not disconnecting joining node {:?}.", self, pub_id);
         } else {
