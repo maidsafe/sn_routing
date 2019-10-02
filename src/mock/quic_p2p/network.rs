@@ -17,12 +17,12 @@ use std::{
     cell::RefCell,
     cmp,
     collections::{hash_map::Entry, VecDeque},
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     rc::{Rc, Weak},
     sync::Once,
 };
 
-const IP_BASE: Ipv4Addr = Ipv4Addr::LOCALHOST;
+const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;
 
 static PRINT_SEED: Once = Once::new();
@@ -47,52 +47,23 @@ impl Network {
         #[cfg(feature = "mock_parsec")]
         parsec::init_mock();
 
-        Network(Rc::new(RefCell::new(Inner {
+        let inner = Rc::new(RefCell::new(Inner {
             min_section_size,
             rng,
             nodes: Default::default(),
             connections: Default::default(),
             used_ips: Default::default(),
             message_sent: false,
-        })))
+        }));
+
+        NETWORK.with(|network| *network.borrow_mut() = Some(inner.clone()));
+
+        Network(inner)
     }
 
     /// Generate new unique socket addrs.
     pub fn gen_addr(&self) -> SocketAddr {
-        let mut inner = self.0.borrow_mut();
-
-        let ip = inner
-            .nodes
-            .keys()
-            .filter_map(|addr| match addr {
-                SocketAddr::V4(addr) => Some(*addr.ip()),
-                SocketAddr::V6(_) => None,
-            })
-            .chain(inner.used_ips.iter().cloned())
-            .max()
-            .map(next_ip)
-            .unwrap_or(IP_BASE);
-
-        let _ = inner.used_ips.insert(ip);
-
-        SocketAddr::V4(SocketAddrV4::new(ip, PORT))
-    }
-
-    /// Generate new socket address to be used by the next created `QuicP2p` instance and return it.
-    pub fn gen_next_addr(&self) -> SocketAddr {
-        let addr = self.gen_addr();
-        self.set_next_addr(addr);
-        addr
-    }
-
-    /// Set the socket address for the next created `QuicP2p` instance.
-    pub fn set_next_addr(&self, addr: SocketAddr) {
-        NEXT_NODE_DETAILS.with(|details| {
-            *details.borrow_mut() = Some(NodeDetails {
-                network: self.0.clone(),
-                addr,
-            });
-        })
+        self.0.borrow_mut().gen_addr(None, None)
     }
 
     /// Poll the network by delivering the queued messages.
@@ -174,11 +145,28 @@ pub(super) struct Inner {
     rng: SeededRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
-    used_ips: FxHashSet<Ipv4Addr>,
+    used_ips: FxHashSet<IpAddr>,
     message_sent: bool,
 }
 
 impl Inner {
+    pub fn gen_addr(&mut self, ip: Option<IpAddr>, port: Option<u16>) -> SocketAddr {
+        let ip = ip.unwrap_or_else(|| {
+            self.nodes
+                .keys()
+                .map(|addr| addr.ip())
+                .chain(self.used_ips.iter().cloned())
+                .max()
+                .map(next_ip)
+                .unwrap_or(IP_BASE)
+        });
+        let port = port.unwrap_or(PORT);
+
+        let _ = self.used_ips.insert(ip);
+
+        SocketAddr::new(ip, port)
+    }
+
     pub fn insert_node(&mut self, addr: SocketAddr, node: Rc<RefCell<Node>>) {
         match self.nodes.entry(addr) {
             Entry::Occupied(_) => panic!("Node with {} already exists", addr),
@@ -350,21 +338,12 @@ impl Connection {
 }
 
 thread_local! {
-    pub(super) static NEXT_NODE_DETAILS: RefCell<Option<NodeDetails>> = RefCell::new(None);
+    pub(super) static NETWORK: RefCell<Option<Rc<RefCell<Inner>>>> = RefCell::new(None);
 }
 
-pub(super) struct NodeDetails {
-    pub network: Rc<RefCell<Inner>>,
-    pub addr: SocketAddr,
-}
-
-fn next_ip(ip_addr: Ipv4Addr) -> Ipv4Addr {
-    Ipv4Addr::from(u32_from_be_bytes(ip_addr.octets()) + 1)
-}
-
-fn u32_from_be_bytes(bytes: [u8; 4]) -> u32 {
-    (u32::from(bytes[0]) << 24)
-        | (u32::from(bytes[1]) << 16)
-        | (u32::from(bytes[2]) << 8)
-        | u32::from(bytes[3])
+fn next_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(ip) => IpAddr::V4(Ipv4Addr::from(u32::from_be_bytes(ip.octets()) + 1)),
+        IpAddr::V6(ip) => IpAddr::V6(Ipv6Addr::from(u128::from_be_bytes(ip.octets()) + 1)),
+    }
 }

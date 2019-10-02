@@ -313,13 +313,16 @@ mod tests {
 
         // Start a bare-bones network service.
         let (event_tx, event_rx) = mpmc::unbounded();
-        let node_a_endpoint = network.gen_next_addr();
-        let node_a_network_service = unwrap!(Builder::new(event_tx).build());
+        let node_a_endpoint = network.gen_addr();
+        let config = NetworkConfig::node().with_endpoint(node_a_endpoint);
+        let node_a_network_service = unwrap!(Builder::new(event_tx).with_config(config).build());
 
         // Construct a `StateMachine` which will start in the `BootstrappingPeer` state and
         // bootstrap off the network service above.
-        let config = NetworkConfig::client().with_hard_coded_contact(node_a_endpoint);
-        let node_b_endpoint = network.gen_next_addr();
+        let node_b_endpoint = network.gen_addr();
+        let config = NetworkConfig::client()
+            .with_hard_coded_contact(node_a_endpoint)
+            .with_endpoint(node_b_endpoint);
         let node_b_full_id = FullId::new();
         let mut node_b_outbox = EventBuf::new();
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(

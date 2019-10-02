@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    network::{Inner, NodeDetails, Packet, NEXT_NODE_DETAILS},
+    network::{Inner, Packet, NETWORK},
     Config, Error, Event, NodeInfo, OurType, Peer,
 };
 use crate::NetworkBytes;
@@ -32,14 +32,16 @@ pub(super) struct Node {
 
 impl Node {
     pub fn new(event_tx: Sender<Event>, config: Config) -> Rc<RefCell<Self>> {
-        let details = NEXT_NODE_DETAILS.with(|details| details.borrow_mut().take());
-        let NodeDetails { network, addr } = unwrap!(
-            details,
-            "Missing next node details. Did you forget to call `Network::set_next_node_addr`?"
-        );
+        let network = NETWORK.with(|network| {
+            Rc::clone(unwrap!(
+                network.borrow().as_ref(),
+                "Mock Network must exist before creating instances of QuicP2p."
+            ))
+        });
 
+        let addr = network.borrow_mut().gen_addr(config.ip, config.port);
         let node = Rc::new(RefCell::new(Node {
-            network: Rc::clone(&network),
+            network,
             addr,
             event_tx,
             config,
@@ -48,7 +50,10 @@ impl Node {
             pending_bootstraps: Default::default(),
             pending_messages: Default::default(),
         }));
-        network.borrow_mut().insert_node(addr, Rc::clone(&node));
+        node.borrow()
+            .network
+            .borrow_mut()
+            .insert_node(addr, Rc::clone(&node));
         node
     }
 
@@ -228,6 +233,10 @@ impl Node {
 
     pub fn is_connected(&self, addr: &SocketAddr) -> bool {
         self.peers.get(addr).is_some()
+    }
+
+    pub fn config(&self) -> &Config {
+        &self.config
     }
 
     fn fire_event(&self, event: Event) {

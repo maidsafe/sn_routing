@@ -8,6 +8,8 @@
 
 mod sending_targets_cache;
 
+#[cfg(feature = "mock_base")]
+use crate::quic_p2p::NodeInfo;
 use crate::{
     quic_p2p::{Builder, Error, Token},
     utils::LogIdent,
@@ -71,6 +73,11 @@ impl NetworkService {
             );
             self.quic_p2p.send(tgt, msg, token);
         }
+    }
+
+    #[cfg(feature = "mock_base")]
+    pub fn our_connection_info(&mut self) -> Result<NodeInfo, Error> {
+        self.quic_p2p.our_connection_info()
     }
 }
 

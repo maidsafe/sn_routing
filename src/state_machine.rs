@@ -9,9 +9,11 @@
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo},
+    error::RoutingError,
     id::{FullId, PublicId},
     network_service::NetworkBuilder,
     outbox::EventBox,
+    pause::PausedState,
     routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, ProvingNode, RelocatingNode},
@@ -20,7 +22,7 @@ use crate::{
     NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{routing_table::Authority, Chain};
+use crate::{quic_p2p::NodeInfo, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use log::LogLevel;
 use std::{
@@ -231,6 +233,14 @@ impl State {
             Terminated => false
         )
     }
+
+    pub fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+        state_dispatch!(
+            self,
+            state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
+            Terminated => Err(RoutingError::InvalidStateForOperation)
+        )
+    }
 }
 
 /// Enum returned from many message handlers
@@ -261,7 +271,6 @@ pub enum Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    #[allow(clippy::new_ret_no_self)]
     pub fn new<F>(
         init_state: F,
         network_config: NetworkConfig,
@@ -270,8 +279,8 @@ impl StateMachine {
     where
         F: FnOnce(NetworkService, Timer, &mut dyn EventBox) -> State,
     {
-        let (network_tx, network_rx) = mpmc::unbounded();
         let (action_tx, action_rx) = mpmc::unbounded();
+        let (network_tx, network_rx) = mpmc::unbounded();
 
         let network_service = unwrap!(
             NetworkBuilder::new(network_tx)
@@ -287,10 +296,40 @@ impl StateMachine {
             _ => true,
         };
         let machine = StateMachine {
-            state: state,
+            state,
             network_rx,
             action_rx,
-            is_running: is_running,
+            is_running,
+            #[cfg(feature = "mock_base")]
+            events: Vec::new(),
+        };
+
+        (action_tx, machine)
+    }
+
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
+        // TODO: should we allow pausing from other states too?
+        match self.state {
+            State::Elder(state) => {
+                let mut state = state.pause()?;
+                state.network_rx = Some(self.network_rx);
+                Ok(state)
+            }
+            _ => Err(RoutingError::InvalidStateForOperation),
+        }
+    }
+
+    pub fn resume(mut state: PausedState) -> (mpmc::Sender<Action>, Self) {
+        let (action_tx, action_rx) = mpmc::unbounded();
+        let network_rx = state.network_rx.take().expect("PausedState is incomplete");
+
+        let timer = Timer::new(action_tx.clone());
+        let state = State::Elder(Elder::resume(state, timer));
+        let machine = StateMachine {
+            state,
+            network_rx,
+            action_rx,
+            is_running: true,
             #[cfg(feature = "mock_base")]
             events: Vec::new(),
         };

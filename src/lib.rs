@@ -112,7 +112,6 @@ mod macros;
 
 mod action;
 mod chain;
-mod config_handler;
 #[cfg(not(feature = "mock_crypto"))]
 mod crypto;
 mod error;
@@ -124,6 +123,7 @@ mod messages;
 mod network_service;
 mod node;
 mod outbox;
+mod pause;
 mod peer_manager;
 mod peer_map;
 mod routing_message_filter;
@@ -167,12 +167,12 @@ use crate::mock::quic_p2p;
 pub use crate::routing_table::verify_network_invariant;
 pub use crate::{
     chain::Chain,
-    config_handler::{Config, DevConfig},
     error::{InterfaceError, RoutingError},
     event::Event,
     event_stream::EventStream,
     id::{FullId, PublicId},
     node::{Node, NodeBuilder},
+    pause::PausedState,
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable},
     types::MessageId,

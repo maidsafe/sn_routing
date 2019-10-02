@@ -12,8 +12,8 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Chain, Config, DevConfig, Event, EventStream, NetworkConfig, Node, Prefix, PublicId, XorName,
-    XorTargetInterval, Xorable,
+    Chain, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder, PausedState, Prefix,
+    PublicId, XorName, XorTargetInterval, Xorable,
 };
 use std::{
     cmp,
@@ -55,15 +55,6 @@ pub fn gen_range_except<T: Rng>(
     x
 }
 
-fn create_config(network: &Network) -> Config {
-    Config {
-        dev: Some(DevConfig {
-            min_section_size: Some(network.min_section_size()),
-            ..DevConfig::default()
-        }),
-    }
-}
-
 /// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
 /// thread.
 pub struct Nodes(pub Vec<TestNode>);
@@ -103,46 +94,25 @@ impl EventStream for TestNode {
 pub struct TestNode {
     pub inner: Node,
     network: Network,
-    endpoint: SocketAddr,
 }
 
 impl TestNode {
     pub fn builder(network: &Network) -> TestNodeBuilder {
         TestNodeBuilder {
+            inner: Node::builder(),
             network: network,
-            first_node: false,
-            network_config: None,
-            endpoint: None,
         }
     }
 
-    pub fn new(
-        network: &Network,
-        first_node: bool,
-        network_config: Option<NetworkConfig>,
-        endpoint: Option<SocketAddr>,
-    ) -> Self {
-        let endpoint = endpoint.unwrap_or_else(|| network.gen_addr());
-        network.set_next_addr(endpoint);
-
-        let config = create_config(network);
-        let builder = Node::builder().first(first_node).config(config);
-        let builder = if let Some(network_config) = network_config {
-            builder.network_config(network_config)
-        } else {
-            builder
-        };
-        let node = unwrap!(builder.create());
-
-        TestNode {
-            inner: node,
+    pub fn resume(network: &Network, state: PausedState) -> Self {
+        Self {
+            inner: Node::resume(state),
             network: network.clone(),
-            endpoint,
         }
     }
 
-    pub fn endpoint(&self) -> SocketAddr {
-        self.endpoint
+    pub fn endpoint(&mut self) -> SocketAddr {
+        unwrap!(self.inner.our_connection_info()).peer_addr
     }
 
     pub fn id(&self) -> PublicId {
@@ -192,35 +162,44 @@ pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
 }
 
 pub struct TestNodeBuilder<'a> {
+    inner: NodeBuilder,
     network: &'a Network,
-    first_node: bool,
-    network_config: Option<NetworkConfig>,
-    endpoint: Option<SocketAddr>,
 }
 
 impl<'a> TestNodeBuilder<'a> {
-    pub fn first(mut self) -> Self {
-        self.first_node = true;
-        self
+    pub fn first(self) -> Self {
+        Self {
+            inner: self.inner.first(true),
+            ..self
+        }
     }
 
-    pub fn network_config(mut self, config: NetworkConfig) -> Self {
-        self.network_config = Some(config);
-        self
+    pub fn network_config(self, config: NetworkConfig) -> Self {
+        Self {
+            inner: self.inner.network_config(config),
+            ..self
+        }
     }
 
-    pub fn endpoint(mut self, endpoint: SocketAddr) -> Self {
-        self.endpoint = Some(endpoint);
-        self
+    // TODO: remove the `unused` attribute when we add a "rejoin" test.
+    #[allow(unused)]
+    pub fn full_id(mut self, full_id: FullId) -> Self {
+        Self {
+            inner: self.inner.full_id(full_id),
+            ..self
+        }
     }
 
     pub fn create(self) -> TestNode {
-        TestNode::new(
-            self.network,
-            self.first_node,
-            self.network_config,
-            self.endpoint,
-        )
+        let inner = unwrap!(self
+            .inner
+            .min_section_size(self.network.min_section_size())
+            .create());
+
+        TestNode {
+            inner,
+            network: self.network.clone(),
+        }
     }
 }
 
@@ -332,14 +311,9 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    let endpoint = network.gen_addr();
-    nodes.push(
-        TestNode::builder(network)
-            .first()
-            .endpoint(endpoint)
-            .create(),
-    );
+    nodes.push(TestNode::builder(network).first().create());
     let _ = nodes[0].poll();
+    let endpoint = nodes[0].endpoint();
     info!("Seed node: {}", nodes[0].inner);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.

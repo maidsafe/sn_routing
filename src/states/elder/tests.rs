@@ -471,15 +471,15 @@ fn new_elder_state(
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
     let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
     let peer_map = PeerMap::new();
-    let peer_mgr = PeerManager::new(false);
+    let peer_mgr = PeerManager::new();
 
     let details = ElderDetails {
         chain,
         network_service,
-        event_backlog: Vec::new(),
+        event_backlog: Default::default(),
         full_id: full_id.clone(),
         gen_pfx_info: gen_pfx_info.clone(),
-        msg_backlog: Vec::new(),
+        msg_queue: Default::default(),
         parsec_map,
         peer_map,
         peer_mgr,
@@ -504,8 +504,6 @@ fn make_state_machine(
 
     let endpoint = network.gen_addr();
     let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
-
-    let _ = network.gen_next_addr();
 
     StateMachine::new(
         move |network_service, timer, outbox2| {

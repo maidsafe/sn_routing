@@ -8,12 +8,12 @@
 
 use crate::{
     action::Action,
-    config_handler::{self, Config},
     error::{InterfaceError, RoutingError},
     event::Event,
     event_stream::{EventStepper, EventStream},
     id::{FullId, PublicId},
     outbox::{EventBox, EventBuf},
+    pause::PausedState,
     quic_p2p::OurType,
     routing_table::Authority,
     state_machine::{State, StateMachine},
@@ -22,7 +22,7 @@ use crate::{
     NetworkConfig, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{utils::XorTargetInterval, Chain};
+use crate::{quic_p2p::NodeInfo, utils::XorTargetInterval, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::fmt::{self, Display, Formatter};
@@ -33,28 +33,37 @@ use unwrap::unwrap;
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
     first: bool,
-    config: Option<Config>,
     network_config: Option<NetworkConfig>,
+    full_id: Option<FullId>,
+    min_section_size: usize,
 }
 
 impl NodeBuilder {
     /// Configures the node to start a new network instead of joining an existing one.
-    pub fn first(self, first: bool) -> NodeBuilder {
-        NodeBuilder { first, ..self }
+    pub fn first(self, first: bool) -> Self {
+        Self { first, ..self }
     }
 
-    /// The node will use the configuration options from `config` rather than defaults.
-    pub fn config(self, config: Config) -> NodeBuilder {
-        NodeBuilder {
-            config: Some(config),
+    /// The node will use the given network config rather than default.
+    pub fn network_config(self, config: NetworkConfig) -> Self {
+        Self {
+            network_config: Some(config),
             ..self
         }
     }
 
-    /// The node will use the given network config rather than default.
-    pub fn network_config(self, config: NetworkConfig) -> NodeBuilder {
-        NodeBuilder {
-            network_config: Some(config),
+    /// The node will use the given full id rather than default, randomly generated one.
+    pub fn full_id(self, full_id: FullId) -> Self {
+        Self {
+            full_id: Some(full_id),
+            ..self
+        }
+    }
+
+    /// Override the default min section size.
+    pub fn min_section_size(self, min_section_size: usize) -> Self {
+        Self {
+            min_section_size,
             ..self
         }
     }
@@ -81,10 +90,8 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
-        let full_id = FullId::new();
-        let config = self.config.unwrap_or_else(config_handler::get_config);
-        let dev_config = config.dev.unwrap_or_default();
-        let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
+        let full_id = self.full_id.unwrap_or_else(FullId::new);
+        let min_section_size = self.min_section_size;
 
         let first = self.first;
 
@@ -132,8 +139,28 @@ impl Node {
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
             first: false,
-            config: None,
             network_config: None,
+            full_id: None,
+            min_section_size: MIN_SECTION_SIZE,
+        }
+    }
+
+    /// Pauses the node in order to be upgraded and/or restarted.
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
+        self.machine.pause()
+    }
+
+    /// Resume previously paused node.
+    pub fn resume(state: PausedState) -> Self {
+        let (interface_result_tx, interface_result_rx) = mpsc::channel();
+        let event_buffer = EventBuf::new();
+        let (_, machine) = StateMachine::resume(state);
+
+        Self {
+            interface_result_tx,
+            interface_result_rx,
+            machine,
+            event_buffer,
         }
     }
 
@@ -273,21 +300,16 @@ impl Node {
             .elder_state_mut()
             .map(|state| state.set_ignore_candidate_info_counter(counter));
     }
+
+    /// Returns connection info of this node.
+    pub fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+        self.machine.current_mut().our_connection_info()
+    }
 }
 
 #[cfg(feature = "mock_base")]
 impl Display for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         self.machine.fmt(formatter)
-    }
-}
-
-impl Drop for Node {
-    fn drop(&mut self) {
-        let _ = self
-            .machine
-            .current_mut()
-            .handle_action(Action::Terminate, &mut self.event_buffer);
-        let _ = self.event_buffer.take_all();
     }
 }

@@ -276,7 +276,8 @@ fn simultaneous_joining_nodes(
                         nodes_with_prefix_mut(&mut nodes, &setup.proxy_prefix).collect_vec();
                     rng.shuffle(&mut compatible_proxies);
 
-                    NetworkConfig::node().with_hard_coded_contact(unwrap!(nodes.first()).endpoint())
+                    NetworkConfig::node()
+                        .with_hard_coded_contact(unwrap!(nodes.first_mut()).endpoint())
                 };
 
                 let node = TestNode::builder(&network).network_config(config).create();
@@ -463,4 +464,29 @@ fn vote_prune() {
     assert!(nodes
         .iter()
         .any(|node| node.chain().parsec_prune_accumulated() > 0));
+}
+
+#[test]
+fn node_pause_and_resume() {
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, 8);
+
+    let index = network.new_rng().gen_range(0, nodes.len());
+    let state = unwrap!(nodes.remove(index).inner.pause());
+
+    // Verify the other nodes do not see the node as going offline.
+    poll_and_resend(&mut nodes);
+    for node in nodes.iter_mut() {
+        expect_no_event!(node, Event::NodeLost(_));
+    }
+
+    // Do some work while the node is paused.
+    let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+    nodes.push(TestNode::builder(&network).network_config(config).create());
+    poll_and_resend(&mut nodes);
+
+    // Resume the node and verify it caugh up to the changes in the network.
+    nodes.push(TestNode::resume(&network, state));
+    poll_and_resend(&mut nodes);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }
