@@ -8,7 +8,6 @@
 
 use crate::{
     action::Action,
-    config_handler::{self, Config},
     error::{InterfaceError, RoutingError},
     event::Event,
     event_stream::{EventStepper, EventStream},
@@ -34,23 +33,15 @@ use unwrap::unwrap;
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
     first: bool,
-    config: Option<Config>,
     network_config: Option<NetworkConfig>,
     full_id: Option<FullId>,
+    min_section_size: usize,
 }
 
 impl NodeBuilder {
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> Self {
         Self { first, ..self }
-    }
-
-    /// The node will use the configuration options from `config` rather than defaults.
-    pub fn config(self, config: Config) -> Self {
-        Self {
-            config: Some(config),
-            ..self
-        }
     }
 
     /// The node will use the given network config rather than default.
@@ -65,6 +56,14 @@ impl NodeBuilder {
     pub fn full_id(self, full_id: FullId) -> Self {
         Self {
             full_id: Some(full_id),
+            ..self
+        }
+    }
+
+    /// Override the default min section size.
+    pub fn min_section_size(self, min_section_size: usize) -> Self {
+        Self {
+            min_section_size,
             ..self
         }
     }
@@ -92,9 +91,7 @@ impl NodeBuilder {
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
         let full_id = self.full_id.unwrap_or_else(FullId::new);
-        let config = self.config.unwrap_or_else(config_handler::get_config);
-        let dev_config = config.dev.unwrap_or_default();
-        let min_section_size = dev_config.min_section_size.unwrap_or(MIN_SECTION_SIZE);
+        let min_section_size = self.min_section_size;
 
         let first = self.first;
 
@@ -142,9 +139,9 @@ impl Node {
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
             first: false,
-            config: None,
             network_config: None,
             full_id: None,
+            min_section_size: MIN_SECTION_SIZE,
         }
     }
 

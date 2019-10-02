@@ -12,8 +12,8 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Chain, Config, DevConfig, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder,
-    PausedState, Prefix, PublicId, XorName, XorTargetInterval, Xorable,
+    Chain, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder, PausedState, Prefix,
+    PublicId, XorName, XorTargetInterval, Xorable,
 };
 use std::{
     cmp,
@@ -53,15 +53,6 @@ pub fn gen_range_except<T: Rng>(
         }
     }
     x
-}
-
-fn create_config(network: &Network) -> Config {
-    Config {
-        dev: Some(DevConfig {
-            min_section_size: Some(network.min_section_size()),
-            ..DevConfig::default()
-        }),
-    }
 }
 
 /// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
@@ -200,8 +191,10 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let config = create_config(self.network);
-        let inner = unwrap!(self.inner.config(config).create());
+        let inner = unwrap!(self
+            .inner
+            .min_section_size(self.network.min_section_size())
+            .create());
 
         TestNode {
             inner,
