@@ -168,22 +168,6 @@ fn node_joins_in_front() {
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
-#[test]
-fn joining_node_with_ignoring_candidate_info() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes(&network, MIN_SECTION_SIZE);
-    let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-    // Make half of the elders ingoring the candidate_info to simulate lagging.
-    // Without the resending, this will block the joining node to be approved.
-    for node in nodes.iter_mut().take(MIN_SECTION_SIZE / 2) {
-        node.inner.set_ignore_candidate_info_counter(1);
-    }
-    nodes.push(TestNode::builder(&network).network_config(config).create());
-    let dummy = |_nodes: &[TestNode]| false;
-    poll_and_resend_until(&mut nodes, &dummy, Some(20));
-    verify_invariant_for_all_nodes(&network, &mut nodes);
-}
-
 // FIXME: the test is currently ignored as the new way of handling joining nodes allows for
 // unconsensused observations that will never be consensused, which makes the test fail. Unignore
 // it when we have a better way of detecting the end of a test.

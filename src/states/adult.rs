@@ -16,8 +16,7 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, EldersInfo, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionKeyInfo,
-        SendAckMessagePayload,
+        Chain, EldersInfo, GenesisPfxInfo, OnlinePayload, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -403,17 +402,6 @@ impl Approved for Adult {
     }
 
     fn handle_offline_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
-        Ok(())
-    }
-
-    fn handle_expect_candidate_event(
-        &mut self,
-        _: ExpectCandidatePayload,
-    ) -> Result<(), RoutingError> {
-        Ok(())
-    }
-
-    fn handle_purge_candidate_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
         Ok(())
     }
 

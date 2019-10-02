@@ -392,7 +392,6 @@ fn packet_is_parsec_gossip() {
         },
         parsec::{Request, Response},
         routing_table::Authority,
-        types::MessageId,
     };
 
     use maidsafe_utilities::serialisation;
@@ -443,9 +442,7 @@ fn packet_is_parsec_gossip() {
     let msg = RoutingMessage {
         src: Authority::ClientManager(rand::random()),
         dst: Authority::ClientManager(rand::random()),
-        content: MessageContent::Relocate {
-            message_id: MessageId::new(),
-        },
+        content: MessageContent::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
     };
     let msg = SignedRoutingMessage::insecure(msg);
     let msg = unwrap!(HopMessage::new(msg));

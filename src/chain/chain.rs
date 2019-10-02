@@ -7,19 +7,16 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    candidate::Candidate,
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatingEvent, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState, NetworkEvent,
-    OnlinePayload, Proof, ProofSet, SectionProofChain,
+    AccumulatingEvent, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState, NetworkEvent, Proof,
+    ProofSet, SectionProofChain,
 };
 use crate::{
     crypto::Digest256,
     error::RoutingError,
     id::PublicId,
     routing_table::{Authority, Error},
-    utils::LogIdent,
-    utils::XorTargetInterval,
     BlsPublicKeySet, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
@@ -58,8 +55,6 @@ pub struct Chain {
     chain_accumulator: ChainAccumulator,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
     event_cache: BTreeSet<NetworkEvent>,
-    /// Current consensused candidate.
-    candidate: Candidate,
     /// Temporary. Counting the accumulated prune events. Only used in tests until tests that
     /// actually tests pruning is in place.
     parsec_prune_accumulated: usize,
@@ -98,7 +93,6 @@ impl Chain {
             is_member,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
-            candidate: Candidate::None,
             parsec_prune_accumulated: 0,
         }
     }
@@ -279,8 +273,6 @@ impl Chain {
             | AccumulatingEvent::RemoveElder(_)
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::ExpectCandidate(_)
-            | AccumulatingEvent::PurgeCandidate(_)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
         Ok(Some(event))
@@ -633,8 +625,6 @@ impl Chain {
             | AccumulatingEvent::RemoveElder(_)
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::ExpectCandidate(_)
-            | AccumulatingEvent::PurgeCandidate(_)
             | AccumulatingEvent::TheirKeyInfo(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_) => {
@@ -1220,55 +1210,6 @@ impl Chain {
             .chain(self.state.neighbour_infos.keys())
             .min_by_key(|prefix| prefix.bit_count())
             .unwrap_or(&self.our_prefix())
-    }
-
-    /// Return true if already has a candidate
-    pub fn has_candidate(&self) -> bool {
-        !self.candidate.is_none()
-    }
-
-    /// Forget about the current candidate.
-    pub fn reset_candidate(&mut self) {
-        self.candidate.reset()
-    }
-
-    /// Forget about the current candidate if it is a member of the given section.
-    pub fn reset_candidate_if_member_of(&mut self, members: &BTreeSet<PublicId>) {
-        self.candidate.reset_if_member_of(members)
-    }
-
-    /// Return true if we are waiting for candidate info for that PublicId.
-    pub fn matching_candidate_target_interval(
-        &self,
-        old_pub_id: &PublicId,
-    ) -> Option<&XorTargetInterval> {
-        self.candidate.matching_target_interval(old_pub_id)
-    }
-
-    /// Our section decided that the candidate should be selected next.
-    /// Pre-condition: !has_resource_proof_candidate.
-    pub fn accept_as_candidate(
-        &mut self,
-        old_pub_id: PublicId,
-        target_interval: XorTargetInterval,
-    ) {
-        self.candidate.accept(old_pub_id, target_interval)
-    }
-
-    /// Handle consensus on `Online`. Marks the candidate as `ApprovedWaitingSectionInfo`.
-    /// If the candidate was already purged or is unexpected, return false.
-    pub fn try_approve_candidate(&mut self, online_payload: &OnlinePayload) -> bool {
-        self.candidate.try_approve(online_payload)
-    }
-
-    /// The public id of the candidate we are waiting to approve.
-    pub fn candidate_old_public_id(&self) -> Option<&PublicId> {
-        self.candidate.old_public_id()
-    }
-
-    /// Logs info about ongoing candidate state, if any.
-    pub fn show_candidate_status(&self, log_ident: &LogIdent) {
-        self.candidate.show_status(log_ident)
     }
 
     /// Get the number of accumulated `ParsecPrune` events. This is only used until we have

@@ -11,23 +11,10 @@ use crate::crypto::Digest256;
 use crate::id::{FullId, PublicId};
 use crate::parsec;
 use crate::routing_table::Prefix;
-use crate::types::MessageId;
 use crate::{Authority, BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName};
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt::{self, Debug, Formatter};
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct ExpectCandidatePayload {
-    /// The joining node's current public ID.
-    pub old_public_id: PublicId,
-    /// The joining node's current authority.
-    pub old_client_auth: Authority<XorName>,
-    /// The message's unique identifier.
-    pub message_id: MessageId,
-    // The routing_msg.dst
-    pub dst_name: XorName,
-}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct OnlinePayload {
@@ -93,12 +80,6 @@ pub enum AccumulatingEvent {
     NeighbourMerge(Digest256),
     SectionInfo(EldersInfo),
 
-    /// Voted for received ExpectCandidate Message.
-    ExpectCandidate(ExpectCandidatePayload),
-
-    // Voted for timeout expired for this candidate old_public_id.
-    PurgeCandidate(PublicId),
-
     // Voted for received message with keys to we can update their_keys
     TheirKeyInfo(SectionKeyInfo),
 
@@ -158,12 +139,6 @@ impl Debug for AccumulatingEvent {
             }
             AccumulatingEvent::SectionInfo(ref info) => {
                 write!(formatter, "SectionInfo({:?})", info)
-            }
-            AccumulatingEvent::ExpectCandidate(ref vote) => {
-                write!(formatter, "ExpectCandidate({:?})", vote)
-            }
-            AccumulatingEvent::PurgeCandidate(ref id) => {
-                write!(formatter, "PurgeCandidate({})", id)
             }
             AccumulatingEvent::TheirKeyInfo(ref payload) => {
                 write!(formatter, "TheirKeyInfo({:?})", payload)

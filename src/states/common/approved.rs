@@ -9,8 +9,8 @@
 use super::Relocated;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersInfo, ExpectCandidatePayload, OnlinePayload, Proof,
-        ProofSet, SectionKeyInfo, SendAckMessagePayload,
+        AccumulatingEvent, Chain, EldersInfo, OnlinePayload, Proof, ProofSet, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     error::RoutingError,
     id::PublicId,
@@ -80,18 +80,6 @@ pub trait Approved: Relocated {
         &mut self,
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError>;
-
-    // Handles an accumulated `ExpectCandidate` event.
-    // Context: a node is joining our section. Send the node our section. If the
-    // network is unbalanced, send `ExpectCandidate` on to a section with a shorter prefix.
-    fn handle_expect_candidate_event(
-        &mut self,
-        vote: ExpectCandidatePayload,
-    ) -> Result<(), RoutingError>;
-
-    /// Handles an accumulated `PurgeCandidate` event.
-    fn handle_purge_candidate_event(&mut self, old_public_id: PublicId)
-        -> Result<(), RoutingError>;
 
     fn handle_parsec_request(
         &mut self,
@@ -248,12 +236,6 @@ pub trait Approved: Relocated {
                 }
                 AccumulatingEvent::SendAckMessage(payload) => {
                     self.handle_send_ack_message_event(payload)?
-                }
-                AccumulatingEvent::ExpectCandidate(vote) => {
-                    self.handle_expect_candidate_event(vote)?
-                }
-                AccumulatingEvent::PurgeCandidate(old_public_id) => {
-                    self.handle_purge_candidate_event(old_public_id)?
                 }
                 AccumulatingEvent::ParsecPrune => {
                     info!(

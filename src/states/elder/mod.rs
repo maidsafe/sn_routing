@@ -15,8 +15,8 @@ use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersInfo,
-        ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
-        PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
+        GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
+        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -39,7 +39,6 @@ use crate::{
     state_machine::Transition,
     time::{Duration, Instant},
     timer::Timer,
-    types::MessageId,
     utils::{self, XorTargetInterval},
     xor_name::XorName,
     BlsPublicKeySet, ConnectionInfo, NetworkService,
@@ -62,8 +61,6 @@ const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 //const MAX_IDLE_ROUNDS: u64 = 100;
 //const TICK_TIMEOUT_SECS: u64 = 60;
-/// Interval between displaying info about current candidate.
-const CANDIDATE_STATUS_INTERVAL: Duration = Duration::from_secs(60);
 /// Duration for which all clients on a given IP will be blocked from joining this node.
 const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 /// Duration for which clients' IDs we disconnected from are retained.
@@ -101,8 +98,6 @@ pub struct Elder {
     next_relocation_dst: Option<XorName>,
     /// Interval used for relocation in mock network tests.
     next_relocation_interval: Option<XorTargetInterval>,
-    /// The timer token for displaying the current candidate status.
-    candidate_status_token: u64,
     /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
     banned_client_ips: LruCache<IpAddr, ()>,
     /// Recently-disconnected clients.  Clients are added to this when we disconnect from them so we
@@ -116,8 +111,6 @@ pub struct Elder {
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
     chain: Chain,
-    #[cfg(feature = "mock_base")]
-    ignore_candidate_info_counter: u8,
     pfx_is_successfully_polled: bool,
 }
 
@@ -220,7 +213,6 @@ impl Elder {
         let timer = details.timer;
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
-        let candidate_status_token = timer.schedule(CANDIDATE_STATUS_INTERVAL);
 
         Self {
             network_service: details.network_service,
@@ -235,7 +227,6 @@ impl Elder {
             timer: timer,
             next_relocation_dst: None,
             next_relocation_interval: None,
-            candidate_status_token,
             banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
@@ -243,8 +234,6 @@ impl Elder {
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
             chain: details.chain,
-            #[cfg(feature = "mock_base")]
-            ignore_candidate_info_counter: 0,
             pfx_is_successfully_polled: false,
         }
     }
@@ -393,8 +382,6 @@ impl Elder {
             completed_events,
         } = self.chain.finalise_prefix_change()?;
         self.gen_pfx_info = gen_pfx_info;
-        self.chain.reset_candidate();
-        self.peer_mgr.reset_candidate();
         self.init_parsec(); // We don't reset the chain on prefix change.
 
         for obs in drained_obs {
@@ -430,9 +417,7 @@ impl Elder {
                 AccumulatingEvent::AddElder(_, _)
                 | AccumulatingEvent::RemoveElder(_)
                 | AccumulatingEvent::Online(_)
-                | AccumulatingEvent::ExpectCandidate(_)
-                | AccumulatingEvent::ParsecPrune
-                | AccumulatingEvent::PurgeCandidate(_) => false,
+                | AccumulatingEvent::ParsecPrune => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 AccumulatingEvent::SectionInfo(ref elders_info) => {
@@ -588,23 +573,6 @@ impl Elder {
 
         match (routing_msg.content, routing_msg.src, routing_msg.dst) {
             (
-                Relocate { message_id },
-                Client {
-                    client_id,
-                    proxy_node_name,
-                },
-                Section(dst_name),
-            ) => self.handle_relocate_request(client_id, proxy_node_name, dst_name, message_id),
-            (
-                ExpectCandidate {
-                    old_public_id,
-                    old_client_auth,
-                    message_id,
-                },
-                Section(_),
-                Section(dst_name),
-            ) => self.handle_expect_candidate(old_public_id, old_client_auth, dst_name, message_id),
-            (
                 ConnectionRequest {
                     conn_info, pub_id, ..
                 },
@@ -697,8 +665,6 @@ impl Elder {
             let src = Authority::ManagedNode(*self.name());
             let _ = self.send_connection_request(new_pub_id, src, new_client_auth, outbox);
         };
-
-        self.peer_mgr.reset_candidate();
 
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
@@ -845,153 +811,6 @@ impl Elder {
             new_public_id: pub_id,
             client_auth: Authority::ManagedNode(*pub_id.name()),
         }));
-    }
-
-    // Received by X; From A -> X
-    fn handle_relocate_request(
-        &mut self,
-        relocating_node_id: PublicId,
-        proxy_name: XorName,
-        dst_name: XorName,
-        message_id: MessageId,
-    ) -> Result<(), RoutingError> {
-        // Validate relocating node has contacted the correct Section-X
-        if *relocating_node_id.name() != dst_name {
-            error!(
-                "{} Invalid destination in a relocate request! Node name: {:?}, destination: {:?}",
-                self,
-                relocating_node_id.name(),
-                dst_name
-            );
-            return Err(RoutingError::InvalidDestination);
-        }
-
-        let close_section = self
-            .chain
-            .close_names(&dst_name)
-            .ok_or(RoutingError::InvalidDestination)?;
-
-        let relocation_dst = self
-            .next_relocation_dst
-            .unwrap_or_else(|| utils::calculate_relocation_dst(close_section, &dst_name));
-
-        // From X -> Y; Send to close section of the relocated name
-        let request_content = MessageContent::ExpectCandidate {
-            old_public_id: relocating_node_id,
-            old_client_auth: Authority::Client {
-                client_id: relocating_node_id,
-                proxy_node_name: proxy_name,
-            },
-            message_id: message_id,
-        };
-
-        let src = Authority::Section(dst_name);
-        let dst = Authority::Section(relocation_dst);
-        self.send_routing_message(src, dst, request_content)
-    }
-
-    // Received by Y; From X -> Y
-    // Context: a node is joining our section. Vote `ExpectCandidate`.
-    fn handle_expect_candidate(
-        &mut self,
-        old_public_id: PublicId,
-        old_client_auth: Authority<XorName>,
-        dst_name: XorName,
-        message_id: MessageId,
-    ) -> Result<(), RoutingError> {
-        self.vote_for_event(AccumulatingEvent::ExpectCandidate(ExpectCandidatePayload {
-            old_public_id,
-            old_client_auth,
-            dst_name,
-            message_id,
-        }));
-        Ok(())
-    }
-
-    // Return Prefix of section with shorter prefix to resend the `ExpectCandidate` to.
-    // Return None if we are the best section.
-    fn need_to_forward_expect_candidate_to_prefix(&self) -> Option<Prefix<XorName>> {
-        if cfg!(feature = "mock_base") && self.next_relocation_interval.is_some() {
-            // Forbid section balancing: It Breaks things in this case.
-            return None;
-        }
-
-        let min_len_prefix = self.chain.min_len_prefix();
-        if min_len_prefix == *self.our_prefix() {
-            // Our section is the best destination.
-            return None;
-        }
-
-        Some(min_len_prefix)
-    }
-
-    // Forward ExpectCandidate to section with given prefix.
-    fn forward_expect_candidate_to_prefix(
-        &mut self,
-        vote: ExpectCandidatePayload,
-        prefix: Prefix<XorName>,
-    ) -> Result<(), RoutingError> {
-        let src = Authority::Section(vote.dst_name);
-        let dst = Authority::Section(prefix.substituted_in(vote.dst_name));
-        let content = MessageContent::ExpectCandidate {
-            old_public_id: vote.old_public_id,
-            old_client_auth: vote.old_client_auth,
-            message_id: vote.message_id,
-        };
-
-        self.send_routing_message(src, dst, content)
-    }
-
-    // Reject candidate without a response as one is already processed: return None.
-    // Otherwise, store the candidate for resource proof: return the target interval.
-    // Take next_relocation_interval if available.
-    fn accept_candidate_with_interval(
-        &mut self,
-        vote: &ExpectCandidatePayload,
-    ) -> Option<XorTargetInterval> {
-        if self.chain.has_candidate() {
-            return None;
-        }
-
-        let target_interval = self.next_relocation_interval.take().unwrap_or_else(|| {
-            utils::calculate_relocation_interval(&self.our_prefix(), &self.chain.our_section())
-        });
-
-        self.chain
-            .accept_as_candidate(vote.old_public_id, target_interval.clone());
-        self.peer_mgr.accept_as_candidate();
-
-        Some(target_interval)
-    }
-
-    // Send RelocateResponse to the candidate using the target_interval.
-    fn send_relocate_response(
-        &mut self,
-        vote: ExpectCandidatePayload,
-        target_interval: XorTargetInterval,
-    ) -> Result<(), RoutingError> {
-        let own_section = {
-            let our_info = self.chain.our_info();
-            (*our_info.prefix(), our_info.members().clone())
-        };
-
-        let src = Authority::Section(vote.dst_name);
-        let dst = vote.old_client_auth;
-        let content = MessageContent::RelocateResponse {
-            target_interval: target_interval,
-            section: own_section,
-            message_id: vote.message_id,
-        };
-
-        info!(
-            "{} Our section with {:?} accepted candidate with old name {}.",
-            self,
-            self.our_prefix(),
-            vote.old_public_id
-        );
-        trace!("{} Sending {:?} to {:?}", self, content, dst);
-
-        self.send_routing_message(src, dst, content)
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -1324,12 +1143,6 @@ impl Elder {
     }
 
     fn remove_expired_peers(&mut self) {
-        if self.peer_mgr.expire_candidate_once() {
-            if let Some(expired_id) = self.chain.candidate_old_public_id().cloned() {
-                self.vote_for_event(AccumulatingEvent::PurgeCandidate(expired_id));
-            }
-        }
-
         for pub_id in self.peer_mgr.remove_expired_peers() {
             debug!("{} Disconnecting from timed out peer {:?}", self, pub_id);
             // We've already removed from peer manager but this helps clean out connections to
@@ -1433,9 +1246,6 @@ impl Base for Elder {
             self.proxy_load_amount = 0;
             self.update_peer_states(outbox);
             outbox.send_event(Event::TimerTicked);
-        } else if self.candidate_status_token == token {
-            self.candidate_status_token = self.timer.schedule(CANDIDATE_STATUS_INTERVAL);
-            self.chain.show_candidate_status(&self.log_ident());
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
@@ -1561,14 +1371,6 @@ impl Elder {
 
     pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
         self.peer_mgr.get_peer(pub_id).map_or(false, Peer::is_node)
-    }
-
-    pub fn has_candidate(&self) -> bool {
-        self.chain.has_candidate()
-    }
-
-    pub fn set_ignore_candidate_info_counter(&mut self, counter: u8) {
-        self.ignore_candidate_info_counter = counter;
     }
 
     pub fn get_peer(&self, pub_id: &PublicId) -> Option<&Peer> {
@@ -1793,37 +1595,6 @@ impl Approved for Elder {
         self.merge_if_necessary()
     }
 
-    fn handle_expect_candidate_event(
-        &mut self,
-        vote: ExpectCandidatePayload,
-    ) -> Result<(), RoutingError> {
-        if let Some(prefix) = self.need_to_forward_expect_candidate_to_prefix() {
-            return self.forward_expect_candidate_to_prefix(vote, prefix);
-        }
-
-        if let Some(target_interval) = self.accept_candidate_with_interval(&vote) {
-            return self.send_relocate_response(vote, target_interval);
-        }
-
-        // Nothing to do with this event.
-        Ok(())
-    }
-
-    fn handle_purge_candidate_event(
-        &mut self,
-        old_public_id: PublicId,
-    ) -> Result<(), RoutingError> {
-        if self
-            .chain
-            .matching_candidate_target_interval(&old_public_id)
-            .is_some()
-        {
-            self.chain.reset_candidate();
-            self.peer_mgr.reset_candidate();
-        }
-        Ok(())
-    }
-
     fn handle_section_info_event(
         &mut self,
         elders_info: EldersInfo,
@@ -1849,9 +1620,6 @@ impl Approved for Elder {
         self.update_peer_states(outbox);
 
         if self_sec_update {
-            self.chain
-                .reset_candidate_if_member_of(elders_info.members());
-
             // Vote to update our self messages proof
             self.vote_send_section_info_ack(SendAckMessagePayload {
                 ack_prefix: *elders_info.prefix(),
