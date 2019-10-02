@@ -162,18 +162,17 @@ struct Candidate {
 ///
 /// This keeps track of which nodes we know of, which ones we have tried to connect to, which IDs
 /// we have verified, and whom we are connected to.
+#[derive(Default)]
 pub struct PeerManager {
     peers: BTreeMap<PublicId, Peer>,
-    disable_client_rate_limiter: bool,
     candidate: Option<Candidate>,
 }
 
 impl PeerManager {
     /// Returns a new peer manager with no entries.
-    pub fn new(disable_client_rate_limiter: bool) -> PeerManager {
+    pub fn new() -> PeerManager {
         PeerManager {
             peers: BTreeMap::new(),
-            disable_client_rate_limiter: disable_client_rate_limiter,
             candidate: None,
         }
     }
@@ -271,11 +270,10 @@ impl PeerManager {
 
     /// Checks whether we can accept more clients. We only allow one client per IP address.
     pub fn can_accept_client(&self, client_ip: &IpAddr) -> bool {
-        self.disable_client_rate_limiter
-            || !self
-                .peers
-                .values()
-                .any(|peer| peer.client_ip() == Some(client_ip))
+        !self
+            .peers
+            .values()
+            .any(|peer| peer.client_ip() == Some(client_ip))
     }
 
     /// Inserts the peer in the `Connecting` state, unless already exists.

@@ -14,7 +14,6 @@ use super::{
 };
 use crate::{
     chain::GenesisPfxInfo,
-    config_handler,
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
@@ -74,9 +73,7 @@ impl ProvingNode {
         details: ProvingNodeDetails,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
-        let dev_config = config_handler::get_config().dev.unwrap_or_default();
-
-        let mut peer_mgr = PeerManager::new(dev_config.disable_client_rate_limiter);
+        let mut peer_mgr = PeerManager::new();
         peer_mgr.insert_peer(details.proxy_pub_id, PeerState::Proxy);
 
         let mut node = Self {

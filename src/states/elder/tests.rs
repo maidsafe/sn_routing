@@ -471,7 +471,7 @@ fn new_elder_state(
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
     let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
     let peer_map = PeerMap::new();
-    let peer_mgr = PeerManager::new(false);
+    let peer_mgr = PeerManager::new();
 
     let details = ElderDetails {
         chain,

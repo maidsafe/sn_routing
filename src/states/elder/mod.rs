@@ -18,7 +18,6 @@ use crate::{
         ExpectCandidatePayload, GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange,
         PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload,
     },
-    config_handler,
     crypto::{signing::Signature, Digest256},
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
@@ -128,8 +127,6 @@ impl Elder {
         timer: Timer,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
-        let dev_config = config_handler::get_config().dev.unwrap_or_default();
-
         let public_id = *full_id.public_id();
         let gen_pfx_info = GenesisPfxInfo {
             first_info: create_first_elders_info(public_id)?,
@@ -139,7 +136,7 @@ impl Elder {
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
         let peer_map = PeerMap::new();
-        let peer_mgr = PeerManager::new(dev_config.disable_client_rate_limiter);
+        let peer_mgr = PeerManager::new();
 
         let details = ElderDetails {
             chain,
