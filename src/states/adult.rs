@@ -9,7 +9,7 @@
 use super::{
     bootstrapping_peer::BootstrappingPeer,
     common::{
-        proxied, Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
+        Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
         RelocatedNotEstablished,
     },
     elder::{Elder, ElderDetails},
@@ -19,7 +19,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, RoutingMessage},
+    messages::{DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage},
     outbox::EventBox,
     parsec::ParsecMap,
     peer_manager::PeerManager,
@@ -305,9 +305,25 @@ impl Bootstrapped for Adult {
     fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        expires_at: Option<Instant>,
+        _expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, expires_at)
+        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
+            return Ok(()); // Message is for us.
+        }
+
+        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
+
+        // We should only be connected to our own Elders - send to all of them
+        // Need to collect IDs first so that self is not borrowed via the iterator
+        let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
+        for pub_id in target_ids {
+            if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &pub_id) {
+                let message = self.to_hop_message(signed_msg.clone())?;
+                self.send_message(&pub_id, message);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -340,8 +356,8 @@ impl Relocated for Adult {
 }
 
 impl BootstrappedNotEstablished for Adult {
-    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
+    fn get_proxy_public_id(&self, _proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
+        Err(RoutingError::InvalidStateForOperation)
     }
 }
 
