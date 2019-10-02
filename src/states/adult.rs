@@ -7,21 +7,19 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
+    bootstrapping_peer::BootstrappingPeer,
     common::{
-        proxied, Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
+        Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
         RelocatedNotEstablished,
     },
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    chain::{
-        Chain, EldersInfo, ExpectCandidatePayload, GenesisPfxInfo, OnlinePayload, SectionKeyInfo,
-        SendAckMessagePayload,
-    },
+    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload},
     error::RoutingError,
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, RoutingMessage},
+    messages::{DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage},
     outbox::EventBox,
     parsec::ParsecMap,
     peer_manager::PeerManager,
@@ -38,6 +36,7 @@ use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
+const ADD_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -64,17 +63,19 @@ pub struct Adult {
     peer_map: PeerMap,
     peer_mgr: PeerManager,
     poke_timer_token: u64,
+    add_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
 }
 
 impl Adult {
-    pub fn from_proving_node(
+    pub fn from_joining_peer(
         details: AdultDetails,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let poke_timer_token = details.timer.schedule(POKE_TIMEOUT);
+        let add_timer_token = details.timer.schedule(ADD_TIMEOUT);
 
         let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
         let chain = Chain::new(
@@ -96,6 +97,7 @@ impl Adult {
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             poke_timer_token,
+            add_timer_token,
         };
 
         node.init(outbox)?;
@@ -110,6 +112,16 @@ impl Adult {
         }
 
         Ok(())
+    }
+
+    pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
+        let min_section_size = self.min_section_size();
+        Ok(State::BootstrappingPeer(BootstrappingPeer::new(
+            self.network_service,
+            FullId::new(),
+            min_section_size,
+            self.timer,
+        )))
     }
 
     pub fn into_elder(
@@ -219,6 +231,20 @@ impl Base for Adult {
         if self.poke_timer_token == token {
             self.send_parsec_poke();
             self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
+        } else if self.add_timer_token == token {
+            debug!("{} - Timeout when trying to join a section.", self);
+
+            for peer_addr in self
+                .peer_map
+                .remove_all()
+                .map(|conn_info| conn_info.peer_addr())
+            {
+                self.network_service
+                    .service_mut()
+                    .disconnect_from(peer_addr);
+            }
+
+            return Transition::Rebootstrap;
         }
 
         Transition::Stay
@@ -279,9 +305,25 @@ impl Bootstrapped for Adult {
     fn send_routing_message_impl(
         &mut self,
         routing_msg: RoutingMessage,
-        expires_at: Option<Instant>,
+        _expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message_via_proxy(routing_msg, expires_at)
+        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
+            return Ok(()); // Message is for us.
+        }
+
+        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
+
+        // We should only be connected to our own Elders - send to all of them
+        // Need to collect IDs first so that self is not borrowed via the iterator
+        let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
+        for pub_id in target_ids {
+            if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &pub_id) {
+                let message = self.to_hop_message(signed_msg.clone())?;
+                self.send_message(&pub_id, message);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -314,8 +356,8 @@ impl Relocated for Adult {
 }
 
 impl BootstrappedNotEstablished for Adult {
-    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        proxied::find_proxy_public_id(self, &self.peer_mgr, proxy_name)
+    fn get_proxy_public_id(&self, _proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
+        Err(RoutingError::InvalidStateForOperation)
     }
 }
 
@@ -349,7 +391,6 @@ impl Approved for Adult {
     fn handle_add_elder_event(
         &mut self,
         new_pub_id: PublicId,
-        _: Authority<XorName>,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.chain.add_member(new_pub_id)?;
@@ -367,24 +408,13 @@ impl Approved for Adult {
 
     fn handle_online_event(
         &mut self,
-        _: OnlinePayload,
+        _: PublicId,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         Ok(())
     }
 
     fn handle_offline_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
-        Ok(())
-    }
-
-    fn handle_expect_candidate_event(
-        &mut self,
-        _: ExpectCandidatePayload,
-    ) -> Result<(), RoutingError> {
-        Ok(())
-    }
-
-    fn handle_purge_candidate_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
         Ok(())
     }
 

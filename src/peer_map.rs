@@ -114,8 +114,14 @@ impl PeerMap {
         self.forward.get(pub_id)
     }
 
+    // Returns an iterator over the public IDs of connected peers
     pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
         self.forward.keys()
+    }
+
+    // Returns `true` if we have the connection info for a given public ID
+    pub fn has(&self, pub_id: &PublicId) -> bool {
+        self.forward.contains_key(pub_id)
     }
 }
 

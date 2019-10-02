@@ -10,15 +10,10 @@ mod adult;
 mod bootstrapping_peer;
 pub mod common;
 mod elder;
-mod proving_node;
-mod relocating_node;
+mod joining_peer;
 
 pub use self::{
-    adult::Adult,
-    bootstrapping_peer::{BootstrappingPeer, TargetState},
-    elder::Elder,
-    proving_node::ProvingNode,
-    relocating_node::RelocatingNode,
+    adult::Adult, bootstrapping_peer::BootstrappingPeer, elder::Elder, joining_peer::JoiningPeer,
 };
 
 //

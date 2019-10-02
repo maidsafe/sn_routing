@@ -6,28 +6,24 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    common::Base,
-    proving_node::{ProvingNode, ProvingNodeDetails},
-    relocating_node::{RelocatingNode, RelocatingNodeDetails},
-};
+use super::common::Base;
 use crate::{
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage},
+    messages::{BootstrapResponse, DirectMessage, HopMessage},
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::NodeInfo,
-    quic_p2p::Peer,
-    routing_table::{Authority, Prefix},
+    quic_p2p::{NodeInfo, Peer},
+    routing_table::Authority,
     state_machine::{State, Transition},
+    states::JoiningPeer,
     timer::Timer,
     xor_name::XorName,
     NetworkService,
 };
 use std::{
-    collections::BTreeSet,
+    collections::HashSet,
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     time::Duration,
@@ -36,31 +32,19 @@ use std::{
 // Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
-// State to transition into after bootstrap process is complete.
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-pub enum TargetState {
-    RelocatingNode,
-    ProvingNode {
-        old_full_id: FullId,
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-    },
-}
-
 // State of Client or Node while bootstrapping.
 pub struct BootstrappingPeer {
+    nodes_to_await: HashSet<SocketAddr>,
     bootstrap_connection: Option<(NodeInfo, u64)>,
     network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
     peer_map: PeerMap,
-    target_state: TargetState,
     timer: Timer,
 }
 
 impl BootstrappingPeer {
     pub fn new(
-        target_state: TargetState,
         mut network_service: NetworkService,
         full_id: FullId,
         min_section_size: usize,
@@ -74,53 +58,24 @@ impl BootstrappingPeer {
             min_section_size,
             timer: timer,
             bootstrap_connection: None,
+            nodes_to_await: Default::default(),
             peer_map: PeerMap::new(),
-            target_state,
         }
     }
 
-    pub fn into_target_state(
+    pub fn into_joining(
         self,
-        proxy_pub_id: PublicId,
-        outbox: &mut dyn EventBox,
+        node_infos: Vec<NodeInfo>,
+        _outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
-        match self.target_state {
-            TargetState::RelocatingNode => {
-                let details = RelocatingNodeDetails {
-                    network_service: self.network_service,
-                    full_id: self.full_id,
-                    min_section_size: self.min_section_size,
-                    peer_map: self.peer_map,
-                    proxy_pub_id,
-                    timer: self.timer,
-                };
-
-                RelocatingNode::from_bootstrapping(details)
-                    .map(State::RelocatingNode)
-                    .map_err(|err| {
-                        outbox.send_event(Event::RestartRequired);
-                        err
-                    })
-            }
-            TargetState::ProvingNode {
-                old_full_id,
-                our_section,
-                ..
-            } => {
-                let details = ProvingNodeDetails {
-                    network_service: self.network_service,
-                    full_id: self.full_id,
-                    min_section_size: self.min_section_size,
-                    old_full_id,
-                    our_section,
-                    peer_map: self.peer_map,
-                    proxy_pub_id,
-                    timer: self.timer,
-                };
-
-                ProvingNode::from_bootstrapping(details, outbox).map(State::ProvingNode)
-            }
-        }
+        Ok(State::JoiningPeer(JoiningPeer::new(
+            self.network_service,
+            self.full_id,
+            self.min_section_size,
+            self.timer,
+            self.peer_map,
+            node_infos,
+        )))
     }
 
     fn send_bootstrap_request(&mut self, dst: NodeInfo) {
@@ -141,17 +96,52 @@ impl BootstrappingPeer {
         self.send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
-    fn rebootstrap(&mut self) {
+    fn reconnect_to_new_section(&mut self, new_node_infos: Vec<NodeInfo>) {
+        if let Some((node_info, _)) = self.bootstrap_connection.take() {
+            debug!(
+                "{} Dropping connected node at {} and retrying.",
+                self, node_info.peer_addr
+            );
+
+            // drop the current connection
+            self.network_service
+                .service_mut()
+                .disconnect_from(node_info.peer_addr);
+        }
+
+        self.nodes_to_await = new_node_infos
+            .iter()
+            .map(|node_info| node_info.peer_addr)
+            .collect();
+
+        for node_info in new_node_infos {
+            self.network_service.service_mut().connect_to(node_info);
+        }
+    }
+
+    fn disconnect_from_bootstrap_proxy(&mut self) {
         if let Some((node_info, _)) = self.bootstrap_connection.take() {
             debug!(
                 "{} Dropping bootstrap node at {} and retrying.",
                 self, node_info.peer_addr
             );
+
             self.network_service
                 .service_mut()
                 .disconnect_from(node_info.peer_addr);
-            self.network_service.service_mut().bootstrap();
         }
+    }
+
+    fn rebootstrap(&mut self) {
+        // only rebootstrap if we're not waiting for connections from anyone else -
+        // otherwise we'll just wait and maybe another connection succeeds
+        if !self.nodes_to_await.is_empty() {
+            return;
+        }
+
+        self.disconnect_from_bootstrap_proxy();
+
+        self.network_service.service_mut().bootstrap();
     }
 }
 
@@ -204,6 +194,8 @@ impl Base for BootstrappingPeer {
                     self, node_info.peer_addr
                 );
 
+                self.disconnect_from_bootstrap_proxy();
+
                 self.rebootstrap();
             }
         }
@@ -237,16 +229,40 @@ impl Base for BootstrappingPeer {
         Transition::Terminate
     }
 
+    fn handle_connected_to(&mut self, conn_info: Peer, _outbox: &mut dyn EventBox) -> Transition {
+        let _ = self.nodes_to_await.remove(&conn_info.peer_addr());
+        if self.bootstrap_connection.is_some() {
+            // we already have an active connection, drop this one
+            self.network_service
+                .service_mut()
+                .disconnect_from(conn_info.peer_addr());
+        } else {
+            if let Peer::Node { ref node_info } = conn_info {
+                debug!(
+                    "{} Received ConnectedTo event from {}.",
+                    self, node_info.peer_addr
+                );
+
+                // Established connection. Pending Validity checks
+                self.send_bootstrap_request(node_info.clone());
+            }
+            self.peer_map_mut().connect(conn_info);
+        }
+        Transition::Stay
+    }
+
     fn handle_connection_failure(
         &mut self,
         peer_addr: SocketAddr,
         _: &mut dyn EventBox,
     ) -> Transition {
+        let _ = self.nodes_to_await.remove(&peer_addr);
         let _ = self.peer_map_mut().disconnect(peer_addr);
 
         if let Some((node_info, _)) = self.bootstrap_connection.as_ref() {
             if node_info.peer_addr == peer_addr {
                 info!("{} Lost connection to proxy {}.", self, peer_addr);
+                self.disconnect_from_bootstrap_proxy();
                 self.rebootstrap();
             }
         }
@@ -257,17 +273,20 @@ impl Base for BootstrappingPeer {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        pub_id: PublicId,
+        _pub_id: PublicId,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectMessage::*;
         match msg {
-            BootstrapResponse(Ok(())) => Ok(Transition::IntoBootstrapped {
-                proxy_public_id: pub_id,
-            }),
-            BootstrapResponse(Err(error)) => {
-                info!("{} Connection failed: {}", self, error);
-                self.rebootstrap();
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join(node_infos)) => {
+                info!("{} - Joining a section: {:?}", self, node_infos);
+                Ok(Transition::IntoJoining { node_infos })
+            }
+            DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_node_infos)) => {
+                info!(
+                    "{} - Bootstrapping redirected to another set of peers: {:?}",
+                    self, new_node_infos
+                );
+                self.reconnect_to_new_section(new_node_infos);
                 Ok(Transition::Stay)
             }
             _ => {
@@ -328,7 +347,6 @@ mod tests {
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
             move |network_service, timer, _outbox2| {
                 State::BootstrappingPeer(BootstrappingPeer::new(
-                    TargetState::RelocatingNode,
                     network_service,
                     node_b_full_id,
                     min_section_size,

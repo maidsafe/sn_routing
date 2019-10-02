@@ -23,8 +23,6 @@ use std::{
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
-/// Duration after which a candidate is considered as expired.
-const CANDIDATE_EXPIRED_TIMEOUT: Duration = Duration::from_secs(90);
 /// Time (in seconds) after which the connection to a peer is considered failed.
 const CONNECTING_PEER_TIMEOUT_SECS: u64 = 150;
 /// Time (in seconds) the node waits for a peer to either become valid once connected to it or to
@@ -34,7 +32,6 @@ const CONNECTED_PEER_TIMEOUT_SECS: u64 = 120;
 #[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod test_consts {
-    pub const CANDIDATE_EXPIRED_TIMEOUT_SECS: u64 = super::CANDIDATE_EXPIRED_TIMEOUT.as_secs();
     pub const CONNECTING_PEER_TIMEOUT_SECS: u64 = super::CONNECTING_PEER_TIMEOUT_SECS;
     pub const CONNECTED_PEER_TIMEOUT_SECS: u64 = super::CONNECTED_PEER_TIMEOUT_SECS;
     pub const JOINING_NODE_TIMEOUT_SECS: u64 = super::JOINING_NODE_TIMEOUT_SECS;
@@ -58,8 +55,6 @@ pub enum PeerState {
     JoiningNode,
     /// We are connected to the peer who is a full node.
     Node { was_joining: bool },
-    /// We are connected to the peer who is our proxy node.
-    Proxy,
 }
 
 impl<'a> From<&'a ConnectionInfo> for PeerState {
@@ -98,7 +93,6 @@ impl Peer {
         match self.state {
             PeerState::Connecting => false,
             PeerState::Connected
-            | PeerState::Proxy
             | PeerState::Client { .. }
             | PeerState::JoiningNode
             | PeerState::Node { .. } => true,
@@ -110,7 +104,7 @@ impl Peer {
     fn is_expired(&self) -> bool {
         let timeout = match self.state {
             PeerState::Connecting => CONNECTING_PEER_TIMEOUT_SECS,
-            PeerState::JoiningNode | PeerState::Proxy => JOINING_NODE_TIMEOUT_SECS,
+            PeerState::JoiningNode => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
             PeerState::Client { .. } | PeerState::Node { .. } => {
                 return false;
@@ -126,11 +120,6 @@ impl Peer {
             PeerState::Node { .. } => true,
             _ => false,
         }
-    }
-
-    /// Returns whether the peer is our proxy node.
-    fn is_proxy(&self) -> bool {
-        self.state == PeerState::Proxy
     }
 
     // If the peer is a client, return its IP, otherwise returns `None`.
@@ -152,12 +141,6 @@ impl Peer {
     }
 }
 
-/// Info about the current candidate.
-struct Candidate {
-    timestamp: Instant,
-    expired_once: bool,
-}
-
 /// A container for information about other nodes in the network.
 ///
 /// This keeps track of which nodes we know of, which ones we have tried to connect to, which IDs
@@ -165,7 +148,6 @@ struct Candidate {
 #[derive(Default)]
 pub struct PeerManager {
     peers: BTreeMap<PublicId, Peer>,
-    candidate: Option<Candidate>,
 }
 
 impl PeerManager {
@@ -173,22 +155,12 @@ impl PeerManager {
     pub fn new() -> PeerManager {
         PeerManager {
             peers: BTreeMap::new(),
-            candidate: None,
         }
     }
 
     /// Handle a `BootstrapRequest` message.
     pub fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: &ConnectionInfo) {
         self.insert_peer(pub_id, conn_info.into());
-    }
-
-    /// Our section decided that the candidate should be selected next.
-    /// Store start time so we can detect when candidate expires.
-    pub fn accept_as_candidate(&mut self) {
-        self.candidate = Some(Candidate {
-            timestamp: Instant::now(),
-            expired_once: false,
-        });
     }
 
     /// Mark the given peer as node.
@@ -219,37 +191,11 @@ impl PeerManager {
         self.peers.iter().filter(|(_, peer)| peer.is_connected())
     }
 
-    /// Returns if the given peer is our proxy node.
-    pub fn is_proxy(&self, pub_id: &PublicId) -> bool {
-        self.peers.get(pub_id).map_or(false, Peer::is_proxy)
-    }
-
     /// Returns if the given peer is or was a joining node.
     pub fn is_or_was_joining_node(&self, pub_id: &PublicId) -> bool {
         self.peers
             .get(pub_id)
             .map_or(false, Peer::is_or_was_joining_node)
-    }
-
-    /// Returns the proxy node's name if we have a proxy.
-    pub fn get_proxy_name(&self) -> Option<&XorName> {
-        self.peers
-            .iter()
-            .find(|(_, peer)| peer.state == PeerState::Proxy)
-            .map(|(pub_id, _)| pub_id.name())
-    }
-
-    /// Returns whether the candidate has expired
-    pub fn expire_candidate_once(&mut self) -> bool {
-        if let Some(candidate) = self.candidate.as_mut() {
-            if !candidate.expired_once && candidate.timestamp.elapsed() > CANDIDATE_EXPIRED_TIMEOUT
-            {
-                candidate.expired_once = true;
-                return true;
-            }
-        }
-
-        false
     }
 
     /// Remove and return `PublicId`s of expired peers.
@@ -308,11 +254,6 @@ impl PeerManager {
     /// If a peer with the same public id already exists, it is overwritten.
     pub fn insert_peer(&mut self, pub_id: PublicId, state: PeerState) {
         let _ = self.peers.insert(pub_id, Peer::new(state));
-    }
-
-    /// Forget about the current candidate.
-    pub fn reset_candidate(&mut self) {
-        self.candidate = None;
     }
 
     /// Removes the given peer. Returns whether the peer was actually present.

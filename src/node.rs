@@ -17,7 +17,7 @@ use crate::{
     quic_p2p::OurType,
     routing_table::Authority,
     state_machine::{State, StateMachine},
-    states::{self, BootstrappingPeer, TargetState},
+    states::{self, BootstrappingPeer},
     xor_name::XorName,
     NetworkConfig, MIN_SECTION_SIZE,
 };
@@ -106,7 +106,6 @@ impl NodeBuilder {
                         .unwrap_or(State::Terminated)
                 } else {
                     State::BootstrappingPeer(BootstrappingPeer::new(
-                        TargetState::RelocatingNode,
                         network_service,
                         full_id,
                         min_section_size,
@@ -245,22 +244,9 @@ impl Node {
         unwrap!(self.elder_state(), "Should be State::Elder")
     }
 
-    /// Returns the underlying ProvingNode state.
-    pub fn proving_node_state(&self) -> Option<&crate::states::ProvingNode> {
-        match *self.machine.current() {
-            State::ProvingNode(ref state) => Some(state),
-            _ => None,
-        }
-    }
-
     /// Returns whether the current state is `Node`.
     pub fn is_elder(&self) -> bool {
         self.elder_state().is_some()
-    }
-
-    /// Returns whether the current state is `ProvingNode`.
-    pub fn is_proving_node(&self) -> bool {
-        self.proving_node_state().is_some()
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
@@ -292,13 +278,6 @@ impl Node {
     /// Checks whether the given authority represents self.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
-    }
-
-    /// Sets a counter to be used ignoring certain number of `CandidateInfo`.
-    pub fn set_ignore_candidate_info_counter(&mut self, counter: u8) {
-        let _ = self
-            .elder_state_mut()
-            .map(|state| state.set_ignore_candidate_info_counter(counter));
     }
 
     /// Returns connection info of this node.

@@ -10,7 +10,6 @@ mod approved;
 mod base;
 mod bootstrapped;
 mod bootstrapped_not_established;
-pub mod proxied;
 mod relocated;
 mod relocated_not_established;
 

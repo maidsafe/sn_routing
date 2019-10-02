@@ -8,7 +8,6 @@
 
 // The `chain` submodule contains the `Chain` implementation, which we reexport here.
 pub(crate) mod bls_emu;
-mod candidate;
 #[allow(clippy::module_inception)]
 mod chain;
 mod chain_accumulator;
@@ -28,8 +27,8 @@ pub use self::{
     elders_info::EldersInfo,
     member_info::{MemberInfo, MemberPersona, MemberState},
     network_event::{
-        AccumulatingEvent, AckMessagePayload, ExpectCandidatePayload, NetworkEvent, OnlinePayload,
-        SectionInfoSigPayload, SendAckMessagePayload,
+        AccumulatingEvent, AckMessagePayload, NetworkEvent, SectionInfoSigPayload,
+        SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
     shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},

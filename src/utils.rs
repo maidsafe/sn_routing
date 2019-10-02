@@ -6,15 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto, routing_table::Xorable, xor_name::XorName, Prefix};
-use itertools::Itertools;
+use crate::xor_name::XorName;
 #[cfg(any(test, feature = "mock_base"))]
 use maidsafe_utilities::SeededRng;
 use rand::{OsRng, Rng};
 use std::{
-    collections::BTreeSet,
     fmt::{self, Display, Formatter},
-    iter,
     ops::RangeInclusive,
     time::Duration,
 };
@@ -85,54 +82,6 @@ impl Into<RangeInclusive<XorName>> for XorTargetInterval {
     }
 }
 
-/// Compute the target destination for a joining node with the given name.
-///
-/// This is used by each member of a joining node's section to choose a location for the node to
-/// move to. On the one hand, sufficiently many of them need to agree on the new name to reach
-/// quorum size, on the other hand, the joining node shall not be able to predict it so that it
-/// cannot choose where to be relocated to.
-///
-/// To meet these requirements, the target is computed from the two closest nodes and the joining
-/// node's current name: It is the SHA3 hash of:
-///
-/// [`current_name`, 1st closest node id, 2nd closest node id]
-///
-/// In the case where only one close node is provided (in initial network setup scenario):
-///
-/// [`current_name`, 1st closest node id]
-pub fn calculate_relocation_dst(mut close_nodes: Vec<XorName>, current_name: &XorName) -> XorName {
-    close_nodes.sort_by(|a, b| current_name.cmp_distance(a, b));
-    let combined: Vec<u8> = iter::once(current_name)
-        .chain(close_nodes.iter().take(2))
-        .flat_map(|close_node| close_node.0.iter())
-        .cloned()
-        .collect();
-    XorName(crypto::sha3_256(&combined))
-}
-
-/// Calculate the interval for a node joining our section to generate a key for.
-pub fn calculate_relocation_interval(
-    prefix: &Prefix<XorName>,
-    section: &BTreeSet<XorName>,
-) -> XorTargetInterval {
-    let (lower_bound, upper_bound) = (prefix.lower_bound(), prefix.upper_bound());
-
-    let (start, end) = iter::once(&lower_bound)
-        .chain(section)
-        .chain(iter::once(&upper_bound))
-        .tuple_windows()
-        .max_by(|&(x1, y1), &(x2, y2)| {
-            let diff1 = y1 - x1;
-            let diff2 = y2 - x2;
-            diff1.cmp(&diff2)
-        })
-        .unwrap_or((&lower_bound, &upper_bound));
-
-    let third_of_distance = (*end - *start) / 3;
-    let new_end = *end - third_of_distance;
-    XorTargetInterval(new_end - third_of_distance, new_end)
-}
-
 #[cfg(any(test, feature = "mock_base"))]
 pub fn rand_index(exclusive_max: usize) -> usize {
     let mut rng = SeededRng::thread_rng();
@@ -193,8 +142,6 @@ pub fn new_rng() -> OsRng {
 #[cfg(test)]
 mod tests {
     use super::DisplayDuration;
-    use crate::{crypto, routing_table::Xorable, xor_name::XorName};
-    use rand;
     use std::time::Duration;
 
     #[test]
@@ -211,74 +158,5 @@ mod tests {
             format!("{}", Duration::new(0, 900_000_000).display_secs()),
             "1 seconds"
         );
-    }
-
-    #[test]
-    fn calculate_relocation_dst() {
-        let original_name: XorName = rand::random();
-
-        // one entry
-        let mut close_nodes_one_entry: Vec<XorName> = Vec::new();
-        close_nodes_one_entry.push(rand::random());
-        let actual_relocated_name_one_entry =
-            super::calculate_relocation_dst(close_nodes_one_entry.clone(), &original_name);
-        assert_ne!(original_name, actual_relocated_name_one_entry);
-
-        let mut combined_one_node_vec: Vec<XorName> = Vec::new();
-        combined_one_node_vec.push(original_name);
-        combined_one_node_vec.push(close_nodes_one_entry[0]);
-
-        let mut combined_one_node: Vec<u8> = Vec::new();
-        for node_id in combined_one_node_vec {
-            for i in &node_id.0 {
-                combined_one_node.push(*i);
-            }
-        }
-
-        let expected_relocated_name_one_node = XorName(crypto::sha3_256(&combined_one_node));
-
-        assert_eq!(
-            actual_relocated_name_one_entry,
-            expected_relocated_name_one_node
-        );
-
-        // populated closed nodes
-        let mut close_nodes: Vec<XorName> = Vec::new();
-        for _ in 0..5 {
-            close_nodes.push(rand::random());
-        }
-        let actual_relocated_name =
-            super::calculate_relocation_dst(close_nodes.clone(), &original_name);
-        assert_ne!(original_name, actual_relocated_name);
-        close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
-        let first_closest = close_nodes[0];
-        let second_closest = close_nodes[1];
-        let mut combined: Vec<u8> = Vec::new();
-
-        for i in &original_name.0 {
-            combined.push(*i);
-        }
-        for i in &first_closest.0 {
-            combined.push(*i);
-        }
-        for i in &second_closest.0 {
-            combined.push(*i);
-        }
-
-        let expected_relocated_name = XorName(crypto::sha3_256(&combined));
-        assert_eq!(expected_relocated_name, actual_relocated_name);
-
-        let mut invalid_combined: Vec<u8> = Vec::new();
-        for i in &first_closest.0 {
-            invalid_combined.push(*i);
-        }
-        for i in &second_closest.0 {
-            invalid_combined.push(*i);
-        }
-        for i in &original_name.0 {
-            invalid_combined.push(*i);
-        }
-        let invalid_relocated_name = XorName(crypto::sha3_256(&invalid_combined));
-        assert_ne!(invalid_relocated_name, actual_relocated_name);
     }
 }

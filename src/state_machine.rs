@@ -10,23 +10,23 @@ use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo},
     error::RoutingError,
-    id::{FullId, PublicId},
+    id::PublicId,
     network_service::NetworkBuilder,
     outbox::EventBox,
     pause::PausedState,
+    quic_p2p::NodeInfo,
     routing_table::Prefix,
     states::common::Base,
-    states::{Adult, BootstrappingPeer, Elder, ProvingNode, RelocatingNode},
+    states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
     xor_name::XorName,
     NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{quic_p2p::NodeInfo, routing_table::Authority, Chain};
+use crate::{routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use log::LogLevel;
 use std::{
-    collections::BTreeSet,
     fmt::{self, Debug, Display, Formatter},
     mem,
 };
@@ -38,8 +38,7 @@ macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
             State::BootstrappingPeer($state) => $expr,
-            State::RelocatingNode($state) => $expr,
-            State::ProvingNode($state) => $expr,
+            State::JoiningPeer($state) => $expr,
             State::Adult($state) => $expr,
             State::Elder($state) => $expr,
             State::Terminated => $term_expr,
@@ -61,8 +60,7 @@ pub struct StateMachine {
 #[allow(clippy::large_enum_variant)]
 pub enum State {
     BootstrappingPeer(BootstrappingPeer),
-    RelocatingNode(RelocatingNode),
-    ProvingNode(ProvingNode),
+    JoiningPeer(JoiningPeer),
     Adult(Adult),
     Elder(Elder),
     Terminated,
@@ -182,10 +180,7 @@ impl State {
         match *self {
             State::Adult(ref state) => Some(state.chain()),
             State::Elder(ref state) => Some(state.chain()),
-            State::BootstrappingPeer(_)
-            | State::RelocatingNode(_)
-            | State::ProvingNode(_)
-            | State::Terminated => None,
+            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => None,
         }
     }
 
@@ -208,8 +203,7 @@ impl State {
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
             State::BootstrappingPeer(_) | State::Terminated => vec![],
-            State::RelocatingNode(ref mut state) => state.get_timed_out_tokens(),
-            State::ProvingNode(ref mut state) => state.get_timed_out_tokens(),
+            State::JoiningPeer(ref mut state) => state.get_timed_out_tokens(),
             State::Adult(ref mut state) => state.get_timed_out_tokens(),
             State::Elder(ref mut state) => state.get_timed_out_tokens(),
         }
@@ -217,10 +211,7 @@ impl State {
 
     pub fn has_unpolled_observations(&self) -> bool {
         match *self {
-            State::Terminated
-            | State::BootstrappingPeer(_)
-            | State::RelocatingNode(_)
-            | State::ProvingNode(_) => false,
+            State::Terminated | State::BootstrappingPeer(_) | State::JoiningPeer(_) => false,
             State::Adult(ref state) => state.has_unpolled_observations(),
             State::Elder(ref state) => state.has_unpolled_observations(),
         }
@@ -248,16 +239,13 @@ impl State {
 #[allow(clippy::large_enum_variant)]
 pub enum Transition {
     Stay,
-    // `Bootstrapping` state transitioning to `Client`, `RelocatingNode`, or `ProvingNode`.
-    IntoBootstrapped {
-        proxy_public_id: PublicId,
+    // `BootstrappingPeer` state transitioning to `JoiningPeer`
+    IntoJoining {
+        node_infos: Vec<NodeInfo>,
     },
-    // `RelocatingNode` state transitioning back to `Bootstrapping`.
-    IntoBootstrapping {
-        new_id: FullId,
-        our_section: (Prefix<XorName>, BTreeSet<PublicId>),
-    },
-    // `ProvingNode` state transitioning to `Adult`.
+    // `JoiningPeer` failing to join and transitioning back to `BootstrappingPeer`
+    Rebootstrap,
+    // `JoiningPeer` state transitioning to `Adult`.
     IntoAdult {
         gen_pfx_info: GenesisPfxInfo,
     },
@@ -351,21 +339,17 @@ impl StateMachine {
         use self::Transition::*;
         match transition {
             Stay => (),
-            IntoBootstrapped { proxy_public_id } => self.state.replace_with(|state| match state {
-                State::BootstrappingPeer(src) => src.into_target_state(proxy_public_id, outbox),
+            IntoJoining { node_infos } => self.state.replace_with(|state| match state {
+                State::BootstrappingPeer(src) => src.into_joining(node_infos, outbox),
                 _ => unreachable!(),
             }),
-            IntoBootstrapping {
-                new_id,
-                our_section,
-            } => self.state.replace_with::<_, ()>(|state| match state {
-                State::RelocatingNode(src) => {
-                    Ok(src.into_bootstrapping(new_id, our_section, outbox))
-                }
+            Rebootstrap => self.state.replace_with(|state| match state {
+                State::JoiningPeer(src) => src.into_bootstrapping(),
+                State::Adult(src) => src.into_bootstrapping(),
                 _ => unreachable!(),
             }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {
-                State::ProvingNode(src) => src.into_adult(gen_pfx_info, outbox),
+                State::JoiningPeer(src) => src.into_adult(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
             IntoElder {

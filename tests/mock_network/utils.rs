@@ -13,7 +13,7 @@ use rand::Rng;
 use routing::{
     mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
     Chain, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder, PausedState, Prefix,
-    PublicId, XorName, XorTargetInterval, Xorable,
+    PublicId, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -425,7 +425,7 @@ pub fn add_connected_nodes_until_split(
             }
         }
         if let Some(prefix_to_split) = found_prefix {
-            add_node_to_section(network, nodes, &prefix_to_split, &mut rng);
+            add_node_to_section(network, nodes, &prefix_to_split);
         } else {
             break;
         }
@@ -496,8 +496,6 @@ fn add_nodes_to_prefixes(
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
 ) {
-    let mut rng = network.new_rng();
-
     for (prefix, target_count) in prefixes_new_count {
         let num_in_section = nodes
             .iter()
@@ -515,7 +513,7 @@ fn add_nodes_to_prefixes(
         );
         let to_add_count = target_count - num_in_section;
         for _ in 0..to_add_count {
-            add_node_to_section(network, nodes, prefix, &mut rng);
+            add_node_to_section(network, nodes, prefix);
         }
     }
 }
@@ -666,24 +664,26 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
     prefixes
 }
 
-fn add_node_to_section<T: Rng>(
-    network: &Network,
-    nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
-    rng: &mut T,
-) {
-    let relocation_name = prefix.substituted_in(rng.gen());
-    nodes.iter_mut().for_each(|node| {
-        node.inner.set_next_relocation_dst(Some(relocation_name));
-        node.inner
-            .set_next_relocation_interval(Some(XorTargetInterval::new(prefix.range_inclusive())));
-    });
-
+fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     let config = NetworkConfig::node().with_hard_coded_contacts(iter::once(nodes[0].endpoint()));
-    nodes.push(TestNode::builder(network).network_config(config).create());
+    let mut full_id = FullId::new();
+    while !prefix.matches(full_id.public_id().name()) {
+        full_id = FullId::new();
+    }
+    nodes.push(
+        TestNode::builder(network)
+            .network_config(config)
+            .full_id(full_id)
+            .create(),
+    );
     poll_and_resend(nodes);
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
-    assert!(prefix.matches(&nodes[nodes.len() - 1].name()));
+    assert!(
+        prefix.matches(&nodes[nodes.len() - 1].name()),
+        "Prefix {:?} doesn't match the name {}!",
+        prefix,
+        nodes[nodes.len() - 1].name()
+    );
 }
 
 mod tests {

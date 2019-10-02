@@ -19,11 +19,8 @@ use crate::{
     mock::Network,
     outbox::{EventBox, EventBuf},
     state_machine::{State, StateMachine, Transition},
-    utils::XorTargetInterval,
-    xor_name::XOR_NAME_LEN,
     NetworkConfig, NetworkService,
 };
-use maidsafe_utilities::serialisation;
 use std::net::SocketAddr;
 use unwrap::unwrap;
 use utils::LogIdent;
@@ -35,21 +32,13 @@ const ACCUMULATE_VOTE_COUNT: usize = 6;
 const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 5;
 
 struct CandidateInfo {
-    old_full_id: FullId,
-    old_proxy_id: FullId,
-    new_full_id: FullId,
-    new_proxy_id: FullId,
-    message_id: MessageId,
+    full_id: FullId,
 }
 
 impl CandidateInfo {
     fn new() -> Self {
         Self {
-            old_full_id: FullId::new(),
-            old_proxy_id: FullId::new(),
-            new_full_id: FullId::new(),
-            new_proxy_id: FullId::new(),
-            message_id: MessageId::new(),
+            full_id: FullId::new(),
         }
     }
 }
@@ -173,58 +162,17 @@ impl ElderUnderTest {
         self.create_gossip()
     }
 
-    fn set_interval_to_match_candidate(&mut self, match_candidate: bool) {
-        let name = if match_candidate {
-            *self.candidate_info.new_full_id.public_id().name()
-        } else {
-            *self.full_id.public_id().name()
-        };
-
-        self.machine
-            .elder_state_mut()
-            .set_next_relocation_interval(Some(XorTargetInterval(name, name)));
-    }
-
-    fn accumulate_expect_candidate(&mut self, payload_expect: ExpectCandidatePayload) {
-        self.n_accumulate_expect_candidate(ACCUMULATE_VOTE_COUNT, payload_expect)
-    }
-
-    fn accumulate_expect_candidate_if_vote(&mut self, payload_expect: ExpectCandidatePayload) {
-        self.n_accumulate_expect_candidate(NOT_ACCUMULATE_ALONE_VOTE_COUNT, payload_expect)
-    }
-
-    fn n_accumulate_expect_candidate(
-        &mut self,
-        count: usize,
-        payload_expect: ExpectCandidatePayload,
-    ) {
-        let _ = self.n_vote_for_gossipped(
-            count,
-            &[&AccumulatingEvent::ExpectCandidate(payload_expect.clone())],
-        );
-    }
-
-    fn accumulate_purge_candidate(&mut self, purge_payload: PublicId) {
+    fn accumulate_online(&mut self, public_id: PublicId) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&AccumulatingEvent::PurgeCandidate(purge_payload)],
+            &[&AccumulatingEvent::Online(public_id)],
         );
     }
 
-    fn accumulate_online(&mut self, online_payload: OnlinePayload) {
-        let _ = self.n_vote_for_gossipped(
-            ACCUMULATE_VOTE_COUNT,
-            &[&AccumulatingEvent::Online(online_payload)],
-        );
-    }
-
-    fn accumulate_add_elder_if_vote(&mut self, online_payload: OnlinePayload) {
+    fn accumulate_add_elder_if_vote(&mut self, public_id: PublicId) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&AccumulatingEvent::AddElder(
-                online_payload.new_public_id,
-                online_payload.client_auth,
-            )],
+            &[&AccumulatingEvent::AddElder(public_id)],
         );
     }
 
@@ -254,7 +202,7 @@ impl ElderUnderTest {
             self.elders_info
                 .members()
                 .iter()
-                .chain(Some(self.candidate_info.new_full_id.public_id()))
+                .chain(Some(self.candidate_info.full_id.public_id()))
                 .cloned()
                 .collect(),
             *self.elders_info.prefix(),
@@ -275,22 +223,10 @@ impl ElderUnderTest {
         self.elder_state().has_unpolled_observations()
     }
 
-    fn has_candidate(&self) -> bool {
-        self.elder_state().has_candidate()
-    }
-
     fn is_candidate_a_valid_peer(&self) -> bool {
         self.elder_state()
             .chain()
-            .is_peer_valid(self.candidate_info.new_full_id.public_id())
-    }
-
-    fn dispatch_routing_message(
-        &mut self,
-        routing_msg: RoutingMessage,
-    ) -> Result<(), RoutingError> {
-        unwrap!(self.machine.current_mut().elder_state_mut())
-            .dispatch_routing_message(routing_msg, &mut self.ev_buffer)
+            .is_peer_valid(self.candidate_info.full_id.public_id())
     }
 
     fn handle_direct_message(
@@ -316,124 +252,12 @@ impl ElderUnderTest {
         }
     }
 
-    fn handle_connected_to_candidate(&mut self) {
-        let conn_info = ConnectionInfo::Node {
-            node_info: self.candidate_node_info(),
-        };
-        self.handle_connected_to(conn_info)
-    }
-
-    fn expect_candidate_payload(&self) -> ExpectCandidatePayload {
-        ExpectCandidatePayload {
-            old_public_id: *self.candidate_info.old_full_id.public_id(),
-            old_client_auth: Authority::Client {
-                client_id: *self.candidate_info.old_full_id.public_id(),
-                proxy_node_name: *self.candidate_info.old_proxy_id.public_id().name(),
-            },
-            message_id: self.candidate_info.message_id,
-            dst_name: XorName([0; XOR_NAME_LEN]),
-        }
-    }
-
-    fn online_payload(&self) -> OnlinePayload {
-        let client_auth = Authority::Client {
-            client_id: *self.candidate_info.new_full_id.public_id(),
-            proxy_node_name: *self.candidate_info.new_proxy_id.public_id().name(),
-        };
-        OnlinePayload {
-            new_public_id: *self.candidate_info.new_full_id.public_id(),
-            client_auth,
-            old_public_id: *self.candidate_info.old_full_id.public_id(),
-        }
+    fn online_payload(&self) -> PublicId {
+        *self.candidate_info.full_id.public_id()
     }
 
     fn offline_payload(&self) -> PublicId {
-        *self.candidate_info.new_full_id.public_id()
-    }
-
-    fn purge_payload(&self) -> PublicId {
-        *self.candidate_info.old_full_id.public_id()
-    }
-
-    fn expect_candidate_message(&self) -> RoutingMessage {
-        let payload = self.expect_candidate_payload();
-
-        RoutingMessage {
-            src: Authority::Section(*payload.old_public_id.name()),
-            dst: Authority::Section(payload.dst_name),
-            content: MessageContent::ExpectCandidate {
-                old_public_id: payload.old_public_id,
-                old_client_auth: payload.old_client_auth,
-                message_id: payload.message_id,
-            },
-        }
-    }
-
-    fn connection_request_message(&self) -> RoutingMessage {
-        let new_full_id = &self.candidate_info.new_full_id;
-        let their_pub_id = self.full_id.public_id();
-
-        let src = Authority::Client {
-            client_id: *new_full_id.public_id(),
-            proxy_node_name: *self.candidate_info.new_proxy_id.public_id().name(),
-        };
-        let dst = Authority::ManagedNode(*their_pub_id.name());
-
-        let content = {
-            let conn_info = self.candidate_node_info();
-            let conn_info = unwrap!(serialisation::serialise(&conn_info));
-
-            MessageContent::ConnectionRequest {
-                conn_info,
-                pub_id: *new_full_id.public_id(),
-                msg_id: MessageId::new(),
-            }
-        };
-
-        RoutingMessage { src, dst, content }
-    }
-
-    fn candidate_info_message(&self) -> (DirectMessage, PublicId) {
-        self.candidate_info_message_use_wrong_old_signature(false)
-    }
-
-    fn candidate_info_message_use_wrong_old_signature(
-        &self,
-        use_bad_sig: bool,
-    ) -> (DirectMessage, PublicId) {
-        let old_full_id = &self.candidate_info.old_full_id;
-        let new_full_id = &self.candidate_info.new_full_id;
-
-        let both_ids = (old_full_id.public_id(), new_full_id.public_id());
-
-        let old_signing_id = if use_bad_sig {
-            new_full_id
-        } else {
-            old_full_id
-        };
-
-        let to_sign = unwrap!(serialisation::serialise(&both_ids));
-        let signature_using_old = old_signing_id.sign(&to_sign);
-
-        (
-            DirectMessage::CandidateInfo {
-                old_public_id: *old_full_id.public_id(),
-                signature_using_old,
-                new_client_auth: Authority::Client {
-                    client_id: *new_full_id.public_id(),
-                    proxy_node_name: *self.candidate_info.new_proxy_id.public_id().name(),
-                },
-            },
-            *new_full_id.public_id(),
-        )
-    }
-
-    fn candidate_node_info(&self) -> NodeInfo {
-        let peer_addr = unwrap!("198.51.100.0:5555".parse());
-        NodeInfo {
-            peer_addr,
-            peer_cert_der: vec![],
-        }
+        *self.candidate_info.full_id.public_id()
     }
 
     fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
@@ -537,60 +361,6 @@ fn construct() {
     let elder_test = ElderUnderTest::new();
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_candidate());
-    assert!(!elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// ExpectCandidate is consensused: candidate is added
-fn accumulate_expect_candidate() {
-    let mut elder_test = ElderUnderTest::new();
-
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_candidate());
-    assert!(!elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// ExpectCandidate not consensused but node received Message: candidate is not added
-fn not_accumulate_expect_candidate_with_message() {
-    let mut elder_test = ElderUnderTest::new();
-
-    let _ = elder_test.dispatch_routing_message(elder_test.expect_candidate_message());
-    let _ = elder_test.create_gossip();
-
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_candidate());
-    assert!(!elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// ExpectCandidate is consensused with the vote of node under test: candidate is added
-fn accumulate_expect_candidate_with_message() {
-    let mut elder_test = ElderUnderTest::new();
-    let _ = elder_test.dispatch_routing_message(elder_test.expect_candidate_message());
-    let _ = elder_test.create_gossip();
-
-    elder_test.accumulate_expect_candidate_if_vote(elder_test.expect_candidate_payload());
-
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_candidate());
-    assert!(!elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// PurgeCandidate is consensused first: candidate is removed
-fn accumulate_purge_candidate() {
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-
-    // Should probably add a test that the vote occured on timeout
-    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
-
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -598,12 +368,10 @@ fn accumulate_purge_candidate() {
 // Candidate is only removed as candidate when its EldersInfo is consensused
 fn accumulate_online_candidate_only_do_not_remove_candidate() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
 
     elder_test.accumulate_online(elder_test.online_payload());
 
     assert!(elder_test.has_unpolled_observations());
-    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -612,21 +380,20 @@ fn accumulate_online_candidate_only_do_not_remove_candidate() {
 // Vote for `Online` trigger immediate vote for AddElder
 fn accumulate_online_candidate_then_add_elder_only_do_not_remove_candidate() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
     elder_test.accumulate_online(elder_test.online_payload());
 
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_candidate());
     assert!(elder_test.is_candidate_a_valid_peer());
 }
 
+// TODO: Modify these tests or remove them
 #[test]
+#[ignore]
 // Candidate is only removed as candidate when its EldersInfo is consensused
 fn accumulate_online_candidate_then_add_elder_then_section_info_remove_candidate() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
     elder_test.accumulate_online(elder_test.online_payload());
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
@@ -634,62 +401,13 @@ fn accumulate_online_candidate_then_add_elder_then_section_info_remove_candidate
     elder_test.accumulate_section_info_if_vote(new_elders_info);
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_candidate());
     assert!(elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// When Online consensused first, PurgeCandidate has no effect
-fn accumulate_online_then_purge_then_add_elder_for_candidate() {
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-    elder_test.accumulate_online(elder_test.online_payload());
-
-    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
-
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.has_candidate());
-    assert!(elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// When Online consensused first, PurgeCandidate has no effect
-fn accumulate_online_then_purge_then_add_elder_then_section_info_for_candidate() {
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-    elder_test.accumulate_online(elder_test.online_payload());
-    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
-
-    let new_elders_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_section_info_if_vote(new_elders_info);
-
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_candidate());
-    assert!(elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// When PurgeCandidate consensused first, When Online consensused AddElder is not voted
-// and the peer is not added.
-fn accumulate_purge_then_online_for_candidate() {
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-    elder_test.accumulate_purge_candidate(elder_test.purge_payload());
-
-    elder_test.accumulate_online(elder_test.online_payload());
-
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.has_candidate());
-    assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
 #[test]
 // When Offline consensused, RemoveElder is voted.
 fn accumulate_offline_for_node() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
     elder_test.accumulate_online(elder_test.online_payload());
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
@@ -705,7 +423,6 @@ fn accumulate_offline_for_node() {
 // EldersInfo is consensused
 fn accumulate_offline_then_remove_elder_for_node() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
     elder_test.accumulate_online(elder_test.online_payload());
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
@@ -722,7 +439,6 @@ fn accumulate_offline_then_remove_elder_for_node() {
 // EldersInfo is consensused
 fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
     elder_test.accumulate_online(elder_test.online_payload());
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
@@ -732,52 +448,6 @@ fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_without_candidate());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// Candidate now show info
-fn candidate_info_message_in_interval() {
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.set_interval_to_match_candidate(true);
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-
-    let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.handle_connected_to_candidate();
-    let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
-
-    assert!(elder_test.has_candidate());
-    assert!(!elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// Candidate info in wrong interval: Candidate not modifed - require purge event to remove
-fn candidate_info_message_not_in_interval() {
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.set_interval_to_match_candidate(false);
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-
-    let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.handle_connected_to_candidate();
-    let _ = elder_test.handle_direct_message(elder_test.candidate_info_message());
-
-    assert!(elder_test.has_candidate());
-    assert!(!elder_test.is_candidate_a_valid_peer());
-}
-
-#[test]
-// Candidate info that is not trustworthy is not trusted.
-fn candidate_info_message_bad_signature() {
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.set_interval_to_match_candidate(true);
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
-
-    let _ = elder_test.dispatch_routing_message(elder_test.connection_request_message());
-    elder_test.handle_connected_to_candidate();
-    let _ = elder_test
-        .handle_direct_message(elder_test.candidate_info_message_use_wrong_old_signature(true));
-
-    assert!(elder_test.has_candidate());
     assert!(!elder_test.is_candidate_a_valid_peer());
 }
 
@@ -807,7 +477,6 @@ fn accept_previously_rejected_client_after_reaching_min_section_size() {
     assert!(!elder_test.has_client(client.public_id()));
 
     // Add new section member to reach min_section_size.
-    elder_test.accumulate_expect_candidate(elder_test.expect_candidate_payload());
     elder_test.accumulate_online(elder_test.online_payload());
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());

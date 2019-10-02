@@ -8,7 +8,7 @@
 
 mod direct;
 
-pub use self::direct::{DirectMessage, SignedDirectMessage};
+pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
     crypto::{self, signing::Signature, Digest256},
@@ -17,13 +17,13 @@ use crate::{
     routing_table::{Authority, Prefix},
     types::MessageId,
     xor_name::XorName,
-    BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare, XorTargetInterval,
+    BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare,
 };
 use hex_fmt::HexFmt;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fmt::{self, Debug, Formatter},
     mem,
 };
@@ -505,33 +505,6 @@ impl RoutingMessage {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum MessageContent {
-    // ---------- Internal ------------
-    /// Ask the network to relocate you.
-    ///
-    /// This is sent by a joining node to its `NaeManager`s with the intent to become a full routing
-    /// node with a new ID in an address range chosen by the `NaeManager`s.
-    Relocate {
-        /// The message's unique identifier.
-        message_id: MessageId,
-    },
-    /// Notify a joining node's `NaeManager` so that it sends a `RelocateResponse`.
-    ExpectCandidate {
-        /// The joining node's current public ID.
-        old_public_id: PublicId,
-        /// The joining node's current authority.
-        old_client_auth: Authority<XorName>,
-        /// The message's unique identifier.
-        message_id: MessageId,
-    },
-    /// Reply with the address range into which the joining node should move.
-    RelocateResponse {
-        /// The interval into which the joining node should join.
-        target_interval: XorTargetInterval,
-        /// The section that the joining node shall connect to.
-        section: (Prefix<XorName>, BTreeSet<PublicId>),
-        /// The message's unique identifier.
-        message_id: MessageId,
-    },
     /// Send a request containing our connection info to a member of a section to connect to us.
     ConnectionRequest {
         /// The sender's public ID.
@@ -585,16 +558,6 @@ impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
         match *self {
-            Relocate { ref message_id } => write!(formatter, "Relocate({:?})", message_id),
-            ExpectCandidate {
-                ref old_public_id,
-                ref old_client_auth,
-                ref message_id,
-            } => write!(
-                formatter,
-                "ExpectCandidate({:?}, {:?}, {:?})",
-                old_public_id, old_client_auth, message_id
-            ),
             ConnectionRequest {
                 ref pub_id,
                 ref msg_id,
@@ -603,15 +566,6 @@ impl Debug for MessageContent {
                 formatter,
                 "ConnectionRequest({:?}, {:?}, ..)",
                 pub_id, msg_id
-            ),
-            RelocateResponse {
-                ref target_interval,
-                ref section,
-                ref message_id,
-            } => write!(
-                formatter,
-                "RelocateResponse({:?}, {:?}, {:?})",
-                target_interval, section, message_id
             ),
             NeighbourInfo(ref info) => write!(formatter, "NeighbourInfo({:?})", info),
             Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
@@ -633,10 +587,10 @@ mod tests {
         crypto::signing::{Signature, SIGNATURE_LENGTH},
         id::FullId,
         routing_table::{Authority, Prefix},
-        types::MessageId,
         xor_name::XorName,
     };
     use rand;
+    use std::collections::BTreeSet;
     use unwrap::unwrap;
 
     #[test]
@@ -659,9 +613,7 @@ mod tests {
                 proxy_node_name: name,
             },
             dst: Authority::ClientManager(name),
-            content: MessageContent::Relocate {
-                message_id: MessageId::new(),
-            },
+            content: MessageContent::UserMessage(vec![0, 1, 2, 3, 4]),
         };
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
             msg.clone(),

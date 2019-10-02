@@ -12,8 +12,7 @@ use crate::{
     id::{FullId, PublicId},
     messages::SignedRoutingMessage,
     parsec,
-    routing_table::Authority,
-    xor_name::XorName,
+    quic_p2p::NodeInfo,
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::{
@@ -31,25 +30,18 @@ pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(SignedRoutingMessage),
-    /// Sent from a newly connected client to the bootstrap node to prove that it is the owner of
+    /// Sent from a newly connected peer to the bootstrap node to prove that it is the owner of
     /// the client's claimed public ID.
     BootstrapRequest,
-    /// Sent from the bootstrap node to a client in response to `BootstrapRequest`. If `true`,
-    /// bootstrapping is successful; if `false` the sender is not available as a bootstrap node.
-    BootstrapResponse(Result<(), BootstrapResponseError>),
+    /// Sent from the bootstrap node to a peer in response to `BootstrapRequest`. It can either
+    /// accept the peer into the section, or redirect it to another set of bootstrap peers
+    BootstrapResponse(BootstrapResponse),
+    /// Sent from a bootstrapping peer to the section that responded with a
+    /// `BootstrapResponse::Join` to its `BootstrapRequest`
+    JoinRequest,
     /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
     ConnectionResponse,
-    /// Sent from a node which is still joining the network to another node, to allow the latter to
-    /// add the former to its routing table.
-    CandidateInfo {
-        /// `PublicId` from before relocation.
-        old_public_id: PublicId,
-        /// Signature of both old and new `PublicId`s using the pre-relocation key.
-        signature_using_old: Signature,
-        /// Client authority from after relocation.
-        new_client_auth: Authority<XorName>,
-    },
     /// Poke a node to send us the first gossip request
     ParsecPoke(u64),
     /// Parsec request message
@@ -58,15 +50,31 @@ pub enum DirectMessage {
     ParsecResponse(u64, parsec::Response),
 }
 
+/// Response to a BootstrapRequest
+#[cfg_attr(feature = "mock_serialise", derive(Clone))]
+#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
+pub enum BootstrapResponse {
+    /// This response means that the new peer is clear to join the section. The connection infos of
+    /// the Elders of the section are provided.
+    Join(Vec<NodeInfo>),
+    /// The new peer should retry bootstrapping with another section. The set of connection infos
+    /// of the members of that section is provided.
+    Rebootstrap(Vec<NodeInfo>),
+    /// An error has occurred
+    Error(BootstrapResponseError),
+}
+
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
         match *self {
             MessageSignature(ref msg) => write!(formatter, "MessageSignature ({:?})", msg),
             BootstrapRequest => write!(formatter, "BootstrapRequest"),
-            BootstrapResponse(ref result) => write!(formatter, "BootstrapResponse({:?})", result),
+            BootstrapResponse(ref response) => {
+                write!(formatter, "BootstrapResponse({:?})", response)
+            }
+            JoinRequest => write!(formatter, "JoinRequest"),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
-            CandidateInfo { .. } => write!(formatter, "CandidateInfo {{ .. }}"),
             ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
@@ -89,17 +97,8 @@ impl Hash for DirectMessage {
             MessageSignature(ref msg) => {
                 msg.hash(state);
             }
-            BootstrapRequest | ConnectionResponse => (),
-            BootstrapResponse(ref result) => result.hash(state),
-            CandidateInfo {
-                ref old_public_id,
-                ref signature_using_old,
-                ref new_client_auth,
-            } => {
-                old_public_id.hash(state);
-                signature_using_old.hash(state);
-                new_client_auth.hash(state);
-            }
+            BootstrapRequest | ConnectionResponse | JoinRequest => (),
+            BootstrapResponse(ref response) => response.hash(state),
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, ref request) => {
                 version.hash(state);

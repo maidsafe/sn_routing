@@ -11,7 +11,7 @@ use crate::{
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::PublicId,
-    messages::{DirectMessage, RoutingMessage},
+    messages::{BootstrapResponse, DirectMessage, RoutingMessage},
     outbox::EventBox,
     peer_manager::{Peer, PeerState},
     routing_table::Prefix,
@@ -29,7 +29,7 @@ pub trait RelocatedNotEstablished: Relocated {
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         match self.peer_mgr().get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::Connected) | Some(PeerState::Proxy) => return Ok(()),
+            Some(PeerState::Node { .. }) | Some(PeerState::Connected) => return Ok(()),
             Some(PeerState::Connecting) => {
                 if let DirectMessage::ConnectionResponse = msg {
                     return Ok(());
@@ -104,7 +104,9 @@ pub trait RelocatedNotEstablished: Relocated {
 
         self.send_direct_message(
             &pub_id,
-            DirectMessage::BootstrapResponse(Err(BootstrapResponseError::NotApproved)),
+            DirectMessage::BootstrapResponse(BootstrapResponse::Error(
+                BootstrapResponseError::NotApproved,
+            )),
         );
         self.disconnect_peer(&pub_id);
     }
@@ -112,18 +114,10 @@ pub trait RelocatedNotEstablished: Relocated {
     fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
 
-        let was_proxy = self.peer_mgr().is_proxy(&pub_id);
-
         if self.peer_mgr_mut().remove_peer(&pub_id) {
             self.send_event(Event::NodeLost(*pub_id.name()), outbox);
         }
 
-        if was_proxy {
-            debug!("{} - Lost connection to proxy {}.", self, pub_id);
-            outbox.send_event(Event::Terminated);
-            Transition::Terminate
-        } else {
-            Transition::Stay
-        }
+        Transition::Stay
     }
 }

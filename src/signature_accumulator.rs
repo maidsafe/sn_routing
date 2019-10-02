@@ -82,7 +82,6 @@ mod tests {
             SignedRoutingMessage,
         },
         routing_table::{Authority, Prefix},
-        types::MessageId,
         BlsPublicKeySet,
     };
     use itertools::Itertools;
@@ -107,9 +106,11 @@ mod tests {
             let routing_msg = RoutingMessage {
                 src: Authority::ClientManager(rand::random()),
                 dst: Authority::ClientManager(rand::random()),
-                content: MessageContent::Relocate {
-                    message_id: MessageId::new(),
-                },
+                content: MessageContent::UserMessage(vec![
+                    rand::random(),
+                    rand::random(),
+                    rand::random(),
+                ]),
             };
             let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
             let elders_info = unwrap!(EldersInfo::new(all_ids, prefix, None));
