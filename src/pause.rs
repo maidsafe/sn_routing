@@ -23,7 +23,11 @@ use std::collections::VecDeque;
 /// A type that wraps the internal state of a node while it is paused in order to be upgraded and/or
 /// restarted. A value of this type is obtained by pausing a node and can be then used to resume
 /// it.
-#[allow(unused)]
+// TODO: this is just a placeholder for now which allows us to have the pause/resume API in place
+// and have tests passing. To make it actually work for all its intended purposes, we need to make
+// sure this type is serialisable/deserialisable in a forward compatible way - that is, we must be
+// able to create a value of this type in routing version X and use it to resume the node in any
+// version >= X.
 pub struct PausedState {
     pub(super) chain: Chain,
     pub(super) full_id: FullId,
