@@ -9,11 +9,9 @@
 mod approved;
 mod base;
 mod bootstrapped;
-mod relocated;
 
 pub use self::{
     approved::Approved,
     base::{from_network_bytes, Base},
     bootstrapped::Bootstrapped,
-    relocated::Relocated,
 };

@@ -9,7 +9,7 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base, Bootstrapped, Relocated};
+use super::common::{Approved, Base, Bootstrapped};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
@@ -1368,19 +1368,13 @@ impl Bootstrapped for Elder {
     }
 }
 
-impl Relocated for Elder {
+impl Approved for Elder {
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
 
     fn peer_mgr_mut(&mut self) -> &mut PeerManager {
         &mut self.peer_mgr
-    }
-
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
-        if self.is_peer_valid(&pub_id) {
-            self.add_node(&pub_id, outbox);
-        }
     }
 
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
@@ -1391,18 +1385,10 @@ impl Relocated for Elder {
         self.print_rt_size();
     }
 
-    fn add_node_failure(&mut self, pub_id: &PublicId) {
-        if !self.is_peer_valid(pub_id) {
-            self.disconnect_peer(pub_id);
-        }
-    }
-
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
         outbox.send_event(event);
     }
-}
 
-impl Approved for Elder {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
     }

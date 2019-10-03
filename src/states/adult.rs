@@ -8,7 +8,7 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base, Bootstrapped, Relocated},
+    common::{Approved, Base, Bootstrapped},
     elder::{Elder, ElderDetails},
 };
 use crate::{
@@ -413,7 +413,7 @@ impl Bootstrapped for Adult {
     }
 }
 
-impl Relocated for Adult {
+impl Approved for Adult {
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
@@ -422,26 +422,16 @@ impl Relocated for Adult {
         &mut self.peer_mgr
     }
 
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
-        self.add_node(&pub_id, outbox);
-    }
-
     fn is_peer_valid(&self, _pub_id: &PublicId) -> bool {
         true
     }
 
     fn add_node_success(&mut self, _: &PublicId) {}
 
-    fn add_node_failure(&mut self, pub_id: &PublicId) {
-        self.disconnect_peer(pub_id)
-    }
-
     fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
     }
-}
 
-impl Approved for Adult {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
     }
