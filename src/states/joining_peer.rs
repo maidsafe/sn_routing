@@ -9,7 +9,7 @@
 use super::{
     adult::{Adult, AdultDetails},
     bootstrapping_peer::BootstrappingPeer,
-    common::{Base, Bootstrapped, BootstrappedNotEstablished},
+    common::{Base, Bootstrapped},
 };
 use crate::{
     chain::GenesisPfxInfo,
@@ -253,8 +253,12 @@ impl Base for JoiningPeer {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let Some(routing_msg) = self.filter_hop_message(msg)? {
-            self.dispatch_routing_message(routing_msg, outbox)
+        let HopMessage { content, .. } = msg;
+
+        if self.filter_incoming_routing_msg(content.routing_message())
+            && self.in_authority(&content.routing_message().dst)
+        {
+            self.dispatch_routing_message(content.into_routing_message(), outbox)
         } else {
             Ok(Transition::Stay)
         }
@@ -282,8 +286,6 @@ impl Bootstrapped for JoiningPeer {
         Ok(())
     }
 }
-
-impl BootstrappedNotEstablished for JoiningPeer {}
 
 impl Display for JoiningPeer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

@@ -54,7 +54,6 @@ pub use self::{
 //                              │   │   │   │   │
 // Base                         *   *   *   *   *
 // Bootstrapped                     *   *   *   *
-// BootstrappedNotEstablished       *   *   *
 // Relocated                            *   *   *
 // RelocatedNotEstablished              *   *
 // Approved                                 *   *

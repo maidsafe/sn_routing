@@ -32,7 +32,7 @@ use crate::{
     peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
-    routing_message_filter::{FilteringResult, RoutingMessageFilter},
+    routing_message_filter::RoutingMessageFilter,
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
     signature_accumulator::SignatureAccumulator,
@@ -500,16 +500,7 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
-        let filter_res = self
-            .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message());
-
-        if filter_res == FilteringResult::KnownMessage {
-            debug!(
-                "{} Known message: {:?} - not handling further",
-                self,
-                signed_msg.routing_message()
-            );
+        if !self.filter_incoming_routing_msg(signed_msg.routing_message()) {
             return Ok(());
         }
 
@@ -544,10 +535,8 @@ impl Elder {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
-            if filter_res == FilteringResult::NewMessage {
-                // if addressed to us, then we just queue it and return
-                self.msg_queue.push_back(signed_msg.into_routing_message());
-            }
+            // if addressed to us, then we just queue it and return
+            self.msg_queue.push_back(signed_msg.into_routing_message());
             return Ok(());
         }
 

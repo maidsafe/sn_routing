@@ -11,7 +11,7 @@ use crate::{
     error::Result,
     id::PublicId,
     messages::{MessageContent, RoutingMessage},
-    routing_message_filter::RoutingMessageFilter,
+    routing_message_filter::{FilteringResult, RoutingMessageFilter},
     routing_table::Authority,
     time::Instant,
     timer::Timer,
@@ -34,6 +34,17 @@ pub trait Bootstrapped: Base {
     /// if it should be blocked due to deduplication.
     fn filter_outgoing_routing_msg(&mut self, msg: &RoutingMessage, pub_id: &PublicId) -> bool {
         self.routing_msg_filter().filter_outgoing(msg, pub_id)
+    }
+
+    fn filter_incoming_routing_msg(&mut self, msg: &RoutingMessage) -> bool {
+        // Prevents us repeatedly handling identical messages sent by a malicious peer.
+        match self.routing_msg_filter().filter_incoming(msg) {
+            FilteringResult::KnownMessage => {
+                debug!("{} Known message: {:?} - not handling further", self, msg);
+                false
+            }
+            FilteringResult::NewMessage => true,
+        }
     }
 
     fn send_routing_message_with_expiry(

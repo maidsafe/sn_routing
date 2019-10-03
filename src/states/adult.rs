@@ -8,10 +8,7 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{
-        Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
-        RelocatedNotEstablished,
-    },
+    common::{Approved, Base, Bootstrapped, Relocated, RelocatedNotEstablished},
     elder::{Elder, ElderDetails},
 };
 use crate::{
@@ -282,9 +279,14 @@ impl Base for Adult {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let Some(routing_msg) = self.filter_hop_message(msg)? {
-            self.dispatch_routing_message(routing_msg, outbox)?;
+        let HopMessage { content, .. } = msg;
+
+        if self.filter_incoming_routing_msg(content.routing_message())
+            && self.in_authority(&content.routing_message().dst)
+        {
+            self.dispatch_routing_message(content.into_routing_message(), outbox)?;
         }
+
         Ok(Transition::Stay)
     }
 }
@@ -350,8 +352,6 @@ impl Relocated for Adult {
         self.event_backlog.push(event)
     }
 }
-
-impl BootstrappedNotEstablished for Adult {}
 
 impl RelocatedNotEstablished for Adult {
     fn our_prefix(&self) -> &Prefix<XorName> {
