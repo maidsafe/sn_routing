@@ -134,12 +134,12 @@ impl JoiningPeer {
         msg: RoutingMessage,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::{messages::MessageContent::*, routing_table::Authority::*};
+        use crate::messages::MessageContent::*;
         match msg {
             RoutingMessage {
                 content: NodeApproval(gen_info),
-                src: PrefixSection(_),
-                dst: ManagedNode { .. },
+                src: Authority::PrefixSection(_),
+                dst: Authority::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
             _ => {
                 debug!(

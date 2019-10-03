@@ -607,7 +607,7 @@ mod tests {
         let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
 
         let msg = RoutingMessage {
-            src: Authority::ManagedNode(rand::random()),
+            src: Authority::Node(rand::random()),
             dst: Authority::NodeManager(rand::random()),
             content: MessageContent::UserMessage(vec![0, 1, 2, 3, 4]),
         };

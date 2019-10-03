@@ -806,7 +806,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         };
 
         let closest_section = match *dst {
-            Authority::ManagedNode(ref target_name) => {
+            Authority::Node(ref target_name) => {
                 if *target_name == self.our_name {
                     return Ok(BTreeSet::new());
                 }
@@ -874,7 +874,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns whether we are a part of the given authority.
     pub fn in_authority(&self, auth: &Authority<T>) -> bool {
         match *auth {
-            Authority::ManagedNode(ref name) => self.our_name == *name,
+            Authority::Node(ref name) => self.our_name == *name,
             Authority::NaeManager(ref name)
             | Authority::NodeManager(ref name)
             | Authority::Section(ref name) => self.our_prefix.matches(name),

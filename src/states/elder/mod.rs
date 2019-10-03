@@ -359,8 +359,8 @@ impl Elder {
 
         for pub_id in peers_to_connect {
             debug!("{} Sending connection info to {:?}.", self, pub_id);
-            let src = Authority::ManagedNode(*self.name());
-            let dst = Authority::ManagedNode(*pub_id.name());
+            let src = Authority::Node(*self.name());
+            let dst = Authority::Node(*pub_id.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
         }
     }
@@ -564,7 +564,6 @@ impl Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         use crate::messages::MessageContent::*;
-        use crate::Authority::{ManagedNode, PrefixSection, Section};
 
         match routing_msg.content {
             UserMessage { .. } => (),
@@ -576,13 +575,15 @@ impl Elder {
                 ConnectionRequest {
                     conn_info, pub_id, ..
                 },
-                src @ ManagedNode(_),
-                dst @ ManagedNode(_),
+                src @ Authority::Node(_),
+                dst @ Authority::Node(_),
             ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(elders_info), Section(_), PrefixSection(_)) => {
+            (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)
             }
-            (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
+            (Merge(digest), Authority::PrefixSection(_), Authority::PrefixSection(_)) => {
+                self.handle_merge(digest)
+            }
             (UserMessage(content), src, dst) => {
                 outbox.send_event(Event::MessageReceived { content, src, dst });
                 Ok(())
@@ -592,8 +593,8 @@ impl Elder {
                     src_prefix,
                     ack_version,
                 },
-                Section(src),
-                Section(dst),
+                Authority::Section(src),
+                Authority::Section(dst),
             ) => self.handle_ack_message(src_prefix, ack_version, src, dst),
             (content, src, dst) => {
                 debug!(
@@ -642,7 +643,7 @@ impl Elder {
             pub_id
         );
 
-        let dst = Authority::ManagedNode(*pub_id.name());
+        let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
         if self.peer_mgr.get_peer(&pub_id).is_none() {
@@ -652,7 +653,7 @@ impl Elder {
                 pub_id
             );
 
-            let src = Authority::ManagedNode(*self.name());
+            let src = Authority::Node(*self.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
         };
 
@@ -894,7 +895,7 @@ impl Elder {
 
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
-        let single_target = if let Authority::ManagedNode(node_name) = dst {
+        let single_target = if let Authority::Node(node_name) = dst {
             self.peer_mgr
                 .get_pub_id(&node_name)
                 .filter(|node_id| self.peer_map.has(&node_id))
@@ -936,10 +937,8 @@ impl Elder {
     /// this may contain us or only other nodes. If our signature is not required, this returns
     /// `None`.
     fn get_signature_targets(&self, src: &Authority<XorName>) -> Option<BTreeSet<XorName>> {
-        use crate::Authority::*;
-
         let list: Vec<XorName> = match *src {
-            NaeManager(_) | NodeManager(_) | Section(_) => self
+            Authority::NaeManager(_) | Authority::NodeManager(_) | Authority::Section(_) => self
                 .chain
                 .our_section()
                 .into_iter()
@@ -948,12 +947,12 @@ impl Elder {
             // calculation. This even when going via RT would have only allowed route-0 to succeed
             // as by ack-failure, the new node would have been accepted to the RT.
             // Need a better network startup separation.
-            PrefixSection(pfx) => {
+            Authority::PrefixSection(pfx) => {
                 Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
                     .filter(|name| pfx.matches(name))
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
             }
-            ManagedNode(_) => {
+            Authority::Node(_) => {
                 let mut result = BTreeSet::new();
                 let _ = result.insert(*self.name());
                 return Some(result);
@@ -1047,8 +1046,8 @@ impl Elder {
             let our_name = *self.name();
             let _ = self.send_connection_request(
                 pub_id,
-                Authority::ManagedNode(our_name),
-                Authority::ManagedNode(*pub_id.name()),
+                Authority::Node(our_name),
+                Authority::Node(*pub_id.name()),
                 outbox,
             );
         }

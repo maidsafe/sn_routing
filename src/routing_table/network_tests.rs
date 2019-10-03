@@ -294,7 +294,7 @@ fn node_to_node_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = *unwrap!(network.rng.choose(&keys));
-        network.send_message(src, Authority::ManagedNode(dst));
+        network.send_message(src, Authority::Node(dst));
     }
 }
 

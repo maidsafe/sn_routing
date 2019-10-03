@@ -31,9 +31,8 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
     /// the routing table or only a part of a `Section`
     PrefixSection(Prefix<N>),
-    /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
-    /// by the network relocation process immediately after bootstrapping.
-    ManagedNode(N),
+    /// A single node
+    Node(N),
 }
 
 impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
@@ -44,7 +43,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
             | Authority::PrefixSection(_)
             | Authority::NaeManager(_)
             | Authority::NodeManager(_) => true,
-            Authority::ManagedNode(_) => false,
+            Authority::Node(_) => false,
         }
     }
 
@@ -55,7 +54,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
             | Authority::Section(_)
             | Authority::PrefixSection(_)
             | Authority::NodeManager(_) => false,
-            Authority::ManagedNode(_) => true,
+            Authority::Node(_) => true,
         }
     }
 
@@ -65,7 +64,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
             Authority::NaeManager(ref name)
             | Authority::NodeManager(ref name)
             | Authority::Section(ref name)
-            | Authority::ManagedNode(ref name) => *name,
+            | Authority::Node(ref name) => *name,
             Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
         }
     }
@@ -79,7 +78,7 @@ impl Authority<XorName> {
             | Authority::Section(_)
             | Authority::PrefixSection(_)
             | Authority::NodeManager(_) => None,
-            Authority::ManagedNode(ref name) => Some(name),
+            Authority::Node(ref name) => Some(name),
         }
     }
 }
@@ -93,7 +92,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority
             Authority::PrefixSection(ref prefix) => {
                 write!(formatter, "PrefixSection(prefix: {:?})", prefix)
             }
-            Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
+            Authority::Node(ref name) => write!(formatter, "Node(name: {})", name),
         }
     }
 }

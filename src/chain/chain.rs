@@ -1087,7 +1087,7 @@ impl Chain {
         };
 
         let (dg_size, best_section) = match *dst {
-            Authority::ManagedNode(ref target_name) => {
+            Authority::Node(ref target_name) => {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
                 }
@@ -1156,7 +1156,7 @@ impl Chain {
     /// Returns whether we are a part of the given authority.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *auth {
-            Authority::ManagedNode(ref name) => self.our_id().name() == name,
+            Authority::Node(ref name) => self.our_id().name() == name,
             Authority::NaeManager(ref name)
             | Authority::NodeManager(ref name)
             | Authority::Section(ref name) => self.our_prefix().matches(name),

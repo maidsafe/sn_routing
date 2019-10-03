@@ -378,8 +378,8 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     let content: Vec<_> = rng.gen_iter().take(100).collect();
     let index0 = gen_range(rng, 0, nodes.len());
     let index1 = gen_range(rng, 0, nodes.len());
-    let auth_n0 = Authority::ManagedNode(nodes[index0].name());
-    let auth_n1 = Authority::ManagedNode(nodes[index1].name());
+    let auth_n0 = Authority::Node(nodes[index0].name());
+    let auth_n1 = Authority::Node(nodes[index1].name());
     let auth_g0 = Authority::NaeManager(rng.gen());
     let auth_g1 = Authority::NaeManager(rng.gen());
     let section_name: XorName = rng.gen();
@@ -508,8 +508,8 @@ fn messages_during_churn() {
         let content: Vec<_> = rng.gen_iter().take(100).collect();
         let index0 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
         let index1 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
-        let auth_n0 = Authority::ManagedNode(nodes[index0].name());
-        let auth_n1 = Authority::ManagedNode(nodes[index1].name());
+        let auth_n0 = Authority::Node(nodes[index0].name());
+        let auth_n1 = Authority::Node(nodes[index1].name());
         let auth_g0 = Authority::NaeManager(rng.gen());
         let auth_g1 = Authority::NaeManager(rng.gen());
         let section_name: XorName = rng.gen();

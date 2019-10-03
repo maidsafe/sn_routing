@@ -124,8 +124,8 @@ impl NodeBuilder {
 ///
 /// A node is a part of the network that can route messages and be a member of a section or group
 /// authority. Its methods can be used to send requests and responses as either an individual
-/// `ManagedNode` or as a part of a section or group authority. Their `src` argument indicates that
-/// role, and can be any [`Authority`](enum.Authority.html) other than `Client`.
+/// `Node` or as a part of a section or group authority. Their `src` argument indicates that
+/// role, and can be any [`Authority`](enum.Authority.html).
 pub struct Node {
     interface_result_tx: mpsc::Sender<Result<(), InterfaceError>>,
     interface_result_rx: mpsc::Receiver<Result<(), InterfaceError>>,

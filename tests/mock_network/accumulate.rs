@@ -26,7 +26,7 @@ fn messages_accumulate_with_quorum() {
         assert!(node.inner.send_message(src, *dst, content).is_ok());
     };
 
-    let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
+    let dst = Authority::Node(nodes[0].name()); // The closest node.
     let content = gen_bytes(&mut rng, 8);
 
     // The smallest number such that `quorum * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR`:

@@ -62,8 +62,8 @@ pub trait RelocatedNotEstablished: Relocated {
                         pub_id,
                         msg_id,
                     },
-                src: ManagedNode(_),
-                dst: ManagedNode(_),
+                src: Node(_),
+                dst: Node(_),
             } => {
                 if self.our_prefix().matches(&src_name) {
                     self.handle_connection_request(&conn_info, pub_id, msg.src, msg.dst, outbox)
