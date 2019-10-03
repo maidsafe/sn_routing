@@ -12,14 +12,10 @@ use crate::{
     time::{Duration, Instant},
     utils::LogIdent,
     xor_name::XorName,
-    ConnectionInfo,
 };
 use itertools::Itertools;
 use log::LogLevel;
-use std::{
-    collections::btree_map::{BTreeMap, Entry},
-    net::IpAddr,
-};
+use std::collections::btree_map::{BTreeMap, Entry};
 
 /// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 900;
@@ -44,29 +40,10 @@ pub enum PeerState {
     Connecting,
     /// We are connected.
     Connected,
-    /// We are the proxy for the client
-    Client {
-        /// Client IP
-        ip: IpAddr,
-        /// Traffic charged for Client
-        traffic: u64,
-    },
     /// We are the proxy for the joining node
     JoiningNode,
     /// We are connected to the peer who is a full node.
     Node { was_joining: bool },
-}
-
-impl<'a> From<&'a ConnectionInfo> for PeerState {
-    fn from(src: &'a ConnectionInfo) -> Self {
-        match *src {
-            ConnectionInfo::Client { ref peer_addr } => PeerState::Client {
-                ip: peer_addr.ip(),
-                traffic: 0,
-            },
-            ConnectionInfo::Node { .. } => PeerState::JoiningNode,
-        }
-    }
 }
 
 /// Represents peer we are connected or attempting connection to.
@@ -92,10 +69,7 @@ impl Peer {
     pub fn is_connected(&self) -> bool {
         match self.state {
             PeerState::Connecting => false,
-            PeerState::Connected
-            | PeerState::Client { .. }
-            | PeerState::JoiningNode
-            | PeerState::Node { .. } => true,
+            PeerState::Connected | PeerState::JoiningNode | PeerState::Node { .. } => true,
         }
     }
 
@@ -106,7 +80,7 @@ impl Peer {
             PeerState::Connecting => CONNECTING_PEER_TIMEOUT_SECS,
             PeerState::JoiningNode => JOINING_NODE_TIMEOUT_SECS,
             PeerState::Connected => CONNECTED_PEER_TIMEOUT_SECS,
-            PeerState::Client { .. } | PeerState::Node { .. } => {
+            PeerState::Node { .. } => {
                 return false;
             }
         };
@@ -119,15 +93,6 @@ impl Peer {
         match self.state {
             PeerState::Node { .. } => true,
             _ => false,
-        }
-    }
-
-    // If the peer is a client, return its IP, otherwise returns `None`.
-    fn client_ip(&self) -> Option<&IpAddr> {
-        if let PeerState::Client { ref ip, .. } = self.state {
-            Some(ip)
-        } else {
-            None
         }
     }
 
@@ -159,8 +124,8 @@ impl PeerManager {
     }
 
     /// Handle a `BootstrapRequest` message.
-    pub fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: &ConnectionInfo) {
-        self.insert_peer(pub_id, conn_info.into());
+    pub fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
+        self.insert_peer(pub_id, PeerState::JoiningNode);
     }
 
     /// Mark the given peer as node.
@@ -212,14 +177,6 @@ impl PeerManager {
         }
 
         expired_peers
-    }
-
-    /// Checks whether we can accept more clients. We only allow one client per IP address.
-    pub fn can_accept_client(&self, client_ip: &IpAddr) -> bool {
-        !self
-            .peers
-            .values()
-            .any(|peer| peer.client_ip() == Some(client_ip))
     }
 
     /// Inserts the peer in the `Connecting` state, unless already exists.

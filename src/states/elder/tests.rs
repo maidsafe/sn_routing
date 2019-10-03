@@ -43,12 +43,12 @@ impl CandidateInfo {
     }
 }
 
-struct ClientInfo {
+struct JoiningNodeInfo {
     full_id: FullId,
     addr: SocketAddr,
 }
 
-impl ClientInfo {
+impl JoiningNodeInfo {
     fn with_addr(addr: &str) -> Self {
         Self {
             full_id: FullId::new(),
@@ -61,8 +61,8 @@ impl ClientInfo {
     }
 
     fn connection_info(&self) -> ConnectionInfo {
-        ConnectionInfo::Client {
-            peer_addr: self.addr,
+        ConnectionInfo::Node {
+            node_info: NodeInfo::from(self.addr),
         }
     }
 }
@@ -273,10 +273,13 @@ impl ElderUnderTest {
             .handle_bootstrap_request(pub_id));
     }
 
-    fn has_client(&self, pub_id: &PublicId) -> bool {
+    fn has_joining_node(&self, pub_id: &PublicId) -> bool {
         match self.elder_state().get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::Client { .. }) => true,
-            Some(state) => panic!("Unexpected peer state: expected Client, got {:?}", state),
+            Some(PeerState::JoiningNode) => true,
+            Some(state) => panic!(
+                "Unexpected peer state: expected JoiningNode, got {:?}",
+                state
+            ),
             None => false,
         }
     }
@@ -452,29 +455,15 @@ fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
 }
 
 #[test]
-fn allow_only_one_client_per_ip() {
-    // Create two clients on the same IP.
-    let client0 = ClientInfo::with_addr("198.51.100.0:5000");
-    let client1 = ClientInfo::with_addr("198.51.100.0:5001");
-
-    let mut elder_test = ElderUnderTest::new();
-    elder_test.handle_bootstrap_request(*client0.public_id(), client0.connection_info());
-    elder_test.handle_bootstrap_request(*client1.public_id(), client1.connection_info());
-
-    assert!(elder_test.has_client(client0.public_id()));
-    assert!(!elder_test.has_client(client1.public_id()));
-}
-
-#[test]
-fn accept_previously_rejected_client_after_reaching_min_section_size() {
+fn accept_previously_rejected_node_after_reaching_min_section_size() {
     // Set min_section_size to one more than the initial size of the section. This makes us reject
-    // any bootstrapping clients.
+    // any bootstrapping nodes.
     let mut elder_test = ElderUnderTest::with_min_section_size(NO_SINGLE_VETO_VOTE_COUNT + 1);
-    let client = ClientInfo::with_addr("198.51.100.0:5000");
+    let node = JoiningNodeInfo::with_addr("198.51.100.0:5000");
 
     // Bootstrap fails for insufficient section size.
-    elder_test.handle_bootstrap_request(*client.public_id(), client.connection_info());
-    assert!(!elder_test.has_client(client.public_id()));
+    elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
+    assert!(!elder_test.has_joining_node(node.public_id()));
 
     // Add new section member to reach min_section_size.
     elder_test.accumulate_online(elder_test.online_payload());
@@ -482,6 +471,6 @@ fn accept_previously_rejected_client_after_reaching_min_section_size() {
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
 
     // Re-bootstrap now succeeds.
-    elder_test.handle_bootstrap_request(*client.public_id(), client.connection_info());
-    assert!(elder_test.has_client(client.public_id()));
+    elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
+    assert!(elder_test.has_joining_node(node.public_id()));
 }

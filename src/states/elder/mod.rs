@@ -458,17 +458,16 @@ impl Elder {
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
         match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::Client { .. }) => {
-                if let DirectMessage::BootstrapRequest = *msg {
-                    Ok(())
-                } else {
+            Some(PeerState::JoiningNode) => match msg {
+                DirectMessage::BootstrapRequest | DirectMessage::JoinRequest => Ok(()),
+                _ => {
                     debug!(
                         "{} Illegitimate direct message {:?} from {:?}.",
                         self, msg, pub_id
                     );
                     Err(RoutingError::InvalidStateForOperation)
                 }
-            }
+            },
             _ => Ok(()),
         }
     }
@@ -690,50 +689,25 @@ impl Elder {
             }
         };
 
-        let (peer_type, client_ip) = match conn_info {
-            ConnectionInfo::Client { peer_addr } => ("client", Some(peer_addr.ip())),
-            ConnectionInfo::Node { .. } => ("node", None),
+        if let ConnectionInfo::Client { .. } = conn_info {
+            trace!(
+                "{} - Received BootstrapRequest from a client. Rejecting.",
+                self,
+            );
+            self.send_direct_message(
+                &pub_id,
+                DirectMessage::BootstrapResponse(BootstrapResponse::Error(
+                    BootstrapResponseError::ClientLimit,
+                )),
+            );
+            self.disconnect_peer(&pub_id);
+            return Ok(());
         };
 
-        trace!(
-            "{} - Received BootstrapRequest from {:?} as {}.",
-            self,
-            pub_id,
-            peer_type
-        );
-
-        if let Some(ip) = client_ip {
-            // Check banned IPs.
-            if self.banned_client_ips.contains_key(&ip) {
-                warn!(
-                    "{} - Client {:?} is trying to bootstrap on banned IP {}.",
-                    self, pub_id, ip
-                );
-                self.ban_and_disconnect_peer(&pub_id);
-                return Ok(());
-            }
-
-            // Check the client limit.
-            if !self.peer_mgr.can_accept_client(&ip) {
-                debug!(
-                    "{} - Client {:?} rejected: We cannot accept more clients.",
-                    self, pub_id
-                );
-                self.send_direct_message(
-                    &pub_id,
-                    DirectMessage::BootstrapResponse(BootstrapResponse::Error(
-                        BootstrapResponseError::ClientLimit,
-                    )),
-                );
-                self.disconnect_peer(&pub_id);
-                return Ok(());
-            }
-        }
+        trace!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
 
         // Check min section size.
-        if (client_ip.is_some() || !self.is_first_node)
-            && self.chain.len() < self.min_section_size() - 1
-        {
+        if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
             debug!(
                 "{} - Peer {:?} rejected: Routing table has {} entries. {} required.",
                 self,
@@ -751,7 +725,7 @@ impl Elder {
             return Ok(());
         }
 
-        self.peer_mgr.handle_bootstrap_request(pub_id, &conn_info);
+        self.peer_mgr.handle_bootstrap_request(pub_id);
         let _ = self.dropped_clients.remove(&pub_id);
 
         self.respond_to_bootstrap_request(&pub_id);
