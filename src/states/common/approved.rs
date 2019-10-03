@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::Bootstrapped;
+use super::Base;
 use crate::{
     chain::{
         AccumulatingEvent, Chain, EldersInfo, Proof, ProofSet, SectionKeyInfo,
@@ -29,7 +29,7 @@ use log::LogLevel;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 
 /// Common functionality for node states post resource proof.
-pub trait Approved: Bootstrapped {
+pub trait Approved: Base {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain_mut(&mut self) -> &mut Chain;
     fn peer_mgr(&self) -> &PeerManager;

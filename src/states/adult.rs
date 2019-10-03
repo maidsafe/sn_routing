@@ -8,7 +8,7 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base, Bootstrapped},
+    common::{Approved, Base},
     elder::{Elder, ElderDetails},
 };
 use crate::{
@@ -373,7 +373,10 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content, .. } = msg;
 
-        if self.filter_incoming_routing_msg(content.routing_message())
+        if self
+            .routing_msg_filter
+            .filter_incoming(content.routing_message())
+            .is_new()
             && self.in_authority(&content.routing_message().dst)
         {
             self.dispatch_routing_message(content.into_routing_message(), outbox)?;
@@ -393,9 +396,10 @@ impl Base for Adult {
         // Need to collect IDs first so that self is not borrowed via the iterator
         let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
         for pub_id in target_ids {
-            if !self
+            if self
                 .routing_msg_filter
                 .filter_outgoing(signed_msg.routing_message(), &pub_id)
+                .is_new()
             {
                 let message = self.to_hop_message(signed_msg.clone())?;
                 self.send_message(&pub_id, message);
@@ -403,12 +407,6 @@ impl Base for Adult {
         }
 
         Ok(())
-    }
-}
-
-impl Bootstrapped for Adult {
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
     }
 }
 

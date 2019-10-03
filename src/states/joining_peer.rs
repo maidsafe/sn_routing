@@ -9,7 +9,7 @@
 use super::{
     adult::{Adult, AdultDetails},
     bootstrapping_peer::BootstrappingPeer,
-    common::{Base, Bootstrapped},
+    common::Base,
 };
 use crate::{
     chain::GenesisPfxInfo,
@@ -258,7 +258,10 @@ impl Base for JoiningPeer {
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content, .. } = msg;
 
-        if self.filter_incoming_routing_msg(content.routing_message())
+        if self
+            .routing_msg_filter
+            .filter_incoming(content.routing_message())
+            .is_new()
             && self.in_authority(&content.routing_message().dst)
         {
             self.dispatch_routing_message(content.into_routing_message(), outbox)
@@ -272,12 +275,6 @@ impl Base for JoiningPeer {
             self, routing_msg
         );
         Ok(())
-    }
-}
-
-impl Bootstrapped for JoiningPeer {
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
     }
 }
 

@@ -9,7 +9,7 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base, Bootstrapped};
+use super::common::{Approved, Base};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
@@ -500,7 +500,16 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
-        if !self.filter_incoming_routing_msg(signed_msg.routing_message()) {
+        if !self
+            .routing_msg_filter
+            .filter_incoming(signed_msg.routing_message())
+            .is_new()
+        {
+            debug!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                signed_msg.routing_message()
+            );
             return Ok(());
         }
 
@@ -910,9 +919,9 @@ impl Elder {
         let targets: Vec<_> = target_pub_ids
             .into_iter()
             .filter(|pub_id| {
-                !self
-                    .routing_msg_filter
+                self.routing_msg_filter
                     .filter_outgoing(signed_msg.routing_message(), pub_id)
+                    .is_new()
             })
             .collect();
 
@@ -1361,12 +1370,6 @@ impl Elder {
         message: Message,
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
-    }
-}
-
-impl Bootstrapped for Elder {
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
     }
 }
 

@@ -8,10 +8,8 @@
 
 mod approved;
 mod base;
-mod bootstrapped;
 
 pub use self::{
     approved::Approved,
     base::{from_network_bytes, Base},
-    bootstrapped::Bootstrapped,
 };

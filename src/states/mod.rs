@@ -52,6 +52,5 @@ pub use self::{
 //                              │   │   │   Elder
 //                              │   │   │   │
 // Base                         *   *   *   *
-// Bootstrapped                     *   *   *
 // Approved                             *   *
 //
