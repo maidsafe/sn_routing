@@ -303,12 +303,17 @@ pub trait Approved: Base {
         encrypted_their_conn_info: &[u8],
         their_pub_id: PublicId,
         src: Authority<XorName>,
-        _dst: Authority<XorName>,
+        dst: Authority<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if src.single_signing_name() != Some(their_pub_id.name()) {
-            // Connection info not from the source node.
-            return Err(RoutingError::InvalidMessage);
+            // Connection request not from the source node.
+            return Err(RoutingError::InvalidSource);
+        }
+
+        if dst.single_signing_name() != Some(self.name()) {
+            // Connection request not for us.
+            return Err(RoutingError::InvalidDestination);
         }
 
         let their_conn_info: NodeInfo = deserialise(encrypted_their_conn_info)?;

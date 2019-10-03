@@ -22,6 +22,7 @@ use crate::{
     xor_name::XorName,
     NetworkService,
 };
+use log::LogLevel;
 use std::{
     collections::HashSet,
     fmt::{self, Display, Formatter},
@@ -310,9 +311,11 @@ impl Base for BootstrappingPeer {
     }
 
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
-        warn!(
+        log_or_panic!(
+            LogLevel::Error,
             "{} - Tried to send a routing message: {:?}",
-            self, routing_msg
+            self,
+            routing_msg
         );
         Ok(())
     }

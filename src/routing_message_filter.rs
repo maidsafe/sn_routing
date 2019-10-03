@@ -69,8 +69,7 @@ impl RoutingMessageFilter {
     // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
     //
-    // Return `KnownMessage` also if serialisation of the message fails - that can be handled
-    // elsewhere.
+    // Return `KnownMessage` also if hashing the message fails - that can be handled elsewhere.
     pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId) -> FilteringResult {
         hash(msg).map_or(FilteringResult::KnownMessage, |hash| {
             if self.outgoing.insert((hash, *pub_id), ()).is_some() {

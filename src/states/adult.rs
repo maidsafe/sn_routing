@@ -210,6 +210,7 @@ impl Adult {
         }
     }
 
+    // Check whether the sender is allowed to send the message to us.
     fn check_direct_message_sender(
         &self,
         msg: &DirectMessage,
@@ -242,6 +243,7 @@ impl Adult {
         self.msg_backlog.push(msg)
     }
 
+    // Reject the bootstrap request, because only Elders can handle it.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
         debug!(
             "{} - Client {:?} rejected: We are not an established node yet.",
@@ -372,14 +374,15 @@ impl Base for Adult {
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content, .. } = msg;
+        let routing_msg = content.into_routing_message();
 
         if self
             .routing_msg_filter
-            .filter_incoming(content.routing_message())
+            .filter_incoming(&routing_msg)
             .is_new()
-            && self.in_authority(&content.routing_message().dst)
+            && self.in_authority(&routing_msg.dst)
         {
-            self.dispatch_routing_message(content.into_routing_message(), outbox)?;
+            self.dispatch_routing_message(routing_msg, outbox)?;
         }
 
         Ok(Transition::Stay)
