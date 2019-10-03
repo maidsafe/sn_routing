@@ -595,7 +595,6 @@ mod tests {
 
     #[test]
     fn signed_routing_message_check_integrity() {
-        let name: XorName = rand::random();
         let full_id = FullId::new();
         let full_id_2 = FullId::new();
         let prefix = Prefix::new(0, *full_id.public_id().name());
@@ -608,11 +607,8 @@ mod tests {
         let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
 
         let msg = RoutingMessage {
-            src: Authority::Client {
-                client_id: *full_id.public_id(),
-                proxy_node_name: name,
-            },
-            dst: Authority::ClientManager(name),
+            src: Authority::ManagedNode(rand::random()),
+            dst: Authority::NodeManager(rand::random()),
             content: MessageContent::UserMessage(vec![0, 1, 2, 3, 4]),
         };
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
@@ -646,8 +642,8 @@ mod tests {
         let content = (0..10).collect();
         let name: XorName = rand::random();
         let msg = RoutingMessage {
-            src: Authority::ClientManager(name),
-            dst: Authority::ClientManager(name),
+            src: Authority::NodeManager(name),
+            dst: Authority::NodeManager(name),
             content: MessageContent::UserMessage(content),
         };
 

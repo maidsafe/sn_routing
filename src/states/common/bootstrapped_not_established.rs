@@ -9,17 +9,11 @@
 use super::Bootstrapped;
 use crate::{
     error::RoutingError,
-    id::PublicId,
-    messages::{HopMessage, RoutingMessage, SignedRoutingMessage},
+    messages::{HopMessage, RoutingMessage},
     routing_message_filter::FilteringResult,
-    routing_table::Authority,
-    time::Instant,
-    xor_name::XorName,
 };
 
 pub trait BootstrappedNotEstablished: Bootstrapped {
-    fn get_proxy_public_id(&self, proxy_name: &XorName) -> Result<&PublicId, RoutingError>;
-
     fn filter_hop_message(
         &mut self,
         hop_msg: HopMessage,
@@ -41,42 +35,5 @@ pub trait BootstrappedNotEstablished: Bootstrapped {
         }
 
         Ok(Some(routing_msg))
-    }
-
-    fn send_routing_message_via_proxy(
-        &mut self,
-        routing_msg: RoutingMessage,
-        _expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
-        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
-            return Ok(()); // Message is for us.
-        }
-
-        // Get PublicId of the proxy node
-        let proxy_pub_id = match routing_msg.src {
-            Authority::Client {
-                ref client_id,
-                ref proxy_node_name,
-            } => {
-                if self.name() != client_id.name() {
-                    return Ok(());
-                }
-
-                *self.get_proxy_public_id(proxy_node_name)?
-            }
-            _ => {
-                error!("{} - Source should be client in this state", self);
-                return Err(RoutingError::InvalidSource);
-            }
-        };
-
-        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
-
-        if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &proxy_pub_id) {
-            let message = self.to_hop_message(signed_msg.clone())?;
-            self.send_message(&proxy_pub_id, message);
-        }
-
-        Ok(())
     }
 }

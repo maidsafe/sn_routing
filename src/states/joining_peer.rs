@@ -283,11 +283,7 @@ impl Bootstrapped for JoiningPeer {
     }
 }
 
-impl BootstrappedNotEstablished for JoiningPeer {
-    fn get_proxy_public_id(&self, _proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        Err(RoutingError::InvalidPeer)
-    }
-}
+impl BootstrappedNotEstablished for JoiningPeer {}
 
 impl Display for JoiningPeer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

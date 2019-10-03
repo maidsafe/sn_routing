@@ -104,8 +104,8 @@ mod tests {
             I: Iterator<Item = &'a FullId>,
         {
             let routing_msg = RoutingMessage {
-                src: Authority::ClientManager(rand::random()),
-                dst: Authority::ClientManager(rand::random()),
+                src: Authority::NodeManager(rand::random()),
+                dst: Authority::NodeManager(rand::random()),
                 content: MessageContent::UserMessage(vec![
                     rand::random(),
                     rand::random(),

@@ -440,8 +440,8 @@ fn packet_is_parsec_gossip() {
 
     // A hop message never contains a Parsec message.
     let msg = RoutingMessage {
-        src: Authority::ClientManager(rand::random()),
-        dst: Authority::ClientManager(rand::random()),
+        src: Authority::NodeManager(rand::random()),
+        dst: Authority::NodeManager(rand::random()),
         content: MessageContent::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
     };
     let msg = SignedRoutingMessage::insecure(msg);

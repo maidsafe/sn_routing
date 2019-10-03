@@ -208,11 +208,7 @@ impl Base for Adult {
     }
 
     fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        if let Authority::Client { ref client_id, .. } = *auth {
-            client_id == self.full_id.public_id()
-        } else {
-            false
-        }
+        self.chain.in_authority(auth)
     }
 
     fn min_section_size(&self) -> usize {
@@ -307,7 +303,7 @@ impl Bootstrapped for Adult {
         routing_msg: RoutingMessage,
         _expires_at: Option<Instant>,
     ) -> Result<(), RoutingError> {
-        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
+        if self.in_authority(&routing_msg.dst) {
             return Ok(()); // Message is for us.
         }
 
@@ -355,11 +351,7 @@ impl Relocated for Adult {
     }
 }
 
-impl BootstrappedNotEstablished for Adult {
-    fn get_proxy_public_id(&self, _proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        Err(RoutingError::InvalidStateForOperation)
-    }
-}
+impl BootstrappedNotEstablished for Adult {}
 
 impl RelocatedNotEstablished for Adult {
     fn our_prefix(&self) -> &Prefix<XorName> {
