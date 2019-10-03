@@ -7,7 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{id::PublicId, quic_p2p::NodeInfo, ConnectionInfo};
-use std::{collections::HashMap, net::SocketAddr};
+use fxhash::FxHashMap;
+use std::net::SocketAddr;
 
 /// This structure holds the bi-directional association between peers public id and their network
 /// connection info. This association can be create in two ways:
@@ -20,9 +21,9 @@ use std::{collections::HashMap, net::SocketAddr};
 ///    public id.
 #[derive(Default)]
 pub struct PeerMap {
-    forward: HashMap<PublicId, ConnectionInfo>,
-    reverse: HashMap<SocketAddr, PublicId>,
-    pending: HashMap<SocketAddr, PendingConnection>,
+    forward: FxHashMap<PublicId, ConnectionInfo>,
+    reverse: FxHashMap<SocketAddr, PublicId>,
+    pending: FxHashMap<SocketAddr, PendingConnection>,
 }
 
 // TODO (quic-p2p): correctly handle these pathological scenarios:
