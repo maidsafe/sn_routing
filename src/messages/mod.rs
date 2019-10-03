@@ -608,7 +608,7 @@ mod tests {
 
         let msg = RoutingMessage {
             src: Authority::Node(rand::random()),
-            dst: Authority::NodeManager(rand::random()),
+            dst: Authority::Section(rand::random()),
             content: MessageContent::UserMessage(vec![0, 1, 2, 3, 4]),
         };
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
@@ -642,8 +642,8 @@ mod tests {
         let content = (0..10).collect();
         let name: XorName = rand::random();
         let msg = RoutingMessage {
-            src: Authority::NodeManager(name),
-            dst: Authority::NodeManager(name),
+            src: Authority::Section(name),
+            dst: Authority::Section(name),
             content: MessageContent::UserMessage(content),
         };
 

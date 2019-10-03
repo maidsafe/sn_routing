@@ -326,7 +326,7 @@ impl Expectations {
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
                         if !self.sections.get(&key.dst).map_or(false, checker) {
-                            if let Authority::NaeManager(_) = dst {
+                            if let Authority::Section(_) = dst {
                                 trace!(
                                     "Unexpected request for node {}: {:?} / {:?}",
                                     node.name(),
@@ -380,8 +380,8 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     let index1 = gen_range(rng, 0, nodes.len());
     let auth_n0 = Authority::Node(nodes[index0].name());
     let auth_n1 = Authority::Node(nodes[index1].name());
-    let auth_g0 = Authority::NaeManager(rng.gen());
-    let auth_g1 = Authority::NaeManager(rng.gen());
+    let auth_g0 = Authority::Section(rng.gen());
+    let auth_g1 = Authority::Section(rng.gen());
     let section_name: XorName = rng.gen();
     let auth_s0 = Authority::Section(section_name);
     // this makes sure we have two different sections if there exists more than one
@@ -510,8 +510,8 @@ fn messages_during_churn() {
         let index1 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
         let auth_n0 = Authority::Node(nodes[index0].name());
         let auth_n1 = Authority::Node(nodes[index1].name());
-        let auth_g0 = Authority::NaeManager(rng.gen());
-        let auth_g1 = Authority::NaeManager(rng.gen());
+        let auth_g0 = Authority::Section(rng.gen());
+        let auth_g1 = Authority::Section(rng.gen());
         let section_name: XorName = rng.gen();
         let auth_s0 = Authority::Section(section_name);
         // this makes sure we have two different sections if there exists more than one

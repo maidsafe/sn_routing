@@ -938,7 +938,7 @@ impl Elder {
     /// `None`.
     fn get_signature_targets(&self, src: &Authority<XorName>) -> Option<BTreeSet<XorName>> {
         let list: Vec<XorName> = match *src {
-            Authority::NaeManager(_) | Authority::NodeManager(_) | Authority::Section(_) => self
+            Authority::Section(_) => self
                 .chain
                 .our_section()
                 .into_iter()

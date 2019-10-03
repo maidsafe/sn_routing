@@ -815,12 +815,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 }
                 candidates(target_name)
             }
-            Authority::NaeManager(ref target_name) | Authority::NodeManager(ref target_name) => {
-                if let Some(group) = self.other_closest_names(target_name, self.min_section_size) {
-                    return Ok(group.into_iter().cloned().collect());
-                }
-                candidates(target_name)
-            }
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
                 if *prefix == self.our_prefix {
@@ -875,9 +869,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn in_authority(&self, auth: &Authority<T>) -> bool {
         match *auth {
             Authority::Node(ref name) => self.our_name == *name,
-            Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name)
-            | Authority::Section(ref name) => self.our_prefix.matches(name),
+            Authority::Section(ref name) => self.our_prefix.matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix.is_compatible(prefix),
         }
     }

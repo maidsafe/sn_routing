@@ -20,7 +20,7 @@ fn send() {
 
     let sender_index = rng.gen_range(0, nodes.len());
     let src = Authority::Node(nodes[sender_index].name());
-    let dst = Authority::NaeManager(rng.gen());
+    let dst = Authority::Section(rng.gen());
     let content: Vec<_> = rng.gen_iter().take(1024).collect();
     assert!(nodes[sender_index]
         .inner
@@ -61,7 +61,7 @@ fn send_and_receive() {
 
     let sender_index = rng.gen_range(0, nodes.len());
     let src = Authority::Node(nodes[sender_index].name());
-    let dst = Authority::NaeManager(rng.gen());
+    let dst = Authority::Section(rng.gen());
 
     let req_content: Vec<_> = rng.gen_iter().take(10).collect();
     let res_content: Vec<_> = rng.gen_iter().take(11).collect();

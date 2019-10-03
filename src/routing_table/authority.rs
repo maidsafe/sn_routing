@@ -21,12 +21,7 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 #[allow(clippy::large_enum_variant)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
-    /// Manager of a network-addressable element, i.e. the group matching this name.
-    /// `XorName` is the name of the element in question.
-    NaeManager(N),
-    /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
-    NodeManager(N),
-    /// A set of nodes with names sharing a common prefix.
+    /// A single section whose prefix matches the given name
     Section(N),
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
     /// the routing table or only a part of a `Section`
@@ -38,34 +33,25 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
 impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
-        match *self {
-            Authority::Section(_)
-            | Authority::PrefixSection(_)
-            | Authority::NaeManager(_)
-            | Authority::NodeManager(_) => true,
+        match self {
+            Authority::Section(_) | Authority::PrefixSection(_) => true,
             Authority::Node(_) => false,
         }
     }
 
     /// Returns `true` if the authority is a single node, and `false` otherwise.
     pub fn is_single(&self) -> bool {
-        match *self {
-            Authority::NaeManager(_)
-            | Authority::Section(_)
-            | Authority::PrefixSection(_)
-            | Authority::NodeManager(_) => false,
+        match self {
+            Authority::Section(_) | Authority::PrefixSection(_) => false,
             Authority::Node(_) => true,
         }
     }
 
     /// Returns the name of authority.
     pub fn name(&self) -> N {
-        match *self {
-            Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name)
-            | Authority::Section(ref name)
-            | Authority::Node(ref name) => *name,
-            Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
+        match self {
+            Authority::Section(name) | Authority::Node(name) => *name,
+            Authority::PrefixSection(prefix) => prefix.lower_bound(),
         }
     }
 }
@@ -74,10 +60,7 @@ impl Authority<XorName> {
     /// provide the name mathching a single node's public key
     pub fn single_signing_name(&self) -> Option<&XorName> {
         match *self {
-            Authority::NaeManager(_)
-            | Authority::Section(_)
-            | Authority::PrefixSection(_)
-            | Authority::NodeManager(_) => None,
+            Authority::Section(_) | Authority::PrefixSection(_) => None,
             Authority::Node(ref name) => Some(name),
         }
     }
@@ -86,8 +69,6 @@ impl Authority<XorName> {
 impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
-            Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
             Authority::Section(ref name) => write!(formatter, "Section(name: {})", name),
             Authority::PrefixSection(ref prefix) => {
                 write!(formatter, "PrefixSection(prefix: {:?})", prefix)

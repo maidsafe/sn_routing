@@ -1096,9 +1096,7 @@ impl Chain {
                 }
                 candidates(target_name)?
             }
-            Authority::NaeManager(ref target_name)
-            | Authority::NodeManager(ref target_name)
-            | Authority::Section(ref target_name) => {
+            Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
                 if &prefix == self.our_prefix() {
                     // Exclude our name since we don't need to send to ourself
@@ -1157,9 +1155,7 @@ impl Chain {
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *auth {
             Authority::Node(ref name) => self.our_id().name() == name,
-            Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name)
-            | Authority::Section(ref name) => self.our_prefix().matches(name),
+            Authority::Section(ref name) => self.our_prefix().matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
         }
     }

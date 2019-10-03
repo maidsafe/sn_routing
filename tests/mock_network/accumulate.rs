@@ -19,7 +19,7 @@ fn messages_accumulate_with_quorum() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, section_size);
 
-    let src = Authority::NaeManager(rng.gen());
+    let src = Authority::Section(rng.gen());
     sort_nodes_by_distance_to(&mut nodes, &src.name());
 
     let send = |node: &mut TestNode, dst: &Authority<XorName>, content: Vec<u8>| {
