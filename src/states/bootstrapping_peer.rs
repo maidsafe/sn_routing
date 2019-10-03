@@ -14,7 +14,7 @@ use crate::{
     messages::{BootstrapResponse, DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::{NodeInfo, Peer},
+    quic_p2p::NodeInfo,
     routing_table::Authority,
     state_machine::{State, Transition},
     states::JoiningPeer,
@@ -92,7 +92,7 @@ impl BootstrappingPeer {
                 return;
             };
 
-        let conn_infos = vec![Peer::Node { node_info: dst }];
+        let conn_infos = vec![dst];
         let dg_size = 1;
         self.send_message_to_initial_targets(conn_infos, dg_size, message);
     }
@@ -209,9 +209,7 @@ impl Base for BootstrappingPeer {
     }
 
     fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
-        self.peer_map_mut().connect(Peer::Node {
-            node_info: node_info.clone(),
-        });
+        self.peer_map_mut().connect(node_info.clone());
 
         if self.bootstrap_connection.is_none() {
             debug!(
@@ -234,23 +232,25 @@ impl Base for BootstrappingPeer {
         Transition::Terminate
     }
 
-    fn handle_connected_to(&mut self, conn_info: Peer, _outbox: &mut dyn EventBox) -> Transition {
-        let _ = self.nodes_to_await.remove(&conn_info.peer_addr());
+    fn handle_connected_to(
+        &mut self,
+        conn_info: NodeInfo,
+        _outbox: &mut dyn EventBox,
+    ) -> Transition {
+        let _ = self.nodes_to_await.remove(&conn_info.peer_addr);
         if self.bootstrap_connection.is_some() {
             // we already have an active connection, drop this one
             self.network_service
                 .service_mut()
-                .disconnect_from(conn_info.peer_addr());
+                .disconnect_from(conn_info.peer_addr);
         } else {
-            if let Peer::Node { ref node_info } = conn_info {
-                debug!(
-                    "{} Received ConnectedTo event from {}.",
-                    self, node_info.peer_addr
-                );
+            debug!(
+                "{} Received ConnectedTo event from {}.",
+                self, conn_info.peer_addr
+            );
 
-                // Established connection. Pending Validity checks
-                self.send_bootstrap_request(node_info.clone());
-            }
+            // Established connection. Pending Validity checks
+            self.send_bootstrap_request(conn_info.clone());
             self.peer_map_mut().connect(conn_info);
         }
         Transition::Stay
@@ -331,9 +331,14 @@ impl Display for BootstrappingPeer {
 mod tests {
     use super::*;
     use crate::{
-        id::FullId, messages::Message, mock::Network, outbox::EventBuf, quic_p2p::Builder,
-        state_machine::StateMachine, states::common::from_network_bytes, NetworkConfig,
-        NetworkEvent,
+        id::FullId,
+        messages::Message,
+        mock::Network,
+        outbox::EventBuf,
+        quic_p2p::{Builder, Peer},
+        state_machine::StateMachine,
+        states::common::from_network_bytes,
+        NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;
     use unwrap::unwrap;

@@ -8,12 +8,10 @@
 
 mod sending_targets_cache;
 
-#[cfg(feature = "mock_base")]
-use crate::quic_p2p::NodeInfo;
 use crate::{
-    quic_p2p::{Builder, Error, Token},
+    quic_p2p::{Builder, Error, NodeInfo, Peer, Token},
     utils::LogIdent,
-    ConnectionInfo, NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
+    NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
 };
 use crossbeam_channel::Sender;
 use std::net::SocketAddr;
@@ -44,7 +42,7 @@ impl NetworkService {
 
     pub fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: Vec<ConnectionInfo>,
+        conn_infos: Vec<NodeInfo>,
         dg_size: usize,
         msg: NetworkBytes,
     ) {
@@ -53,7 +51,13 @@ impl NetworkService {
         // initially only send to dg_size targets
         for conn_info in conn_infos.iter().take(dg_size) {
             // NetworkBytes is refcounted and cheap to clone.
-            self.quic_p2p.send(conn_info.clone(), msg.clone(), token);
+            self.quic_p2p.send(
+                Peer::Node {
+                    node_info: conn_info.clone(),
+                },
+                msg.clone(),
+                token,
+            );
         }
 
         self.cache.insert_message(token, conn_infos, dg_size);
@@ -71,7 +75,8 @@ impl NetworkService {
                 "{} Sending of message ID {} failed; resending...",
                 log_ident, token
             );
-            self.quic_p2p.send(tgt, msg, token);
+            self.quic_p2p
+                .send(Peer::Node { node_info: tgt }, msg, token);
         }
     }
 

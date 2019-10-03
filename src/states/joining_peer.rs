@@ -19,7 +19,7 @@ use crate::{
     outbox::EventBox,
     peer_manager::{PeerManager, PeerState},
     peer_map::PeerMap,
-    quic_p2p::{NodeInfo, Peer},
+    quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
@@ -122,8 +122,7 @@ impl JoiningPeer {
             return;
         };
 
-        let conn_infos = vec![Peer::Node { node_info: dst }];
-
+        let conn_infos = vec![dst];
         let dg_size = 1;
         self.send_message_to_initial_targets(conn_infos, dg_size, message);
     }
@@ -217,7 +216,7 @@ impl Base for JoiningPeer {
             for peer_addr in self
                 .peer_map
                 .remove_all()
-                .map(|conn_info| conn_info.peer_addr())
+                .map(|conn_info| conn_info.peer_addr)
             {
                 self.network_service
                     .service_mut()

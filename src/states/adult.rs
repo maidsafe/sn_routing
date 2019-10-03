@@ -318,7 +318,7 @@ impl Base for Adult {
             for peer_addr in self
                 .peer_map
                 .remove_all()
-                .map(|conn_info| conn_info.peer_addr())
+                .map(|conn_info| conn_info.peer_addr)
             {
                 self.network_service
                     .service_mut()

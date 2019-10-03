@@ -345,10 +345,10 @@ pub trait Approved: Base {
         } else {
             debug!("{} Disconnecting {}.", self, pub_id);
 
-            if let Some(peer) = self.peer_map_mut().remove(pub_id) {
+            if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
                 self.network_service_mut()
                     .service_mut()
-                    .disconnect_from(peer.peer_addr());
+                    .disconnect_from(conn_info.peer_addr);
             }
 
             let _ = self.peer_mgr_mut().remove_peer(pub_id);

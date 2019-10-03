@@ -41,7 +41,7 @@ use crate::{
     timer::Timer,
     utils::{self, XorTargetInterval},
     xor_name::XorName,
-    BlsPublicKeySet, ConnectionInfo, NetworkService,
+    BlsPublicKeySet, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -53,7 +53,6 @@ use std::{
     collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
-    net::IpAddr,
 };
 
 /// Time after which a `Ticked` event is sent.
@@ -61,8 +60,6 @@ const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 //const MAX_IDLE_ROUNDS: u64 = 100;
 //const TICK_TIMEOUT_SECS: u64 = 60;
-/// Duration for which all clients on a given IP will be blocked from joining this node.
-const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
 /// Duration for which clients' IDs we disconnected from are retained.
 const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
@@ -98,8 +95,6 @@ pub struct Elder {
     next_relocation_dst: Option<XorName>,
     /// Interval used for relocation in mock network tests.
     next_relocation_interval: Option<XorTargetInterval>,
-    /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
-    banned_client_ips: LruCache<IpAddr, ()>,
     /// Recently-disconnected clients.  Clients are added to this when we disconnect from them so we
     /// have a way to know to not handle subsequent hop messages from them (i.e. those which were
     /// already enqueued in the channel or added before Crust handled the disconnect request).  If a
@@ -227,7 +222,6 @@ impl Elder {
             timer: timer,
             next_relocation_dst: None,
             next_relocation_interval: None,
-            banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
             dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
             proxy_load_amount: 0,
             parsec_map: details.parsec_map,
@@ -678,30 +672,12 @@ impl Elder {
 
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        let conn_info = match self.peer_map().get_connection_info(&pub_id) {
-            Some(conn_info) => conn_info.clone(),
-            None => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Not connected to the sender of BootstrapRequest."
-                );
-                return Err(RoutingError::UnknownConnection(pub_id));
-            }
-        };
-
-        if let ConnectionInfo::Client { .. } = conn_info {
-            trace!(
-                "{} - Received BootstrapRequest from a client. Rejecting.",
-                self,
+        if self.peer_map().get_connection_info(&pub_id).is_none() {
+            log_or_panic!(
+                LogLevel::Error,
+                "Not connected to the sender of BootstrapRequest."
             );
-            self.send_direct_message(
-                &pub_id,
-                DirectMessage::BootstrapResponse(BootstrapResponse::Error(
-                    BootstrapResponseError::ClientLimit,
-                )),
-            );
-            self.disconnect_peer(&pub_id);
-            return Ok(());
+            return Err(RoutingError::UnknownConnection(pub_id));
         };
 
         trace!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
@@ -738,10 +714,7 @@ impl Elder {
             node_names
                 .into_iter()
                 .filter_map(|xor_name| self.peer_mgr.get_pub_id(&xor_name))
-                .filter_map(|pub_id| match self.peer_map.get_connection_info(pub_id) {
-                    Some(ConnectionInfo::Node { node_info }) => Some(node_info.clone()),
-                    _ => None,
-                })
+                .filter_map(|pub_id| self.peer_map.get_connection_info(pub_id).cloned())
                 .collect()
         };
         let response = if self.our_prefix().matches(pub_id.name()) {
@@ -1048,36 +1021,6 @@ impl Elder {
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
     }
-
-    // While this can theoretically be called as a result of a misbehaving client or node, we're
-    // actually only blocking clients from bootstrapping from that IP (see
-    // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
-    // handle malicious nodes more fully.
-    fn ban_and_disconnect_peer(&mut self, pub_id: &PublicId) {
-        let ip = match self.peer_map().get_connection_info(pub_id) {
-            Some(ConnectionInfo::Client { peer_addr }) => peer_addr.ip(),
-            Some(ConnectionInfo::Node { .. }) => {
-                warn!(
-                    "{} - Can't ban IP address of {:?} - not a client.",
-                    self, pub_id
-                );
-                return;
-            }
-            None => {
-                warn!(
-                    "{} - Can't ban IP address of {:?} - unknown IP address.",
-                    self, pub_id
-                );
-                return;
-            }
-        };
-
-        debug!("{} - Banned client {:?} on IP {}.", self, pub_id, ip);
-
-        let _ = self.banned_client_ips.insert(ip, ());
-        let _ = self.dropped_clients.insert(*pub_id, ());
-        self.disconnect_peer(pub_id);
-    }
 }
 
 impl Base for Elder {
@@ -1198,10 +1141,9 @@ impl Base for Elder {
             BootstrapRequest => {
                 if let Err(error) = self.handle_bootstrap_request(pub_id) {
                     warn!(
-                        "{} Invalid BootstrapRequest received ({:?}), dropping {}.",
-                        self, error, pub_id
+                        "{} Invalid BootstrapRequest received from {} ({:?}).",
+                        self, pub_id, error,
                     );
-                    self.ban_and_disconnect_peer(&pub_id);
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
@@ -1304,13 +1246,6 @@ impl Elder {
 
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
-    }
-
-    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
-        self.banned_client_ips
-            .peek_iter()
-            .map(|(ip, _)| *ip)
-            .collect()
     }
 
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {

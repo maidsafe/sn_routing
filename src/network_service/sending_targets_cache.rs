@@ -6,8 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::quic_p2p::Token;
-use crate::ConnectionInfo;
+use crate::quic_p2p::{NodeInfo, Token};
 use log::LogLevel;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -43,16 +42,11 @@ impl TargetState {
 
 #[derive(Default)]
 pub struct SendingTargetsCache {
-    cache: HashMap<Token, Vec<(ConnectionInfo, TargetState)>>,
+    cache: HashMap<Token, Vec<(NodeInfo, TargetState)>>,
 }
 
 impl SendingTargetsCache {
-    pub fn insert_message(
-        &mut self,
-        token: Token,
-        initial_targets: Vec<ConnectionInfo>,
-        dg_size: usize,
-    ) {
+    pub fn insert_message(&mut self, token: Token, initial_targets: Vec<NodeInfo>, dg_size: usize) {
         // When a message is inserted into the cache initially, we are only sending it to `dg_size`
         // targets with the highest priority - thus, we will set the first `dg_size` targets'
         // states to Sending(0), and the rest to Failed(0) (indicating that we haven't sent to
@@ -74,21 +68,21 @@ impl SendingTargetsCache {
         let _ = self.cache.insert(token, targets);
     }
 
-    fn target_states(&self, token: Token) -> impl Iterator<Item = &(ConnectionInfo, TargetState)> {
+    fn target_states(&self, token: Token) -> impl Iterator<Item = &(NodeInfo, TargetState)> {
         self.cache.get(&token).into_iter().flatten()
     }
 
     fn target_states_mut(
         &mut self,
         token: Token,
-    ) -> impl Iterator<Item = &mut (ConnectionInfo, TargetState)> {
+    ) -> impl Iterator<Item = &mut (NodeInfo, TargetState)> {
         self.cache.get_mut(&token).into_iter().flatten()
     }
 
     fn fail_target(&mut self, token: Token, target: SocketAddr) {
         let _ = self
             .target_states_mut(token)
-            .find(|(info, _state)| info.peer_addr() == target)
+            .find(|(info, _state)| info.peer_addr == target)
             .map(|(_info, state)| match *state {
                 TargetState::Failed(_) => {
                     log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
@@ -108,7 +102,7 @@ impl SendingTargetsCache {
     /// Finds a Failed target with the lowest number of failed attempts so far, among the ones that
     /// failed at most MAX_RESENDS times. If there are multiple possibilities, the one with the
     /// highest priority (earliest in the list) is taken. Returns None if no such targets exist.
-    fn take_next_target(&mut self, token: Token) -> Option<ConnectionInfo> {
+    fn take_next_target(&mut self, token: Token) -> Option<NodeInfo> {
         self.target_states_mut(token)
             .filter(|(_info, state)| !state.is_complete())
             .filter_map(|(info, state)| match state {
@@ -133,7 +127,7 @@ impl SendingTargetsCache {
             .all(|(_info, state)| !state.is_sending())
     }
 
-    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> Option<ConnectionInfo> {
+    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> Option<NodeInfo> {
         self.fail_target(token, target);
         let result = self.take_next_target(token);
         if self.should_drop(token) {
@@ -145,7 +139,7 @@ impl SendingTargetsCache {
     pub fn target_succeeded(&mut self, token: Token, target: SocketAddr) {
         let _ = self
             .target_states_mut(token)
-            .find(|(info, _state)| info.peer_addr() == target)
+            .find(|(info, _state)| info.peer_addr == target)
             .map(|(_info, state)| {
                 *state = TargetState::Sent;
             });

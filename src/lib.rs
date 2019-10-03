@@ -203,7 +203,7 @@ pub(crate) use self::{
         SignatureShare as BlsSignatureShare,
     },
     network_service::NetworkService,
-    quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p},
+    quic_p2p::{Event as NetworkEvent, QuicP2p},
 };
 
 #[cfg(feature = "mock_crypto")]

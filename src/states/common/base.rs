@@ -16,13 +16,13 @@ use crate::{
     },
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::{NodeInfo, Token},
+    quic_p2p::{NodeInfo, Peer, Token},
     routing_table::Authority,
     state_machine::Transition,
     timer::Timer,
     utils::LogIdent,
     xor_name::XorName,
-    ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
+    NetworkBytes, NetworkEvent, NetworkService,
 };
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
@@ -117,7 +117,19 @@ pub trait Base: Display {
         let transition = match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
             BootstrapFailure => self.handle_bootstrap_failure(outbox),
-            ConnectedTo { peer } => self.handle_connected_to(peer, outbox),
+            ConnectedTo {
+                peer: Peer::Node { node_info },
+            } => self.handle_connected_to(node_info, outbox),
+            ConnectedTo {
+                peer: Peer::Client { peer_addr },
+            } => {
+                trace!(
+                    "{} - Ignoring connection attempt from a client at {}",
+                    self,
+                    peer_addr
+                );
+                Transition::Stay
+            }
             ConnectionFailure { peer_addr, .. } => {
                 self.handle_connection_failure(peer_addr, outbox)
             }
@@ -154,7 +166,7 @@ pub trait Base: Display {
 
     fn handle_connected_to(
         &mut self,
-        conn_info: ConnectionInfo,
+        conn_info: NodeInfo,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
         self.peer_map_mut().connect(conn_info);
@@ -314,7 +326,7 @@ pub trait Base: Display {
 
     fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: Vec<ConnectionInfo>,
+        conn_infos: Vec<NodeInfo>,
         dg_size: usize,
         message: Message,
     ) {
