@@ -8,18 +8,20 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base, Bootstrapped, Relocated, RelocatedNotEstablished},
+    common::{Approved, Base, Bootstrapped, Relocated},
     elder::{Elder, ElderDetails},
 };
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload},
-    error::RoutingError,
+    error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage},
+    messages::{
+        BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage,
+    },
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::PeerManager,
+    peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -151,7 +153,40 @@ impl Adult {
         msg: RoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.handle_routing_message(msg, outbox)
+        use crate::{messages::MessageContent::*, routing_table::Authority::*};
+
+        let src_name = msg.src.name();
+
+        match msg {
+            RoutingMessage {
+                content:
+                    ConnectionRequest {
+                        conn_info,
+                        pub_id,
+                        msg_id,
+                    },
+                src: Node(_),
+                dst: Node(_),
+            } => {
+                if self.chain.our_prefix().matches(&src_name) {
+                    self.handle_connection_request(&conn_info, pub_id, msg.src, msg.dst, outbox)
+                } else {
+                    self.add_message_to_backlog(RoutingMessage {
+                        content: ConnectionRequest {
+                            conn_info,
+                            pub_id,
+                            msg_id,
+                        },
+                        ..msg
+                    });
+                    Ok(())
+                }
+            }
+            _ => {
+                self.add_message_to_backlog(msg);
+                Ok(())
+            }
+        }
     }
 
     // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
@@ -173,6 +208,53 @@ impl Adult {
         for recipient in recipients {
             self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
         }
+    }
+
+    fn check_direct_message_sender(
+        &self,
+        msg: &DirectMessage,
+        pub_id: &PublicId,
+    ) -> Result<(), RoutingError> {
+        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
+            Some(PeerState::Node { .. }) | Some(PeerState::Connected) => return Ok(()),
+            Some(PeerState::Connecting) => {
+                if let DirectMessage::ConnectionResponse = msg {
+                    return Ok(());
+                }
+            }
+            _ => (),
+        }
+
+        debug!(
+            "{} Illegitimate direct message {:?} from {:?}.",
+            self, msg, pub_id
+        );
+        Err(RoutingError::InvalidStateForOperation)
+    }
+
+    // Backlog the message to be processed once we are established.
+    fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
+        trace!(
+            "{} Not established yet. Delaying message handling: {:?}",
+            self,
+            msg
+        );
+        self.msg_backlog.push(msg)
+    }
+
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
+        debug!(
+            "{} - Client {:?} rejected: We are not an established node yet.",
+            self, pub_id
+        );
+
+        self.send_direct_message(
+            &pub_id,
+            DirectMessage::BootstrapResponse(BootstrapResponse::Error(
+                BootstrapResponseError::NotApproved,
+            )),
+        );
+        self.disconnect_peer(&pub_id);
     }
 }
 
@@ -244,7 +326,13 @@ impl Base for Adult {
     }
 
     fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
-        RelocatedNotEstablished::handle_peer_lost(self, pub_id, outbox)
+        debug!("{} - Lost peer {}", self, pub_id);
+
+        if self.peer_mgr.remove_peer(&pub_id) {
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        }
+
+        Transition::Stay
     }
 
     fn handle_direct_message(
@@ -350,16 +438,6 @@ impl Relocated for Adult {
 
     fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
-    }
-}
-
-impl RelocatedNotEstablished for Adult {
-    fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain.our_prefix()
-    }
-
-    fn push_message_to_backlog(&mut self, msg: RoutingMessage) {
-        self.msg_backlog.push(msg)
     }
 }
 

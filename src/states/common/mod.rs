@@ -10,12 +10,10 @@ mod approved;
 mod base;
 mod bootstrapped;
 mod relocated;
-mod relocated_not_established;
 
 pub use self::{
     approved::Approved,
     base::{from_network_bytes, Base},
     bootstrapped::Bootstrapped,
     relocated::Relocated,
-    relocated_not_established::RelocatedNotEstablished,
 };

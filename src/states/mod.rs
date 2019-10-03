@@ -25,17 +25,17 @@ pub use self::{
 //      ┌───────────────┐
 //      │ Bootstrapping │──────────┐
 //      └───────────────┘          │
-//              │     ▲            │
+//              ▲     ▲            │
 //              │     │            │
-//              ▼     │            ▼
-//            ┌────────────────┐ ┌─────────────┐
-//            │ RelocatingNode │ │ ProvingNode │
-//            └────────────────┘ └─────────────┘
-//                                 │
-//                                 │
-//                                 ▼
-//                               ┌───────┐
-//                               │ Adult │
+//              │     │            ▼
+//              │     │          ┌─────────────┐
+//              │     └──────────│ JoiningNode │
+//              │                └─────────────┘
+//              │                  │
+//              │                  │
+//              │                  ▼
+//              │                ┌───────┐
+//              └────────────────│ Adult │
 //                               └───────┘
 //                                 │
 //                                 │
@@ -46,15 +46,13 @@ pub use self::{
 //
 //
 // # Common traits
-//                              Bootstrapping
-//                              │   RelocatingNode
-//                              │   │   ProvingNode
-//                              │   │   │   Adult
-//                              │   │   │   │   Elder
-//                              │   │   │   │   │
-// Base                         *   *   *   *   *
-// Bootstrapped                     *   *   *   *
-// Relocated                            *   *   *
-// RelocatedNotEstablished              *   *
-// Approved                                 *   *
+//                              BootstrappingPeer
+//                              │   JoininigPeer
+//                              │   │   Adult
+//                              │   │   │   Elder
+//                              │   │   │   │
+// Base                         *   *   *   *
+// Bootstrapped                     *   *   *
+// Relocated                            *   *
+// Approved                             *   *
 //
