@@ -15,7 +15,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::PublicId,
-    messages::{DirectMessage, MessageContent},
+    messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
     peer_manager::{Peer, PeerManager},
@@ -288,13 +288,14 @@ pub trait Approved: Bootstrapped {
             self, their_pub_id
         );
 
-        self.send_routing_message(src, dst, content).map_err(|err| {
-            debug!(
-                "{} - Failed to send our connection info for {:?}: {:?}.",
-                self, their_pub_id, err
-            );
-            err
-        })
+        self.send_routing_message(RoutingMessage { src, dst, content })
+            .map_err(|err| {
+                debug!(
+                    "{} - Failed to send our connection info for {:?}: {:?}.",
+                    self, their_pub_id, err
+                );
+                err
+            })
     }
 
     fn handle_connection_request(

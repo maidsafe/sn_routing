@@ -26,7 +26,7 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
-    time::{Duration, Instant},
+    time::Duration,
     timer::Timer,
     xor_name::XorName,
     NetworkService,
@@ -302,6 +302,10 @@ impl Base for Adult {
         &mut self.peer_map
     }
 
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.timer
+    }
+
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.poke_timer_token == token {
             self.send_parsec_poke();
@@ -377,22 +381,8 @@ impl Base for Adult {
 
         Ok(Transition::Stay)
     }
-}
 
-impl Bootstrapped for Adult {
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
-    }
-
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
-    }
-
-    fn send_routing_message_impl(
-        &mut self,
-        routing_msg: RoutingMessage,
-        _expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         if self.in_authority(&routing_msg.dst) {
             return Ok(()); // Message is for us.
         }
@@ -403,13 +393,22 @@ impl Bootstrapped for Adult {
         // Need to collect IDs first so that self is not borrowed via the iterator
         let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
         for pub_id in target_ids {
-            if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &pub_id) {
+            if !self
+                .routing_msg_filter
+                .filter_outgoing(signed_msg.routing_message(), &pub_id)
+            {
                 let message = self.to_hop_message(signed_msg.clone())?;
                 self.send_message(&pub_id, message);
             }
         }
 
         Ok(())
+    }
+}
+
+impl Bootstrapped for Adult {
+    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
+        &mut self.routing_msg_filter
     }
 }
 

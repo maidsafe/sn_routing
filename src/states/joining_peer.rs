@@ -23,7 +23,6 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
-    time::Instant,
     timer::Timer,
     xor_name::XorName,
     NetworkService,
@@ -195,6 +194,10 @@ impl Base for JoiningPeer {
         &mut self.peer_map
     }
 
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.timer
+    }
+
     fn handle_send_message(
         &mut self,
         _: Authority<XorName>,
@@ -263,27 +266,18 @@ impl Base for JoiningPeer {
             Ok(Transition::Stay)
         }
     }
-}
-
-impl Bootstrapped for JoiningPeer {
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
-    }
-
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
-    }
-
-    fn send_routing_message_impl(
-        &mut self,
-        routing_msg: RoutingMessage,
-        _expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         warn!(
             "{} - Tried to send a routing message: {:?}",
             self, routing_msg
         );
         Ok(())
+    }
+}
+
+impl Bootstrapped for JoiningPeer {
+    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
+        &mut self.routing_msg_filter
     }
 }
 

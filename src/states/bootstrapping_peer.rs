@@ -11,7 +11,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{BootstrapResponse, DirectMessage, HopMessage},
+    messages::{BootstrapResponse, DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::{NodeInfo, Peer},
@@ -174,6 +174,10 @@ impl Base for BootstrappingPeer {
         &mut self.peer_map
     }
 
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.timer
+    }
+
     fn handle_send_message(
         &mut self,
         _: Authority<XorName>,
@@ -303,6 +307,14 @@ impl Base for BootstrappingPeer {
     ) -> Result<Transition, RoutingError> {
         debug!("{} - Unhandled hop message: {:?}", self, msg);
         Ok(Transition::Stay)
+    }
+
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+        warn!(
+            "{} - Tried to send a routing message: {:?}",
+            self, routing_msg
+        );
+        Ok(())
     }
 }
 
