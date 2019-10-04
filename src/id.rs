@@ -208,6 +208,12 @@ impl PublicId {
     }
 }
 
+impl AsRef<XorName> for PublicId {
+    fn as_ref(&self) -> &XorName {
+        &self.name
+    }
+}
+
 fn name_from_key(public_key: &signing::PublicKey) -> XorName {
     XorName(public_key.to_bytes())
 }

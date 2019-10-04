@@ -697,8 +697,7 @@ impl Elder {
         let get_node_infos = |node_names: BTreeSet<XorName>| {
             node_names
                 .into_iter()
-                .filter_map(|xor_name| self.peer_mgr.get_pub_id(&xor_name))
-                .filter_map(|pub_id| self.peer_map.get_connection_info(pub_id).cloned())
+                .filter_map(|name| self.peer_map.get_connection_info(name).cloned())
                 .collect()
         };
         let response = if self.our_prefix().matches(pub_id.name()) {

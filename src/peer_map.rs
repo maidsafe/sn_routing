@@ -6,9 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{id::PublicId, quic_p2p::NodeInfo};
+use crate::{id::PublicId, quic_p2p::NodeInfo, xor_name::XorName};
 use fxhash::FxHashMap;
 use std::net::SocketAddr;
+
 
 /// This structure holds the bi-directional association between peers public id and their network
 /// connection info. This association can be create in two ways:
@@ -21,7 +22,7 @@ use std::net::SocketAddr;
 ///    public id.
 #[derive(Default)]
 pub struct PeerMap {
-    forward: FxHashMap<PublicId, NodeInfo>,
+    forward: FxHashMap<XorName, NodeInfo>,
     reverse: FxHashMap<SocketAddr, PublicId>,
     pending: FxHashMap<SocketAddr, PendingConnection>,
 }
@@ -63,7 +64,7 @@ impl PeerMap {
         let _ = self.pending.remove(&socket_addr);
 
         if let Some(pub_id) = self.reverse.remove(&socket_addr) {
-            let _ = self.forward.remove(&pub_id);
+            let _ = self.forward.remove(pub_id.name());
             Some(pub_id)
         } else {
             None
@@ -76,7 +77,7 @@ impl PeerMap {
         if let Some(pending) = self.pending.remove(&socket_addr) {
             let _ = self
                 .forward
-                .insert(pub_id, pending.into_connection_info(socket_addr));
+                .insert(*pub_id.name(), pending.into_connection_info(socket_addr));
             let _ = self.reverse.insert(socket_addr, pub_id);
         }
     }
@@ -87,13 +88,13 @@ impl PeerMap {
     pub fn insert(&mut self, pub_id: PublicId, node_info: NodeInfo) {
         let _ = self.pending.remove(&node_info.peer_addr);
         let _ = self.reverse.insert(node_info.peer_addr, pub_id);
-        let _ = self.forward.insert(pub_id, node_info);
+        let _ = self.forward.insert(*pub_id.name(), node_info);
     }
 
     // Removes the peer. If we were connected to the peer, returns its connection info. Otherwise
     // returns `None`.
-    pub fn remove(&mut self, pub_id: &PublicId) -> Option<NodeInfo> {
-        let conn_info = self.forward.remove(pub_id)?;
+    pub fn remove<N: AsRef<XorName>>(&mut self, name: N) -> Option<NodeInfo> {
+        let conn_info = self.forward.remove(name.as_ref())?;
         let _ = self.reverse.remove(&conn_info.peer_addr);
         Some(conn_info)
     }
@@ -109,18 +110,18 @@ impl PeerMap {
     }
 
     // Get connection info of the peer with the given public id.
-    pub fn get_connection_info<'a>(&'a self, pub_id: &PublicId) -> Option<&'a NodeInfo> {
-        self.forward.get(pub_id)
+    pub fn get_connection_info<N: AsRef<XorName>>(&self, name: N) -> Option<&NodeInfo> {
+        self.forward.get(name.as_ref())
     }
 
     // Returns an iterator over the public IDs of connected peers
     pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
-        self.forward.keys()
+        self.reverse.values()
     }
 
     // Returns `true` if we have the connection info for a given public ID
-    pub fn has(&self, pub_id: &PublicId) -> bool {
-        self.forward.contains_key(pub_id)
+    pub fn has<N: AsRef<XorName>>(&self, name: N) -> bool {
+        self.forward.contains_key(name.as_ref())
     }
 }
 
