@@ -45,7 +45,6 @@ use crate::{
 };
 use itertools::Itertools;
 use log::LogLevel;
-use lru_time_cache::LruCache;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -58,10 +57,6 @@ use std::{
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
-//const MAX_IDLE_ROUNDS: u64 = 100;
-//const TICK_TIMEOUT_SECS: u64 = 60;
-/// Duration for which clients' IDs we disconnected from are retained.
-const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -95,13 +90,6 @@ pub struct Elder {
     next_relocation_dst: Option<XorName>,
     /// Interval used for relocation in mock network tests.
     next_relocation_interval: Option<XorTargetInterval>,
-    /// Recently-disconnected clients.  Clients are added to this when we disconnect from them so we
-    /// have a way to know to not handle subsequent hop messages from them (i.e. those which were
-    /// already enqueued in the channel or added before Crust handled the disconnect request).  If a
-    /// client then re-connects, its ID is removed from here when we add it to the `PeerManager`.
-    dropped_clients: LruCache<PublicId, ()>,
-    /// Proxy client traffic handled
-    proxy_load_amount: u64,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
@@ -222,8 +210,6 @@ impl Elder {
             timer: timer,
             next_relocation_dst: None,
             next_relocation_interval: None,
-            dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
-            proxy_load_amount: 0,
             parsec_map: details.parsec_map,
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
@@ -672,7 +658,7 @@ impl Elder {
 
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        if self.peer_map().get_connection_info(&pub_id).is_none() {
+        if !self.peer_map.has(&pub_id) {
             log_or_panic!(
                 LogLevel::Error,
                 "Not connected to the sender of BootstrapRequest."
@@ -702,8 +688,6 @@ impl Elder {
         }
 
         self.peer_mgr.handle_bootstrap_request(pub_id);
-        let _ = self.dropped_clients.remove(&pub_id);
-
         self.respond_to_bootstrap_request(&pub_id);
 
         Ok(())
@@ -1077,7 +1061,6 @@ impl Base for Elder {
         if self.tick_timer_token == token {
             self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
             self.remove_expired_peers();
-            self.proxy_load_amount = 0;
             self.update_peer_states(outbox);
             outbox.send_event(Event::TimerTicked);
         } else if self.gossip_timer_token == token {
