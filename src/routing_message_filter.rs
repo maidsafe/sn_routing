@@ -27,6 +27,15 @@ pub enum FilteringResult {
     KnownMessage,
 }
 
+impl FilteringResult {
+    pub fn is_new(&self) -> bool {
+        match self {
+            Self::NewMessage => true,
+            Self::KnownMessage => false,
+        }
+    }
+}
+
 // Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
 pub struct RoutingMessageFilter {
     incoming: MessageFilter<Digest>,
@@ -44,8 +53,7 @@ impl RoutingMessageFilter {
         }
     }
 
-    // Filter incoming `RoutingMessage`. Return the number of times this specific message has been
-    // seen, including this time.
+    // Filter incoming `RoutingMessage`. Return whether this specific message has already been seen.
     pub fn filter_incoming(&mut self, msg: &RoutingMessage) -> FilteringResult {
         let hash = match hash(msg) {
             Some(hash) => hash,
@@ -61,10 +69,14 @@ impl RoutingMessageFilter {
     // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently
     // (and thus should not be sent, due to deduplication).
     //
-    // Return `false` if serialisation of the message fails - that can be handled elsewhere.
-    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId) -> bool {
-        hash(msg).map_or(false, |hash| {
-            self.outgoing.insert((hash, *pub_id), ()).is_some()
+    // Return `KnownMessage` also if hashing the message fails - that can be handled elsewhere.
+    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId) -> FilteringResult {
+        hash(msg).map_or(FilteringResult::KnownMessage, |hash| {
+            if self.outgoing.insert((hash, *pub_id), ()).is_some() {
+                FilteringResult::KnownMessage
+            } else {
+                FilteringResult::NewMessage
+            }
         })
     }
 }

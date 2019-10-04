@@ -19,14 +19,14 @@ fn messages_accumulate_with_quorum() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, section_size);
 
-    let src = Authority::NaeManager(rng.gen());
+    let src = Authority::Section(rng.gen());
     sort_nodes_by_distance_to(&mut nodes, &src.name());
 
     let send = |node: &mut TestNode, dst: &Authority<XorName>, content: Vec<u8>| {
         assert!(node.inner.send_message(src, *dst, content).is_ok());
     };
 
-    let dst = Authority::ManagedNode(nodes[0].name()); // The closest node.
+    let dst = Authority::Node(nodes[0].name()); // The closest node.
     let content = gen_bytes(&mut rng, 8);
 
     // The smallest number such that `quorum * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR`:

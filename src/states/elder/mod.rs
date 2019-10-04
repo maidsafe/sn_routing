@@ -9,7 +9,7 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base, Bootstrapped, Relocated};
+use super::common::{Approved, Base};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
@@ -32,12 +32,12 @@ use crate::{
     peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
-    routing_message_filter::{FilteringResult, RoutingMessageFilter},
+    routing_message_filter::RoutingMessageFilter,
     routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
     signature_accumulator::SignatureAccumulator,
     state_machine::Transition,
-    time::{Duration, Instant},
+    time::Duration,
     timer::Timer,
     utils::{self, XorTargetInterval},
     xor_name::XorName,
@@ -312,7 +312,7 @@ impl Elder {
             let src = Authority::PrefixSection(*self.our_prefix());
             let dst = Authority::PrefixSection(sibling_pfx);
             let content = MessageContent::Merge(payload);
-            if let Err(err) = self.send_routing_message(src, dst, content) {
+            if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
                 debug!("{} Failed to send Merge: {:?}.", self, err);
             }
         }
@@ -359,8 +359,8 @@ impl Elder {
 
         for pub_id in peers_to_connect {
             debug!("{} Sending connection info to {:?}.", self, pub_id);
-            let src = Authority::ManagedNode(*self.name());
-            let dst = Authority::ManagedNode(*pub_id.name());
+            let src = Authority::Node(*self.name());
+            let dst = Authority::Node(*pub_id.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
         }
     }
@@ -445,7 +445,7 @@ impl Elder {
             let src = Authority::Section(self.our_prefix().name());
             let dst = Authority::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
-            if let Err(err) = self.send_routing_message(src, dst, content) {
+            if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
                 debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
             }
         });
@@ -500,11 +500,11 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
-        let filter_res = self
+        if !self
             .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message());
-
-        if filter_res == FilteringResult::KnownMessage {
+            .filter_incoming(signed_msg.routing_message())
+            .is_new()
+        {
             debug!(
                 "{} Known message: {:?} - not handling further",
                 self,
@@ -544,10 +544,8 @@ impl Elder {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
-            if filter_res == FilteringResult::NewMessage {
-                // if addressed to us, then we just queue it and return
-                self.msg_queue.push_back(signed_msg.into_routing_message());
-            }
+            // if addressed to us, then we just queue it and return
+            self.msg_queue.push_back(signed_msg.into_routing_message());
             return Ok(());
         }
 
@@ -564,7 +562,6 @@ impl Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         use crate::messages::MessageContent::*;
-        use crate::Authority::{Client, ManagedNode, PrefixSection, Section};
 
         match routing_msg.content {
             UserMessage { .. } => (),
@@ -576,20 +573,15 @@ impl Elder {
                 ConnectionRequest {
                     conn_info, pub_id, ..
                 },
-                src @ Client { .. },
-                dst @ ManagedNode(_),
-            )
-            | (
-                ConnectionRequest {
-                    conn_info, pub_id, ..
-                },
-                src @ ManagedNode(_),
-                dst @ ManagedNode(_),
+                src @ Authority::Node(_),
+                dst @ Authority::Node(_),
             ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
-            (NeighbourInfo(elders_info), Section(_), PrefixSection(_)) => {
+            (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)
             }
-            (Merge(digest), PrefixSection(_), PrefixSection(_)) => self.handle_merge(digest),
+            (Merge(digest), Authority::PrefixSection(_), Authority::PrefixSection(_)) => {
+                self.handle_merge(digest)
+            }
             (UserMessage(content), src, dst) => {
                 outbox.send_event(Event::MessageReceived { content, src, dst });
                 Ok(())
@@ -599,8 +591,8 @@ impl Elder {
                     src_prefix,
                     ack_version,
                 },
-                Section(src),
-                Section(dst),
+                Authority::Section(src),
+                Authority::Section(dst),
             ) => self.handle_ack_message(src_prefix, ack_version, src, dst),
             (content, src, dst) => {
                 debug!(
@@ -649,7 +641,7 @@ impl Elder {
             pub_id
         );
 
-        let dst = Authority::ManagedNode(*pub_id.name());
+        let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
         if self.peer_mgr.get_peer(&pub_id).is_none() {
@@ -659,7 +651,7 @@ impl Elder {
                 pub_id
             );
 
-            let src = Authority::ManagedNode(*self.name());
+            let src = Authority::Node(*self.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
         };
 
@@ -671,7 +663,7 @@ impl Elder {
 
         let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
         let content = MessageContent::NodeApproval(trimmed_info);
-        if let Err(error) = self.send_routing_message(src, dst, content) {
+        if let Err(error) = self.send_routing_message(RoutingMessage { src, dst, content }) {
             debug!(
                 "{} Failed sending NodeApproval to {}: {:?}",
                 self, pub_id, error
@@ -807,10 +799,6 @@ impl Elder {
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
-        if signed_msg.routing_message().src.is_client() {
-            return;
-        }
-
         let key_info = if let Some(key_info) = signed_msg.source_section_key_info() {
             key_info
         } else {
@@ -892,7 +880,11 @@ impl Elder {
         dst: Authority<XorName>,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message(src, dst, MessageContent::UserMessage(content))
+        self.send_routing_message(RoutingMessage {
+            src,
+            dst,
+            content: MessageContent::UserMessage(content),
+        })
     }
 
     // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
@@ -903,18 +895,9 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         let dst = signed_msg.routing_message().dst;
 
-        if let Authority::Client { ref client_id, .. } = dst {
-            if *self.name() == dst.name() {
-                // This is a message for a client we are the proxy of. Relay it.
-                return self.relay_to_client(signed_msg, client_id);
-            } else if self.in_authority(&dst) {
-                return Ok(()); // Message is for us as a client.
-            }
-        }
-
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
-        let single_target = if let Authority::ManagedNode(node_name) = dst {
+        let single_target = if let Authority::Node(node_name) = dst {
             self.peer_mgr
                 .get_pub_id(&node_name)
                 .filter(|node_id| self.peer_map.has(&node_id))
@@ -936,7 +919,9 @@ impl Elder {
         let targets: Vec<_> = target_pub_ids
             .into_iter()
             .filter(|pub_id| {
-                !self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id)
+                self.routing_msg_filter
+                    .filter_outgoing(signed_msg.routing_message(), pub_id)
+                    .is_new()
             })
             .collect();
 
@@ -952,39 +937,12 @@ impl Elder {
         Ok(())
     }
 
-    // Wraps the signed message in a `HopMessage` and sends it on.
-    //
-    // In the case that the `pub_id` is unknown, an ack is sent and the message dropped.
-    fn relay_to_client(
-        &mut self,
-        signed_msg: &SignedRoutingMessage,
-        pub_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        if self.peer_mgr.is_connected(pub_id) {
-            if self.filter_outgoing_routing_msg(signed_msg.routing_message(), pub_id) {
-                return Ok(());
-            }
-
-            let message = self.to_hop_message(signed_msg.clone())?;
-            self.send_message(pub_id, message);
-            Ok(())
-        } else {
-            debug!(
-                "{} Client connection not found for message {:?}.",
-                self, signed_msg
-            );
-            Err(RoutingError::ClientConnectionNotFound)
-        }
-    }
-
     /// Returns the set of peers that are responsible for collecting signatures to verify a message;
     /// this may contain us or only other nodes. If our signature is not required, this returns
     /// `None`.
     fn get_signature_targets(&self, src: &Authority<XorName>) -> Option<BTreeSet<XorName>> {
-        use crate::Authority::*;
-
         let list: Vec<XorName> = match *src {
-            ClientManager(_) | NaeManager(_) | NodeManager(_) | Section(_) => self
+            Authority::Section(_) => self
                 .chain
                 .our_section()
                 .into_iter()
@@ -993,12 +951,12 @@ impl Elder {
             // calculation. This even when going via RT would have only allowed route-0 to succeed
             // as by ack-failure, the new node would have been accepted to the RT.
             // Need a better network startup separation.
-            PrefixSection(pfx) => {
+            Authority::PrefixSection(pfx) => {
                 Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
                     .filter(|name| pfx.matches(name))
                     .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
             }
-            ManagedNode(_) | Client { .. } => {
+            Authority::Node(_) => {
                 let mut result = BTreeSet::new();
                 let _ = result.insert(*self.name());
                 return Some(result);
@@ -1019,58 +977,24 @@ impl Elder {
         &self,
         routing_msg: &RoutingMessage,
     ) -> Result<(Vec<PublicId>, usize), RoutingError> {
-        let force_via_proxy = match routing_msg.content {
-            MessageContent::ConnectionRequest { pub_id, .. } => {
-                routing_msg.src.is_client() && pub_id == *self.full_id.public_id()
-            }
-            _ => false,
-        };
-
-        if !force_via_proxy {
-            // TODO: even if having chain reply based on connected_state,
-            // we remove self in targets info and can do same by not
-            // chaining us to conn_peer list here?
-            let conn_peers = self
-                .peer_map()
-                .connected_ids()
-                .map(|pub_id| pub_id.name())
-                .chain(iter::once(self.name()))
-                .collect_vec();
-            let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
-            Ok((
-                targets
-                    .into_iter()
-                    .filter_map(|name| self.peer_mgr.get_pub_id(&name))
-                    .cloned()
-                    .collect(),
-                dg_size,
-            ))
-        } else if let Authority::Client {
-            ref proxy_node_name,
-            ..
-        } = routing_msg.src
-        {
-            if let Some(pub_id) = self.peer_mgr.get_pub_id(proxy_node_name) {
-                if self.peer_mgr.is_connected(pub_id) {
-                    Ok((vec![*pub_id], 1))
-                } else {
-                    error!(
-                        "{} Unable to find connection to proxy in PeerManager.",
-                        self
-                    );
-                    Err(RoutingError::ProxyConnectionNotFound)
-                }
-            } else {
-                error!("{} Unable to find proxy in PeerManager.", self);
-                Err(RoutingError::ProxyConnectionNotFound)
-            }
-        } else {
-            error!(
-                "{} Source should be client if our state is a Client. {:?}",
-                self, routing_msg
-            );
-            Err(RoutingError::InvalidSource)
-        }
+        // TODO: even if having chain reply based on connected_state,
+        // we remove self in targets info and can do same by not
+        // chaining us to conn_peer list here?
+        let conn_peers = self
+            .peer_map()
+            .connected_ids()
+            .map(|pub_id| pub_id.name())
+            .chain(iter::once(self.name()))
+            .collect_vec();
+        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
+        Ok((
+            targets
+                .into_iter()
+                .filter_map(|name| self.peer_mgr.get_pub_id(&name))
+                .cloned()
+                .collect(),
+            dg_size,
+        ))
     }
 
     // TODO: Once `Chain::targets` uses the ideal state instead of the actually connected peers,
@@ -1126,8 +1050,8 @@ impl Elder {
             let our_name = *self.name();
             let _ = self.send_connection_request(
                 pub_id,
-                Authority::ManagedNode(our_name),
-                Authority::ManagedNode(*pub_id.name()),
+                Authority::Node(our_name),
+                Authority::Node(*pub_id.name()),
                 outbox,
             );
         }
@@ -1196,11 +1120,7 @@ impl Base for Elder {
     }
 
     fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        if let Authority::Client { ref client_id, .. } = *auth {
-            client_id == self.full_id.public_id()
-        } else {
-            self.chain.in_authority(auth)
-        }
+        self.chain.in_authority(auth)
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
@@ -1218,6 +1138,10 @@ impl Base for Elder {
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
         &mut self.peer_map
+    }
+
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.timer
     }
 
     fn handle_send_message(
@@ -1331,68 +1255,11 @@ impl Base for Elder {
         self.handle_signed_message(content)
             .map(|()| Transition::Stay)
     }
-}
 
-#[cfg(feature = "mock_base")]
-impl Elder {
-    pub fn chain(&self) -> &Chain {
-        &self.chain
-    }
-
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
-        self.timer.get_timed_out_tokens()
-    }
-
-    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
-        self.banned_client_ips
-            .peek_iter()
-            .map(|(ip, _)| *ip)
-            .collect()
-    }
-
-    pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        self.next_relocation_dst = dst;
-    }
-
-    pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
-        self.next_relocation_interval = interval;
-    }
-
-    pub fn has_unpolled_observations(&self) -> bool {
-        self.parsec_map.has_unpolled_observations()
-    }
-
-    pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
-        self.peer_mgr.get_peer(pub_id).map_or(false, Peer::is_node)
-    }
-
-    pub fn get_peer(&self, pub_id: &PublicId) -> Option<&Peer> {
-        self.peer_mgr.get_peer(pub_id)
-    }
-
-    pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
-        self.peer_map.identify(pub_id, peer_addr)
-    }
-
-    pub fn send_msg_to_targets(
-        &mut self,
-        dst_targets: &[PublicId],
-        dg_size: usize,
-        message: Message,
-    ) {
-        self.send_message_to_targets(dst_targets, dg_size, message)
-    }
-}
-
-impl Bootstrapped for Elder {
     // Constructs a signed message, finds the nodes responsible for accumulation, and either sends
     // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message_impl(
-        &mut self,
-        routing_msg: RoutingMessage,
-        _expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         if !self.in_authority(&routing_msg.src) {
             log_or_panic!(
                 LogLevel::Error,
@@ -1453,29 +1320,66 @@ impl Bootstrapped for Elder {
         }
         Ok(())
     }
+}
 
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
+#[cfg(feature = "mock_base")]
+impl Elder {
+    pub fn chain(&self) -> &Chain {
+        &self.chain
     }
 
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
+    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+        self.timer.get_timed_out_tokens()
+    }
+
+    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
+        self.banned_client_ips
+            .peek_iter()
+            .map(|(ip, _)| *ip)
+            .collect()
+    }
+
+    pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
+        self.next_relocation_dst = dst;
+    }
+
+    pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
+        self.next_relocation_interval = interval;
+    }
+
+    pub fn has_unpolled_observations(&self) -> bool {
+        self.parsec_map.has_unpolled_observations()
+    }
+
+    pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
+        self.peer_mgr.get_peer(pub_id).map_or(false, Peer::is_node)
+    }
+
+    pub fn get_peer(&self, pub_id: &PublicId) -> Option<&Peer> {
+        self.peer_mgr.get_peer(pub_id)
+    }
+
+    pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
+        self.peer_map.identify(pub_id, peer_addr)
+    }
+
+    pub fn send_msg_to_targets(
+        &mut self,
+        dst_targets: &[PublicId],
+        dg_size: usize,
+        message: Message,
+    ) {
+        self.send_message_to_targets(dst_targets, dg_size, message)
     }
 }
 
-impl Relocated for Elder {
+impl Approved for Elder {
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
 
     fn peer_mgr_mut(&mut self) -> &mut PeerManager {
         &mut self.peer_mgr
-    }
-
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
-        if self.is_peer_valid(&pub_id) {
-            self.add_node(&pub_id, outbox);
-        }
     }
 
     fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
@@ -1486,18 +1390,10 @@ impl Relocated for Elder {
         self.print_rt_size();
     }
 
-    fn add_node_failure(&mut self, pub_id: &PublicId) {
-        if !self.is_peer_valid(pub_id) {
-            self.disconnect_peer(pub_id);
-        }
-    }
-
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
         outbox.send_event(event);
     }
-}
 
-impl Approved for Elder {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
     }
@@ -1638,7 +1534,7 @@ impl Approved for Elder {
             ack_version: ack_payload.ack_version,
         };
 
-        self.send_routing_message(src, dst, content)
+        self.send_routing_message(RoutingMessage { src, dst, content })
     }
 }
 

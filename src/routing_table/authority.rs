@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Prefix, Xorable};
-use crate::id::PublicId;
 use crate::xor_name::XorName;
 use std::fmt::{self, Binary, Debug, Display, Formatter};
 
@@ -22,78 +21,37 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 #[allow(clippy::large_enum_variant)]
 pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
-    /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
-    ClientManager(N),
-    /// Manager of a network-addressable element, i.e. the group matching this name.
-    /// `XorName` is the name of the element in question.
-    NaeManager(N),
-    /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
-    NodeManager(N),
-    /// A set of nodes with names sharing a common prefix.
+    /// A single section whose prefix matches the given name
     Section(N),
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
     /// the routing table or only a part of a `Section`
     PrefixSection(Prefix<N>),
-    /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
-    /// by the network relocation process immediately after bootstrapping.
-    ManagedNode(N),
-    /// A Client.
-    Client {
-        /// The Public ID of the client.
-        client_id: PublicId,
-        /// The name of the single ManagedNode which the Client connects to and proxies all messages
-        /// through.
-        proxy_node_name: N,
-    },
+    /// A single node
+    Node(N),
 }
 
 impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
-        match *self {
-            Authority::Section(_)
-            | Authority::PrefixSection(_)
-            | Authority::ClientManager(_)
-            | Authority::NaeManager(_)
-            | Authority::NodeManager(_) => true,
-            Authority::ManagedNode(_) | Authority::Client { .. } => false,
+        match self {
+            Authority::Section(_) | Authority::PrefixSection(_) => true,
+            Authority::Node(_) => false,
         }
     }
 
     /// Returns `true` if the authority is a single node, and `false` otherwise.
     pub fn is_single(&self) -> bool {
-        match *self {
-            Authority::ClientManager(_)
-            | Authority::NaeManager(_)
-            | Authority::Section(_)
-            | Authority::PrefixSection(_)
-            | Authority::NodeManager(_) => false,
-            Authority::ManagedNode(_) | Authority::Client { .. } => true,
-        }
-    }
-
-    /// Returns `true` if a client, `false` if a node or section.
-    pub fn is_client(&self) -> bool {
-        if let Authority::Client { .. } = *self {
-            true
-        } else {
-            false
+        match self {
+            Authority::Section(_) | Authority::PrefixSection(_) => false,
+            Authority::Node(_) => true,
         }
     }
 
     /// Returns the name of authority.
     pub fn name(&self) -> N {
-        match *self {
-            Authority::ClientManager(ref name)
-            | Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name)
-            | Authority::Section(ref name)
-            | Authority::ManagedNode(ref name) => *name,
-            Authority::PrefixSection(ref prefix) => prefix.lower_bound(),
-            Authority::Client {
-                ref proxy_node_name,
-                ..
-            } => *proxy_node_name,
+        match self {
+            Authority::Section(name) | Authority::Node(name) => *name,
+            Authority::PrefixSection(prefix) => prefix.lower_bound(),
         }
     }
 }
@@ -102,13 +60,8 @@ impl Authority<XorName> {
     /// provide the name mathching a single node's public key
     pub fn single_signing_name(&self) -> Option<&XorName> {
         match *self {
-            Authority::ClientManager(_)
-            | Authority::NaeManager(_)
-            | Authority::Section(_)
-            | Authority::PrefixSection(_)
-            | Authority::NodeManager(_) => None,
-            Authority::ManagedNode(ref name) => Some(name),
-            Authority::Client { ref client_id, .. } => Some(client_id.name()),
+            Authority::Section(_) | Authority::PrefixSection(_) => None,
+            Authority::Node(ref name) => Some(name),
         }
     }
 }
@@ -116,25 +69,11 @@ impl Authority<XorName> {
 impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Authority::ClientManager(ref name) => {
-                write!(formatter, "ClientManager(name: {})", name)
-            }
-            Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
-            Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
             Authority::Section(ref name) => write!(formatter, "Section(name: {})", name),
             Authority::PrefixSection(ref prefix) => {
                 write!(formatter, "PrefixSection(prefix: {:?})", prefix)
             }
-            Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
-            Authority::Client {
-                ref proxy_node_name,
-                ref client_id,
-            } => write!(
-                formatter,
-                "Client {{ client_name: {}, proxy_node_name: {} }}",
-                client_id.name(),
-                proxy_node_name
-            ),
+            Authority::Node(ref name) => write!(formatter, "Node(name: {})", name),
         }
     }
 }

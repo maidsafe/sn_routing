@@ -1087,11 +1087,7 @@ impl Chain {
         };
 
         let (dg_size, best_section) = match *dst {
-            Authority::ManagedNode(ref target_name)
-            | Authority::Client {
-                proxy_node_name: ref target_name,
-                ..
-            } => {
+            Authority::Node(ref target_name) => {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
                 }
@@ -1100,10 +1096,7 @@ impl Chain {
                 }
                 candidates(target_name)?
             }
-            Authority::ClientManager(ref target_name)
-            | Authority::NaeManager(ref target_name)
-            | Authority::NodeManager(ref target_name)
-            | Authority::Section(ref target_name) => {
+            Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section(target_name);
                 if &prefix == self.our_prefix() {
                     // Exclude our name since we don't need to send to ourself
@@ -1161,13 +1154,8 @@ impl Chain {
     /// Returns whether we are a part of the given authority.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *auth {
-            // clients have no routing tables
-            Authority::Client { .. } => false,
-            Authority::ManagedNode(ref name) => self.our_id().name() == name,
-            Authority::ClientManager(ref name)
-            | Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name)
-            | Authority::Section(ref name) => self.our_prefix().matches(name),
+            Authority::Node(ref name) => self.our_id().name() == name,
+            Authority::Section(ref name) => self.our_prefix().matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
         }
     }

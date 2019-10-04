@@ -10,12 +10,16 @@ use crate::{
     action::Action,
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, Message, SignedDirectMessage, SignedRoutingMessage},
+    messages::{
+        DirectMessage, HopMessage, Message, RoutingMessage, SignedDirectMessage,
+        SignedRoutingMessage,
+    },
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::{NodeInfo, Token},
     routing_table::Authority,
     state_machine::Transition,
+    timer::Timer,
     utils::LogIdent,
     xor_name::XorName,
     ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
@@ -33,6 +37,8 @@ pub trait Base: Display {
     fn min_section_size(&self) -> usize;
     fn peer_map(&self) -> &PeerMap;
     fn peer_map_mut(&mut self) -> &mut PeerMap;
+    fn timer(&mut self) -> &mut Timer;
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
 
     fn log_ident(&self) -> LogIdent {
         LogIdent::new(self)

@@ -806,24 +806,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         };
 
         let closest_section = match *dst {
-            Authority::ManagedNode(ref target_name)
-            | Authority::Client {
-                proxy_node_name: ref target_name,
-                ..
-            } => {
+            Authority::Node(ref target_name) => {
                 if *target_name == self.our_name {
                     return Ok(BTreeSet::new());
                 }
                 if self.has(target_name) {
                     return Ok(iter::once(*target_name).collect());
-                }
-                candidates(target_name)
-            }
-            Authority::ClientManager(ref target_name)
-            | Authority::NaeManager(ref target_name)
-            | Authority::NodeManager(ref target_name) => {
-                if let Some(group) = self.other_closest_names(target_name, self.min_section_size) {
-                    return Ok(group.into_iter().cloned().collect());
                 }
                 candidates(target_name)
             }
@@ -880,13 +868,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// Returns whether we are a part of the given authority.
     pub fn in_authority(&self, auth: &Authority<T>) -> bool {
         match *auth {
-            // clients have no routing tables
-            Authority::Client { .. } => false,
-            Authority::ManagedNode(ref name) => self.our_name == *name,
-            Authority::ClientManager(ref name)
-            | Authority::NaeManager(ref name)
-            | Authority::NodeManager(ref name)
-            | Authority::Section(ref name) => self.our_prefix.matches(name),
+            Authority::Node(ref name) => self.our_name == *name,
+            Authority::Section(ref name) => self.our_prefix.matches(name),
             Authority::PrefixSection(ref prefix) => self.our_prefix.is_compatible(prefix),
         }
     }

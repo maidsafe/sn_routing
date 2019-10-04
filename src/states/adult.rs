@@ -8,26 +8,25 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{
-        Approved, Base, Bootstrapped, BootstrappedNotEstablished, Relocated,
-        RelocatedNotEstablished,
-    },
+    common::{Approved, Base},
     elder::{Elder, ElderDetails},
 };
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload},
-    error::RoutingError,
+    error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage},
+    messages::{
+        BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage,
+    },
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::PeerManager,
+    peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
-    time::{Duration, Instant},
+    time::Duration,
     timer::Timer,
     xor_name::XorName,
     NetworkService,
@@ -154,7 +153,40 @@ impl Adult {
         msg: RoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.handle_routing_message(msg, outbox)
+        use crate::{messages::MessageContent::*, routing_table::Authority::*};
+
+        let src_name = msg.src.name();
+
+        match msg {
+            RoutingMessage {
+                content:
+                    ConnectionRequest {
+                        conn_info,
+                        pub_id,
+                        msg_id,
+                    },
+                src: Node(_),
+                dst: Node(_),
+            } => {
+                if self.chain.our_prefix().matches(&src_name) {
+                    self.handle_connection_request(&conn_info, pub_id, msg.src, msg.dst, outbox)
+                } else {
+                    self.add_message_to_backlog(RoutingMessage {
+                        content: ConnectionRequest {
+                            conn_info,
+                            pub_id,
+                            msg_id,
+                        },
+                        ..msg
+                    });
+                    Ok(())
+                }
+            }
+            _ => {
+                self.add_message_to_backlog(msg);
+                Ok(())
+            }
+        }
     }
 
     // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
@@ -176,6 +208,55 @@ impl Adult {
         for recipient in recipients {
             self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
         }
+    }
+
+    // Check whether the sender is allowed to send the message to us.
+    fn check_direct_message_sender(
+        &self,
+        msg: &DirectMessage,
+        pub_id: &PublicId,
+    ) -> Result<(), RoutingError> {
+        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
+            Some(PeerState::Node { .. }) | Some(PeerState::Connected) => return Ok(()),
+            Some(PeerState::Connecting) => {
+                if let DirectMessage::ConnectionResponse = msg {
+                    return Ok(());
+                }
+            }
+            _ => (),
+        }
+
+        debug!(
+            "{} Illegitimate direct message {:?} from {:?}.",
+            self, msg, pub_id
+        );
+        Err(RoutingError::InvalidStateForOperation)
+    }
+
+    // Backlog the message to be processed once we are established.
+    fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
+        trace!(
+            "{} Not established yet. Delaying message handling: {:?}",
+            self,
+            msg
+        );
+        self.msg_backlog.push(msg)
+    }
+
+    // Reject the bootstrap request, because only Elders can handle it.
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
+        debug!(
+            "{} - Client {:?} rejected: We are not an established node yet.",
+            self, pub_id
+        );
+
+        self.send_direct_message(
+            &pub_id,
+            DirectMessage::BootstrapResponse(BootstrapResponse::Error(
+                BootstrapResponseError::NotApproved,
+            )),
+        );
+        self.disconnect_peer(&pub_id);
     }
 }
 
@@ -208,11 +289,7 @@ impl Base for Adult {
     }
 
     fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        if let Authority::Client { ref client_id, .. } = *auth {
-            client_id == self.full_id.public_id()
-        } else {
-            false
-        }
+        self.chain.in_authority(auth)
     }
 
     fn min_section_size(&self) -> usize {
@@ -225,6 +302,10 @@ impl Base for Adult {
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
         &mut self.peer_map
+    }
+
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.timer
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
@@ -251,7 +332,13 @@ impl Base for Adult {
     }
 
     fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
-        RelocatedNotEstablished::handle_peer_lost(self, pub_id, outbox)
+        debug!("{} - Lost peer {}", self, pub_id);
+
+        if self.peer_mgr.remove_peer(&pub_id) {
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        }
+
+        Transition::Stay
     }
 
     fn handle_direct_message(
@@ -286,28 +373,23 @@ impl Base for Adult {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let Some(routing_msg) = self.filter_hop_message(msg)? {
+        let HopMessage { content, .. } = msg;
+        let routing_msg = content.into_routing_message();
+
+        if self
+            .routing_msg_filter
+            .filter_incoming(&routing_msg)
+            .is_new()
+            && self.in_authority(&routing_msg.dst)
+        {
             self.dispatch_routing_message(routing_msg, outbox)?;
         }
+
         Ok(Transition::Stay)
     }
-}
 
-impl Bootstrapped for Adult {
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
-    }
-
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
-    }
-
-    fn send_routing_message_impl(
-        &mut self,
-        routing_msg: RoutingMessage,
-        _expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
-        if routing_msg.dst.is_client() && self.in_authority(&routing_msg.dst) {
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+        if self.in_authority(&routing_msg.dst) {
             return Ok(()); // Message is for us.
         }
 
@@ -317,7 +399,11 @@ impl Bootstrapped for Adult {
         // Need to collect IDs first so that self is not borrowed via the iterator
         let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
         for pub_id in target_ids {
-            if !self.filter_outgoing_routing_msg(signed_msg.routing_message(), &pub_id) {
+            if self
+                .routing_msg_filter
+                .filter_outgoing(signed_msg.routing_message(), &pub_id)
+                .is_new()
+            {
                 let message = self.to_hop_message(signed_msg.clone())?;
                 self.send_message(&pub_id, message);
             }
@@ -327,7 +413,7 @@ impl Bootstrapped for Adult {
     }
 }
 
-impl Relocated for Adult {
+impl Approved for Adult {
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
@@ -336,42 +422,16 @@ impl Relocated for Adult {
         &mut self.peer_mgr
     }
 
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
-        self.add_node(&pub_id, outbox);
-    }
-
     fn is_peer_valid(&self, _pub_id: &PublicId) -> bool {
         true
     }
 
     fn add_node_success(&mut self, _: &PublicId) {}
 
-    fn add_node_failure(&mut self, pub_id: &PublicId) {
-        self.disconnect_peer(pub_id)
-    }
-
     fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
     }
-}
 
-impl BootstrappedNotEstablished for Adult {
-    fn get_proxy_public_id(&self, _proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        Err(RoutingError::InvalidStateForOperation)
-    }
-}
-
-impl RelocatedNotEstablished for Adult {
-    fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain.our_prefix()
-    }
-
-    fn push_message_to_backlog(&mut self, msg: RoutingMessage) {
-        self.msg_backlog.push(msg)
-    }
-}
-
-impl Approved for Adult {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
     }

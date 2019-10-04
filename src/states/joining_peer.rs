@@ -9,7 +9,7 @@
 use super::{
     adult::{Adult, AdultDetails},
     bootstrapping_peer::BootstrappingPeer,
-    common::{Base, Bootstrapped, BootstrappedNotEstablished},
+    common::Base,
 };
 use crate::{
     chain::GenesisPfxInfo,
@@ -23,7 +23,6 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
-    time::Instant,
     timer::Timer,
     xor_name::XorName,
     NetworkService,
@@ -134,12 +133,12 @@ impl JoiningPeer {
         msg: RoutingMessage,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::{messages::MessageContent::*, routing_table::Authority::*};
+        use crate::messages::MessageContent::*;
         match msg {
             RoutingMessage {
                 content: NodeApproval(gen_info),
-                src: PrefixSection(_),
-                dst: ManagedNode { .. },
+                src: Authority::PrefixSection(_),
+                dst: Authority::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
             _ => {
                 debug!(
@@ -193,6 +192,10 @@ impl Base for JoiningPeer {
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
         &mut self.peer_map
+    }
+
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.timer
     }
 
     fn handle_send_message(
@@ -253,39 +256,25 @@ impl Base for JoiningPeer {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if let Some(routing_msg) = self.filter_hop_message(msg)? {
-            self.dispatch_routing_message(routing_msg, outbox)
+        let HopMessage { content, .. } = msg;
+
+        if self
+            .routing_msg_filter
+            .filter_incoming(content.routing_message())
+            .is_new()
+            && self.in_authority(&content.routing_message().dst)
+        {
+            self.dispatch_routing_message(content.into_routing_message(), outbox)
         } else {
             Ok(Transition::Stay)
         }
     }
-}
-
-impl Bootstrapped for JoiningPeer {
-    fn routing_msg_filter(&mut self) -> &mut RoutingMessageFilter {
-        &mut self.routing_msg_filter
-    }
-
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
-    }
-
-    fn send_routing_message_impl(
-        &mut self,
-        routing_msg: RoutingMessage,
-        _expires_at: Option<Instant>,
-    ) -> Result<(), RoutingError> {
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         warn!(
             "{} - Tried to send a routing message: {:?}",
             self, routing_msg
         );
         Ok(())
-    }
-}
-
-impl BootstrappedNotEstablished for JoiningPeer {
-    fn get_proxy_public_id(&self, _proxy_name: &XorName) -> Result<&PublicId, RoutingError> {
-        Err(RoutingError::InvalidPeer)
     }
 }
 
