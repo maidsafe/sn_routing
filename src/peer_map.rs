@@ -114,6 +114,13 @@ impl PeerMap {
         self.forward.get(name.as_ref())
     }
 
+    // Get PublicId for XorName
+    pub fn get_id(&self, name: &XorName) -> Option<&PublicId> {
+        self.forward
+            .get(name)
+            .and_then(|conn_info| self.reverse.get(&conn_info.peer_addr))
+    }
+
     // Returns an iterator over the public IDs of connected peers
     pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
         self.reverse.values()

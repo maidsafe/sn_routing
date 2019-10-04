@@ -16,6 +16,11 @@ pub use self::{
     adult::Adult, bootstrapping_peer::BootstrappingPeer, elder::Elder, joining_peer::JoiningPeer,
 };
 
+#[cfg(feature = "mock_base")]
+pub use self::{
+    adult::ADD_TIMEOUT, bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT,
+};
+
 //
 // # The state machine
 //

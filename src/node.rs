@@ -247,7 +247,7 @@ impl Node {
         unwrap!(self.elder_state(), "Should be State::Elder")
     }
 
-    /// Returns whether the current state is `Node`.
+    /// Returns whether the current state is `Elder`.
     pub fn is_elder(&self) -> bool {
         self.elder_state().is_some()
     }
@@ -307,11 +307,9 @@ impl Node {
         self.machine.current().has_unpolled_observations()
     }
 
-    /// Indicates if a given `PublicId` is in the peer manager as a Node
-    pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
-        self.elder_state()
-            .map(|state| state.is_node_peer(pub_id))
-            .unwrap_or(false)
+    /// Indicates if this node has the connection info to the given peer.
+    pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
+        self.machine.current().is_connected(name)
     }
 
     /// Checks whether the given authority represents self.

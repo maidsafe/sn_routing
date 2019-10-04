@@ -243,9 +243,11 @@ pub trait Base: Display {
         token: Token,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        debug!(
+        trace!(
             "{} Successfully sent message with ID {} to {:?}",
-            self, token, peer_addr
+            self,
+            token,
+            peer_addr
         );
         self.network_service_mut()
             .targets_cache_mut()
@@ -361,6 +363,14 @@ pub trait Base: Display {
                 error!("{} - Failed to create SignedDirectMessage: {:?}", self, err);
                 err
             })
+    }
+
+    fn disconnect(&mut self, pub_id: &PublicId) {
+        if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
+            self.network_service_mut()
+                .service_mut()
+                .disconnect_from(conn_info.peer_addr)
+        }
     }
 }
 

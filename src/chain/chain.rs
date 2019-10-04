@@ -488,6 +488,12 @@ impl Chain {
             .collect()
     }
 
+    /// Returns whether the given peer is elder in our section.
+    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+        self.state.our_info().members().contains(pub_id)
+            || self.state.new_info.members().contains(pub_id)
+    }
+
     /// Returns `true` if we know the section with `elders_info`.
     ///
     /// If `check_signed` is `true`, also trust sections that we have signed but that haven't

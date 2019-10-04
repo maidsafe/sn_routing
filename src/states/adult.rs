@@ -21,7 +21,7 @@ use crate::{
     },
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::{Peer, PeerManager, PeerState},
+    peer_manager::PeerManager,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -35,7 +35,9 @@ use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
-const ADD_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Time after which the node reinitiates the bootstrap if it is not added to the section.
+pub const ADD_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -45,7 +47,6 @@ pub struct AdultDetails {
     pub min_section_size: usize,
     pub msg_backlog: Vec<RoutingMessage>,
     pub peer_map: PeerMap,
-    pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
 }
@@ -92,7 +93,7 @@ impl Adult {
             msg_backlog: details.msg_backlog,
             parsec_map,
             peer_map: details.peer_map,
-            peer_mgr: details.peer_mgr,
+            peer_mgr: PeerManager::new(),
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             poke_timer_token,
@@ -210,29 +211,6 @@ impl Adult {
         }
     }
 
-    // Check whether the sender is allowed to send the message to us.
-    fn check_direct_message_sender(
-        &self,
-        msg: &DirectMessage,
-        pub_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::Node { .. }) | Some(PeerState::Connected) => return Ok(()),
-            Some(PeerState::Connecting) => {
-                if let DirectMessage::ConnectionResponse = msg {
-                    return Ok(());
-                }
-            }
-            _ => (),
-        }
-
-        debug!(
-            "{} Illegitimate direct message {:?} from {:?}.",
-            self, msg, pub_id
-        );
-        Err(RoutingError::InvalidStateForOperation)
-    }
-
     // Backlog the message to be processed once we are established.
     fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
         trace!(
@@ -246,7 +224,7 @@ impl Adult {
     // Reject the bootstrap request, because only Elders can handle it.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
         debug!(
-            "{} - Client {:?} rejected: We are not an established node yet.",
+            "{} - Joining node {:?} rejected: We are not an established node yet.",
             self, pub_id
         );
 
@@ -256,7 +234,7 @@ impl Adult {
                 BootstrapResponseError::NotApproved,
             )),
         );
-        self.disconnect_peer(&pub_id);
+        self.disconnect(&pub_id);
     }
 }
 
@@ -331,13 +309,8 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, _: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
-
-        if self.peer_mgr.remove_peer(&pub_id) {
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        }
-
         Transition::Stay
     }
 
@@ -347,8 +320,6 @@ impl Base for Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        self.check_direct_message_sender(&msg, &pub_id)?;
-
         use crate::messages::DirectMessage::*;
         match msg {
             ParsecRequest(version, par_request) => {
@@ -426,8 +397,6 @@ impl Approved for Adult {
         true
     }
 
-    fn add_node_success(&mut self, _: &PublicId) {}
-
     fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
     }
@@ -450,31 +419,43 @@ impl Approved for Adult {
 
     fn handle_add_elder_event(
         &mut self,
-        new_pub_id: PublicId,
-        _: &mut dyn EventBox,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let _ = self.chain.add_member(new_pub_id)?;
+        info!("{} - Added elder {}.", self, pub_id);
+        let _ = self.chain.add_member(pub_id)?;
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         Ok(())
     }
 
     fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
-        _: &mut dyn EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        info!("{} - Removed elder {}.", self, pub_id);
         let _ = self.chain.remove_member(pub_id)?;
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
         Ok(())
     }
 
     fn handle_online_event(
         &mut self,
-        _: PublicId,
-        _: &mut dyn EventBox,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        Ok(())
+        self.peer_mgr.set_connected(pub_id);
+        self.send_connection_request(
+            pub_id,
+            Authority::Node(*self.name()),
+            Authority::Node(*pub_id.name()),
+            outbox,
+        )
     }
 
-    fn handle_offline_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
+    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+        let _ = self.peer_mgr.remove_peer(&pub_id);
+        self.disconnect(&pub_id);
         Ok(())
     }
 

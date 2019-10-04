@@ -184,7 +184,6 @@ pub use crate::{
         section_proof_chain_from_elders_info,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    peer_manager::test_consts,
 };
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
@@ -208,6 +207,12 @@ pub(crate) use self::{
 
 #[cfg(feature = "mock_crypto")]
 pub(crate) use self::mock::crypto;
+
+#[cfg(feature = "mock_base")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub use crate::states::{ADD_TIMEOUT, BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
+}
 
 #[cfg(test)]
 mod tests {

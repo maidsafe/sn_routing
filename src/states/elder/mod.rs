@@ -29,7 +29,7 @@ use crate::{
     outbox::EventBox,
     parsec::{self, ParsecMap},
     pause::PausedState,
-    peer_manager::{Peer, PeerManager, PeerState},
+    peer_manager::PeerManager,
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
@@ -304,41 +304,29 @@ impl Elder {
         Ok(())
     }
 
-    // Connected peers which are valid need added to RT
-    // Peers no longer required currently connected as PeerState::Routing are disconnected
-    // Establish connection to peers missing from peer manager
+    // Connect to all valid peers we are not yet connected to and disconnect from peers that are no
+    // longer valid.
     fn update_peer_states(&mut self, outbox: &mut dyn EventBox) {
-        let mut peers_to_add = Vec::new();
-        let mut peers_to_remove = Vec::new();
-
-        for (pub_id, peer) in self.peer_mgr.connected_peers() {
-            if self.is_peer_valid(pub_id) {
-                peers_to_add.push(*pub_id);
-            } else if peer.is_node() && self.chain.prefix_change() == PrefixChange::None {
-                peers_to_remove.push(*pub_id);
+        if self.chain.prefix_change() == PrefixChange::None {
+            let peers_to_disconnect: Vec<_> = self
+                .peer_map
+                .connected_ids()
+                .filter(|pub_id| !self.peer_mgr.is_connected(pub_id) && !self.is_peer_valid(pub_id))
+                .copied()
+                .collect();
+            for pub_id in peers_to_disconnect {
+                self.disconnect(&pub_id);
             }
         }
-        for pub_id in peers_to_add {
-            self.add_node(&pub_id, outbox);
-        }
-        for pub_id in peers_to_remove {
-            trace!("{} Removing {:?} from RT.", self, pub_id);
-            let _ = self.peer_mgr.remove_peer(&pub_id);
-            self.disconnect_peer(&pub_id);
-        }
 
-        let peers_to_connect: BTreeSet<PublicId> = self
+        let peers_to_connect: Vec<_> = self
             .chain
             .valid_peers()
             .into_iter()
-            .filter(|pub_id| {
-                self.peer_mgr.get_peer(pub_id).is_none() && *pub_id != self.full_id.public_id()
-            })
-            .cloned()
+            .filter(|pub_id| !self.peer_map.has(pub_id) && *pub_id != self.id())
+            .copied()
             .collect();
-
         for pub_id in peers_to_connect {
-            debug!("{} Sending connection info to {:?}.", self, pub_id);
             let src = Authority::Node(*self.name());
             let dst = Authority::Node(*pub_id.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
@@ -437,18 +425,24 @@ impl Elder {
         msg: &DirectMessage,
         pub_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::JoiningNode) => match msg {
-                DirectMessage::BootstrapRequest | DirectMessage::JoinRequest => Ok(()),
-                _ => {
-                    debug!(
-                        "{} Illegitimate direct message {:?} from {:?}.",
-                        self, msg, pub_id
-                    );
-                    Err(RoutingError::InvalidStateForOperation)
-                }
-            },
-            _ => Ok(()),
+        let valid = match msg {
+            DirectMessage::BootstrapRequest | DirectMessage::JoinRequest => {
+                !self.peer_mgr.is_connected(pub_id)
+            }
+            DirectMessage::ParsecPoke(..)
+            | DirectMessage::ParsecRequest(..)
+            | DirectMessage::ParsecResponse(..) => self.peer_mgr.is_connected(pub_id),
+            _ => self.chain.is_peer_valid(pub_id),
+        };
+
+        if valid {
+            Ok(())
+        } else {
+            debug!(
+                "{} Illegitimate direct message {:?} from {}.",
+                self, msg, pub_id
+            );
+            Err(RoutingError::InvalidStateForOperation)
         }
     }
 
@@ -459,7 +453,7 @@ impl Elder {
         msg: SignedRoutingMessage,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
-        if !self.peer_mgr.get_peer(&pub_id).map_or(false, Peer::is_node) {
+        if !self.chain.is_peer_elder(&pub_id) {
             debug!(
                 "{} Received message signature from unknown peer {}",
                 self, pub_id
@@ -623,7 +617,7 @@ impl Elder {
         let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
-        if self.peer_mgr.get_peer(&pub_id).is_none() {
+        if !self.peer_map.has(&pub_id) {
             trace!(
                 "{} - Not yet connected to {} - sending connection request.",
                 self,
@@ -666,7 +660,7 @@ impl Elder {
             return Err(RoutingError::UnknownConnection(pub_id));
         };
 
-        trace!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
+        debug!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
 
         // Check min section size.
         if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
@@ -683,11 +677,10 @@ impl Elder {
                     BootstrapResponseError::TooFewPeers,
                 )),
             );
-            self.disconnect_peer(&pub_id);
+            self.disconnect(&pub_id);
             return Ok(());
         }
 
-        self.peer_mgr.handle_bootstrap_request(pub_id);
         self.respond_to_bootstrap_request(&pub_id);
 
         Ok(())
@@ -719,12 +712,12 @@ impl Elder {
         self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(response));
     }
 
-    fn handle_connection_response(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
-        self.peer_mgr_mut().set_connected(pub_id);
-        self.process_connection(pub_id, outbox);
+    fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
+        debug!("{} - Received connection response from {}", self, pub_id);
     }
 
     fn handle_join_request(&mut self, pub_id: PublicId) {
+        debug!("{} - Received JoinRequest from {}", self, pub_id);
         self.vote_for_event(AccumulatingEvent::Online(pub_id));
     }
 
@@ -767,9 +760,13 @@ impl Elder {
                     return;
                 }
 
-                recipients.retain(|pub_id| self.peer_mgr.is_connected(pub_id));
+                recipients.retain(|pub_id| self.peer_map.has(pub_id));
                 if recipients.is_empty() {
-                    log_or_panic!(LogLevel::Error, "Not connected to any gossip recipient.");
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} - Not connected to any gossip recipient.",
+                        self
+                    );
                     return;
                 }
 
@@ -828,9 +825,7 @@ impl Elder {
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
         let single_target = if let Authority::Node(node_name) = dst {
-            self.peer_mgr
-                .get_pub_id(&node_name)
-                .filter(|node_id| self.peer_map.has(&node_id))
+            self.peer_map.get_id(&node_name)
         } else {
             None
         };
@@ -920,8 +915,8 @@ impl Elder {
         Ok((
             targets
                 .into_iter()
-                .filter_map(|name| self.peer_mgr.get_pub_id(&name))
-                .cloned()
+                .filter_map(|name| self.peer_map.get_id(&name))
+                .copied()
                 .collect(),
             dg_size,
         ))
@@ -932,71 +927,31 @@ impl Elder {
     /// Returns all peers we are currently connected to, according to the peer manager, including
     /// ourselves.
     fn connected_peers(&self) -> Vec<&XorName> {
-        self.peer_mgr
-            .connected_peers()
-            .map(|(pub_id, _)| pub_id.name())
+        self.peer_map
+            .connected_ids()
+            .map(|pub_id| pub_id.name())
             .chain(iter::once(self.name()))
             .collect()
     }
 
-    /// Handles dropped peer with the given ID. Returns true if we should keep running, false if
-    /// we should terminate.
-    fn dropped_peer(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-        try_reconnect: bool,
-    ) -> bool {
-        if self.peer_mgr.remove_peer_no_joining_checks(&pub_id) {
-            info!("{} Dropped {} from the routing table.", self, pub_id.name());
-            outbox.send_event(Event::NodeLost(*pub_id.name()));
-
-            if self.chain.our_info().members().contains(&pub_id) {
-                self.vote_for_event(AccumulatingEvent::Offline(pub_id));
-            }
-        }
-
+    // Check whether we are connected to any elders. If this node loses all elder connections,
+    // it must be restarted.
+    fn check_elder_connections(&mut self, outbox: &mut dyn EventBox) -> bool {
         if self
-            .peer_mgr
-            .connected_peers()
-            .filter(|(_, p)| p.is_node())
-            .count()
-            == 0
+            .peer_map
+            .connected_ids()
+            .any(|id| self.chain.is_peer_elder(id))
         {
-            debug!("{} Lost all routing connections.", self);
+            true
+        } else {
+            debug!("{} - Lost all elder connections.", self);
+
             // Except network startup, restart in other cases.
             if *self.chain.our_info().version() > 0 {
                 outbox.send_event(Event::RestartRequired);
-                return false;
-            }
-        }
-
-        if try_reconnect && self.is_peer_valid(&pub_id) {
-            debug!(
-                "{} - Sending connection info to {:?} due to dropped peer.",
-                self, pub_id
-            );
-
-            let our_name = *self.name();
-            let _ = self.send_connection_request(
-                pub_id,
-                Authority::Node(our_name),
-                Authority::Node(*pub_id.name()),
-                outbox,
-            );
-        }
-
-        true
-    }
-
-    fn remove_expired_peers(&mut self) {
-        for pub_id in self.peer_mgr.remove_expired_peers() {
-            debug!("{} Disconnecting from timed out peer {:?}", self, pub_id);
-            // We've already removed from peer manager but this helps clean out connections to
-            // expired peers.
-            self.disconnect_peer(&pub_id);
-            if self.chain.our_info().members().contains(&pub_id) {
-                self.vote_for_event(AccumulatingEvent::Offline(pub_id));
+                false
+            } else {
+                true
             }
         }
     }
@@ -1059,13 +1014,12 @@ impl Base for Elder {
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
         if self.tick_timer_token == token {
             self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
-            self.remove_expired_peers();
             self.update_peer_states(outbox);
             outbox.send_event(Event::TimerTicked);
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
-            // If we're the only node then invoke parsec_poll_all directly
+            // If we're the only node then invoke parsec_poll directly
             if self.chain.our_info().members().len() == 1 {
                 let _ = self.parsec_poll(outbox);
             }
@@ -1092,15 +1046,30 @@ impl Base for Elder {
     fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
 
-        if self.peer_mgr.get_peer(&pub_id).is_none() {
-            return Transition::Stay;
+        if !self.check_elder_connections(outbox) {
+            return Transition::Terminate;
         }
 
-        if self.dropped_peer(pub_id, outbox, true) {
-            Transition::Stay
-        } else {
-            Transition::Terminate
+        if self.peer_mgr.is_connected(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
+
+        if self.is_peer_valid(&pub_id) {
+            debug!(
+                "{} - Sending connection request to {} due to lost peer.",
+                self, pub_id
+            );
+
+            let our_name = *self.name();
+            let _ = self.send_connection_request(
+                pub_id,
+                Authority::Node(our_name),
+                Authority::Node(*pub_id.name()),
+                outbox,
+            );
+        }
+
+        Transition::Stay
     }
 
     fn finish_handle_network_event(&mut self, outbox: &mut dyn EventBox) -> Transition {
@@ -1195,7 +1164,7 @@ impl Base for Elder {
                         self.send_signed_message(&mut msg)?;
                     }
                 }
-            } else if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
+            } else if let Some(&pub_id) = self.peer_map.get_id(&target) {
                 trace!(
                     "{} Sending a signature for message {:?} to {:?}",
                     self,
@@ -1242,12 +1211,8 @@ impl Elder {
         self.parsec_map.has_unpolled_observations()
     }
 
-    pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
-        self.peer_mgr.get_peer(pub_id).map_or(false, Peer::is_node)
-    }
-
-    pub fn get_peer(&self, pub_id: &PublicId) -> Option<&Peer> {
-        self.peer_mgr.get_peer(pub_id)
+    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+        self.chain.is_peer_elder(pub_id)
     }
 
     pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
@@ -1277,10 +1242,6 @@ impl Approved for Elder {
         self.chain.is_peer_valid(pub_id)
     }
 
-    fn add_node_success(&mut self, _: &PublicId) {
-        self.print_rt_size();
-    }
-
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
         outbox.send_event(event);
     }
@@ -1303,17 +1264,15 @@ impl Approved for Elder {
 
     fn handle_add_elder_event(
         &mut self,
-        new_pub_id: PublicId,
+        pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let to_vote_infos = self.chain.add_member(new_pub_id)?;
+        info!("{} - Added elder {}.", self, pub_id);
 
-        // If we are connected to the new elder, mark it as a full node already. Otherwise the
-        // connection request to them should have been already sent and we mark them as full node
-        // when we receive the response.
-        if self.peer_mgr.get_peer(&new_pub_id).is_some() {
-            self.add_node(&new_pub_id, outbox);
-        };
+        let to_vote_infos = self.chain.add_member(pub_id)?;
+
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        self.print_rt_size();
 
         for info in to_vote_infos {
             self.vote_for_section_info(info)?;
@@ -1327,32 +1286,43 @@ impl Approved for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        info!("{} - Removed elder {}.", self, pub_id);
+
         let self_info = self.chain.remove_member(pub_id)?;
         self.vote_for_section_info(self_info)?;
-        if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
-            let _ = self.dropped_peer(pub_id, outbox, false);
-            self.disconnect_peer(&pub_id);
+
+        if self.peer_mgr.is_connected(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }
 
     fn handle_online_event(
         &mut self,
-        public_id: PublicId,
+        pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.handle_candidate_approval(public_id, outbox);
+        self.peer_mgr.set_connected(pub_id);
+        self.handle_candidate_approval(pub_id, outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(public_id));
+        self.vote_for_event(AccumulatingEvent::AddElder(pub_id));
 
         Ok(())
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
+        let _ = self.peer_mgr.remove_peer(&pub_id);
+        self.disconnect(&pub_id);
+
+        if self.chain.is_peer_elder(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
+        }
+
         Ok(())
     }
 

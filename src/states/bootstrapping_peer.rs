@@ -30,8 +30,8 @@ use std::{
     time::Duration,
 };
 
-// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
+/// Time after which bootstrap is cancelled (and possibly retried).
+pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // State of Client or Node while bootstrapping.
 pub struct BootstrappingPeer {

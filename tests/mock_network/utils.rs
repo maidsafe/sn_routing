@@ -11,8 +11,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, Authority, Chain, Event, EventStream,
-    FullId, NetworkConfig, Node, NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
+    mock::Network, test_consts, Authority, Chain, Event, EventStream, FullId, NetworkConfig, Node,
+    NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -273,7 +273,14 @@ pub fn poll_and_resend_until(
             extra_advance = None;
         } else if !fired_connecting_peer_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
-            FakeClock::advance_time(CONNECTING_PEER_TIMEOUT_SECS * 1000 + 1);
+            FakeClock::advance_time(
+                (test_consts::BOOTSTRAP_TIMEOUT
+                    + test_consts::JOIN_TIMEOUT
+                    + test_consts::ADD_TIMEOUT)
+                    .as_secs()
+                    * 1000
+                    + 1,
+            );
             fired_connecting_peer_timeout = true;
         } else {
             return;
@@ -344,7 +351,8 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
 
         assert!(
             node_added_count >= n,
-            "Got only {} NodeAdded events.",
+            "{} - Got only {} NodeAdded events.",
+            node.inner,
             node_added_count
         );
     }
@@ -772,7 +780,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
         let _ = peers.remove(&our_id);
         let missing_peers = peers
             .iter()
-            .filter(|pub_id| !node.inner.is_node_peer(pub_id))
+            .filter(|pub_id| !node.inner.is_connected(pub_id))
             .cloned()
             .collect_vec();
         if !missing_peers.is_empty() {

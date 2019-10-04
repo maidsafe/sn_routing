@@ -17,7 +17,6 @@ use crate::{
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
-    peer_manager::{PeerManager, PeerState},
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
@@ -29,12 +28,11 @@ use crate::{
 };
 use std::{
     fmt::{self, Display, Formatter},
-    net::SocketAddr,
     time::Duration,
 };
 
-// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
+/// Time after which bootstrap is cancelled (and possibly retried).
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
@@ -81,13 +79,6 @@ impl JoiningPeer {
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
-        let mut peer_mgr = PeerManager::new();
-
-        // initialise known peers to PeerState::Connected in the PeerManager
-        for pub_id in self.peer_map.connected_ids() {
-            peer_mgr.insert_peer(*pub_id, PeerState::Connected);
-        }
-
         let details = AdultDetails {
             network_service: self.network_service,
             event_backlog: vec![],
@@ -96,7 +87,6 @@ impl JoiningPeer {
             min_section_size: self.min_section_size,
             msg_backlog: self.msg_backlog,
             peer_map: self.peer_map,
-            peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
         };
@@ -225,16 +215,6 @@ impl Base for JoiningPeer {
 
             return Transition::Rebootstrap;
         }
-
-        Transition::Stay
-    }
-
-    fn handle_connection_failure(
-        &mut self,
-        peer_addr: SocketAddr,
-        _: &mut dyn EventBox,
-    ) -> Transition {
-        let _ = self.peer_map_mut().disconnect(peer_addr);
 
         Transition::Stay
     }

@@ -12,7 +12,7 @@ use super::{
 use rand::Rng;
 use routing::{mock::Network, Event, EventStream};
 
-// Drop node at index and verify its own section receives NodeLost.
+// Drop node at index and verify its own section detected it.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     let name = node.name();
@@ -20,18 +20,12 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
     drop(node);
 
-    // Using poll_all instead of poll_and_resend here to specifically only detect
-    // the NodeLost event getting triggered by the remaining nodes.
+    // Using poll_all instead of poll_and_resend here to only let the other nodes realise the node
+    // got disconnected, but not make more progress.
     let _ = poll_all(nodes);
 
     for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
-        loop {
-            match node.try_next_ev() {
-                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
-                Ok(_) => (),
-                _ => panic!("Event::NodeLost({:?}) not received", name),
-            }
-        }
+        assert!(!node.inner.is_connected(name));
     }
 }
 

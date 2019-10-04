@@ -53,11 +53,3 @@ impl EventBuf {
         std::mem::replace(&mut self.events, Default::default())
     }
 }
-
-impl Drop for EventBuf {
-    fn drop(&mut self) {
-        if !self.events.is_empty() {
-            error!("EventBox dropped events: {:?}", self.events);
-        }
-    }
-}
