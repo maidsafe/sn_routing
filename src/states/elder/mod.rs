@@ -1250,7 +1250,7 @@ impl Approved for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - Added elder {}.", self, pub_id);
+        info!("{} - handle AddElder: {}.", self, pub_id);
 
         let to_vote_infos = self.chain.add_elder(pub_id)?;
 
@@ -1269,7 +1269,7 @@ impl Approved for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - Removed elder {}.", self, pub_id);
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
 
         let self_info = self.chain.remove_elder(pub_id)?;
         self.vote_for_section_info(self_info)?;
@@ -1288,6 +1288,8 @@ impl Approved for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        info!("{} - handle Online: {}.", self, pub_id);
+
         self.chain.add_member(pub_id);
         self.handle_candidate_approval(pub_id, outbox);
 
@@ -1299,6 +1301,8 @@ impl Approved for Elder {
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+        info!("{} - handle Offline: {}.", self, pub_id);
+
         self.chain.remove_member(&pub_id);
         self.disconnect(&pub_id);
 

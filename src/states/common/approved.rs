@@ -273,6 +273,11 @@ pub trait Approved: Base {
         dst: Authority<XorName>,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        if their_pub_id == *self.id() {
+            debug!("{} - Not sending connection request to ourselves.", self);
+            return Ok(());
+        }
+
         if self.peer_map().has(&their_pub_id) {
             debug!(
                 "{} - Not sending connection request to {} - already connected.",

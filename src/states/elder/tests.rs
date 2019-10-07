@@ -404,8 +404,11 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     assert!(elder_test.is_candidate_in_our_elders_info());
 }
 
+// Note: currently a node is considered demoted from elder only when the new section info
+// accumulates. This logic might be seen as inconsistent with the node promotion logic so we might
+// consider changing it.
 #[test]
-fn when_accumulate_offline_and_accumulate_remove_elder_then_node_is_demoted_from_elder() {
+fn when_accumulate_offline_and_accumulate_remove_elder_then_node_is_not_yet_demoted_from_elder() {
     let mut elder_test = ElderUnderTest::new();
     elder_test.accumulate_online(elder_test.candidate_id);
     elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
@@ -416,7 +419,7 @@ fn when_accumulate_offline_and_accumulate_remove_elder_then_node_is_demoted_from
 
     assert!(!elder_test.has_unpolled_observations());
     assert!(!elder_test.is_candidate_member());
-    assert!(!elder_test.is_candidate_elder());
+    assert!(elder_test.is_candidate_elder());
     assert!(elder_test.is_candidate_in_our_elders_info());
 }
 
