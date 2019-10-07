@@ -298,8 +298,6 @@ impl Elder {
 
     // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
     // longer members of our section or elders of neighbour sections.
-    // TODO: call this only on neighbour membership change instead of periodically (event-based
-    // instead of time-based).
     fn update_peer_states(&mut self, outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
             let peers_to_disconnect: Vec<_> = self
@@ -1009,8 +1007,9 @@ impl Base for Elder {
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
         if self.tick_timer_token == token {
+            // TODO: we no longer need tick for any internal purposes. Verify it is not needed by
+            // the upper layers and remove it.
             self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
-            self.update_peer_states(outbox);
             outbox.send_event(Event::TimerTicked);
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
