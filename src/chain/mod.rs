@@ -16,11 +16,7 @@ mod member_info;
 mod network_event;
 mod proof;
 mod shared_state;
-#[cfg(any(test, feature = "mock_base"))]
-mod test_utils;
 
-#[cfg(any(test, feature = "mock_base"))]
-pub use self::test_utils::verify_chain_invariant;
 pub use self::{
     chain::{delivery_group_size, Chain, PrefixChangeOutcome},
     chain_accumulator::AccumulatingProof,
