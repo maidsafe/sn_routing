@@ -22,11 +22,14 @@ use crate::{
     NetworkConfig, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{quic_p2p::NodeInfo, utils::XorTargetInterval, Chain};
+use crate::{quic_p2p::NodeInfo, utils::XorTargetInterval, Chain, Prefix};
 use crossbeam_channel as mpmc;
-#[cfg(feature = "mock_base")]
-use std::fmt::{self, Display, Formatter};
 use std::sync::mpsc;
+#[cfg(feature = "mock_base")]
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Display, Formatter},
+};
 #[cfg(feature = "mock_base")]
 use unwrap::unwrap;
 
@@ -247,6 +250,36 @@ impl Node {
     /// Returns whether the current state is `Node`.
     pub fn is_elder(&self) -> bool {
         self.elder_state().is_some()
+    }
+
+    /// Our `Prefix` once we are a part of the section.
+    pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
+        self.chain().map(|chain| chain.our_prefix())
+    }
+
+    /// Our `XorName`.
+    pub fn our_name(&self) -> Option<&XorName> {
+        self.chain().map(|chain| chain.our_id().name())
+    }
+
+    /// Returns the prefixes of all out neighbours.
+    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        self.chain()
+            .map(|chain| chain.other_prefixes())
+            .unwrap_or_default()
+    }
+
+    /// Returns the members of a section with the given prefix.
+    /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
+    pub fn section_members(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
+        self.chain()
+            .and_then(|chain| {
+                chain
+                    .all_sections()
+                    .find(|(sec_prefix, _)| prefix == *sec_prefix)
+                    .map(|(_, elder_info)| elder_info.member_names())
+            })
+            .unwrap_or_default()
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.

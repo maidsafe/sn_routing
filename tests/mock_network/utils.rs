@@ -580,8 +580,115 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
+pub fn verify_individual_chain(node: &TestNode, min_section_size: usize) {
+    let our_prefix = unwrap!(node.inner.our_prefix());
+    let our_name = unwrap!(node.inner.our_name());
+    let our_section_members = node.inner.section_members(our_prefix);
+
+    assert!(
+        our_prefix.matches(our_name),
+        "Our prefix doesn't match our name: {:?}, {:?}",
+        our_prefix,
+        our_name,
+    );
+
+    if !our_prefix.is_empty() {
+        assert!(
+            our_section_members.len() >= min_section_size,
+            "Our section {:?} is below the minimum size!",
+            our_prefix,
+        );
+    }
+
+    if let Some(name) = our_section_members
+        .iter()
+        .find(|name| !our_prefix.matches(name))
+    {
+        panic!(
+            "A name in our section doesn't match its prefix! {:?}, {:?}",
+            name, our_prefix,
+        );
+    }
+
+    let neighbour_prefixes = node.inner.neighbour_prefixes();
+
+    if let Some(compatible_prefix) = neighbour_prefixes
+        .iter()
+        .find(|prefix| prefix.is_compatible(our_prefix))
+    {
+        panic!(
+            "Our prefix is compatible with one of the neighbour prefixes:\
+             us: {:?} / neighbour: {:?}",
+            our_prefix, compatible_prefix,
+        );
+    }
+
+    if let Some(prefix) = neighbour_prefixes
+        .iter()
+        .find(|prefix| node.inner.section_members(prefix).len() < min_section_size)
+    {
+        panic!(
+            "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?})",
+            prefix,
+            node.inner.section_members(prefix).len(),
+            our_name,
+            our_prefix,
+        );
+    }
+
+    for prefix in &neighbour_prefixes {
+        if let Some(name) = node
+            .inner
+            .section_members(prefix)
+            .iter()
+            .find(|name| !prefix.matches(name))
+        {
+            panic!(
+                "A name in a section doesn't match its prefix! {:?}, {:?}",
+                name, prefix,
+            );
+        }
+    }
+
+    let all_are_neighbours = node
+        .inner
+        .neighbour_prefixes()
+        .iter()
+        .all(|prefix| our_prefix.is_neighbour(prefix));
+    let all_neighbours_covered = {
+        (0..our_prefix.bit_count()).all(|i| {
+            our_prefix
+                .with_flipped_bit(i)
+                .is_covered_by(&neighbour_prefixes)
+        })
+    };
+    if !all_are_neighbours {
+        panic!(
+            "Some sections in the chain aren't neighbours of our section: {:?}",
+            iter::once(*our_prefix)
+                .chain(neighbour_prefixes)
+                .collect::<Vec<_>>()
+        );
+    }
+    if !all_neighbours_covered {
+        panic!(
+            "Some neighbours aren't fully covered by the chain: {:?}",
+            iter::once(*our_prefix)
+                .chain(neighbour_prefixes)
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+pub fn verify_individual_chains(nodes: &[TestNode], min_section_size: usize) {
+    for node in nodes.iter() {
+        verify_individual_chain(node, min_section_size);
+    }
+}
+
 pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode]) {
     let min_section_size = network.min_section_size();
+    verify_individual_chains(nodes, min_section_size);
     verify_chain_invariant(nodes.iter().map(TestNode::chain), min_section_size);
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
