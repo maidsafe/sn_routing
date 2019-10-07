@@ -10,7 +10,6 @@ use crate::{id::PublicId, quic_p2p::NodeInfo, xor_name::XorName};
 use fxhash::FxHashMap;
 use std::net::SocketAddr;
 
-
 /// This structure holds the bi-directional association between peers public id and their network
 /// connection info. This association can be create in two ways:
 /// 1. When both pieces of information (public id and connection info) are obtained at the same

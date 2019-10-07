@@ -29,7 +29,6 @@ use crate::{
     outbox::EventBox,
     parsec::{self, ParsecMap},
     pause::PausedState,
-    peer_manager::PeerManager,
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
@@ -67,7 +66,6 @@ pub struct ElderDetails {
     pub msg_queue: VecDeque<RoutingMessage>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
-    pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
 }
@@ -80,7 +78,6 @@ pub struct Elder {
     /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<RoutingMessage>,
     peer_map: PeerMap,
-    peer_mgr: PeerManager,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
@@ -114,7 +111,6 @@ impl Elder {
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
         let peer_map = PeerMap::new();
-        let peer_mgr = PeerManager::new();
 
         let details = ElderDetails {
             chain,
@@ -125,7 +121,6 @@ impl Elder {
             msg_queue: VecDeque::new(),
             parsec_map,
             peer_map,
-            peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
         };
@@ -163,7 +158,6 @@ impl Elder {
             network_rx: None,
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
-            peer_mgr: self.peer_mgr,
             sig_accumulator: self.sig_accumulator,
         })
     }
@@ -179,7 +173,6 @@ impl Elder {
                 msg_queue: state.msg_queue,
                 parsec_map: state.parsec_map,
                 peer_map: state.peer_map,
-                peer_mgr: state.peer_mgr,
                 routing_msg_filter: state.msg_filter,
                 timer,
             },
@@ -203,7 +196,6 @@ impl Elder {
             is_first_node,
             msg_queue: details.msg_queue.into_iter().collect(),
             peer_map: details.peer_map,
-            peer_mgr: details.peer_mgr,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
             tick_timer_token,
@@ -314,7 +306,7 @@ impl Elder {
                 .peer_map
                 .connected_ids()
                 .filter(|pub_id| {
-                    !self.peer_mgr.is_connected(pub_id)
+                    !self.chain.is_peer_our_member(pub_id)
                         && !self.chain.is_peer_neighbour_elder(pub_id)
                 })
                 .copied()
@@ -431,11 +423,11 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         let valid = match msg {
             DirectMessage::BootstrapRequest | DirectMessage::JoinRequest => {
-                !self.peer_mgr.is_connected(pub_id)
+                !self.chain.is_peer_our_member(pub_id)
             }
             DirectMessage::ParsecPoke(..)
             | DirectMessage::ParsecRequest(..)
-            | DirectMessage::ParsecResponse(..) => self.peer_mgr.is_connected(pub_id),
+            | DirectMessage::ParsecResponse(..) => self.chain.is_peer_our_member(pub_id),
             _ => self.chain.is_peer_elder(pub_id),
         };
 
@@ -1054,7 +1046,7 @@ impl Base for Elder {
             return Transition::Terminate;
         }
 
-        if self.peer_mgr.is_connected(&pub_id) {
+        if self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
 
@@ -1234,14 +1226,6 @@ impl Elder {
 }
 
 impl Approved for Elder {
-    fn peer_mgr(&self) -> &PeerManager {
-        &self.peer_mgr
-    }
-
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
-        &mut self.peer_mgr
-    }
-
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
         outbox.send_event(event);
     }
@@ -1291,7 +1275,7 @@ impl Approved for Elder {
         let self_info = self.chain.remove_elder(pub_id)?;
         self.vote_for_section_info(self_info)?;
 
-        if self.peer_mgr.is_connected(&pub_id) {
+        if self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
 
@@ -1305,7 +1289,7 @@ impl Approved for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.peer_mgr.set_connected(pub_id);
+        self.chain.add_member(pub_id);
         self.handle_candidate_approval(pub_id, outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
@@ -1316,7 +1300,7 @@ impl Approved for Elder {
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        let _ = self.peer_mgr.remove_peer(&pub_id);
+        self.chain.remove_member(&pub_id);
         self.disconnect(&pub_id);
 
         if self.chain.is_peer_our_elder(&pub_id) {

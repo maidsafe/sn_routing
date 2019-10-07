@@ -18,7 +18,6 @@ use crate::{
     messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
-    peer_manager::PeerManager,
     quic_p2p::NodeInfo,
     routing_table::{Authority, Prefix},
     state_machine::Transition,
@@ -32,8 +31,6 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 pub trait Approved: Base {
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain_mut(&mut self) -> &mut Chain;
-    fn peer_mgr(&self) -> &PeerManager;
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager;
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
@@ -150,10 +147,6 @@ pub trait Approved: Base {
                     );
 
                     for pub_id in group {
-                        // Mark them as members of our section.
-                        // TODO: eventually this will be handled by chain.
-                        self.peer_mgr_mut().set_connected(*pub_id);
-
                         // Establish connection with them, if not already connected.
                         self.send_connection_request(
                             *pub_id,

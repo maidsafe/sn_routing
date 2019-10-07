@@ -278,29 +278,62 @@ impl Chain {
         Ok(Some(event))
     }
 
-    /// Adds an elder to our section, creating a new `EldersInfo` in the process.
-    /// If we need to split also returns an additional sibling `EldersInfo`.
-    /// Should not be called while a pfx change is in progress.
-    pub fn add_elder(&mut self, pub_id: PublicId) -> Result<Vec<EldersInfo>, RoutingError> {
-        if self.state.change != PrefixChange::None {
-            log_or_panic!(
-                LogLevel::Warn,
-                "Adding {:?} to chain during pfx change.",
-                pub_id
-            );
-        }
+    /// Adds a member to our section.
+    pub fn add_member(&mut self, pub_id: PublicId) {
+        self.assert_no_prefix_change("add member");
 
         if !self.our_prefix().matches(&pub_id.name()) {
             log_or_panic!(
                 LogLevel::Error,
-                "Invalid AddElder event {:?} for self prefix.",
-                pub_id
+                "{} - Adding member {} whose name does not match our prefix {:?}.",
+                self,
+                pub_id,
+                self.our_prefix()
             );
         }
 
+        // TODO: start as infant unless rejoining
+        // TODO: support rejoining
+        let info = self.state.our_members.entry(pub_id).or_default();
+        info.persona = MemberPersona::Adult;
+        info.state = MemberState::Joined;
+    }
+
+    /// Remove a member from our section.
+    pub fn remove_member(&mut self, pub_id: &PublicId) {
+        self.assert_no_prefix_change("remove member");
+
+        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
+            info.state = MemberState::Left;
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Attempt to remove non-existent member {}.",
+                self,
+                pub_id
+            )
+        }
+    }
+
+    /// Adds an elder to our section, creating a new `EldersInfo` in the process.
+    /// If we need to split also returns an additional sibling `EldersInfo`.
+    /// Should not be called while a pfx change is in progress.
+    pub fn add_elder(&mut self, pub_id: PublicId) -> Result<Vec<EldersInfo>, RoutingError> {
+        self.assert_no_prefix_change("add elder");
+
+        if !self.our_prefix().matches(&pub_id.name()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Adding elder {} whose name does not match our prefix {:?}.",
+                self,
+                pub_id,
+                self.our_prefix()
+            );
+        }
+
+        // TODO: check that the peer is already a member.
         let info = self.state.our_members.entry(pub_id).or_default();
         info.persona = MemberPersona::Elder;
-        info.state = MemberState::Joined;
 
         let mut elders = self.state.new_info.members().clone();
         let _ = elders.insert(pub_id);
@@ -324,33 +357,10 @@ impl Chain {
     /// Removes an elder from our section, creating a new `our_info` in the process.
     /// Should not be called while a pfx change is in progress.
     pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
-        if self.state.change != PrefixChange::None {
-            log_or_panic!(
-                LogLevel::Warn,
-                "Removing {:?} from chain during pfx change.",
-                pub_id
-            );
-        }
+        self.assert_no_prefix_change("remove elder");
 
-        if !self.our_prefix().matches(&pub_id.name()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "Invalid RemoveElder event {:?} for self prefix.",
-                pub_id
-            );
-        }
-
-        match self.state.our_members.get_mut(&pub_id) {
-            Some(info) => {
-                info.state = MemberState::Left;
-            }
-            None => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Removed elder not {} present in our_members",
-                    pub_id
-                );
-            }
+        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
+            info.persona = MemberPersona::Adult;
         }
 
         let mut elders = self.state.new_info.members().clone();
@@ -461,6 +471,15 @@ impl Chain {
     /// Return prefixes of all our neighbours
     pub fn other_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         self.state.neighbour_infos.keys().cloned().collect()
+    }
+
+    /// Check if the given `PublicId` is a member of our section.
+    pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
+        self.state
+            .our_members
+            .get(pub_id)
+            .map(|info| info.state == MemberState::Joined)
+            .unwrap_or(false)
     }
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
@@ -1215,6 +1234,17 @@ impl Chain {
     /// implemented acting on the accumulated events.
     pub fn parsec_prune_accumulated(&self) -> usize {
         self.parsec_prune_accumulated
+    }
+
+    fn assert_no_prefix_change(&self, label: &str) {
+        if self.state.change != PrefixChange::None {
+            log_or_panic!(
+                LogLevel::Warn,
+                "{} - attempt to {} during prefix change.",
+                self,
+                label,
+            );
+        }
     }
 }
 

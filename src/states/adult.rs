@@ -21,7 +21,6 @@ use crate::{
     },
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::PeerManager,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -61,7 +60,6 @@ pub struct Adult {
     msg_backlog: Vec<RoutingMessage>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
-    peer_mgr: PeerManager,
     poke_timer_token: u64,
     add_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
@@ -93,7 +91,6 @@ impl Adult {
             msg_backlog: details.msg_backlog,
             parsec_map,
             peer_map: details.peer_map,
-            peer_mgr: PeerManager::new(),
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             poke_timer_token,
@@ -139,7 +136,6 @@ impl Adult {
             msg_queue: self.msg_backlog.into_iter().collect(),
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
-            peer_mgr: self.peer_mgr,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -385,14 +381,6 @@ impl Base for Adult {
 }
 
 impl Approved for Adult {
-    fn peer_mgr(&self) -> &PeerManager {
-        &self.peer_mgr
-    }
-
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
-        &mut self.peer_mgr
-    }
-
     fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
     }
@@ -440,7 +428,7 @@ impl Approved for Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.peer_mgr.set_connected(pub_id);
+        self.chain.add_member(pub_id);
         self.send_connection_request(
             pub_id,
             Authority::Node(*self.name()),
@@ -450,7 +438,7 @@ impl Approved for Adult {
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        let _ = self.peer_mgr.remove_peer(&pub_id);
+        self.chain.remove_member(&pub_id);
         self.disconnect(&pub_id);
         Ok(())
     }
