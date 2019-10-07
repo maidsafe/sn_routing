@@ -21,7 +21,7 @@ use crate::{
     state_machine::{State, StateMachine, Transition},
     NetworkConfig, NetworkService,
 };
-use std::net::SocketAddr;
+use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
 use utils::LogIdent;
 
@@ -30,18 +30,6 @@ const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 const NO_SINGLE_VETO_VOTE_COUNT: usize = 7;
 const ACCUMULATE_VOTE_COUNT: usize = 6;
 const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 5;
-
-struct CandidateInfo {
-    full_id: FullId,
-}
-
-impl CandidateInfo {
-    fn new() -> Self {
-        Self {
-            full_id: FullId::new(),
-        }
-    }
-}
 
 struct JoiningNodeInfo {
     full_id: FullId,
@@ -72,7 +60,7 @@ struct ElderUnderTest {
     pub other_parsec_map: Vec<ParsecMap>,
     pub ev_buffer: EventBuf,
     pub elders_info: EldersInfo,
-    pub candidate_info: CandidateInfo,
+    pub candidate_id: PublicId,
 }
 
 impl ElderUnderTest {
@@ -115,11 +103,11 @@ impl ElderUnderTest {
             other_parsec_map,
             ev_buffer,
             elders_info,
-            candidate_info: CandidateInfo::new(),
+            candidate_id: *FullId::new().public_id(),
         };
 
         // Process initial unpolled event
-        let _ = elder_test.create_gossip();
+        unwrap!(elder_test.create_gossip());
         elder_test
     }
 
@@ -127,7 +115,7 @@ impl ElderUnderTest {
         unwrap!(self.machine.current().elder_state())
     }
 
-    fn n_vote_for(&mut self, count: usize, events: &[&AccumulatingEvent]) {
+    fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
         for event in events {
             self.other_parsec_map
                 .iter_mut()
@@ -138,7 +126,7 @@ impl ElderUnderTest {
                         .elders_info()
                         .map(|info| unwrap!(SectionInfoSigPayload::new(info, &full_id)));
                     parsec.vote_for(
-                        (*event).clone().into_network_event_with(sig_event),
+                        event.clone().into_network_event_with(sig_event),
                         &LogIdent::new(&0),
                     )
                 });
@@ -154,7 +142,7 @@ impl ElderUnderTest {
     fn n_vote_for_gossipped(
         &mut self,
         count: usize,
-        events: &[&AccumulatingEvent],
+        events: impl IntoIterator<Item = AccumulatingEvent>,
     ) -> Result<(), RoutingError> {
         self.n_vote_for(count, events);
         self.create_gossip()
@@ -163,35 +151,35 @@ impl ElderUnderTest {
     fn accumulate_online(&mut self, public_id: PublicId) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&AccumulatingEvent::Online(public_id)],
+            iter::once(AccumulatingEvent::Online(public_id)),
         );
     }
 
     fn accumulate_add_elder_if_vote(&mut self, public_id: PublicId) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&AccumulatingEvent::AddElder(public_id)],
+            iter::once(AccumulatingEvent::AddElder(public_id)),
         );
     }
 
     fn accumulate_section_info_if_vote(&mut self, section_info_payload: EldersInfo) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&AccumulatingEvent::SectionInfo(section_info_payload)],
+            iter::once(AccumulatingEvent::SectionInfo(section_info_payload)),
         );
     }
 
     fn accumulate_offline(&mut self, offline_payload: PublicId) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            &[&AccumulatingEvent::Offline(offline_payload)],
+            iter::once(AccumulatingEvent::Offline(offline_payload)),
         );
     }
 
     fn accumulate_remove_elder_if_vote(&mut self, offline_payload: PublicId) {
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            &[&AccumulatingEvent::RemoveElder(offline_payload)],
+            iter::once(AccumulatingEvent::RemoveElder(offline_payload)),
         );
     }
 
@@ -200,7 +188,7 @@ impl ElderUnderTest {
             self.elders_info
                 .members()
                 .iter()
-                .chain(Some(self.candidate_info.full_id.public_id()))
+                .chain(iter::once(&self.candidate_id))
                 .cloned()
                 .collect(),
             *self.elders_info.prefix(),
@@ -221,10 +209,24 @@ impl ElderUnderTest {
         self.elder_state().has_unpolled_observations()
     }
 
+    fn is_candidate_member(&self) -> bool {
+        self.elder_state()
+            .chain()
+            .is_peer_our_member(&self.candidate_id)
+    }
+
     fn is_candidate_elder(&self) -> bool {
         self.elder_state()
             .chain()
-            .is_peer_elder(self.candidate_info.full_id.public_id())
+            .is_peer_our_elder(&self.candidate_id)
+    }
+
+    fn is_candidate_in_our_elders_info(&self) -> bool {
+        self.elder_state()
+            .chain()
+            .our_info()
+            .members()
+            .contains(&self.candidate_id)
     }
 
     fn handle_direct_message(
@@ -248,14 +250,6 @@ impl ElderUnderTest {
             Transition::Stay => (),
             _ => panic!("Unexpected transition"),
         }
-    }
-
-    fn online_payload(&self) -> PublicId {
-        *self.candidate_info.full_id.public_id()
-    }
-
-    fn offline_payload(&self) -> PublicId {
-        *self.candidate_info.full_id.public_id()
     }
 
     fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: NodeInfo) {
@@ -348,9 +342,6 @@ impl StateMachineExt for StateMachine {
     }
 }
 
-// TODO: re-enable these tests
-
-#[ignore]
 #[test]
 fn construct() {
     let elder_test = ElderUnderTest::new();
@@ -359,99 +350,94 @@ fn construct() {
     assert!(!elder_test.is_candidate_elder());
 }
 
-#[ignore]
 #[test]
-// Candidate is only removed as candidate when its EldersInfo is consensused
-fn accumulate_online_candidate_only_do_not_remove_candidate() {
+fn when_accumulate_online_then_node_is_added_to_our_members() {
     let mut elder_test = ElderUnderTest::new();
+    elder_test.accumulate_online(elder_test.candidate_id);
 
-    elder_test.accumulate_online(elder_test.online_payload());
-
-    assert!(elder_test.has_unpolled_observations());
+    assert!(elder_test.has_unpolled_observations()); // voted for AddElder
+    assert!(elder_test.is_candidate_member());
     assert!(!elder_test.is_candidate_elder());
+    assert!(!elder_test.is_candidate_in_our_elders_info());
 }
 
-#[ignore]
 #[test]
-// Candidate is only removed as candidate when its EldersInfo is consensused
-// Vote for `Online` trigger immediate vote for AddElder
-fn accumulate_online_candidate_then_add_elder_only_do_not_remove_candidate() {
+fn when_accumulate_online_and_accumulate_add_elder_then_node_is_promoted_to_elder() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.online_payload());
-
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_online(elder_test.candidate_id);
+    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
 
     assert!(!elder_test.has_unpolled_observations());
+    assert!(elder_test.is_candidate_member());
     assert!(elder_test.is_candidate_elder());
+    assert!(!elder_test.is_candidate_in_our_elders_info());
 }
 
-// TODO: Modify these tests or remove them
 #[test]
-#[ignore]
-// Candidate is only removed as candidate when its EldersInfo is consensused
-fn accumulate_online_candidate_then_add_elder_then_section_info_remove_candidate() {
+fn when_accumulate_online_and_accumulate_add_elder_and_accumulate_section_info_then_node_is_added_to_our_elders_info(
+) {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.online_payload());
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_online(elder_test.candidate_id);
+    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
 
     let new_elders_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_section_info_if_vote(new_elders_info);
 
     assert!(!elder_test.has_unpolled_observations());
+    assert!(elder_test.is_candidate_member());
     assert!(elder_test.is_candidate_elder());
+    assert!(elder_test.is_candidate_in_our_elders_info());
 }
 
-#[ignore]
 #[test]
-// When Offline consensused, RemoveElder is voted.
-fn accumulate_offline_for_node() {
+fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.online_payload());
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_online(elder_test.candidate_id);
+    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
 
-    elder_test.accumulate_offline(elder_test.offline_payload());
+    elder_test.accumulate_offline(elder_test.candidate_id);
 
-    assert!(elder_test.has_unpolled_observations());
+    assert!(elder_test.has_unpolled_observations()); // voted for RemoveElder
+    assert!(!elder_test.is_candidate_member());
     assert!(elder_test.is_candidate_elder());
+    assert!(elder_test.is_candidate_in_our_elders_info());
 }
 
-#[ignore]
 #[test]
-// When Offline consensused, RemoveElder is voted. The peer only become invalid once
-// EldersInfo is consensused
-fn accumulate_offline_then_remove_elder_for_node() {
+fn when_accumulate_offline_and_accumulate_remove_elder_then_node_is_demoted_from_elder() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.online_payload());
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_online(elder_test.candidate_id);
+    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
-    elder_test.accumulate_offline(elder_test.offline_payload());
 
-    elder_test.accumulate_remove_elder_if_vote(elder_test.offline_payload());
+    elder_test.accumulate_offline(elder_test.candidate_id);
+    elder_test.accumulate_remove_elder_if_vote(elder_test.candidate_id);
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.is_candidate_elder());
+    assert!(!elder_test.is_candidate_member());
+    assert!(!elder_test.is_candidate_elder());
+    assert!(elder_test.is_candidate_in_our_elders_info());
 }
 
-#[ignore]
 #[test]
-// When Offline consensused, RemoveElder is voted. The peer only become invalid once
-// EldersInfo is consensused
-fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
+fn when_accumulate_offline_and_accumulate_remove_elder_and_accumulate_section_info_then_node_is_removed_from_our_elders_info(
+) {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.online_payload());
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_online(elder_test.candidate_id);
+    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
-    elder_test.accumulate_offline(elder_test.offline_payload());
-    elder_test.accumulate_remove_elder_if_vote(elder_test.offline_payload());
 
+    elder_test.accumulate_offline(elder_test.candidate_id);
+    elder_test.accumulate_remove_elder_if_vote(elder_test.candidate_id);
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_without_candidate());
 
     assert!(!elder_test.has_unpolled_observations());
+    assert!(!elder_test.is_candidate_member());
     assert!(!elder_test.is_candidate_elder());
+    assert!(!elder_test.is_candidate_in_our_elders_info());
 }
 
-#[ignore]
 #[test]
 fn accept_previously_rejected_node_after_reaching_min_section_size() {
     // Set min_section_size to one more than the initial size of the section. This makes us reject
@@ -464,8 +450,8 @@ fn accept_previously_rejected_node_after_reaching_min_section_size() {
     assert!(!elder_test.is_connected(node.public_id()));
 
     // Add new section member to reach min_section_size.
-    elder_test.accumulate_online(elder_test.online_payload());
-    elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
+    elder_test.accumulate_online(elder_test.candidate_id);
+    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
 
     // Re-bootstrap now succeeds.

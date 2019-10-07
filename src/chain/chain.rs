@@ -503,8 +503,11 @@ impl Chain {
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.our_info().members().contains(pub_id)
-            || self.state.new_info.members().contains(pub_id)
+        self.state
+            .our_members
+            .get(pub_id)
+            .map(|info| info.persona == MemberPersona::Elder)
+            .unwrap_or(false)
     }
 
     /// Returns whether the given peer is elder in one of our neighbour sections.
