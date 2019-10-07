@@ -224,7 +224,7 @@ impl Elder {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
                 self,
-                self.chain.valid_peers().len()
+                self.chain.elders().len()
             );
             let network_estimate = match self.chain.network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
@@ -304,14 +304,19 @@ impl Elder {
         Ok(())
     }
 
-    // Connect to all valid peers we are not yet connected to and disconnect from peers that are no
-    // longer valid.
+    // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
+    // longer members of our section or elders of neighbour sections.
+    // TODO: call this only on neighbour membership change instead of periodically (event-based
+    // instead of time-based).
     fn update_peer_states(&mut self, outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
             let peers_to_disconnect: Vec<_> = self
                 .peer_map
                 .connected_ids()
-                .filter(|pub_id| !self.peer_mgr.is_connected(pub_id) && !self.is_peer_valid(pub_id))
+                .filter(|pub_id| {
+                    !self.peer_mgr.is_connected(pub_id)
+                        && !self.chain.is_peer_neighbour_elder(pub_id)
+                })
                 .copied()
                 .collect();
             for pub_id in peers_to_disconnect {
@@ -321,9 +326,8 @@ impl Elder {
 
         let peers_to_connect: Vec<_> = self
             .chain
-            .valid_peers()
-            .into_iter()
-            .filter(|pub_id| !self.peer_map.has(pub_id) && *pub_id != self.id())
+            .neighbour_elders()
+            .filter(|pub_id| !self.peer_map.has(pub_id))
             .copied()
             .collect();
         for pub_id in peers_to_connect {
@@ -432,7 +436,7 @@ impl Elder {
             DirectMessage::ParsecPoke(..)
             | DirectMessage::ParsecRequest(..)
             | DirectMessage::ParsecResponse(..) => self.peer_mgr.is_connected(pub_id),
-            _ => self.chain.is_peer_valid(pub_id),
+            _ => self.chain.is_peer_elder(pub_id),
         };
 
         if valid {
@@ -940,7 +944,7 @@ impl Elder {
         if self
             .peer_map
             .connected_ids()
-            .any(|id| self.chain.is_peer_elder(id))
+            .any(|id| self.chain.is_peer_our_elder(id))
         {
             true
         } else {
@@ -1054,7 +1058,7 @@ impl Base for Elder {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
 
-        if self.is_peer_valid(&pub_id) {
+        if self.chain.is_peer_elder(&pub_id) {
             debug!(
                 "{} - Sending connection request to {} due to lost peer.",
                 self, pub_id
@@ -1211,8 +1215,8 @@ impl Elder {
         self.parsec_map.has_unpolled_observations()
     }
 
-    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
-        self.chain.is_peer_elder(pub_id)
+    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
+        self.chain.is_peer_our_elder(pub_id)
     }
 
     pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
@@ -1236,10 +1240,6 @@ impl Approved for Elder {
 
     fn peer_mgr_mut(&mut self) -> &mut PeerManager {
         &mut self.peer_mgr
-    }
-
-    fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
-        self.chain.is_peer_valid(pub_id)
     }
 
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
@@ -1269,7 +1269,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - Added elder {}.", self, pub_id);
 
-        let to_vote_infos = self.chain.add_member(pub_id)?;
+        let to_vote_infos = self.chain.add_elder(pub_id)?;
 
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         self.print_rt_size();
@@ -1288,7 +1288,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - Removed elder {}.", self, pub_id);
 
-        let self_info = self.chain.remove_member(pub_id)?;
+        let self_info = self.chain.remove_elder(pub_id)?;
         self.vote_for_section_info(self_info)?;
 
         if self.peer_mgr.is_connected(&pub_id) {
@@ -1319,7 +1319,7 @@ impl Approved for Elder {
         let _ = self.peer_mgr.remove_peer(&pub_id);
         self.disconnect(&pub_id);
 
-        if self.chain.is_peer_elder(&pub_id) {
+        if self.chain.is_peer_our_elder(&pub_id) {
             self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
         }
 

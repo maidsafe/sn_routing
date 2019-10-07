@@ -221,10 +221,10 @@ impl ElderUnderTest {
         self.elder_state().has_unpolled_observations()
     }
 
-    fn is_candidate_a_valid_peer(&self) -> bool {
+    fn is_candidate_elder(&self) -> bool {
         self.elder_state()
             .chain()
-            .is_peer_valid(self.candidate_info.full_id.public_id())
+            .is_peer_elder(self.candidate_info.full_id.public_id())
     }
 
     fn handle_direct_message(
@@ -358,7 +358,7 @@ fn construct() {
     let elder_test = ElderUnderTest::new();
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.is_candidate_elder());
 }
 
 #[ignore]
@@ -370,7 +370,7 @@ fn accumulate_online_candidate_only_do_not_remove_candidate() {
     elder_test.accumulate_online(elder_test.online_payload());
 
     assert!(elder_test.has_unpolled_observations());
-    assert!(!elder_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.is_candidate_elder());
 }
 
 #[ignore]
@@ -384,7 +384,7 @@ fn accumulate_online_candidate_then_add_elder_only_do_not_remove_candidate() {
     elder_test.accumulate_add_elder_if_vote(elder_test.online_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.is_candidate_a_valid_peer());
+    assert!(elder_test.is_candidate_elder());
 }
 
 // TODO: Modify these tests or remove them
@@ -400,7 +400,7 @@ fn accumulate_online_candidate_then_add_elder_then_section_info_remove_candidate
     elder_test.accumulate_section_info_if_vote(new_elders_info);
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.is_candidate_a_valid_peer());
+    assert!(elder_test.is_candidate_elder());
 }
 
 #[ignore]
@@ -415,7 +415,7 @@ fn accumulate_offline_for_node() {
     elder_test.accumulate_offline(elder_test.offline_payload());
 
     assert!(elder_test.has_unpolled_observations());
-    assert!(elder_test.is_candidate_a_valid_peer());
+    assert!(elder_test.is_candidate_elder());
 }
 
 #[ignore]
@@ -432,7 +432,7 @@ fn accumulate_offline_then_remove_elder_for_node() {
     elder_test.accumulate_remove_elder_if_vote(elder_test.offline_payload());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.is_candidate_a_valid_peer());
+    assert!(elder_test.is_candidate_elder());
 }
 
 #[ignore]
@@ -450,7 +450,7 @@ fn accumulate_offline_then_remove_elder_then_section_info_for_node() {
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_without_candidate());
 
     assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.is_candidate_a_valid_peer());
+    assert!(!elder_test.is_candidate_elder());
 }
 
 #[ignore]

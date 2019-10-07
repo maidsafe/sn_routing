@@ -34,7 +34,6 @@ pub trait Approved: Base {
     fn chain_mut(&mut self) -> &mut Chain;
     fn peer_mgr(&self) -> &PeerManager;
     fn peer_mgr_mut(&mut self) -> &mut PeerManager;
-    fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;

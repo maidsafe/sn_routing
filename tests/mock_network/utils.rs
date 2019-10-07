@@ -774,8 +774,8 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
-        // Confirm valid peers from chain are connected according to PeerMgr
-        let mut peers = node.chain().valid_peers();
+        // Confirm elders from chain are connected according to PeerMgr
+        let mut peers = node.chain().elders();
         let our_id = node.chain().our_id();
         let _ = peers.remove(&our_id);
         let missing_peers = peers

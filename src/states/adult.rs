@@ -393,10 +393,6 @@ impl Approved for Adult {
         &mut self.peer_mgr
     }
 
-    fn is_peer_valid(&self, _pub_id: &PublicId) -> bool {
-        true
-    }
-
     fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
     }
@@ -423,7 +419,7 @@ impl Approved for Adult {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - Added elder {}.", self, pub_id);
-        let _ = self.chain.add_member(pub_id)?;
+        let _ = self.chain.add_elder(pub_id)?;
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         Ok(())
     }
@@ -434,7 +430,7 @@ impl Approved for Adult {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - Removed elder {}.", self, pub_id);
-        let _ = self.chain.remove_member(pub_id)?;
+        let _ = self.chain.remove_elder(pub_id)?;
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
         Ok(())
     }
@@ -465,7 +461,7 @@ impl Approved for Adult {
         old_pfx: Prefix<XorName>,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if self.chain.is_member() {
+        if self.chain.is_self_elder() {
             Ok(Transition::IntoElder {
                 elders_info,
                 old_pfx,

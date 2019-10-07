@@ -48,9 +48,9 @@ pub struct Chain {
     our_id: PublicId,
     /// The shared state of the section.
     state: SharedState,
-    /// If we're a member of the section yet. This will be toggled once we get a `EldersInfo`
+    /// If we're an elder of the section yet. This will be toggled once we get a `EldersInfo`
     /// block accumulated which bears `our_id` as one of the members
-    is_member: bool,
+    is_elder: bool,
     /// Accumulate NetworkEvent that do not have yet enough vote/proofs.
     chain_accumulator: ChainAccumulator,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
@@ -85,12 +85,12 @@ impl Chain {
     /// Create a new chain given genesis information
     pub fn new(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_member = gen_info.first_info.members().contains(&our_id);
+        let is_elder = gen_info.first_info.members().contains(&our_id);
         Self {
             min_sec_size,
             our_id,
             state: SharedState::new(gen_info.first_info),
-            is_member,
+            is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             parsec_prune_accumulated: 0,
@@ -278,10 +278,10 @@ impl Chain {
         Ok(Some(event))
     }
 
-    /// Adds a member to our section, creating a new `EldersInfo` in the process.
+    /// Adds an elder to our section, creating a new `EldersInfo` in the process.
     /// If we need to split also returns an additional sibling `EldersInfo`.
     /// Should not be called while a pfx change is in progress.
-    pub fn add_member(&mut self, pub_id: PublicId) -> Result<Vec<EldersInfo>, RoutingError> {
+    pub fn add_elder(&mut self, pub_id: PublicId) -> Result<Vec<EldersInfo>, RoutingError> {
         if self.state.change != PrefixChange::None {
             log_or_panic!(
                 LogLevel::Warn,
@@ -293,7 +293,7 @@ impl Chain {
         if !self.our_prefix().matches(&pub_id.name()) {
             log_or_panic!(
                 LogLevel::Error,
-                "Invalid Online event {:?} for self prefix.",
+                "Invalid AddElder event {:?} for self prefix.",
                 pub_id
             );
         }
@@ -321,9 +321,9 @@ impl Chain {
         Ok(vec![self.state.new_info.clone()])
     }
 
-    /// Removes a member from our section, creating a new `our_info` in the process.
+    /// Removes an elder from our section, creating a new `our_info` in the process.
     /// Should not be called while a pfx change is in progress.
-    pub fn remove_member(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
+    pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
         if self.state.change != PrefixChange::None {
             log_or_panic!(
                 LogLevel::Warn,
@@ -335,7 +335,7 @@ impl Chain {
         if !self.our_prefix().matches(&pub_id.name()) {
             log_or_panic!(
                 LogLevel::Error,
-                "Invalid Offline event {:?} for self prefix.",
+                "Invalid RemoveElder event {:?} for self prefix.",
                 pub_id
             );
         }
@@ -347,7 +347,7 @@ impl Chain {
             None => {
                 log_or_panic!(
                     LogLevel::Error,
-                    "Removed peer not {} present in our_members",
+                    "Removed elder not {} present in our_members",
                     pub_id
                 );
             }
@@ -453,13 +453,6 @@ impl Chain {
         self.state.our_info_by_hash(hash)
     }
 
-    /// If we are a member of the section yet. We consider ourselves to be one after we receive a
-    /// `EldersInfo` block that contains us. After that we are expected to be involved in futher
-    /// votings.
-    pub fn is_member(&self) -> bool {
-        self.is_member
-    }
-
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &EldersInfo> {
         self.state.neighbour_infos.values()
@@ -470,17 +463,13 @@ impl Chain {
         self.state.neighbour_infos.keys().cloned().collect()
     }
 
-    /// Checks if given `PublicId` is a valid peer by checking if we have them as a member of self
-    /// section or neighbours.
-    pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
-        self.neighbour_infos()
-            .chain(iter::once(self.state.our_info()))
-            .chain(iter::once(&self.state.new_info))
-            .any(|si| si.members().contains(pub_id))
+    /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
+    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+        self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
     }
 
-    /// Returns a set of valid peers we should be connected to.
-    pub fn valid_peers(&self) -> BTreeSet<&PublicId> {
+    /// Returns a set of elders we should be connected to.
+    pub fn elders(&self) -> BTreeSet<&PublicId> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
             .flat_map(EldersInfo::members)
@@ -488,10 +477,26 @@ impl Chain {
             .collect()
     }
 
+    /// Returns whether we are elder in our section.
+    pub fn is_self_elder(&self) -> bool {
+        self.is_elder
+    }
+
     /// Returns whether the given peer is elder in our section.
-    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.state.our_info().members().contains(pub_id)
             || self.state.new_info.members().contains(pub_id)
+    }
+
+    /// Returns whether the given peer is elder in one of our neighbour sections.
+    pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
+        self.neighbour_infos()
+            .any(|info| info.members().contains(pub_id))
+    }
+
+    /// Returns all neighbour elders.
+    pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.neighbour_infos().flat_map(EldersInfo::members)
     }
 
     /// Returns `true` if we know the section with `elders_info`.
@@ -740,12 +745,12 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let pfx = *elders_info.prefix();
         if pfx.matches(self.our_id.name()) {
-            let is_new_member = !self.is_member && elders_info.members().contains(&self.our_id);
+            let is_new_elder = !self.is_elder && elders_info.members().contains(&self.our_id);
             let pk_set = self.public_key_set();
             self.state.push_our_new_info(elders_info, proofs, &pk_set)?;
 
-            if is_new_member {
-                self.is_member = true;
+            if is_new_elder {
+                self.is_elder = true;
             }
             self.check_and_clean_neighbour_infos(None);
         } else {
@@ -1193,7 +1198,7 @@ impl Chain {
             .sum();
 
         // Total size estimate = known_nodes / network_fraction
-        let network_size = self.valid_peers().len() as f64 / network_fraction;
+        let network_size = self.elders().len() as f64 / network_fraction;
 
         (network_size.ceil() as u64, is_exact)
     }
@@ -1229,7 +1234,7 @@ impl Debug for Chain {
         writeln!(formatter, "\tchange: {:?},", self.state.change)?;
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
-        writeln!(formatter, "\tis_member: {},", self.is_member)?;
+        writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
         writeln!(formatter, "\tnew_info: {}", self.state.new_info)?;
         writeln!(formatter, "\tmerging: {:?}", self.state.merging)?;
 
