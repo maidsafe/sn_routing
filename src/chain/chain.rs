@@ -12,8 +12,9 @@ use super::{
     AccumulatingEvent, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState, NetworkEvent, Proof,
     ProofSet, SectionProofChain,
 };
+#[cfg(feature = "mock_base")]
+use crate::crypto::Digest256;
 use crate::{
-    crypto::Digest256,
     error::RoutingError,
     id::PublicId,
     routing_table::{Authority, Error},
@@ -479,6 +480,7 @@ impl Chain {
     }
 
     /// Returns our section info with the given hash, if it exists.
+    #[cfg(feature = "mock_base")]
     pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
         self.state.our_info_by_hash(hash)
     }
@@ -546,6 +548,7 @@ impl Chain {
     ///
     /// If `check_signed` is `true`, also trust sections that we have signed but that haven't
     /// accumulated yet.
+    #[cfg(feature = "mock_base")]
     pub fn is_trusted(&self, elders_info: &EldersInfo, check_signed: bool) -> bool {
         let is_proof = |si: &EldersInfo| si == elders_info || si.is_successor_of(elders_info);
         let mut signed = self
@@ -999,6 +1002,7 @@ impl Chain {
 
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
+    #[cfg(feature = "mock_base")]
     pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
         if self.our_prefix().matches(name) {
             Some(
@@ -1015,6 +1019,7 @@ impl Chain {
 
     /// If our section is the closest one to `name`, returns all names in our section *excluding
     /// ours*, otherwise returns `None`.
+    #[cfg(feature = "mock_base")]
     pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
             let mut section = self.our_info().member_names();
@@ -1243,6 +1248,7 @@ impl Chain {
     }
 
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
+    #[cfg(feature = "mock_base")]
     pub fn min_len_prefix(&self) -> Prefix<XorName> {
         *iter::once(self.our_prefix())
             .chain(self.state.neighbour_infos.keys())
@@ -1252,6 +1258,7 @@ impl Chain {
 
     /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
     /// implemented acting on the accumulated events.
+    #[cfg(feature = "mock_base")]
     pub fn parsec_prune_accumulated(&self) -> usize {
         self.parsec_prune_accumulated
     }

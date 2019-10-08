@@ -7,7 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 //! Types emulating the BLS functionality until proper BLS lands
-use super::{EldersInfo, ProofSet};
+use super::EldersInfo;
+#[cfg(feature = "mock_base")]
+use super::ProofSet;
 use crate::{
     crypto,
     id::{FullId, PublicId},
@@ -37,6 +39,7 @@ pub struct Signature {
 }
 
 impl Signature {
+    #[cfg(feature = "mock_base")]
     pub fn from_proof_set(proofs: ProofSet) -> Self {
         Self { sigs: proofs.sigs }
     }

@@ -276,7 +276,7 @@ impl EventStepper for Node {
 #[cfg(feature = "mock_base")]
 impl Node {
     /// Returns the chain for this node.
-    pub fn chain(&self) -> Option<&Chain> {
+    fn chain(&self) -> Option<&Chain> {
         self.machine.current().chain()
     }
 

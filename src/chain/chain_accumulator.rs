@@ -133,6 +133,7 @@ impl AccumulatingProof {
         &self.parsec_proofs
     }
 
+    #[cfg(feature = "mock_base")]
     pub fn into_parsec_proof_set(self) -> ProofSet {
         self.parsec_proofs
     }
