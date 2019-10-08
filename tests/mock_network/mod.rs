@@ -474,9 +474,9 @@ fn check_section_info_ack() {
     let node_with_sibling_knowledge: Vec<_> = nodes
         .iter()
         .filter(|node| {
-            node.chain()
+            node.inner
                 .get_their_knowledge()
-                .contains_key(&node.chain().our_prefix().sibling())
+                .contains_key(&node.our_prefix().sibling())
         })
         .map(|node| node.id())
         .collect();
@@ -516,7 +516,7 @@ fn vote_prune() {
 
     assert!(nodes
         .iter()
-        .all(|node| node.chain().parsec_prune_accumulated() > 0));
+        .all(|node| unwrap!(node.inner.parsec_prune_accumulated()) > 0));
 }
 
 #[test]

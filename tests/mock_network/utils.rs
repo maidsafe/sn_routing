@@ -11,7 +11,7 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, test_consts, Authority, Chain, Event, EventStream, FullId, NetworkConfig, Node,
+    mock::Network, test_consts, Authority, Event, EventStream, FullId, NetworkConfig, Node,
     NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
 };
 use std::{
@@ -120,15 +120,11 @@ impl TestNode {
     }
 
     pub fn close_names(&self) -> Vec<XorName> {
-        unwrap!(unwrap!(self.inner.chain()).close_names(&self.name()))
+        unwrap!(self.inner.close_names(&self.name()))
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain().our_prefix()
-    }
-
-    pub fn chain(&self) -> &Chain {
-        unwrap!(self.inner.chain(), "no chain for {}", self.inner)
+        unwrap!(self.inner.our_prefix())
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
@@ -141,19 +137,14 @@ impl TestNode {
 }
 
 pub fn count_sections(nodes: &[TestNode]) -> usize {
-    nodes
-        .iter()
-        .filter_map(|n| n.inner.chain())
-        .flat_map(Chain::prefixes)
-        .unique()
-        .count()
+    nodes.iter().map(|n| n.inner.prefixes()).unique().count()
 }
 
 pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
     nodes
         .iter()
-        .filter_map(|n| n.inner.chain())
-        .flat_map(Chain::prefixes)
+        .map(|n| n.inner.prefixes())
+        .flat_map(|prefix_set| prefix_set.into_iter())
         .collect()
 }
 
@@ -437,7 +428,7 @@ pub fn add_connected_nodes_until_split(
     clear_all_event_queues(nodes, |_| {});
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
-    let min_split_size = nodes[0].chain().min_split_size();
+    let min_split_size = unwrap!(nodes[0].inner.min_split_size());
     let prefixes_new_count = prefixes
         .iter()
         .map(|prefix| (*prefix, min_split_size))
@@ -450,7 +441,8 @@ pub fn add_connected_nodes_until_split(
     loop {
         let mut found_prefix = None;
         for node in nodes.iter() {
-            if let Some(prefix_to_split) = unwrap!(node.inner.chain())
+            if let Some(prefix_to_split) = node
+                .inner
                 .prefixes()
                 .iter()
                 .find(|&prefix| !prefixes.contains(prefix))
@@ -483,7 +475,7 @@ pub fn add_connected_nodes_until_split(
     // Gather all the actual prefixes and check they are as expected.
     let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
     for node in nodes.iter() {
-        actual_prefixes.append(&mut unwrap!(node.inner.chain()).prefixes());
+        actual_prefixes.append(&mut node.inner.prefixes());
     }
     assert_eq!(
         prefixes.iter().cloned().collect::<BTreeSet<_>>(),
@@ -596,7 +588,7 @@ fn prefixes_and_count_to_split_with_only_one_extra_node(
         .map(|prefix| prefix_half_with_fewer_nodes(nodes, prefix))
         .collect_vec();
 
-    let min_split_size = nodes[0].chain().min_split_size();
+    let min_split_size = unwrap!(nodes[0].inner.min_split_size());
 
     let mut prefixes_and_counts = Vec::new();
     for small_prefix in &prefixes_to_add_to_split {
@@ -818,9 +810,9 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
         // Confirm elders from chain are connected according to PeerMgr
-        let our_id = node.chain().our_id();
+        let our_id = unwrap!(node.inner.our_id());
         let missing_peers = node
-            .chain()
+            .inner
             .elders()
             .filter(|pub_id| *pub_id != our_id)
             .filter(|pub_id| !node.inner.is_connected(pub_id))
