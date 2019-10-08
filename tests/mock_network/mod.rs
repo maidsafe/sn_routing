@@ -18,8 +18,8 @@ pub use self::utils::{
     add_connected_nodes_until_one_away_from_split, add_connected_nodes_until_split,
     clear_relocation_overrides, count_sections, create_connected_nodes,
     create_connected_nodes_until_split, current_sections, gen_bytes, gen_range, gen_range_except,
-    poll_all, poll_and_resend, poll_and_resend_until, remove_nodes_which_failed_to_connect,
-    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, TestNode,
+    poll_all, poll_and_resend, poll_and_resend_with_options, remove_nodes_which_failed_to_connect,
+    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, PollOptions, TestNode,
 };
 use itertools::Itertools;
 use rand::Rng;
@@ -474,7 +474,7 @@ fn node_pause_and_resume() {
     // Do some work while the node is paused.
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.push(TestNode::builder(&network).network_config(config).create());
-    poll_and_resend(&mut nodes);
+    poll_and_resend_with_options(&mut nodes, PollOptions::default().fire_join_timeout(false));
 
     // Resume the node and verify it caugh up to the changes in the network.
     nodes.push(TestNode::resume(&network, state));

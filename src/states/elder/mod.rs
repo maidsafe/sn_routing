@@ -32,7 +32,6 @@ use crate::{
     peer_map::PeerMap,
     quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
-    routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
     signature_accumulator::SignatureAccumulator,
     state_machine::Transition,
@@ -396,6 +395,7 @@ impl Elder {
             let src = Authority::Section(self.our_prefix().name());
             let dst = Authority::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
+
             if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
                 debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
             }
@@ -1165,9 +1165,9 @@ impl Base for Elder {
                     target,
                     signed_msg.routing_message()
                 );
-                return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
             }
         }
+
         Ok(())
     }
 }

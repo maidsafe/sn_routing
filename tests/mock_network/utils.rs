@@ -246,32 +246,53 @@ pub fn poll_all_until(nodes: &mut [TestNode], should_stop: &dyn Fn(&[TestNode]) 
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode]) {
-    let dummy = |_nodes: &[TestNode]| false;
-    poll_and_resend_until(nodes, &dummy, None)
+    poll_and_resend_with_options(nodes, PollOptions::default())
+}
+
+/// Options for polling nodes in the test network.
+///
+/// - should_stop: can be used for an early return from poll_and_resend
+/// - extra_advance: this is so far only used for the ignoring candidate_info test.
+pub struct PollOptions {
+    pub should_stop: Box<dyn Fn(&[TestNode]) -> bool>,
+    pub extra_advance: Option<u64>,
+    pub fire_join_timeout: bool,
+}
+
+impl Default for PollOptions {
+    fn default() -> Self {
+        Self {
+            should_stop: Box::new(|_| false),
+            extra_advance: None,
+            fire_join_timeout: true,
+        }
+    }
+}
+
+impl PollOptions {
+    pub fn fire_join_timeout(self, fire_join_timeout: bool) -> Self {
+        Self {
+            fire_join_timeout,
+            ..self
+        }
+    }
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
-/// should_stop: can be used for an early return from poll_and_resend
-/// extra_advance: this is so far only used for the ignoring candidate_info test.
-pub fn poll_and_resend_until(
-    nodes: &mut [TestNode],
-    should_stop: &dyn Fn(&[TestNode]) -> bool,
-    mut extra_advance: Option<u64>,
-) {
-    let mut fired_connecting_peer_timeout = false;
+pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
+    let mut fired_join_timeout = !options.fire_join_timeout;
     for _ in 0..MAX_POLL_CALLS {
-        if should_stop(nodes) {
+        if (options.should_stop)(nodes) {
             return;
         }
 
         let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
-        if poll_all_until(nodes, should_stop) || nodes.iter().any(node_busy) {
+        if poll_all_until(nodes, &*options.should_stop) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
             FakeClock::advance_time(1001);
-        } else if let Some(step) = extra_advance {
+        } else if let Some(step) = options.extra_advance.take() {
             FakeClock::advance_time(step * 1000 + 1);
-            extra_advance = None;
-        } else if !fired_connecting_peer_timeout {
+        } else if !fired_join_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
             FakeClock::advance_time(
                 (test_consts::BOOTSTRAP_TIMEOUT
@@ -281,7 +302,7 @@ pub fn poll_and_resend_until(
                     * 1000
                     + 1,
             );
-            fired_connecting_peer_timeout = true;
+            fired_join_timeout = true;
         } else {
             return;
         }
