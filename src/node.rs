@@ -22,7 +22,7 @@ use crate::{
     NetworkBytes, NetworkConfig, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
+use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
 use crossbeam_channel as mpmc;
 use quic_p2p::Token;
 use std::net::SocketAddr;
@@ -396,6 +396,12 @@ impl Node {
     /// Indicates if this node has the connection info to the given peer.
     pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
         self.machine.current().is_connected(name)
+    }
+
+    /// Provide a SectionProofChain that proves the given signature to the section with a given
+    /// prefix
+    pub fn prove(&self, target: &Authority<XorName>) -> Option<SectionProofChain> {
+        self.chain().map(|chain| chain.prove(target))
     }
 
     /// Checks whether the given authority represents self.

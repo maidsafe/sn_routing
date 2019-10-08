@@ -66,8 +66,9 @@ fn message_with_invalid_security(fail_type: FailType) {
 
     let message = {
         let proof = match fail_type {
-            FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos].inner.chain())
-                .prove(&Authority::PrefixSection(their_prefix)),
+            FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos]
+                .inner
+                .prove(&Authority::PrefixSection(their_prefix))),
             FailType::UntrustedProofValidSig => section_proof_chain_from_elders_info(&new_info),
         };
         let pk_set = bls_key_set_from_elders_info(new_info);
