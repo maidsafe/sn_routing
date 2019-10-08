@@ -11,13 +11,12 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, verify_chain_invariant, Authority,
-    Chain, Event, EventStream, FullId, NetworkConfig, Node, NodeBuilder, PausedState, Prefix,
-    PublicId, XorName, Xorable,
+    mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, Authority, Chain, Event, EventStream,
+    FullId, NetworkConfig, Node, NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
 };
 use std::{
     cmp,
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     iter,
     net::SocketAddr,
     ops::{Deref, DerefMut},
@@ -580,7 +579,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
-pub fn verify_individual_chain(node: &TestNode, min_section_size: usize) {
+pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usize) {
     let our_prefix = unwrap!(node.inner.our_prefix());
     let our_name = unwrap!(node.inner.our_name());
     let our_section_members = node.inner.section_members(our_prefix);
@@ -680,16 +679,90 @@ pub fn verify_individual_chain(node: &TestNode, min_section_size: usize) {
     }
 }
 
-pub fn verify_individual_chains(nodes: &[TestNode], min_section_size: usize) {
+pub fn verify_section_invariants_for_nodes(nodes: &[TestNode], min_section_size: usize) {
     for node in nodes.iter() {
-        verify_individual_chain(node, min_section_size);
+        verify_section_invariants_for_node(node, min_section_size);
     }
+}
+
+pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
+    let mut sections: BTreeMap<Prefix<XorName>, (XorName, BTreeSet<XorName>)> = BTreeMap::new();
+
+    for node in nodes.iter() {
+        let our_prefix = unwrap!(node.inner.our_prefix());
+        let our_name = unwrap!(node.inner.our_name());
+        // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
+        // Is this a problem?
+        for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
+            let our_view_section_members = node.inner.section_members(prefix);
+
+            if let Some(&(ref their_name, ref their_view_section_members)) = sections.get(prefix) {
+                assert_eq!(
+                    &our_view_section_members,
+                    their_view_section_members,
+                    "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
+                     {:?}: {:?},\n{:?}: {:?}",
+                    prefix,
+                    our_name,
+                    their_name,
+                    our_name,
+                    our_view_section_members,
+                    their_name,
+                    their_view_section_members,
+                );
+                // NOTE: previous version of this also included an assertion that the section
+                // versions are the same. Removed since we don't expose the section version in the
+                // `Node` public API.
+                // Should we?
+                continue;
+            }
+            let _ = sections.insert(*prefix, (*our_name, our_view_section_members));
+        }
+    }
+
+    // check that prefixes are disjoint
+    for prefix1 in sections.keys() {
+        for prefix2 in sections.keys() {
+            if prefix1 == prefix2 {
+                continue;
+            }
+            if prefix1.is_compatible(prefix2) {
+                panic!(
+                    "Section prefixes should be disjoint, but these are not:\n\
+                     Section {:?}, according to node {:?}: {:?}\n\
+                     Section {:?}, according to node {:?}: {:?}",
+                    prefix1,
+                    sections[prefix1].0,
+                    sections[prefix1].1,
+                    prefix2,
+                    sections[prefix2].0,
+                    sections[prefix2].1
+                );
+            }
+        }
+    }
+
+    // check that each section contains names agreeing with its prefix
+    for (prefix, (_, ref members)) in &sections {
+        for name in members {
+            if !prefix.matches(name) {
+                panic!(
+                    "Section members should match the prefix, but {:?} \
+                     does not match {:?}",
+                    name, prefix
+                );
+            }
+        }
+    }
+
+    // check that sections cover the whole namespace
+    assert!(Prefix::default().is_covered_by(sections.keys()));
 }
 
 pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode]) {
     let min_section_size = network.min_section_size();
-    verify_individual_chains(nodes, min_section_size);
-    verify_chain_invariant(nodes.iter().map(TestNode::chain), min_section_size);
+    verify_section_invariants_for_nodes(nodes, min_section_size);
+    verify_section_invariants_between_nodes(nodes);
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {

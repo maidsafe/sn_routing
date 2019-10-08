@@ -264,9 +264,15 @@ impl Node {
 
     /// Returns the prefixes of all out neighbours.
     pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.chain()
-            .map(|chain| chain.other_prefixes())
-            .unwrap_or_default()
+        if let Some(chain) = self.chain() {
+            chain
+                .neighbour_infos()
+                .map(|info| info.prefix())
+                .cloned()
+                .collect()
+        } else {
+            Default::default()
+        }
     }
 
     /// Returns the members of a section with the given prefix.

@@ -163,8 +163,6 @@ pub const ELDER_SIZE: usize = 7;
 
 #[cfg(feature = "mock_base")]
 use crate::mock::quic_p2p;
-#[cfg(any(test, feature = "mock_base"))]
-pub use crate::routing_table::verify_network_invariant;
 pub use crate::{
     chain::Chain,
     error::{InterfaceError, RoutingError},
@@ -183,7 +181,7 @@ pub use crate::{
 pub use crate::{
     chain::{
         bls_key_set_from_elders_info, delivery_group_size, elders_info_for_test,
-        section_proof_chain_from_elders_info, verify_chain_invariant,
+        section_proof_chain_from_elders_info,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     peer_manager::test_consts,
