@@ -9,7 +9,7 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersInfo, Proof, ProofSet, SectionKeyInfo,
+        AccumulatingEvent, Chain, EldersChange, EldersInfo, Proof, ProofSet, SectionKeyInfo,
         SendAckMessagePayload,
     },
     error::RoutingError,
@@ -70,6 +70,7 @@ pub trait Approved: Base {
         &mut self,
         elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
+        neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -219,7 +220,7 @@ pub trait Approved: Base {
 
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut our_pfx = *self.chain_mut().our_prefix();
-        while let Some(event) = self.chain_mut().poll()? {
+        while let Some((event, neighbour_change)) = self.chain_mut().poll()? {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
@@ -238,7 +239,12 @@ pub trait Approved: Base {
                 AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
                 AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
                 AccumulatingEvent::SectionInfo(elders_info) => {
-                    match self.handle_section_info_event(elders_info, our_pfx, outbox)? {
+                    match self.handle_section_info_event(
+                        elders_info,
+                        our_pfx,
+                        neighbour_change,
+                        outbox,
+                    )? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }

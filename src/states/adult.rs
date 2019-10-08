@@ -12,7 +12,9 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload},
+    chain::{
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload,
+    },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -452,6 +454,7 @@ impl Approved for Adult {
         &mut self,
         elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
+        _neighbour_change: EldersChange,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if self.chain.is_self_elder() {

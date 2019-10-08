@@ -213,7 +213,7 @@ impl Chain {
     ///
     /// If the event is a `EldersInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll(&mut self) -> Result<Option<AccumulatingEvent>, RoutingError> {
+    pub fn poll(&mut self) -> Result<Option<(AccumulatingEvent, EldersChange)>, RoutingError> {
         let (event, proofs) = {
             let opt_event = self
                 .chain_accumulator
@@ -232,12 +232,28 @@ impl Chain {
 
         match event {
             AccumulatingEvent::SectionInfo(ref info) => {
+                let old_neighbours: BTreeSet<_> = self.neighbour_elders().copied().collect();
                 self.add_elders_info(info.clone(), proofs)?;
+                let new_neighbours: BTreeSet<_> = self.neighbour_elders().copied().collect();
+
                 if let Some((ref cached_info, _)) = self.state.split_cache {
                     if cached_info == info {
                         return Ok(None);
                     }
                 }
+
+                let neighbour_change = EldersChange {
+                    added: new_neighbours
+                        .difference(&old_neighbours)
+                        .copied()
+                        .collect(),
+                    removed: old_neighbours
+                        .difference(&new_neighbours)
+                        .copied()
+                        .collect(),
+                };
+
+                return Ok(Some((event, neighbour_change)));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
                 self.update_their_keys(key_info);
@@ -275,7 +291,8 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
-        Ok(Some(event))
+
+        Ok(Some((event, EldersChange::default())))
     }
 
     /// Adds a member to our section.
@@ -1312,6 +1329,15 @@ impl Chain {
     pub fn validate_our_history(&self) -> bool {
         self.state.our_history.validate()
     }
+}
+
+// Change to section elders.
+#[derive(Default)]
+pub struct EldersChange {
+    // Peers that became elders.
+    pub added: BTreeSet<PublicId>,
+    // Peers that ceased to be elders.
+    pub removed: BTreeSet<PublicId>,
 }
 
 #[cfg(test)]

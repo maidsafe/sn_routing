@@ -14,7 +14,7 @@ use super::common::{Approved, Base};
 use crate::messages::Message;
 use crate::{
     chain::{
-        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersInfo,
+        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
@@ -44,7 +44,6 @@ use crate::{
 };
 use itertools::Itertools;
 use log::LogLevel;
-use lru_time_cache::LruCache;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -57,7 +56,6 @@ use std::{
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
-const JOINING_PEERS_EXPIRY_DURATION: Duration = Duration::from_secs(120);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -94,10 +92,6 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
-    // Set of peers that are currently trying to join our section. They are kept here to prevent us
-    // from accidentally disconnecting from them in `update_neighbour_connections`.
-    // TODO: find a way to not need this (by tracking removed/demoted neighbour elders).
-    joining_peers: LruCache<PublicId, ()>,
 }
 
 impl Elder {
@@ -213,7 +207,6 @@ impl Elder {
             gossip_timer_token,
             chain: details.chain,
             pfx_is_successfully_polled: false,
-            joining_peers: LruCache::with_expiry_duration(JOINING_PEERS_EXPIRY_DURATION),
         }
     }
 
@@ -259,7 +252,11 @@ impl Elder {
         }
 
         // Handle the SectionInfo event which triggered us becoming established node.
-        let _ = self.handle_section_info_event(elders_info, old_pfx, outbox)?;
+        let neighbour_change = EldersChange {
+            added: self.chain.neighbour_elders().copied().collect(),
+            removed: Default::default(),
+        };
+        let _ = self.handle_section_info_event(elders_info, old_pfx, neighbour_change, outbox)?;
 
         Ok(())
     }
@@ -305,30 +302,14 @@ impl Elder {
 
     // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
     // longer members of our section or elders of neighbour sections.
-    fn update_neighbour_connections(&mut self, outbox: &mut dyn EventBox) {
+    fn update_neighbour_connections(&mut self, change: EldersChange, outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
-            let peers_to_disconnect: Vec<_> = self
-                .peer_map
-                .connected_ids()
-                .filter(|pub_id| {
-                    !self.chain.is_peer_our_member(pub_id)
-                        && !self.chain.is_peer_neighbour_elder(pub_id)
-                        && !self.joining_peers.contains_key(pub_id)
-                })
-                .copied()
-                .collect();
-            for pub_id in peers_to_disconnect {
+            for pub_id in change.removed {
                 self.disconnect(&pub_id);
             }
         }
 
-        let peers_to_connect: Vec<_> = self
-            .chain
-            .neighbour_elders()
-            .filter(|pub_id| !self.peer_map.has(pub_id))
-            .copied()
-            .collect();
-        for pub_id in peers_to_connect {
+        for pub_id in change.added {
             let src = Authority::Node(*self.name());
             let dst = Authority::Node(*pub_id.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
@@ -726,7 +707,6 @@ impl Elder {
             return;
         }
 
-        let _ = self.joining_peers.insert(pub_id, ());
         self.vote_for_event(AccumulatingEvent::Online(pub_id));
     }
 
@@ -1298,7 +1278,6 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - handle Online: {}.", self, pub_id);
 
-        let _ = self.joining_peers.remove(&pub_id);
         self.chain.add_member(pub_id);
         self.handle_candidate_approval(pub_id, outbox);
 
@@ -1334,6 +1313,7 @@ impl Approved for Elder {
         &mut self,
         elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
+        neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if elders_info.prefix().is_extension_of(&old_pfx) {
@@ -1352,7 +1332,7 @@ impl Approved for Elder {
 
         let self_sec_update = elders_info.prefix().matches(self.name());
 
-        self.update_neighbour_connections(outbox);
+        self.update_neighbour_connections(neighbour_change, outbox);
 
         if self_sec_update {
             // Vote to update our self messages proof
