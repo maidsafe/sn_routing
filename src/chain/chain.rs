@@ -531,7 +531,7 @@ impl Chain {
 
     /// Returns elders from our own section, including ourselves.
     pub fn our_elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.state.our_info().members().into_iter()
+        self.state.our_info().members().iter()
     }
 
     /// Returns all neighbour elders.
