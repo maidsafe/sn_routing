@@ -7,8 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::routing_table::Error as RoutingTableError;
-use crate::{action::Action, event::Event, id::PublicId, quic_p2p, types::MessageId};
-use config_file_handler::Error as ConfigFileHandlerError;
+use crate::{action::Action, event::Event, id::PublicId, quic_p2p};
 use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
 use quick_error::quick_error;
@@ -65,42 +64,18 @@ impl From<mpmc::SendError<Action>> for InterfaceError {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum RoutingError {
-    /// The node/client has not bootstrapped yet
-    NotBootstrapped,
     /// Invalid State
     Terminated,
     /// Invalid requester or handler authorities
     BadAuthority,
-    /// Failure to connect to an already connected node
-    AlreadyConnected,
-    /// Failure to connect to a group in handling a joining request
-    AlreadyHandlingJoinRequest,
-    /// Received message having unknown type
-    UnknownMessageType,
     /// Failed signature check
     FailedSignature,
-    /// Not Enough signatures
-    NotEnoughSignatures,
-    /// Duplicate signatures
-    DuplicateSignatures,
-    /// The list of owner keys is invalid
-    InvalidOwners,
     /// Duplicate request received
     FilterCheckFailed,
-    /// Failure to bootstrap off the provided endpoints
-    FailedToBootstrap,
-    /// Node's new name doesn't fall within the specified target address range.
-    InvalidRelocationTargetRange,
-    /// A client with `client_restriction == true` tried to send a message restricted to nodes.
-    RejectedClientMessage,
     /// Routing Table error
     RoutingTable(RoutingTableError),
-    /// String errors
-    Utf8(::std::str::Utf8Error),
     /// Interface error
     Interface(InterfaceError),
-    /// i/o error
-    Io(::std::io::Error),
     /// Network layer error
     Network(quic_p2p::Error),
     /// Channel sending error
@@ -113,35 +88,10 @@ pub enum RoutingError {
     UnknownConnection(PublicId),
     /// Invalid Destination
     InvalidDestination,
-    /// Connection to proxy node does not exist in proxy map
-    ProxyConnectionNotFound,
-    /// Connection to client does not exist in client map
-    ClientConnectionNotFound,
     /// Invalid Source
     InvalidSource,
-    /// Decoded a user message with an unexpected hash.
-    HashMismatch,
-    /// Version check has failed
-    InvalidSuccessor,
-    /// Candidate is unknown
-    UnknownCandidate,
-    /// Operation timed out
-    TimedOut,
-    /// Failed validation of resource proof
-    FailedResourceProofValidation,
     /// Content of a received message is inconsistent.
     InvalidMessage,
-    /// Invalid Peer
-    InvalidPeer,
-    /// The client's message indicated by the included message id has been rejected by the
-    /// rate-limiter.
-    ExceedsRateLimit(MessageId),
-    /// Invalid configuration
-    ConfigError(ConfigFileHandlerError),
-    /// Invalid chain
-    Chain,
-    /// We received a signed message with a previous hop's section info that we don't know.
-    UnknownPrevHop,
     /// A signed message's chain of proving sections is invalid.
     InvalidProvingSection,
     /// A signed message could not be trusted
@@ -153,18 +103,6 @@ pub enum RoutingError {
 impl From<RoutingTableError> for RoutingError {
     fn from(error: RoutingTableError) -> RoutingError {
         RoutingError::RoutingTable(error)
-    }
-}
-
-impl From<::std::str::Utf8Error> for RoutingError {
-    fn from(error: ::std::str::Utf8Error) -> RoutingError {
-        RoutingError::Utf8(error)
-    }
-}
-
-impl From<::std::io::Error> for RoutingError {
-    fn from(error: ::std::io::Error) -> RoutingError {
-        RoutingError::Io(error)
     }
 }
 
@@ -192,27 +130,16 @@ impl From<serialisation::SerialisationError> for RoutingError {
     }
 }
 
-impl From<ConfigFileHandlerError> for RoutingError {
-    fn from(error: ConfigFileHandlerError) -> RoutingError {
-        RoutingError::ConfigError(error)
-    }
-}
-
 quick_error! {
     #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     pub enum BootstrapResponseError {
         NotApproved {
-            description("Proxy not approved yet")
-            display("The chosen proxy node has not yet been approved by the network.")
+            description("Bootstrap node not approved yet")
+            display("The chosen bootstrap node has not yet been approved by the network.")
         }
         TooFewPeers {
-            description("Proxy has too few peers")
-            display("The chosen proxy node has too few connections to peers.")
-        }
-        ClientLimit {
-            description("Proxy has max. clients")
-            display("The chosen proxy node already has connections to the maximum number of \
-                     clients allowed per proxy.")
+            description("Bootstrap node has too few peers")
+            display("The chosen bootstrap node has too few connections to peers.")
         }
     }
 }
