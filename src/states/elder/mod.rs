@@ -44,6 +44,7 @@ use crate::{
 };
 use itertools::Itertools;
 use log::LogLevel;
+use lru_time_cache::LruCache;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -56,6 +57,7 @@ use std::{
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+const JOINING_PEERS_EXPIRY_DURATION: Duration = Duration::from_secs(120);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -92,6 +94,10 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
+    // Set of peers that are currently trying to join our section. They are kept here to prevent us
+    // from accidentally disconnecting from them in `update_neighbour_connections`.
+    // TODO: find a way to not need this (by tracking removed/demoted neighbour elders).
+    joining_peers: LruCache<PublicId, ()>,
 }
 
 impl Elder {
@@ -207,6 +213,7 @@ impl Elder {
             gossip_timer_token,
             chain: details.chain,
             pfx_is_successfully_polled: false,
+            joining_peers: LruCache::with_expiry_duration(JOINING_PEERS_EXPIRY_DURATION),
         }
     }
 
@@ -216,7 +223,7 @@ impl Elder {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
                 self,
-                self.chain.elders().len()
+                self.chain.elders().count()
             );
             let network_estimate = match self.chain.network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
@@ -298,7 +305,7 @@ impl Elder {
 
     // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
     // longer members of our section or elders of neighbour sections.
-    fn update_peer_states(&mut self, outbox: &mut dyn EventBox) {
+    fn update_neighbour_connections(&mut self, outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
             let peers_to_disconnect: Vec<_> = self
                 .peer_map
@@ -306,6 +313,7 @@ impl Elder {
                 .filter(|pub_id| {
                     !self.chain.is_peer_our_member(pub_id)
                         && !self.chain.is_peer_neighbour_elder(pub_id)
+                        && !self.joining_peers.contains_key(pub_id)
                 })
                 .copied()
                 .collect();
@@ -413,33 +421,6 @@ impl Elder {
         });
     }
 
-    /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
-    fn check_direct_message_sender(
-        &self,
-        msg: &DirectMessage,
-        pub_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        let valid = match msg {
-            DirectMessage::BootstrapRequest | DirectMessage::JoinRequest => {
-                !self.chain.is_peer_our_member(pub_id)
-            }
-            DirectMessage::ParsecPoke(..)
-            | DirectMessage::ParsecRequest(..)
-            | DirectMessage::ParsecResponse(..) => self.chain.is_peer_our_member(pub_id),
-            _ => self.chain.is_peer_elder(pub_id),
-        };
-
-        if valid {
-            Ok(())
-        } else {
-            debug!(
-                "{} Illegitimate direct message {:?} from {}.",
-                self, msg, pub_id
-            );
-            Err(RoutingError::InvalidStateForOperation)
-        }
-    }
-
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
     /// message, handles it.
     fn handle_message_signature(
@@ -449,10 +430,10 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {
             debug!(
-                "{} Received message signature from unknown peer {}",
+                "{} - Received message signature from invalid peer {}",
                 self, pub_id
             );
-            return Err(RoutingError::UnknownConnection(pub_id));
+            return Err(RoutingError::InvalidSource);
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
@@ -646,6 +627,8 @@ impl Elder {
 
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+        debug!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
+
         if !self.peer_map.has(&pub_id) {
             log_or_panic!(
                 LogLevel::Error,
@@ -654,7 +637,13 @@ impl Elder {
             return Err(RoutingError::UnknownConnection(pub_id));
         };
 
-        debug!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
+        if self.chain.is_peer_our_member(&pub_id) {
+            debug!(
+                "{} - Ignoring BootstrapRequest from {} - already member of our section",
+                self, pub_id
+            );
+            return Ok(());
+        }
 
         // Check min section size.
         if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
@@ -688,7 +677,13 @@ impl Elder {
                 .collect()
         };
         let response = if self.our_prefix().matches(pub_id.name()) {
-            let mut node_infos: Vec<_> = get_node_infos(self.chain.our_section());
+            let mut node_infos: Vec<_> = get_node_infos(
+                self.chain
+                    .our_elders()
+                    .map(PublicId::name)
+                    .copied()
+                    .collect(),
+            );
             if let Ok(our_info) = self.our_connection_info() {
                 node_infos.push(our_info);
             }
@@ -712,6 +707,26 @@ impl Elder {
 
     fn handle_join_request(&mut self, pub_id: PublicId) {
         debug!("{} - Received JoinRequest from {}", self, pub_id);
+
+        if !self.chain.our_prefix().matches(pub_id.name()) {
+            debug!(
+                "{} - Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
+                self,
+                pub_id,
+                self.chain.our_prefix()
+            );
+            return;
+        }
+
+        if self.chain.is_peer_our_member(&pub_id) {
+            debug!(
+                "{} - Ignoring JoinRequest from {} - already member of our section.",
+                self, pub_id
+            );
+            return;
+        }
+
+        let _ = self.joining_peers.insert(pub_id, ());
         self.vote_for_event(AccumulatingEvent::Online(pub_id));
     }
 
@@ -845,7 +860,6 @@ impl Elder {
             .collect();
 
         let message = self.to_hop_message(signed_msg.clone())?;
-
         self.send_message_to_targets(&targets, dg_size, message);
 
         // we've seen this message - don't handle it again if someone else sends it to us
@@ -863,8 +877,9 @@ impl Elder {
         let list: Vec<XorName> = match *src {
             Authority::Section(_) => self
                 .chain
-                .our_section()
-                .into_iter()
+                .our_elders()
+                .map(PublicId::name)
+                .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
             // FIXME: This does not include recently accepted peers which would affect quorum
             // calculation. This even when going via RT would have only allowed route-0 to succeed
@@ -899,13 +914,8 @@ impl Elder {
         // TODO: even if having chain reply based on connected_state,
         // we remove self in targets info and can do same by not
         // chaining us to conn_peer list here?
-        let conn_peers = self
-            .peer_map()
-            .connected_ids()
-            .map(|pub_id| pub_id.name())
-            .chain(iter::once(self.name()))
-            .collect_vec();
-        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
+        let conn_peers = self.connected_peers();
+        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;;
         Ok((
             targets
                 .into_iter()
@@ -1079,8 +1089,6 @@ impl Base for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        self.check_direct_message_sender(&msg, &pub_id)?;
-
         use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
@@ -1290,6 +1298,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - handle Online: {}.", self, pub_id);
 
+        let _ = self.joining_peers.remove(&pub_id);
         self.chain.add_member(pub_id);
         self.handle_candidate_approval(pub_id, outbox);
 
@@ -1343,7 +1352,7 @@ impl Approved for Elder {
 
         let self_sec_update = elders_info.prefix().matches(self.name());
 
-        self.update_peer_states(outbox);
+        self.update_neighbour_connections(outbox);
 
         if self_sec_update {
             // Vote to update our self messages proof

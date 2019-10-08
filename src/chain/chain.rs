@@ -482,18 +482,17 @@ impl Chain {
             .unwrap_or(false)
     }
 
-    /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
-    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
-        self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
-    }
-
     /// Returns a set of elders we should be connected to.
-    pub fn elders(&self) -> BTreeSet<&PublicId> {
+    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
             .flat_map(EldersInfo::members)
             .chain(self.state.new_info.members())
-            .collect()
+    }
+
+    /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
+    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+        self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
     }
 
     /// Returns whether we are elder in our section.
@@ -511,6 +510,11 @@ impl Chain {
     pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
         self.neighbour_infos()
             .any(|info| info.members().contains(pub_id))
+    }
+
+    /// Returns elders from our own section, including ourselves.
+    pub fn our_elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.state.our_info().members().into_iter()
     }
 
     /// Returns all neighbour elders.
@@ -1176,11 +1180,6 @@ impl Chain {
         Ok((best_section, dg_size))
     }
 
-    /// Returns our own section, including our own name.
-    pub fn our_section(&self) -> BTreeSet<XorName> {
-        self.state.our_info().member_names()
-    }
-
     /// Returns whether we are a part of the given authority.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *auth {
@@ -1217,7 +1216,7 @@ impl Chain {
             .sum();
 
         // Total size estimate = known_nodes / network_fraction
-        let network_size = self.elders().len() as f64 / network_fraction;
+        let network_size = self.elders().count() as f64 / network_fraction;
 
         (network_size.ceil() as u64, is_exact)
     }

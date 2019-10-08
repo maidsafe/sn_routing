@@ -775,11 +775,11 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
         // Confirm elders from chain are connected according to PeerMgr
-        let mut peers = node.chain().elders();
         let our_id = node.chain().our_id();
-        let _ = peers.remove(&our_id);
-        let missing_peers = peers
-            .iter()
+        let missing_peers = node
+            .chain()
+            .elders()
+            .filter(|pub_id| *pub_id != our_id)
             .filter(|pub_id| !node.inner.is_connected(pub_id))
             .cloned()
             .collect_vec();

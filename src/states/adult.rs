@@ -199,7 +199,8 @@ impl Adult {
             .latest_info
             .members()
             .iter()
-            .cloned()
+            .filter(|pub_id| self.peer_map.has(pub_id))
+            .copied()
             .collect_vec();
 
         for recipient in recipients {
@@ -365,6 +366,7 @@ impl Base for Adult {
         // We should only be connected to our own Elders - send to all of them
         // Need to collect IDs first so that self is not borrowed via the iterator
         let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
+
         for pub_id in target_ids {
             if self
                 .routing_msg_filter
@@ -409,7 +411,14 @@ impl Approved for Adult {
         info!("{} - Added elder {}.", self, pub_id);
         let _ = self.chain.add_elder(pub_id)?;
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        Ok(())
+
+        // As Adult, we only connect to the elders in our section.
+        self.send_connection_request(
+            pub_id,
+            Authority::Node(*self.name()),
+            Authority::Node(*pub_id.name()),
+            outbox,
+        )
     }
 
     fn handle_remove_elder_event(
@@ -419,27 +428,23 @@ impl Approved for Adult {
     ) -> Result<(), RoutingError> {
         info!("{} - Removed elder {}.", self, pub_id);
         let _ = self.chain.remove_elder(pub_id)?;
+        self.disconnect(&pub_id);
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
         Ok(())
     }
 
     fn handle_online_event(
         &mut self,
         pub_id: PublicId,
-        outbox: &mut dyn EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         self.chain.add_member(pub_id);
-        self.send_connection_request(
-            pub_id,
-            Authority::Node(*self.name()),
-            Authority::Node(*pub_id.name()),
-            outbox,
-        )
+        Ok(())
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
         self.chain.remove_member(&pub_id);
-        self.disconnect(&pub_id);
         Ok(())
     }
 

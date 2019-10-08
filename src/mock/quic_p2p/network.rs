@@ -42,7 +42,7 @@ impl Network {
             SeededRng::new()
         };
 
-        PRINT_SEED.call_once(|| println!("{:?}", rng));
+        PRINT_SEED.call_once(|| eprintln!("{:?}", rng));
 
         #[cfg(feature = "mock_parsec")]
         parsec::init_mock();
