@@ -448,13 +448,33 @@ fn check_section_info_ack() {
 
 #[test]
 fn vote_prune() {
-    // Create a network with a single large section, this is will trigger parsec pruning
-    let min_section_size = 3;
-    let network = Network::new(min_section_size, None);
-    let nodes = create_connected_nodes(&network, 10 * min_section_size);
+    // Create a small network to keep all nodes in a single section. Then repeatedly add and remove
+    // nodes (while making sure no split happens) to cause lot of parsec traffic which should make
+    // the parsec graphs to grow sufficiently so prune is triggered and accumulated.
+
+    let max_section_size = 2 * MIN_SECTION_SIZE;
+    let steps = 10;
+
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, max_section_size);
+
+    for _ in 0..steps {
+        if nodes.len() < max_section_size {
+            // Add node
+            let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+            let node = TestNode::builder(&network).network_config(config).create();
+            nodes.push(node);
+        } else {
+            // Remove node
+            let _ = nodes.pop();
+        }
+
+        poll_and_resend(&mut nodes);
+    }
+
     assert!(nodes
         .iter()
-        .any(|node| node.chain().parsec_prune_accumulated() > 0));
+        .all(|node| node.chain().parsec_prune_accumulated() > 0));
 }
 
 #[test]
