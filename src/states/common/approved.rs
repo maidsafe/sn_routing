@@ -18,11 +18,11 @@ use crate::{
     messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
-    quic_p2p::NodeInfo,
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     types::MessageId,
     xor_name::XorName,
+    ConnectionInfo,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
@@ -329,7 +329,7 @@ pub trait Approved: Base {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let their_conn_info: NodeInfo = deserialise(encrypted_their_conn_info)?;
+        let their_conn_info: ConnectionInfo = deserialise(encrypted_their_conn_info)?;
 
         debug!(
             "{} - Received connection request from {:?}.",

@@ -18,13 +18,12 @@ use crate::{
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
     timer::Timer,
     xor_name::XorName,
-    NetworkService,
+    ConnectionInfo, NetworkService,
 };
 use std::{
     fmt::{self, Display, Formatter},
@@ -53,7 +52,7 @@ impl JoiningPeer {
         min_section_size: usize,
         timer: Timer,
         peer_map: PeerMap,
-        node_infos: Vec<NodeInfo>,
+        conn_infos: Vec<ConnectionInfo>,
     ) -> Self {
         let join_token = timer.schedule(JOIN_TIMEOUT);
 
@@ -68,8 +67,8 @@ impl JoiningPeer {
             join_token,
         };
 
-        for node_info in node_infos {
-            joining_peer.send_join_request(node_info);
+        for conn_info in conn_infos {
+            joining_peer.send_join_request(conn_info);
         }
         joining_peer
     }
@@ -102,7 +101,7 @@ impl JoiningPeer {
         )))
     }
 
-    fn send_join_request(&mut self, dst: NodeInfo) {
+    fn send_join_request(&mut self, dst: ConnectionInfo) {
         info!("{} Sending JoinRequest to {:?}.", self, dst);
 
         let message = if let Ok(message) = self.to_signed_direct_message(DirectMessage::JoinRequest)

@@ -22,7 +22,7 @@ use crate::{
     NetworkConfig, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{quic_p2p::NodeInfo, utils::XorTargetInterval, Chain, Prefix};
+use crate::{utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
 use crossbeam_channel as mpmc;
 use std::sync::mpsc;
 #[cfg(feature = "mock_base")]
@@ -318,7 +318,7 @@ impl Node {
     }
 
     /// Returns connection info of this node.
-    pub fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         self.machine.current_mut().our_connection_info()
     }
 }

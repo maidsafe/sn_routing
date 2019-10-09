@@ -14,13 +14,12 @@ use crate::{
     messages::{BootstrapResponse, DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::NodeInfo,
     routing_table::Authority,
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
     xor_name::XorName,
-    NetworkService,
+    ConnectionInfo, NetworkService,
 };
 use log::LogLevel;
 use std::{
@@ -36,7 +35,7 @@ pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 // State of Client or Node while bootstrapping.
 pub struct BootstrappingPeer {
     nodes_to_await: HashSet<SocketAddr>,
-    bootstrap_connection: Option<(NodeInfo, u64)>,
+    bootstrap_connection: Option<(ConnectionInfo, u64)>,
     network_service: NetworkService,
     full_id: FullId,
     min_section_size: usize,
@@ -66,7 +65,7 @@ impl BootstrappingPeer {
 
     pub fn into_joining(
         self,
-        node_infos: Vec<NodeInfo>,
+        conn_infos: Vec<ConnectionInfo>,
         _outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         Ok(State::JoiningPeer(JoiningPeer::new(
@@ -75,11 +74,11 @@ impl BootstrappingPeer {
             self.min_section_size,
             self.timer,
             self.peer_map,
-            node_infos,
+            conn_infos,
         )))
     }
 
-    fn send_bootstrap_request(&mut self, dst: NodeInfo) {
+    fn send_bootstrap_request(&mut self, dst: ConnectionInfo) {
         debug!("{} Sending BootstrapRequest to {}.", self, dst.peer_addr);
 
         let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
@@ -97,39 +96,39 @@ impl BootstrappingPeer {
         self.send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
-    fn reconnect_to_new_section(&mut self, new_node_infos: Vec<NodeInfo>) {
-        if let Some((node_info, _)) = self.bootstrap_connection.take() {
+    fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
+        if let Some((conn_info, _)) = self.bootstrap_connection.take() {
             debug!(
                 "{} Dropping connected node at {} and retrying.",
-                self, node_info.peer_addr
+                self, conn_info.peer_addr
             );
 
             // drop the current connection
             self.network_service
                 .service_mut()
-                .disconnect_from(node_info.peer_addr);
+                .disconnect_from(conn_info.peer_addr);
         }
 
-        self.nodes_to_await = new_node_infos
+        self.nodes_to_await = new_conn_infos
             .iter()
-            .map(|node_info| node_info.peer_addr)
+            .map(|conn_info| conn_info.peer_addr)
             .collect();
 
-        for node_info in new_node_infos {
-            self.network_service.service_mut().connect_to(node_info);
+        for conn_info in new_conn_infos {
+            self.network_service.service_mut().connect_to(conn_info);
         }
     }
 
     fn disconnect_from_bootstrap_proxy(&mut self) {
-        if let Some((node_info, _)) = self.bootstrap_connection.take() {
+        if let Some((conn_info, _)) = self.bootstrap_connection.take() {
             debug!(
                 "{} Dropping bootstrap node at {} and retrying.",
-                self, node_info.peer_addr
+                self, conn_info.peer_addr
             );
 
             self.network_service
                 .service_mut()
-                .disconnect_from(node_info.peer_addr);
+                .disconnect_from(conn_info.peer_addr);
         }
     }
 
@@ -192,11 +191,11 @@ impl Base for BootstrappingPeer {
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if let Some((node_info, bootstrap_token)) = self.bootstrap_connection.as_ref() {
+        if let Some((conn_info, bootstrap_token)) = self.bootstrap_connection.as_ref() {
             if *bootstrap_token == token {
                 debug!(
                     "{} - Timeout when trying to bootstrap against {}.",
-                    self, node_info.peer_addr
+                    self, conn_info.peer_addr
                 );
 
                 self.disconnect_from_bootstrap_proxy();
@@ -208,17 +207,17 @@ impl Base for BootstrappingPeer {
         Transition::Stay
     }
 
-    fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
-        self.peer_map_mut().connect(node_info.clone());
+    fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
+        self.peer_map_mut().connect(conn_info.clone());
 
         if self.bootstrap_connection.is_none() {
             debug!(
                 "{} Received BootstrappedTo event from {}.",
-                self, node_info.peer_addr
+                self, conn_info.peer_addr
             );
 
             // Established connection. Pending Validity checks
-            self.send_bootstrap_request(node_info);
+            self.send_bootstrap_request(conn_info);
         } else {
             warn!("{} Received more than one BootstrappedTo event", self);
         }
@@ -234,7 +233,7 @@ impl Base for BootstrappingPeer {
 
     fn handle_connected_to(
         &mut self,
-        conn_info: NodeInfo,
+        conn_info: ConnectionInfo,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
         let _ = self.nodes_to_await.remove(&conn_info.peer_addr);
@@ -264,8 +263,8 @@ impl Base for BootstrappingPeer {
         let _ = self.nodes_to_await.remove(&peer_addr);
         let _ = self.peer_map_mut().disconnect(peer_addr);
 
-        if let Some((node_info, _)) = self.bootstrap_connection.as_ref() {
-            if node_info.peer_addr == peer_addr {
+        if let Some((conn_info, _)) = self.bootstrap_connection.as_ref() {
+            if conn_info.peer_addr == peer_addr {
                 info!("{} Lost connection to proxy {}.", self, peer_addr);
                 self.disconnect_from_bootstrap_proxy();
                 self.rebootstrap();
@@ -282,16 +281,16 @@ impl Base for BootstrappingPeer {
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join(node_infos)) => {
-                info!("{} - Joining a section: {:?}", self, node_infos);
-                Ok(Transition::IntoJoining { node_infos })
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join(conn_infos)) => {
+                info!("{} - Joining a section: {:?}", self, conn_infos);
+                Ok(Transition::IntoJoining { conn_infos })
             }
-            DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_node_infos)) => {
+            DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(
                     "{} - Bootstrapping redirected to another set of peers: {:?}",
-                    self, new_node_infos
+                    self, new_conn_infos
                 );
-                self.reconnect_to_new_section(new_node_infos);
+                self.reconnect_to_new_section(new_conn_infos);
                 Ok(Transition::Stay)
             }
             _ => {

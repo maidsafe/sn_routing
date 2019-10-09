@@ -48,8 +48,8 @@ impl JoiningNodeInfo {
         self.full_id.public_id()
     }
 
-    fn connection_info(&self) -> NodeInfo {
-        NodeInfo::from(self.addr)
+    fn connection_info(&self) -> ConnectionInfo {
+        ConnectionInfo::from(self.addr)
     }
 }
 
@@ -241,7 +241,7 @@ impl ElderUnderTest {
         Ok(())
     }
 
-    fn handle_connected_to(&mut self, conn_info: NodeInfo) {
+    fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
         match self
             .machine
             .elder_state_mut()
@@ -252,7 +252,7 @@ impl ElderUnderTest {
         }
     }
 
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: NodeInfo) {
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
         let peer_addr = conn_info.peer_addr;
 
         self.handle_connected_to(conn_info);

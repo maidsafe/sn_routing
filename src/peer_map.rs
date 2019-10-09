@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{id::PublicId, quic_p2p::NodeInfo, xor_name::XorName};
+use crate::{id::PublicId, xor_name::XorName, ConnectionInfo};
 use fxhash::FxHashMap;
 use std::net::SocketAddr;
 
@@ -21,7 +21,7 @@ use std::net::SocketAddr;
 ///    public id.
 #[derive(Default)]
 pub struct PeerMap {
-    forward: FxHashMap<XorName, NodeInfo>,
+    forward: FxHashMap<XorName, ConnectionInfo>,
     reverse: FxHashMap<SocketAddr, PublicId>,
     pending: FxHashMap<SocketAddr, PendingConnection>,
 }
@@ -48,7 +48,7 @@ impl PeerMap {
     // TODO: remove this `allow` when https://github.com/rust-lang/rust-clippy/issues/4219
     // is fixed.
     #[allow(clippy::map_entry)]
-    pub fn connect(&mut self, conn_info: NodeInfo) {
+    pub fn connect(&mut self, conn_info: ConnectionInfo) {
         let socket_addr = conn_info.peer_addr;
         if !self.reverse.contains_key(&socket_addr) {
             let _ = self
@@ -84,22 +84,22 @@ impl PeerMap {
     // Inserts a new entry into the peer map. This is equivalent to calling `connect` followed by
     // `identify` and can be used when we obtain both the public id and the connection info at the
     // same time (for example when a third party sends them to us).
-    pub fn insert(&mut self, pub_id: PublicId, node_info: NodeInfo) {
-        let _ = self.pending.remove(&node_info.peer_addr);
-        let _ = self.reverse.insert(node_info.peer_addr, pub_id);
-        let _ = self.forward.insert(*pub_id.name(), node_info);
+    pub fn insert(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
+        let _ = self.pending.remove(&conn_info.peer_addr);
+        let _ = self.reverse.insert(conn_info.peer_addr, pub_id);
+        let _ = self.forward.insert(*pub_id.name(), conn_info);
     }
 
     // Removes the peer. If we were connected to the peer, returns its connection info. Otherwise
     // returns `None`.
-    pub fn remove<N: AsRef<XorName>>(&mut self, name: N) -> Option<NodeInfo> {
+    pub fn remove<N: AsRef<XorName>>(&mut self, name: N) -> Option<ConnectionInfo> {
         let conn_info = self.forward.remove(name.as_ref())?;
         let _ = self.reverse.remove(&conn_info.peer_addr);
         Some(conn_info)
     }
 
     // Removes all peers. Returns an iterator over the connection infos of the removed peers.
-    pub fn remove_all<'a>(&'a mut self) -> impl Iterator<Item = NodeInfo> + 'a {
+    pub fn remove_all<'a>(&'a mut self) -> impl Iterator<Item = ConnectionInfo> + 'a {
         self.reverse.clear();
         self.forward.drain().map(|(_, conn_info)| conn_info).chain(
             self.pending
@@ -109,7 +109,7 @@ impl PeerMap {
     }
 
     // Get connection info of the peer with the given public id.
-    pub fn get_connection_info<N: AsRef<XorName>>(&self, name: N) -> Option<&NodeInfo> {
+    pub fn get_connection_info<N: AsRef<XorName>>(&self, name: N) -> Option<&ConnectionInfo> {
         self.forward.get(name.as_ref())
     }
 
@@ -135,8 +135,8 @@ struct PendingConnection {
     peer_cert_der: Vec<u8>,
 }
 
-impl From<NodeInfo> for PendingConnection {
-    fn from(conn_info: NodeInfo) -> Self {
+impl From<ConnectionInfo> for PendingConnection {
+    fn from(conn_info: ConnectionInfo) -> Self {
         Self {
             peer_cert_der: conn_info.peer_cert_der,
         }
@@ -144,8 +144,8 @@ impl From<NodeInfo> for PendingConnection {
 }
 
 impl PendingConnection {
-    fn into_connection_info(self, peer_addr: SocketAddr) -> NodeInfo {
-        NodeInfo {
+    fn into_connection_info(self, peer_addr: SocketAddr) -> ConnectionInfo {
+        ConnectionInfo {
             peer_addr,
             peer_cert_der: self.peer_cert_der,
         }
@@ -189,9 +189,9 @@ mod tests {
         assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
     }
 
-    fn connection_info(addr: &str) -> NodeInfo {
+    fn connection_info(addr: &str) -> ConnectionInfo {
         let peer_addr: SocketAddr = unwrap!(addr.parse());
-        NodeInfo {
+        ConnectionInfo {
             peer_addr,
             peer_cert_der: vec![],
         }

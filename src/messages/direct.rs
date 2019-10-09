@@ -11,8 +11,7 @@ use crate::{
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
     messages::SignedRoutingMessage,
-    parsec,
-    quic_p2p::NodeInfo,
+    parsec, ConnectionInfo,
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::{
@@ -56,10 +55,10 @@ pub enum DirectMessage {
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
     /// the Elders of the section are provided.
-    Join(Vec<NodeInfo>),
+    Join(Vec<ConnectionInfo>),
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
-    Rebootstrap(Vec<NodeInfo>),
+    Rebootstrap(Vec<ConnectionInfo>),
     /// An error has occurred
     Error(BootstrapResponseError),
 }

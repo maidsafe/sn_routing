@@ -16,13 +16,13 @@ use crate::{
     },
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::{NodeInfo, Peer, Token},
+    quic_p2p::{Peer, Token},
     routing_table::Authority,
     state_machine::Transition,
     timer::Timer,
     utils::LogIdent,
     xor_name::XorName,
-    NetworkBytes, NetworkEvent, NetworkService,
+    ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
@@ -154,7 +154,7 @@ pub trait Base: Display {
         }
     }
 
-    fn handle_bootstrapped_to(&mut self, _node_info: NodeInfo) -> Transition {
+    fn handle_bootstrapped_to(&mut self, _conn_info: ConnectionInfo) -> Transition {
         debug!("{} - Unhandled network event: BootstrappedTo", self);
         Transition::Stay
     }
@@ -166,7 +166,7 @@ pub trait Base: Display {
 
     fn handle_connected_to(
         &mut self,
-        conn_info: NodeInfo,
+        conn_info: ConnectionInfo,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
         self.peer_map_mut().connect(conn_info);
@@ -267,7 +267,7 @@ pub trait Base: Display {
         self.full_id().public_id().name()
     }
 
-    fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+    fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         self.network_service_mut()
             .service_mut()
             .our_connection_info()
@@ -328,7 +328,7 @@ pub trait Base: Display {
 
     fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: Vec<NodeInfo>,
+        conn_infos: Vec<ConnectionInfo>,
         dg_size: usize,
         message: Message,
     ) {

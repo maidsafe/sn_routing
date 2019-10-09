@@ -30,7 +30,6 @@ use crate::{
     parsec::{self, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
     signature_accumulator::SignatureAccumulator,
@@ -39,7 +38,7 @@ use crate::{
     timer::Timer,
     utils::{self, XorTargetInterval},
     xor_name::XorName,
-    BlsPublicKeySet, NetworkService,
+    BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -1020,11 +1019,11 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
+    fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
         // A mature node doesn't need a bootstrap connection
         self.network_service
             .service_mut()
-            .disconnect_from(node_info.peer_addr);
+            .disconnect_from(conn_info.peer_addr);
         Transition::Stay
     }
 

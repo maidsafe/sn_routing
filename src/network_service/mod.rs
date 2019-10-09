@@ -9,9 +9,9 @@
 mod sending_targets_cache;
 
 use crate::{
-    quic_p2p::{Builder, Error, NodeInfo, Peer, Token},
+    quic_p2p::{Builder, Error, Peer, Token},
     utils::LogIdent,
-    NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
+    ConnectionInfo, NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
 };
 use crossbeam_channel::Sender;
 use std::net::SocketAddr;
@@ -42,7 +42,7 @@ impl NetworkService {
 
     pub fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: Vec<NodeInfo>,
+        conn_infos: Vec<ConnectionInfo>,
         dg_size: usize,
         msg: NetworkBytes,
     ) {
@@ -81,7 +81,7 @@ impl NetworkService {
     }
 
     #[cfg(feature = "mock_base")]
-    pub fn our_connection_info(&mut self) -> Result<NodeInfo, Error> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, Error> {
         self.quic_p2p.our_connection_info()
     }
 }
