@@ -168,7 +168,7 @@ impl Adult {
                 dst: Node(_),
             } => {
                 if self.chain.our_prefix().matches(&src_name) {
-                    self.handle_connection_request(&conn_info, pub_id, msg.src, msg.dst, outbox)
+                    self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
                 } else {
                     self.add_message_to_backlog(RoutingMessage {
                         content: ConnectionRequest {

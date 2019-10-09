@@ -25,7 +25,6 @@ use crate::{
     ConnectionInfo,
 };
 use log::LogLevel;
-use maidsafe_utilities::serialisation::{deserialise, serialise};
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -292,9 +291,8 @@ pub trait Approved: Base {
             return Ok(());
         }
 
-        let conn_info = serialise(&self.our_connection_info()?)?;
         let content = MessageContent::ConnectionRequest {
-            conn_info,
+            conn_info: self.our_connection_info()?,
             pub_id: *self.full_id().public_id(),
             msg_id: MessageId::new(),
         };
@@ -313,7 +311,7 @@ pub trait Approved: Base {
 
     fn handle_connection_request(
         &mut self,
-        encrypted_their_conn_info: &[u8],
+        their_conn_info: ConnectionInfo,
         their_pub_id: PublicId,
         src: Authority<XorName>,
         dst: Authority<XorName>,
@@ -328,8 +326,6 @@ pub trait Approved: Base {
             // Connection request not for us.
             return Err(RoutingError::InvalidDestination);
         }
-
-        let their_conn_info: ConnectionInfo = deserialise(encrypted_their_conn_info)?;
 
         debug!(
             "{} - Received connection request from {:?}.",

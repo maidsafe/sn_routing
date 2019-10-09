@@ -503,7 +503,7 @@ impl Elder {
                 },
                 src @ Authority::Node(_),
                 dst @ Authority::Node(_),
-            ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
+            ) => self.handle_connection_request(conn_info, pub_id, src, dst, outbox),
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)
             }
