@@ -123,6 +123,11 @@ pub trait Base: Display {
             ConnectedTo {
                 peer: Peer::Client { peer_addr },
             } => {
+                // NOTE: we can raise the client connection info to the upper layers here if we
+                // decide they need it.
+                // We would also need to store a set of connected client infos so we know whether a
+                // `NewMessage` came from client or node (could be handled by `PeerMap`). If it
+                // came from a client, we would raise it upwards, otherwise we'd handle it ourselves.
                 trace!(
                     "{} - Ignoring connection attempt from a client at {}",
                     self,
