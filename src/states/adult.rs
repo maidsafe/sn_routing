@@ -8,7 +8,7 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base},
+    common::{Approved, Base, GOSSIP_TIMEOUT},
     elder::{Elder, ElderDetails},
 };
 use crate::{
@@ -62,8 +62,8 @@ pub struct Adult {
     msg_backlog: Vec<RoutingMessage>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
-    poke_timer_token: u64,
     add_timer_token: u64,
+    parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
 }
@@ -74,7 +74,7 @@ impl Adult {
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
-        let poke_timer_token = details.timer.schedule(POKE_TIMEOUT);
+        let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
         let add_timer_token = details.timer.schedule(ADD_TIMEOUT);
 
         let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
@@ -95,7 +95,7 @@ impl Adult {
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
-            poke_timer_token,
+            parsec_timer_token,
             add_timer_token,
         };
 
@@ -286,9 +286,14 @@ impl Base for Adult {
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if self.poke_timer_token == token {
-            self.send_parsec_poke();
-            self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
+        if self.parsec_timer_token == token {
+            if self.chain.is_peer_our_elder(self.id()) {
+                self.send_parsec_gossip(None);
+                self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
+            } else {
+                self.send_parsec_poke();
+                self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
+            }
         } else if self.add_timer_token == token {
             debug!("{} - Timeout when trying to join a section.", self);
 
@@ -389,6 +394,10 @@ impl Approved for Adult {
         self.event_backlog.push(event)
     }
 
+    fn parsec_map(&self) -> &ParsecMap {
+        &self.parsec_map
+    }
+
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
     }
@@ -420,7 +429,14 @@ impl Approved for Adult {
             Authority::Node(*self.name()),
             Authority::Node(*pub_id.name()),
             outbox,
-        )
+        )?;
+
+        // If the elder being added is us, start sending parsec gossips.
+        if pub_id == *self.id() {
+            self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
+        }
+
+        Ok(())
     }
 
     fn handle_remove_elder_event(

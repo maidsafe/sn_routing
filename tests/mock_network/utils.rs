@@ -875,10 +875,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 
 fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     let config = NetworkConfig::node().with_hard_coded_contacts(iter::once(nodes[0].endpoint()));
-    let mut full_id = FullId::new();
-    while !prefix.matches(full_id.public_id().name()) {
-        full_id = FullId::new();
-    }
+    let full_id = FullId::within_range(&prefix.range_inclusive());
     nodes.push(
         TestNode::builder(network)
             .network_config(config)

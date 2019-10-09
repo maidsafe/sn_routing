@@ -9,7 +9,7 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base};
+use super::common::{Approved, Base, GOSSIP_TIMEOUT};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
@@ -36,7 +36,7 @@ use crate::{
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    utils::{self, XorTargetInterval},
+    utils::XorTargetInterval,
     xor_name::XorName,
     BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
@@ -53,7 +53,6 @@ use std::{
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
-const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -737,36 +736,7 @@ impl Elder {
         Ok(())
     }
 
-    fn send_parsec_gossip(&mut self, target: Option<(u64, PublicId)>) {
-        let (version, gossip_target) = match target {
-            Some((v, p)) => (v, p),
-            None => {
-                let version = self.parsec_map.last_version();
-                let mut recipients = self.parsec_map.gossip_recipients();
-                if recipients.is_empty() {
-                    // Parsec hasn't caught up with the event of us joining yet.
-                    return;
-                }
-
-                recipients.retain(|pub_id| self.peer_map.has(pub_id));
-                if recipients.is_empty() {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "{} - Not connected to any gossip recipient.",
-                        self
-                    );
-                    return;
-                }
-
-                let rand_index = utils::rand_index(recipients.len());
-                (version, *recipients[rand_index])
-            }
-        };
-
-        if let Some(msg) = self.parsec_map.create_gossip(version, &gossip_target) {
-            self.send_direct_message(&gossip_target, msg);
-        }
-
+    fn maintain_parsec(&mut self) {
         if self.parsec_map.needs_pruning() {
             self.vote_for_event(AccumulatingEvent::ParsecPrune);
             self.parsec_map_mut().set_pruning_voted_for();
@@ -1009,6 +979,7 @@ impl Base for Elder {
             }
 
             self.send_parsec_gossip(None);
+            self.maintain_parsec();
         }
 
         Transition::Stay
@@ -1214,6 +1185,10 @@ impl Elder {
 impl Approved for Elder {
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
         outbox.send_event(event);
+    }
+
+    fn parsec_map(&self) -> &ParsecMap {
+        &self.parsec_map
     }
 
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {

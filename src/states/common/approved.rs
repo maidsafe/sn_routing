@@ -21,6 +21,7 @@ use crate::{
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     types::MessageId,
+    utils,
     xor_name::XorName,
     ConnectionInfo,
 };
@@ -28,6 +29,7 @@ use log::LogLevel;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
+    fn parsec_map(&self) -> &ParsecMap;
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain_mut(&mut self) -> &mut Chain;
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
@@ -121,6 +123,37 @@ pub trait Approved: Base {
             self.parsec_poll(outbox)
         } else {
             Ok(Transition::Stay)
+        }
+    }
+
+    fn send_parsec_gossip(&mut self, target: Option<(u64, PublicId)>) {
+        let (version, gossip_target) = match target {
+            Some((v, p)) => (v, p),
+            None => {
+                let version = self.parsec_map().last_version();
+                let mut recipients = self.parsec_map().gossip_recipients();
+                if recipients.is_empty() {
+                    // Parsec hasn't caught up with the event of us joining yet.
+                    return;
+                }
+
+                recipients.retain(|pub_id| self.peer_map().has(pub_id));
+                if recipients.is_empty() {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} - Not connected to any gossip recipient.",
+                        self
+                    );
+                    return;
+                }
+
+                let rand_index = utils::rand_index(recipients.len());
+                (version, *recipients[rand_index])
+            }
+        };
+
+        if let Some(msg) = self.parsec_map_mut().create_gossip(version, &gossip_target) {
+            self.send_direct_message(&gossip_target, msg);
         }
     }
 
