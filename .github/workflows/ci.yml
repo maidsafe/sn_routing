@@ -48,7 +48,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --features mock
+          args: --release --features mock
   mock_base_tests:
     name: Tests (mock_base)
     runs-on: ${{ matrix.os }}
@@ -64,7 +64,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --features mock_base
+          args: --release --features mock_base
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
