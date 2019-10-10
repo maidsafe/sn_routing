@@ -25,12 +25,12 @@ use crate::{
 use crate::{utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
 use crossbeam_channel as mpmc;
 use quic_p2p::Token;
+use std::net::SocketAddr;
 use std::sync::mpsc;
 #[cfg(feature = "mock_base")]
 use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
-    net::SocketAddr,
 };
 #[cfg(feature = "mock_base")]
 use unwrap::unwrap;

@@ -57,12 +57,6 @@ pub enum ClientEvent {
     },
 }
 
-impl Into<Event> for ClientEvent {
-    fn into(self) -> Event {
-        Event::ClientEvent(self)
-    }
-}
-
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
 /// These are sent by routing to the library's user. It allows the user to handle requests and
@@ -105,6 +99,12 @@ pub enum Event {
     TimerTicked,
     /// Consensus on a custom event.
     Consensus(Vec<u8>),
+}
+
+impl From<ClientEvent> for Event {
+    fn from(client_event: ClientEvent) -> Event {
+        Event::ClientEvent(client_event)
+    }
 }
 
 impl Debug for Event {

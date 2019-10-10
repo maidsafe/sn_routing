@@ -154,8 +154,7 @@ pub trait Base: Display {
             ConnectedTo {
                 peer: Peer::Client { peer_addr },
             } => {
-                let client_event = ClientEvent::ConnectedToClient { peer_addr };
-                outbox.send_event(client_event.into());
+                self.handle_connected_to_client(peer_addr, outbox);
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
@@ -237,6 +236,12 @@ pub trait Base: Display {
     ) -> Transition {
         self.peer_map_mut().connect(conn_info);
         Transition::Stay
+    }
+
+    fn handle_connected_to_client(&mut self, peer_addr: SocketAddr, _outbox: &mut dyn EventBox) {
+        // By default we immediately disconnect from a client.
+        // Only elders override it to pass it on to the vaults
+        self.disconnect_from(peer_addr);
     }
 
     fn handle_connection_failure(
