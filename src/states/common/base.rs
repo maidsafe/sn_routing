@@ -22,7 +22,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_name::XorName,
-    ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
+    ConnectionInfo, Event, NetworkBytes, NetworkEvent, NetworkService,
 };
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
@@ -123,32 +123,57 @@ pub trait Base: Display {
             ConnectedTo {
                 peer: Peer::Client { peer_addr },
             } => {
-                // NOTE: we can raise the client connection info to the upper layers here if we
-                // decide they need it.
-                // We would also need to store a set of connected client infos so we know whether a
-                // `NewMessage` came from client or node (could be handled by `PeerMap`). If it
-                // came from a client, we would raise it upwards, otherwise we'd handle it ourselves.
-                trace!(
-                    "{} - Ignoring connection attempt from a client at {}",
-                    self,
-                    peer_addr
-                );
+                outbox.send_event(Event::ConnectedToClient { peer_addr });
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
-                self.handle_connection_failure(peer_addr, outbox)
+                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
+                    outbox.send_event(Event::ConnectionFailureToClient { peer_addr });
+                    Transition::Stay
+                } else {
+                    self.handle_connection_failure(peer_addr, outbox)
+                }
             }
-            NewMessage { peer_addr, msg } => self.handle_new_message(peer_addr, msg, outbox),
+            NewMessage { peer_addr, msg } => {
+                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
+                    outbox.send_event(Event::NewMessageFromClient { peer_addr, msg });
+                    Transition::Stay
+                } else {
+                    self.handle_new_message(peer_addr, msg, outbox)
+                }
+            }
             UnsentUserMessage {
                 peer_addr,
                 msg,
                 token,
-            } => self.handle_unsent_message(peer_addr, msg, token, outbox),
+            } => {
+                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
+                    outbox.send_event(Event::UnsentUserMsgToClient {
+                        peer_addr,
+                        msg,
+                        token,
+                    });
+                    Transition::Stay
+                } else {
+                    self.handle_unsent_message(peer_addr, msg, token, outbox)
+                }
+            }
             SentUserMessage {
                 peer_addr,
                 msg,
                 token,
-            } => self.handle_sent_message(peer_addr, msg, token, outbox),
+            } => {
+                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
+                    outbox.send_event(Event::SentUserMsgToClient {
+                        peer_addr,
+                        msg,
+                        token,
+                    });
+                    Transition::Stay
+                } else {
+                    self.handle_sent_message(peer_addr, msg, token, outbox)
+                }
+            }
             Finish => Transition::Terminate,
         };
 
