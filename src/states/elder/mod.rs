@@ -432,7 +432,7 @@ impl Elder {
             .filter_incoming(signed_msg.routing_message())
             .is_new()
         {
-            debug!(
+            trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
                 signed_msg.routing_message()
@@ -1290,6 +1290,8 @@ impl Approved for Elder {
         neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        info!("{} - handle SectionInfo: {:?}.", self, elders_info);
+
         if elders_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*elders_info.prefix()), outbox);

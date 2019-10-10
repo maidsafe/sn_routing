@@ -1319,7 +1319,7 @@ impl Chain {
 #[cfg(feature = "mock_base")]
 impl Chain {
     /// Returns their_knowledge
-    pub fn get_their_knowldege(&self) -> &BTreeMap<Prefix<XorName>, u64> {
+    pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         &self.state.get_their_knowledge()
     }
 }

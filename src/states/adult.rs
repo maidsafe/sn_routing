@@ -336,6 +336,10 @@ impl Base for Adult {
                 self.handle_bootstrap_request(pub_id);
                 Ok(Transition::Stay)
             }
+            ConnectionResponse => {
+                debug!("{} - Received connection response from {}", self, pub_id);
+                Ok(Transition::Stay)
+            }
             _ => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
                 Ok(Transition::Stay)
@@ -419,7 +423,7 @@ impl Approved for Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - Added elder {}.", self, pub_id);
+        info!("{} - handle AddElder: {}.", self, pub_id);
         let _ = self.chain.add_elder(pub_id)?;
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
 
@@ -444,7 +448,7 @@ impl Approved for Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - Removed elder {}.", self, pub_id);
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
         let _ = self.chain.remove_elder(pub_id)?;
         self.disconnect(&pub_id);
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
@@ -457,11 +461,13 @@ impl Approved for Adult {
         pub_id: PublicId,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        info!("{} - handle Online: {}.", self, pub_id);
         self.chain.add_member(pub_id);
         Ok(())
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+        info!("{} - handle Offline: {}.", self, pub_id);
         self.chain.remove_member(&pub_id);
         Ok(())
     }
