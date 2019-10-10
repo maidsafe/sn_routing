@@ -8,10 +8,8 @@
 
 mod sending_targets_cache;
 
-#[cfg(feature = "mock_base")]
-use crate::quic_p2p::NodeInfo;
 use crate::{
-    quic_p2p::{Builder, Error, Token},
+    quic_p2p::{Builder, Error, Peer, Token},
     utils::LogIdent,
     ConnectionInfo, NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
 };
@@ -53,7 +51,13 @@ impl NetworkService {
         // initially only send to dg_size targets
         for conn_info in conn_infos.iter().take(dg_size) {
             // NetworkBytes is refcounted and cheap to clone.
-            self.quic_p2p.send(conn_info.clone(), msg.clone(), token);
+            self.quic_p2p.send(
+                Peer::Node {
+                    node_info: conn_info.clone(),
+                },
+                msg.clone(),
+                token,
+            );
         }
 
         self.cache.insert_message(token, conn_infos, dg_size);
@@ -71,12 +75,13 @@ impl NetworkService {
                 "{} Sending of message ID {} failed; resending...",
                 log_ident, token
             );
-            self.quic_p2p.send(tgt, msg, token);
+            self.quic_p2p
+                .send(Peer::Node { node_info: tgt }, msg, token);
         }
     }
 
     #[cfg(feature = "mock_base")]
-    pub fn our_connection_info(&mut self) -> Result<NodeInfo, Error> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, Error> {
         self.quic_p2p.our_connection_info()
     }
 }

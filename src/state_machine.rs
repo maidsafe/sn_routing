@@ -14,13 +14,12 @@ use crate::{
     network_service::NetworkBuilder,
     outbox::EventBox,
     pause::PausedState,
-    quic_p2p::NodeInfo,
     routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
     xor_name::XorName,
-    NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
+    ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
 use crate::{routing_table::Authority, Chain};
@@ -225,11 +224,19 @@ impl State {
         )
     }
 
-    pub fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         state_dispatch!(
             self,
             state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
             Terminated => Err(RoutingError::InvalidStateForOperation)
+        )
+    }
+
+    pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
+        state_dispatch!(
+            self,
+            state => state.peer_map().has(name),
+            Terminated => false
         )
     }
 }
@@ -241,7 +248,7 @@ pub enum Transition {
     Stay,
     // `BootstrappingPeer` state transitioning to `JoiningPeer`
     IntoJoining {
-        node_infos: Vec<NodeInfo>,
+        conn_infos: Vec<ConnectionInfo>,
     },
     // `JoiningPeer` failing to join and transitioning back to `BootstrappingPeer`
     Rebootstrap,
@@ -339,8 +346,8 @@ impl StateMachine {
         use self::Transition::*;
         match transition {
             Stay => (),
-            IntoJoining { node_infos } => self.state.replace_with(|state| match state {
-                State::BootstrappingPeer(src) => src.into_joining(node_infos, outbox),
+            IntoJoining { conn_infos } => self.state.replace_with(|state| match state {
+                State::BootstrappingPeer(src) => src.into_joining(conn_infos, outbox),
                 _ => unreachable!(),
             }),
             Rebootstrap => self.state.replace_with(|state| match state {

@@ -124,7 +124,6 @@ mod network_service;
 mod node;
 mod outbox;
 mod pause;
-mod peer_manager;
 mod peer_map;
 mod routing_message_filter;
 mod routing_table;
@@ -184,7 +183,6 @@ pub use crate::{
         section_proof_chain_from_elders_info,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    peer_manager::test_consts,
 };
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
@@ -203,11 +201,17 @@ pub(crate) use self::{
         SignatureShare as BlsSignatureShare,
     },
     network_service::NetworkService,
-    quic_p2p::{Event as NetworkEvent, Peer as ConnectionInfo, QuicP2p},
+    quic_p2p::{Event as NetworkEvent, NodeInfo as ConnectionInfo, QuicP2p},
 };
 
 #[cfg(feature = "mock_crypto")]
 pub(crate) use self::mock::crypto;
+
+#[cfg(feature = "mock_base")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub use crate::states::{ADD_TIMEOUT, BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
+}
 
 #[cfg(test)]
 mod tests {

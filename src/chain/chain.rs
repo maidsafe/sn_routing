@@ -48,9 +48,9 @@ pub struct Chain {
     our_id: PublicId,
     /// The shared state of the section.
     state: SharedState,
-    /// If we're a member of the section yet. This will be toggled once we get a `EldersInfo`
+    /// If we're an elder of the section yet. This will be toggled once we get a `EldersInfo`
     /// block accumulated which bears `our_id` as one of the members
-    is_member: bool,
+    is_elder: bool,
     /// Accumulate NetworkEvent that do not have yet enough vote/proofs.
     chain_accumulator: ChainAccumulator,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
@@ -85,12 +85,12 @@ impl Chain {
     /// Create a new chain given genesis information
     pub fn new(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_member = gen_info.first_info.members().contains(&our_id);
+        let is_elder = gen_info.first_info.members().contains(&our_id);
         Self {
             min_sec_size,
             our_id,
             state: SharedState::new(gen_info.first_info),
-            is_member,
+            is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             parsec_prune_accumulated: 0,
@@ -213,7 +213,7 @@ impl Chain {
     ///
     /// If the event is a `EldersInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll(&mut self) -> Result<Option<AccumulatingEvent>, RoutingError> {
+    pub fn poll(&mut self) -> Result<Option<(AccumulatingEvent, EldersChange)>, RoutingError> {
         let (event, proofs) = {
             let opt_event = self
                 .chain_accumulator
@@ -232,12 +232,28 @@ impl Chain {
 
         match event {
             AccumulatingEvent::SectionInfo(ref info) => {
+                let old_neighbours: BTreeSet<_> = self.neighbour_elders().copied().collect();
                 self.add_elders_info(info.clone(), proofs)?;
+                let new_neighbours: BTreeSet<_> = self.neighbour_elders().copied().collect();
+
                 if let Some((ref cached_info, _)) = self.state.split_cache {
                     if cached_info == info {
                         return Ok(None);
                     }
                 }
+
+                let neighbour_change = EldersChange {
+                    added: new_neighbours
+                        .difference(&old_neighbours)
+                        .copied()
+                        .collect(),
+                    removed: old_neighbours
+                        .difference(&new_neighbours)
+                        .copied()
+                        .collect(),
+                };
+
+                return Ok(Some((event, neighbour_change)));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
                 self.update_their_keys(key_info);
@@ -275,32 +291,66 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
-        Ok(Some(event))
+
+        Ok(Some((event, EldersChange::default())))
     }
 
-    /// Adds a member to our section, creating a new `EldersInfo` in the process.
-    /// If we need to split also returns an additional sibling `EldersInfo`.
-    /// Should not be called while a pfx change is in progress.
-    pub fn add_member(&mut self, pub_id: PublicId) -> Result<Vec<EldersInfo>, RoutingError> {
-        if self.state.change != PrefixChange::None {
-            log_or_panic!(
-                LogLevel::Warn,
-                "Adding {:?} to chain during pfx change.",
-                pub_id
-            );
-        }
+    /// Adds a member to our section.
+    pub fn add_member(&mut self, pub_id: PublicId) {
+        self.assert_no_prefix_change("add member");
 
         if !self.our_prefix().matches(&pub_id.name()) {
             log_or_panic!(
                 LogLevel::Error,
-                "Invalid Online event {:?} for self prefix.",
-                pub_id
+                "{} - Adding member {} whose name does not match our prefix {:?}.",
+                self,
+                pub_id,
+                self.our_prefix()
             );
         }
 
+        // TODO: start as infant unless rejoining
+        // TODO: support rejoining
+        let info = self.state.our_members.entry(pub_id).or_default();
+        info.persona = MemberPersona::Adult;
+        info.state = MemberState::Joined;
+    }
+
+    /// Remove a member from our section.
+    pub fn remove_member(&mut self, pub_id: &PublicId) {
+        self.assert_no_prefix_change("remove member");
+
+        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
+            info.state = MemberState::Left;
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Attempt to remove non-existent member {}.",
+                self,
+                pub_id
+            )
+        }
+    }
+
+    /// Adds an elder to our section, creating a new `EldersInfo` in the process.
+    /// If we need to split also returns an additional sibling `EldersInfo`.
+    /// Should not be called while a pfx change is in progress.
+    pub fn add_elder(&mut self, pub_id: PublicId) -> Result<Vec<EldersInfo>, RoutingError> {
+        self.assert_no_prefix_change("add elder");
+
+        if !self.our_prefix().matches(&pub_id.name()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Adding elder {} whose name does not match our prefix {:?}.",
+                self,
+                pub_id,
+                self.our_prefix()
+            );
+        }
+
+        // TODO: check that the peer is already a member.
         let info = self.state.our_members.entry(pub_id).or_default();
         info.persona = MemberPersona::Elder;
-        info.state = MemberState::Joined;
 
         let mut elders = self.state.new_info.members().clone();
         let _ = elders.insert(pub_id);
@@ -321,36 +371,13 @@ impl Chain {
         Ok(vec![self.state.new_info.clone()])
     }
 
-    /// Removes a member from our section, creating a new `our_info` in the process.
+    /// Removes an elder from our section, creating a new `our_info` in the process.
     /// Should not be called while a pfx change is in progress.
-    pub fn remove_member(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
-        if self.state.change != PrefixChange::None {
-            log_or_panic!(
-                LogLevel::Warn,
-                "Removing {:?} from chain during pfx change.",
-                pub_id
-            );
-        }
+    pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
+        self.assert_no_prefix_change("remove elder");
 
-        if !self.our_prefix().matches(&pub_id.name()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "Invalid Offline event {:?} for self prefix.",
-                pub_id
-            );
-        }
-
-        match self.state.our_members.get_mut(&pub_id) {
-            Some(info) => {
-                info.state = MemberState::Left;
-            }
-            None => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Removed peer not {} present in our_members",
-                    pub_id
-                );
-            }
+        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
+            info.persona = MemberPersona::Adult;
         }
 
         let mut elders = self.state.new_info.members().clone();
@@ -453,13 +480,6 @@ impl Chain {
         self.state.our_info_by_hash(hash)
     }
 
-    /// If we are a member of the section yet. We consider ourselves to be one after we receive a
-    /// `EldersInfo` block that contains us. After that we are expected to be involved in futher
-    /// votings.
-    pub fn is_member(&self) -> bool {
-        self.is_member
-    }
-
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &EldersInfo> {
         self.state.neighbour_infos.values()
@@ -470,22 +490,53 @@ impl Chain {
         self.state.neighbour_infos.keys().cloned().collect()
     }
 
-    /// Checks if given `PublicId` is a valid peer by checking if we have them as a member of self
-    /// section or neighbours.
-    pub fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
-        self.neighbour_infos()
-            .chain(iter::once(self.state.our_info()))
-            .chain(iter::once(&self.state.new_info))
-            .any(|si| si.members().contains(pub_id))
+    /// Check if the given `PublicId` is a member of our section.
+    pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
+        self.state
+            .our_members
+            .get(pub_id)
+            .map(|info| info.state == MemberState::Joined)
+            .unwrap_or(false)
     }
 
-    /// Returns a set of valid peers we should be connected to.
-    pub fn valid_peers(&self) -> BTreeSet<&PublicId> {
+    /// Returns a set of elders we should be connected to.
+    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
             .flat_map(EldersInfo::members)
             .chain(self.state.new_info.members())
-            .collect()
+    }
+
+    /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
+    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+        self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
+    }
+
+    /// Returns whether we are elder in our section.
+    pub fn is_self_elder(&self) -> bool {
+        self.is_elder
+    }
+
+    /// Returns whether the given peer is elder in our section.
+    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
+        self.state.our_info().members().contains(pub_id)
+            || self.state.new_info.members().contains(pub_id)
+    }
+
+    /// Returns whether the given peer is elder in one of our neighbour sections.
+    pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
+        self.neighbour_infos()
+            .any(|info| info.members().contains(pub_id))
+    }
+
+    /// Returns elders from our own section, including ourselves.
+    pub fn our_elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.state.our_info().members().iter()
+    }
+
+    /// Returns all neighbour elders.
+    pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.neighbour_infos().flat_map(EldersInfo::members)
     }
 
     /// Returns `true` if we know the section with `elders_info`.
@@ -734,12 +785,12 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let pfx = *elders_info.prefix();
         if pfx.matches(self.our_id.name()) {
-            let is_new_member = !self.is_member && elders_info.members().contains(&self.our_id);
+            let is_new_elder = !self.is_elder && elders_info.members().contains(&self.our_id);
             let pk_set = self.public_key_set();
             self.state.push_our_new_info(elders_info, proofs, &pk_set)?;
 
-            if is_new_member {
-                self.is_member = true;
+            if is_new_elder {
+                self.is_elder = true;
             }
             self.check_and_clean_neighbour_infos(None);
         } else {
@@ -1146,11 +1197,6 @@ impl Chain {
         Ok((best_section, dg_size))
     }
 
-    /// Returns our own section, including our own name.
-    pub fn our_section(&self) -> BTreeSet<XorName> {
-        self.state.our_info().member_names()
-    }
-
     /// Returns whether we are a part of the given authority.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         match *auth {
@@ -1187,7 +1233,7 @@ impl Chain {
             .sum();
 
         // Total size estimate = known_nodes / network_fraction
-        let network_size = self.valid_peers().len() as f64 / network_fraction;
+        let network_size = self.elders().count() as f64 / network_fraction;
 
         (network_size.ceil() as u64, is_exact)
     }
@@ -1204,6 +1250,17 @@ impl Chain {
     /// implemented acting on the accumulated events.
     pub fn parsec_prune_accumulated(&self) -> usize {
         self.parsec_prune_accumulated
+    }
+
+    fn assert_no_prefix_change(&self, label: &str) {
+        if self.state.change != PrefixChange::None {
+            log_or_panic!(
+                LogLevel::Warn,
+                "{} - attempt to {} during prefix change.",
+                self,
+                label,
+            );
+        }
     }
 }
 
@@ -1223,7 +1280,7 @@ impl Debug for Chain {
         writeln!(formatter, "\tchange: {:?},", self.state.change)?;
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
-        writeln!(formatter, "\tis_member: {},", self.is_member)?;
+        writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
         writeln!(formatter, "\tnew_info: {}", self.state.new_info)?;
         writeln!(formatter, "\tmerging: {:?}", self.state.merging)?;
 
@@ -1262,7 +1319,7 @@ impl Chain {
 #[cfg(feature = "mock_base")]
 impl Chain {
     /// Returns their_knowledge
-    pub fn get_their_knowldege(&self) -> &BTreeMap<Prefix<XorName>, u64> {
+    pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         &self.state.get_their_knowledge()
     }
 }
@@ -1272,6 +1329,15 @@ impl Chain {
     pub fn validate_our_history(&self) -> bool {
         self.state.our_history.validate()
     }
+}
+
+// Change to section elders.
+#[derive(Default)]
+pub struct EldersChange {
+    // Peers that became elders.
+    pub added: BTreeSet<PublicId>,
+    // Peers that ceased to be elders.
+    pub removed: BTreeSet<PublicId>,
 }
 
 #[cfg(test)]

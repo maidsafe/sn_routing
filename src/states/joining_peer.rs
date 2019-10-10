@@ -17,24 +17,21 @@ use crate::{
     id::{FullId, PublicId},
     messages::{DirectMessage, HopMessage, RoutingMessage},
     outbox::EventBox,
-    peer_manager::{PeerManager, PeerState},
     peer_map::PeerMap,
-    quic_p2p::{NodeInfo, Peer},
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
     timer::Timer,
     xor_name::XorName,
-    NetworkService,
+    ConnectionInfo, NetworkService,
 };
 use std::{
     fmt::{self, Display, Formatter},
-    net::SocketAddr,
     time::Duration,
 };
 
-// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
+/// Time after which bootstrap is cancelled (and possibly retried).
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
@@ -55,7 +52,7 @@ impl JoiningPeer {
         min_section_size: usize,
         timer: Timer,
         peer_map: PeerMap,
-        node_infos: Vec<NodeInfo>,
+        conn_infos: Vec<ConnectionInfo>,
     ) -> Self {
         let join_token = timer.schedule(JOIN_TIMEOUT);
 
@@ -70,8 +67,8 @@ impl JoiningPeer {
             join_token,
         };
 
-        for node_info in node_infos {
-            joining_peer.send_join_request(node_info);
+        for conn_info in conn_infos {
+            joining_peer.send_join_request(conn_info);
         }
         joining_peer
     }
@@ -81,13 +78,6 @@ impl JoiningPeer {
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
-        let mut peer_mgr = PeerManager::new();
-
-        // initialise known peers to PeerState::Connected in the PeerManager
-        for pub_id in self.peer_map.connected_ids() {
-            peer_mgr.insert_peer(*pub_id, PeerState::Connected);
-        }
-
         let details = AdultDetails {
             network_service: self.network_service,
             event_backlog: vec![],
@@ -96,7 +86,6 @@ impl JoiningPeer {
             min_section_size: self.min_section_size,
             msg_backlog: self.msg_backlog,
             peer_map: self.peer_map,
-            peer_mgr,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
         };
@@ -112,7 +101,7 @@ impl JoiningPeer {
         )))
     }
 
-    fn send_join_request(&mut self, dst: NodeInfo) {
+    fn send_join_request(&mut self, dst: ConnectionInfo) {
         info!("{} Sending JoinRequest to {:?}.", self, dst);
 
         let message = if let Ok(message) = self.to_signed_direct_message(DirectMessage::JoinRequest)
@@ -122,8 +111,7 @@ impl JoiningPeer {
             return;
         };
 
-        let conn_infos = vec![Peer::Node { node_info: dst }];
-
+        let conn_infos = vec![dst];
         let dg_size = 1;
         self.send_message_to_initial_targets(conn_infos, dg_size, message);
     }
@@ -217,7 +205,7 @@ impl Base for JoiningPeer {
             for peer_addr in self
                 .peer_map
                 .remove_all()
-                .map(|conn_info| conn_info.peer_addr())
+                .map(|conn_info| conn_info.peer_addr)
             {
                 self.network_service
                     .service_mut()
@@ -226,16 +214,6 @@ impl Base for JoiningPeer {
 
             return Transition::Rebootstrap;
         }
-
-        Transition::Stay
-    }
-
-    fn handle_connection_failure(
-        &mut self,
-        peer_addr: SocketAddr,
-        _: &mut dyn EventBox,
-    ) -> Transition {
-        let _ = self.peer_map_mut().disconnect(peer_addr);
 
         Transition::Stay
     }

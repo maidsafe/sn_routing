@@ -18,8 +18,8 @@ pub use self::utils::{
     add_connected_nodes_until_one_away_from_split, add_connected_nodes_until_split,
     clear_relocation_overrides, count_sections, create_connected_nodes,
     create_connected_nodes_until_split, current_sections, gen_bytes, gen_range, gen_range_except,
-    poll_all, poll_and_resend, poll_and_resend_until, remove_nodes_which_failed_to_connect,
-    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, TestNode,
+    poll_all, poll_and_resend, poll_and_resend_with_options, remove_nodes_which_failed_to_connect,
+    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, PollOptions, TestNode,
 };
 use itertools::Itertools;
 use rand::Rng;
@@ -433,7 +433,7 @@ fn check_section_info_ack() {
         .iter()
         .filter(|node| {
             node.chain()
-                .get_their_knowldege()
+                .get_their_knowledge()
                 .contains_key(&node.chain().our_prefix().sibling())
         })
         .map(|node| node.id())
@@ -448,13 +448,33 @@ fn check_section_info_ack() {
 
 #[test]
 fn vote_prune() {
-    // Create a network with a single large section, this is will trigger parsec pruning
-    let min_section_size = 3;
-    let network = Network::new(min_section_size, None);
-    let nodes = create_connected_nodes(&network, 10 * min_section_size);
+    // Create a small network to keep all nodes in a single section. Then repeatedly add and remove
+    // nodes (while making sure no split happens) to cause lot of parsec traffic which should make
+    // the parsec graphs to grow sufficiently so prune is triggered and accumulated.
+
+    let max_section_size = 2 * MIN_SECTION_SIZE;
+    let steps = 10;
+
+    let network = Network::new(MIN_SECTION_SIZE, None);
+    let mut nodes = create_connected_nodes(&network, max_section_size);
+
+    for _ in 0..steps {
+        if nodes.len() < max_section_size {
+            // Add node
+            let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+            let node = TestNode::builder(&network).network_config(config).create();
+            nodes.push(node);
+        } else {
+            // Remove node
+            let _ = nodes.pop();
+        }
+
+        poll_and_resend(&mut nodes);
+    }
+
     assert!(nodes
         .iter()
-        .any(|node| node.chain().parsec_prune_accumulated() > 0));
+        .all(|node| node.chain().parsec_prune_accumulated() > 0));
 }
 
 #[test]
@@ -474,7 +494,7 @@ fn node_pause_and_resume() {
     // Do some work while the node is paused.
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.push(TestNode::builder(&network).network_config(config).create());
-    poll_and_resend(&mut nodes);
+    poll_and_resend_with_options(&mut nodes, PollOptions::default().fire_join_timeout(false));
 
     // Resume the node and verify it caugh up to the changes in the network.
     nodes.push(TestNode::resume(&network, state));

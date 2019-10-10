@@ -11,8 +11,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, test_consts::CONNECTING_PEER_TIMEOUT_SECS, Authority, Chain, Event, EventStream,
-    FullId, NetworkConfig, Node, NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
+    mock::Network, test_consts, Authority, Chain, Event, EventStream, FullId, NetworkConfig, Node,
+    NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -246,35 +246,63 @@ pub fn poll_all_until(nodes: &mut [TestNode], should_stop: &dyn Fn(&[TestNode]) 
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode]) {
-    let dummy = |_nodes: &[TestNode]| false;
-    poll_and_resend_until(nodes, &dummy, None)
+    poll_and_resend_with_options(nodes, PollOptions::default())
+}
+
+/// Options for polling nodes in the test network.
+///
+/// - should_stop: can be used for an early return from poll_and_resend
+/// - extra_advance: this is so far only used for the ignoring candidate_info test.
+pub struct PollOptions {
+    pub should_stop: Box<dyn Fn(&[TestNode]) -> bool>,
+    pub extra_advance: Option<u64>,
+    pub fire_join_timeout: bool,
+}
+
+impl Default for PollOptions {
+    fn default() -> Self {
+        Self {
+            should_stop: Box::new(|_| false),
+            extra_advance: None,
+            fire_join_timeout: true,
+        }
+    }
+}
+
+impl PollOptions {
+    pub fn fire_join_timeout(self, fire_join_timeout: bool) -> Self {
+        Self {
+            fire_join_timeout,
+            ..self
+        }
+    }
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
-/// should_stop: can be used for an early return from poll_and_resend
-/// extra_advance: this is so far only used for the ignoring candidate_info test.
-pub fn poll_and_resend_until(
-    nodes: &mut [TestNode],
-    should_stop: &dyn Fn(&[TestNode]) -> bool,
-    mut extra_advance: Option<u64>,
-) {
-    let mut fired_connecting_peer_timeout = false;
+pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
+    let mut fired_join_timeout = !options.fire_join_timeout;
     for _ in 0..MAX_POLL_CALLS {
-        if should_stop(nodes) {
+        if (options.should_stop)(nodes) {
             return;
         }
 
         let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
-        if poll_all_until(nodes, should_stop) || nodes.iter().any(node_busy) {
+        if poll_all_until(nodes, &*options.should_stop) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
             FakeClock::advance_time(1001);
-        } else if let Some(step) = extra_advance {
+        } else if let Some(step) = options.extra_advance.take() {
             FakeClock::advance_time(step * 1000 + 1);
-            extra_advance = None;
-        } else if !fired_connecting_peer_timeout {
+        } else if !fired_join_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
-            FakeClock::advance_time(CONNECTING_PEER_TIMEOUT_SECS * 1000 + 1);
-            fired_connecting_peer_timeout = true;
+            FakeClock::advance_time(
+                (test_consts::BOOTSTRAP_TIMEOUT
+                    + test_consts::JOIN_TIMEOUT
+                    + test_consts::ADD_TIMEOUT)
+                    .as_secs()
+                    * 1000
+                    + 1,
+            );
+            fired_join_timeout = true;
         } else {
             return;
         }
@@ -344,7 +372,8 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
 
         assert!(
             node_added_count >= n,
-            "Got only {} NodeAdded events.",
+            "{} - Got only {} NodeAdded events.",
+            node.inner,
             node_added_count
         );
     }
@@ -766,13 +795,13 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
-        // Confirm valid peers from chain are connected according to PeerMgr
-        let mut peers = node.chain().valid_peers();
+        // Confirm elders from chain are connected according to PeerMgr
         let our_id = node.chain().our_id();
-        let _ = peers.remove(&our_id);
-        let missing_peers = peers
-            .iter()
-            .filter(|pub_id| !node.inner.is_node_peer(pub_id))
+        let missing_peers = node
+            .chain()
+            .elders()
+            .filter(|pub_id| *pub_id != our_id)
+            .filter(|pub_id| !node.inner.is_connected(pub_id))
             .cloned()
             .collect_vec();
         if !missing_peers.is_empty() {
@@ -846,10 +875,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 
 fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     let config = NetworkConfig::node().with_hard_coded_contacts(iter::once(nodes[0].endpoint()));
-    let mut full_id = FullId::new();
-    while !prefix.matches(full_id.public_id().name()) {
-        full_id = FullId::new();
-    }
+    let full_id = FullId::within_range(&prefix.range_inclusive());
     nodes.push(
         TestNode::builder(network)
             .network_config(config)

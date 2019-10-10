@@ -16,7 +16,7 @@ use crate::{
     },
     outbox::EventBox,
     peer_map::PeerMap,
-    quic_p2p::{NodeInfo, Token},
+    quic_p2p::{Peer, Token},
     routing_table::Authority,
     state_machine::Transition,
     timer::Timer,
@@ -117,7 +117,24 @@ pub trait Base: Display {
         let transition = match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
             BootstrapFailure => self.handle_bootstrap_failure(outbox),
-            ConnectedTo { peer } => self.handle_connected_to(peer, outbox),
+            ConnectedTo {
+                peer: Peer::Node { node_info },
+            } => self.handle_connected_to(node_info, outbox),
+            ConnectedTo {
+                peer: Peer::Client { peer_addr },
+            } => {
+                // NOTE: we can raise the client connection info to the upper layers here if we
+                // decide they need it.
+                // We would also need to store a set of connected client infos so we know whether a
+                // `NewMessage` came from client or node (could be handled by `PeerMap`). If it
+                // came from a client, we would raise it upwards, otherwise we'd handle it ourselves.
+                trace!(
+                    "{} - Ignoring connection attempt from a client at {}",
+                    self,
+                    peer_addr
+                );
+                Transition::Stay
+            }
             ConnectionFailure { peer_addr, .. } => {
                 self.handle_connection_failure(peer_addr, outbox)
             }
@@ -142,7 +159,7 @@ pub trait Base: Display {
         }
     }
 
-    fn handle_bootstrapped_to(&mut self, _node_info: NodeInfo) -> Transition {
+    fn handle_bootstrapped_to(&mut self, _conn_info: ConnectionInfo) -> Transition {
         debug!("{} - Unhandled network event: BootstrappedTo", self);
         Transition::Stay
     }
@@ -231,9 +248,11 @@ pub trait Base: Display {
         token: Token,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        debug!(
+        trace!(
             "{} Successfully sent message with ID {} to {:?}",
-            self, token, peer_addr
+            self,
+            token,
+            peer_addr
         );
         self.network_service_mut()
             .targets_cache_mut()
@@ -253,7 +272,7 @@ pub trait Base: Display {
         self.full_id().public_id().name()
     }
 
-    fn our_connection_info(&mut self) -> Result<NodeInfo, RoutingError> {
+    fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         self.network_service_mut()
             .service_mut()
             .our_connection_info()
@@ -349,6 +368,14 @@ pub trait Base: Display {
                 error!("{} - Failed to create SignedDirectMessage: {:?}", self, err);
                 err
             })
+    }
+
+    fn disconnect(&mut self, pub_id: &PublicId) {
+        if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
+            self.network_service_mut()
+                .service_mut()
+                .disconnect_from(conn_info.peer_addr)
+        }
     }
 }
 

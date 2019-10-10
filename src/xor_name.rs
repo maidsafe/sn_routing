@@ -252,6 +252,12 @@ impl<'a> ops::Div<&'a u32> for &'a XorName {
     }
 }
 
+impl AsRef<XorName> for XorName {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -8,11 +8,13 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base},
+    common::{Approved, Base, GOSSIP_TIMEOUT},
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload},
+    chain::{
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload,
+    },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -21,7 +23,6 @@ use crate::{
     },
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -35,7 +36,9 @@ use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
-const ADD_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Time after which the node reinitiates the bootstrap if it is not added to the section.
+pub const ADD_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -45,7 +48,6 @@ pub struct AdultDetails {
     pub min_section_size: usize,
     pub msg_backlog: Vec<RoutingMessage>,
     pub peer_map: PeerMap,
-    pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
 }
@@ -60,9 +62,8 @@ pub struct Adult {
     msg_backlog: Vec<RoutingMessage>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
-    peer_mgr: PeerManager,
-    poke_timer_token: u64,
     add_timer_token: u64,
+    parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
 }
@@ -73,7 +74,7 @@ impl Adult {
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
-        let poke_timer_token = details.timer.schedule(POKE_TIMEOUT);
+        let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
         let add_timer_token = details.timer.schedule(ADD_TIMEOUT);
 
         let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
@@ -92,10 +93,9 @@ impl Adult {
             msg_backlog: details.msg_backlog,
             parsec_map,
             peer_map: details.peer_map,
-            peer_mgr: details.peer_mgr,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
-            poke_timer_token,
+            parsec_timer_token,
             add_timer_token,
         };
 
@@ -138,7 +138,6 @@ impl Adult {
             msg_queue: self.msg_backlog.into_iter().collect(),
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
-            peer_mgr: self.peer_mgr,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -169,7 +168,7 @@ impl Adult {
                 dst: Node(_),
             } => {
                 if self.chain.our_prefix().matches(&src_name) {
-                    self.handle_connection_request(&conn_info, pub_id, msg.src, msg.dst, outbox)
+                    self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
                 } else {
                     self.add_message_to_backlog(RoutingMessage {
                         content: ConnectionRequest {
@@ -202,35 +201,13 @@ impl Adult {
             .latest_info
             .members()
             .iter()
-            .cloned()
+            .filter(|pub_id| self.peer_map.has(pub_id))
+            .copied()
             .collect_vec();
 
         for recipient in recipients {
             self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
         }
-    }
-
-    // Check whether the sender is allowed to send the message to us.
-    fn check_direct_message_sender(
-        &self,
-        msg: &DirectMessage,
-        pub_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::Node { .. }) | Some(PeerState::Connected) => return Ok(()),
-            Some(PeerState::Connecting) => {
-                if let DirectMessage::ConnectionResponse = msg {
-                    return Ok(());
-                }
-            }
-            _ => (),
-        }
-
-        debug!(
-            "{} Illegitimate direct message {:?} from {:?}.",
-            self, msg, pub_id
-        );
-        Err(RoutingError::InvalidStateForOperation)
     }
 
     // Backlog the message to be processed once we are established.
@@ -246,7 +223,7 @@ impl Adult {
     // Reject the bootstrap request, because only Elders can handle it.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
         debug!(
-            "{} - Client {:?} rejected: We are not an established node yet.",
+            "{} - Joining node {:?} rejected: We are not an established node yet.",
             self, pub_id
         );
 
@@ -256,7 +233,7 @@ impl Adult {
                 BootstrapResponseError::NotApproved,
             )),
         );
-        self.disconnect_peer(&pub_id);
+        self.disconnect(&pub_id);
     }
 }
 
@@ -309,16 +286,21 @@ impl Base for Adult {
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if self.poke_timer_token == token {
-            self.send_parsec_poke();
-            self.poke_timer_token = self.timer.schedule(POKE_TIMEOUT);
+        if self.parsec_timer_token == token {
+            if self.chain.is_peer_our_elder(self.id()) {
+                self.send_parsec_gossip(None);
+                self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
+            } else {
+                self.send_parsec_poke();
+                self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
+            }
         } else if self.add_timer_token == token {
             debug!("{} - Timeout when trying to join a section.", self);
 
             for peer_addr in self
                 .peer_map
                 .remove_all()
-                .map(|conn_info| conn_info.peer_addr())
+                .map(|conn_info| conn_info.peer_addr)
             {
                 self.network_service
                     .service_mut()
@@ -331,13 +313,8 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_peer_lost(&mut self, pub_id: PublicId, _: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
-
-        if self.peer_mgr.remove_peer(&pub_id) {
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        }
-
         Transition::Stay
     }
 
@@ -347,8 +324,6 @@ impl Base for Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        self.check_direct_message_sender(&msg, &pub_id)?;
-
         use crate::messages::DirectMessage::*;
         match msg {
             ParsecRequest(version, par_request) => {
@@ -359,6 +334,10 @@ impl Base for Adult {
             }
             BootstrapRequest => {
                 self.handle_bootstrap_request(pub_id);
+                Ok(Transition::Stay)
+            }
+            ConnectionResponse => {
+                debug!("{} - Received connection response from {}", self, pub_id);
                 Ok(Transition::Stay)
             }
             _ => {
@@ -398,6 +377,7 @@ impl Base for Adult {
         // We should only be connected to our own Elders - send to all of them
         // Need to collect IDs first so that self is not borrowed via the iterator
         let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
+
         for pub_id in target_ids {
             if self
                 .routing_msg_filter
@@ -414,22 +394,12 @@ impl Base for Adult {
 }
 
 impl Approved for Adult {
-    fn peer_mgr(&self) -> &PeerManager {
-        &self.peer_mgr
-    }
-
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
-        &mut self.peer_mgr
-    }
-
-    fn is_peer_valid(&self, _pub_id: &PublicId) -> bool {
-        true
-    }
-
-    fn add_node_success(&mut self, _: &PublicId) {}
-
     fn send_event(&mut self, event: Event, _: &mut dyn EventBox) {
         self.event_backlog.push(event)
+    }
+
+    fn parsec_map(&self) -> &ParsecMap {
+        &self.parsec_map
     }
 
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
@@ -450,31 +420,55 @@ impl Approved for Adult {
 
     fn handle_add_elder_event(
         &mut self,
-        new_pub_id: PublicId,
-        _: &mut dyn EventBox,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let _ = self.chain.add_member(new_pub_id)?;
+        info!("{} - handle AddElder: {}.", self, pub_id);
+        let _ = self.chain.add_elder(pub_id)?;
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+
+        // As Adult, we only connect to the elders in our section.
+        self.send_connection_request(
+            pub_id,
+            Authority::Node(*self.name()),
+            Authority::Node(*pub_id.name()),
+            outbox,
+        )?;
+
+        // If the elder being added is us, start sending parsec gossips.
+        if pub_id == *self.id() {
+            self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
+        }
+
         Ok(())
     }
 
     fn handle_remove_elder_event(
         &mut self,
         pub_id: PublicId,
-        _: &mut dyn EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let _ = self.chain.remove_member(pub_id)?;
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+        let _ = self.chain.remove_elder(pub_id)?;
+        self.disconnect(&pub_id);
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
         Ok(())
     }
 
     fn handle_online_event(
         &mut self,
-        _: PublicId,
+        pub_id: PublicId,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        info!("{} - handle Online: {}.", self, pub_id);
+        self.chain.add_member(pub_id);
         Ok(())
     }
 
-    fn handle_offline_event(&mut self, _: PublicId) -> Result<(), RoutingError> {
+    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+        info!("{} - handle Offline: {}.", self, pub_id);
+        self.chain.remove_member(&pub_id);
         Ok(())
     }
 
@@ -482,9 +476,10 @@ impl Approved for Adult {
         &mut self,
         elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
+        _neighbour_change: EldersChange,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if self.chain.is_member() {
+        if self.chain.is_self_elder() {
             Ok(Transition::IntoElder {
                 elders_info,
                 old_pfx,

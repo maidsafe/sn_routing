@@ -9,12 +9,12 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base};
+use super::common::{Approved, Base, GOSSIP_TIMEOUT};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
     chain::{
-        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersInfo,
+        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
@@ -29,23 +29,19 @@ use crate::{
     outbox::EventBox,
     parsec::{self, ParsecMap},
     pause::PausedState,
-    peer_manager::{Peer, PeerManager, PeerState},
     peer_map::PeerMap,
-    quic_p2p::NodeInfo,
     routing_message_filter::RoutingMessageFilter,
-    routing_table::Error as RoutingTableError,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
     signature_accumulator::SignatureAccumulator,
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    utils::{self, XorTargetInterval},
+    utils::XorTargetInterval,
     xor_name::XorName,
     BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
-use lru_time_cache::LruCache;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
@@ -53,18 +49,10 @@ use std::{
     collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
-    net::IpAddr,
 };
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
-const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
-//const MAX_IDLE_ROUNDS: u64 = 100;
-//const TICK_TIMEOUT_SECS: u64 = 60;
-/// Duration for which all clients on a given IP will be blocked from joining this node.
-const CLIENT_BAN_DURATION: Duration = Duration::from_secs(2 * 60 * 60);
-/// Duration for which clients' IDs we disconnected from are retained.
-const DROPPED_CLIENT_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -75,7 +63,6 @@ pub struct ElderDetails {
     pub msg_queue: VecDeque<RoutingMessage>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
-    pub peer_mgr: PeerManager,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
 }
@@ -88,7 +75,6 @@ pub struct Elder {
     /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<RoutingMessage>,
     peer_map: PeerMap,
-    peer_mgr: PeerManager,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
@@ -98,15 +84,6 @@ pub struct Elder {
     next_relocation_dst: Option<XorName>,
     /// Interval used for relocation in mock network tests.
     next_relocation_interval: Option<XorTargetInterval>,
-    /// IPs of clients which have been temporarily blocked from bootstrapping off this node.
-    banned_client_ips: LruCache<IpAddr, ()>,
-    /// Recently-disconnected clients.  Clients are added to this when we disconnect from them so we
-    /// have a way to know to not handle subsequent hop messages from them (i.e. those which were
-    /// already enqueued in the channel or added before Crust handled the disconnect request).  If a
-    /// client then re-connects, its ID is removed from here when we add it to the `PeerManager`.
-    dropped_clients: LruCache<PublicId, ()>,
-    /// Proxy client traffic handled
-    proxy_load_amount: u64,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
@@ -131,7 +108,6 @@ impl Elder {
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
         let peer_map = PeerMap::new();
-        let peer_mgr = PeerManager::new();
 
         let details = ElderDetails {
             chain,
@@ -142,7 +118,6 @@ impl Elder {
             msg_queue: VecDeque::new(),
             parsec_map,
             peer_map,
-            peer_mgr,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
         };
@@ -180,7 +155,6 @@ impl Elder {
             network_rx: None,
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
-            peer_mgr: self.peer_mgr,
             sig_accumulator: self.sig_accumulator,
         })
     }
@@ -196,7 +170,6 @@ impl Elder {
                 msg_queue: state.msg_queue,
                 parsec_map: state.parsec_map,
                 peer_map: state.peer_map,
-                peer_mgr: state.peer_mgr,
                 routing_msg_filter: state.msg_filter,
                 timer,
             },
@@ -220,16 +193,12 @@ impl Elder {
             is_first_node,
             msg_queue: details.msg_queue.into_iter().collect(),
             peer_map: details.peer_map,
-            peer_mgr: details.peer_mgr,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
             tick_timer_token,
             timer: timer,
             next_relocation_dst: None,
             next_relocation_interval: None,
-            banned_client_ips: LruCache::with_expiry_duration(CLIENT_BAN_DURATION),
-            dropped_clients: LruCache::with_expiry_duration(DROPPED_CLIENT_TIMEOUT),
-            proxy_load_amount: 0,
             parsec_map: details.parsec_map,
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
@@ -244,7 +213,7 @@ impl Elder {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
                 self,
-                self.chain.valid_peers().len()
+                self.chain.elders().count()
             );
             let network_estimate = match self.chain.network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
@@ -280,7 +249,11 @@ impl Elder {
         }
 
         // Handle the SectionInfo event which triggered us becoming established node.
-        let _ = self.handle_section_info_event(elders_info, old_pfx, outbox)?;
+        let neighbour_change = EldersChange {
+            added: self.chain.neighbour_elders().copied().collect(),
+            removed: Default::default(),
+        };
+        let _ = self.handle_section_info_event(elders_info, old_pfx, neighbour_change, outbox)?;
 
         Ok(())
     }
@@ -324,41 +297,16 @@ impl Elder {
         Ok(())
     }
 
-    // Connected peers which are valid need added to RT
-    // Peers no longer required currently connected as PeerState::Routing are disconnected
-    // Establish connection to peers missing from peer manager
-    fn update_peer_states(&mut self, outbox: &mut dyn EventBox) {
-        let mut peers_to_add = Vec::new();
-        let mut peers_to_remove = Vec::new();
-
-        for (pub_id, peer) in self.peer_mgr.connected_peers() {
-            if self.is_peer_valid(pub_id) {
-                peers_to_add.push(*pub_id);
-            } else if peer.is_node() && self.chain.prefix_change() == PrefixChange::None {
-                peers_to_remove.push(*pub_id);
+    // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
+    // longer members of our section or elders of neighbour sections.
+    fn update_neighbour_connections(&mut self, change: EldersChange, outbox: &mut dyn EventBox) {
+        if self.chain.prefix_change() == PrefixChange::None {
+            for pub_id in change.removed {
+                self.disconnect(&pub_id);
             }
         }
-        for pub_id in peers_to_add {
-            self.add_node(&pub_id, outbox);
-        }
-        for pub_id in peers_to_remove {
-            trace!("{} Removing {:?} from RT.", self, pub_id);
-            let _ = self.peer_mgr.remove_peer(&pub_id);
-            self.disconnect_peer(&pub_id);
-        }
 
-        let peers_to_connect: BTreeSet<PublicId> = self
-            .chain
-            .valid_peers()
-            .into_iter()
-            .filter(|pub_id| {
-                self.peer_mgr.get_peer(pub_id).is_none() && *pub_id != self.full_id.public_id()
-            })
-            .cloned()
-            .collect();
-
-        for pub_id in peers_to_connect {
-            debug!("{} Sending connection info to {:?}.", self, pub_id);
+        for pub_id in change.added {
             let src = Authority::Node(*self.name());
             let dst = Authority::Node(*pub_id.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
@@ -445,32 +393,11 @@ impl Elder {
             let src = Authority::Section(self.our_prefix().name());
             let dst = Authority::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
+
             if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
                 debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
             }
         });
-    }
-
-    /// Returns `Ok` if the peer's state indicates it's allowed to send the given message type.
-    fn check_direct_message_sender(
-        &self,
-        msg: &DirectMessage,
-        pub_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        match self.peer_mgr.get_peer(pub_id).map(Peer::state) {
-            Some(PeerState::Client { .. }) => {
-                if let DirectMessage::BootstrapRequest = *msg {
-                    Ok(())
-                } else {
-                    debug!(
-                        "{} Illegitimate direct message {:?} from {:?}.",
-                        self, msg, pub_id
-                    );
-                    Err(RoutingError::InvalidStateForOperation)
-                }
-            }
-            _ => Ok(()),
-        }
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -480,12 +407,12 @@ impl Elder {
         msg: SignedRoutingMessage,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
-        if !self.peer_mgr.get_peer(&pub_id).map_or(false, Peer::is_node) {
+        if !self.chain.is_peer_elder(&pub_id) {
             debug!(
-                "{} Received message signature from unknown peer {}",
+                "{} - Received message signature from invalid peer {}",
                 self, pub_id
             );
-            return Err(RoutingError::UnknownConnection(pub_id));
+            return Err(RoutingError::InvalidSource);
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
@@ -505,7 +432,7 @@ impl Elder {
             .filter_incoming(signed_msg.routing_message())
             .is_new()
         {
-            debug!(
+            trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
                 signed_msg.routing_message()
@@ -575,7 +502,7 @@ impl Elder {
                 },
                 src @ Authority::Node(_),
                 dst @ Authority::Node(_),
-            ) => self.handle_connection_request(&conn_info, pub_id, src, dst, outbox),
+            ) => self.handle_connection_request(conn_info, pub_id, src, dst, outbox),
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)
             }
@@ -644,7 +571,7 @@ impl Elder {
         let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
-        if self.peer_mgr.get_peer(&pub_id).is_none() {
+        if !self.peer_map.has(&pub_id) {
             trace!(
                 "{} - Not yet connected to {} - sending connection request.",
                 self,
@@ -679,61 +606,26 @@ impl Elder {
 
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        let conn_info = match self.peer_map().get_connection_info(&pub_id) {
-            Some(conn_info) => conn_info.clone(),
-            None => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Not connected to the sender of BootstrapRequest."
-                );
-                return Err(RoutingError::UnknownConnection(pub_id));
-            }
+        debug!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
+
+        if !self.peer_map.has(&pub_id) {
+            log_or_panic!(
+                LogLevel::Error,
+                "Not connected to the sender of BootstrapRequest."
+            );
+            return Err(RoutingError::UnknownConnection(pub_id));
         };
 
-        let (peer_type, client_ip) = match conn_info {
-            ConnectionInfo::Client { peer_addr } => ("client", Some(peer_addr.ip())),
-            ConnectionInfo::Node { .. } => ("node", None),
-        };
-
-        trace!(
-            "{} - Received BootstrapRequest from {:?} as {}.",
-            self,
-            pub_id,
-            peer_type
-        );
-
-        if let Some(ip) = client_ip {
-            // Check banned IPs.
-            if self.banned_client_ips.contains_key(&ip) {
-                warn!(
-                    "{} - Client {:?} is trying to bootstrap on banned IP {}.",
-                    self, pub_id, ip
-                );
-                self.ban_and_disconnect_peer(&pub_id);
-                return Ok(());
-            }
-
-            // Check the client limit.
-            if !self.peer_mgr.can_accept_client(&ip) {
-                debug!(
-                    "{} - Client {:?} rejected: We cannot accept more clients.",
-                    self, pub_id
-                );
-                self.send_direct_message(
-                    &pub_id,
-                    DirectMessage::BootstrapResponse(BootstrapResponse::Error(
-                        BootstrapResponseError::ClientLimit,
-                    )),
-                );
-                self.disconnect_peer(&pub_id);
-                return Ok(());
-            }
+        if self.chain.is_peer_our_member(&pub_id) {
+            debug!(
+                "{} - Ignoring BootstrapRequest from {} - already member of our section",
+                self, pub_id
+            );
+            return Ok(());
         }
 
         // Check min section size.
-        if (client_ip.is_some() || !self.is_first_node)
-            && self.chain.len() < self.min_section_size() - 1
-        {
+        if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
             debug!(
                 "{} - Peer {:?} rejected: Routing table has {} entries. {} required.",
                 self,
@@ -747,12 +639,9 @@ impl Elder {
                     BootstrapResponseError::TooFewPeers,
                 )),
             );
-            self.disconnect_peer(&pub_id);
+            self.disconnect(&pub_id);
             return Ok(());
         }
-
-        self.peer_mgr.handle_bootstrap_request(pub_id, &conn_info);
-        let _ = self.dropped_clients.remove(&pub_id);
 
         self.respond_to_bootstrap_request(&pub_id);
 
@@ -763,15 +652,17 @@ impl Elder {
         let get_node_infos = |node_names: BTreeSet<XorName>| {
             node_names
                 .into_iter()
-                .filter_map(|xor_name| self.peer_mgr.get_pub_id(&xor_name))
-                .filter_map(|pub_id| match self.peer_map.get_connection_info(pub_id) {
-                    Some(ConnectionInfo::Node { node_info }) => Some(node_info.clone()),
-                    _ => None,
-                })
+                .filter_map(|name| self.peer_map.get_connection_info(name).cloned())
                 .collect()
         };
         let response = if self.our_prefix().matches(pub_id.name()) {
-            let mut node_infos: Vec<_> = get_node_infos(self.chain.our_section());
+            let mut node_infos: Vec<_> = get_node_infos(
+                self.chain
+                    .our_elders()
+                    .map(PublicId::name)
+                    .copied()
+                    .collect(),
+            );
             if let Ok(our_info) = self.our_connection_info() {
                 node_infos.push(our_info);
             }
@@ -789,12 +680,31 @@ impl Elder {
         self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(response));
     }
 
-    fn handle_connection_response(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
-        self.peer_mgr_mut().set_connected(pub_id);
-        self.process_connection(pub_id, outbox);
+    fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
+        debug!("{} - Received connection response from {}", self, pub_id);
     }
 
     fn handle_join_request(&mut self, pub_id: PublicId) {
+        debug!("{} - Received JoinRequest from {}", self, pub_id);
+
+        if !self.chain.our_prefix().matches(pub_id.name()) {
+            debug!(
+                "{} - Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
+                self,
+                pub_id,
+                self.chain.our_prefix()
+            );
+            return;
+        }
+
+        if self.chain.is_peer_our_member(&pub_id) {
+            debug!(
+                "{} - Ignoring JoinRequest from {} - already member of our section.",
+                self, pub_id
+            );
+            return;
+        }
+
         self.vote_for_event(AccumulatingEvent::Online(pub_id));
     }
 
@@ -826,32 +736,7 @@ impl Elder {
         Ok(())
     }
 
-    fn send_parsec_gossip(&mut self, target: Option<(u64, PublicId)>) {
-        let (version, gossip_target) = match target {
-            Some((v, p)) => (v, p),
-            None => {
-                let version = self.parsec_map.last_version();
-                let mut recipients = self.parsec_map.gossip_recipients();
-                if recipients.is_empty() {
-                    // Parsec hasn't caught up with the event of us joining yet.
-                    return;
-                }
-
-                recipients.retain(|pub_id| self.peer_mgr.is_connected(pub_id));
-                if recipients.is_empty() {
-                    log_or_panic!(LogLevel::Error, "Not connected to any gossip recipient.");
-                    return;
-                }
-
-                let rand_index = utils::rand_index(recipients.len());
-                (version, *recipients[rand_index])
-            }
-        };
-
-        if let Some(msg) = self.parsec_map.create_gossip(version, &gossip_target) {
-            self.send_direct_message(&gossip_target, msg);
-        }
-
+    fn maintain_parsec(&mut self) {
         if self.parsec_map.needs_pruning() {
             self.vote_for_event(AccumulatingEvent::ParsecPrune);
             self.parsec_map_mut().set_pruning_voted_for();
@@ -898,9 +783,7 @@ impl Elder {
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
         let single_target = if let Authority::Node(node_name) = dst {
-            self.peer_mgr
-                .get_pub_id(&node_name)
-                .filter(|node_id| self.peer_map.has(&node_id))
+            self.peer_map.get_id(&node_name)
         } else {
             None
         };
@@ -926,7 +809,6 @@ impl Elder {
             .collect();
 
         let message = self.to_hop_message(signed_msg.clone())?;
-
         self.send_message_to_targets(&targets, dg_size, message);
 
         // we've seen this message - don't handle it again if someone else sends it to us
@@ -944,8 +826,9 @@ impl Elder {
         let list: Vec<XorName> = match *src {
             Authority::Section(_) => self
                 .chain
-                .our_section()
-                .into_iter()
+                .our_elders()
+                .map(PublicId::name)
+                .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
             // FIXME: This does not include recently accepted peers which would affect quorum
             // calculation. This even when going via RT would have only allowed route-0 to succeed
@@ -980,18 +863,13 @@ impl Elder {
         // TODO: even if having chain reply based on connected_state,
         // we remove self in targets info and can do same by not
         // chaining us to conn_peer list here?
-        let conn_peers = self
-            .peer_map()
-            .connected_ids()
-            .map(|pub_id| pub_id.name())
-            .chain(iter::once(self.name()))
-            .collect_vec();
-        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
+        let conn_peers = self.connected_peers();
+        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;;
         Ok((
             targets
                 .into_iter()
-                .filter_map(|name| self.peer_mgr.get_pub_id(&name))
-                .cloned()
+                .filter_map(|name| self.peer_map.get_id(&name))
+                .copied()
                 .collect(),
             dg_size,
         ))
@@ -1002,107 +880,37 @@ impl Elder {
     /// Returns all peers we are currently connected to, according to the peer manager, including
     /// ourselves.
     fn connected_peers(&self) -> Vec<&XorName> {
-        self.peer_mgr
-            .connected_peers()
-            .map(|(pub_id, _)| pub_id.name())
+        self.peer_map
+            .connected_ids()
+            .map(|pub_id| pub_id.name())
             .chain(iter::once(self.name()))
             .collect()
     }
 
-    /// Handles dropped peer with the given ID. Returns true if we should keep running, false if
-    /// we should terminate.
-    fn dropped_peer(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-        try_reconnect: bool,
-    ) -> bool {
-        if self.peer_mgr.remove_peer_no_joining_checks(&pub_id) {
-            info!("{} Dropped {} from the routing table.", self, pub_id.name());
-            outbox.send_event(Event::NodeLost(*pub_id.name()));
-
-            if self.chain.our_info().members().contains(&pub_id) {
-                self.vote_for_event(AccumulatingEvent::Offline(pub_id));
-            }
-        }
-
+    // Check whether we are connected to any elders. If this node loses all elder connections,
+    // it must be restarted.
+    fn check_elder_connections(&mut self, outbox: &mut dyn EventBox) -> bool {
         if self
-            .peer_mgr
-            .connected_peers()
-            .filter(|(_, p)| p.is_node())
-            .count()
-            == 0
+            .peer_map
+            .connected_ids()
+            .any(|id| self.chain.is_peer_our_elder(id))
         {
-            debug!("{} Lost all routing connections.", self);
+            true
+        } else {
+            debug!("{} - Lost all elder connections.", self);
+
             // Except network startup, restart in other cases.
             if *self.chain.our_info().version() > 0 {
                 outbox.send_event(Event::RestartRequired);
-                return false;
-            }
-        }
-
-        if try_reconnect && self.is_peer_valid(&pub_id) {
-            debug!(
-                "{} - Sending connection info to {:?} due to dropped peer.",
-                self, pub_id
-            );
-
-            let our_name = *self.name();
-            let _ = self.send_connection_request(
-                pub_id,
-                Authority::Node(our_name),
-                Authority::Node(*pub_id.name()),
-                outbox,
-            );
-        }
-
-        true
-    }
-
-    fn remove_expired_peers(&mut self) {
-        for pub_id in self.peer_mgr.remove_expired_peers() {
-            debug!("{} Disconnecting from timed out peer {:?}", self, pub_id);
-            // We've already removed from peer manager but this helps clean out connections to
-            // expired peers.
-            self.disconnect_peer(&pub_id);
-            if self.chain.our_info().members().contains(&pub_id) {
-                self.vote_for_event(AccumulatingEvent::Offline(pub_id));
+                false
+            } else {
+                true
             }
         }
     }
 
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
-    }
-
-    // While this can theoretically be called as a result of a misbehaving client or node, we're
-    // actually only blocking clients from bootstrapping from that IP (see
-    // `handle_bootstrap_accept()`). This behaviour will change when we refactor the codebase to
-    // handle malicious nodes more fully.
-    fn ban_and_disconnect_peer(&mut self, pub_id: &PublicId) {
-        let ip = match self.peer_map().get_connection_info(pub_id) {
-            Some(ConnectionInfo::Client { peer_addr }) => peer_addr.ip(),
-            Some(ConnectionInfo::Node { .. }) => {
-                warn!(
-                    "{} - Can't ban IP address of {:?} - not a client.",
-                    self, pub_id
-                );
-                return;
-            }
-            None => {
-                warn!(
-                    "{} - Can't ban IP address of {:?} - unknown IP address.",
-                    self, pub_id
-                );
-                return;
-            }
-        };
-
-        debug!("{} - Banned client {:?} on IP {}.", self, pub_id, ip);
-
-        let _ = self.banned_client_ips.insert(ip, ());
-        let _ = self.dropped_clients.insert(*pub_id, ());
-        self.disconnect_peer(pub_id);
     }
 }
 
@@ -1158,20 +966,20 @@ impl Base for Elder {
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
         if self.tick_timer_token == token {
+            // TODO: we no longer need tick for any internal purposes. Verify it is not needed by
+            // the upper layers and remove it.
             self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
-            self.remove_expired_peers();
-            self.proxy_load_amount = 0;
-            self.update_peer_states(outbox);
             outbox.send_event(Event::TimerTicked);
         } else if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
-            // If we're the only node then invoke parsec_poll_all directly
+            // If we're the only node then invoke parsec_poll directly
             if self.chain.our_info().members().len() == 1 {
                 let _ = self.parsec_poll(outbox);
             }
 
             self.send_parsec_gossip(None);
+            self.maintain_parsec();
         }
 
         Transition::Stay
@@ -1182,26 +990,41 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_bootstrapped_to(&mut self, node_info: NodeInfo) -> Transition {
+    fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
         // A mature node doesn't need a bootstrap connection
         self.network_service
             .service_mut()
-            .disconnect_from(node_info.peer_addr);
+            .disconnect_from(conn_info.peer_addr);
         Transition::Stay
     }
 
     fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - Lost peer {}", self, pub_id);
 
-        if self.peer_mgr.get_peer(&pub_id).is_none() {
-            return Transition::Stay;
+        if !self.check_elder_connections(outbox) {
+            return Transition::Terminate;
         }
 
-        if self.dropped_peer(pub_id, outbox, true) {
-            Transition::Stay
-        } else {
-            Transition::Terminate
+        if self.chain.is_peer_our_member(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
+
+        if self.chain.is_peer_elder(&pub_id) {
+            debug!(
+                "{} - Sending connection request to {} due to lost peer.",
+                self, pub_id
+            );
+
+            let our_name = *self.name();
+            let _ = self.send_connection_request(
+                pub_id,
+                Authority::Node(our_name),
+                Authority::Node(*pub_id.name()),
+                outbox,
+            );
+        }
+
+        Transition::Stay
     }
 
     fn finish_handle_network_event(&mut self, outbox: &mut dyn EventBox) -> Transition {
@@ -1216,18 +1039,15 @@ impl Base for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        self.check_direct_message_sender(&msg, &pub_id)?;
-
         use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
             BootstrapRequest => {
                 if let Err(error) = self.handle_bootstrap_request(pub_id) {
                     warn!(
-                        "{} Invalid BootstrapRequest received ({:?}), dropping {}.",
-                        self, error, pub_id
+                        "{} Invalid BootstrapRequest received from {} ({:?}).",
+                        self, pub_id, error,
                     );
-                    self.ban_and_disconnect_peer(&pub_id);
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
@@ -1297,7 +1117,7 @@ impl Base for Elder {
                         self.send_signed_message(&mut msg)?;
                     }
                 }
-            } else if let Some(&pub_id) = self.peer_mgr.get_pub_id(&target) {
+            } else if let Some(&pub_id) = self.peer_map.get_id(&target) {
                 trace!(
                     "{} Sending a signature for message {:?} to {:?}",
                     self,
@@ -1315,9 +1135,9 @@ impl Base for Elder {
                     target,
                     signed_msg.routing_message()
                 );
-                return Err(RoutingError::RoutingTable(RoutingTableError::NoSuchPeer));
             }
         }
+
         Ok(())
     }
 }
@@ -1332,13 +1152,6 @@ impl Elder {
         self.timer.get_timed_out_tokens()
     }
 
-    pub fn get_banned_client_ips(&self) -> BTreeSet<IpAddr> {
-        self.banned_client_ips
-            .peek_iter()
-            .map(|(ip, _)| *ip)
-            .collect()
-    }
-
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
         self.next_relocation_dst = dst;
     }
@@ -1351,12 +1164,8 @@ impl Elder {
         self.parsec_map.has_unpolled_observations()
     }
 
-    pub fn is_node_peer(&self, pub_id: &PublicId) -> bool {
-        self.peer_mgr.get_peer(pub_id).map_or(false, Peer::is_node)
-    }
-
-    pub fn get_peer(&self, pub_id: &PublicId) -> Option<&Peer> {
-        self.peer_mgr.get_peer(pub_id)
+    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
+        self.chain.is_peer_our_elder(pub_id)
     }
 
     pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
@@ -1374,24 +1183,12 @@ impl Elder {
 }
 
 impl Approved for Elder {
-    fn peer_mgr(&self) -> &PeerManager {
-        &self.peer_mgr
-    }
-
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
-        &mut self.peer_mgr
-    }
-
-    fn is_peer_valid(&self, pub_id: &PublicId) -> bool {
-        self.chain.is_peer_valid(pub_id)
-    }
-
-    fn add_node_success(&mut self, _: &PublicId) {
-        self.print_rt_size();
-    }
-
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
         outbox.send_event(event);
+    }
+
+    fn parsec_map(&self) -> &ParsecMap {
+        &self.parsec_map
     }
 
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
@@ -1412,17 +1209,15 @@ impl Approved for Elder {
 
     fn handle_add_elder_event(
         &mut self,
-        new_pub_id: PublicId,
+        pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let to_vote_infos = self.chain.add_member(new_pub_id)?;
+        info!("{} - handle AddElder: {}.", self, pub_id);
 
-        // If we are connected to the new elder, mark it as a full node already. Otherwise the
-        // connection request to them should have been already sent and we mark them as full node
-        // when we receive the response.
-        if self.peer_mgr.get_peer(&new_pub_id).is_some() {
-            self.add_node(&new_pub_id, outbox);
-        };
+        let to_vote_infos = self.chain.add_elder(pub_id)?;
+
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        self.print_rt_size();
 
         for info in to_vote_infos {
             self.vote_for_section_info(info)?;
@@ -1436,32 +1231,47 @@ impl Approved for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let self_info = self.chain.remove_member(pub_id)?;
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+
+        let self_info = self.chain.remove_elder(pub_id)?;
         self.vote_for_section_info(self_info)?;
-        if let Some(&pub_id) = self.peer_mgr.get_pub_id(pub_id.name()) {
-            let _ = self.dropped_peer(pub_id, outbox, false);
-            self.disconnect_peer(&pub_id);
+
+        if self.chain.is_peer_our_member(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }
 
     fn handle_online_event(
         &mut self,
-        public_id: PublicId,
+        pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.handle_candidate_approval(public_id, outbox);
+        info!("{} - handle Online: {}.", self, pub_id);
+
+        self.chain.add_member(pub_id);
+        self.handle_candidate_approval(pub_id, outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(public_id));
+        self.vote_for_event(AccumulatingEvent::AddElder(pub_id));
 
         Ok(())
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
+        info!("{} - handle Offline: {}.", self, pub_id);
+
+        self.chain.remove_member(&pub_id);
+        self.disconnect(&pub_id);
+
+        if self.chain.is_peer_our_elder(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
+        }
+
         Ok(())
     }
 
@@ -1477,8 +1287,11 @@ impl Approved for Elder {
         &mut self,
         elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
+        neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        info!("{} - handle SectionInfo: {:?}.", self, elders_info);
+
         if elders_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*elders_info.prefix()), outbox);
@@ -1495,7 +1308,7 @@ impl Approved for Elder {
 
         let self_sec_update = elders_info.prefix().matches(self.name());
 
-        self.update_peer_states(outbox);
+        self.update_neighbour_connections(neighbour_change, outbox);
 
         if self_sec_update {
             // Vote to update our self messages proof

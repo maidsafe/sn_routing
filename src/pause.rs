@@ -11,7 +11,6 @@ use crate::{
     id::FullId,
     messages::RoutingMessage,
     parsec::ParsecMap,
-    peer_manager::PeerManager,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
@@ -39,6 +38,5 @@ pub struct PausedState {
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,
     pub(super) parsec_map: ParsecMap,
     pub(super) peer_map: PeerMap,
-    pub(super) peer_mgr: PeerManager,
     pub(super) sig_accumulator: SignatureAccumulator,
 }

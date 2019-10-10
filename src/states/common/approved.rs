@@ -9,7 +9,7 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersInfo, Proof, ProofSet, SectionKeyInfo,
+        AccumulatingEvent, Chain, EldersChange, EldersInfo, Proof, ProofSet, SectionKeyInfo,
         SendAckMessagePayload,
     },
     error::RoutingError,
@@ -18,24 +18,20 @@ use crate::{
     messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
-    peer_manager::{Peer, PeerManager},
-    quic_p2p::NodeInfo,
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     types::MessageId,
+    utils,
     xor_name::XorName,
+    ConnectionInfo,
 };
 use log::LogLevel;
-use maidsafe_utilities::serialisation::{deserialise, serialise};
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
+    fn parsec_map(&self) -> &ParsecMap;
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain_mut(&mut self) -> &mut Chain;
-    fn peer_mgr(&self) -> &PeerManager;
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager;
-    fn is_peer_valid(&self, pub_id: &PublicId) -> bool;
-    fn add_node_success(&mut self, pub_id: &PublicId);
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
@@ -75,6 +71,7 @@ pub trait Approved: Base {
         &mut self,
         elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
+        neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -129,6 +126,37 @@ pub trait Approved: Base {
         }
     }
 
+    fn send_parsec_gossip(&mut self, target: Option<(u64, PublicId)>) {
+        let (version, gossip_target) = match target {
+            Some((v, p)) => (v, p),
+            None => {
+                let version = self.parsec_map().last_version();
+                let mut recipients = self.parsec_map().gossip_recipients();
+                if recipients.is_empty() {
+                    // Parsec hasn't caught up with the event of us joining yet.
+                    return;
+                }
+
+                recipients.retain(|pub_id| self.peer_map().has(pub_id));
+                if recipients.is_empty() {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} - Not connected to any gossip recipient.",
+                        self
+                    );
+                    return;
+                }
+
+                let rand_index = utils::rand_index(recipients.len());
+                (version, *recipients[rand_index])
+            }
+        };
+
+        if let Some(msg) = self.parsec_map_mut().create_gossip(version, &gossip_target) {
+            self.send_direct_message(&gossip_target, msg);
+        }
+    }
+
     fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         while let Some(block) = self.parsec_map_mut().poll() {
             let parsec_version = self.parsec_map_mut().last_version();
@@ -150,9 +178,29 @@ pub trait Approved: Base {
                         group,
                         related_info.len()
                     );
+
+                    for pub_id in group {
+                        // Establish connection with the genesis peer, if not already connected.
+                        if let Err(error) = self.send_connection_request(
+                            *pub_id,
+                            Authority::Node(*self.name()),
+                            Authority::Node(*pub_id.name()),
+                            outbox,
+                        ) {
+                            debug!(
+                                "{} - Failed to send connection request to genesis peer {}: {:?}",
+                                self, pub_id, error
+                            );
+                        }
+
+                        // Notify upper layers about the new node.
+                        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+                    }
+
                     self.chain_mut()
                         .handle_genesis_event(&group, &related_info)?;
                     self.set_pfx_successfully_polled(true);
+
                     continue;
                 }
                 Observation::OpaquePayload(event) => {
@@ -204,7 +252,7 @@ pub trait Approved: Base {
 
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut our_pfx = *self.chain_mut().our_prefix();
-        while let Some(event) = self.chain_mut().poll()? {
+        while let Some((event, neighbour_change)) = self.chain_mut().poll()? {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
@@ -223,7 +271,12 @@ pub trait Approved: Base {
                 AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
                 AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
                 AccumulatingEvent::SectionInfo(elders_info) => {
-                    match self.handle_section_info_event(elders_info, our_pfx, outbox)? {
+                    match self.handle_section_info_event(
+                        elders_info,
+                        our_pfx,
+                        neighbour_change,
+                        outbox,
+                    )? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
@@ -251,47 +304,38 @@ pub trait Approved: Base {
         Ok(Transition::Stay)
     }
 
-    fn process_connection(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
-        if self.is_peer_valid(&pub_id) {
-            self.add_node(&pub_id, outbox);
-        }
-    }
-
     fn send_connection_request(
         &mut self,
         their_pub_id: PublicId,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        outbox: &mut dyn EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if self.peer_mgr().is_connected(&their_pub_id) {
-            debug!(
-                "{} - Not sending our connection info to {:?} - already connected.",
-                self, their_pub_id
-            );
-
-            self.process_connection(their_pub_id, outbox);
+        if their_pub_id == *self.id() {
+            debug!("{} - Not sending connection request to ourselves.", self);
             return Ok(());
-        } else {
-            self.peer_mgr_mut().set_connecting(their_pub_id);
         }
 
-        let conn_info = serialise(&self.our_connection_info()?)?;
+        if self.peer_map().has(&their_pub_id) {
+            debug!(
+                "{} - Not sending connection request to {} - already connected.",
+                self, their_pub_id
+            );
+            return Ok(());
+        }
+
         let content = MessageContent::ConnectionRequest {
-            conn_info,
+            conn_info: self.our_connection_info()?,
             pub_id: *self.full_id().public_id(),
             msg_id: MessageId::new(),
         };
 
-        debug!(
-            "{} - Sending our connection info to {:?}.",
-            self, their_pub_id
-        );
+        debug!("{} - Sending connection request to {}.", self, their_pub_id);
 
         self.send_routing_message(RoutingMessage { src, dst, content })
             .map_err(|err| {
                 debug!(
-                    "{} - Failed to send our connection info for {:?}: {:?}.",
+                    "{} - Failed to send connection request to {}: {:?}.",
                     self, their_pub_id, err
                 );
                 err
@@ -300,11 +344,11 @@ pub trait Approved: Base {
 
     fn handle_connection_request(
         &mut self,
-        encrypted_their_conn_info: &[u8],
+        their_conn_info: ConnectionInfo,
         their_pub_id: PublicId,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        outbox: &mut dyn EventBox,
+        _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if src.single_signing_name() != Some(their_pub_id.name()) {
             // Connection request not from the source node.
@@ -316,61 +360,15 @@ pub trait Approved: Base {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let their_conn_info: NodeInfo = deserialise(encrypted_their_conn_info)?;
-
         debug!(
-            "{} - Received connection info from {:?}.",
+            "{} - Received connection request from {:?}.",
             self, their_pub_id
         );
 
         self.peer_map_mut().insert(their_pub_id, their_conn_info);
-        self.peer_mgr_mut().set_connected(their_pub_id);
-        self.process_connection(their_pub_id, outbox);
-
         self.send_direct_message(&their_pub_id, DirectMessage::ConnectionResponse);
 
         Ok(())
-    }
-
-    /// Disconnects if the peer is not a proxy, client or routing table entry.
-    fn disconnect_peer(&mut self, pub_id: &PublicId) {
-        if self
-            .peer_mgr()
-            .get_peer(pub_id)
-            .map_or(false, Peer::is_node)
-        {
-            debug!("{} Not disconnecting node {}.", self, pub_id);
-        } else if self.peer_mgr().is_or_was_joining_node(pub_id) {
-            debug!("{} Not disconnecting joining node {:?}.", self, pub_id);
-        } else {
-            debug!("{} Disconnecting {}.", self, pub_id);
-
-            if let Some(peer) = self.peer_map_mut().remove(pub_id) {
-                self.network_service_mut()
-                    .service_mut()
-                    .disconnect_from(peer.peer_addr());
-            }
-
-            let _ = self.peer_mgr_mut().remove_peer(pub_id);
-        }
-    }
-
-    fn add_node(&mut self, pub_id: &PublicId, outbox: &mut dyn EventBox) {
-        let log_ident = self.log_ident();
-        match self.peer_mgr_mut().set_node(pub_id, &log_ident) {
-            Ok(true) => {
-                info!("{} - Added peer {} as node.", self, pub_id);
-                self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-                self.add_node_success(pub_id);
-            }
-            Ok(false) => {}
-            Err(error) => {
-                debug!("{} Peer {:?} was not updated: {:?}", self, pub_id, error);
-                if !self.is_peer_valid(pub_id) {
-                    self.disconnect_peer(pub_id);
-                }
-            }
-        }
     }
 }
 

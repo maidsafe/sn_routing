@@ -17,7 +17,7 @@ use crate::{
     routing_table::{Authority, Prefix},
     types::MessageId,
     xor_name::XorName,
-    BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare,
+    BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare, ConnectionInfo,
 };
 use hex_fmt::HexFmt;
 use log::LogLevel;
@@ -162,7 +162,7 @@ impl Debug for SecurityMetadata {
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SignedRoutingMessage {
     /// A request or response type message.
     content: RoutingMessage,
@@ -425,7 +425,7 @@ impl SignedRoutingMessage {
 }
 
 /// A routing message with source and destination authorities.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
     /// Source authority
     pub src: Authority<XorName>,
@@ -501,7 +501,7 @@ impl RoutingMessage {
 /// add it into their routing table. When A receives the `NodeApproval` message, it adds the members
 /// of Y to its routing table.
 ///
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum MessageContent {
@@ -510,7 +510,7 @@ pub enum MessageContent {
         /// The sender's public ID.
         pub_id: PublicId,
         /// Sender's connection info.
-        conn_info: Vec<u8>,
+        conn_info: ConnectionInfo,
         /// The message's unique identifier.
         msg_id: MessageId,
     },

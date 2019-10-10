@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{id::PublicId, quic_p2p::NodeInfo, ConnectionInfo};
+use crate::{id::PublicId, xor_name::XorName, ConnectionInfo};
 use fxhash::FxHashMap;
 use std::net::SocketAddr;
 
@@ -21,7 +21,7 @@ use std::net::SocketAddr;
 ///    public id.
 #[derive(Default)]
 pub struct PeerMap {
-    forward: FxHashMap<PublicId, ConnectionInfo>,
+    forward: FxHashMap<XorName, ConnectionInfo>,
     reverse: FxHashMap<SocketAddr, PublicId>,
     pending: FxHashMap<SocketAddr, PendingConnection>,
 }
@@ -49,7 +49,7 @@ impl PeerMap {
     // is fixed.
     #[allow(clippy::map_entry)]
     pub fn connect(&mut self, conn_info: ConnectionInfo) {
-        let socket_addr = conn_info.peer_addr();
+        let socket_addr = conn_info.peer_addr;
         if !self.reverse.contains_key(&socket_addr) {
             let _ = self
                 .pending
@@ -63,7 +63,7 @@ impl PeerMap {
         let _ = self.pending.remove(&socket_addr);
 
         if let Some(pub_id) = self.reverse.remove(&socket_addr) {
-            let _ = self.forward.remove(&pub_id);
+            let _ = self.forward.remove(pub_id.name());
             Some(pub_id)
         } else {
             None
@@ -73,10 +73,10 @@ impl PeerMap {
     // Associate a network layer connection, that was previously established via `connect`, with
     // the peers public id.
     pub fn identify(&mut self, pub_id: PublicId, socket_addr: SocketAddr) {
-        if let Some(peer_type) = self.pending.remove(&socket_addr) {
+        if let Some(pending) = self.pending.remove(&socket_addr) {
             let _ = self
                 .forward
-                .insert(pub_id, peer_type.into_connection_info(socket_addr));
+                .insert(*pub_id.name(), pending.into_connection_info(socket_addr));
             let _ = self.reverse.insert(socket_addr, pub_id);
         }
     }
@@ -84,19 +84,17 @@ impl PeerMap {
     // Inserts a new entry into the peer map. This is equivalent to calling `connect` followed by
     // `identify` and can be used when we obtain both the public id and the connection info at the
     // same time (for example when a third party sends them to us).
-    pub fn insert(&mut self, pub_id: PublicId, node_info: NodeInfo) {
-        let _ = self.pending.remove(&node_info.peer_addr);
-        let _ = self.reverse.insert(node_info.peer_addr, pub_id);
-        let _ = self
-            .forward
-            .insert(pub_id, ConnectionInfo::Node { node_info });
+    pub fn insert(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
+        let _ = self.pending.remove(&conn_info.peer_addr);
+        let _ = self.reverse.insert(conn_info.peer_addr, pub_id);
+        let _ = self.forward.insert(*pub_id.name(), conn_info);
     }
 
     // Removes the peer. If we were connected to the peer, returns its connection info. Otherwise
     // returns `None`.
-    pub fn remove(&mut self, pub_id: &PublicId) -> Option<ConnectionInfo> {
-        let conn_info = self.forward.remove(pub_id)?;
-        let _ = self.reverse.remove(&conn_info.peer_addr());
+    pub fn remove<N: AsRef<XorName>>(&mut self, name: N) -> Option<ConnectionInfo> {
+        let conn_info = self.forward.remove(name.as_ref())?;
+        let _ = self.reverse.remove(&conn_info.peer_addr);
         Some(conn_info)
     }
 
@@ -106,52 +104,50 @@ impl PeerMap {
         self.forward.drain().map(|(_, conn_info)| conn_info).chain(
             self.pending
                 .drain()
-                .map(|(socket_addr, peer_type)| peer_type.into_connection_info(socket_addr)),
+                .map(|(socket_addr, pending)| pending.into_connection_info(socket_addr)),
         )
     }
 
     // Get connection info of the peer with the given public id.
-    pub fn get_connection_info<'a>(&'a self, pub_id: &PublicId) -> Option<&'a ConnectionInfo> {
-        self.forward.get(pub_id)
+    pub fn get_connection_info<N: AsRef<XorName>>(&self, name: N) -> Option<&ConnectionInfo> {
+        self.forward.get(name.as_ref())
+    }
+
+    // Get PublicId for XorName
+    pub fn get_id(&self, name: &XorName) -> Option<&PublicId> {
+        self.forward
+            .get(name)
+            .and_then(|conn_info| self.reverse.get(&conn_info.peer_addr))
     }
 
     // Returns an iterator over the public IDs of connected peers
     pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
-        self.forward.keys()
+        self.reverse.values()
     }
 
     // Returns `true` if we have the connection info for a given public ID
-    pub fn has(&self, pub_id: &PublicId) -> bool {
-        self.forward.contains_key(pub_id)
+    pub fn has<N: AsRef<XorName>>(&self, name: N) -> bool {
+        self.forward.contains_key(name.as_ref())
     }
 }
 
-enum PendingConnection {
-    Client,
-    Node { peer_cert_der: Vec<u8> },
+struct PendingConnection {
+    peer_cert_der: Vec<u8>,
 }
 
 impl From<ConnectionInfo> for PendingConnection {
     fn from(conn_info: ConnectionInfo) -> Self {
-        match conn_info {
-            ConnectionInfo::Client { .. } => PendingConnection::Client,
-            ConnectionInfo::Node {
-                node_info: NodeInfo { peer_cert_der, .. },
-            } => PendingConnection::Node { peer_cert_der },
+        Self {
+            peer_cert_der: conn_info.peer_cert_der,
         }
     }
 }
 
 impl PendingConnection {
     fn into_connection_info(self, peer_addr: SocketAddr) -> ConnectionInfo {
-        match self {
-            PendingConnection::Client => ConnectionInfo::Client { peer_addr },
-            PendingConnection::Node { peer_cert_der } => ConnectionInfo::Node {
-                node_info: NodeInfo {
-                    peer_addr,
-                    peer_cert_der,
-                },
-            },
+        ConnectionInfo {
+            peer_addr,
+            peer_cert_der: self.peer_cert_der,
         }
     }
 }
@@ -165,7 +161,7 @@ mod tests {
     #[test]
     fn connect_then_identify_then_disconnect() {
         let mut peer_map = PeerMap::new();
-        let conn_info = conn_info("198.51.100.0:5555");
+        let conn_info = connection_info("198.51.100.0:5555");
         let pub_id = *FullId::new().public_id();
 
         assert!(peer_map.get_connection_info(&pub_id).is_none());
@@ -173,10 +169,10 @@ mod tests {
         peer_map.connect(conn_info.clone());
         assert!(peer_map.get_connection_info(&pub_id).is_none());
 
-        peer_map.identify(pub_id, conn_info.peer_addr());
+        peer_map.identify(pub_id, conn_info.peer_addr);
         assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
 
-        let outcome = peer_map.disconnect(conn_info.peer_addr());
+        let outcome = peer_map.disconnect(conn_info.peer_addr);
         assert_eq!(outcome, Some(pub_id));
         assert!(peer_map.get_connection_info(&pub_id).is_none());
     }
@@ -184,27 +180,18 @@ mod tests {
     #[test]
     fn insert() {
         let mut peer_map = PeerMap::new();
-        let node_info = node_info("198.51.100.0:5555");
-        let conn_info = ConnectionInfo::Node {
-            node_info: node_info.clone(),
-        };
+        let conn_info = connection_info("198.51.100.0:5555");
         let pub_id = *FullId::new().public_id();
 
         assert!(peer_map.get_connection_info(&pub_id).is_none());
 
-        peer_map.insert(pub_id, node_info.clone());
+        peer_map.insert(pub_id, conn_info.clone());
         assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
     }
 
-    fn conn_info(addr: &str) -> ConnectionInfo {
-        ConnectionInfo::Node {
-            node_info: node_info(addr),
-        }
-    }
-
-    fn node_info(addr: &str) -> NodeInfo {
+    fn connection_info(addr: &str) -> ConnectionInfo {
         let peer_addr: SocketAddr = unwrap!(addr.parse());
-        NodeInfo {
+        ConnectionInfo {
             peer_addr,
             peer_cert_der: vec![],
         }

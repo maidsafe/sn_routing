@@ -6,8 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::quic_p2p::Token;
-use crate::ConnectionInfo;
+use crate::{quic_p2p::Token, ConnectionInfo};
 use log::LogLevel;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -88,7 +87,7 @@ impl SendingTargetsCache {
     fn fail_target(&mut self, token: Token, target: SocketAddr) {
         let _ = self
             .target_states_mut(token)
-            .find(|(info, _state)| info.peer_addr() == target)
+            .find(|(info, _state)| info.peer_addr == target)
             .map(|(_info, state)| match *state {
                 TargetState::Failed(_) => {
                     log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
@@ -145,7 +144,7 @@ impl SendingTargetsCache {
     pub fn target_succeeded(&mut self, token: Token, target: SocketAddr) {
         let _ = self
             .target_states_mut(token)
-            .find(|(info, _state)| info.peer_addr() == target)
+            .find(|(info, _state)| info.peer_addr == target)
             .map(|(_info, state)| {
                 *state = TargetState::Sent;
             });
