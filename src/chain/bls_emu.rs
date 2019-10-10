@@ -13,9 +13,14 @@ use super::ProofSet;
 use crate::{
     crypto,
     id::{FullId, PublicId},
-    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{collections::BTreeMap, fmt};
+
+/// The BLS scheme will require more than `THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR`
+/// shares in order to construct a full key or signature.
+pub const THRESHOLD_NUMERATOR: usize = 1;
+/// See `THRESHOLD_NUMERATOR`.
+pub const THRESHOLD_DENOMINATOR: usize = 3;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PublicKeySet {
@@ -65,7 +70,7 @@ impl PublicKeyShare {
 
 impl PublicKeySet {
     pub fn from_elders_info(elders_info: EldersInfo) -> Self {
-        let threshold = elders_info.members().len() * QUORUM_NUMERATOR / QUORUM_DENOMINATOR;
+        let threshold = elders_info.members().len() * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
         Self {
             threshold,
             elders_info,
@@ -172,7 +177,7 @@ mod test {
     #[test]
     fn test_signature() {
         let section_size = 10;
-        let min_sigs = section_size * QUORUM_NUMERATOR / QUORUM_DENOMINATOR + 1;
+        let min_sigs = section_size * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR + 1;
 
         let (pk_set, sk_shares) = gen_section(section_size);
 

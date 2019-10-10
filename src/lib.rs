@@ -216,6 +216,9 @@ pub mod test_consts {
     pub use crate::states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 }
 
+#[cfg(feature = "mock_base")]
+pub use self::chain::bls_emu::{THRESHOLD_DENOMINATOR, THRESHOLD_NUMERATOR};
+
 #[cfg(test)]
 mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
