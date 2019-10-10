@@ -19,11 +19,11 @@ use crate::{
     mock::Network,
     outbox::{EventBox, EventBuf},
     state_machine::{State, StateMachine, Transition},
+    utils::LogIdent,
     NetworkConfig, NetworkService,
 };
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
-use utils::LogIdent;
 
 const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 // Accumulate even if 1 old node and an additional new node do not vote.
