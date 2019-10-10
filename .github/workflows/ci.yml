@@ -19,7 +19,7 @@ jobs:
           command: check
 
   test:
-    name: Test Suite
+    name: cargo test
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -34,7 +34,7 @@ jobs:
         with:
           command: test
   mock_tests:
-    name: Test Suite
+    name: Tests (mock)
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -50,7 +50,7 @@ jobs:
           command: test
           args: --features mock
   mock_base_tests:
-    name: Test Suite
+    name: Tests (mock_base)
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
