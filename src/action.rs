@@ -10,8 +10,11 @@ use crate::error::InterfaceError;
 use crate::id::PublicId;
 use crate::routing_table::Authority;
 use crate::xor_name::XorName;
+use crate::NetworkBytes;
 use hex_fmt::HexFmt;
+use quic_p2p::Token;
 use std::fmt::{self, Debug, Formatter};
+use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
@@ -33,6 +36,16 @@ pub enum Action {
         result_tx: Sender<PublicId>,
     },
     HandleTimeout(u64),
+    DisconnectClient {
+        peer_addr: SocketAddr,
+        result_tx: Sender<Result<(), InterfaceError>>,
+    },
+    SendMessageToClient {
+        peer_addr: SocketAddr,
+        msg: NetworkBytes,
+        token: Token,
+        result_tx: Sender<Result<(), InterfaceError>>,
+    },
     Terminate,
 }
 
@@ -46,6 +59,16 @@ impl Debug for Action {
             ),
             Action::GetId { .. } => write!(formatter, "Action::GetId"),
             Action::HandleTimeout(token) => write!(formatter, "Action::HandleTimeout({})", token),
+            Action::DisconnectClient { peer_addr, .. } => {
+                write!(formatter, "Action::DisconnectClient: {}", peer_addr)
+            }
+            Action::SendMessageToClient {
+                peer_addr, token, ..
+            } => write!(
+                formatter,
+                "Action::SendMessageToClient: {}, token: {}",
+                peer_addr, token
+            ),
             Action::Terminate => write!(formatter, "Action::Terminate"),
         }
     }

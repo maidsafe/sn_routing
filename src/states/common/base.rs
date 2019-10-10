@@ -81,6 +81,22 @@ pub trait Base: Display {
                     return transition;
                 }
             },
+            Action::DisconnectClient {
+                peer_addr,
+                result_tx,
+            } => {
+                let res = self.handle_disconnect_client(peer_addr);
+                let _ = result_tx.send(res);
+            }
+            Action::SendMessageToClient {
+                peer_addr,
+                msg,
+                token,
+                result_tx,
+            } => {
+                let res = self.handle_send_msg_to_client(peer_addr, msg, token);
+                let _ = result_tx.send(res);
+            }
             Action::Terminate => {
                 return Transition::Terminate;
             }
@@ -96,6 +112,21 @@ pub trait Base: Display {
         _content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);
+        Err(InterfaceError::InvalidState)
+    }
+
+    fn handle_send_msg_to_client(
+        &mut self,
+        _peer_addr: SocketAddr,
+        _msg: NetworkBytes,
+        _token: Token,
+    ) -> Result<(), InterfaceError> {
+        warn!("{} - Cannot send message to client- invalid state.", self);
+        Err(InterfaceError::InvalidState)
+    }
+
+    fn handle_disconnect_client(&mut self, _peer_addr: SocketAddr) -> Result<(), InterfaceError> {
+        warn!("{} - Cannot handle DisconnectClient - invalid state.", self);
         Err(InterfaceError::InvalidState)
     }
 
@@ -402,10 +433,21 @@ pub trait Base: Display {
 
     fn disconnect(&mut self, pub_id: &PublicId) {
         if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
-            self.network_service_mut()
-                .service_mut()
-                .disconnect_from(conn_info.peer_addr)
+            self.disconnect_from(conn_info.peer_addr);
         }
+    }
+
+    fn disconnect_from(&mut self, peer_addr: SocketAddr) {
+        self.network_service_mut()
+            .service_mut()
+            .disconnect_from(peer_addr);
+    }
+
+    fn send_msg_to_client(&mut self, peer_addr: SocketAddr, msg: NetworkBytes, token: Token) {
+        let client = Peer::Client { peer_addr };
+        self.network_service_mut()
+            .service_mut()
+            .send(client, msg, token);
     }
 }
 
