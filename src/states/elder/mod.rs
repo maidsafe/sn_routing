@@ -379,7 +379,8 @@ impl Elder {
                 AccumulatingEvent::NeighbourMerge(_)
                 | AccumulatingEvent::TheirKeyInfo(_)
                 | AccumulatingEvent::AckMessage(_)
-                | AccumulatingEvent::SendAckMessage(_) => true,
+                | AccumulatingEvent::SendAckMessage(_)
+                | AccumulatingEvent::User(_) => true,
             })
             .for_each(|event| {
                 self.vote_for_network_event(event.clone());
@@ -817,6 +818,11 @@ impl Elder {
             .filter_incoming(signed_msg.routing_message());
 
         Ok(())
+    }
+
+    /// Vote for a user-defined event.
+    pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
+        self.vote_for_event(AccumulatingEvent::User(event));
     }
 
     /// Returns the set of peers that are responsible for collecting signatures to verify a message;

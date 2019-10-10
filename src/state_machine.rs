@@ -135,6 +135,14 @@ impl State {
         )
     }
 
+    /// Returns this elder mut state.
+    pub fn elder_state_mut(&mut self) -> Option<&mut Elder> {
+        match *self {
+            State::Elder(ref mut state) => Some(state),
+            _ => None,
+        }
+    }
+
     fn replace_with<F, E>(&mut self, f: F)
     where
         F: FnOnce(Self) -> Result<Self, E>,
@@ -187,14 +195,6 @@ impl State {
     pub fn elder_state(&self) -> Option<&Elder> {
         match *self {
             State::Elder(ref state) => Some(state),
-            _ => None,
-        }
-    }
-
-    /// Returns this elder mut state.
-    pub fn elder_state_mut(&mut self) -> Option<&mut Elder> {
-        match *self {
-            State::Elder(ref mut state) => Some(state),
             _ => None,
         }
     }

@@ -182,6 +182,15 @@ impl Node {
         self.machine.current().min_section_size()
     }
 
+    /// Vote for a custom event.
+    pub fn vote_for(&mut self, event: Vec<u8>) {
+        let _ = self
+            .machine
+            .current_mut()
+            .elder_state_mut()
+            .map(|elder| elder.vote_for_user_event(event));
+    }
+
     /// Send a message.
     pub fn send_message(
         &mut self,

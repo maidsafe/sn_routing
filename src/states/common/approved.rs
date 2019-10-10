@@ -85,6 +85,16 @@ pub trait Approved: Base {
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError>;
 
+    /// Handle an accumulated `User` event
+    fn handle_user_event(
+        &mut self,
+        payload: Vec<u8>,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        self.send_event(Event::Consensus(payload), outbox);
+        Ok(())
+    }
+
     fn handle_parsec_request(
         &mut self,
         msg_version: u64,
@@ -296,6 +306,7 @@ pub trait Approved: Base {
                         self, event
                     );
                 }
+                AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }
 
             our_pfx = *self.chain_mut().our_prefix();
