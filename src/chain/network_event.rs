@@ -80,6 +80,9 @@ pub enum AccumulatingEvent {
 
     // Prune the gossip graph.
     ParsecPrune,
+
+    // Opaque user-defined event.
+    User(Vec<u8>),
 }
 
 impl AccumulatingEvent {
@@ -135,6 +138,7 @@ impl Debug for AccumulatingEvent {
                 write!(formatter, "SendAckMessage({:?})", payload)
             }
             AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
+            AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }
 }

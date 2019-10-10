@@ -50,6 +50,8 @@ pub enum Event {
     // TODO: Find a better solution for periodic tasks.
     /// This event is sent periodically every time Routing sends the `Heartbeat` messages.
     TimerTicked,
+    /// Consensus on a custom event.
+    Consensus(Vec<u8>),
 }
 
 impl Debug for Event {
@@ -80,6 +82,9 @@ impl Debug for Event {
             Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
             Event::Terminated => write!(formatter, "Event::Terminated"),
             Event::TimerTicked => write!(formatter, "Event::TimerTicked"),
+            Event::Consensus(ref payload) => {
+                write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
+            }
         }
     }
 }

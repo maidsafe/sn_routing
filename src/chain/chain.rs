@@ -289,6 +289,7 @@ impl Chain {
             | AccumulatingEvent::RemoveElder(_)
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::User(_)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
@@ -678,7 +679,8 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::TheirKeyInfo(_)
             | AccumulatingEvent::ParsecPrune
-            | AccumulatingEvent::AckMessage(_) => {
+            | AccumulatingEvent::AckMessage(_)
+            | AccumulatingEvent::User(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::SendAckMessage(_) => {
