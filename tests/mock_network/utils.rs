@@ -22,9 +22,6 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-// Poll one event per node. Otherwise, all events in a single node are polled before moving on.
-const BALANCED_POLLING: bool = true;
-
 // Maximum number of times to try and poll in a loop.  This is several orders higher than the
 // anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
 const MAX_POLL_CALLS: usize = 1000;
@@ -206,30 +203,15 @@ impl<'a> TestNodeBuilder<'a> {
 
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode]) -> bool {
-    let dummy = |_nodes: &[TestNode]| false;
-    poll_all_until(nodes, &dummy)
-}
-
-/// Process all events. Returns whether there were any events.
-/// should_stop: can be used for an early return from poll_all
-pub fn poll_all_until(nodes: &mut [TestNode], should_stop: &dyn Fn(&[TestNode]) -> bool) -> bool {
     assert!(!nodes.is_empty());
     let network = nodes[0].network().clone();
     let mut result = false;
     for _ in 0..MAX_POLL_CALLS {
-        if should_stop(nodes) {
-            return result;
-        }
+        network.poll();
 
         let mut handled_message = false;
-        network.poll();
-        if BALANCED_POLLING {
-            // handle all current messages for each node in turn, then repeat (via outer loop):
-            nodes
-                .iter_mut()
-                .for_each(|node| handled_message = node.poll() || handled_message);
-        } else {
-            handled_message = nodes.iter_mut().any(TestNode::poll);
+        for node in nodes.iter_mut() {
+            handled_message = node.poll() || handled_message;
         }
 
         // check if there were any outgoing messages which could be due to timeouts
@@ -250,19 +232,22 @@ pub fn poll_and_resend(nodes: &mut [TestNode]) {
 }
 
 /// Options for polling nodes in the test network.
-///
-/// - should_stop: can be used for an early return from poll_and_resend
-/// - extra_advance: this is so far only used for the ignoring candidate_info test.
 pub struct PollOptions {
-    pub should_stop: Box<dyn Fn(&[TestNode]) -> bool>,
+    /// If set, polling continues until this predicate returns false. If not set, polling stops when
+    /// all nodes become idle.
+    pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
+    /// If set and all nodes become idle, advances the time by this amount (in seconds) and polls
+    /// the nodes again (but only once).
     pub extra_advance: Option<u64>,
+    /// If true and all nodes become idle, advances the time by the amount it takes for joining
+    /// nodes to timeout and polls again (but only once).
     pub fire_join_timeout: bool,
 }
 
 impl Default for PollOptions {
     fn default() -> Self {
         Self {
-            should_stop: Box::new(|_| false),
+            continue_predicate: None,
             extra_advance: None,
             fire_join_timeout: true,
         }
@@ -270,6 +255,16 @@ impl Default for PollOptions {
 }
 
 impl PollOptions {
+    pub fn continue_until<F>(self, pred: F) -> Self
+    where
+        F: Fn(&[TestNode]) -> bool + 'static,
+    {
+        Self {
+            continue_predicate: Some(Box::new(pred)),
+            ..self
+        }
+    }
+
     pub fn fire_join_timeout(self, fire_join_timeout: bool) -> Self {
         Self {
             fire_join_timeout,
@@ -280,19 +275,26 @@ impl PollOptions {
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
-    let mut fired_join_timeout = !options.fire_join_timeout;
     for _ in 0..MAX_POLL_CALLS {
-        if (options.should_stop)(nodes) {
-            return;
-        }
-
         let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
-        if poll_all_until(nodes, &*options.should_stop) || nodes.iter().any(node_busy) {
+        if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
             FakeClock::advance_time(1001);
-        } else if let Some(step) = options.extra_advance.take() {
+            continue;
+        }
+
+        if let Some(continue_predicate) = options.continue_predicate.as_ref() {
+            if continue_predicate(nodes) {
+                continue;
+            }
+        }
+
+        if let Some(step) = options.extra_advance.take() {
             FakeClock::advance_time(step * 1000 + 1);
-        } else if !fired_join_timeout {
+            continue;
+        }
+
+        if options.fire_join_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
             FakeClock::advance_time(
                 (test_consts::BOOTSTRAP_TIMEOUT
@@ -302,11 +304,13 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
                     * 1000
                     + 1,
             );
-            fired_join_timeout = true;
-        } else {
-            return;
+            options.fire_join_timeout = false;
+            continue;
         }
+
+        return;
     }
+
     panic!("poll_and_resend has been called {} times.", MAX_POLL_CALLS);
 }
 
@@ -882,7 +886,18 @@ fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pr
             .full_id(full_id)
             .create(),
     );
-    poll_and_resend(nodes);
+    // Poll until the new node transitions to the `Elder` state.
+    poll_and_resend_with_options(
+        nodes,
+        PollOptions::default()
+            .continue_until(|nodes| {
+                !nodes
+                    .last()
+                    .map(|node| node.inner.is_elder())
+                    .unwrap_or(false)
+            })
+            .fire_join_timeout(false),
+    );
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
     assert!(
         prefix.matches(&nodes[nodes.len() - 1].name()),
