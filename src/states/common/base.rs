@@ -22,7 +22,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_name::XorName,
-    ConnectionInfo, Event, NetworkBytes, NetworkEvent, NetworkService,
+    ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
@@ -123,20 +123,23 @@ pub trait Base: Display {
             ConnectedTo {
                 peer: Peer::Client { peer_addr },
             } => {
-                outbox.send_event(Event::ConnectedToClient { peer_addr });
+                let client_event = ClientEvent::ConnectedToClient { peer_addr };
+                outbox.send_event(client_event.into());
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
-                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
-                    outbox.send_event(Event::ConnectionFailureToClient { peer_addr });
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::ConnectionFailureToClient { peer_addr };
+                    outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {
                     self.handle_connection_failure(peer_addr, outbox)
                 }
             }
             NewMessage { peer_addr, msg } => {
-                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
-                    outbox.send_event(Event::NewMessageFromClient { peer_addr, msg });
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::NewMessageFromClient { peer_addr, msg };
+                    outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {
                     self.handle_new_message(peer_addr, msg, outbox)
@@ -147,12 +150,13 @@ pub trait Base: Display {
                 msg,
                 token,
             } => {
-                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
-                    outbox.send_event(Event::UnsentUserMsgToClient {
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::UnsentUserMsgToClient {
                         peer_addr,
                         msg,
                         token,
-                    });
+                    };
+                    outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {
                     self.handle_unsent_message(peer_addr, msg, token, outbox)
@@ -163,12 +167,13 @@ pub trait Base: Display {
                 msg,
                 token,
             } => {
-                if !self.peer_map().is_peer_known_to_routing(&peer_addr) {
-                    outbox.send_event(Event::SentUserMsgToClient {
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::SentUserMsgToClient {
                         peer_addr,
                         msg,
                         token,
-                    });
+                    };
+                    outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {
                     self.handle_sent_message(peer_addr, msg, token, outbox)

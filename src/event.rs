@@ -15,18 +15,11 @@ use quic_p2p::Token;
 use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 
-/// An Event raised by a `Node` or `Client` via its event sender.
+/// An Event raised by a `Client`
 ///
-/// These are sent by routing to the library's user. It allows the user to handle requests and
-/// responses, and to react to changes in the network.
-///
-/// `Request` and `Response` events from section authorities are only raised once the quorum has
-/// been reached, i.e. enough members of the section have sent the same message.
+/// These are send transparently to the user library and not handled by routing
 #[derive(Clone, Eq, PartialEq)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-pub enum Event {
-    // =========== Client Events - Routing won't handle these ===========
+pub enum ClientEvent {
     /// Inform the user (library) that we are connected to a client
     ConnectedToClient {
         /// Client's endpoint
@@ -62,7 +55,27 @@ pub enum Event {
         /// Token that we had used to identify this message
         token: Token,
     },
-    // ==================================================================
+}
+
+impl Into<Event> for ClientEvent {
+    fn into(self) -> Event {
+        Event::ClientEvent(self)
+    }
+}
+
+/// An Event raised by a `Node` or `Client` via its event sender.
+///
+/// These are sent by routing to the library's user. It allows the user to handle requests and
+/// responses, and to react to changes in the network.
+///
+/// `Request` and `Response` events from section authorities are only raised once the quorum has
+/// been reached, i.e. enough members of the section have sent the same message.
+#[derive(Clone, Eq, PartialEq)]
+// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[allow(clippy::large_enum_variant)]
+pub enum Event {
+    /// Client events - to be sent to the user library and not handled in the routing library.
+    ClientEvent(ClientEvent),
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -97,29 +110,7 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::ConnectedToClient { peer_addr } => {
-                write!(formatter, "Event::ConnectedToClient - {}", peer_addr)
-            }
-            Event::ConnectionFailureToClient { peer_addr } => {
-                write!(formatter, "Event::ConnectionFailureToClient: {}", peer_addr)
-            }
-            Event::NewMessageFromClient { peer_addr, .. } => {
-                write!(formatter, "Event::NewMessageFromClient: {}", peer_addr)
-            }
-            Event::UnsentUserMsgToClient {
-                peer_addr, token, ..
-            } => write!(
-                formatter,
-                "Event::UnsentUserMsgToClient: {} with Token: {}",
-                peer_addr, token
-            ),
-            Event::SentUserMsgToClient {
-                peer_addr, token, ..
-            } => write!(
-                formatter,
-                "Event::SentUserMsgToClient: {} with Token: {}",
-                peer_addr, token
-            ),
+            Event::ClientEvent(ref client_event) => write!(formatter, "{:?}", client_event),
             Event::MessageReceived {
                 ref content,
                 ref src,
@@ -148,6 +139,40 @@ impl Debug for Event {
             Event::Consensus(ref payload) => {
                 write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
             }
+        }
+    }
+}
+
+impl Debug for ClientEvent {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match *self {
+            ClientEvent::ConnectedToClient { peer_addr } => {
+                write!(formatter, "ClientEvent::ConnectedToClient - {}", peer_addr)
+            }
+            ClientEvent::ConnectionFailureToClient { peer_addr } => write!(
+                formatter,
+                "ClientEvent::ConnectionFailureToClient: {}",
+                peer_addr
+            ),
+            ClientEvent::NewMessageFromClient { peer_addr, .. } => write!(
+                formatter,
+                "ClientEvent::NewMessageFromClient: {}",
+                peer_addr
+            ),
+            ClientEvent::UnsentUserMsgToClient {
+                peer_addr, token, ..
+            } => write!(
+                formatter,
+                "ClientEvent::UnsentUserMsgToClient: {} with Token: {}",
+                peer_addr, token
+            ),
+            ClientEvent::SentUserMsgToClient {
+                peer_addr, token, ..
+            } => write!(
+                formatter,
+                "ClientEvent::SentUserMsgToClient: {} with Token: {}",
+                peer_addr, token
+            ),
         }
     }
 }
