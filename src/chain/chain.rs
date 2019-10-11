@@ -9,8 +9,8 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatingEvent, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState, NetworkEvent, Proof,
-    ProofSet, SectionProofChain,
+    AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState,
+    NetworkEvent, Proof, ProofSet, SectionProofChain,
 };
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
@@ -24,10 +24,8 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
-#[cfg(feature = "mock_base")]
-use std::collections::BTreeMap;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -91,7 +89,7 @@ impl Chain {
         Self {
             min_sec_size,
             our_id,
-            state: SharedState::new(gen_info.first_info),
+            state: SharedState::new(gen_info.first_info, gen_info.first_ages),
             is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
@@ -116,6 +114,14 @@ impl Chain {
     /// parsec data
     pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
         self.state.get_genesis_related_info()
+    }
+
+    fn get_ages(&self) -> BTreeMap<PublicId, AgeCounter> {
+        self.state
+            .our_members
+            .iter()
+            .map(|(pub_id, member_info)| (*pub_id, member_info.age_counter))
+            .collect()
     }
 
     /// Handles an accumulated parsec Observation for membership mutation.
@@ -447,6 +453,7 @@ impl Chain {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
+                first_ages: self.get_ages(),
                 latest_info: Default::default(),
             },
             cached_events: remaining
@@ -1353,7 +1360,7 @@ pub struct EldersChange {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet};
+    use super::super::{AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet, MIN_AGE};
     use super::Chain;
     use crate::id::{FullId, PublicId};
     use crate::{Prefix, XorName, MIN_SECTION_SIZE};
@@ -1442,9 +1449,15 @@ mod tests {
 
         let first_info = sections_iter.next().expect("section members");
         let our_members = first_info.members().clone();
+        let first_ages = first_info
+            .members()
+            .iter()
+            .map(|pub_id| (*pub_id, MIN_AGE))
+            .collect();
         let genesis_info = GenesisPfxInfo {
             first_info,
             first_state_serialized: Vec::new(),
+            first_ages,
             latest_info: Default::default(),
         };
 

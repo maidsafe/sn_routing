@@ -16,7 +16,7 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
-        SectionKeyInfo, SendAckMessagePayload,
+        SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -46,7 +46,7 @@ use quic_p2p::Token;
 use std::net::SocketAddr;
 use std::{
     cmp,
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
 };
@@ -100,9 +100,12 @@ impl Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
+        let mut first_ages = BTreeMap::new();
+        let _ = first_ages.insert(public_id, MIN_AGE);
         let gen_pfx_info = GenesisPfxInfo {
             first_info: create_first_elders_info(public_id)?,
             first_state_serialized: Vec::new(),
+            first_ages,
             latest_info: EldersInfo::default(),
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
@@ -586,6 +589,7 @@ impl Elder {
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
             first_state_serialized: self.gen_pfx_info.first_state_serialized.clone(),
+            first_ages: self.gen_pfx_info.first_ages.clone(),
             latest_info: self.chain.our_info().clone(),
         };
 

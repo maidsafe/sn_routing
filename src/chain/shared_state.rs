@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, EldersInfo, MemberInfo,
-    MemberPersona, MemberState,
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, AgeCounter, EldersInfo, MemberInfo,
+    MemberPersona, MemberState, MIN_AGE,
 };
 use crate::{
     crypto::Digest256, error::RoutingError, id::PublicId, utils::LogIdent, BlsPublicKey,
@@ -60,7 +60,7 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(elders_info: EldersInfo) -> Self {
+    pub fn new(elders_info: EldersInfo, ages: BTreeMap<PublicId, AgeCounter>) -> Self {
         let pk_info = SectionKeyInfo::from_elders_info(&elders_info);
         let our_history = SectionProofChain::from_genesis(pk_info);
         let their_key_info = our_history.last_public_key_info();
@@ -73,7 +73,7 @@ impl SharedState {
             .map(|pub_id| {
                 let info = MemberInfo {
                     persona: MemberPersona::Elder,
-                    age: 0,
+                    age_counter: *ages.get(&pub_id).unwrap_or(&MIN_AGE),
                     state: MemberState::Joined,
                 };
                 (pub_id, info)
@@ -704,7 +704,7 @@ mod test {
 
         let mut state = {
             let start_section = unwrap!(keys_to_update.first()).1.clone();
-            SharedState::new(start_section)
+            SharedState::new(start_section, Default::default())
         };
 
         //

@@ -7,18 +7,31 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 /// Information about a member of our section.
+
+pub type AgeCounter = u32;
+
+/// The minimum allowed value of the Age Counter
+pub const MIN_AGE: AgeCounter = 16;
+
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct MemberInfo {
     pub persona: MemberPersona,
-    pub age: u8,
+    pub age_counter: AgeCounter,
     pub state: MemberState,
+}
+
+impl MemberInfo {
+    #[allow(unused)]
+    pub fn age(self) -> u8 {
+        f64::from(self.age_counter).log2() as u8
+    }
 }
 
 impl Default for MemberInfo {
     fn default() -> Self {
         Self {
             persona: MemberPersona::Infant,
-            age: 0,
+            age_counter: MIN_AGE,
             state: MemberState::Joined,
         }
     }
@@ -28,7 +41,6 @@ impl Default for MemberInfo {
 pub enum MemberPersona {
     #[allow(unused)]
     Infant,
-    #[allow(unused)]
     Adult,
     Elder,
 }
@@ -38,6 +50,5 @@ pub enum MemberState {
     Joined,
     // TODO: we should track how long the node has been away. If longer than some limit, remove it
     // from the list. Otherwise we allow it to return.
-    #[allow(unused)]
     Left,
 }

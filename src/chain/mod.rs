@@ -21,7 +21,7 @@ pub use self::{
     chain::{delivery_group_size, Chain, EldersChange, PrefixChangeOutcome},
     chain_accumulator::AccumulatingProof,
     elders_info::EldersInfo,
-    member_info::{MemberInfo, MemberPersona, MemberState},
+    member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE},
     network_event::{
         AccumulatingEvent, AckMessagePayload, NetworkEvent, SectionInfoSigPayload,
         SendAckMessagePayload,
@@ -29,8 +29,10 @@ pub use self::{
     proof::{Proof, ProofSet},
     shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},
 };
+use crate::PublicId;
 #[cfg(feature = "mock_base")]
-use crate::{error::RoutingError, BlsPublicKeySet, Prefix, PublicId, XorName};
+use crate::{error::RoutingError, BlsPublicKeySet, Prefix, XorName};
+use std::collections::BTreeMap;
 #[cfg(feature = "mock_base")]
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
@@ -39,6 +41,7 @@ use std::fmt::{self, Debug, Formatter};
 pub struct GenesisPfxInfo {
     pub first_info: EldersInfo,
     pub first_state_serialized: Vec<u8>,
+    pub first_ages: BTreeMap<PublicId, AgeCounter>,
     pub latest_info: EldersInfo,
 }
 
