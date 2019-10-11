@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
-        args: ["--release --features mock", "-release", "--release --features mock_base"
+        args: ["--release --features mock", "-release", "--release --features mock_base"]
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
