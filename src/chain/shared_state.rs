@@ -11,8 +11,8 @@ use super::{
     MemberPersona, MemberState,
 };
 use crate::{
-    crypto::Digest256, error::RoutingError, id::PublicId, BlsPublicKey, BlsPublicKeySet,
-    BlsSignature, Prefix, XorName,
+    crypto::Digest256, error::RoutingError, id::PublicId, utils::LogIdent, BlsPublicKey,
+    BlsPublicKeySet, BlsSignature, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -20,7 +20,7 @@ use maidsafe_utilities::serialisation;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
-    iter, mem,
+    hash, iter, mem,
 };
 use unwrap::unwrap;
 
@@ -98,6 +98,7 @@ impl SharedState {
     pub fn update_with_genesis_related_info(
         &mut self,
         related_info: &[u8],
+        log_ident: &LogIdent,
     ) -> Result<(), RoutingError> {
         if related_info.is_empty() {
             return Ok(());
@@ -117,7 +118,8 @@ impl SharedState {
             if self.our_infos != our_infos {
                 log_or_panic!(
                     LogLevel::Error,
-                    "update_with_genesis_related_info different our_infos:\n{:?},\n{:?}",
+                    "{} - update_with_genesis_related_info different our_infos:\n{:?},\n{:?}",
+                    log_ident,
                     self.our_infos,
                     our_infos
                 );
@@ -125,7 +127,8 @@ impl SharedState {
             if self.our_history != our_history {
                 log_or_panic!(
                     LogLevel::Error,
-                    "update_with_genesis_related_info different our_history:\n{:?},\n{:?}",
+                    "{} - update_with_genesis_related_info different our_history:\n{:?},\n{:?}",
+                    log_ident,
                     self.our_history,
                     our_history
                 );
@@ -133,7 +136,8 @@ impl SharedState {
             if self.our_members != our_members {
                 log_or_panic!(
                     LogLevel::Error,
-                    "update_with_genesis_related_info different our_members:\n{:?},\n{:?}",
+                    "{} - update_with_genesis_related_info different our_members:\n{:?},\n{:?}",
+                    log_ident,
                     self.our_members,
                     our_members
                 );
@@ -141,7 +145,8 @@ impl SharedState {
             if self.neighbour_infos != neighbour_infos {
                 log_or_panic!(
                     LogLevel::Error,
-                    "update_with_genesis_related_info different neighbour_infos:\n{:?},\n{:?}",
+                    "{} - update_with_genesis_related_info different neighbour_infos:\n{:?},\n{:?}",
+                    log_ident,
                     self.neighbour_infos,
                     neighbour_infos
                 );
@@ -149,7 +154,8 @@ impl SharedState {
             if self.their_keys != their_keys {
                 log_or_panic!(
                     LogLevel::Error,
-                    "update_with_genesis_related_info different their_keys:\n{:?},\n{:?}",
+                    "{} - update_with_genesis_related_info different their_keys:\n{:?},\n{:?}",
+                    log_ident,
                     self.their_keys,
                     their_keys
                 );
@@ -157,7 +163,8 @@ impl SharedState {
             if self.their_knowledge != their_knowledge {
                 log_or_panic!(
                     LogLevel::Error,
-                    "update_with_genesis_related_info different their_knowledge:\n{:?},\n{:?}",
+                    "{} - update_with_genesis_related_info different their_knowledge:\n{:?},\n{:?}",
+                    log_ident,
                     self.their_knowledge,
                     their_knowledge
                 );
@@ -165,7 +172,8 @@ impl SharedState {
             if self.their_recent_keys != their_recent_keys {
                 log_or_panic!(
                     LogLevel::Error,
-                    "update_with_genesis_related_info different their_recent_keys:\n{:?},\n{:?}",
+                    "{} - update_with_genesis_related_info different their_recent_keys:\n{:?},\n{:?}",
+                    log_ident,
                     self.their_recent_keys,
                     their_recent_keys
                 );
@@ -437,7 +445,7 @@ where
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key_info: SectionKeyInfo,
     sig: BlsSignature,
@@ -488,7 +496,26 @@ impl SectionProofBlock {
     }
 }
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+// TODO: with emulated BLS we can't compare signatures, because even if two signatures were
+// constructed from threshold + 1 signature shares from the same signature share set, they might
+// not necessarily have the same internal representation and so would not compare as equal.
+// When we switch to real BLS, this custom impl should be removed and a normal `derive`d one should
+// be used.
+impl PartialEq for SectionProofBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.key_info.eq(&other.key_info)
+    }
+}
+
+impl hash::Hash for SectionProofBlock {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.key_info.hash(state)
+    }
+}
+
+impl Eq for SectionProofBlock {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_key_info: SectionKeyInfo,
     blocks: Vec<SectionProofBlock>,
@@ -555,6 +582,26 @@ impl SectionProofChain {
             genesis_key_info,
             blocks,
         }
+    }
+}
+
+// TODO: remove this impl (replace with a `derive`d one) when we switch to real BLS. For more
+// details see the TODO comment on the `PartialEq` impl of `SectionProofBlock`.
+impl PartialEq for SectionProofChain {
+    fn eq(&self, other: &Self) -> bool {
+        self.genesis_key_info == other.genesis_key_info
+            && self.blocks == other.blocks
+            && self.validate()
+            && other.validate()
+    }
+}
+
+impl Eq for SectionProofChain {}
+
+impl hash::Hash for SectionProofChain {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        self.genesis_key_info.hash(state);
+        self.blocks.hash(state);
     }
 }
 

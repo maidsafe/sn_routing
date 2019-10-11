@@ -64,7 +64,7 @@ impl HopMessage {
 /// Metadata needed for verification of the sender.
 /// Contain shares of the section signature before combining into a BLS signature
 /// and into a FullSecurityMetadata.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
     proof: SectionProofChain,
     shares: BTreeMap<BlsPublicKeyShare, BlsSignatureShare>,
@@ -83,7 +83,7 @@ impl Debug for PartialSecurityMetadata {
 }
 
 /// Metadata needed for verification of the sender.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct FullSecurityMetadata {
     proof: SectionProofChain,
     signature: BlsSignature,
@@ -141,7 +141,7 @@ impl Debug for SingleSrcSecurityMetadata {
     }
 }
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
     None,

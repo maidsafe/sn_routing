@@ -233,14 +233,15 @@ pub fn poll_and_resend(nodes: &mut [TestNode]) {
 
 /// Options for polling nodes in the test network.
 pub struct PollOptions {
-    /// If set, polling continues until this predicate returns false. If not set, polling stops when
-    /// all nodes become idle.
+    /// If set, polling continues while this predicate returns true even if all nodes are idle.
     pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
+    /// If this predicate returns true, the polling stops even if some nodes are still busy.
+    pub stop_predicate: Box<dyn Fn(&[TestNode]) -> bool>,
     /// If set and all nodes become idle, advances the time by this amount (in seconds) and polls
-    /// the nodes again (but only once).
+    /// again one more time.
     pub extra_advance: Option<u64>,
     /// If true and all nodes become idle, advances the time by the amount it takes for joining
-    /// nodes to timeout and polls again (but only once).
+    /// nodes to timeout and polls again one more time.
     pub fire_join_timeout: bool,
 }
 
@@ -248,6 +249,7 @@ impl Default for PollOptions {
     fn default() -> Self {
         Self {
             continue_predicate: None,
+            stop_predicate: Box::new(|_| false),
             extra_advance: None,
             fire_join_timeout: true,
         }
@@ -255,12 +257,22 @@ impl Default for PollOptions {
 }
 
 impl PollOptions {
-    pub fn continue_until<F>(self, pred: F) -> Self
+    pub fn continue_if<F>(self, pred: F) -> Self
     where
         F: Fn(&[TestNode]) -> bool + 'static,
     {
         Self {
             continue_predicate: Some(Box::new(pred)),
+            ..self
+        }
+    }
+
+    pub fn stop_if<F>(self, pred: F) -> Self
+    where
+        F: Fn(&[TestNode]) -> bool + 'static,
+    {
+        Self {
+            stop_predicate: Box::new(pred),
             ..self
         }
     }
@@ -276,6 +288,10 @@ impl PollOptions {
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
     for _ in 0..MAX_POLL_CALLS {
+        if (options.stop_predicate)(nodes) {
+            return;
+        }
+
         let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
@@ -892,7 +908,7 @@ fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pr
     poll_and_resend_with_options(
         nodes,
         PollOptions::default()
-            .continue_until(|nodes| {
+            .continue_if(|nodes| {
                 !nodes
                     .last()
                     .map(|node| node.inner.is_elder())
