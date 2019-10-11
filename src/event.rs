@@ -110,7 +110,9 @@ impl From<ClientEvent> for Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::ClientEvent(ref client_event) => write!(formatter, "{:?}", client_event),
+            Event::ClientEvent(ref client_event) => {
+                write!(formatter, "Event::ClientEvent({:?})", client_event)
+            }
             Event::MessageReceived {
                 ref content,
                 ref src,
