@@ -19,7 +19,7 @@ use crate::{
     id::PublicId,
     routing_table::{Authority, Error},
     utils::LogIdent,
-    BlsPublicKeySet, Prefix, XorName, Xorable,
+    BlsPublicKeySet, Prefix, XorName, Xorable, SAFE_SECTION_SIZE,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -305,6 +305,28 @@ impl Chain {
         Ok(Some((event, EldersChange::default())))
     }
 
+    fn increase_members_age(&mut self, trigger_node: &PublicId) {
+        if self.state.our_present_members().count() >= SAFE_SECTION_SIZE
+            && self
+                .state
+                .our_members
+                .get(trigger_node)
+                .map(|member| member.persona == MemberPersona::Infant)
+                .unwrap_or(true)
+        {
+            // Do nothing for infants and unknown nodes
+            return;
+        }
+        for (_, member) in self
+            .state
+            .our_members
+            .iter_mut()
+            .filter(|(_, member)| member.state == MemberState::Joined)
+        {
+            member.increase_age();
+        }
+    }
+
     /// Adds a member to our section.
     pub fn add_member(&mut self, pub_id: PublicId) {
         self.assert_no_prefix_change("add member");
@@ -319,10 +341,10 @@ impl Chain {
             );
         }
 
-        // TODO: start as infant unless rejoining
+        self.increase_members_age(&pub_id);
+
         // TODO: support rejoining
         let info = self.state.our_members.entry(pub_id).or_default();
-        info.persona = MemberPersona::Adult;
         info.state = MemberState::Joined;
     }
 
@@ -332,6 +354,7 @@ impl Chain {
 
         if let Some(info) = self.state.our_members.get_mut(&pub_id) {
             info.state = MemberState::Left;
+            self.increase_members_age(&pub_id);
         } else {
             log_or_panic!(
                 LogLevel::Error,

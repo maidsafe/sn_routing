@@ -13,6 +13,8 @@ pub type AgeCounter = u32;
 /// The minimum allowed value of the Age Counter
 pub const MIN_AGE: AgeCounter = 16;
 
+const MAX_INFANT_AGE: u8 = 4;
+
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct MemberInfo {
     pub persona: MemberPersona,
@@ -21,9 +23,16 @@ pub struct MemberInfo {
 }
 
 impl MemberInfo {
-    #[allow(unused)]
     pub fn age(self) -> u8 {
         f64::from(self.age_counter).log2() as u8
+    }
+
+    #[allow(unused)]
+    pub fn increase_age(&mut self) {
+        self.age_counter += 1;
+        if self.age() > MAX_INFANT_AGE && self.persona == MemberPersona::Infant {
+            self.persona = MemberPersona::Adult;
+        }
     }
 }
 

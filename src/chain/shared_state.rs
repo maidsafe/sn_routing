@@ -231,6 +231,13 @@ impl SharedState {
         &self.our_members
     }
 
+    /// Returns an iterator over the members that have state == `Joined`.
+    pub fn our_present_members(&self) -> impl Iterator<Item = (&PublicId, &MemberInfo)> {
+        self.our_members
+            .iter()
+            .filter(|(_, member)| member.state == MemberState::Joined)
+    }
+
     /// Remove all entries from `out_members` whose name does not match `prefix`.
     pub fn remove_our_members_not_matching_prefix(&mut self, prefix: &Prefix<XorName>) {
         self.our_members = mem::replace(&mut self.our_members, BTreeMap::new())
