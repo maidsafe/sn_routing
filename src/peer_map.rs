@@ -129,6 +129,13 @@ impl PeerMap {
     pub fn has<N: AsRef<XorName>>(&self, name: N) -> bool {
         self.forward.contains_key(name.as_ref())
     }
+
+    // If we don't have any information about this peer when this query is made then in certain
+    // context it could mean it's likely a client. If we have the info then the peer definitely
+    // wanted to join us as a node.
+    pub fn is_node(&self, peer_addr: &SocketAddr) -> bool {
+        self.reverse.contains_key(peer_addr) || self.pending.contains_key(peer_addr)
+    }
 }
 
 struct PendingConnection {

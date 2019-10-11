@@ -19,11 +19,13 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer},
     xor_name::XorName,
-    NetworkConfig, MIN_SECTION_SIZE,
+    NetworkBytes, NetworkConfig, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
 use crate::{utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
 use crossbeam_channel as mpmc;
+use quic_p2p::Token;
+use std::net::SocketAddr;
 use std::sync::mpsc;
 #[cfg(feature = "mock_base")]
 use std::{
@@ -208,6 +210,43 @@ impl Node {
             result_tx: self.interface_result_tx.clone(),
         };
 
+        self.perform_action(action)
+    }
+
+    /// Send a message to a client peer
+    pub fn send_message_to_client(
+        &mut self,
+        peer_addr: SocketAddr,
+        msg: NetworkBytes,
+        token: Token,
+    ) -> Result<(), InterfaceError> {
+        // Make sure the state machine has processed any outstanding network events.
+        let _ = self.poll();
+
+        let action = Action::SendMessageToClient {
+            peer_addr,
+            msg,
+            token,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        self.perform_action(action)
+    }
+
+    /// Disconnect form a client peer
+    pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), InterfaceError> {
+        // Make sure the state machine has processed any outstanding network events.
+        let _ = self.poll();
+
+        let action = Action::DisconnectClient {
+            peer_addr,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        self.perform_action(action)
+    }
+
+    fn perform_action(&mut self, action: Action) -> Result<(), InterfaceError> {
         let transition = self
             .machine
             .current_mut()

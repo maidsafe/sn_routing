@@ -22,7 +22,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_name::XorName,
-    ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
+    ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
@@ -81,6 +81,22 @@ pub trait Base: Display {
                     return transition;
                 }
             },
+            Action::DisconnectClient {
+                peer_addr,
+                result_tx,
+            } => {
+                let res = self.handle_disconnect_client(peer_addr);
+                let _ = result_tx.send(res);
+            }
+            Action::SendMessageToClient {
+                peer_addr,
+                msg,
+                token,
+                result_tx,
+            } => {
+                let res = self.handle_send_msg_to_client(peer_addr, msg, token);
+                let _ = result_tx.send(res);
+            }
             Action::Terminate => {
                 return Transition::Terminate;
             }
@@ -96,6 +112,21 @@ pub trait Base: Display {
         _content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);
+        Err(InterfaceError::InvalidState)
+    }
+
+    fn handle_send_msg_to_client(
+        &mut self,
+        _peer_addr: SocketAddr,
+        _msg: NetworkBytes,
+        _token: Token,
+    ) -> Result<(), InterfaceError> {
+        warn!("{} - Cannot send message to client- invalid state.", self);
+        Err(InterfaceError::InvalidState)
+    }
+
+    fn handle_disconnect_client(&mut self, _peer_addr: SocketAddr) -> Result<(), InterfaceError> {
+        warn!("{} - Cannot handle DisconnectClient - invalid state.", self);
         Err(InterfaceError::InvalidState)
     }
 
@@ -123,32 +154,61 @@ pub trait Base: Display {
             ConnectedTo {
                 peer: Peer::Client { peer_addr },
             } => {
-                // NOTE: we can raise the client connection info to the upper layers here if we
-                // decide they need it.
-                // We would also need to store a set of connected client infos so we know whether a
-                // `NewMessage` came from client or node (could be handled by `PeerMap`). If it
-                // came from a client, we would raise it upwards, otherwise we'd handle it ourselves.
-                trace!(
-                    "{} - Ignoring connection attempt from a client at {}",
-                    self,
-                    peer_addr
-                );
+                self.handle_connected_to_client(peer_addr, outbox);
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
-                self.handle_connection_failure(peer_addr, outbox)
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::ConnectionFailureToClient { peer_addr };
+                    outbox.send_event(client_event.into());
+                    Transition::Stay
+                } else {
+                    self.handle_connection_failure(peer_addr, outbox)
+                }
             }
-            NewMessage { peer_addr, msg } => self.handle_new_message(peer_addr, msg, outbox),
+            NewMessage { peer_addr, msg } => {
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::NewMessageFromClient { peer_addr, msg };
+                    outbox.send_event(client_event.into());
+                    Transition::Stay
+                } else {
+                    self.handle_new_message(peer_addr, msg, outbox)
+                }
+            }
             UnsentUserMessage {
                 peer_addr,
                 msg,
                 token,
-            } => self.handle_unsent_message(peer_addr, msg, token, outbox),
+            } => {
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::UnsentUserMsgToClient {
+                        peer_addr,
+                        msg,
+                        token,
+                    };
+                    outbox.send_event(client_event.into());
+                    Transition::Stay
+                } else {
+                    self.handle_unsent_message(peer_addr, msg, token, outbox)
+                }
+            }
             SentUserMessage {
                 peer_addr,
                 msg,
                 token,
-            } => self.handle_sent_message(peer_addr, msg, token, outbox),
+            } => {
+                if !self.peer_map().is_node(&peer_addr) {
+                    let client_event = ClientEvent::SentUserMsgToClient {
+                        peer_addr,
+                        msg,
+                        token,
+                    };
+                    outbox.send_event(client_event.into());
+                    Transition::Stay
+                } else {
+                    self.handle_sent_message(peer_addr, msg, token, outbox)
+                }
+            }
             Finish => Transition::Terminate,
         };
 
@@ -176,6 +236,12 @@ pub trait Base: Display {
     ) -> Transition {
         self.peer_map_mut().connect(conn_info);
         Transition::Stay
+    }
+
+    fn handle_connected_to_client(&mut self, peer_addr: SocketAddr, _outbox: &mut dyn EventBox) {
+        // By default we immediately disconnect from a client.
+        // Only elders override it to pass it on to the vaults
+        self.disconnect_from(peer_addr);
     }
 
     fn handle_connection_failure(
@@ -372,10 +438,21 @@ pub trait Base: Display {
 
     fn disconnect(&mut self, pub_id: &PublicId) {
         if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
-            self.network_service_mut()
-                .service_mut()
-                .disconnect_from(conn_info.peer_addr)
+            self.disconnect_from(conn_info.peer_addr);
         }
+    }
+
+    fn disconnect_from(&mut self, peer_addr: SocketAddr) {
+        self.network_service_mut()
+            .service_mut()
+            .disconnect_from(peer_addr);
+    }
+
+    fn send_msg_to_client(&mut self, peer_addr: SocketAddr, msg: NetworkBytes, token: Token) {
+        let client = Peer::Client { peer_addr };
+        self.network_service_mut()
+            .service_mut()
+            .send(client, msg, token);
     }
 }
 
