@@ -165,7 +165,7 @@ use crate::mock::quic_p2p;
 pub use crate::{
     chain::Chain,
     error::{InterfaceError, RoutingError},
-    event::Event,
+    event::{ClientEvent, Event},
     event_stream::EventStream,
     id::{FullId, PublicId},
     node::{Node, NodeBuilder},

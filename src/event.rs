@@ -9,8 +9,53 @@
 use crate::routing_table::Authority;
 use crate::routing_table::Prefix;
 use crate::xor_name::XorName;
+use crate::NetworkBytes;
 use hex_fmt::HexFmt;
+use quic_p2p::Token;
 use std::fmt::{self, Debug, Formatter};
+use std::net::SocketAddr;
+
+/// An Event raised by a `Client`
+///
+/// These are send transparently to the user library and not handled by routing
+#[derive(Clone, Eq, PartialEq)]
+pub enum ClientEvent {
+    /// Inform the user (library) that we are connected to a client
+    ConnectedToClient {
+        /// Client's endpoint
+        peer_addr: SocketAddr,
+    },
+    /// Inform the user (library) that we are disconnected from a client
+    ConnectionFailureToClient {
+        /// Client's endpoint
+        peer_addr: SocketAddr,
+    },
+    /// Inform the user (library) that we have a new message from a client
+    NewMessageFromClient {
+        /// Client's endpoint
+        peer_addr: SocketAddr,
+        /// Client's message
+        msg: NetworkBytes,
+    },
+    /// Inform the user (library) that we couldn't send this message to a client
+    UnsentUserMsgToClient {
+        /// Client's endpoint
+        peer_addr: SocketAddr,
+        /// Message we had tried to send to the client
+        msg: NetworkBytes,
+        /// Token that we had used to identify this message
+        token: Token,
+    },
+    /// Inform the user (library) that we have successfully sent this message to a client
+    SentUserMsgToClient {
+        /// Client's endpoint
+        peer_addr: SocketAddr,
+        /// Message we had tried to send to the client
+        msg: NetworkBytes,
+        /// Token that we had used to identify this message
+        token: Token,
+    },
+}
 
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
@@ -23,6 +68,8 @@ use std::fmt::{self, Debug, Formatter};
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
+    /// Client events - to be sent to the user library and not handled in the routing library.
+    ClientEvent(ClientEvent),
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -54,9 +101,18 @@ pub enum Event {
     Consensus(Vec<u8>),
 }
 
+impl From<ClientEvent> for Event {
+    fn from(client_event: ClientEvent) -> Event {
+        Event::ClientEvent(client_event)
+    }
+}
+
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
+            Event::ClientEvent(ref client_event) => {
+                write!(formatter, "Event::ClientEvent({:?})", client_event)
+            }
             Event::MessageReceived {
                 ref content,
                 ref src,
@@ -85,6 +141,40 @@ impl Debug for Event {
             Event::Consensus(ref payload) => {
                 write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
             }
+        }
+    }
+}
+
+impl Debug for ClientEvent {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match *self {
+            ClientEvent::ConnectedToClient { peer_addr } => {
+                write!(formatter, "ClientEvent::ConnectedToClient - {}", peer_addr)
+            }
+            ClientEvent::ConnectionFailureToClient { peer_addr } => write!(
+                formatter,
+                "ClientEvent::ConnectionFailureToClient: {}",
+                peer_addr
+            ),
+            ClientEvent::NewMessageFromClient { peer_addr, .. } => write!(
+                formatter,
+                "ClientEvent::NewMessageFromClient: {}",
+                peer_addr
+            ),
+            ClientEvent::UnsentUserMsgToClient {
+                peer_addr, token, ..
+            } => write!(
+                formatter,
+                "ClientEvent::UnsentUserMsgToClient: {} with Token: {}",
+                peer_addr, token
+            ),
+            ClientEvent::SentUserMsgToClient {
+                peer_addr, token, ..
+            } => write!(
+                formatter,
+                "ClientEvent::SentUserMsgToClient: {} with Token: {}",
+                peer_addr, token
+            ),
         }
     }
 }
