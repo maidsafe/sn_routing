@@ -1191,6 +1191,10 @@ impl Elder {
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
+
+    pub fn trigger_relocation(&mut self, _pub_id: PublicId, _destination_address: XorName) {
+        unimplemented!()
+    }
 }
 
 impl Approved for Elder {

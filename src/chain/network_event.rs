@@ -50,6 +50,13 @@ impl SectionInfoSigPayload {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct RelocatePayload {
+    pub_id: PublicId,
+    destination: XorName,
+    new_age: u8,
+}
+
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
