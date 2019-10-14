@@ -297,7 +297,7 @@ fn simultaneous_joining_nodes(
                     None => return false,
                 };
 
-                let new_node_section = node.inner.section_members(new_node_prefix);
+                let new_node_section = node.inner.section_elders(new_node_prefix);
                 if !new_node_section.is_empty() && !new_node_section.contains(&new_node.name()) {
                     return false;
                 }
