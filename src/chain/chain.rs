@@ -306,7 +306,7 @@ impl Chain {
     }
 
     fn increase_members_age(&mut self, trigger_node: &PublicId) {
-        if self.state.our_present_members().count() >= SAFE_SECTION_SIZE
+        if self.state.our_joined_members().count() >= SAFE_SECTION_SIZE
             && self
                 .state
                 .our_members

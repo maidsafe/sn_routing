@@ -232,7 +232,7 @@ impl SharedState {
     }
 
     /// Returns an iterator over the members that have state == `Joined`.
-    pub fn our_present_members(&self) -> impl Iterator<Item = (&PublicId, &MemberInfo)> {
+    pub fn our_joined_members(&self) -> impl Iterator<Item = (&PublicId, &MemberInfo)> {
         self.our_members
             .iter()
             .filter(|(_, member)| member.state == MemberState::Joined)
