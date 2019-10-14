@@ -327,12 +327,8 @@ impl Node {
     /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
     pub fn section_members(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.chain()
-            .and_then(|chain| {
-                chain
-                    .all_sections()
-                    .find(|(sec_prefix, _)| prefix == *sec_prefix)
-                    .map(|(_, elder_info)| elder_info.member_names())
-            })
+            .and_then(|chain| chain.get_section(prefix))
+            .map(|info| info.member_names())
             .unwrap_or_default()
     }
 

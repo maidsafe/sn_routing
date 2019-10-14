@@ -26,6 +26,7 @@ use rand::Rng;
 use routing::{
     mock::Network, Event, EventStream, NetworkConfig, Prefix, XorName, XorTargetInterval,
 };
+use std::collections::BTreeSet;
 
 pub const MIN_SECTION_SIZE: usize = 3;
 
@@ -284,23 +285,63 @@ fn simultaneous_joining_nodes(
     // Act
     // Add new nodes and process until complete
     //
-    nodes.extend(nodes_to_add.into_iter());
-    poll_and_resend(&mut nodes);
+    let first_new_index = nodes.len();
+    nodes.extend(nodes_to_add);
+
+    // Stop polling when all nodes register the new nodes as elders in their respective sections.
+    let all_new_nodes_are_elders = move |nodes: &[TestNode]| {
+        for node in nodes.iter() {
+            for new_node in &nodes[first_new_index..] {
+                let new_node_prefix = match new_node.inner.our_prefix() {
+                    Some(prefix) => prefix,
+                    None => return false,
+                };
+
+                let new_node_section = node.inner.section_members(new_node_prefix);
+                if !new_node_section.is_empty() && !new_node_section.contains(&new_node.name()) {
+                    return false;
+                }
+            }
+        }
+
+        // Also wait until all nodes register all splits.
+        // TODO: this can be removed if we removed the invariant check at the end of this test.
+        let prefixes: BTreeSet<_> = nodes
+            .iter()
+            .flat_map(|node| {
+                node.inner
+                    .our_prefix()
+                    .copied()
+                    .into_iter()
+                    .chain(node.inner.neighbour_prefixes())
+            })
+            .collect();
+        if prefixes
+            .iter()
+            .tuple_combinations()
+            .any(|(a, b)| a.is_compatible(b))
+        {
+            return false;
+        }
+
+        true
+    };
+
+    poll_and_resend_with_options(
+        &mut nodes,
+        PollOptions::default().stop_if(all_new_nodes_are_elders),
+    );
 
     //
     // Assert
-    // Verify that the new nodes are now full nodes part of a section and other invariants.
+    // Verify that the all nodes are now elders and other invariants.
     //
-    let non_full_nodes = nodes
+    let non_elders = nodes
         .iter()
         .filter(|node| !node.inner.is_elder())
         .map(TestNode::name)
         .collect_vec();
-    assert!(
-        non_full_nodes.is_empty(),
-        "Should be full node: {:?}",
-        non_full_nodes
-    );
+    assert!(non_elders.is_empty(), "Should be elders: {:?}", non_elders);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
@@ -366,6 +407,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
     // Create a network with three sections:
     let network = Network::new(min_section_size, None);
+
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     // The created sections
