@@ -31,33 +31,33 @@ impl Default for AgeCounter {
 /// prevent frequent relocations during the beginning of a node's lifetime.
 pub const MIN_AGE_COUNTER: AgeCounter = AgeCounter(16);
 
-const MAX_INFANT_AGE: u8 = 4;
+const MAX_INFANT_AGE: u32 = 4;
 
 /// Information about a member of our section.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct MemberInfo {
-    pub persona: MemberPersona,
     pub age_counter: AgeCounter,
     pub state: MemberState,
 }
 
 impl MemberInfo {
+    #[allow(unused)]
     pub fn age(self) -> u8 {
         self.age_counter.age()
     }
 
     pub fn increase_age(&mut self) {
         self.age_counter.increment();
-        if self.age() > MAX_INFANT_AGE && self.persona == MemberPersona::Infant {
-            self.persona = MemberPersona::Adult;
-        }
+    }
+
+    pub fn is_mature(self) -> bool {
+        self.age_counter > AgeCounter(2u32.pow(MAX_INFANT_AGE))
     }
 }
 
 impl Default for MemberInfo {
     fn default() -> Self {
         Self {
-            persona: MemberPersona::Infant,
             age_counter: MIN_AGE_COUNTER,
             state: MemberState::Joined,
         }
@@ -66,7 +66,6 @@ impl Default for MemberInfo {
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum MemberPersona {
-    #[allow(unused)]
     Infant,
     Adult,
     Elder,

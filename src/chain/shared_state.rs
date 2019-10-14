@@ -72,7 +72,6 @@ impl SharedState {
             .copied()
             .map(|pub_id| {
                 let info = MemberInfo {
-                    persona: MemberPersona::Elder,
                     age_counter: *ages.get(&pub_id).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
                 };
@@ -236,6 +235,22 @@ impl SharedState {
         self.our_members
             .iter()
             .filter(|(_, member)| member.state == MemberState::Joined)
+    }
+
+    /// Returns the current persona corresponding to the given PublicId or `None` if such a member
+    /// doesn't exist
+    pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {
+        if self.our_info().members().contains(pub_id) {
+            Some(MemberPersona::Elder)
+        } else {
+            self.our_members.get(pub_id).map(|member| {
+                if member.is_mature() {
+                    MemberPersona::Adult
+                } else {
+                    MemberPersona::Infant
+                }
+            })
+        }
     }
 
     /// Remove all entries from `out_members` whose name does not match `prefix`.

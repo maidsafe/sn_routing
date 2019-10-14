@@ -309,9 +309,8 @@ impl Chain {
         if self.state.our_joined_members().count() >= SAFE_SECTION_SIZE
             && self
                 .state
-                .our_members
-                .get(trigger_node)
-                .map(|member| member.persona == MemberPersona::Infant)
+                .get_persona(trigger_node)
+                .map(|persona| persona == MemberPersona::Infant)
                 .unwrap_or(true)
         {
             // Do nothing for infants and unknown nodes
@@ -382,8 +381,7 @@ impl Chain {
         }
 
         // TODO: check that the peer is already a member.
-        let info = self.state.our_members.entry(pub_id).or_default();
-        info.persona = MemberPersona::Elder;
+        let _ = self.state.our_members.entry(pub_id).or_default();
 
         let mut elders = self.state.new_info.members().clone();
         let _ = elders.insert(pub_id);
@@ -408,10 +406,6 @@ impl Chain {
     /// Should not be called while a pfx change is in progress.
     pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
         self.assert_no_prefix_change("remove elder");
-
-        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
-            info.persona = MemberPersona::Adult;
-        }
 
         let mut elders = self.state.new_info.members().clone();
         let _ = elders.remove(&pub_id);
