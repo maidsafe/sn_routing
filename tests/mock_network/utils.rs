@@ -625,7 +625,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usize) {
     let our_prefix = unwrap!(node.inner.our_prefix());
     let our_name = unwrap!(node.inner.our_name());
-    let our_section_members = node.inner.section_members(our_prefix);
+    let our_section_elders = node.inner.section_elders(our_prefix);
 
     assert!(
         our_prefix.matches(our_name),
@@ -636,13 +636,13 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
 
     if !our_prefix.is_empty() {
         assert!(
-            our_section_members.len() >= min_section_size,
+            our_section_elders.len() >= min_section_size,
             "Our section {:?} is below the minimum size!",
             our_prefix,
         );
     }
 
-    if let Some(name) = our_section_members
+    if let Some(name) = our_section_elders
         .iter()
         .find(|name| !our_prefix.matches(name))
     {
@@ -667,12 +667,12 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
 
     if let Some(prefix) = neighbour_prefixes
         .iter()
-        .find(|prefix| node.inner.section_members(prefix).len() < min_section_size)
+        .find(|prefix| node.inner.section_elders(prefix).len() < min_section_size)
     {
         panic!(
             "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?})",
             prefix,
-            node.inner.section_members(prefix).len(),
+            node.inner.section_elders(prefix).len(),
             our_name,
             our_prefix,
         );
@@ -681,7 +681,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
     for prefix in &neighbour_prefixes {
         if let Some(name) = node
             .inner
-            .section_members(prefix)
+            .section_elders(prefix)
             .iter()
             .find(|name| !prefix.matches(name))
         {
@@ -737,21 +737,21 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
         for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
-            let our_view_section_members = node.inner.section_members(prefix);
+            let our_view_section_elders = node.inner.section_elders(prefix);
 
-            if let Some(&(ref their_name, ref their_view_section_members)) = sections.get(prefix) {
+            if let Some(&(ref their_name, ref their_view_section_elders)) = sections.get(prefix) {
                 assert_eq!(
-                    &our_view_section_members,
-                    their_view_section_members,
+                    &our_view_section_elders,
+                    their_view_section_elders,
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
                      {:?}: {:?},\n{:?}: {:?}",
                     prefix,
                     our_name,
                     their_name,
                     our_name,
-                    our_view_section_members,
+                    our_view_section_elders,
                     their_name,
-                    their_view_section_members,
+                    their_view_section_elders,
                 );
                 // NOTE: previous version of this also included an assertion that the section
                 // versions are the same. Removed since we don't expose the section version in the
@@ -759,7 +759,7 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
                 // Should we?
                 continue;
             }
-            let _ = sections.insert(*prefix, (*our_name, our_view_section_members));
+            let _ = sections.insert(*prefix, (*our_name, our_view_section_elders));
         }
     }
 

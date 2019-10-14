@@ -333,9 +333,9 @@ impl Node {
         self.chain().map(Chain::prefixes).unwrap_or_default()
     }
 
-    /// Returns the members of a section with the given prefix.
+    /// Returns the elder of a section with the given prefix.
     /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
-    pub fn section_members(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
+    pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.chain()
             .and_then(|chain| chain.get_section(prefix))
             .map(|info| info.member_names())

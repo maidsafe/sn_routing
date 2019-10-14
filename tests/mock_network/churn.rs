@@ -38,7 +38,7 @@ fn drop_random_nodes<R: Rng>(
     let min_sec_size = |node: &TestNode| unwrap!(node.inner.min_sec_size_from_chain());
     let node_section_size = |node: &TestNode| {
         node.inner
-            .section_members(unwrap!(node.inner.our_prefix()))
+            .section_elders(unwrap!(node.inner.our_prefix()))
             .len()
     };
     let sections: BTreeMap<_, _> = nodes
