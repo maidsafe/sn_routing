@@ -31,7 +31,7 @@ pub struct SecretKeyShare(FullId);
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Copy, Hash, Serialize, Deserialize, Debug)]
 pub struct PublicKeyShare(pub PublicId);
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct Signature {
     sigs: BTreeMap<PublicId, SignatureShare>,
 }

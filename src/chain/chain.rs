@@ -17,6 +17,7 @@ use crate::{
     error::RoutingError,
     id::PublicId,
     routing_table::{Authority, Error},
+    utils::LogIdent,
     BlsPublicKeySet, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
@@ -106,7 +107,8 @@ impl Chain {
         _group: &BTreeSet<PublicId>,
         related_info: &[u8],
     ) -> Result<(), RoutingError> {
-        self.state.update_with_genesis_related_info(related_info)
+        self.state
+            .update_with_genesis_related_info(related_info, &LogIdent::new(self))
     }
 
     /// Get the serialized shared state that will be the starting point when processing
