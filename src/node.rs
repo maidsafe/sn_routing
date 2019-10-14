@@ -179,11 +179,6 @@ impl Node {
         self.machine.current().id().ok_or(RoutingError::Terminated)
     }
 
-    /// Returns the minimum section size this vault is using.
-    pub fn min_section_size(&self) -> usize {
-        self.machine.current().min_section_size()
-    }
-
     /// Vote for a custom event.
     pub fn vote_for(&mut self, event: Vec<u8>) {
         let _ = self
@@ -361,8 +356,9 @@ impl Node {
         self.chain().and_then(|chain| chain.close_names(name))
     }
 
+    /// Returns the minimum section size this vault is using.
     /// Only if we have a chain (meaning we are elders) we will process this API
-    pub fn min_sec_size_from_chain(&self) -> Option<usize> {
+    pub fn min_sec_size(&self) -> Option<usize> {
         self.chain().map(Chain::min_sec_size)
     }
 
