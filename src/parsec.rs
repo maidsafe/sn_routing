@@ -300,7 +300,11 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests {
     use super::*;
-    use crate::{chain::EldersInfo, routing_table::Prefix, xor_name::XorName};
+    use crate::{
+        chain::{EldersInfo, MIN_AGE_COUNTER},
+        routing_table::Prefix,
+        xor_name::XorName,
+    };
     use serde::Serialize;
     use unwrap::unwrap;
 
@@ -329,9 +333,15 @@ mod tests {
             Prefix::<XorName>::default(),
             version
         ));
+        let first_ages = elders_info
+            .members()
+            .iter()
+            .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
+            .collect();
         GenesisPfxInfo {
             first_info: elders_info,
             first_state_serialized: Vec::new(),
+            first_ages,
             latest_info: EldersInfo::default(),
         }
     }

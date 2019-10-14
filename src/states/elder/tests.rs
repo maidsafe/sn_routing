@@ -80,10 +80,15 @@ impl ElderUnderTest {
             prefix,
             iter::empty()
         ));
+        let first_ages = full_ids
+            .iter()
+            .map(|id| (*id.public_id(), MIN_AGE_COUNTER))
+            .collect();
 
         let gen_pfx_info = GenesisPfxInfo {
             first_info: elders_info.clone(),
             first_state_serialized: Vec::new(),
+            first_ages,
             latest_info: EldersInfo::default(),
         };
 

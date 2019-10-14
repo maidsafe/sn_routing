@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, EldersInfo, MemberInfo,
-    MemberPersona, MemberState,
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, AgeCounter, EldersInfo, MemberInfo,
+    MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
     crypto::Digest256, error::RoutingError, id::PublicId, utils::LogIdent, BlsPublicKey,
@@ -60,7 +60,7 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(elders_info: EldersInfo) -> Self {
+    pub fn new(elders_info: EldersInfo, ages: BTreeMap<PublicId, AgeCounter>) -> Self {
         let pk_info = SectionKeyInfo::from_elders_info(&elders_info);
         let our_history = SectionProofChain::from_genesis(pk_info);
         let their_key_info = our_history.last_public_key_info();
@@ -72,8 +72,7 @@ impl SharedState {
             .copied()
             .map(|pub_id| {
                 let info = MemberInfo {
-                    persona: MemberPersona::Elder,
-                    age: 0,
+                    age_counter: *ages.get(&pub_id).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
                 };
                 (pub_id, info)
@@ -229,6 +228,29 @@ impl SharedState {
     #[allow(unused)]
     pub fn our_members(&self) -> &BTreeMap<PublicId, MemberInfo> {
         &self.our_members
+    }
+
+    /// Returns an iterator over the members that have state == `Joined`.
+    pub fn our_joined_members(&self) -> impl Iterator<Item = (&PublicId, &MemberInfo)> {
+        self.our_members
+            .iter()
+            .filter(|(_, member)| member.state == MemberState::Joined)
+    }
+
+    /// Returns the current persona corresponding to the given PublicId or `None` if such a member
+    /// doesn't exist
+    pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {
+        if self.our_info().members().contains(pub_id) {
+            Some(MemberPersona::Elder)
+        } else {
+            self.our_members.get(pub_id).map(|member| {
+                if member.is_mature() {
+                    MemberPersona::Adult
+                } else {
+                    MemberPersona::Infant
+                }
+            })
+        }
     }
 
     /// Remove all entries from `out_members` whose name does not match `prefix`.
@@ -704,7 +726,7 @@ mod test {
 
         let mut state = {
             let start_section = unwrap!(keys_to_update.first()).1.clone();
-            SharedState::new(start_section)
+            SharedState::new(start_section, Default::default())
         };
 
         //

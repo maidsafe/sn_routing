@@ -9,8 +9,8 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatingEvent, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState, NetworkEvent, Proof,
-    ProofSet, SectionProofChain,
+    AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState,
+    NetworkEvent, Proof, ProofSet, SectionProofChain,
 };
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
@@ -19,15 +19,13 @@ use crate::{
     id::PublicId,
     routing_table::{Authority, Error},
     utils::LogIdent,
-    BlsPublicKeySet, Prefix, XorName, Xorable,
+    BlsPublicKeySet, Prefix, XorName, Xorable, SAFE_SECTION_SIZE,
 };
 use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
-#[cfg(feature = "mock_base")]
-use std::collections::BTreeMap;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -91,7 +89,7 @@ impl Chain {
         Self {
             min_sec_size,
             our_id,
-            state: SharedState::new(gen_info.first_info),
+            state: SharedState::new(gen_info.first_info, gen_info.first_ages),
             is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
@@ -116,6 +114,14 @@ impl Chain {
     /// parsec data
     pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
         self.state.get_genesis_related_info()
+    }
+
+    fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
+        self.state
+            .our_members
+            .iter()
+            .map(|(pub_id, member_info)| (*pub_id, member_info.age_counter))
+            .collect()
     }
 
     /// Handles an accumulated parsec Observation for membership mutation.
@@ -299,6 +305,27 @@ impl Chain {
         Ok(Some((event, EldersChange::default())))
     }
 
+    fn increase_members_age(&mut self, trigger_node: &PublicId) {
+        if self.state.our_joined_members().count() >= SAFE_SECTION_SIZE
+            && self
+                .state
+                .get_persona(trigger_node)
+                .map(|persona| persona == MemberPersona::Infant)
+                .unwrap_or(true)
+        {
+            // Do nothing for infants and unknown nodes
+            return;
+        }
+        for (_, member) in self
+            .state
+            .our_members
+            .iter_mut()
+            .filter(|(_, member)| member.state == MemberState::Joined)
+        {
+            member.increase_age();
+        }
+    }
+
     /// Adds a member to our section.
     pub fn add_member(&mut self, pub_id: PublicId) {
         self.assert_no_prefix_change("add member");
@@ -313,10 +340,10 @@ impl Chain {
             );
         }
 
-        // TODO: start as infant unless rejoining
+        self.increase_members_age(&pub_id);
+
         // TODO: support rejoining
         let info = self.state.our_members.entry(pub_id).or_default();
-        info.persona = MemberPersona::Adult;
         info.state = MemberState::Joined;
     }
 
@@ -326,6 +353,7 @@ impl Chain {
 
         if let Some(info) = self.state.our_members.get_mut(&pub_id) {
             info.state = MemberState::Left;
+            self.increase_members_age(&pub_id);
         } else {
             log_or_panic!(
                 LogLevel::Error,
@@ -353,8 +381,7 @@ impl Chain {
         }
 
         // TODO: check that the peer is already a member.
-        let info = self.state.our_members.entry(pub_id).or_default();
-        info.persona = MemberPersona::Elder;
+        let _ = self.state.our_members.entry(pub_id).or_default();
 
         let mut elders = self.state.new_info.members().clone();
         let _ = elders.insert(pub_id);
@@ -379,10 +406,6 @@ impl Chain {
     /// Should not be called while a pfx change is in progress.
     pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
         self.assert_no_prefix_change("remove elder");
-
-        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
-            info.persona = MemberPersona::Adult;
-        }
 
         let mut elders = self.state.new_info.members().clone();
         let _ = elders.remove(&pub_id);
@@ -447,6 +470,7 @@ impl Chain {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
+                first_ages: self.get_age_counters(),
                 latest_info: Default::default(),
             },
             cached_events: remaining
@@ -1353,7 +1377,9 @@ pub struct EldersChange {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet};
+    use super::super::{
+        AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet, MIN_AGE_COUNTER,
+    };
     use super::Chain;
     use crate::id::{FullId, PublicId};
     use crate::{Prefix, XorName, MIN_SECTION_SIZE};
@@ -1442,9 +1468,15 @@ mod tests {
 
         let first_info = sections_iter.next().expect("section members");
         let our_members = first_info.members().clone();
+        let first_ages = first_info
+            .members()
+            .iter()
+            .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
+            .collect();
         let genesis_info = GenesisPfxInfo {
             first_info,
             first_state_serialized: Vec::new(),
+            first_ages,
             latest_info: Default::default(),
         };
 
