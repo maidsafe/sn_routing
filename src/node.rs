@@ -305,11 +305,6 @@ impl Node {
         self.chain().map(|chain| chain.our_id().name())
     }
 
-    /// Our ID once we're part of a section
-    pub fn our_id(&self) -> Option<&PublicId> {
-        self.chain().map(Chain::our_id)
-    }
-
     /// Returns the prefixes of all out neighbours signed by our section
     pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         if let Some(chain) = self.chain() {

@@ -24,7 +24,7 @@ fn get_position_with_other_prefix(nodes: &Nodes, prefix: &Prefix<XorName>) -> us
 }
 
 fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
-    let targets = vec![*unwrap!(nodes[dst].inner.our_id())];
+    let targets = vec![unwrap!(nodes[dst].inner.id())];
     let _ = nodes[src]
         .inner
         .elder_state_mut()
