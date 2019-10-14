@@ -116,7 +116,7 @@ impl Chain {
         self.state.get_genesis_related_info()
     }
 
-    fn get_ages(&self) -> BTreeMap<PublicId, AgeCounter> {
+    fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
         self.state
             .our_members
             .iter()
@@ -476,7 +476,7 @@ impl Chain {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
-                first_ages: self.get_ages(),
+                first_ages: self.get_age_counters(),
                 latest_info: Default::default(),
             },
             cached_events: remaining
