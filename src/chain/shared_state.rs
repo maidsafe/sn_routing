@@ -220,6 +220,7 @@ impl SharedState {
     }
 
     /// Returns our section info with the given hash, if it exists.
+    #[cfg(feature = "mock_base")]
     pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
         self.our_infos.iter().find(|info| info.hash() == hash)
     }

@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 use std::iter;
 
 fn get_prefix(node: &TestNode) -> Prefix<XorName> {
-    *unwrap!(node.inner.chain()).our_prefix()
+    *unwrap!(node.inner.our_prefix())
 }
 
 fn get_position_with_other_prefix(nodes: &Nodes, prefix: &Prefix<XorName>) -> usize {
@@ -24,7 +24,7 @@ fn get_position_with_other_prefix(nodes: &Nodes, prefix: &Prefix<XorName>) -> us
 }
 
 fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
-    let targets = vec![*unwrap!(nodes[dst].inner.chain()).our_id()];
+    let targets = vec![unwrap!(nodes[dst].inner.id())];
     let _ = nodes[src]
         .inner
         .elder_state_mut()
@@ -66,8 +66,9 @@ fn message_with_invalid_security(fail_type: FailType) {
 
     let message = {
         let proof = match fail_type {
-            FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos].inner.chain())
-                .prove(&Authority::PrefixSection(their_prefix)),
+            FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos]
+                .inner
+                .prove(&Authority::PrefixSection(their_prefix))),
             FailType::UntrustedProofValidSig => section_proof_chain_from_elders_info(&new_info),
         };
         let pk_set = bls_key_set_from_elders_info(new_info);

@@ -99,6 +99,7 @@ impl EldersInfo {
         &self.prefix
     }
 
+    #[cfg(feature = "mock_base")]
     pub fn prev_hash(&self) -> &BTreeSet<Digest256> {
         &self.prev_hash
     }

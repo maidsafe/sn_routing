@@ -19,12 +19,11 @@ use crate::{
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
     xor_name::XorName,
-    ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService, MIN_SECTION_SIZE,
+    ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
 use crate::{routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
-use log::LogLevel;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     mem,
@@ -118,20 +117,6 @@ impl State {
             *self,
             ref state => state.close_group(name, count),
             Terminated => None
-        )
-    }
-
-    pub fn min_section_size(&self) -> usize {
-        state_dispatch!(
-            *self,
-            ref state => state.min_section_size(),
-            Terminated => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "Can't get min_section_size when Terminated."
-                );
-                MIN_SECTION_SIZE
-            }
         )
     }
 

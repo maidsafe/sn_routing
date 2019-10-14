@@ -35,8 +35,12 @@ fn drop_random_nodes<R: Rng>(
     max_per_pfx: Option<usize>,
 ) -> BTreeSet<XorName> {
     let mut dropped_nodes = BTreeSet::new();
-    let min_sec_size = |node: &TestNode| node.chain().min_sec_size();
-    let node_section_size = |node: &TestNode| node.chain().our_info().members().len();
+    let min_sec_size = |node: &TestNode| unwrap!(node.inner.min_sec_size());
+    let node_section_size = |node: &TestNode| {
+        node.inner
+            .section_elders(unwrap!(node.inner.our_prefix()))
+            .len()
+    };
     let sections: BTreeMap<_, _> = nodes
         .iter()
         .map(|node| {
@@ -98,7 +102,7 @@ fn add_nodes<R: Rng>(
 
     let mut added_nodes = Vec::new();
     while !prefixes.is_empty() {
-        let proxy_index = if nodes.len() > nodes[0].chain().min_sec_size() {
+        let proxy_index = if nodes.len() > unwrap!(nodes[0].inner.min_sec_size()) {
             gen_range(rng, 0, nodes.len())
         } else {
             0
@@ -222,7 +226,8 @@ fn random_churn<R: Rng>(
     }
 
     // Use min_sec_size rather than section size to prevent collapsing any groups.
-    let max_drop = (nodes[0].chain().min_sec_size() - 1) * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
+    let max_drop = (unwrap!(nodes[0].inner.min_sec_size()) - 1)
+        * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
         / QUORUM_DENOMINATOR;
     assert!(max_drop > 0);
     let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));

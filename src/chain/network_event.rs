@@ -151,6 +151,7 @@ pub struct NetworkEvent {
 
 impl NetworkEvent {
     /// Returns the payload if this is a `SectionInfo` event.
+    #[cfg(feature = "mock_base")]
     pub fn elders_info(&self) -> Option<&EldersInfo> {
         self.payload.elders_info()
     }

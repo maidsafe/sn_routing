@@ -297,7 +297,7 @@ fn simultaneous_joining_nodes(
                     None => return false,
                 };
 
-                let new_node_section = node.inner.section_members(new_node_prefix);
+                let new_node_section = node.inner.section_elders(new_node_prefix);
                 if !new_node_section.is_empty() && !new_node_section.contains(&new_node.name()) {
                     return false;
                 }
@@ -474,9 +474,9 @@ fn check_section_info_ack() {
     let node_with_sibling_knowledge: Vec<_> = nodes
         .iter()
         .filter(|node| {
-            node.chain()
+            node.inner
                 .get_their_knowledge()
-                .contains_key(&node.chain().our_prefix().sibling())
+                .contains_key(&node.our_prefix().sibling())
         })
         .map(|node| node.id())
         .collect();
@@ -516,7 +516,7 @@ fn vote_prune() {
 
     assert!(nodes
         .iter()
-        .all(|node| node.chain().parsec_prune_accumulated() > 0));
+        .all(|node| unwrap!(node.inner.parsec_prune_accumulated()) > 0));
 }
 
 #[test]

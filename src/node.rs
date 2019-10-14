@@ -22,14 +22,14 @@ use crate::{
     NetworkBytes, NetworkConfig, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
-use crate::{utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
+use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
 use crossbeam_channel as mpmc;
 use quic_p2p::Token;
 use std::net::SocketAddr;
 use std::sync::mpsc;
 #[cfg(feature = "mock_base")]
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Display, Formatter},
 };
 #[cfg(feature = "mock_base")]
@@ -179,11 +179,6 @@ impl Node {
         self.machine.current().id().ok_or(RoutingError::Terminated)
     }
 
-    /// Returns the minimum section size this vault is using.
-    pub fn min_section_size(&self) -> usize {
-        self.machine.current().min_section_size()
-    }
-
     /// Vote for a custom event.
     pub fn vote_for(&mut self, event: Vec<u8>) {
         let _ = self
@@ -276,7 +271,7 @@ impl EventStepper for Node {
 #[cfg(feature = "mock_base")]
 impl Node {
     /// Returns the chain for this node.
-    pub fn chain(&self) -> Option<&Chain> {
+    fn chain(&self) -> Option<&Chain> {
         self.machine.current().chain()
     }
 
@@ -302,7 +297,7 @@ impl Node {
 
     /// Our `Prefix` once we are a part of the section.
     pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
-        self.chain().map(|chain| chain.our_prefix())
+        self.chain().map(Chain::our_prefix)
     }
 
     /// Our `XorName`.
@@ -310,7 +305,7 @@ impl Node {
         self.chain().map(|chain| chain.our_id().name())
     }
 
-    /// Returns the prefixes of all out neighbours.
+    /// Returns the prefixes of all out neighbours signed by our section
     pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         if let Some(chain) = self.chain() {
             chain
@@ -323,13 +318,51 @@ impl Node {
         }
     }
 
-    /// Returns the members of a section with the given prefix.
+    /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
+    pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        self.chain().map(Chain::prefixes).unwrap_or_default()
+    }
+
+    /// Returns the elder of a section with the given prefix.
     /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
-    pub fn section_members(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
+    pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.chain()
             .and_then(|chain| chain.get_section(prefix))
             .map(|info| info.member_names())
             .unwrap_or_default()
+    }
+
+    /// Returns a set of elders we should be connected to.
+    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.chain().into_iter().flat_map(Chain::elders)
+    }
+
+    /// Returns their knowledge
+    pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
+        self.chain()
+            .map(Chain::get_their_knowledge)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *including
+    /// ours*, otherwise returns `None`.
+    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
+        self.chain().and_then(|chain| chain.close_names(name))
+    }
+
+    /// Returns the minimum section size this vault is using.
+    /// Only if we have a chain (meaning we are elders) we will process this API
+    pub fn min_sec_size(&self) -> Option<usize> {
+        self.chain().map(Chain::min_sec_size)
+    }
+
+    /// Size at which our section splits. Since this is configurable, this method is used to
+    /// obtain it.
+    ///
+    /// Only if we have a chain (meaning we are elders) we will process this API
+    pub fn min_split_size(&self) -> Option<usize> {
+        self.chain().map(|chain| chain.min_split_size())
     }
 
     /// Sets a name to be used when the next node relocation request is received by this node.
@@ -356,6 +389,12 @@ impl Node {
         self.machine.current().is_connected(name)
     }
 
+    /// Provide a SectionProofChain that proves the given signature to the section with a given
+    /// prefix
+    pub fn prove(&self, target: &Authority<XorName>) -> Option<SectionProofChain> {
+        self.chain().map(|chain| chain.prove(target))
+    }
+
     /// Checks whether the given authority represents self.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
@@ -364,6 +403,12 @@ impl Node {
     /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         self.machine.current_mut().our_connection_info()
+    }
+
+    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
+    /// implemented acting on the accumulated events, at which point this function will be removed.
+    pub fn parsec_prune_accumulated(&self) -> Option<usize> {
+        self.chain().map(Chain::parsec_prune_accumulated)
     }
 }
 

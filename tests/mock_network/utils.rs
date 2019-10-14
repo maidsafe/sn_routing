@@ -11,7 +11,7 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, test_consts, Authority, Chain, Event, EventStream, FullId, NetworkConfig, Node,
+    mock::Network, test_consts, Authority, Event, EventStream, FullId, NetworkConfig, Node,
     NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
 };
 use std::{
@@ -120,15 +120,11 @@ impl TestNode {
     }
 
     pub fn close_names(&self) -> Vec<XorName> {
-        unwrap!(unwrap!(self.inner.chain()).close_names(&self.name()))
+        unwrap!(self.inner.close_names(&self.name()))
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain().our_prefix()
-    }
-
-    pub fn chain(&self) -> &Chain {
-        unwrap!(self.inner.chain(), "no chain for {}", self.inner)
+        unwrap!(self.inner.our_prefix())
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
@@ -141,19 +137,14 @@ impl TestNode {
 }
 
 pub fn count_sections(nodes: &[TestNode]) -> usize {
-    nodes
-        .iter()
-        .filter_map(|n| n.inner.chain())
-        .flat_map(Chain::prefixes)
-        .unique()
-        .count()
+    nodes.iter().map(|n| n.inner.prefixes()).unique().count()
 }
 
 pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
     nodes
         .iter()
-        .filter_map(|n| n.inner.chain())
-        .flat_map(Chain::prefixes)
+        .map(|n| n.inner.prefixes())
+        .flat_map(|prefix_set| prefix_set.into_iter())
         .collect()
 }
 
@@ -437,7 +428,7 @@ pub fn add_connected_nodes_until_split(
     clear_all_event_queues(nodes, |_| {});
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
-    let min_split_size = nodes[0].chain().min_split_size();
+    let min_split_size = unwrap!(nodes[0].inner.min_split_size());
     let prefixes_new_count = prefixes
         .iter()
         .map(|prefix| (*prefix, min_split_size))
@@ -450,7 +441,8 @@ pub fn add_connected_nodes_until_split(
     loop {
         let mut found_prefix = None;
         for node in nodes.iter() {
-            if let Some(prefix_to_split) = unwrap!(node.inner.chain())
+            if let Some(prefix_to_split) = node
+                .inner
                 .prefixes()
                 .iter()
                 .find(|&prefix| !prefixes.contains(prefix))
@@ -483,7 +475,7 @@ pub fn add_connected_nodes_until_split(
     // Gather all the actual prefixes and check they are as expected.
     let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
     for node in nodes.iter() {
-        actual_prefixes.append(&mut unwrap!(node.inner.chain()).prefixes());
+        actual_prefixes.append(&mut node.inner.prefixes());
     }
     assert_eq!(
         prefixes.iter().cloned().collect::<BTreeSet<_>>(),
@@ -596,7 +588,7 @@ fn prefixes_and_count_to_split_with_only_one_extra_node(
         .map(|prefix| prefix_half_with_fewer_nodes(nodes, prefix))
         .collect_vec();
 
-    let min_split_size = nodes[0].chain().min_split_size();
+    let min_split_size = unwrap!(nodes[0].inner.min_split_size());
 
     let mut prefixes_and_counts = Vec::new();
     for small_prefix in &prefixes_to_add_to_split {
@@ -633,7 +625,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usize) {
     let our_prefix = unwrap!(node.inner.our_prefix());
     let our_name = unwrap!(node.inner.our_name());
-    let our_section_members = node.inner.section_members(our_prefix);
+    let our_section_elders = node.inner.section_elders(our_prefix);
 
     assert!(
         our_prefix.matches(our_name),
@@ -644,13 +636,13 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
 
     if !our_prefix.is_empty() {
         assert!(
-            our_section_members.len() >= min_section_size,
+            our_section_elders.len() >= min_section_size,
             "Our section {:?} is below the minimum size!",
             our_prefix,
         );
     }
 
-    if let Some(name) = our_section_members
+    if let Some(name) = our_section_elders
         .iter()
         .find(|name| !our_prefix.matches(name))
     {
@@ -675,12 +667,12 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
 
     if let Some(prefix) = neighbour_prefixes
         .iter()
-        .find(|prefix| node.inner.section_members(prefix).len() < min_section_size)
+        .find(|prefix| node.inner.section_elders(prefix).len() < min_section_size)
     {
         panic!(
             "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?})",
             prefix,
-            node.inner.section_members(prefix).len(),
+            node.inner.section_elders(prefix).len(),
             our_name,
             our_prefix,
         );
@@ -689,7 +681,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
     for prefix in &neighbour_prefixes {
         if let Some(name) = node
             .inner
-            .section_members(prefix)
+            .section_elders(prefix)
             .iter()
             .find(|name| !prefix.matches(name))
         {
@@ -745,21 +737,21 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
         for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
-            let our_view_section_members = node.inner.section_members(prefix);
+            let our_view_section_elders = node.inner.section_elders(prefix);
 
-            if let Some(&(ref their_name, ref their_view_section_members)) = sections.get(prefix) {
+            if let Some(&(ref their_name, ref their_view_section_elders)) = sections.get(prefix) {
                 assert_eq!(
-                    &our_view_section_members,
-                    their_view_section_members,
+                    &our_view_section_elders,
+                    their_view_section_elders,
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
                      {:?}: {:?},\n{:?}: {:?}",
                     prefix,
                     our_name,
                     their_name,
                     our_name,
-                    our_view_section_members,
+                    our_view_section_elders,
                     their_name,
-                    their_view_section_members,
+                    their_view_section_elders,
                 );
                 // NOTE: previous version of this also included an assertion that the section
                 // versions are the same. Removed since we don't expose the section version in the
@@ -767,7 +759,7 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
                 // Should we?
                 continue;
             }
-            let _ = sections.insert(*prefix, (*our_name, our_view_section_members));
+            let _ = sections.insert(*prefix, (*our_name, our_view_section_elders));
         }
     }
 
@@ -818,11 +810,11 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
         // Confirm elders from chain are connected according to PeerMgr
-        let our_id = node.chain().our_id();
+        let our_id = unwrap!(node.inner.id());
         let missing_peers = node
-            .chain()
+            .inner
             .elders()
-            .filter(|pub_id| *pub_id != our_id)
+            .filter(|pub_id| *pub_id != &our_id)
             .filter(|pub_id| !node.inner.is_connected(pub_id))
             .cloned()
             .collect_vec();

@@ -46,6 +46,7 @@ impl Proof {
     }
 
     /// Validates `payload` against this `Proof`'s `key` and `sig`.
+    #[cfg(any(test, feature = "mock_base"))]
     pub fn validate_signature<S: Serialize>(&self, payload: &S) -> bool {
         match serialisation::serialise(payload) {
             Ok(data) => self.pub_id.verify(&data[..], &self.sig),
@@ -69,6 +70,7 @@ pub struct ProofSet {
 
 impl ProofSet {
     /// Creates a new empty set.
+    #[cfg(any(test, feature = "mock_base"))]
     pub fn new() -> ProofSet {
         ProofSet::default()
     }
@@ -84,6 +86,7 @@ impl ProofSet {
     }
 
     /// Validates `payload` against all signatures.
+    #[cfg(feature = "mock_base")]
     pub fn validate_signatures<S: Serialize>(&self, payload: &S) -> bool {
         match serialisation::serialise(payload) {
             Ok(data) => self.validate_signatures_for_bytes(&data),
@@ -92,6 +95,7 @@ impl ProofSet {
     }
 
     /// Validates `data` against all signatures.
+    #[cfg(feature = "mock_base")]
     fn validate_signatures_for_bytes(&self, data: &[u8]) -> bool {
         self.sigs.iter().all(|(id, sig)| id.verify(data, sig))
     }
@@ -102,16 +106,19 @@ impl ProofSet {
     }
 
     /// Returns the number of signatures.
+    #[cfg(feature = "mock_base")]
     pub fn len(&self) -> usize {
         self.sigs.len()
     }
 
     /// Removes the node's signature. Returns `false` if it already didn't exist.
+    #[cfg(feature = "mock_base")]
     pub fn remove(&mut self, id: &PublicId) -> bool {
         self.sigs.remove(id).is_some()
     }
 
     /// Merges the other proof set into this one.
+    #[cfg(feature = "mock_base")]
     pub fn merge(&mut self, other: Self) {
         self.sigs.extend(other.sigs);
     }
