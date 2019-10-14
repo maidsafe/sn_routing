@@ -301,7 +301,7 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
 mod tests {
     use super::*;
     use crate::{
-        chain::{EldersInfo, MIN_AGE},
+        chain::{EldersInfo, MIN_AGE_COUNTER},
         routing_table::Prefix,
         xor_name::XorName,
     };
@@ -336,7 +336,7 @@ mod tests {
         let first_ages = elders_info
             .members()
             .iter()
-            .map(|pub_id| (*pub_id, MIN_AGE))
+            .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         GenesisPfxInfo {
             first_info: elders_info,

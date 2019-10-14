@@ -1383,7 +1383,9 @@ pub struct EldersChange {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet, MIN_AGE};
+    use super::super::{
+        AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet, MIN_AGE_COUNTER,
+    };
     use super::Chain;
     use crate::id::{FullId, PublicId};
     use crate::{Prefix, XorName, MIN_SECTION_SIZE};
@@ -1475,7 +1477,7 @@ mod tests {
         let first_ages = first_info
             .members()
             .iter()
-            .map(|pub_id| (*pub_id, MIN_AGE))
+            .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         let genesis_info = GenesisPfxInfo {
             first_info,

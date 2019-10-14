@@ -21,7 +21,7 @@ pub use self::{
     chain::{delivery_group_size, Chain, EldersChange, PrefixChangeOutcome},
     chain_accumulator::AccumulatingProof,
     elders_info::EldersInfo,
-    member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE},
+    member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER},
     network_event::{
         AccumulatingEvent, AckMessagePayload, NetworkEvent, SectionInfoSigPayload,
         SendAckMessagePayload,

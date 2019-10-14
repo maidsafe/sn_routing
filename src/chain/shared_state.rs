@@ -8,7 +8,7 @@
 
 use super::{
     bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, AgeCounter, EldersInfo, MemberInfo,
-    MemberPersona, MemberState, MIN_AGE,
+    MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
     crypto::Digest256, error::RoutingError, id::PublicId, utils::LogIdent, BlsPublicKey,
@@ -73,7 +73,7 @@ impl SharedState {
             .map(|pub_id| {
                 let info = MemberInfo {
                     persona: MemberPersona::Elder,
-                    age_counter: *ages.get(&pub_id).unwrap_or(&MIN_AGE),
+                    age_counter: *ages.get(&pub_id).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
                 };
                 (pub_id, info)

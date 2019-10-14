@@ -16,7 +16,7 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
-        SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
+        SectionKeyInfo, SendAckMessagePayload, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -101,7 +101,7 @@ impl Elder {
     ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
         let mut first_ages = BTreeMap::new();
-        let _ = first_ages.insert(public_id, MIN_AGE);
+        let _ = first_ages.insert(public_id, MIN_AGE_COUNTER);
         let gen_pfx_info = GenesisPfxInfo {
             first_info: create_first_elders_info(public_id)?,
             first_state_serialized: Vec::new(),

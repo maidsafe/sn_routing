@@ -82,7 +82,7 @@ impl ElderUnderTest {
         ));
         let first_ages = full_ids
             .iter()
-            .map(|id| (*id.public_id(), MIN_AGE))
+            .map(|id| (*id.public_id(), MIN_AGE_COUNTER))
             .collect();
 
         let gen_pfx_info = GenesisPfxInfo {
