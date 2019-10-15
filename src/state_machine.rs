@@ -11,6 +11,7 @@ use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     error::RoutingError,
     id::PublicId,
+    messages::SignedRoutingMessage,
     network_service::NetworkBuilder,
     outbox::EventBox,
     pause::PausedState,
@@ -237,6 +238,11 @@ pub enum Transition {
     },
     // `JoiningPeer` failing to join and transitioning back to `BootstrappingPeer`
     Rebootstrap,
+    // Node getting relocated.
+    Relocate {
+        message: SignedRoutingMessage,
+        conn_infos: Vec<ConnectionInfo>,
+    },
     // `JoiningPeer` state transitioning to `Adult`.
     IntoAdult {
         gen_pfx_info: GenesisPfxInfo,
@@ -247,6 +253,20 @@ pub enum Transition {
         old_pfx: Prefix<XorName>,
     },
     Terminate,
+}
+
+impl Debug for Transition {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Stay => write!(f, "Stay"),
+            Self::IntoJoining { .. } => write!(f, "IntoJoining"),
+            Self::Rebootstrap => write!(f, "Rebootstrap"),
+            Self::Relocate { .. } => write!(f, "Relocate"),
+            Self::IntoAdult { .. } => write!(f, "IntoAdult"),
+            Self::IntoElder { .. } => write!(f, "IntoElder"),
+            Self::Terminate => write!(f, "Terminate"),
+        }
+    }
 }
 
 impl StateMachine {
@@ -340,6 +360,7 @@ impl StateMachine {
                 State::Adult(src) => src.into_bootstrapping(),
                 _ => unreachable!(),
             }),
+            Relocate { .. } => unimplemented!(),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {
                 State::JoiningPeer(src) => src.into_adult(gen_pfx_info, outbox),
                 _ => unreachable!(),

@@ -114,6 +114,20 @@ impl PeerMap {
         self.forward.get(name.as_ref())
     }
 
+    // Get connection infos of the peers with the given names. Ignores unknown names.
+    pub fn get_connection_infos<'a, I>(
+        &'a self,
+        names: I,
+    ) -> impl Iterator<Item = &'a ConnectionInfo>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<XorName>,
+    {
+        names
+            .into_iter()
+            .filter_map(move |name| self.get_connection_info(name))
+    }
+
     // Get PublicId for XorName
     pub fn get_id(&self, name: &XorName) -> Option<&PublicId> {
         self.forward

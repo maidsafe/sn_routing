@@ -24,7 +24,7 @@ use crate::{
     id::{FullId, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
-        SignedRoutingMessage,
+        SecurityMetadata, SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, ParsecMap},
@@ -261,14 +261,18 @@ impl Elder {
         Ok(())
     }
 
-    fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) {
+    fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
         while let Some(msg) = self.msg_queue.pop_front() {
             if self.in_authority(&msg.routing_message().dst) {
-                if let Err(err) = self.dispatch_routing_message(msg, outbox) {
-                    debug!("{} Routing message dispatch failed: {:?}", self, err);
+                match self.dispatch_routing_message(msg, outbox) {
+                    Ok(Transition::Stay) => (),
+                    Ok(transition) => return transition,
+                    Err(err) => debug!("{} Routing message dispatch failed: {:?}", self, err),
                 }
             }
         }
+
+        Transition::Stay
     }
 
     fn public_key_set(&self) -> BlsPublicKeySet {
@@ -460,11 +464,10 @@ impl Elder {
             }
             // if addressed to us, then we just queue it and return
             self.msg_queue.push_back(signed_msg);
-            return Ok(());
-        }
-
-        if let Err(error) = self.send_signed_message(&mut signed_msg) {
-            debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
+        } else {
+            if let Err(error) = self.send_signed_message(&mut signed_msg) {
+                debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
+            }
         }
 
         Ok(())
@@ -474,10 +477,10 @@ impl Elder {
         &mut self,
         msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
 
-        let (msg, _) = msg.into_parts();
+        let (msg, metadata) = msg.into_parts();
 
         match msg.content {
             UserMessage { .. } => (),
@@ -491,16 +494,21 @@ impl Elder {
                 },
                 src @ Authority::Node(_),
                 dst @ Authority::Node(_),
-            ) => self.handle_connection_request(conn_info, pub_id, src, dst, outbox),
+            ) => {
+                self.handle_connection_request(conn_info, pub_id, src, dst, outbox)?;
+                Ok(Transition::Stay)
+            }
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
-                self.handle_neighbour_info(elders_info)
+                self.handle_neighbour_info(elders_info)?;
+                Ok(Transition::Stay)
             }
             (Merge(digest), Authority::PrefixSection(_), Authority::PrefixSection(_)) => {
-                self.handle_merge(digest)
+                self.handle_merge(digest)?;
+                Ok(Transition::Stay)
             }
             (UserMessage(content), src, dst) => {
                 outbox.send_event(Event::MessageReceived { content, src, dst });
-                Ok(())
+                Ok(Transition::Stay)
             }
             (
                 AckMessage {
@@ -509,7 +517,13 @@ impl Elder {
                 },
                 Authority::Section(src),
                 Authority::Section(dst),
-            ) => self.handle_ack_message(src_prefix, ack_version, src, dst),
+            ) => {
+                self.handle_ack_message(src_prefix, ack_version, src, dst)?;
+                Ok(Transition::Stay)
+            }
+            (Relocate(payload), src @ Authority::Section(_), dst @ Authority::Node(_)) => {
+                Ok(self.handle_relocate(src, dst, payload, metadata))
+            }
             (content, src, dst) => {
                 debug!(
                     "{} Unhandled routing message {:?} from {:?} to {:?}",
@@ -639,33 +653,31 @@ impl Elder {
     }
 
     fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId) {
-        let get_node_infos = |node_names: BTreeSet<XorName>| {
-            node_names
-                .into_iter()
-                .filter_map(|name| self.peer_map.get_connection_info(name).cloned())
-                .collect()
-        };
         let response = if self.our_prefix().matches(pub_id.name()) {
-            let mut node_infos: Vec<_> = get_node_infos(
-                self.chain
-                    .our_elders()
-                    .map(PublicId::name)
-                    .copied()
-                    .collect(),
-            );
+            let mut conn_infos: Vec<_> = self
+                .peer_map
+                .get_connection_infos(self.chain.our_elders())
+                .cloned()
+                .collect();
+
             if let Ok(our_info) = self.our_connection_info() {
-                node_infos.push(our_info);
+                conn_infos.push(our_info);
             }
             trace!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
-            BootstrapResponse::Join(node_infos)
+            BootstrapResponse::Join(conn_infos)
         } else {
-            let node_infos = get_node_infos(self.chain.closest_section(pub_id.name()).1);
+            let names = self.chain.closest_section(pub_id.name()).1;
+            let conn_infos = self
+                .peer_map
+                .get_connection_infos(&names)
+                .cloned()
+                .collect();
             trace!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
                 self,
                 pub_id
             );
-            BootstrapResponse::Rebootstrap(node_infos)
+            BootstrapResponse::Rebootstrap(conn_infos)
         };
         self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(response));
     }
@@ -697,6 +709,48 @@ impl Elder {
 
         self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
         self.vote_for_event(AccumulatingEvent::Online(pub_id));
+    }
+
+    fn handle_relocate(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        payload: RelocatePayload,
+        security_metadata: SecurityMetadata,
+    ) -> Transition {
+        if self.chain.our_prefix().matches(&payload.destination) {
+            debug!(
+                "{} - Ignoring Relocate message - already at the destination.",
+                self
+            );
+            return Transition::Stay;
+        }
+
+        debug!(
+            "{} - Received Relocate message - rebootstrapping to join the new section at {}.",
+            self, payload.destination
+        );
+
+        let names = self.chain.closest_section(&payload.destination).1;
+        let conn_infos = self
+            .peer_map
+            .get_connection_infos(&names)
+            .cloned()
+            .collect();
+
+        let message = SignedRoutingMessage::from_parts(
+            RoutingMessage {
+                src,
+                dst,
+                content: MessageContent::Relocate(payload),
+            },
+            security_metadata,
+        );
+
+        Transition::Relocate {
+            message,
+            conn_infos,
+        }
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -997,8 +1051,7 @@ impl Base for Elder {
     }
 
     fn finish_handle_action(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        self.handle_routing_messages(outbox);
-        Transition::Stay
+        self.handle_routing_messages(outbox)
     }
 
     fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
@@ -1039,8 +1092,7 @@ impl Base for Elder {
     }
 
     fn finish_handle_network_event(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        self.handle_routing_messages(outbox);
-        Transition::Stay
+        self.handle_routing_messages(outbox)
     }
 
     // Deconstruct a `DirectMessage` and handle or forward as appropriate.
