@@ -7,12 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod direct;
+mod relocate;
 
-pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
+pub use self::{
+    direct::{BootstrapResponse, DirectMessage, SignedDirectMessage},
+    relocate::{RelocateDetails, SignedRelocateDetails},
+};
 use crate::{
-    chain::{
-        Chain, EldersInfo, GenesisPfxInfo, RelocatePayload, SectionKeyInfo, SectionProofChain,
-    },
+    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
@@ -544,7 +546,7 @@ pub enum MessageContent {
         ack_version: u64,
     },
     /// Send to a node to inform it to relocate itself.
-    Relocate(RelocatePayload),
+    Relocate(RelocateDetails),
 }
 
 impl Debug for HopMessage {

@@ -11,7 +11,10 @@ use crate::{
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
     messages::SignedRoutingMessage,
-    parsec, ConnectionInfo,
+    parsec,
+    routing_table::Prefix,
+    xor_name::XorName,
+    ConnectionInfo,
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::{
@@ -29,9 +32,9 @@ pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(SignedRoutingMessage),
-    /// Sent from a newly connected peer to the bootstrap node to prove that it is the owner of
-    /// the client's claimed public ID.
-    BootstrapRequest,
+    /// Sent from a newly connected peer to the bootstrap node to request connection infos of
+    /// members of the section matching the given name.
+    BootstrapRequest(XorName),
     /// Sent from the bootstrap node to a peer in response to `BootstrapRequest`. It can either
     /// accept the peer into the section, or redirect it to another set of bootstrap peers
     BootstrapResponse(BootstrapResponse),
@@ -54,8 +57,11 @@ pub enum DirectMessage {
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
-    /// the Elders of the section are provided.
-    Join(Vec<ConnectionInfo>),
+    /// the Elders of the section and the section prefix are provided.
+    Join {
+        prefix: Prefix<XorName>,
+        conn_infos: Vec<ConnectionInfo>,
+    },
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
     Rebootstrap(Vec<ConnectionInfo>),
@@ -66,17 +72,15 @@ pub enum BootstrapResponse {
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
-        match *self {
-            MessageSignature(ref msg) => write!(formatter, "MessageSignature ({:?})", msg),
-            BootstrapRequest => write!(formatter, "BootstrapRequest"),
-            BootstrapResponse(ref response) => {
-                write!(formatter, "BootstrapResponse({:?})", response)
-            }
+        match self {
+            MessageSignature(msg) => write!(formatter, "MessageSignature ({:?})", msg),
+            BootstrapRequest(name) => write!(formatter, "BootstrapRequest({})", name),
+            BootstrapResponse(response) => write!(formatter, "BootstrapResponse({:?})", response),
             JoinRequest => write!(formatter, "JoinRequest"),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
-            ParsecRequest(ref v, _) => write!(formatter, "ParsecRequest({}, _)", v),
-            ParsecResponse(ref v, _) => write!(formatter, "ParsecResponse({}, _)", v),
-            ParsecPoke(ref v) => write!(formatter, "ParsecPoke({})", v),
+            ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
+            ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
+            ParsecPoke(v) => write!(formatter, "ParsecPoke({})", v),
         }
     }
 }
@@ -96,7 +100,8 @@ impl Hash for DirectMessage {
             MessageSignature(ref msg) => {
                 msg.hash(state);
             }
-            BootstrapRequest | ConnectionResponse | JoinRequest => (),
+            ConnectionResponse | JoinRequest => (),
+            BootstrapRequest(name) => name.hash(state),
             BootstrapResponse(ref response) => response.hash(state),
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, ref request) => {

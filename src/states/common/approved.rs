@@ -9,13 +9,13 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersChange, EldersInfo, Proof, ProofSet, RelocatePayload,
-        SectionKeyInfo, SendAckMessagePayload,
+        AccumulatingEvent, Chain, EldersChange, EldersInfo, Proof, ProofSet, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
     id::PublicId,
-    messages::{DirectMessage, MessageContent, RoutingMessage},
+    messages::{DirectMessage, MessageContent, RelocateDetails, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
     routing_table::{Authority, Prefix},
@@ -86,7 +86,7 @@ pub trait Approved: Base {
     ) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `Relocate` event
-    fn handle_relocate_event(&mut self, payload: RelocatePayload) -> Result<(), RoutingError>;
+    fn handle_relocate_event(&mut self, payload: RelocateDetails) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `User` event
     fn handle_user_event(

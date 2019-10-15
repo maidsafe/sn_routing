@@ -92,7 +92,7 @@ impl JoiningPeer {
         Adult::from_joining_peer(details, outbox).map(State::Adult)
     }
 
-    pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
+    pub fn rebootstrap(self) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
             FullId::new(),

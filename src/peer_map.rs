@@ -115,10 +115,7 @@ impl PeerMap {
     }
 
     // Get connection infos of the peers with the given names. Ignores unknown names.
-    pub fn get_connection_infos<'a, I>(
-        &'a self,
-        names: I,
-    ) -> impl Iterator<Item = &'a ConnectionInfo>
+    pub fn get_connection_infos<I>(&self, names: I) -> impl Iterator<Item = &ConnectionInfo>
     where
         I: IntoIterator,
         I::Item: AsRef<XorName>,

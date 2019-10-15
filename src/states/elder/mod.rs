@@ -9,22 +9,25 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base, GOSSIP_TIMEOUT};
+use super::{
+    common::{Approved, Base, GOSSIP_TIMEOUT},
+    BootstrappingPeer,
+};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, RelocatePayload,
-        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE_COUNTER,
+        GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
+        SectionKeyInfo, SendAckMessagePayload, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
-        SecurityMetadata, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RelocateDetails,
+        RoutingMessage, SecurityMetadata, SignedRelocateDetails, SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, ParsecMap},
@@ -33,6 +36,7 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
     signature_accumulator::SignatureAccumulator,
+    state_machine::State,
     state_machine::Transition,
     time::Duration,
     timer::Timer,
@@ -179,6 +183,21 @@ impl Elder {
             false,
             state.sig_accumulator,
         )
+    }
+
+    pub fn relocate(
+        self,
+        details: SignedRelocateDetails,
+        conn_infos: Vec<ConnectionInfo>,
+    ) -> Result<State, RoutingError> {
+        Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
+            self.network_service,
+            self.full_id,
+            self.chain.min_sec_size(),
+            self.timer,
+            details,
+            conn_infos,
+        )))
     }
 
     fn new(
@@ -464,10 +483,8 @@ impl Elder {
             }
             // if addressed to us, then we just queue it and return
             self.msg_queue.push_back(signed_msg);
-        } else {
-            if let Err(error) = self.send_signed_message(&mut signed_msg) {
-                debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
-            }
+        } else if let Err(error) = self.send_signed_message(&mut signed_msg) {
+            debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
         Ok(())
@@ -609,8 +626,15 @@ impl Elder {
     }
 
     // If this returns an error, the peer will be dropped.
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        debug!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
+    fn handle_bootstrap_request(
+        &mut self,
+        pub_id: PublicId,
+        name: XorName,
+    ) -> Result<(), RoutingError> {
+        debug!(
+            "{} - Received BootstrapRequest to {} from {:?}.",
+            self, name, pub_id
+        );
 
         if !self.peer_map.has(&pub_id) {
             log_or_panic!(
@@ -619,14 +643,6 @@ impl Elder {
             );
             return Err(RoutingError::UnknownConnection(pub_id));
         };
-
-        if self.chain.is_peer_our_member(&pub_id) {
-            debug!(
-                "{} - Ignoring BootstrapRequest from {} - already member of our section",
-                self, pub_id
-            );
-            return Ok(());
-        }
 
         // Check min section size.
         if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
@@ -647,13 +663,13 @@ impl Elder {
             return Ok(());
         }
 
-        self.respond_to_bootstrap_request(&pub_id);
+        self.respond_to_bootstrap_request(&pub_id, &name);
 
         Ok(())
     }
 
-    fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId) {
-        let response = if self.our_prefix().matches(pub_id.name()) {
+    fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId, name: &XorName) {
+        let response = if self.our_prefix().matches(name) {
             let mut conn_infos: Vec<_> = self
                 .peer_map
                 .get_connection_infos(self.chain.our_elders())
@@ -664,9 +680,12 @@ impl Elder {
                 conn_infos.push(our_info);
             }
             trace!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
-            BootstrapResponse::Join(conn_infos)
+            BootstrapResponse::Join {
+                prefix: *self.chain.our_prefix(),
+                conn_infos,
+            }
         } else {
-            let names = self.chain.closest_section(pub_id.name()).1;
+            let names = self.chain.closest_section(name).1;
             let conn_infos = self
                 .peer_map
                 .get_connection_infos(&names)
@@ -715,7 +734,7 @@ impl Elder {
         &mut self,
         src: Authority<XorName>,
         dst: Authority<XorName>,
-        payload: RelocatePayload,
+        payload: RelocateDetails,
         security_metadata: SecurityMetadata,
     ) -> Transition {
         if self.chain.our_prefix().matches(&payload.destination) {
@@ -738,17 +757,16 @@ impl Elder {
             .cloned()
             .collect();
 
-        let message = SignedRoutingMessage::from_parts(
-            RoutingMessage {
-                src,
-                dst,
-                content: MessageContent::Relocate(payload),
-            },
-            security_metadata,
-        );
+        for conn_info in self.peer_map.remove_all() {
+            self.network_service
+                .service_mut()
+                .disconnect_from(conn_info.peer_addr);
+        }
+
+        let details = SignedRelocateDetails::new(payload, src, dst, security_metadata);
 
         Transition::Relocate {
-            message,
+            details,
             conn_infos,
         }
     }
@@ -1105,8 +1123,8 @@ impl Base for Elder {
         use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
-            BootstrapRequest => {
-                if let Err(error) = self.handle_bootstrap_request(pub_id) {
+            BootstrapRequest(name) => {
+                if let Err(error) = self.handle_bootstrap_request(pub_id, name) {
                     warn!(
                         "{} Invalid BootstrapRequest received from {} ({:?}).",
                         self, pub_id, error,
@@ -1246,7 +1264,7 @@ impl Elder {
 
     pub fn trigger_relocation(&mut self, pub_id: PublicId, destination: XorName) {
         let age = if let Some(info) = self.chain.get_member(&pub_id) {
-            info.age()
+            info.age() + 1
         } else {
             log_or_panic!(
                 LogLevel::Error,
@@ -1257,7 +1275,7 @@ impl Elder {
             return;
         };
 
-        self.vote_for_event(AccumulatingEvent::Relocate(RelocatePayload {
+        self.vote_for_event(AccumulatingEvent::Relocate(RelocateDetails {
             pub_id,
             destination,
             age,
@@ -1433,7 +1451,9 @@ impl Approved for Elder {
         self.send_routing_message(RoutingMessage { src, dst, content })
     }
 
-    fn handle_relocate_event(&mut self, payload: RelocatePayload) -> Result<(), RoutingError> {
+    fn handle_relocate_event(&mut self, payload: RelocateDetails) -> Result<(), RoutingError> {
+        // TODO: vote Offline
+
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(self.our_prefix().name()),
             dst: Authority::Node(*payload.pub_id.name()),

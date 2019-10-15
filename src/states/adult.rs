@@ -13,14 +13,14 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, EldersChange, EldersInfo, GenesisPfxInfo, RelocatePayload, SectionKeyInfo,
-        SendAckMessagePayload,
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload,
     },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, RelocateDetails, RoutingMessage,
+        SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::ParsecMap,
@@ -114,7 +114,7 @@ impl Adult {
         Ok(())
     }
 
-    pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
+    pub fn rebootstrap(self) -> Result<State, RoutingError> {
         let min_section_size = self.min_section_size();
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
@@ -226,7 +226,7 @@ impl Adult {
     }
 
     // Reject the bootstrap request, because only Elders can handle it.
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId, _destination: XorName) {
         debug!(
             "{} - Joining node {:?} rejected: We are not an established node yet.",
             self, pub_id
@@ -337,8 +337,8 @@ impl Base for Adult {
             ParsecResponse(version, par_response) => {
                 self.handle_parsec_response(version, par_response, pub_id, outbox)
             }
-            BootstrapRequest => {
-                self.handle_bootstrap_request(pub_id);
+            BootstrapRequest(name) => {
+                self.handle_bootstrap_request(pub_id, name);
                 Ok(Transition::Stay)
             }
             ConnectionResponse => {
@@ -519,7 +519,7 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_relocate_event(&mut self, _: RelocatePayload) -> Result<(), RoutingError> {
+    fn handle_relocate_event(&mut self, _: RelocateDetails) -> Result<(), RoutingError> {
         debug!("{} - Unhandled Relocate event", self);
         Ok(())
     }

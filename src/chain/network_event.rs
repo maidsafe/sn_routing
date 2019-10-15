@@ -7,11 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{EldersInfo, Proof, SectionKeyInfo};
-use crate::crypto::Digest256;
-use crate::id::{FullId, PublicId};
-use crate::parsec;
-use crate::routing_table::Prefix;
-use crate::{BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName};
+use crate::{
+    crypto::Digest256,
+    id::{FullId, PublicId},
+    messages::RelocateDetails,
+    parsec,
+    routing_table::Prefix,
+    BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
+};
 use hex_fmt::HexFmt;
 use std::fmt::{self, Debug, Formatter};
 
@@ -50,17 +53,6 @@ impl SectionInfoSigPayload {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct RelocatePayload {
-    /// Public id of the node to relocate.
-    pub pub_id: PublicId,
-    /// Relocation destination - the node will be relocated to a section whose prefix matches this
-    /// name.
-    pub destination: XorName,
-    /// The age the node will have post-relocation.
-    pub age: u8,
-}
-
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
@@ -93,7 +85,7 @@ pub enum AccumulatingEvent {
     ParsecPrune,
 
     // Voted for node to be relocated out of our section.
-    Relocate(RelocatePayload),
+    Relocate(RelocateDetails),
 
     // Opaque user-defined event.
     User(Vec<u8>),

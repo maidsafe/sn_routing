@@ -11,7 +11,7 @@ use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     error::RoutingError,
     id::PublicId,
-    messages::SignedRoutingMessage,
+    messages::SignedRelocateDetails,
     network_service::NetworkBuilder,
     outbox::EventBox,
     pause::PausedState,
@@ -240,7 +240,7 @@ pub enum Transition {
     Rebootstrap,
     // Node getting relocated.
     Relocate {
-        message: SignedRoutingMessage,
+        details: SignedRelocateDetails,
         conn_infos: Vec<ConnectionInfo>,
     },
     // `JoiningPeer` state transitioning to `Adult`.
@@ -356,11 +356,17 @@ impl StateMachine {
                 _ => unreachable!(),
             }),
             Rebootstrap => self.state.replace_with(|state| match state {
-                State::JoiningPeer(src) => src.into_bootstrapping(),
-                State::Adult(src) => src.into_bootstrapping(),
+                State::JoiningPeer(src) => src.rebootstrap(),
+                State::Adult(src) => src.rebootstrap(),
                 _ => unreachable!(),
             }),
-            Relocate { .. } => unimplemented!(),
+            Relocate {
+                details,
+                conn_infos,
+            } => self.state.replace_with(|state| match state {
+                State::Elder(src) => src.relocate(details, conn_infos),
+                _ => unreachable!(),
+            }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {
                 State::JoiningPeer(src) => src.into_adult(gen_pfx_info, outbox),
                 _ => unreachable!(),

@@ -267,7 +267,7 @@ impl ElderUnderTest {
         unwrap!(self
             .machine
             .elder_state_mut()
-            .handle_bootstrap_request(pub_id));
+            .handle_bootstrap_request(pub_id, *pub_id.name()));
     }
 
     fn is_connected(&self, pub_id: &PublicId) -> bool {
