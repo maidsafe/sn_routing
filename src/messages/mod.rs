@@ -10,7 +10,9 @@ mod direct;
 
 pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
+    chain::{
+        Chain, EldersInfo, GenesisPfxInfo, RelocatePayload, SectionKeyInfo, SectionProofChain,
+    },
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
@@ -532,6 +534,8 @@ pub enum MessageContent {
         /// The version acknowledged.
         ack_version: u64,
     },
+    /// Send to a node to inform it to relocate itself.
+    Relocate(RelocatePayload),
 }
 
 impl Debug for HopMessage {
@@ -557,24 +561,21 @@ impl Debug for SignedRoutingMessage {
 impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
-        match *self {
-            ConnectionRequest {
-                ref pub_id,
-                ref msg_id,
-                ..
-            } => write!(
+        match self {
+            ConnectionRequest { pub_id, msg_id, .. } => write!(
                 formatter,
                 "ConnectionRequest({:?}, {:?}, ..)",
                 pub_id, msg_id
             ),
-            NeighbourInfo(ref info) => write!(formatter, "NeighbourInfo({:?})", info),
-            Merge(ref digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
-            UserMessage(ref content) => write!(formatter, "UserMessage({:?})", content,),
-            NodeApproval(ref gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
+            NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
+            Merge(digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
+            UserMessage(content) => write!(formatter, "UserMessage({:?})", content,),
+            NodeApproval(gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
             AckMessage {
-                ref src_prefix,
-                ref ack_version,
+                src_prefix,
+                ack_version,
             } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
+            Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
         }
     }
 }

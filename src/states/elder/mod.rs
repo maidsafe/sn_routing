@@ -15,8 +15,8 @@ use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
-        SectionKeyInfo, SendAckMessagePayload, MIN_AGE_COUNTER,
+        GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, RelocatePayload,
+        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -361,14 +361,17 @@ impl Elder {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
                 }
 
+                // TODO: this comment is outdated:
                 // Drop candidates that have not completed:
                 // Called peer_manager.remove_candidate reset the candidate so it can be shared by
                 // all nodes: Because new node may not have voted for it, Forget the votes in
                 // flight as well.
+                // TODO: verify whether it would make more sense to carry some of these events over.
                 AccumulatingEvent::AddElder(_)
                 | AccumulatingEvent::RemoveElder(_)
                 | AccumulatingEvent::Online(_)
-                | AccumulatingEvent::ParsecPrune => false,
+                | AccumulatingEvent::ParsecPrune
+                | AccumulatingEvent::Relocate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 AccumulatingEvent::SectionInfo(ref elders_info) => {
@@ -1192,8 +1195,24 @@ impl Elder {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
 
-    pub fn trigger_relocation(&mut self, _pub_id: PublicId, _destination_address: XorName) {
-        unimplemented!()
+    pub fn trigger_relocation(&mut self, pub_id: PublicId, destination: XorName) {
+        let age = if let Some(info) = self.chain.get_member(&pub_id) {
+            info.age()
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Cannot trigger relocation of {}: unknown peer.",
+                self,
+                pub_id
+            );
+            return;
+        };
+
+        self.vote_for_event(AccumulatingEvent::Relocate(RelocatePayload {
+            pub_id,
+            destination,
+            age,
+        }))
     }
 }
 
@@ -1363,6 +1382,14 @@ impl Approved for Elder {
         };
 
         self.send_routing_message(RoutingMessage { src, dst, content })
+    }
+
+    fn handle_relocate_event(&mut self, payload: RelocatePayload) -> Result<(), RoutingError> {
+        self.send_routing_message(RoutingMessage {
+            src: Authority::Section(self.our_prefix().name()),
+            dst: Authority::Node(*payload.pub_id.name()),
+            content: MessageContent::Relocate(payload),
+        })
     }
 }
 

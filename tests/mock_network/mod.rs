@@ -545,6 +545,7 @@ fn node_pause_and_resume() {
 }
 
 #[test]
+#[ignore]
 fn relocate() {
     // Create network of at least two sections. Then request relocation of a node from one section
     // into another one. Verify the node actually got relocated.

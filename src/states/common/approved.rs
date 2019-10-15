@@ -9,8 +9,8 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersChange, EldersInfo, Proof, ProofSet, SectionKeyInfo,
-        SendAckMessagePayload,
+        AccumulatingEvent, Chain, EldersChange, EldersInfo, Proof, ProofSet, RelocatePayload,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -84,6 +84,9 @@ pub trait Approved: Base {
         &mut self,
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError>;
+
+    /// Handle an accumulated `Relocate` event
+    fn handle_relocate_event(&mut self, payload: RelocatePayload) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `User` event
     fn handle_user_event(
@@ -306,6 +309,7 @@ pub trait Approved: Base {
                         self, event
                     );
                 }
+                AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(payload)?,
                 AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }
 

@@ -52,9 +52,13 @@ impl SectionInfoSigPayload {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct RelocatePayload {
-    pub_id: PublicId,
-    destination: XorName,
-    new_age: u8,
+    /// Public id of the node to relocate.
+    pub pub_id: PublicId,
+    /// Relocation destination - the node will be relocated to a section whose prefix matches this
+    /// name.
+    pub destination: XorName,
+    /// The age the node will have post-relocation.
+    pub age: u8,
 }
 
 /// Routing Network events
@@ -67,9 +71,9 @@ pub enum AccumulatingEvent {
     /// Remove elder once we agreed to remove the peer
     RemoveElder(PublicId),
 
-    /// Voted for candidate that pass resource proof
+    /// Voted for node that is about to join our section
     Online(PublicId),
-    /// Voted for candidate we no longer consider online.
+    /// Voted for node we no longer consider online.
     Offline(PublicId),
 
     OurMerge,
@@ -87,6 +91,9 @@ pub enum AccumulatingEvent {
 
     // Prune the gossip graph.
     ParsecPrune,
+
+    // Voted for node to be relocated out of our section.
+    Relocate(RelocatePayload),
 
     // Opaque user-defined event.
     User(Vec<u8>),
@@ -124,27 +131,26 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            AccumulatingEvent::AddElder(ref id) => write!(formatter, "AddElder({})", id),
-            AccumulatingEvent::RemoveElder(ref id) => write!(formatter, "RemoveElder({})", id),
-            AccumulatingEvent::Online(ref id) => write!(formatter, "Online({})", id),
-            AccumulatingEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
+            AccumulatingEvent::AddElder(id) => write!(formatter, "AddElder({})", id),
+            AccumulatingEvent::RemoveElder(id) => write!(formatter, "RemoveElder({})", id),
+            AccumulatingEvent::Online(id) => write!(formatter, "Online({})", id),
+            AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
             AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
-            AccumulatingEvent::NeighbourMerge(ref digest) => {
+            AccumulatingEvent::NeighbourMerge(digest) => {
                 write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
             }
-            AccumulatingEvent::SectionInfo(ref info) => {
-                write!(formatter, "SectionInfo({:?})", info)
-            }
-            AccumulatingEvent::TheirKeyInfo(ref payload) => {
+            AccumulatingEvent::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
+            AccumulatingEvent::TheirKeyInfo(payload) => {
                 write!(formatter, "TheirKeyInfo({:?})", payload)
             }
-            AccumulatingEvent::AckMessage(ref payload) => {
+            AccumulatingEvent::AckMessage(payload) => {
                 write!(formatter, "AckMessage({:?})", payload)
             }
-            AccumulatingEvent::SendAckMessage(ref payload) => {
+            AccumulatingEvent::SendAckMessage(payload) => {
                 write!(formatter, "SendAckMessage({:?})", payload)
             }
             AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
+            AccumulatingEvent::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
             AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }

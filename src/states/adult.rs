@@ -13,7 +13,8 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, EldersChange, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload,
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, RelocatePayload, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
@@ -511,6 +512,11 @@ impl Approved for Adult {
 
     fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled NeighbourMerge event", self);
+        Ok(())
+    }
+
+    fn handle_relocate_event(&mut self, _: RelocatePayload) -> Result<(), RoutingError> {
+        debug!("{} - Unhandled Relocate event", self);
         Ok(())
     }
 }

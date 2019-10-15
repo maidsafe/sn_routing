@@ -12,8 +12,6 @@ use super::{
     AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState,
     NetworkEvent, Proof, ProofSet, SectionProofChain,
 };
-#[cfg(feature = "mock_base")]
-use crate::crypto::Digest256;
 use crate::{
     error::RoutingError,
     id::PublicId,
@@ -29,6 +27,9 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
+
+#[cfg(feature = "mock_base")]
+use {super::MemberInfo, crate::crypto::Digest256};
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -299,7 +300,8 @@ impl Chain {
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::SendAckMessage(_) => (),
+            | AccumulatingEvent::SendAckMessage(_)
+            | AccumulatingEvent::Relocate(_) => (),
         }
 
         Ok(Some((event, EldersChange::default())))
@@ -528,6 +530,15 @@ impl Chain {
             .unwrap_or(false)
     }
 
+    /// Get info about a member of our section.
+    #[cfg(feature = "mock_base")]
+    pub fn get_member(&self, pub_id: &PublicId) -> Option<&MemberInfo> {
+        self.state
+            .our_members
+            .get(pub_id)
+            .filter(|info| info.state == MemberState::Joined)
+    }
+
     /// Returns a set of elders we should be connected to.
     pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
         self.neighbour_infos()
@@ -709,7 +720,8 @@ impl Chain {
             | AccumulatingEvent::TheirKeyInfo(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_)
-            | AccumulatingEvent::User(_) => {
+            | AccumulatingEvent::User(_)
+            | AccumulatingEvent::Relocate(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::SendAckMessage(_) => {
