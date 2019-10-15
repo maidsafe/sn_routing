@@ -15,7 +15,7 @@ use crate::{
     chain::GenesisPfxInfo,
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, RoutingMessage},
+    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
@@ -37,7 +37,7 @@ pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
-    msg_backlog: Vec<RoutingMessage>,
+    msg_backlog: Vec<SignedRoutingMessage>,
     full_id: FullId,
     min_section_size: usize,
     peer_map: PeerMap,
@@ -118,13 +118,14 @@ impl JoiningPeer {
 
     fn dispatch_routing_message(
         &mut self,
-        msg: RoutingMessage,
+        msg: SignedRoutingMessage,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::MessageContent::*;
+        let (msg, metadata) = msg.into_parts();
+
         match msg {
             RoutingMessage {
-                content: NodeApproval(gen_info),
+                content: MessageContent::NodeApproval(gen_info),
                 src: Authority::PrefixSection(_),
                 dst: Authority::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
@@ -133,7 +134,8 @@ impl JoiningPeer {
                     "{} - Unhandled routing message, adding to backlog: {:?}",
                     self, msg
                 );
-                self.msg_backlog.push(msg);
+                self.msg_backlog
+                    .push(SignedRoutingMessage::from_parts(msg, metadata));
                 Ok(Transition::Stay)
             }
         }
@@ -234,15 +236,16 @@ impl Base for JoiningPeer {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let HopMessage { content, .. } = msg;
+        let HopMessage { content: msg, .. } = msg;
 
         if self
             .routing_msg_filter
-            .filter_incoming(content.routing_message())
+            .filter_incoming(msg.routing_message())
             .is_new()
-            && self.in_authority(&content.routing_message().dst)
+            && self.in_authority(&msg.routing_message().dst)
         {
-            self.dispatch_routing_message(content.into_routing_message(), outbox)
+            self.check_signed_message_integrity(&msg)?;
+            self.dispatch_routing_message(msg, outbox)
         } else {
             Ok(Transition::Stay)
         }

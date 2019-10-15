@@ -25,6 +25,7 @@ use crate::{
     ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use itertools::Itertools;
+use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{fmt::Display, net::SocketAddr};
 
@@ -435,6 +436,22 @@ pub trait Base: Display {
         self.network_service_mut()
             .service_mut()
             .send(client, msg, token);
+    }
+
+    fn check_signed_message_integrity(
+        &self,
+        msg: &SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        msg.check_integrity().map_err(|err| {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Invalid integrity of {:?}: {:?}",
+                self,
+                msg,
+                err,
+            );
+            err
+        })
     }
 }
 

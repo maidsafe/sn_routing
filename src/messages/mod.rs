@@ -174,7 +174,6 @@ pub struct SignedRoutingMessage {
 
 impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
-    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         content: RoutingMessage,
         full_id: &FullId,
@@ -190,7 +189,7 @@ impl SignedRoutingMessage {
             pk_set,
             proof,
         };
-        Ok(SignedRoutingMessage {
+        Ok(Self {
             content,
             security_metadata: SecurityMetadata::Partial(partial_metadata),
         })
@@ -206,7 +205,7 @@ impl SignedRoutingMessage {
             signature: full_id.sign(&serialise(&content)?),
         };
 
-        Ok(SignedRoutingMessage {
+        Ok(Self {
             content,
             security_metadata: SecurityMetadata::Single(single_metadata),
         })
@@ -215,9 +214,19 @@ impl SignedRoutingMessage {
     /// Creates a `SignedRoutingMessage` without security metadata
     #[cfg(all(test, feature = "mock_base"))]
     pub fn insecure(content: RoutingMessage) -> SignedRoutingMessage {
-        SignedRoutingMessage {
+        Self {
             content,
             security_metadata: SecurityMetadata::None,
+        }
+    }
+
+    /// Creates a `SignedRoutingMessage` from content and security metadata.
+    /// Note: this function does not verify the metadata matches the content. Need to call
+    /// `check_integrity` for that.
+    pub fn from_parts(content: RoutingMessage, security_metadata: SecurityMetadata) -> Self {
+        Self {
+            content,
+            security_metadata,
         }
     }
 
@@ -333,9 +342,9 @@ impl SignedRoutingMessage {
         }
     }
 
-    /// Returns the routing message without cloning it.
-    pub fn into_routing_message(self) -> RoutingMessage {
-        self.content
+    /// Returns the content and the security metadata.
+    pub fn into_parts(self) -> (RoutingMessage, SecurityMetadata) {
+        (self.content, self.security_metadata)
     }
 
     /// The routing message that was signed.

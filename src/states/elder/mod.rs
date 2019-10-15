@@ -60,7 +60,7 @@ pub struct ElderDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_queue: VecDeque<RoutingMessage>,
+    pub msg_queue: Vec<SignedRoutingMessage>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -73,7 +73,7 @@ pub struct Elder {
     is_first_node: bool,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
-    msg_queue: VecDeque<RoutingMessage>,
+    msg_queue: VecDeque<SignedRoutingMessage>,
     peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
@@ -118,7 +118,7 @@ impl Elder {
             event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
-            msg_queue: VecDeque::new(),
+            msg_queue: Vec::new(),
             parsec_map,
             peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -153,7 +153,7 @@ impl Elder {
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: self.routing_msg_filter,
-            msg_queue: self.msg_queue,
+            msg_queue: self.msg_queue.into_iter().collect(),
             network_service: self.network_service,
             network_rx: None,
             parsec_map: self.parsec_map,
@@ -262,9 +262,9 @@ impl Elder {
     }
 
     fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) {
-        while let Some(routing_msg) = self.msg_queue.pop_front() {
-            if self.in_authority(&routing_msg.dst) {
-                if let Err(err) = self.dispatch_routing_message(routing_msg, outbox) {
+        while let Some(msg) = self.msg_queue.pop_front() {
+            if self.in_authority(&msg.routing_message().dst) {
+                if let Err(err) = self.dispatch_routing_message(msg, outbox) {
                     debug!("{} Routing message dispatch failed: {:?}", self, err);
                 }
             }
@@ -448,28 +448,8 @@ impl Elder {
         }
 
         if self.in_authority(&signed_msg.routing_message().dst) {
-            // The message is addressed to our section. Verify its integrity and trust
-            if !signed_msg.check_trust(&self.chain) {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Untrusted SignedRoutingMessage: {:?} --- {:?}",
-                    self,
-                    signed_msg,
-                    self.chain.get_their_keys_info().collect::<Vec<_>>()
-                );
-                return Err(RoutingError::UntrustedMessage);
-            }
-            if let Err(err) = signed_msg.check_integrity() {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Invalid integrity ({:?}) SignedRoutingMessage: {:?}",
-                    self,
-                    err,
-                    signed_msg,
-                );
-                return Err(err);
-            }
-
+            self.check_signed_message_trust(&signed_msg)?;
+            self.check_signed_message_integrity(&signed_msg)?;
             self.update_our_knowledge(&signed_msg);
 
             if signed_msg.routing_message().dst.is_multiple() {
@@ -479,7 +459,7 @@ impl Elder {
                 }
             }
             // if addressed to us, then we just queue it and return
-            self.msg_queue.push_back(signed_msg.into_routing_message());
+            self.msg_queue.push_back(signed_msg);
             return Ok(());
         }
 
@@ -492,17 +472,19 @@ impl Elder {
 
     fn dispatch_routing_message(
         &mut self,
-        routing_msg: RoutingMessage,
+        msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         use crate::messages::MessageContent::*;
 
-        match routing_msg.content {
+        let (msg, _) = msg.into_parts();
+
+        match msg.content {
             UserMessage { .. } => (),
-            _ => trace!("{} Got routing message {:?}.", self, routing_msg),
+            _ => trace!("{} Got routing message {:?}.", self, msg),
         }
 
-        match (routing_msg.content, routing_msg.src, routing_msg.dst) {
+        match (msg.content, msg.src, msg.dst) {
             (
                 ConnectionRequest {
                     conn_info, pub_id, ..
@@ -920,6 +902,21 @@ impl Elder {
             } else {
                 true
             }
+        }
+    }
+
+    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+        if msg.check_trust(&self.chain) {
+            Ok(())
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Untrusted {:?} --- [{:?}]",
+                self,
+                msg,
+                self.chain.get_their_keys_info().format(", ")
+            );
+            Err(RoutingError::UntrustedMessage)
         }
     }
 

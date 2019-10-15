@@ -47,7 +47,7 @@ pub struct AdultDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub min_section_size: usize,
-    pub msg_backlog: Vec<RoutingMessage>,
+    pub msg_backlog: Vec<SignedRoutingMessage>,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -60,7 +60,7 @@ pub struct Adult {
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
-    msg_backlog: Vec<RoutingMessage>,
+    msg_backlog: Vec<SignedRoutingMessage>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
     add_timer_token: u64,
@@ -150,12 +150,13 @@ impl Adult {
 
     fn dispatch_routing_message(
         &mut self,
-        msg: RoutingMessage,
+        msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
 
-        let src_name = msg.src.name();
+        let (msg, metadata) = msg.into_parts();
+        // let src_name = msg.src.name();
 
         match msg {
             RoutingMessage {
@@ -168,22 +169,25 @@ impl Adult {
                 src: Node(_),
                 dst: Node(_),
             } => {
-                if self.chain.our_prefix().matches(&src_name) {
+                if self.chain.our_prefix().matches(&msg.src.name()) {
                     self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
                 } else {
-                    self.add_message_to_backlog(RoutingMessage {
-                        content: ConnectionRequest {
-                            conn_info,
-                            pub_id,
-                            msg_id,
+                    self.add_message_to_backlog(SignedRoutingMessage::from_parts(
+                        RoutingMessage {
+                            content: ConnectionRequest {
+                                conn_info,
+                                pub_id,
+                                msg_id,
+                            },
+                            ..msg
                         },
-                        ..msg
-                    });
+                        metadata,
+                    ));
                     Ok(())
                 }
             }
             _ => {
-                self.add_message_to_backlog(msg);
+                self.add_message_to_backlog(SignedRoutingMessage::from_parts(msg, metadata));
                 Ok(())
             }
         }
@@ -212,9 +216,9 @@ impl Adult {
     }
 
     // Backlog the message to be processed once we are established.
-    fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
+    fn add_message_to_backlog(&mut self, msg: SignedRoutingMessage) {
         trace!(
-            "{} Not established yet. Delaying message handling: {:?}",
+            "{} Not elder yet. Delaying message handling: {:?}",
             self,
             msg
         );
@@ -353,16 +357,16 @@ impl Base for Adult {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let HopMessage { content, .. } = msg;
-        let routing_msg = content.into_routing_message();
+        let HopMessage { content: msg, .. } = msg;
 
         if self
             .routing_msg_filter
-            .filter_incoming(&routing_msg)
+            .filter_incoming(msg.routing_message())
             .is_new()
-            && self.in_authority(&routing_msg.dst)
+            && self.in_authority(&msg.routing_message().dst)
         {
-            self.dispatch_routing_message(routing_msg, outbox)?;
+            self.check_signed_message_integrity(&msg)?;
+            self.dispatch_routing_message(msg, outbox)?;
         }
 
         Ok(Transition::Stay)

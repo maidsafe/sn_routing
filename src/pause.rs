@@ -9,7 +9,7 @@
 use crate::{
     chain::{Chain, GenesisPfxInfo},
     id::FullId,
-    messages::RoutingMessage,
+    messages::SignedRoutingMessage,
     parsec::ParsecMap,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
@@ -17,7 +17,6 @@ use crate::{
     NetworkEvent, NetworkService,
 };
 use crossbeam_channel as mpmc;
-use std::collections::VecDeque;
 
 /// A type that wraps the internal state of a node while it is paused in order to be upgraded and/or
 /// restarted. A value of this type is obtained by pausing a node and can be then used to resume
@@ -32,7 +31,7 @@ pub struct PausedState {
     pub(super) full_id: FullId,
     pub(super) gen_pfx_info: GenesisPfxInfo,
     pub(super) msg_filter: RoutingMessageFilter,
-    pub(super) msg_queue: VecDeque<RoutingMessage>,
+    pub(super) msg_queue: Vec<SignedRoutingMessage>,
     // TODO: instead of storing both network_service and network_rx, store only the network config.
     pub(super) network_service: NetworkService,
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,
