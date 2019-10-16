@@ -24,6 +24,7 @@ pub struct RelocateDetails {
 
 /// Relocation details that are signed so the destination section can prove the relocation is
 /// genuine.
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedRelocateDetails {
     content: RelocateDetails,
     src: Authority<XorName>,

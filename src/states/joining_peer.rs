@@ -15,7 +15,10 @@ use crate::{
     chain::GenesisPfxInfo,
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
+    messages::{
+        DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRelocateDetails,
+        SignedRoutingMessage,
+    },
     outbox::EventBox,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
@@ -53,6 +56,7 @@ impl JoiningPeer {
         timer: Timer,
         peer_map: PeerMap,
         conn_infos: Vec<ConnectionInfo>,
+        relocate_details: Option<SignedRelocateDetails>,
     ) -> Self {
         let join_token = timer.schedule(JOIN_TIMEOUT);
 
@@ -67,9 +71,7 @@ impl JoiningPeer {
             join_token,
         };
 
-        for conn_info in conn_infos {
-            joining_peer.send_join_request(conn_info);
-        }
+        joining_peer.send_join_requests(conn_infos, relocate_details);
         joining_peer
     }
 
@@ -101,9 +103,15 @@ impl JoiningPeer {
         )))
     }
 
-    fn send_join_request(&mut self, dst: ConnectionInfo) {
-        info!("{} Sending JoinRequest to {:?}.", self, dst);
-        self.send_direct_message(&dst, DirectMessage::JoinRequest)
+    fn send_join_requests(
+        &mut self,
+        conn_infos: Vec<ConnectionInfo>,
+        relocate_details: Option<SignedRelocateDetails>,
+    ) {
+        for dst in conn_infos {
+            info!("{} - Sending JoinRequest to {:?}", self, dst);
+            self.send_direct_message(&dst, DirectMessage::JoinRequest(relocate_details.clone()));
+        }
     }
 
     fn dispatch_routing_message(

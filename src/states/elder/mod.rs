@@ -187,16 +187,16 @@ impl Elder {
 
     pub fn relocate(
         self,
-        details: SignedRelocateDetails,
         conn_infos: Vec<ConnectionInfo>,
+        details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
             self.network_service,
             self.full_id,
             self.chain.min_sec_size(),
             self.timer,
-            details,
             conn_infos,
+            details,
         )))
     }
 
@@ -705,7 +705,11 @@ impl Elder {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(&mut self, pub_id: PublicId) {
+    fn handle_join_request(
+        &mut self,
+        pub_id: PublicId,
+        relocate_details: Option<SignedRelocateDetails>,
+    ) {
         debug!("{} - Received JoinRequest from {}", self, pub_id);
 
         if !self.chain.our_prefix().matches(pub_id.name()) {
@@ -726,7 +730,39 @@ impl Elder {
             return;
         }
 
+        // This joining node is being relocated to us.
+        if let Some(details) = relocate_details {
+            if !self
+                .chain
+                .our_prefix()
+                .matches(&details.content().destination)
+            {
+                debug!("{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
+                    self, pub_id, details.content().destination, self.chain.our_prefix());
+                return;
+            }
+
+            let message = SignedRoutingMessage::from(details);
+
+            if let Err(err) = message.check_integrity() {
+                debug!("{} - Ignoring relocation JoinRequest from {} - invalid integrity of {:?}: {:?}.", self, pub_id, message, err);
+                return;
+            }
+
+            if !message.check_trust(&self.chain) {
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - untrusted {:?}.",
+                    self, pub_id, message
+                );
+                return;
+            }
+        }
+
         self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+
+        // TODO: the Online vote should also include the age the node should get. For normal joins,
+        // this should be the min infant age. For relocation it should be the age proposed by the
+        // source section.
         self.vote_for_event(AccumulatingEvent::Online(pub_id));
     }
 
@@ -1132,7 +1168,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest => self.handle_join_request(pub_id),
+            JoinRequest(relocate_details) => self.handle_join_request(pub_id, relocate_details),
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, pub_id, outbox);

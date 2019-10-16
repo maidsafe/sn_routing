@@ -364,7 +364,7 @@ impl StateMachine {
                 details,
                 conn_infos,
             } => self.state.replace_with(|state| match state {
-                State::Elder(src) => src.relocate(details, conn_infos),
+                State::Elder(src) => src.relocate(conn_infos, details),
                 _ => unreachable!(),
             }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {

@@ -74,8 +74,8 @@ impl BootstrappingPeer {
         full_id: FullId,
         min_section_size: usize,
         timer: Timer,
-        relocate_details: SignedRelocateDetails,
         conn_infos: Vec<ConnectionInfo>,
+        relocate_details: SignedRelocateDetails,
     ) -> Self {
         let mut node = Self {
             network_service,
@@ -107,6 +107,7 @@ impl BootstrappingPeer {
             self.timer,
             self.peer_map,
             conn_infos,
+            self.relocate_details,
         )))
     }
 
@@ -146,7 +147,6 @@ impl BootstrappingPeer {
             self.full_id = FullId::within_range(&prefix.range_inclusive());
         }
 
-        // TODO: cary over also the relocation details.
         Transition::IntoJoining { conn_infos }
     }
 

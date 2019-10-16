@@ -10,7 +10,7 @@ use crate::{
     crypto::signing::Signature,
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
-    messages::SignedRoutingMessage,
+    messages::{SignedRelocateDetails, SignedRoutingMessage},
     parsec,
     routing_table::Prefix,
     xor_name::XorName,
@@ -39,8 +39,10 @@ pub enum DirectMessage {
     /// accept the peer into the section, or redirect it to another set of bootstrap peers
     BootstrapResponse(BootstrapResponse),
     /// Sent from a bootstrapping peer to the section that responded with a
-    /// `BootstrapResponse::Join` to its `BootstrapRequest`
-    JoinRequest,
+    /// `BootstrapResponse::Join` to its `BootstrapRequest`.
+    /// If the peer is being relocated, contains the signed relocation details. Otherwise contains
+    /// `None`.
+    JoinRequest(Option<SignedRelocateDetails>),
     /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
     ConnectionResponse,
@@ -76,7 +78,11 @@ impl Debug for DirectMessage {
             MessageSignature(msg) => write!(formatter, "MessageSignature ({:?})", msg),
             BootstrapRequest(name) => write!(formatter, "BootstrapRequest({})", name),
             BootstrapResponse(response) => write!(formatter, "BootstrapResponse({:?})", response),
-            JoinRequest => write!(formatter, "JoinRequest"),
+            JoinRequest(relocate_details) => write!(
+                formatter,
+                "JoinRequest({:?})",
+                relocate_details.as_ref().map(|details| details.content())
+            ),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
@@ -96,20 +102,19 @@ impl Hash for DirectMessage {
 
         mem::discriminant(self).hash(state);
 
-        match *self {
-            MessageSignature(ref msg) => {
-                msg.hash(state);
-            }
-            ConnectionResponse | JoinRequest => (),
+        match self {
+            MessageSignature(msg) => msg.hash(state),
             BootstrapRequest(name) => name.hash(state),
-            BootstrapResponse(ref response) => response.hash(state),
+            BootstrapResponse(response) => response.hash(state),
+            JoinRequest(details) => details.hash(state),
+            ConnectionResponse => (),
             ParsecPoke(version) => version.hash(state),
-            ParsecRequest(version, ref request) => {
+            ParsecRequest(version, request) => {
                 version.hash(state);
                 // Fake hash via serialisation
                 serialise(&request).ok().hash(state)
             }
-            ParsecResponse(version, ref response) => {
+            ParsecResponse(version, response) => {
                 version.hash(state);
                 // Fake hash via serialisation
                 serialise(&response).ok().hash(state)
