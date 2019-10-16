@@ -34,7 +34,7 @@ use crate::{
     pause::PausedState,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
-    routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
+    routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
     state_machine::State,
     state_machine::Transition,
@@ -1511,7 +1511,7 @@ impl Display for Elder {
 fn create_first_elders_info(public_id: PublicId) -> Result<EldersInfo, RoutingError> {
     EldersInfo::new(
         iter::once(public_id).collect(),
-        *DEFAULT_PREFIX,
+        Prefix::default(),
         iter::empty(),
     )
     .map_err(|err| {
