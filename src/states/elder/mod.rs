@@ -18,8 +18,8 @@ use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
-        SectionKeyInfo, SendAckMessagePayload, MIN_AGE_COUNTER,
+        GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
+        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -731,7 +731,7 @@ impl Elder {
         }
 
         // This joining node is being relocated to us.
-        if let Some(details) = relocate_details {
+        let age = if let Some(details) = relocate_details {
             if !self
                 .chain
                 .our_prefix()
@@ -742,6 +742,7 @@ impl Elder {
                 return;
             }
 
+            let age = details.content().age;
             let message = SignedRoutingMessage::from(details);
 
             if let Err(err) = message.check_integrity() {
@@ -756,14 +757,14 @@ impl Elder {
                 );
                 return;
             }
-        }
+
+            age
+        } else {
+            MIN_AGE
+        };
 
         self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
-
-        // TODO: the Online vote should also include the age the node should get. For normal joins,
-        // this should be the min infant age. For relocation it should be the age proposed by the
-        // source section.
-        self.vote_for_event(AccumulatingEvent::Online(pub_id));
+        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { pub_id, age }))
     }
 
     fn handle_relocate(
@@ -1384,17 +1385,17 @@ impl Approved for Elder {
 
     fn handle_online_event(
         &mut self,
-        pub_id: PublicId,
+        payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Online: {}.", self, pub_id);
+        info!("{} - handle Online: {:?}.", self, payload);
 
-        self.chain.add_member(pub_id);
-        self.handle_candidate_approval(pub_id, outbox);
+        self.chain.add_member(payload.pub_id, payload.age);
+        self.handle_candidate_approval(payload.pub_id, outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(pub_id));
+        self.vote_for_event(AccumulatingEvent::AddElder(payload.pub_id));
 
         Ok(())
     }

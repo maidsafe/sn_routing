@@ -591,25 +591,25 @@ fn relocate() {
         for node in nodes {
             let prefixes = node.inner.prefixes();
 
-            if !prefixes
+            let in_source = prefixes
                 .iter()
                 .filter(|prefix| prefix.is_compatible(&source_prefix))
-                .all(|prefix| {
+                .any(|prefix| {
                     // TODO: check all members, not just elders.
-                    !node.inner.section_elders(prefix).contains(&node_name)
-                })
-            {
+                    node.inner.section_elders(prefix).contains(&node_name)
+                });
+            if in_source {
                 return false;
             }
 
-            if !prefixes
+            let in_target = prefixes
                 .iter()
                 .filter(|prefix| prefix.is_compatible(&target_prefix))
                 .any(|prefix| {
                     // TODO: check all members, not just elders.
                     node.inner.section_elders(prefix).contains(&node_name)
-                })
-            {
+                });
+            if !in_target {
                 return false;
             }
         }

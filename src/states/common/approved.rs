@@ -9,8 +9,8 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersChange, EldersInfo, Proof, ProofSet, SectionKeyInfo,
-        SendAckMessagePayload,
+        AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload, Proof, ProofSet,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -53,7 +53,7 @@ pub trait Approved: Base {
     /// Handles an accumulated `Online` event.
     fn handle_online_event(
         &mut self,
-        pub_id: PublicId,
+        payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -275,8 +275,8 @@ pub trait Approved: Base {
                 AccumulatingEvent::RemoveElder(pub_id) => {
                     self.handle_remove_elder_event(pub_id, outbox)?;
                 }
-                AccumulatingEvent::Online(info) => {
-                    self.handle_online_event(info, outbox)?;
+                AccumulatingEvent::Online(payload) => {
+                    self.handle_online_event(payload, outbox)?;
                 }
                 AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id)?;

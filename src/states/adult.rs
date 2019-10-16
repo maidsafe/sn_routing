@@ -13,7 +13,8 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, EldersChange, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload,
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, OnlinePayload, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
@@ -463,11 +464,11 @@ impl Approved for Adult {
 
     fn handle_online_event(
         &mut self,
-        pub_id: PublicId,
+        payload: OnlinePayload,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Online: {}.", self, pub_id);
-        self.chain.add_member(pub_id);
+        info!("{} - handle Online: {:?}.", self, payload);
+        self.chain.add_member(payload.pub_id, payload.age);
         Ok(())
     }
 

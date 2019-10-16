@@ -53,6 +53,12 @@ impl SectionInfoSigPayload {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct OnlinePayload {
+    pub pub_id: PublicId,
+    pub age: u8,
+}
+
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
@@ -64,7 +70,7 @@ pub enum AccumulatingEvent {
     RemoveElder(PublicId),
 
     /// Voted for node that is about to join our section
-    Online(PublicId),
+    Online(OnlinePayload),
     /// Voted for node we no longer consider online.
     Offline(PublicId),
 
@@ -125,7 +131,7 @@ impl Debug for AccumulatingEvent {
         match self {
             AccumulatingEvent::AddElder(id) => write!(formatter, "AddElder({})", id),
             AccumulatingEvent::RemoveElder(id) => write!(formatter, "RemoveElder({})", id),
-            AccumulatingEvent::Online(id) => write!(formatter, "Online({})", id),
+            AccumulatingEvent::Online(payload) => write!(formatter, "Online({:?})", payload),
             AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
             AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
             AccumulatingEvent::NeighbourMerge(digest) => {

@@ -329,7 +329,7 @@ impl Chain {
     }
 
     /// Adds a member to our section.
-    pub fn add_member(&mut self, pub_id: PublicId) {
+    pub fn add_member(&mut self, pub_id: PublicId, age: u8) {
         self.assert_no_prefix_change("add member");
 
         if !self.our_prefix().matches(&pub_id.name()) {
@@ -347,6 +347,7 @@ impl Chain {
         // TODO: support rejoining
         let info = self.state.our_members.entry(pub_id).or_default();
         info.state = MemberState::Joined;
+        info.set_age(age);
     }
 
     /// Remove a member from our section.
