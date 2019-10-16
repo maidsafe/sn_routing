@@ -545,7 +545,6 @@ fn node_pause_and_resume() {
 }
 
 #[test]
-#[ignore]
 fn relocate() {
     // Create network of at least two sections. Then request relocation of a node from one section
     // into another one. Verify the node actually got relocated.
@@ -586,16 +585,42 @@ fn relocate() {
     }
 
     // Proceed until the node relocates.
+    let relocation_complete = move |nodes: &[TestNode]| {
+        let node_name = nodes[relocate_index].name();
+
+        for node in nodes {
+            let prefixes = node.inner.prefixes();
+
+            if !prefixes
+                .iter()
+                .filter(|prefix| prefix.is_compatible(&source_prefix))
+                .all(|prefix| {
+                    // TODO: check all members, not just elders.
+                    !node.inner.section_elders(prefix).contains(&node_name)
+                })
+            {
+                return false;
+            }
+
+            if !prefixes
+                .iter()
+                .filter(|prefix| prefix.is_compatible(&target_prefix))
+                .any(|prefix| {
+                    // TODO: check all members, not just elders.
+                    node.inner.section_elders(prefix).contains(&node_name)
+                })
+            {
+                return false;
+            }
+        }
+
+        true
+    };
+
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| {
-                !nodes[relocate_index]
-                    .inner
-                    .our_prefix()
-                    .map(|prefix| prefix.is_compatible(&target_prefix))
-                    .unwrap_or(false)
-            })
+            .continue_if(relocation_complete)
             .fire_join_timeout(false),
     )
 }

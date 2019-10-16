@@ -1488,7 +1488,9 @@ impl Approved for Elder {
     }
 
     fn handle_relocate_event(&mut self, payload: RelocateDetails) -> Result<(), RoutingError> {
-        // TODO: vote Offline
+        info!("{} - handle Relocate: {:?}.", self, payload);
+
+        // TODO: should we vote Offline here?
 
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(self.our_prefix().name()),
