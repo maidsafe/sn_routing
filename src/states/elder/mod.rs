@@ -710,6 +710,7 @@ impl Elder {
             return;
         }
 
+        self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
         self.vote_for_event(AccumulatingEvent::Online(pub_id));
     }
 
