@@ -10,7 +10,7 @@ mod direct;
 mod relocate;
 
 pub use self::{
-    direct::{BootstrapResponse, DirectMessage, SignedDirectMessage},
+    direct::{BootstrapResponse, DirectMessage, RelocatePayload, SignedDirectMessage},
     relocate::{RelocateDetails, SignedRelocateDetails},
 };
 use crate::{

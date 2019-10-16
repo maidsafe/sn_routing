@@ -40,9 +40,8 @@ pub enum DirectMessage {
     BootstrapResponse(BootstrapResponse),
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
-    /// If the peer is being relocated, contains the signed relocation details. Otherwise contains
-    /// `None`.
-    JoinRequest(Option<SignedRelocateDetails>),
+    /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
+    JoinRequest(Option<RelocatePayload>),
     /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
     ConnectionResponse,
@@ -71,6 +70,41 @@ pub enum BootstrapResponse {
     Error(BootstrapResponseError),
 }
 
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
+pub struct RelocatePayload {
+    pub details: SignedRelocateDetails,
+    /// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.
+    pub signature_of_new_id_with_old_id: Signature,
+}
+
+impl RelocatePayload {
+    pub fn new(
+        details: SignedRelocateDetails,
+        new_pub_id: &PublicId,
+        old_full_id: &FullId,
+    ) -> Result<Self, RoutingError> {
+        let new_id_serialised = serialise(new_pub_id)?;
+        let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
+
+        Ok(Self {
+            details,
+            signature_of_new_id_with_old_id,
+        })
+    }
+
+    pub fn verify_identity(&self, new_pub_id: &PublicId) -> bool {
+        let new_id_serialised = match serialise(new_pub_id) {
+            Ok(buf) => buf,
+            Err(_) => return false,
+        };
+
+        self.details
+            .content()
+            .pub_id
+            .verify(&new_id_serialised, &self.signature_of_new_id_with_old_id)
+    }
+}
+
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
@@ -81,7 +115,9 @@ impl Debug for DirectMessage {
             JoinRequest(relocate_details) => write!(
                 formatter,
                 "JoinRequest({:?})",
-                relocate_details.as_ref().map(|details| details.content())
+                relocate_details
+                    .as_ref()
+                    .map(|payload| payload.details.content())
             ),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
@@ -106,7 +142,7 @@ impl Hash for DirectMessage {
             MessageSignature(msg) => msg.hash(state),
             BootstrapRequest(name) => name.hash(state),
             BootstrapResponse(response) => response.hash(state),
-            JoinRequest(details) => details.hash(state),
+            JoinRequest(payload) => payload.hash(state),
             ConnectionResponse => (),
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, request) => {

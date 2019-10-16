@@ -16,7 +16,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
     messages::{
-        DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRelocateDetails,
+        DirectMessage, HopMessage, MessageContent, RelocatePayload, RoutingMessage,
         SignedRoutingMessage,
     },
     outbox::EventBox,
@@ -56,7 +56,7 @@ impl JoiningPeer {
         timer: Timer,
         peer_map: PeerMap,
         conn_infos: Vec<ConnectionInfo>,
-        relocate_details: Option<SignedRelocateDetails>,
+        relocate_payload: Option<RelocatePayload>,
     ) -> Self {
         let join_token = timer.schedule(JOIN_TIMEOUT);
 
@@ -71,7 +71,7 @@ impl JoiningPeer {
             join_token,
         };
 
-        joining_peer.send_join_requests(conn_infos, relocate_details);
+        joining_peer.send_join_requests(conn_infos, relocate_payload);
         joining_peer
     }
 
@@ -106,11 +106,11 @@ impl JoiningPeer {
     fn send_join_requests(
         &mut self,
         conn_infos: Vec<ConnectionInfo>,
-        relocate_details: Option<SignedRelocateDetails>,
+        relocate_payload: Option<RelocatePayload>,
     ) {
         for dst in conn_infos {
             info!("{} - Sending JoinRequest to {:?}", self, dst);
-            self.send_direct_message(&dst, DirectMessage::JoinRequest(relocate_details.clone()));
+            self.send_direct_message(&dst, DirectMessage::JoinRequest(relocate_payload.clone()));
         }
     }
 

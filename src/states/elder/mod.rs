@@ -27,7 +27,8 @@ use crate::{
     id::{FullId, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RelocateDetails,
-        RoutingMessage, SecurityMetadata, SignedRelocateDetails, SignedRoutingMessage,
+        RelocatePayload, RoutingMessage, SecurityMetadata, SignedRelocateDetails,
+        SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, ParsecMap},
@@ -705,11 +706,7 @@ impl Elder {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(
-        &mut self,
-        pub_id: PublicId,
-        relocate_details: Option<SignedRelocateDetails>,
-    ) {
+    fn handle_join_request(&mut self, pub_id: PublicId, relocate_payload: Option<RelocatePayload>) {
         debug!("{} - Received JoinRequest from {}", self, pub_id);
 
         if !self.chain.our_prefix().matches(pub_id.name()) {
@@ -731,7 +728,17 @@ impl Elder {
         }
 
         // This joining node is being relocated to us.
-        let age = if let Some(details) = relocate_details {
+        let age = if let Some(payload) = relocate_payload {
+            if !payload.verify_identity(&pub_id) {
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - invalid signature.",
+                    self, pub_id
+                );
+                return;
+            }
+
+            let details = payload.details;
+
             if !self
                 .chain
                 .our_prefix()
@@ -1169,7 +1176,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest(relocate_details) => self.handle_join_request(pub_id, relocate_details),
+            JoinRequest(payload) => self.handle_join_request(pub_id, payload),
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, pub_id, outbox);

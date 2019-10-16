@@ -12,7 +12,8 @@ use crate::{
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRelocateDetails,
+        BootstrapResponse, DirectMessage, HopMessage, RelocatePayload, RoutingMessage,
+        SignedRelocateDetails,
     },
     outbox::EventBox,
     peer_map::PeerMap,
@@ -98,6 +99,7 @@ impl BootstrappingPeer {
     pub fn into_joining(
         self,
         conn_infos: Vec<ConnectionInfo>,
+        relocate_payload: Option<RelocatePayload>,
         _outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
         Ok(State::JoiningPeer(JoiningPeer::new(
@@ -107,7 +109,7 @@ impl BootstrappingPeer {
             self.timer,
             self.peer_map,
             conn_infos,
-            self.relocate_details,
+            relocate_payload,
         )))
     }
 
@@ -142,12 +144,27 @@ impl BootstrappingPeer {
         &mut self,
         prefix: Prefix<XorName>,
         conn_infos: Vec<ConnectionInfo>,
-    ) -> Transition {
+    ) -> Result<Transition, RoutingError> {
+        let old_full_id = self.full_id.clone();
+
         if !prefix.matches(self.name()) {
             self.full_id = FullId::within_range(&prefix.range_inclusive());
         }
 
-        Transition::IntoJoining { conn_infos }
+        if let Some(details) = self.relocate_details.take() {
+            let relocate_payload =
+                RelocatePayload::new(details, self.full_id.public_id(), &old_full_id)?;
+
+            Ok(Transition::IntoJoining {
+                conn_infos,
+                relocate_payload: Some(relocate_payload),
+            })
+        } else {
+            Ok(Transition::IntoJoining {
+                conn_infos,
+                relocate_payload: None,
+            })
+        }
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
@@ -328,7 +345,7 @@ impl Base for BootstrappingPeer {
                     "{} - Joining a section {:?}: {:?}",
                     self, prefix, conn_infos
                 );
-                Ok(self.join_section(prefix, conn_infos))
+                self.join_section(prefix, conn_infos)
             }
             DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(
