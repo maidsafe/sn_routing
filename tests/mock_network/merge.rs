@@ -26,7 +26,10 @@ fn merge(prefix_lengths: Vec<usize>) {
     // prefix.
     let mut min_prefix = *nodes[0].our_prefix();
     loop {
-        warn!("Current Prefixes: {:?}", current_sections(&nodes));
+        warn!(
+            "Current Prefixes: {{{:?}}}",
+            current_sections(&nodes).format(", ")
+        );
         rng.shuffle(&mut nodes);
         let mut index = nodes.len();
         for (i, node) in nodes.iter().enumerate() {
@@ -42,9 +45,9 @@ fn merge(prefix_lengths: Vec<usize>) {
 
         let removed = nodes.remove(index);
         warn!(
-            "Dropped: {}. Current Prefixes: {:?}",
+            "Dropped: {}. Current Prefixes: {{{:?}}}",
             removed.name(),
-            current_sections(&nodes)
+            current_sections(&nodes).format(", ")
         );
         drop(removed);
         poll_and_resend(&mut nodes);
@@ -110,7 +113,7 @@ fn concurrent_merge() {
     // This setup also allows testing concurrent merges where one of the merging section is not
     // a neighbour of either of the other two merging sections.
     let prefixes_to_drop_from = {
-        let mut sections = current_sections(&nodes).into_iter().collect_vec();
+        let mut sections = current_sections(&nodes).collect_vec();
         rng.shuffle(&mut sections);
 
         let any_sibling = |others: &[Prefix<XorName>], prefix: &Prefix<XorName>| {

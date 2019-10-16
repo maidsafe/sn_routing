@@ -11,6 +11,7 @@ mod churn;
 mod drop;
 mod merge;
 mod messages;
+mod node_ageing;
 mod secure_message_delivery;
 mod utils;
 
@@ -411,7 +412,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     // The created sections
-    let sections = current_sections(&nodes).into_iter().collect_vec();
+    let sections = current_sections(&nodes).collect_vec();
     let small_prefix = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 1));
     let long_prefix_0 = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 2));
     let long_prefix_1 = long_prefix_0.sibling();
@@ -542,85 +543,4 @@ fn node_pause_and_resume() {
     nodes.push(TestNode::resume(&network, state));
     poll_and_resend(&mut nodes);
     verify_invariant_for_all_nodes(&network, &mut nodes);
-}
-
-#[test]
-fn relocate() {
-    // Create network of at least two sections. Then request relocation of a node from one section
-    // into another one. Verify the node actually got relocated.
-    let network = Network::new(MIN_SECTION_SIZE, None);
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
-
-    let mut prefixes: Vec<_> = nodes
-        .iter()
-        .filter_map(|node| node.inner.our_prefix().copied())
-        .collect();
-    prefixes.sort();
-    prefixes.dedup();
-    assert!(prefixes.len() > 1);
-
-    let find_matching_prefix =
-        |name: &XorName| *unwrap!(prefixes.iter().find(|prefix| prefix.matches(name)));
-
-    let mut rng = network.new_rng();
-
-    // Pick a random node to relocate:
-    let relocate_index = rng.gen_range(0, nodes.len());
-    let relocate_id = nodes[relocate_index].id();
-    let source_prefix = find_matching_prefix(relocate_id.name());
-
-    // Pick a random destination to relocate to.
-    let target_name: XorName = unwrap!(rng.gen_iter().find(|name| !source_prefix.matches(name)));
-    let target_prefix = find_matching_prefix(&target_name);
-
-    // Trigger the relocation.
-    for node in nodes.iter_mut() {
-        if node.inner.our_prefix() != Some(&source_prefix) {
-            continue;
-        }
-
-        // TODO: When relocation trigger is implemented, change this test to use it instead of this
-        // explicit method.
-        node.inner.trigger_relocation(relocate_id, target_name);
-    }
-
-    // Proceed until the node relocates.
-    let relocation_complete = move |nodes: &[TestNode]| {
-        let node_name = nodes[relocate_index].name();
-
-        for node in nodes {
-            let prefixes = node.inner.prefixes();
-
-            let in_source = prefixes
-                .iter()
-                .filter(|prefix| prefix.is_compatible(&source_prefix))
-                .any(|prefix| {
-                    // TODO: check all members, not just elders.
-                    node.inner.section_elders(prefix).contains(&node_name)
-                });
-            if in_source {
-                return false;
-            }
-
-            let in_target = prefixes
-                .iter()
-                .filter(|prefix| prefix.is_compatible(&target_prefix))
-                .any(|prefix| {
-                    // TODO: check all members, not just elders.
-                    node.inner.section_elders(prefix).contains(&node_name)
-                });
-            if !in_target {
-                return false;
-            }
-        }
-
-        true
-    };
-
-    poll_and_resend_with_options(
-        &mut nodes,
-        PollOptions::default()
-            .continue_if(relocation_complete)
-            .fire_join_timeout(false),
-    )
 }

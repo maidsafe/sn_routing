@@ -137,15 +137,11 @@ impl TestNode {
 }
 
 pub fn count_sections(nodes: &[TestNode]) -> usize {
-    nodes.iter().map(|n| n.inner.prefixes()).unique().count()
+    current_sections(nodes).count()
 }
 
-pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
-    nodes
-        .iter()
-        .map(|n| n.inner.prefixes())
-        .flat_map(|prefix_set| prefix_set.into_iter())
-        .collect()
+pub fn current_sections<'a>(nodes: &'a [TestNode]) -> impl Iterator<Item = Prefix<XorName>> + 'a {
+    nodes.iter().flat_map(|n| n.inner.prefixes()).unique()
 }
 
 pub struct TestNodeBuilder<'a> {
@@ -168,9 +164,7 @@ impl<'a> TestNodeBuilder<'a> {
         }
     }
 
-    // TODO: remove the `unused` attribute when we add a "rejoin" test.
-    #[allow(unused)]
-    pub fn full_id(mut self, full_id: FullId) -> Self {
+    pub fn full_id(self, full_id: FullId) -> Self {
         Self {
             inner: self.inner.full_id(full_id),
             ..self
