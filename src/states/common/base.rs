@@ -27,7 +27,11 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use std::{fmt::Display, net::SocketAddr};
+use std::{
+    fmt::{Debug, Display},
+    net::SocketAddr,
+    slice,
+};
 
 // Trait for all states.
 pub trait Base: Display {
@@ -338,29 +342,29 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message(&mut self, dst_id: &PublicId, content: DirectMessage) {
+    fn send_direct_message<T: MessageRecipient>(&mut self, dst: &T, content: DirectMessage) {
         let message = if let Ok(message) = self.to_signed_direct_message(content) {
             message
         } else {
             return;
         };
 
-        self.send_message(dst_id, message);
+        self.send_message(dst, message);
     }
 
-    fn send_message(&mut self, dst_id: &PublicId, message: Message) {
-        self.send_message_to_targets(&[*dst_id], 1, message);
+    fn send_message<T: MessageRecipient>(&mut self, dst: &T, message: Message) {
+        self.send_message_to_targets(slice::from_ref(dst), 1, message);
     }
 
-    fn send_message_to_targets(
+    fn send_message_to_targets<T: MessageRecipient>(
         &mut self,
-        dst_targets: &[PublicId],
+        dst_targets: &[T],
         dg_size: usize,
         message: Message,
     ) {
         let conn_infos: Vec<_> = dst_targets
             .iter()
-            .filter_map(|pub_id| self.peer_map().get_connection_info(pub_id).cloned())
+            .filter_map(|dst| dst.resolve(self.peer_map()).cloned())
             .collect();
 
         if conn_infos.len() < dg_size {
@@ -371,7 +375,7 @@ pub trait Base: Display {
                 dst_targets,
                 dst_targets
                     .iter()
-                    .filter(|pub_id| self.peer_map().get_connection_info(pub_id).is_some())
+                    .filter(|dst| dst.resolve(self.peer_map()).is_some())
                     .format(", "),
                 message
             );
@@ -477,4 +481,28 @@ pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
     let result = Ok((*data).clone());
 
     result
+}
+
+/// A trait for types used to identify recipients of messages.
+pub trait MessageRecipient: Debug {
+    /// Resolve this recipient to a ConnectionInfo using the given PeerMap.
+    fn resolve<'a>(&'a self, peer_map: &'a PeerMap) -> Option<&'a ConnectionInfo>;
+}
+
+impl MessageRecipient for PublicId {
+    fn resolve<'a>(&'a self, peer_map: &'a PeerMap) -> Option<&'a ConnectionInfo> {
+        peer_map.get_connection_info(self)
+    }
+}
+
+impl MessageRecipient for XorName {
+    fn resolve<'a>(&'a self, peer_map: &'a PeerMap) -> Option<&'a ConnectionInfo> {
+        peer_map.get_connection_info(self)
+    }
+}
+
+impl MessageRecipient for ConnectionInfo {
+    fn resolve(&self, _: &PeerMap) -> Option<&ConnectionInfo> {
+        Some(self)
+    }
 }

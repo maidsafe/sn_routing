@@ -103,17 +103,7 @@ impl JoiningPeer {
 
     fn send_join_request(&mut self, dst: ConnectionInfo) {
         info!("{} Sending JoinRequest to {:?}.", self, dst);
-
-        let message = if let Ok(message) = self.to_signed_direct_message(DirectMessage::JoinRequest)
-        {
-            message
-        } else {
-            return;
-        };
-
-        let conn_infos = vec![dst];
-        let dg_size = 1;
-        self.send_message_to_initial_targets(conn_infos, dg_size, message);
+        self.send_direct_message(&dst, DirectMessage::JoinRequest)
     }
 
     fn dispatch_routing_message(

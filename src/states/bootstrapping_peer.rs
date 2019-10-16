@@ -129,22 +129,11 @@ impl BootstrappingPeer {
             let destination = if let Some(details) = self.relocate_details.as_ref() {
                 details.content().destination
             } else {
-                *self.id().name()
+                *self.name()
             };
 
-            let message = if let Ok(message) =
-                self.to_signed_direct_message(DirectMessage::BootstrapRequest(destination))
-            {
-                message
-            } else {
-                return;
-            };
-
-            self.peer_map_mut().connect(dst.clone());
-
-            let conn_infos = vec![dst];
-            let dg_size = 1;
-            self.send_message_to_initial_targets(conn_infos, dg_size, message);
+            self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
+            self.peer_map_mut().connect(dst);
         }
     }
 

@@ -698,7 +698,7 @@ impl Elder {
             );
             BootstrapResponse::Rebootstrap(conn_infos)
         };
-        self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(response));
+        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(response));
     }
 
     fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
