@@ -30,11 +30,10 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_name::XorName,
-    InterfaceError, NetworkService,
+    NetworkService,
 };
 use itertools::Itertools;
 use std::fmt::{self, Display, Formatter};
-use std::net::SocketAddr;
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -284,11 +283,6 @@ impl Base for Adult {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
-    }
-
-    fn handle_disconnect_client(&mut self, peer_addr: SocketAddr) -> Result<(), InterfaceError> {
-        self.disconnect_from(peer_addr);
-        Ok(())
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {

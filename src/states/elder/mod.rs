@@ -20,7 +20,7 @@ use crate::{
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
-    event::{ClientEvent, Event},
+    event::Event,
     id::{FullId, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
@@ -38,11 +38,11 @@ use crate::{
     timer::Timer,
     utils::XorTargetInterval,
     xor_name::XorName,
-    BlsPublicKeySet, ConnectionInfo, NetworkBytes, NetworkService,
+    BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
-use quic_p2p::Token;
+#[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
     cmp,
@@ -961,26 +961,6 @@ impl Base for Elder {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
-    }
-
-    fn handle_connected_to_client(&mut self, peer_addr: SocketAddr, outbox: &mut dyn EventBox) {
-        let client_event = ClientEvent::ConnectedToClient { peer_addr };
-        outbox.send_event(From::from(client_event));
-    }
-
-    fn handle_disconnect_client(&mut self, peer_addr: SocketAddr) -> Result<(), InterfaceError> {
-        self.disconnect_from(peer_addr);
-        Ok(())
-    }
-
-    fn handle_send_msg_to_client(
-        &mut self,
-        peer_addr: SocketAddr,
-        msg: NetworkBytes,
-        token: Token,
-    ) -> Result<(), InterfaceError> {
-        self.send_msg_to_client(peer_addr, msg, token);
-        Ok(())
     }
 
     fn handle_send_message(

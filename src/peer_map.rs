@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{id::PublicId, xor_name::XorName, ConnectionInfo};
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use std::net::SocketAddr;
 
 /// This structure holds the bi-directional association between peers public id and their network
@@ -24,6 +24,7 @@ pub struct PeerMap {
     forward: FxHashMap<XorName, ConnectionInfo>,
     reverse: FxHashMap<SocketAddr, PublicId>,
     pending: FxHashMap<SocketAddr, PendingConnection>,
+    clients: FxHashSet<SocketAddr>,
 }
 
 // TODO (quic-p2p): correctly handle these pathological scenarios:
@@ -130,11 +131,19 @@ impl PeerMap {
         self.forward.contains_key(name.as_ref())
     }
 
-    // If we don't have any information about this peer when this query is made then in certain
-    // context it could mean it's likely a client. If we have the info then the peer definitely
-    // wanted to join us as a node.
-    pub fn is_node(&self, peer_addr: &SocketAddr) -> bool {
-        self.reverse.contains_key(peer_addr) || self.pending.contains_key(peer_addr)
+    // Inserts a new client entry
+    pub fn insert_client(&mut self, peer_addr: SocketAddr) {
+        let _ = self.clients.insert(peer_addr);
+    }
+
+    // Inserts a new client entry
+    pub fn remove_client(&mut self, peer_addr: &SocketAddr) {
+        let _ = self.clients.remove(&peer_addr);
+    }
+
+    // Return true if we know of that peer as a client
+    pub fn is_known_client(&self, peer_addr: &SocketAddr) -> bool {
+        self.clients.contains(peer_addr)
     }
 }
 
