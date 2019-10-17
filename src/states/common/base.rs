@@ -39,7 +39,6 @@ pub trait Base: Display {
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
-    fn min_section_size(&self) -> usize;
     fn peer_map(&self) -> &PeerMap;
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;

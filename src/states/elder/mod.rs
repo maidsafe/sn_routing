@@ -18,8 +18,9 @@ use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
-        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
+        GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload, PrefixChange,
+        PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
+        MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -104,7 +105,7 @@ impl Elder {
     pub fn first(
         network_service: NetworkService,
         full_id: FullId,
-        min_section_size: usize,
+        network_cfg: NetworkParams,
         timer: Timer,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
@@ -118,7 +119,7 @@ impl Elder {
             latest_info: EldersInfo::default(),
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
-        let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+        let chain = Chain::new(network_cfg, public_id, gen_pfx_info.clone());
         let peer_map = PeerMap::new();
 
         let details = ElderDetails {
@@ -198,7 +199,7 @@ impl Elder {
         Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
             self.network_service,
             self.full_id,
-            self.chain.min_sec_size(),
+            self.chain.network_cfg(),
             self.timer,
             conn_infos,
             details,
@@ -662,13 +663,13 @@ impl Elder {
         }
 
         // Check min section size.
-        if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
+        if !self.is_first_node && self.chain.len() < self.chain.elder_size() - 1 {
             debug!(
                 "{} - Peer {:?} rejected: Routing table has {} entries. {} required.",
                 self,
                 pub_id,
                 self.chain.len(),
-                self.min_section_size() - 1
+                self.chain.elder_size() - 1
             );
             self.send_direct_message(
                 &pub_id,
@@ -1101,10 +1102,6 @@ impl Base for Elder {
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         let conn_peers = self.connected_peers();
         self.chain.closest_names(&name, count, &conn_peers)
-    }
-
-    fn min_section_size(&self) -> usize {
-        self.chain.min_sec_size()
     }
 
     fn peer_map(&self) -> &PeerMap {

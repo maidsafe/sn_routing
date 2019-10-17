@@ -10,7 +10,7 @@ use super::{
     create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use rand::Rng;
-use routing::{mock::Network, Event, EventStream};
+use routing::{mock::Network, Event, EventStream, NetworkParams};
 
 // Drop node at index and verify its own section detected it.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
@@ -31,9 +31,16 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
 #[test]
 fn node_drops() {
-    let min_section_size = 8;
-    let network = Network::new(min_section_size, None);
-    let mut nodes = create_connected_nodes(&network, min_section_size + 2);
+    let elder_size = 8;
+    let safe_section_size = 8;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
+    let mut nodes = create_connected_nodes(&network, elder_size + 2);
     drop_node(&mut nodes, 0);
 
     // Trigger poll_and_resend to allow remaining nodes to gossip and
@@ -46,10 +53,17 @@ fn node_drops() {
 fn node_restart() {
     // Idea of test: if a node disconnects from all other nodes, it should restart
     // (with the exception of the first node which is special).
-    let min_section_size = 5;
-    let network = Network::new(min_section_size, None);
+    let elder_size = 5;
+    let safe_section_size = 5;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    let mut nodes = create_connected_nodes(&network, elder_size);
 
     // Drop all but last node in random order:
     while nodes.len() > 1 {

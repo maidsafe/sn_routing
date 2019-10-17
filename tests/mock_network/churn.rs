@@ -14,8 +14,8 @@ use super::{
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, Authority, Event, EventStream, NetworkConfig, XorName, XorTargetInterval,
-    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    mock::Network, Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName,
+    XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -23,7 +23,7 @@ use std::{
 };
 
 /// Randomly removes some nodes, but <1/3 from each section and never node 0.
-/// Never trigger merge: never remove enough nodes to drop to `min_sec_size`.
+/// Never trigger merge: never remove enough nodes to drop to `elder_size`.
 /// max_per_pfx: limits dropping to the specified count per pfx. It would also
 /// skip prefixes randomly allowing sections to split if this is executed in the same
 /// iteration as `add_nodes_and_poll`.
@@ -35,7 +35,7 @@ fn drop_random_nodes<R: Rng>(
     max_per_pfx: Option<usize>,
 ) -> BTreeSet<XorName> {
     let mut dropped_nodes = BTreeSet::new();
-    let min_sec_size = |node: &TestNode| unwrap!(node.inner.min_sec_size());
+    let elder_size = |node: &TestNode| unwrap!(node.inner.elder_size());
     let node_section_size = |node: &TestNode| {
         node.inner
             .section_elders(unwrap!(node.inner.our_prefix()))
@@ -45,7 +45,7 @@ fn drop_random_nodes<R: Rng>(
         .iter()
         .map(|node| {
             let initial_size = node_section_size(node);
-            let min_size = min_sec_size(node);
+            let min_size = elder_size(node);
             let max_drop = initial_size.saturating_sub(min_size);
             (*node.our_prefix(), (initial_size, max_drop))
         })
@@ -102,7 +102,7 @@ fn add_nodes<R: Rng>(
 
     let mut added_nodes = Vec::new();
     while !prefixes.is_empty() {
-        let proxy_index = if nodes.len() > unwrap!(nodes[0].inner.min_sec_size()) {
+        let proxy_index = if nodes.len() > unwrap!(nodes[0].inner.elder_size()) {
             gen_range(rng, 0, nodes.len())
         } else {
             0
@@ -225,8 +225,8 @@ fn random_churn<R: Rng>(
         return add_nodes(rng, &network, nodes, false);
     }
 
-    // Use min_sec_size rather than section size to prevent collapsing any groups.
-    let max_drop = (unwrap!(nodes[0].inner.min_sec_size()) - 1)
+    // Use elder_size rather than section size to prevent collapsing any groups.
+    let max_drop = (unwrap!(nodes[0].inner.elder_size()) - 1)
         * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
         / QUORUM_DENOMINATOR;
     assert!(max_drop > 0);
@@ -260,7 +260,7 @@ impl Expectations {
         src: Authority<XorName>,
         dst: Authority<XorName>,
         nodes: &mut [TestNode],
-        min_section_size: usize,
+        elder_size: usize,
     ) {
         let mut sent_count = 0;
         for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
@@ -269,10 +269,10 @@ impl Expectations {
         }
         if src.is_multiple() {
             assert!(
-                sent_count * QUORUM_DENOMINATOR > min_section_size * QUORUM_NUMERATOR,
-                "sent_count: {}. min_section_size: {}",
+                sent_count * QUORUM_DENOMINATOR > elder_size * QUORUM_NUMERATOR,
+                "sent_count: {}. elder_size: {}",
                 sent_count,
-                min_section_size
+                elder_size
             );
         } else {
             assert_eq!(sent_count, 1);
@@ -378,7 +378,7 @@ impl Expectations {
     }
 }
 
-fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_size: usize) {
+fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], elder_size: usize) {
     // Create random content and pick random sending and receiving nodes.
     let content: Vec<_> = rng.gen_iter().take(100).collect();
     let index0 = gen_range(rng, 0, nodes.len());
@@ -395,20 +395,20 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
     let mut expectations = Expectations::default();
 
     // Test messages from a node to itself, another node, a group and a section...
-    expectations.send_and_expect(&content, auth_n0, auth_n0, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_n0, auth_n1, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_n0, auth_g0, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_n0, auth_s0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_n0, auth_n0, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_n0, auth_n1, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_n0, auth_g0, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_n0, auth_s0, nodes, elder_size);
     // ... and from a section to itself, another section, a group and a node...
-    expectations.send_and_expect(&content, auth_g0, auth_g0, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_g0, auth_g1, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_g0, auth_s0, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_g0, auth_n0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_g0, auth_g0, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_g0, auth_g1, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_g0, auth_s0, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_g0, auth_n0, nodes, elder_size);
     // ... and from a section to itself, another section, a group and a node...
-    expectations.send_and_expect(&content, auth_s0, auth_s0, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_s0, auth_s1, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_s0, auth_g0, nodes, min_section_size);
-    expectations.send_and_expect(&content, auth_s0, auth_n0, nodes, min_section_size);
+    expectations.send_and_expect(&content, auth_s0, auth_s0, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_s0, auth_s1, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_s0, auth_g0, nodes, elder_size);
+    expectations.send_and_expect(&content, auth_s0, auth_n0, nodes, elder_size);
 
     poll_and_resend(nodes);
 
@@ -417,15 +417,22 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], min_section_siz
 
 #[test]
 fn aggressive_churn() {
-    let min_section_size = 4;
+    let elder_size = 4;
+    let safe_section_size = 4;
     let target_section_num = 5;
     let target_network_size = 35;
-    let network = Network::new(min_section_size, None);
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
 
     // Create an initial network, increase until we have several sections, then
-    // decrease back to min_section_size, then increase to again.
-    let mut nodes = create_connected_nodes(&network, min_section_size);
+    // decrease back to elder_size, then increase to again.
+    let mut nodes = create_connected_nodes(&network, elder_size);
 
     warn!(
         "Churn [{} nodes, {} sections]: adding nodes",
@@ -443,7 +450,7 @@ fn aggressive_churn() {
         }
 
         verify_invariant_for_all_nodes(&network, &mut nodes);
-        send_and_receive(&mut rng, &mut nodes, min_section_size);
+        send_and_receive(&mut rng, &mut nodes, elder_size);
     }
 
     // Simultaneous Add/Drop nodes in the same iteration.
@@ -465,7 +472,7 @@ fn aggressive_churn() {
 
         verify_invariant_for_all_nodes(&network, &mut nodes);
 
-        send_and_receive(&mut rng, &mut nodes, min_section_size);
+        send_and_receive(&mut rng, &mut nodes, elder_size);
         warn!(
             "Remaining Prefixes: {{{:?}}}",
             current_sections(&nodes).format(", ")
@@ -487,7 +494,7 @@ fn aggressive_churn() {
         warn!("Dropping random nodes. Dropped: {:?}", dropped_nodes);
         poll_and_resend(&mut nodes);
         verify_invariant_for_all_nodes(&network, &mut nodes);
-        send_and_receive(&mut rng, &mut nodes, min_section_size);
+        send_and_receive(&mut rng, &mut nodes, elder_size);
         shuffle_nodes(&mut rng, &mut nodes);
         warn!(
             "Remaining Prefixes: {{{:?}}}",
@@ -504,8 +511,15 @@ fn aggressive_churn() {
 
 #[test]
 fn messages_during_churn() {
-    let min_section_size = 4;
-    let network = Network::new(min_section_size, None);
+    let elder_size = 4;
+    let safe_section_size = 4;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
     let prefixes = vec![2, 2, 2, 3, 3];
     let max_prefixes_len = prefixes.len() * 2;
@@ -535,20 +549,20 @@ fn messages_during_churn() {
         let mut expectations = Expectations::default();
 
         // Test messages from a node to itself, another node, a group and a section...
-        expectations.send_and_expect(&content, auth_n0, auth_n0, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_n0, auth_n1, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_n0, auth_g0, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_n0, auth_s0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_n0, auth_n0, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_n0, auth_n1, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_n0, auth_g0, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_n0, auth_s0, &mut nodes, elder_size);
         // ... and from a group to itself, another group, a section and a node...
-        expectations.send_and_expect(&content, auth_g0, auth_g0, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_g0, auth_g1, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_g0, auth_s0, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_g0, auth_n0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_g0, auth_g0, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_g0, auth_g1, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_g0, auth_s0, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_g0, auth_n0, &mut nodes, elder_size);
         // ... and from a section to itself, another section, a group and a node...
-        expectations.send_and_expect(&content, auth_s0, auth_s0, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_s0, auth_s1, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_s0, auth_g0, &mut nodes, min_section_size);
-        expectations.send_and_expect(&content, auth_s0, auth_n0, &mut nodes, min_section_size);
+        expectations.send_and_expect(&content, auth_s0, auth_s0, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_s0, auth_s1, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_s0, auth_g0, &mut nodes, elder_size);
+        expectations.send_and_expect(&content, auth_s0, auth_n0, &mut nodes, elder_size);
 
         poll_and_resend(&mut nodes);
         let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);

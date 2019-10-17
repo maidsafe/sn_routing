@@ -13,8 +13,6 @@ use fxhash::FxHashSet;
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
 
-const MIN_SECTION_SIZE: usize = 4;
-
 // Assert that the expression matches the expected pattern.
 macro_rules! assert_match {
     ($e:expr, $p:pat => $arm:expr) => {
@@ -31,7 +29,7 @@ macro_rules! assert_match {
 
 #[test]
 fn successful_bootstrap_node_to_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let a = Agent::node();
     let b = Agent::bootstrapped_node(&network, a.addr());
     a.expect_connected_to_node(&b.addr());
@@ -39,7 +37,7 @@ fn successful_bootstrap_node_to_node() {
 
 #[test]
 fn successful_bootstrap_client_to_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let a = Agent::node();
     let b = Agent::bootstrapped_client(&network, a.addr());
     a.expect_connected_to_client(&b.addr());
@@ -47,7 +45,7 @@ fn successful_bootstrap_client_to_node() {
 
 #[test]
 fn bootstrap_to_nonexisting_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let a_addr = network.gen_addr();
 
     let config = Config::node().with_hard_coded_contacts(iter::once(a_addr));
@@ -60,7 +58,7 @@ fn bootstrap_to_nonexisting_node() {
 
 #[test]
 fn bootstrap_to_multiple_nodes() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let bootstrappers: Vec<_> = (0..3).map(|_| Agent::node()).collect();
 
@@ -91,7 +89,7 @@ fn bootstrap_to_multiple_nodes() {
 
 #[test]
 fn bootstrap_using_bootstrap_cache() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     // Address of a bootstrap node that is currently offline.
     let a_addr = network.gen_addr();
@@ -117,7 +115,7 @@ fn bootstrap_using_bootstrap_cache() {
 
 #[test]
 fn successful_connect_node_to_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let mut a = Agent::node();
     let mut b = Agent::node();
 
@@ -126,7 +124,7 @@ fn successful_connect_node_to_node() {
 
 #[test]
 fn successful_connect_client_to_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let mut a = Agent::client();
     let mut b = Agent::node();
 
@@ -135,7 +133,7 @@ fn successful_connect_client_to_node() {
 
 #[test]
 fn connect_to_nonexisting_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let mut a = Agent::node();
     let b_addr = network.gen_addr();
 
@@ -147,7 +145,7 @@ fn connect_to_nonexisting_node() {
 
 #[test]
 fn connect_to_already_connected_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let mut a = Agent::node();
     let mut b = Agent::node();
 
@@ -162,7 +160,7 @@ fn connect_to_already_connected_node() {
 
 #[test]
 fn disconnect_incoming_bootstrap_connection() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let a = Agent::node();
     let mut b = Agent::bootstrapped_node(&network, a.addr());
@@ -177,7 +175,7 @@ fn disconnect_incoming_bootstrap_connection() {
 
 #[test]
 fn disconnect_outgoing_bootstrap_connection() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let mut a = Agent::node();
     let b = Agent::bootstrapped_node(&network, a.addr());
@@ -192,7 +190,7 @@ fn disconnect_outgoing_bootstrap_connection() {
 
 #[test]
 fn disconnect_outgoing_connection() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let mut a = Agent::node();
     let mut b = Agent::node();
@@ -208,7 +206,7 @@ fn disconnect_outgoing_connection() {
 
 #[test]
 fn disconnect_incoming_connection() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let mut a = Agent::node();
     let mut b = Agent::node();
@@ -224,7 +222,7 @@ fn disconnect_incoming_connection() {
 
 #[test]
 fn send_to_connected_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let mut a = Agent::node();
     let mut b = Agent::node();
@@ -241,7 +239,7 @@ fn send_to_connected_node() {
 
 #[test]
 fn send_to_disconnecting_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let mut a = Agent::node();
     let mut b = Agent::node();
 
@@ -259,7 +257,7 @@ fn send_to_disconnecting_node() {
 
 #[test]
 fn send_to_nonexisting_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let mut a = Agent::node();
     let b_addr = network.gen_addr();
@@ -276,7 +274,7 @@ fn send_to_nonexisting_node() {
 
 #[test]
 fn send_without_connecting_first() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let mut a = Agent::node();
     let b = Agent::node();
 
@@ -293,7 +291,7 @@ fn send_without_connecting_first() {
 
 #[test]
 fn send_multiple_messages_without_connecting_first() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
     let mut a = Agent::node();
     let b = Agent::node();
 
@@ -318,7 +316,7 @@ fn send_multiple_messages_without_connecting_first() {
 
 #[test]
 fn our_connection_info_of_node() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let (tx, _) = mpmc::unbounded();
 
@@ -336,7 +334,7 @@ fn our_connection_info_of_node() {
 
 #[test]
 fn our_connection_info_of_client() {
-    let _network = Network::new(MIN_SECTION_SIZE, None);
+    let _network = Network::new(Default::default(), None);
 
     let (tx, _) = mpmc::unbounded();
     let mut client = unwrap!(Builder::new(tx).with_config(Config::client()).build());
@@ -346,7 +344,7 @@ fn our_connection_info_of_client() {
 
 #[test]
 fn bootstrap_cache() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let mut a = Agent::node();
     let mut b = Agent::node();
@@ -365,7 +363,7 @@ fn bootstrap_cache() {
 
 #[test]
 fn drop_disconnects() {
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(Default::default(), None);
 
     let mut a = Agent::node();
     let a_addr = a.addr();

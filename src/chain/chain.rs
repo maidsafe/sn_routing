@@ -17,7 +17,7 @@ use crate::{
     id::PublicId,
     routing_table::{Authority, Error},
     utils::LogIdent,
-    BlsPublicKeySet, Prefix, XorName, Xorable, SAFE_SECTION_SIZE,
+    BlsPublicKeySet, Prefix, XorName, Xorable, ELDER_SIZE, SAFE_SECTION_SIZE,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -41,10 +41,28 @@ pub fn delivery_group_size(n: usize) -> usize {
     (n + 2) / 3
 }
 
+/// Network parameters: number of elders, safe section size
+#[derive(Clone, Copy, Debug)]
+pub struct NetworkParams {
+    /// The number of elders per section
+    pub elder_size: usize,
+    /// Minimum number of nodes we consider safe in a section
+    pub safe_section_size: usize,
+}
+
+impl Default for NetworkParams {
+    fn default() -> Self {
+        Self {
+            elder_size: ELDER_SIZE,
+            safe_section_size: SAFE_SECTION_SIZE,
+        }
+    }
+}
+
 /// Data chain.
 pub struct Chain {
-    /// Minimum number of nodes we consider acceptable in a section
-    min_sec_size: usize,
+    /// Network parameters
+    network_cfg: NetworkParams,
     /// This node's public ID.
     our_id: PublicId,
     /// The shared state of the section.
@@ -63,15 +81,25 @@ pub struct Chain {
 
 #[allow(clippy::len_without_is_empty)]
 impl Chain {
-    /// Returns the minimum section size.
-    pub fn min_sec_size(&self) -> usize {
-        self.min_sec_size
+    /// Returns the number of elders per section
+    pub fn elder_size(&self) -> usize {
+        self.network_cfg.elder_size
+    }
+
+    /// Returns the safe section size.
+    pub fn safe_section_size(&self) -> usize {
+        self.network_cfg.safe_section_size
+    }
+
+    /// Returns the full NetworkParams structure (if present)
+    pub fn network_cfg(&self) -> NetworkParams {
+        self.network_cfg
     }
 
     /// Returns the number of nodes which need to exist in each subsection of a given section to
     /// allow it to be split.
     pub fn min_split_size(&self) -> usize {
-        self.min_sec_size + SPLIT_BUFFER
+        self.safe_section_size() + SPLIT_BUFFER
     }
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
@@ -84,11 +112,11 @@ impl Chain {
     }
 
     /// Create a new chain given genesis information
-    pub fn new(min_sec_size: usize, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
+    pub fn new(network_cfg: NetworkParams, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.members().contains(&our_id);
         Self {
-            min_sec_size,
+            network_cfg,
             our_id,
             state: SharedState::new(gen_info.first_info, gen_info.first_ages),
             is_elder,
@@ -308,7 +336,7 @@ impl Chain {
     }
 
     fn increase_members_age(&mut self, trigger_node: &PublicId) {
-        if self.state.our_joined_members().count() >= SAFE_SECTION_SIZE
+        if self.state.our_joined_members().count() >= self.safe_section_size()
             && self
                 .state
                 .get_persona(trigger_node)
@@ -419,7 +447,7 @@ impl Chain {
             Some(&self.state.new_info),
         )?;
 
-        if self.state.new_info.members().len() < self.min_sec_size {
+        if self.state.new_info.members().len() < self.elder_size() {
             // set to merge state to prevent extending chain any further.
             // We'd still not Vote for OurMerge until we've updated our_infos
             self.state.change = PrefixChange::Merging;
@@ -446,7 +474,7 @@ impl Chain {
     /// Returns `true` if we should merge.
     pub fn should_vote_for_merge(&self) -> bool {
         self.state
-            .should_vote_for_merge(self.min_sec_size, self.neighbour_infos())
+            .should_vote_for_merge(self.elder_size(), self.neighbour_infos())
     }
 
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
@@ -1390,12 +1418,16 @@ mod tests {
         AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet, MIN_AGE_COUNTER,
     };
     use super::Chain;
-    use crate::id::{FullId, PublicId};
-    use crate::{Prefix, XorName, MIN_SECTION_SIZE};
+    use crate::{
+        id::{FullId, PublicId},
+        {Prefix, XorName},
+    };
     use rand::{thread_rng, Rng};
     use serde::Serialize;
-    use std::collections::{BTreeSet, HashMap};
-    use std::str::FromStr;
+    use std::{
+        collections::{BTreeSet, HashMap},
+        str::FromStr,
+    };
     use unwrap::unwrap;
 
     enum SecInfoGen<'a> {
@@ -1456,7 +1488,7 @@ mod tests {
         AccumulatingProof::from_proof_set(proofs)
     }
 
-    fn gen_chain<T>(min_sec_size: usize, sections: T) -> (Chain, HashMap<PublicId, FullId>)
+    fn gen_chain<T>(sections: T) -> (Chain, HashMap<PublicId, FullId>)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -1489,7 +1521,7 @@ mod tests {
             latest_info: Default::default(),
         };
 
-        let mut chain = Chain::new(min_sec_size, *our_id.public_id(), genesis_info);
+        let mut chain = Chain::new(Default::default(), *our_id.public_id(), genesis_info);
 
         for neighbour_info in sections_iter {
             let proofs = gen_proofs(&full_ids, &our_members, &neighbour_info);
@@ -1501,14 +1533,11 @@ mod tests {
 
     #[test]
     fn generate_chain() {
-        let (chain, _ids) = gen_chain(
-            MIN_SECTION_SIZE,
-            vec![
-                (Prefix::from_str("00").unwrap(), 8),
-                (Prefix::from_str("01").unwrap(), 8),
-                (Prefix::from_str("10").unwrap(), 8),
-            ],
-        );
+        let (chain, _ids) = gen_chain(vec![
+            (Prefix::from_str("00").unwrap(), 8),
+            (Prefix::from_str("01").unwrap(), 8),
+            (Prefix::from_str("10").unwrap(), 8),
+        ]);
         assert!(!chain
             .get_section(&Prefix::from_str("00").unwrap())
             .expect("No section 00 found!")
@@ -1537,8 +1566,7 @@ mod tests {
         let p_00 = Prefix::from_str("00").unwrap();
         let p_01 = Prefix::from_str("01").unwrap();
         let p_10 = Prefix::from_str("10").unwrap();
-        let (mut chain, mut full_ids) =
-            gen_chain(MIN_SECTION_SIZE, vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
+        let (mut chain, mut full_ids) = gen_chain(vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
         for _ in 0..1000 {
             let (new_info, new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();

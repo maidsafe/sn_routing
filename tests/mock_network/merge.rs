@@ -12,12 +12,19 @@ use super::{
 };
 use itertools::Itertools;
 use rand::Rng;
-use routing::{mock::Network, Event, EventStream, Prefix, XorName, XOR_NAME_LEN};
+use routing::{mock::Network, Event, EventStream, NetworkParams, Prefix, XorName, XOR_NAME_LEN};
 
 // See docs for `create_connected_nodes_with_cache_until_split` for details on `prefix_lengths`.
 fn merge(prefix_lengths: Vec<usize>) {
-    let min_section_size = 4;
-    let network = Network::new(min_section_size, None);
+    let elder_size = 4;
+    let safe_section_size = 4;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths);
     verify_invariant_for_all_nodes(&network, &mut nodes);
@@ -99,8 +106,15 @@ fn merge_five_sections_into_one() {
 #[test]
 #[ignore]
 fn concurrent_merge() {
-    let min_section_size = 4;
-    let network = Network::new(min_section_size, None);
+    let elder_size = 4;
+    let safe_section_size = 4;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
@@ -131,10 +145,10 @@ fn concurrent_merge() {
             .collect_vec()
     };
 
-    // Shrink the two sections to exactly `min_section_size`.
+    // Shrink the two sections to exactly `elder_size`.
     for pfx in &prefixes_to_drop_from {
         let len = nodes.iter().filter(|node| node.our_prefix() == pfx).count();
-        for _ in min_section_size..len {
+        for _ in elder_size..len {
             let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
             drop(nodes.remove(index));
             poll_and_resend(&mut nodes);
@@ -145,7 +159,7 @@ fn concurrent_merge() {
     assert_eq!(count_sections(&nodes), 5);
 
     // Drop one more node (without polling) from each of the two sections to take them just below
-    // `min_section_size`.
+    // `elder_size`.
     for pfx in &prefixes_to_drop_from {
         let index = unwrap!(nodes.iter().position(|node| node.our_prefix() == pfx));
         drop(nodes.remove(index));
@@ -160,13 +174,20 @@ fn concurrent_merge() {
 #[test]
 #[ignore]
 fn merge_drop_multiple_nodes() {
-    let min_section_size = 7;
-    let nodes_to_drop = (min_section_size - 1) / 3;
+    let elder_size = 7;
+    let safe_section_size = 7;
+    let nodes_to_drop = (elder_size - 1) / 3;
     assert!(
         nodes_to_drop > 1,
-        "min_section_size needs to be large enough to drop multiple nodes"
+        "elder_size needs to be large enough to drop multiple nodes"
     );
-    let network = Network::new(min_section_size, None);
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
@@ -176,9 +197,9 @@ fn merge_drop_multiple_nodes() {
     let prefix_to_drop_from = Prefix::new(1, XorName([0; XOR_NAME_LEN]));
     let matches_prefix = |node: &TestNode| *node.our_prefix() == prefix_to_drop_from;
 
-    // Bring down the section size to exactly `min_section_size`.
+    // Bring down the section size to exactly `elder_size`.
     let len = nodes.iter().filter(|n| matches_prefix(n)).count();
-    for _ in min_section_size..len {
+    for _ in elder_size..len {
         let index = unwrap!(nodes.iter().position(matches_prefix));
         drop(nodes.remove(index));
         poll_and_resend(&mut nodes);
