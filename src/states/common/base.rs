@@ -85,8 +85,9 @@ pub trait Base: Display {
                 peer_addr,
                 result_tx,
             } => {
-                let res = self.handle_disconnect_client(peer_addr);
-                let _ = result_tx.send(res);
+                self.peer_map_mut().remove_client(&peer_addr);
+                self.disconnect_from(peer_addr);
+                let _ = result_tx.send(Ok(()));
             }
             Action::SendMessageToClient {
                 peer_addr,
@@ -94,8 +95,8 @@ pub trait Base: Display {
                 token,
                 result_tx,
             } => {
-                let res = self.handle_send_msg_to_client(peer_addr, msg, token);
-                let _ = result_tx.send(res);
+                self.send_msg_to_client(peer_addr, msg, token);
+                let _ = result_tx.send(Ok(()));
             }
             Action::Terminate => {
                 return Transition::Terminate;
@@ -112,21 +113,6 @@ pub trait Base: Display {
         _content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);
-        Err(InterfaceError::InvalidState)
-    }
-
-    fn handle_send_msg_to_client(
-        &mut self,
-        _peer_addr: SocketAddr,
-        _msg: NetworkBytes,
-        _token: Token,
-    ) -> Result<(), InterfaceError> {
-        warn!("{} - Cannot send message to client- invalid state.", self);
-        Err(InterfaceError::InvalidState)
-    }
-
-    fn handle_disconnect_client(&mut self, _peer_addr: SocketAddr) -> Result<(), InterfaceError> {
-        warn!("{} - Cannot handle DisconnectClient - invalid state.", self);
         Err(InterfaceError::InvalidState)
     }
 
@@ -154,11 +140,13 @@ pub trait Base: Display {
             ConnectedTo {
                 peer: Peer::Client { peer_addr },
             } => {
-                self.handle_connected_to_client(peer_addr, outbox);
+                self.peer_map_mut().insert_client(peer_addr);
+                let client_event = ClientEvent::ConnectedToClient { peer_addr };
+                outbox.send_event(From::from(client_event));
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
-                if !self.peer_map().is_node(&peer_addr) {
+                if self.peer_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::ConnectionFailureToClient { peer_addr };
                     outbox.send_event(client_event.into());
                     Transition::Stay
@@ -167,7 +155,7 @@ pub trait Base: Display {
                 }
             }
             NewMessage { peer_addr, msg } => {
-                if !self.peer_map().is_node(&peer_addr) {
+                if self.peer_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::NewMessageFromClient { peer_addr, msg };
                     outbox.send_event(client_event.into());
                     Transition::Stay
@@ -180,7 +168,7 @@ pub trait Base: Display {
                 msg,
                 token,
             } => {
-                if !self.peer_map().is_node(&peer_addr) {
+                if self.peer_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::UnsentUserMsgToClient {
                         peer_addr,
                         msg,
@@ -197,7 +185,7 @@ pub trait Base: Display {
                 msg,
                 token,
             } => {
-                if !self.peer_map().is_node(&peer_addr) {
+                if self.peer_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::SentUserMsgToClient {
                         peer_addr,
                         msg,
@@ -236,12 +224,6 @@ pub trait Base: Display {
     ) -> Transition {
         self.peer_map_mut().connect(conn_info);
         Transition::Stay
-    }
-
-    fn handle_connected_to_client(&mut self, peer_addr: SocketAddr, _outbox: &mut dyn EventBox) {
-        // By default we immediately disconnect from a client.
-        // Only elders override it to pass it on to the vaults
-        self.disconnect_from(peer_addr);
     }
 
     fn handle_connection_failure(
