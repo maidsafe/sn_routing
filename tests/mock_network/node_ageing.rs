@@ -46,7 +46,7 @@ fn relocate_without_split() {
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| {
+            .stop_if(move |nodes| {
                 relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
             })
             .fire_join_timeout(false),
@@ -92,7 +92,7 @@ fn relocate_causing_split() {
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| {
+            .stop_if(move |nodes| {
                 relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
                     && split_complete(nodes, &target_prefix)
             })
@@ -151,7 +151,7 @@ fn relocate_during_split() {
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| {
+            .stop_if(move |nodes| {
                 relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
                     && split_complete(nodes, &target_prefix)
             })

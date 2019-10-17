@@ -327,14 +327,15 @@ pub trait Approved: Base {
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if their_pub_id == *self.id() {
-            debug!("{} - Not sending connection request to ourselves.", self);
+            trace!("{} - Not sending connection request to ourselves.", self);
             return Ok(());
         }
 
         if self.peer_map().has(&their_pub_id) {
-            debug!(
+            trace!(
                 "{} - Not sending connection request to {} - already connected.",
-                self, their_pub_id
+                self,
+                their_pub_id
             );
             return Ok(());
         }

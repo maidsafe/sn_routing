@@ -462,12 +462,8 @@ impl Chain {
             .into_iter()
             .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
 
-        info!(
-            "finalise_prefix_change: {:?}, {:?}, state: {:?}",
-            self.our_prefix(),
-            self.our_id(),
-            self.state,
-        );
+        info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
+        trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
 
         Ok(PrefixChangeOutcome {
             gen_pfx_info: GenesisPfxInfo {

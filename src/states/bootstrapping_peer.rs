@@ -116,11 +116,13 @@ impl BootstrappingPeer {
     fn send_bootstrap_request(&mut self, dst: ConnectionInfo) {
         let _ = self.nodes_to_await.remove(&dst.peer_addr);
 
-        if self.bootstrap_connection.is_some() {
-            // we already have an active connection, drop this one
-            self.network_service
-                .service_mut()
-                .disconnect_from(dst.peer_addr);
+        if let Some((bootstrap_dst, _)) = self.bootstrap_connection.as_ref() {
+            if *bootstrap_dst != dst {
+                // we already have an active connection, drop this one
+                self.network_service
+                    .service_mut()
+                    .disconnect_from(dst.peer_addr);
+            }
         } else {
             debug!("{} Sending BootstrapRequest to {}.", self, dst.peer_addr);
 
@@ -148,7 +150,13 @@ impl BootstrappingPeer {
         let old_full_id = self.full_id.clone();
 
         if !prefix.matches(self.name()) {
-            self.full_id = FullId::within_range(&prefix.range_inclusive());
+            let new_full_id = FullId::within_range(&prefix.range_inclusive());
+            info!(
+                "{} - Changing name to {}.",
+                self,
+                new_full_id.public_id().name()
+            );
+            self.full_id = new_full_id;
         }
 
         if let Some(details) = self.relocate_details.take() {

@@ -496,6 +496,16 @@ impl Approved for Adult {
         }
     }
 
+    fn handle_relocate_event(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+        info!("{} - handle Relocate: {:?}.", self, details);
+
+        if !self.chain.our_prefix().matches(&details.destination) {
+            self.chain.remove_member(&details.pub_id);
+        }
+
+        Ok(())
+    }
+
     fn handle_their_key_info_event(
         &mut self,
         _key_info: SectionKeyInfo,
@@ -517,11 +527,6 @@ impl Approved for Adult {
 
     fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled NeighbourMerge event", self);
-        Ok(())
-    }
-
-    fn handle_relocate_event(&mut self, _: RelocateDetails) -> Result<(), RoutingError> {
-        debug!("{} - Unhandled Relocate event", self);
         Ok(())
     }
 }

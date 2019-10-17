@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{id::PublicId, xor_name::XorName, ConnectionInfo};
-use fxhash::{FxHashMap, FxHashSet};
-use std::net::SocketAddr;
+use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::{collections::hash_map::Entry, net::SocketAddr};
 
 /// This structure holds the bi-directional association between peers public id and their network
 /// connection info. This association can be create in two ways:
@@ -21,33 +21,20 @@ use std::net::SocketAddr;
 ///    public id.
 #[derive(Default)]
 pub struct PeerMap {
-    forward: FxHashMap<XorName, ConnectionInfo>,
-    reverse: FxHashMap<SocketAddr, PublicId>,
-    pending: FxHashMap<SocketAddr, PendingConnection>,
-    clients: FxHashSet<SocketAddr>,
+    forward: HashMap<XorName, ConnectionInfo>,
+    reverse: HashMap<SocketAddr, HashSet<PublicId>>,
+    pending: HashMap<SocketAddr, PendingConnection>,
+    clients: HashSet<SocketAddr>,
 }
-
-// TODO (quic-p2p): correctly handle these pathological scenarios:
-//
-// 1. Non-unique public id:
-//      1. There is existing connection with pub id P and conn info C
-//      2. We get another connection with conn info D
-//      3. We receive a DirectMessage over connection D but with pub id P
-//
-// 2. Non-unique connection info:
-//      1. There is existing connection with pub id P and conn info C
-//      2. We receive a DirectMessage over connection C but with pub id R
-//
 
 impl PeerMap {
     pub fn new() -> Self {
         Self::default()
     }
 
-    // Marks the connection as established at the network layer. This is the first step in creating
-    // an association between public id and connection info. The second step is to call `identify`.
+    // Marks the connection as established at the network layer.
     // TODO: remove this `allow` when https://github.com/rust-lang/rust-clippy/issues/4219
-    // is fixed.
+    // is fixed and stabilized.
     #[allow(clippy::map_entry)]
     pub fn connect(&mut self, conn_info: ConnectionInfo) {
         let socket_addr = conn_info.peer_addr;
@@ -58,28 +45,44 @@ impl PeerMap {
         }
     }
 
-    // Marks the connection as severed at the network layer. Returns the peers public id if the
-    // connection has been associated with one.
-    pub fn disconnect(&mut self, socket_addr: SocketAddr) -> Option<PublicId> {
+    // Marks the connection as severed at the network layer. Returns an iterator over all the
+    // public ids associated with that connection, if any.
+    pub fn disconnect(&mut self, socket_addr: SocketAddr) -> Vec<PublicId> {
         let _ = self.pending.remove(&socket_addr);
+        let removed_pub_ids: Vec<_> = self
+            .reverse
+            .remove(&socket_addr)
+            .into_iter()
+            .flatten()
+            .collect();
 
-        if let Some(pub_id) = self.reverse.remove(&socket_addr) {
+        for pub_id in &removed_pub_ids {
             let _ = self.forward.remove(pub_id.name());
-            Some(pub_id)
-        } else {
-            None
         }
+
+        removed_pub_ids
     }
 
     // Associate a network layer connection, that was previously established via `connect`, with
     // the peers public id.
     pub fn identify(&mut self, pub_id: PublicId, socket_addr: SocketAddr) {
-        if let Some(pending) = self.pending.remove(&socket_addr) {
-            let _ = self
-                .forward
-                .insert(*pub_id.name(), pending.into_connection_info(socket_addr));
-            let _ = self.reverse.insert(socket_addr, pub_id);
-        }
+        let pub_ids = self.reverse.entry(socket_addr).or_default();
+        let forward = &self.forward;
+
+        let conn_info = if let Some(pending) = self.pending.remove(&socket_addr) {
+            pending.into_connection_info(socket_addr)
+        } else if let Some(conn_info) = pub_ids
+            .iter()
+            .next()
+            .and_then(|other_id| forward.get(other_id.name()))
+        {
+            conn_info.clone()
+        } else {
+            return;
+        };
+
+        let _ = self.forward.insert(*pub_id.name(), conn_info);
+        let _ = pub_ids.insert(pub_id);
     }
 
     // Inserts a new entry into the peer map. This is equivalent to calling `connect` followed by
@@ -87,16 +90,28 @@ impl PeerMap {
     // same time (for example when a third party sends them to us).
     pub fn insert(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
         let _ = self.pending.remove(&conn_info.peer_addr);
-        let _ = self.reverse.insert(conn_info.peer_addr, pub_id);
+        let _ = self
+            .reverse
+            .entry(conn_info.peer_addr)
+            .or_default()
+            .insert(pub_id);
         let _ = self.forward.insert(*pub_id.name(), conn_info);
     }
 
     // Removes the peer. If we were connected to the peer, returns its connection info. Otherwise
     // returns `None`.
-    pub fn remove<N: AsRef<XorName>>(&mut self, name: N) -> Option<ConnectionInfo> {
-        let conn_info = self.forward.remove(name.as_ref())?;
-        let _ = self.reverse.remove(&conn_info.peer_addr);
-        Some(conn_info)
+    pub fn remove(&mut self, pub_id: &PublicId) -> Option<ConnectionInfo> {
+        let conn_info = self.forward.remove(pub_id.name())?;
+
+        if let Entry::Occupied(mut entry) = self.reverse.entry(conn_info.peer_addr) {
+            let _ = entry.get_mut().remove(pub_id);
+            if entry.get().is_empty() {
+                let _ = entry.remove();
+                return Some(conn_info);
+            }
+        }
+
+        None
     }
 
     // Removes all peers. Returns an iterator over the connection infos of the removed peers.
@@ -130,11 +145,12 @@ impl PeerMap {
         self.forward
             .get(name)
             .and_then(|conn_info| self.reverse.get(&conn_info.peer_addr))
+            .and_then(|pub_ids| pub_ids.iter().find(|pub_id| pub_id.name() == name))
     }
 
     // Returns an iterator over the public IDs of connected peers
     pub fn connected_ids(&self) -> impl Iterator<Item = &PublicId> {
-        self.reverse.values()
+        self.reverse.values().flatten()
     }
 
     // Returns `true` if we have the connection info for a given public ID
@@ -200,7 +216,7 @@ mod tests {
         assert_eq!(peer_map.get_connection_info(&pub_id), Some(&conn_info));
 
         let outcome = peer_map.disconnect(conn_info.peer_addr);
-        assert_eq!(outcome, Some(pub_id));
+        assert_eq!(outcome, vec![pub_id]);
         assert!(peer_map.get_connection_info(&pub_id).is_none());
     }
 

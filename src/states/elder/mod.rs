@@ -329,6 +329,12 @@ impl Elder {
     fn update_neighbour_connections(&mut self, change: EldersChange, outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
             for pub_id in change.removed {
+                // The peer might have been relocated from a neighbour to us - in that case do not
+                // disconnect from them.
+                if self.chain.is_peer_our_member(&pub_id) {
+                    continue;
+                }
+
                 self.disconnect(&pub_id);
             }
         }
@@ -364,7 +370,7 @@ impl Elder {
                 parsec::Observation::Remove { peer_id, .. } => {
                     AccumulatingEvent::Offline(peer_id).into_network_event()
                 }
-                parsec::Observation::OpaquePayload(event) => event.clone(),
+                parsec::Observation::OpaquePayload(event) => event,
 
                 parsec::Observation::Genesis { .. }
                 | parsec::Observation::Add { .. }
@@ -633,7 +639,7 @@ impl Elder {
         name: XorName,
     ) -> Result<(), RoutingError> {
         debug!(
-            "{} - Received BootstrapRequest to {} from {:?}.",
+            "{} - Received BootstrapRequest to section at {} from {:?}.",
             self, name, pub_id
         );
 
@@ -680,7 +686,7 @@ impl Elder {
             if let Ok(our_info) = self.our_connection_info() {
                 conn_infos.push(our_info);
             }
-            trace!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
+            debug!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
             BootstrapResponse::Join {
                 prefix: *self.chain.our_prefix(),
                 conn_infos,
@@ -692,10 +698,9 @@ impl Elder {
                 .get_connection_infos(&names)
                 .cloned()
                 .collect();
-            trace!(
+            debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
-                self,
-                pub_id
+                self, pub_id
             );
             BootstrapResponse::Rebootstrap(conn_infos)
         };
@@ -901,9 +906,11 @@ impl Elder {
             self.get_targets(signed_msg.routing_message())?
         };
 
-        debug!(
+        trace!(
             "{}: Sending message {:?} via targets {:?}",
-            self, signed_msg, target_pub_ids
+            self,
+            signed_msg,
+            target_pub_ids
         );
 
         let targets: Vec<_> = target_pub_ids
@@ -1038,6 +1045,15 @@ impl Elder {
 
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
+    }
+
+    fn remove_member(&mut self, pub_id: PublicId) {
+        self.chain.remove_member(&pub_id);
+        self.disconnect(&pub_id);
+
+        if self.chain.is_peer_our_elder(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
+        }
     }
 }
 
@@ -1409,14 +1425,7 @@ impl Approved for Elder {
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-
-        self.chain.remove_member(&pub_id);
-        self.disconnect(&pub_id);
-
-        if self.chain.is_peer_our_elder(&pub_id) {
-            self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
-        }
-
+        self.remove_member(pub_id);
         Ok(())
     }
 
@@ -1498,13 +1507,24 @@ impl Approved for Elder {
     fn handle_relocate_event(&mut self, payload: RelocateDetails) -> Result<(), RoutingError> {
         info!("{} - handle Relocate: {:?}.", self, payload);
 
-        // TODO: should we vote Offline here?
+        if self.chain.our_prefix().matches(&payload.destination) {
+            debug!(
+                "{} - ignoring Relocate event - destination already in our section.",
+                self
+            );
+            return Ok(());
+        }
+
+        let pub_id = payload.pub_id;
 
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(self.our_prefix().name()),
             dst: Authority::Node(*payload.pub_id.name()),
             content: MessageContent::Relocate(payload),
-        })
+        })?;
+        self.remove_member(pub_id);
+
+        Ok(())
     }
 }
 
