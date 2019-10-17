@@ -16,6 +16,8 @@ impl AgeCounter {
         f64::from(self.0).log2() as u8
     }
 
+    /// Sets the age. Minimal valid age is `MIN_AGE` so if a smaller value is passed in, it's
+    /// silently changed to `MIN_AGE`.
     pub fn set_age(&mut self, age: u8) {
         self.0 = 2u32.pow(u32::from(age.max(MIN_AGE)))
     }
@@ -96,5 +98,17 @@ mod tests {
     #[test]
     fn min_age_counter_agrees_with_min_age() {
         assert_eq!(MIN_AGE_COUNTER.age(), MIN_AGE);
+    }
+
+    #[test]
+    fn age_counter_to_age() {
+        let mut age_counter = AgeCounter::default();
+
+        for age in MIN_AGE..16 {
+            for _ in 0..2u32.pow(u32::from(age)) {
+                assert_eq!(age_counter.age(), age);
+                age_counter.increment();
+            }
+        }
     }
 }
