@@ -51,13 +51,15 @@ use log::LogLevel;
 use std::net::SocketAddr;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
 };
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
+/// Time after which we disconnect from relocated peer.
+const RELOCATE_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -94,6 +96,8 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
+    /// Peers we will disconnect from in the future.
+    delayed_disconnects: HashMap<u64, PublicId>,
 }
 
 impl Elder {
@@ -227,6 +231,7 @@ impl Elder {
             gossip_timer_token,
             chain: details.chain,
             pfx_is_successfully_polled: false,
+            delayed_disconnects: HashMap::default(),
         }
     }
 
@@ -1047,9 +1052,18 @@ impl Elder {
         self.chain.our_prefix()
     }
 
-    fn remove_member(&mut self, pub_id: PublicId) {
+    fn remove_member(&mut self, pub_id: PublicId, disconnect_time: DisconnectTime) {
         self.chain.remove_member(&pub_id);
-        self.disconnect(&pub_id);
+
+        match disconnect_time {
+            DisconnectTime::Now => {
+                self.disconnect(&pub_id);
+            }
+            DisconnectTime::Later => {
+                let token = self.timer.schedule(RELOCATE_DISCONNECT_TIMEOUT);
+                let _ = self.delayed_disconnects.insert(token, pub_id);
+            }
+        }
 
         if self.chain.is_peer_our_elder(&pub_id) {
             self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
@@ -1123,6 +1137,10 @@ impl Base for Elder {
 
             self.send_parsec_gossip(None);
             self.maintain_parsec();
+        } else if let Some(pub_id) = self.delayed_disconnects.remove(&token) {
+            if !self.chain.is_peer_elder(&pub_id) && !self.chain.is_peer_our_member(&pub_id) {
+                self.disconnect(&pub_id);
+            }
         }
 
         Transition::Stay
@@ -1425,7 +1443,7 @@ impl Approved for Elder {
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-        self.remove_member(pub_id);
+        self.remove_member(pub_id, DisconnectTime::Now);
         Ok(())
     }
 
@@ -1522,7 +1540,9 @@ impl Approved for Elder {
             dst: Authority::Node(*payload.pub_id.name()),
             content: MessageContent::Relocate(payload),
         })?;
-        self.remove_member(pub_id);
+
+        // Delay the disconnect, to give the peer chance to receive the `Relocate` message.
+        self.remove_member(pub_id, DisconnectTime::Later);
 
         Ok(())
     }
@@ -1549,4 +1569,9 @@ fn create_first_elders_info(public_id: PublicId) -> Result<EldersInfo, RoutingEr
         );
         err
     })
+}
+
+enum DisconnectTime {
+    Now,
+    Later,
 }
