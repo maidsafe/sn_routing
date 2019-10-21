@@ -58,7 +58,7 @@ pub enum DirectMessage {
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
-    /// the Elders of the section and the section prefix are provided.
+    /// the section elders and the section prefix are provided.
     Join {
         prefix: Prefix<XorName>,
         conn_infos: Vec<ConnectionInfo>,

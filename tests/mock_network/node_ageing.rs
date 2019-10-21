@@ -23,8 +23,6 @@ fn relocate_without_split() {
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    assert!(prefixes.len() > 1);
-
     let source_prefix = *unwrap!(rng.choose(&prefixes));
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
@@ -64,8 +62,6 @@ fn relocate_causing_split() {
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    assert!(prefixes.len() > 1);
-
     let source_prefix = *unwrap!(rng.choose(&prefixes));
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
@@ -117,8 +113,6 @@ fn relocate_during_split() {
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    assert!(prefixes.len() > 1);
-
     let source_prefix = *unwrap!(rng.choose(&prefixes));
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
@@ -174,6 +168,8 @@ fn choose_other_prefix<'a, R: Rng>(
     prefixes: &'a [Prefix<XorName>],
     except: &Prefix<XorName>,
 ) -> &'a Prefix<XorName> {
+    assert!(prefixes.iter().any(|prefix| prefix != except));
+
     unwrap!(iter::repeat(())
         .filter_map(|_| rng.choose(prefixes))
         .find(|prefix| *prefix != except))

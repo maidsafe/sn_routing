@@ -396,12 +396,9 @@ impl Elder {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
                 }
 
-                // TODO: this comment is outdated:
-                // Drop candidates that have not completed:
-                // Called peer_manager.remove_candidate reset the candidate so it can be shared by
-                // all nodes: Because new node may not have voted for it, Forget the votes in
-                // flight as well.
-                // TODO: verify whether it would make more sense to carry some of these events over.
+                // Drop: no longer relevant after prefix change.
+                // TODO: verify this is really the case. Some/all of these might still make sense
+                // to carry over. In case it does not, add a comment explaining why.
                 AccumulatingEvent::AddElder(_)
                 | AccumulatingEvent::RemoveElder(_)
                 | AccumulatingEvent::Online(_)
@@ -504,12 +501,12 @@ impl Elder {
 
     fn dispatch_routing_message(
         &mut self,
-        msg: SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
 
-        let (msg, metadata) = msg.into_parts();
+        let (msg, metadata) = signed_msg.into_parts();
 
         match msg.content {
             UserMessage { .. } => (),
@@ -656,6 +653,14 @@ impl Elder {
             return Err(RoutingError::UnknownConnection(pub_id));
         };
 
+        if self.chain.is_peer_our_member(&pub_id) {
+            debug!(
+                "{} - Ignoring BootstrapRequest from {} - already member of our section",
+                self, pub_id
+            );
+            return Ok(());
+        }
+
         // Check min section size.
         if !self.is_first_node && self.chain.len() < self.min_section_size() - 1 {
             debug!(
@@ -754,8 +759,10 @@ impl Elder {
                 .our_prefix()
                 .matches(&details.content().destination)
             {
-                debug!("{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
-                    self, pub_id, details.content().destination, self.chain.our_prefix());
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
+                    self, pub_id, details.content().destination, self.chain.our_prefix()
+                );
                 return;
             }
 
@@ -763,14 +770,17 @@ impl Elder {
             let message = SignedRoutingMessage::from(details);
 
             if let Err(err) = message.check_integrity() {
-                debug!("{} - Ignoring relocation JoinRequest from {} - invalid integrity of {:?}: {:?}.", self, pub_id, message, err);
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - invalid integrity of {:?}: {:?}.",
+                    self, pub_id, message, err
+                );
                 return;
             }
 
             if !message.check_trust(&self.chain) {
                 debug!(
                     "{} - Ignoring relocation JoinRequest from {} - untrusted {:?}.",
-                    self, pub_id, message
+                    self, pub_id, message,
                 );
                 return;
             }
