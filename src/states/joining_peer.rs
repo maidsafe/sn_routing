@@ -35,6 +35,8 @@ use std::{
 
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
+/// How many time will the node try to join the same section before giving up and rebootstrapping.
+const MAX_JOIN_ATTEMPTS: u8 = 3;
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
@@ -46,6 +48,9 @@ pub struct JoiningPeer {
     peer_map: PeerMap,
     timer: Timer,
     join_token: u64,
+    join_attempts: u8,
+    conn_infos: Vec<ConnectionInfo>,
+    relocate_payload: Option<RelocatePayload>,
 }
 
 impl JoiningPeer {
@@ -69,9 +74,12 @@ impl JoiningPeer {
             timer: timer,
             peer_map,
             join_token,
+            join_attempts: 0,
+            conn_infos,
+            relocate_payload,
         };
 
-        joining_peer.send_join_requests(conn_infos, relocate_payload);
+        joining_peer.send_join_requests();
         joining_peer
     }
 
@@ -103,14 +111,14 @@ impl JoiningPeer {
         )))
     }
 
-    fn send_join_requests(
-        &mut self,
-        conn_infos: Vec<ConnectionInfo>,
-        relocate_payload: Option<RelocatePayload>,
-    ) {
+    fn send_join_requests(&mut self) {
+        let conn_infos = self.conn_infos.clone();
         for dst in conn_infos {
             info!("{} - Sending JoinRequest to {:?}", self, dst);
-            self.send_direct_message(&dst, DirectMessage::JoinRequest(relocate_payload.clone()));
+            self.send_direct_message(
+                &dst,
+                DirectMessage::JoinRequest(self.relocate_payload.clone()),
+            );
         }
     }
 
@@ -200,19 +208,28 @@ impl Base for JoiningPeer {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.join_token == token {
-            debug!("{} - Timeout when trying to join a section.", self);
+            self.join_attempts += 1;
+            debug!(
+                "{} - Timeout when trying to join a section (attempt {}/{}).",
+                self, self.join_attempts, MAX_JOIN_ATTEMPTS
+            );
 
-            for peer_addr in self
-                .peer_map
-                .remove_all()
-                .map(|conn_info| conn_info.peer_addr)
-            {
-                self.network_service
-                    .service_mut()
-                    .disconnect_from(peer_addr);
+            if self.join_attempts < MAX_JOIN_ATTEMPTS {
+                self.join_token = self.timer.schedule(JOIN_TIMEOUT);
+                self.send_join_requests();
+            } else {
+                for peer_addr in self
+                    .peer_map
+                    .remove_all()
+                    .map(|conn_info| conn_info.peer_addr)
+                {
+                    self.network_service
+                        .service_mut()
+                        .disconnect_from(peer_addr);
+                }
+
+                return Transition::Rebootstrap;
             }
-
-            return Transition::Rebootstrap;
         }
 
         Transition::Stay

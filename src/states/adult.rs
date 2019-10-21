@@ -117,9 +117,14 @@ impl Adult {
 
     pub fn rebootstrap(self) -> Result<State, RoutingError> {
         let min_section_size = self.min_section_size();
+
+        // Try to join the same section, but using new id, otherwise the section won't accept us
+        // due to duplicate votes.
+        let full_id = FullId::within_range(&self.chain.our_prefix().range_inclusive());
+
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
-            FullId::new(),
+            full_id,
             min_section_size,
             self.timer,
         )))

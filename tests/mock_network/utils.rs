@@ -298,9 +298,9 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
         if options.fire_join_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
             FakeClock::advance_time(
-                (test_consts::BOOTSTRAP_TIMEOUT
-                    + test_consts::JOIN_TIMEOUT
-                    + test_consts::ADD_TIMEOUT)
+                test_consts::BOOTSTRAP_TIMEOUT
+                    .max(test_consts::JOIN_TIMEOUT)
+                    .max(test_consts::ADD_TIMEOUT)
                     .as_secs()
                     * 1000
                     + 1,

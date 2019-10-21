@@ -98,11 +98,13 @@ fn relocate_causing_split() {
     )
 }
 
-// TODO: This test currently fails, because the relocated node is sometimes not voted to become
-// member or elder of the target section due to ongoing split. It then tries to rebootstrap, but in
-// the process generates different id for itself which doesn't always match the original target
-// section, thus the test fails. This is not necessarily a problem in the relocation logic iteself,
-// rather in how this test is set up. We should figure out how to modify this test to make it pass.
+// This test is ignored because it currently fails in the following case:
+// A node is relocated to the target section, successfully bootstraps and is about to send
+// `JoinRequest`. At the same time, the target section splits. One half of the former section
+// matches the new name of the relocated node, but does not match the relocate destination. The
+// other half is the other way around. Both thus reject the `JoinRequest` and the node relocation
+// fails.
+// TODO: find a way to address this issue.
 #[ignore]
 #[test]
 fn relocate_during_split() {
@@ -133,7 +135,12 @@ fn relocate_during_split() {
 
     // Add new node, but do not poll yet.
     let full_id = FullId::within_range(&target_prefix.range_inclusive());
-    let bootstrap_index = rng.gen_range(0, nodes.len());
+    // Make sure the bootstrap node is not the relocated node.
+    // TODO: remove this restriction. We should be able to bootstrap via the relocated node too,
+    // once its relocation completes.
+    let bootstrap_index = unwrap!(iter::repeat(())
+        .map(|_| rng.gen_range(0, nodes.len()))
+        .find(|index| *index != relocate_index));
 
     let node = TestNode::builder(&network)
         .network_config(
@@ -158,7 +165,7 @@ fn relocate_during_split() {
             .continue_if(move |nodes| {
                 !relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
             })
-            .fire_join_timeout(false),
+            .fire_join_timeout(true),
     )
 }
 
