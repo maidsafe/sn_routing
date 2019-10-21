@@ -803,7 +803,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
-        // Confirm elders from chain are connected according to PeerMgr
+        // Confirm elders from chain are connected according to PeerMap
         let our_id = unwrap!(node.inner.id());
         let missing_peers = node
             .inner

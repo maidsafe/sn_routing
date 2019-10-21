@@ -66,22 +66,27 @@ impl PeerMap {
     // Associate a network layer connection, that was previously established via `connect`, with
     // the peers public id.
     pub fn identify(&mut self, pub_id: PublicId, socket_addr: SocketAddr) {
-        let pub_ids = self.reverse.entry(socket_addr).or_default();
-        let forward = &self.forward;
-
-        let conn_info = if let Some(pending) = self.pending.remove(&socket_addr) {
-            pending.into_connection_info(socket_addr)
-        } else if let Some(conn_info) = pub_ids
-            .iter()
-            .next()
-            .and_then(|other_id| forward.get(other_id.name()))
-        {
-            conn_info.clone()
+        let forward = &mut self.forward;
+        let (conn_info, pub_ids) = if let Some(pending) = self.pending.remove(&socket_addr) {
+            (
+                pending.into_connection_info(socket_addr),
+                self.reverse.entry(socket_addr).or_default(),
+            )
+        } else if let Some(pub_ids) = self.reverse.get_mut(&socket_addr) {
+            if let Some(conn_info) = pub_ids
+                .iter()
+                .next()
+                .and_then(|other_id| forward.get(other_id.name()))
+            {
+                (conn_info.clone(), pub_ids)
+            } else {
+                return;
+            }
         } else {
             return;
         };
 
-        let _ = self.forward.insert(*pub_id.name(), conn_info);
+        let _ = forward.insert(*pub_id.name(), conn_info);
         let _ = pub_ids.insert(pub_id);
     }
 

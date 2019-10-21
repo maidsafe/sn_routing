@@ -408,7 +408,6 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
     // Create a network with three sections:
     let network = Network::new(min_section_size, None);
-
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     // The created sections
