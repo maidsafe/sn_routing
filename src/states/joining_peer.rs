@@ -35,7 +35,7 @@ use std::{
 
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
-/// How many time will the node try to join the same section before giving up and rebootstrapping.
+/// How many times will the node try to join the same section before giving up and rebootstrapping.
 const MAX_JOIN_ATTEMPTS: u8 = 3;
 
 // State of a node after bootstrapping, while joining a section

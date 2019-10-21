@@ -238,16 +238,19 @@ pub trait Base: Display {
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, peer_addr);
 
+        let mut transition = Transition::Stay;
+
         let pub_ids = self.peer_map_mut().disconnect(peer_addr);
         for pub_id in pub_ids {
             trace!("{} - ConnectionFailure from {}", self, pub_id);
-            match self.handle_peer_lost(pub_id, outbox) {
-                Transition::Stay => (),
-                transition => return transition,
+            let other_transition = self.handle_peer_lost(pub_id, outbox);
+
+            if let Transition::Stay = transition {
+                transition = other_transition
             }
         }
 
-        Transition::Stay
+        transition
     }
 
     fn handle_new_message(

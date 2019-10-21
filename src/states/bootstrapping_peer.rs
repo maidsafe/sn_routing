@@ -159,20 +159,20 @@ impl BootstrappingPeer {
             self.full_id = new_full_id;
         }
 
-        if let Some(details) = self.relocate_details.take() {
-            let relocate_payload =
-                RelocatePayload::new(details, self.full_id.public_id(), &old_full_id)?;
-
-            Ok(Transition::IntoJoining {
-                conn_infos,
-                relocate_payload: Some(relocate_payload),
-            })
+        let relocate_payload = if let Some(details) = self.relocate_details.take() {
+            Some(RelocatePayload::new(
+                details,
+                self.full_id.public_id(),
+                &old_full_id,
+            )?)
         } else {
-            Ok(Transition::IntoJoining {
-                conn_infos,
-                relocate_payload: None,
-            })
-        }
+            None
+        };
+
+        Ok(Transition::IntoJoining {
+            conn_infos,
+            relocate_payload,
+        })
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
