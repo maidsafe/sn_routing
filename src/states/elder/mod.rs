@@ -998,7 +998,7 @@ impl Elder {
         // we remove self in targets info and can do same by not
         // chaining us to conn_peer list here?
         let conn_peers = self.connected_peers();
-        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;;
+        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
         Ok((
             targets
                 .into_iter()
