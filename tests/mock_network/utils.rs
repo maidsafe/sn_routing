@@ -387,9 +387,10 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
 
         assert!(
             node_added_count >= n,
-            "{} - Got only {} NodeAdded events.",
+            "{} - Got only {} NodeAdded events, expected at least {}.",
             node.inner,
-            node_added_count
+            node_added_count,
+            n
         );
     }
 
@@ -969,14 +970,13 @@ fn add_node_to_section(
     }
 
     // Poll until the new node transitions to the `Elder` state.
+    let elder_size = network.elder_size();
     poll_and_resend_with_options(
         nodes,
         PollOptions::default()
-            .continue_if(|nodes| {
-                !nodes
-                    .last()
-                    .map(|node| node.inner.is_elder())
-                    .unwrap_or(false)
+            .continue_if(move |nodes| {
+                nodes.len() >= elder_size
+                    && nodes.iter().filter(|node| node.inner.is_elder()).count() < elder_size
             })
             .fire_join_timeout(false),
     );
