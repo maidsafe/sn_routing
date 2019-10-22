@@ -12,8 +12,6 @@ use super::{
     AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState,
     NetworkEvent, Proof, ProofSet, SectionProofChain,
 };
-#[cfg(feature = "mock_base")]
-use crate::crypto::Digest256;
 use crate::{
     error::RoutingError,
     id::PublicId,
@@ -29,6 +27,9 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
+
+#[cfg(feature = "mock_base")]
+use {super::MemberInfo, crate::crypto::Digest256};
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -299,7 +300,8 @@ impl Chain {
             | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::SendAckMessage(_) => (),
+            | AccumulatingEvent::SendAckMessage(_)
+            | AccumulatingEvent::Relocate(_) => (),
         }
 
         Ok(Some((event, EldersChange::default())))
@@ -327,7 +329,7 @@ impl Chain {
     }
 
     /// Adds a member to our section.
-    pub fn add_member(&mut self, pub_id: PublicId) {
+    pub fn add_member(&mut self, pub_id: PublicId, age: u8) {
         self.assert_no_prefix_change("add member");
 
         if !self.our_prefix().matches(&pub_id.name()) {
@@ -345,6 +347,7 @@ impl Chain {
         // TODO: support rejoining
         let info = self.state.our_members.entry(pub_id).or_default();
         info.state = MemberState::Joined;
+        info.set_age(age);
     }
 
     /// Remove a member from our section.
@@ -459,12 +462,8 @@ impl Chain {
             .into_iter()
             .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
 
-        info!(
-            "finalise_prefix_change: {:?}, {:?}, state: {:?}",
-            self.our_prefix(),
-            self.our_id(),
-            self.state,
-        );
+        info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
+        trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
 
         Ok(PrefixChangeOutcome {
             gen_pfx_info: GenesisPfxInfo {
@@ -526,6 +525,15 @@ impl Chain {
             .get(pub_id)
             .map(|info| info.state == MemberState::Joined)
             .unwrap_or(false)
+    }
+
+    /// Get info about a member of our section.
+    #[cfg(feature = "mock_base")]
+    pub fn get_member(&self, pub_id: &PublicId) -> Option<&MemberInfo> {
+        self.state
+            .our_members
+            .get(pub_id)
+            .filter(|info| info.state == MemberState::Joined)
     }
 
     /// Returns a set of elders we should be connected to.
@@ -709,7 +717,8 @@ impl Chain {
             | AccumulatingEvent::TheirKeyInfo(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_)
-            | AccumulatingEvent::User(_) => {
+            | AccumulatingEvent::User(_)
+            | AccumulatingEvent::Relocate(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::SendAckMessage(_) => {

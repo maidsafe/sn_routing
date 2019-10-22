@@ -7,15 +7,15 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::xorable::Xorable;
-use crate::XorName;
-use lazy_static::lazy_static;
-use std::cmp::{self, Ordering};
-use std::fmt::Result as FmtResult;
-use std::fmt::{Binary, Debug, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::RangeInclusive;
+use std::{
+    cmp::{self, Ordering},
+    fmt::Result as FmtResult,
+    fmt::{Binary, Debug, Formatter},
+    hash::{Hash, Hasher},
+    ops::RangeInclusive,
+};
 #[cfg(test)]
-use std::str::FromStr;
+use {crate::XorName, std::str::FromStr};
 
 /// A prefix with section version.
 #[derive(
@@ -42,11 +42,6 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Into<(Prefix<T>, u64)> for Ve
     fn into(self) -> (Prefix<T>, u64) {
         (self.prefix, self.version)
     }
-}
-
-lazy_static! {
-    /// An empty prefix
-    pub static ref DEFAULT_PREFIX: Prefix<XorName> = Default::default();
 }
 
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space

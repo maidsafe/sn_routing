@@ -11,6 +11,7 @@ use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     error::RoutingError,
     id::PublicId,
+    messages::{RelocatePayload, SignedRelocateDetails},
     network_service::NetworkBuilder,
     outbox::EventBox,
     pause::PausedState,
@@ -234,9 +235,15 @@ pub enum Transition {
     // `BootstrappingPeer` state transitioning to `JoiningPeer`
     IntoJoining {
         conn_infos: Vec<ConnectionInfo>,
+        relocate_payload: Option<RelocatePayload>,
     },
     // `JoiningPeer` failing to join and transitioning back to `BootstrappingPeer`
     Rebootstrap,
+    // Node getting relocated.
+    Relocate {
+        conn_infos: Vec<ConnectionInfo>,
+        details: SignedRelocateDetails,
+    },
     // `JoiningPeer` state transitioning to `Adult`.
     IntoAdult {
         gen_pfx_info: GenesisPfxInfo,
@@ -247,6 +254,20 @@ pub enum Transition {
         old_pfx: Prefix<XorName>,
     },
     Terminate,
+}
+
+impl Debug for Transition {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Stay => write!(f, "Stay"),
+            Self::IntoJoining { .. } => write!(f, "IntoJoining"),
+            Self::Rebootstrap => write!(f, "Rebootstrap"),
+            Self::Relocate { .. } => write!(f, "Relocate"),
+            Self::IntoAdult { .. } => write!(f, "IntoAdult"),
+            Self::IntoElder { .. } => write!(f, "IntoElder"),
+            Self::Terminate => write!(f, "Terminate"),
+        }
+    }
 }
 
 impl StateMachine {
@@ -331,13 +352,25 @@ impl StateMachine {
         use self::Transition::*;
         match transition {
             Stay => (),
-            IntoJoining { conn_infos } => self.state.replace_with(|state| match state {
-                State::BootstrappingPeer(src) => src.into_joining(conn_infos, outbox),
+            IntoJoining {
+                conn_infos,
+                relocate_payload,
+            } => self.state.replace_with(|state| match state {
+                State::BootstrappingPeer(src) => {
+                    src.into_joining(conn_infos, relocate_payload, outbox)
+                }
                 _ => unreachable!(),
             }),
             Rebootstrap => self.state.replace_with(|state| match state {
-                State::JoiningPeer(src) => src.into_bootstrapping(),
-                State::Adult(src) => src.into_bootstrapping(),
+                State::JoiningPeer(src) => src.rebootstrap(),
+                State::Adult(src) => src.rebootstrap(),
+                _ => unreachable!(),
+            }),
+            Relocate {
+                details,
+                conn_infos,
+            } => self.state.replace_with(|state| match state {
+                State::Elder(src) => src.relocate(conn_infos, details),
                 _ => unreachable!(),
             }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {

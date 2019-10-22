@@ -7,11 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{EldersInfo, Proof, SectionKeyInfo};
-use crate::crypto::Digest256;
-use crate::id::{FullId, PublicId};
-use crate::parsec;
-use crate::routing_table::Prefix;
-use crate::{BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName};
+use crate::{
+    crypto::Digest256,
+    id::{FullId, PublicId},
+    messages::RelocateDetails,
+    parsec,
+    routing_table::Prefix,
+    BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
+};
 use hex_fmt::HexFmt;
 use std::fmt::{self, Debug, Formatter};
 
@@ -50,6 +53,12 @@ impl SectionInfoSigPayload {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct OnlinePayload {
+    pub pub_id: PublicId,
+    pub age: u8,
+}
+
 /// Routing Network events
 // TODO: Box `SectionInfo`?
 #[allow(clippy::large_enum_variant)]
@@ -60,9 +69,9 @@ pub enum AccumulatingEvent {
     /// Remove elder once we agreed to remove the peer
     RemoveElder(PublicId),
 
-    /// Voted for candidate that pass resource proof
-    Online(PublicId),
-    /// Voted for candidate we no longer consider online.
+    /// Voted for node that is about to join our section
+    Online(OnlinePayload),
+    /// Voted for node we no longer consider online.
     Offline(PublicId),
 
     OurMerge,
@@ -80,6 +89,9 @@ pub enum AccumulatingEvent {
 
     // Prune the gossip graph.
     ParsecPrune,
+
+    // Voted for node to be relocated out of our section.
+    Relocate(RelocateDetails),
 
     // Opaque user-defined event.
     User(Vec<u8>),
@@ -117,27 +129,26 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            AccumulatingEvent::AddElder(ref id) => write!(formatter, "AddElder({})", id),
-            AccumulatingEvent::RemoveElder(ref id) => write!(formatter, "RemoveElder({})", id),
-            AccumulatingEvent::Online(ref id) => write!(formatter, "Online({})", id),
-            AccumulatingEvent::Offline(ref id) => write!(formatter, "Offline({})", id),
+            AccumulatingEvent::AddElder(id) => write!(formatter, "AddElder({})", id),
+            AccumulatingEvent::RemoveElder(id) => write!(formatter, "RemoveElder({})", id),
+            AccumulatingEvent::Online(payload) => write!(formatter, "Online({:?})", payload),
+            AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
             AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
-            AccumulatingEvent::NeighbourMerge(ref digest) => {
+            AccumulatingEvent::NeighbourMerge(digest) => {
                 write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
             }
-            AccumulatingEvent::SectionInfo(ref info) => {
-                write!(formatter, "SectionInfo({:?})", info)
-            }
-            AccumulatingEvent::TheirKeyInfo(ref payload) => {
+            AccumulatingEvent::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
+            AccumulatingEvent::TheirKeyInfo(payload) => {
                 write!(formatter, "TheirKeyInfo({:?})", payload)
             }
-            AccumulatingEvent::AckMessage(ref payload) => {
+            AccumulatingEvent::AckMessage(payload) => {
                 write!(formatter, "AckMessage({:?})", payload)
             }
-            AccumulatingEvent::SendAckMessage(ref payload) => {
+            AccumulatingEvent::SendAckMessage(payload) => {
                 write!(formatter, "SendAckMessage({:?})", payload)
             }
             AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
+            AccumulatingEvent::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
             AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }

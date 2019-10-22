@@ -13,13 +13,15 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, EldersChange, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SendAckMessagePayload,
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, OnlinePayload, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, RelocateDetails, RoutingMessage,
+        SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::ParsecMap,
@@ -46,7 +48,7 @@ pub struct AdultDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub min_section_size: usize,
-    pub msg_backlog: Vec<RoutingMessage>,
+    pub msg_backlog: Vec<SignedRoutingMessage>,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -59,7 +61,7 @@ pub struct Adult {
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
-    msg_backlog: Vec<RoutingMessage>,
+    msg_backlog: Vec<SignedRoutingMessage>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
     add_timer_token: u64,
@@ -113,11 +115,16 @@ impl Adult {
         Ok(())
     }
 
-    pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
+    pub fn rebootstrap(self) -> Result<State, RoutingError> {
         let min_section_size = self.min_section_size();
+
+        // Try to join the same section, but using new id, otherwise the section won't accept us
+        // due to duplicate votes.
+        let full_id = FullId::within_range(&self.chain.our_prefix().range_inclusive());
+
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
-            FullId::new(),
+            full_id,
             min_section_size,
             self.timer,
         )))
@@ -149,12 +156,13 @@ impl Adult {
 
     fn dispatch_routing_message(
         &mut self,
-        msg: RoutingMessage,
+        msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
 
-        let src_name = msg.src.name();
+        let (msg, metadata) = msg.into_parts();
+        // let src_name = msg.src.name();
 
         match msg {
             RoutingMessage {
@@ -167,22 +175,25 @@ impl Adult {
                 src: Node(_),
                 dst: Node(_),
             } => {
-                if self.chain.our_prefix().matches(&src_name) {
+                if self.chain.our_prefix().matches(&msg.src.name()) {
                     self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
                 } else {
-                    self.add_message_to_backlog(RoutingMessage {
-                        content: ConnectionRequest {
-                            conn_info,
-                            pub_id,
-                            msg_id,
+                    self.add_message_to_backlog(SignedRoutingMessage::from_parts(
+                        RoutingMessage {
+                            content: ConnectionRequest {
+                                conn_info,
+                                pub_id,
+                                msg_id,
+                            },
+                            ..msg
                         },
-                        ..msg
-                    });
+                        metadata,
+                    ));
                     Ok(())
                 }
             }
             _ => {
-                self.add_message_to_backlog(msg);
+                self.add_message_to_backlog(SignedRoutingMessage::from_parts(msg, metadata));
                 Ok(())
             }
         }
@@ -211,9 +222,9 @@ impl Adult {
     }
 
     // Backlog the message to be processed once we are established.
-    fn add_message_to_backlog(&mut self, msg: RoutingMessage) {
+    fn add_message_to_backlog(&mut self, msg: SignedRoutingMessage) {
         trace!(
-            "{} Not established yet. Delaying message handling: {:?}",
+            "{} Not elder yet. Delaying message handling: {:?}",
             self,
             msg
         );
@@ -221,7 +232,7 @@ impl Adult {
     }
 
     // Reject the bootstrap request, because only Elders can handle it.
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId) {
+    fn handle_bootstrap_request(&mut self, pub_id: PublicId, _destination: XorName) {
         debug!(
             "{} - Joining node {:?} rejected: We are not an established node yet.",
             self, pub_id
@@ -332,8 +343,8 @@ impl Base for Adult {
             ParsecResponse(version, par_response) => {
                 self.handle_parsec_response(version, par_response, pub_id, outbox)
             }
-            BootstrapRequest => {
-                self.handle_bootstrap_request(pub_id);
+            BootstrapRequest(name) => {
+                self.handle_bootstrap_request(pub_id, name);
                 Ok(Transition::Stay)
             }
             ConnectionResponse => {
@@ -352,16 +363,16 @@ impl Base for Adult {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let HopMessage { content, .. } = msg;
-        let routing_msg = content.into_routing_message();
+        let HopMessage { content: msg, .. } = msg;
 
         if self
             .routing_msg_filter
-            .filter_incoming(&routing_msg)
+            .filter_incoming(msg.routing_message())
             .is_new()
-            && self.in_authority(&routing_msg.dst)
+            && self.in_authority(&msg.routing_message().dst)
         {
-            self.dispatch_routing_message(routing_msg, outbox)?;
+            self.check_signed_message_integrity(&msg)?;
+            self.dispatch_routing_message(msg, outbox)?;
         }
 
         Ok(Transition::Stay)
@@ -458,11 +469,11 @@ impl Approved for Adult {
 
     fn handle_online_event(
         &mut self,
-        pub_id: PublicId,
+        payload: OnlinePayload,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Online: {}.", self, pub_id);
-        self.chain.add_member(pub_id);
+        info!("{} - handle Online: {:?}.", self, payload);
+        self.chain.add_member(payload.pub_id, payload.age);
         Ok(())
     }
 
@@ -488,6 +499,16 @@ impl Approved for Adult {
             debug!("{} - Unhandled SectionInfo event", self);
             Ok(Transition::Stay)
         }
+    }
+
+    fn handle_relocate_event(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+        info!("{} - handle Relocate: {:?}.", self, details);
+
+        if !self.chain.our_prefix().matches(&details.destination) {
+            self.chain.remove_member(&details.pub_id);
+        }
+
+        Ok(())
     }
 
     fn handle_their_key_info_event(

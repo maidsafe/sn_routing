@@ -11,8 +11,15 @@
 pub struct AgeCounter(u32);
 
 impl AgeCounter {
+    #[cfg(any(test, feature = "mock_base"))]
     pub fn age(self) -> u8 {
         f64::from(self.0).log2() as u8
+    }
+
+    /// Sets the age. Minimal valid age is `MIN_AGE` so if a smaller value is passed in, it's
+    /// silently changed to `MIN_AGE`.
+    pub fn set_age(&mut self, age: u8) {
+        self.0 = 2u32.pow(u32::from(age.max(MIN_AGE)))
     }
 
     pub fn increment(&mut self) {
@@ -30,8 +37,9 @@ impl Default for AgeCounter {
 /// The Infants will start at age 4, which is equivalent to the age counter value of 16. This is to
 /// prevent frequent relocations during the beginning of a node's lifetime.
 pub const MIN_AGE_COUNTER: AgeCounter = AgeCounter(16);
+pub const MIN_AGE: u8 = 4;
 
-const MAX_INFANT_AGE: u32 = 4;
+const MAX_INFANT_AGE: u32 = MIN_AGE as u32;
 
 /// Information about a member of our section.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
@@ -41,9 +49,13 @@ pub struct MemberInfo {
 }
 
 impl MemberInfo {
-    #[allow(unused)]
+    #[cfg(feature = "mock_base")]
     pub fn age(self) -> u8 {
         self.age_counter.age()
+    }
+
+    pub fn set_age(&mut self, age: u8) {
+        self.age_counter.set_age(age)
     }
 
     pub fn increase_age(&mut self) {
@@ -77,4 +89,26 @@ pub enum MemberState {
     // TODO: we should track how long the node has been away. If longer than some limit, remove it
     // from the list. Otherwise we allow it to return.
     Left,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn min_age_counter_agrees_with_min_age() {
+        assert_eq!(MIN_AGE_COUNTER.age(), MIN_AGE);
+    }
+
+    #[test]
+    fn age_counter_to_age() {
+        let mut age_counter = AgeCounter::default();
+
+        for age in MIN_AGE..16 {
+            for _ in 0..2u32.pow(u32::from(age)) {
+                assert_eq!(age_counter.age(), age);
+                age_counter.increment();
+            }
+        }
+    }
 }

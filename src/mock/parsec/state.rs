@@ -89,8 +89,14 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
         Some((block, holder))
     }
 
-    pub fn has_unconsensused_observations(&self) -> bool {
-        !self.unconsensused_observations.is_empty()
+    pub fn has_unconsensused_observations(&self, peer_list: &BTreeSet<P>) -> bool {
+        self.unconsensused_observations
+            .iter()
+            .any(|holder| match holder {
+                // Ignore orphaned votes.
+                ObservationHolder::Single { creator, .. } => peer_list.contains(creator),
+                ObservationHolder::Supermajority(..) => true,
+            })
     }
 
     /// Returns the result of a fake Distributed Key Generation for the given set of participants.

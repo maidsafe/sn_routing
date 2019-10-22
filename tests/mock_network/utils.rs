@@ -137,15 +137,11 @@ impl TestNode {
 }
 
 pub fn count_sections(nodes: &[TestNode]) -> usize {
-    nodes.iter().map(|n| n.inner.prefixes()).unique().count()
+    current_sections(nodes).count()
 }
 
-pub fn current_sections(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
-    nodes
-        .iter()
-        .map(|n| n.inner.prefixes())
-        .flat_map(|prefix_set| prefix_set.into_iter())
-        .collect()
+pub fn current_sections<'a>(nodes: &'a [TestNode]) -> impl Iterator<Item = Prefix<XorName>> + 'a {
+    nodes.iter().flat_map(|n| n.inner.prefixes()).unique()
 }
 
 pub struct TestNodeBuilder<'a> {
@@ -168,9 +164,7 @@ impl<'a> TestNodeBuilder<'a> {
         }
     }
 
-    // TODO: remove the `unused` attribute when we add a "rejoin" test.
-    #[allow(unused)]
-    pub fn full_id(mut self, full_id: FullId) -> Self {
+    pub fn full_id(self, full_id: FullId) -> Self {
         Self {
             inner: self.inner.full_id(full_id),
             ..self
@@ -304,9 +298,9 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
         if options.fire_join_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
             FakeClock::advance_time(
-                (test_consts::BOOTSTRAP_TIMEOUT
-                    + test_consts::JOIN_TIMEOUT
-                    + test_consts::ADD_TIMEOUT)
+                test_consts::BOOTSTRAP_TIMEOUT
+                    .max(test_consts::JOIN_TIMEOUT)
+                    .max(test_consts::ADD_TIMEOUT)
                     .as_secs()
                     * 1000
                     + 1,
@@ -809,7 +803,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
     for node in nodes.iter_mut() {
-        // Confirm elders from chain are connected according to PeerMgr
+        // Confirm elders from chain are connected according to PeerMap
         let our_id = unwrap!(node.inner.id());
         let missing_peers = node
             .inner

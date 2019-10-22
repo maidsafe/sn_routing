@@ -15,7 +15,10 @@ use crate::{
     chain::GenesisPfxInfo,
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
-    messages::{DirectMessage, HopMessage, RoutingMessage},
+    messages::{
+        DirectMessage, HopMessage, MessageContent, RelocatePayload, RoutingMessage,
+        SignedRoutingMessage,
+    },
     outbox::EventBox,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
@@ -32,17 +35,22 @@ use std::{
 
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
+/// How many times will the node try to join the same section before giving up and rebootstrapping.
+const MAX_JOIN_ATTEMPTS: u8 = 3;
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
-    msg_backlog: Vec<RoutingMessage>,
+    msg_backlog: Vec<SignedRoutingMessage>,
     full_id: FullId,
     min_section_size: usize,
     peer_map: PeerMap,
     timer: Timer,
     join_token: u64,
+    join_attempts: u8,
+    conn_infos: Vec<ConnectionInfo>,
+    relocate_payload: Option<RelocatePayload>,
 }
 
 impl JoiningPeer {
@@ -53,6 +61,7 @@ impl JoiningPeer {
         timer: Timer,
         peer_map: PeerMap,
         conn_infos: Vec<ConnectionInfo>,
+        relocate_payload: Option<RelocatePayload>,
     ) -> Self {
         let join_token = timer.schedule(JOIN_TIMEOUT);
 
@@ -65,11 +74,12 @@ impl JoiningPeer {
             timer: timer,
             peer_map,
             join_token,
+            join_attempts: 0,
+            conn_infos,
+            relocate_payload,
         };
 
-        for conn_info in conn_infos {
-            joining_peer.send_join_request(conn_info);
-        }
+        joining_peer.send_join_requests();
         joining_peer
     }
 
@@ -92,7 +102,7 @@ impl JoiningPeer {
         Adult::from_joining_peer(details, outbox).map(State::Adult)
     }
 
-    pub fn into_bootstrapping(self) -> Result<State, RoutingError> {
+    pub fn rebootstrap(self) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
             FullId::new(),
@@ -101,30 +111,27 @@ impl JoiningPeer {
         )))
     }
 
-    fn send_join_request(&mut self, dst: ConnectionInfo) {
-        info!("{} Sending JoinRequest to {:?}.", self, dst);
-
-        let message = if let Ok(message) = self.to_signed_direct_message(DirectMessage::JoinRequest)
-        {
-            message
-        } else {
-            return;
-        };
-
-        let conn_infos = vec![dst];
-        let dg_size = 1;
-        self.send_message_to_initial_targets(conn_infos, dg_size, message);
+    fn send_join_requests(&mut self) {
+        let conn_infos = self.conn_infos.clone();
+        for dst in conn_infos {
+            info!("{} - Sending JoinRequest to {:?}", self, dst);
+            self.send_direct_message(
+                &dst,
+                DirectMessage::JoinRequest(self.relocate_payload.clone()),
+            );
+        }
     }
 
     fn dispatch_routing_message(
         &mut self,
-        msg: RoutingMessage,
+        msg: SignedRoutingMessage,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::MessageContent::*;
+        let (msg, metadata) = msg.into_parts();
+
         match msg {
             RoutingMessage {
-                content: NodeApproval(gen_info),
+                content: MessageContent::NodeApproval(gen_info),
                 src: Authority::PrefixSection(_),
                 dst: Authority::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
@@ -133,7 +140,8 @@ impl JoiningPeer {
                     "{} - Unhandled routing message, adding to backlog: {:?}",
                     self, msg
                 );
-                self.msg_backlog.push(msg);
+                self.msg_backlog
+                    .push(SignedRoutingMessage::from_parts(msg, metadata));
                 Ok(Transition::Stay)
             }
         }
@@ -200,19 +208,28 @@ impl Base for JoiningPeer {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.join_token == token {
-            debug!("{} - Timeout when trying to join a section.", self);
+            self.join_attempts += 1;
+            debug!(
+                "{} - Timeout when trying to join a section (attempt {}/{}).",
+                self, self.join_attempts, MAX_JOIN_ATTEMPTS
+            );
 
-            for peer_addr in self
-                .peer_map
-                .remove_all()
-                .map(|conn_info| conn_info.peer_addr)
-            {
-                self.network_service
-                    .service_mut()
-                    .disconnect_from(peer_addr);
+            if self.join_attempts < MAX_JOIN_ATTEMPTS {
+                self.join_token = self.timer.schedule(JOIN_TIMEOUT);
+                self.send_join_requests();
+            } else {
+                for peer_addr in self
+                    .peer_map
+                    .remove_all()
+                    .map(|conn_info| conn_info.peer_addr)
+                {
+                    self.network_service
+                        .service_mut()
+                        .disconnect_from(peer_addr);
+                }
+
+                return Transition::Rebootstrap;
             }
-
-            return Transition::Rebootstrap;
         }
 
         Transition::Stay
@@ -234,15 +251,16 @@ impl Base for JoiningPeer {
         msg: HopMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let HopMessage { content, .. } = msg;
+        let HopMessage { content: msg, .. } = msg;
 
         if self
             .routing_msg_filter
-            .filter_incoming(content.routing_message())
+            .filter_incoming(msg.routing_message())
             .is_new()
-            && self.in_authority(&content.routing_message().dst)
+            && self.in_authority(&msg.routing_message().dst)
         {
-            self.dispatch_routing_message(content.into_routing_message(), outbox)
+            self.check_signed_message_integrity(&msg)?;
+            self.dispatch_routing_message(msg, outbox)
         } else {
             Ok(Transition::Stay)
         }

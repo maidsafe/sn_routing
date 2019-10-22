@@ -200,7 +200,7 @@ where
 
     pub fn has_unpolled_observations(&self) -> bool {
         state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
-            state.has_unconsensused_observations()
+            state.has_unconsensused_observations(&self.peer_list)
                 || state.get_block(self.first_unconsensused).is_some()
         }) || self.our_unpolled_observations().next().is_some()
     }

@@ -11,6 +11,7 @@ mod churn;
 mod drop;
 mod merge;
 mod messages;
+mod node_ageing;
 mod secure_message_delivery;
 mod utils;
 
@@ -407,11 +408,10 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
     // Create a network with three sections:
     let network = Network::new(min_section_size, None);
-
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     // The created sections
-    let sections = current_sections(&nodes).into_iter().collect_vec();
+    let sections = current_sections(&nodes).collect_vec();
     let small_prefix = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 1));
     let long_prefix_0 = *unwrap!(sections.iter().find(|prefix| prefix.bit_count() == 2));
     let long_prefix_1 = long_prefix_0.sibling();

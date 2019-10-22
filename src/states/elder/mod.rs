@@ -9,21 +9,25 @@
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests;
 
-use super::common::{Approved, Base, GOSSIP_TIMEOUT};
+use super::{
+    common::{Approved, Base, GOSSIP_TIMEOUT},
+    BootstrappingPeer,
+};
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, PrefixChange, PrefixChangeOutcome, SectionInfoSigPayload,
-        SectionKeyInfo, SendAckMessagePayload, MIN_AGE_COUNTER,
+        GenesisPfxInfo, NetworkEvent, OnlinePayload, PrefixChange, PrefixChangeOutcome,
+        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RelocateDetails,
+        RelocatePayload, RoutingMessage, SecurityMetadata, SignedRelocateDetails,
         SignedRoutingMessage,
     },
     outbox::EventBox,
@@ -31,8 +35,9 @@ use crate::{
     pause::PausedState,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
-    routing_table::{Authority, Prefix, Xorable, DEFAULT_PREFIX},
+    routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
+    state_machine::State,
     state_machine::Transition,
     time::Duration,
     timer::Timer,
@@ -46,13 +51,15 @@ use log::LogLevel;
 use std::net::SocketAddr;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
 };
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
+/// Time after which we disconnect from relocated peer.
+const RELOCATE_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -60,7 +67,7 @@ pub struct ElderDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_queue: VecDeque<RoutingMessage>,
+    pub msg_queue: Vec<SignedRoutingMessage>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -73,7 +80,7 @@ pub struct Elder {
     is_first_node: bool,
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
-    msg_queue: VecDeque<RoutingMessage>,
+    msg_queue: VecDeque<SignedRoutingMessage>,
     peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
@@ -89,6 +96,8 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
+    /// Peers we will disconnect from in the future.
+    delayed_disconnects: HashMap<u64, PublicId>,
 }
 
 impl Elder {
@@ -118,7 +127,7 @@ impl Elder {
             event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
-            msg_queue: VecDeque::new(),
+            msg_queue: Vec::new(),
             parsec_map,
             peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -153,7 +162,7 @@ impl Elder {
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: self.routing_msg_filter,
-            msg_queue: self.msg_queue,
+            msg_queue: self.msg_queue.into_iter().collect(),
             network_service: self.network_service,
             network_rx: None,
             parsec_map: self.parsec_map,
@@ -179,6 +188,21 @@ impl Elder {
             false,
             state.sig_accumulator,
         )
+    }
+
+    pub fn relocate(
+        self,
+        conn_infos: Vec<ConnectionInfo>,
+        details: SignedRelocateDetails,
+    ) -> Result<State, RoutingError> {
+        Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
+            self.network_service,
+            self.full_id,
+            self.chain.min_sec_size(),
+            self.timer,
+            conn_infos,
+            details,
+        )))
     }
 
     fn new(
@@ -207,6 +231,7 @@ impl Elder {
             gossip_timer_token,
             chain: details.chain,
             pfx_is_successfully_polled: false,
+            delayed_disconnects: HashMap::default(),
         }
     }
 
@@ -261,14 +286,18 @@ impl Elder {
         Ok(())
     }
 
-    fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) {
-        while let Some(routing_msg) = self.msg_queue.pop_front() {
-            if self.in_authority(&routing_msg.dst) {
-                if let Err(err) = self.dispatch_routing_message(routing_msg, outbox) {
-                    debug!("{} Routing message dispatch failed: {:?}", self, err);
+    fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
+        while let Some(msg) = self.msg_queue.pop_front() {
+            if self.in_authority(&msg.routing_message().dst) {
+                match self.dispatch_routing_message(msg, outbox) {
+                    Ok(Transition::Stay) => (),
+                    Ok(transition) => return transition,
+                    Err(err) => debug!("{} Routing message dispatch failed: {:?}", self, err),
                 }
             }
         }
+
+        Transition::Stay
     }
 
     fn public_key_set(&self) -> BlsPublicKeySet {
@@ -305,6 +334,12 @@ impl Elder {
     fn update_neighbour_connections(&mut self, change: EldersChange, outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
             for pub_id in change.removed {
+                // The peer might have been relocated from a neighbour to us - in that case do not
+                // disconnect from them.
+                if self.chain.is_peer_our_member(&pub_id) {
+                    continue;
+                }
+
                 self.disconnect(&pub_id);
             }
         }
@@ -340,7 +375,7 @@ impl Elder {
                 parsec::Observation::Remove { peer_id, .. } => {
                     AccumulatingEvent::Offline(peer_id).into_network_event()
                 }
-                parsec::Observation::OpaquePayload(event) => event.clone(),
+                parsec::Observation::OpaquePayload(event) => event,
 
                 parsec::Observation::Genesis { .. }
                 | parsec::Observation::Add { .. }
@@ -361,14 +396,14 @@ impl Elder {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
                 }
 
-                // Drop candidates that have not completed:
-                // Called peer_manager.remove_candidate reset the candidate so it can be shared by
-                // all nodes: Because new node may not have voted for it, Forget the votes in
-                // flight as well.
+                // Drop: no longer relevant after prefix change.
+                // TODO: verify this is really the case. Some/all of these might still make sense
+                // to carry over. In case it does not, add a comment explaining why.
                 AccumulatingEvent::AddElder(_)
                 | AccumulatingEvent::RemoveElder(_)
                 | AccumulatingEvent::Online(_)
-                | AccumulatingEvent::ParsecPrune => false,
+                | AccumulatingEvent::ParsecPrune
+                | AccumulatingEvent::Relocate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 AccumulatingEvent::SectionInfo(ref elders_info) => {
@@ -445,28 +480,8 @@ impl Elder {
         }
 
         if self.in_authority(&signed_msg.routing_message().dst) {
-            // The message is addressed to our section. Verify its integrity and trust
-            if !signed_msg.check_trust(&self.chain) {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Untrusted SignedRoutingMessage: {:?} --- {:?}",
-                    self,
-                    signed_msg,
-                    self.chain.get_their_keys_info().collect::<Vec<_>>()
-                );
-                return Err(RoutingError::UntrustedMessage);
-            }
-            if let Err(err) = signed_msg.check_integrity() {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Invalid integrity ({:?}) SignedRoutingMessage: {:?}",
-                    self,
-                    err,
-                    signed_msg,
-                );
-                return Err(err);
-            }
-
+            self.check_signed_message_trust(&signed_msg)?;
+            self.check_signed_message_integrity(&signed_msg)?;
             self.update_our_knowledge(&signed_msg);
 
             if signed_msg.routing_message().dst.is_multiple() {
@@ -476,11 +491,8 @@ impl Elder {
                 }
             }
             // if addressed to us, then we just queue it and return
-            self.msg_queue.push_back(signed_msg.into_routing_message());
-            return Ok(());
-        }
-
-        if let Err(error) = self.send_signed_message(&mut signed_msg) {
+            self.msg_queue.push_back(signed_msg);
+        } else if let Err(error) = self.send_signed_message(&mut signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -489,33 +501,40 @@ impl Elder {
 
     fn dispatch_routing_message(
         &mut self,
-        routing_msg: RoutingMessage,
+        signed_msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
 
-        match routing_msg.content {
+        let (msg, metadata) = signed_msg.into_parts();
+
+        match msg.content {
             UserMessage { .. } => (),
-            _ => trace!("{} Got routing message {:?}.", self, routing_msg),
+            _ => trace!("{} Got routing message {:?}.", self, msg),
         }
 
-        match (routing_msg.content, routing_msg.src, routing_msg.dst) {
+        match (msg.content, msg.src, msg.dst) {
             (
                 ConnectionRequest {
                     conn_info, pub_id, ..
                 },
                 src @ Authority::Node(_),
                 dst @ Authority::Node(_),
-            ) => self.handle_connection_request(conn_info, pub_id, src, dst, outbox),
+            ) => {
+                self.handle_connection_request(conn_info, pub_id, src, dst, outbox)?;
+                Ok(Transition::Stay)
+            }
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
-                self.handle_neighbour_info(elders_info)
+                self.handle_neighbour_info(elders_info)?;
+                Ok(Transition::Stay)
             }
             (Merge(digest), Authority::PrefixSection(_), Authority::PrefixSection(_)) => {
-                self.handle_merge(digest)
+                self.handle_merge(digest)?;
+                Ok(Transition::Stay)
             }
             (UserMessage(content), src, dst) => {
                 outbox.send_event(Event::MessageReceived { content, src, dst });
-                Ok(())
+                Ok(Transition::Stay)
             }
             (
                 AckMessage {
@@ -524,7 +543,13 @@ impl Elder {
                 },
                 Authority::Section(src),
                 Authority::Section(dst),
-            ) => self.handle_ack_message(src_prefix, ack_version, src, dst),
+            ) => {
+                self.handle_ack_message(src_prefix, ack_version, src, dst)?;
+                Ok(Transition::Stay)
+            }
+            (Relocate(payload), src @ Authority::Section(_), dst @ Authority::Node(_)) => {
+                Ok(self.handle_relocate(src, dst, payload, metadata))
+            }
             (content, src, dst) => {
                 debug!(
                     "{} Unhandled routing message {:?} from {:?} to {:?}",
@@ -610,8 +635,15 @@ impl Elder {
     }
 
     // If this returns an error, the peer will be dropped.
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        debug!("{} - Received BootstrapRequest from {:?}.", self, pub_id,);
+    fn handle_bootstrap_request(
+        &mut self,
+        pub_id: PublicId,
+        name: XorName,
+    ) -> Result<(), RoutingError> {
+        debug!(
+            "{} - Received BootstrapRequest to section at {} from {:?}.",
+            self, name, pub_id
+        );
 
         if !self.peer_map.has(&pub_id) {
             log_or_panic!(
@@ -648,48 +680,48 @@ impl Elder {
             return Ok(());
         }
 
-        self.respond_to_bootstrap_request(&pub_id);
+        self.respond_to_bootstrap_request(&pub_id, &name);
 
         Ok(())
     }
 
-    fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId) {
-        let get_node_infos = |node_names: BTreeSet<XorName>| {
-            node_names
-                .into_iter()
-                .filter_map(|name| self.peer_map.get_connection_info(name).cloned())
-                .collect()
-        };
-        let response = if self.our_prefix().matches(pub_id.name()) {
-            let mut node_infos: Vec<_> = get_node_infos(
-                self.chain
-                    .our_elders()
-                    .map(PublicId::name)
-                    .copied()
-                    .collect(),
-            );
+    fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId, name: &XorName) {
+        let response = if self.our_prefix().matches(name) {
+            let mut conn_infos: Vec<_> = self
+                .peer_map
+                .get_connection_infos(self.chain.our_elders())
+                .cloned()
+                .collect();
+
             if let Ok(our_info) = self.our_connection_info() {
-                node_infos.push(our_info);
+                conn_infos.push(our_info);
             }
-            trace!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
-            BootstrapResponse::Join(node_infos)
+            debug!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
+            BootstrapResponse::Join {
+                prefix: *self.chain.our_prefix(),
+                conn_infos,
+            }
         } else {
-            let node_infos = get_node_infos(self.chain.closest_section(pub_id.name()).1);
-            trace!(
+            let names = self.chain.closest_section(name).1;
+            let conn_infos = self
+                .peer_map
+                .get_connection_infos(&names)
+                .cloned()
+                .collect();
+            debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
-                self,
-                pub_id
+                self, pub_id
             );
-            BootstrapResponse::Rebootstrap(node_infos)
+            BootstrapResponse::Rebootstrap(conn_infos)
         };
-        self.send_direct_message(&pub_id, DirectMessage::BootstrapResponse(response));
+        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(response));
     }
 
     fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(&mut self, pub_id: PublicId) {
+    fn handle_join_request(&mut self, pub_id: PublicId, relocate_payload: Option<RelocatePayload>) {
         debug!("{} - Received JoinRequest from {}", self, pub_id);
 
         if !self.chain.our_prefix().matches(pub_id.name()) {
@@ -710,8 +742,97 @@ impl Elder {
             return;
         }
 
+        // This joining node is being relocated to us.
+        let age = if let Some(payload) = relocate_payload {
+            if !payload.verify_identity(&pub_id) {
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - invalid signature.",
+                    self, pub_id
+                );
+                return;
+            }
+
+            let details = payload.details;
+
+            if !self
+                .chain
+                .our_prefix()
+                .matches(&details.content().destination)
+            {
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
+                    self, pub_id, details.content().destination, self.chain.our_prefix()
+                );
+                return;
+            }
+
+            let age = details.content().age;
+            let message = SignedRoutingMessage::from(details);
+
+            if let Err(err) = message.check_integrity() {
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - invalid integrity of {:?}: {:?}.",
+                    self, pub_id, message, err
+                );
+                return;
+            }
+
+            if !message.check_trust(&self.chain) {
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - untrusted {:?}.",
+                    self, pub_id, message,
+                );
+                return;
+            }
+
+            age
+        } else {
+            MIN_AGE
+        };
+
         self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
-        self.vote_for_event(AccumulatingEvent::Online(pub_id));
+        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { pub_id, age }))
+    }
+
+    fn handle_relocate(
+        &mut self,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        payload: RelocateDetails,
+        security_metadata: SecurityMetadata,
+    ) -> Transition {
+        if self.chain.our_prefix().matches(&payload.destination) {
+            debug!(
+                "{} - Ignoring Relocate message - already at the destination.",
+                self
+            );
+            return Transition::Stay;
+        }
+
+        debug!(
+            "{} - Received Relocate message - rebootstrapping to join the new section at {}.",
+            self, payload.destination
+        );
+
+        let names = self.chain.closest_section(&payload.destination).1;
+        let conn_infos = self
+            .peer_map
+            .get_connection_infos(&names)
+            .cloned()
+            .collect();
+
+        for conn_info in self.peer_map.remove_all() {
+            self.network_service
+                .service_mut()
+                .disconnect_from(conn_info.peer_addr);
+        }
+
+        let details = SignedRelocateDetails::new(payload, src, dst, security_metadata);
+
+        Transition::Relocate {
+            details,
+            conn_infos,
+        }
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -800,9 +921,11 @@ impl Elder {
             self.get_targets(signed_msg.routing_message())?
         };
 
-        debug!(
+        trace!(
             "{}: Sending message {:?} via targets {:?}",
-            self, signed_msg, target_pub_ids
+            self,
+            signed_msg,
+            target_pub_ids
         );
 
         let targets: Vec<_> = target_pub_ids
@@ -920,8 +1043,41 @@ impl Elder {
         }
     }
 
+    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+        if msg.check_trust(&self.chain) {
+            Ok(())
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} Untrusted {:?} --- [{:?}]",
+                self,
+                msg,
+                self.chain.get_their_keys_info().format(", ")
+            );
+            Err(RoutingError::UntrustedMessage)
+        }
+    }
+
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
+    }
+
+    fn remove_member(&mut self, pub_id: PublicId, disconnect_time: DisconnectTime) {
+        self.chain.remove_member(&pub_id);
+
+        match disconnect_time {
+            DisconnectTime::Now => {
+                self.disconnect(&pub_id);
+            }
+            DisconnectTime::Later => {
+                let token = self.timer.schedule(RELOCATE_DISCONNECT_TIMEOUT);
+                let _ = self.delayed_disconnects.insert(token, pub_id);
+            }
+        }
+
+        if self.chain.is_peer_our_elder(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
+        }
     }
 }
 
@@ -991,14 +1147,17 @@ impl Base for Elder {
 
             self.send_parsec_gossip(None);
             self.maintain_parsec();
+        } else if let Some(pub_id) = self.delayed_disconnects.remove(&token) {
+            if !self.chain.is_peer_elder(&pub_id) && !self.chain.is_peer_our_member(&pub_id) {
+                self.disconnect(&pub_id);
+            }
         }
 
         Transition::Stay
     }
 
     fn finish_handle_action(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        self.handle_routing_messages(outbox);
-        Transition::Stay
+        self.handle_routing_messages(outbox)
     }
 
     fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
@@ -1039,8 +1198,7 @@ impl Base for Elder {
     }
 
     fn finish_handle_network_event(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        self.handle_routing_messages(outbox);
-        Transition::Stay
+        self.handle_routing_messages(outbox)
     }
 
     // Deconstruct a `DirectMessage` and handle or forward as appropriate.
@@ -1053,8 +1211,8 @@ impl Base for Elder {
         use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
-            BootstrapRequest => {
-                if let Err(error) = self.handle_bootstrap_request(pub_id) {
+            BootstrapRequest(name) => {
+                if let Err(error) = self.handle_bootstrap_request(pub_id, name) {
                     warn!(
                         "{} Invalid BootstrapRequest received from {} ({:?}).",
                         self, pub_id, error,
@@ -1062,7 +1220,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest => self.handle_join_request(pub_id),
+            JoinRequest(payload) => self.handle_join_request(pub_id, payload),
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, pub_id, outbox);
@@ -1191,6 +1349,26 @@ impl Elder {
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
+
+    pub fn trigger_relocation(&mut self, pub_id: PublicId, destination: XorName) {
+        let age = if let Some(info) = self.chain.get_member(&pub_id) {
+            info.age() + 1
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Cannot trigger relocation of {}: unknown peer.",
+                self,
+                pub_id
+            );
+            return;
+        };
+
+        self.vote_for_event(AccumulatingEvent::Relocate(RelocateDetails {
+            pub_id,
+            destination,
+            age,
+        }))
+    }
 }
 
 impl Approved for Elder {
@@ -1258,31 +1436,24 @@ impl Approved for Elder {
 
     fn handle_online_event(
         &mut self,
-        pub_id: PublicId,
+        payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Online: {}.", self, pub_id);
+        info!("{} - handle Online: {:?}.", self, payload);
 
-        self.chain.add_member(pub_id);
-        self.handle_candidate_approval(pub_id, outbox);
+        self.chain.add_member(payload.pub_id, payload.age);
+        self.handle_candidate_approval(payload.pub_id, outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(pub_id));
+        self.vote_for_event(AccumulatingEvent::AddElder(payload.pub_id));
 
         Ok(())
     }
 
     fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-
-        self.chain.remove_member(&pub_id);
-        self.disconnect(&pub_id);
-
-        if self.chain.is_peer_our_elder(&pub_id) {
-            self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
-        }
-
+        self.remove_member(pub_id, DisconnectTime::Now);
         Ok(())
     }
 
@@ -1360,6 +1531,31 @@ impl Approved for Elder {
 
         self.send_routing_message(RoutingMessage { src, dst, content })
     }
+
+    fn handle_relocate_event(&mut self, payload: RelocateDetails) -> Result<(), RoutingError> {
+        info!("{} - handle Relocate: {:?}.", self, payload);
+
+        if self.chain.our_prefix().matches(&payload.destination) {
+            debug!(
+                "{} - ignoring Relocate event - destination already in our section.",
+                self
+            );
+            return Ok(());
+        }
+
+        let pub_id = payload.pub_id;
+
+        self.send_routing_message(RoutingMessage {
+            src: Authority::Section(self.our_prefix().name()),
+            dst: Authority::Node(*payload.pub_id.name()),
+            content: MessageContent::Relocate(payload),
+        })?;
+
+        // Delay the disconnect, to give the peer chance to receive the `Relocate` message.
+        self.remove_member(pub_id, DisconnectTime::Later);
+
+        Ok(())
+    }
 }
 
 impl Display for Elder {
@@ -1372,7 +1568,7 @@ impl Display for Elder {
 fn create_first_elders_info(public_id: PublicId) -> Result<EldersInfo, RoutingError> {
     EldersInfo::new(
         iter::once(public_id).collect(),
-        *DEFAULT_PREFIX,
+        Prefix::default(),
         iter::empty(),
     )
     .map_err(|err| {
@@ -1383,4 +1579,9 @@ fn create_first_elders_info(public_id: PublicId) -> Result<EldersInfo, RoutingEr
         );
         err
     })
+}
+
+enum DisconnectTime {
+    Now,
+    Later,
 }

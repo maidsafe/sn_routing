@@ -153,10 +153,13 @@ impl ElderUnderTest {
         self.create_gossip()
     }
 
-    fn accumulate_online(&mut self, public_id: PublicId) {
+    fn accumulate_online(&mut self, pub_id: PublicId) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            iter::once(AccumulatingEvent::Online(public_id)),
+            iter::once(AccumulatingEvent::Online(OnlinePayload {
+                pub_id,
+                age: MIN_AGE,
+            })),
         );
     }
 
@@ -267,7 +270,7 @@ impl ElderUnderTest {
         unwrap!(self
             .machine
             .elder_state_mut()
-            .handle_bootstrap_request(pub_id));
+            .handle_bootstrap_request(pub_id, *pub_id.name()));
     }
 
     fn is_connected(&self, pub_id: &PublicId) -> bool {

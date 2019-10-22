@@ -466,7 +466,10 @@ fn aggressive_churn() {
         verify_invariant_for_all_nodes(&network, &mut nodes);
 
         send_and_receive(&mut rng, &mut nodes, min_section_size);
-        warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
+        warn!(
+            "Remaining Prefixes: {{{:?}}}",
+            current_sections(&nodes).format(", ")
+        );
     }
 
     // Drop nodes to trigger merges.
@@ -486,7 +489,10 @@ fn aggressive_churn() {
         verify_invariant_for_all_nodes(&network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, min_section_size);
         shuffle_nodes(&mut rng, &mut nodes);
-        warn!("Remaining Prefixes: {:?}", current_sections(&nodes));
+        warn!(
+            "Remaining Prefixes: {{{:?}}}",
+            current_sections(&nodes).format(", ")
+        );
     }
 
     warn!(
@@ -506,7 +512,11 @@ fn messages_during_churn() {
     let mut nodes = create_connected_nodes_until_split(&network, prefixes);
 
     for i in 0..50 {
-        warn!("Iteration {}. Prefixes: {:?}", i, current_sections(&nodes));
+        warn!(
+            "Iteration {}. Prefixes: {{{:?}}}",
+            i,
+            current_sections(&nodes).format(", ")
+        );
         let new_indices = random_churn(&mut rng, &network, &mut nodes, max_prefixes_len);
 
         // Create random data and pick random sending and receiving nodes.
