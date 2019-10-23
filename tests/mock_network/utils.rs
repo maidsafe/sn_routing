@@ -102,7 +102,7 @@ impl TestNode {
 
     pub fn resume(network: &Network, state: PausedState) -> Self {
         Self {
-            inner: Node::resume(state),
+            inner: Node::resume(state).0,
             network: network.clone(),
         }
     }
@@ -172,7 +172,7 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let inner = unwrap!(self
+        let (inner, _node_rx) = unwrap!(self
             .inner
             .min_section_size(self.network.min_section_size())
             .create());

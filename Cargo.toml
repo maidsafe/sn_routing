@@ -13,7 +13,7 @@ edition = "2018"
 [dependencies]
 bytes = "~0.4.12"
 config_file_handler = "~0.11.0"
-crossbeam-channel = "~0.3.8"
+crossbeam-channel = "~0.3.9"
 fake_clock = "~0.3.0"
 fxhash = "~0.2.1"
 hex = "~0.2.0"
