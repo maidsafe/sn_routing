@@ -501,6 +501,10 @@ impl Chain {
         let p2p_node = P2pNode::new(pub_id, connection_info);
         let _ = elders.remove(&p2p_node);
 
+        if self.our_id() == &pub_id {
+            self.is_elder = false;
+        }
+
         self.state.new_info = EldersInfo::new(
             elders,
             *self.state.new_info.prefix(),
