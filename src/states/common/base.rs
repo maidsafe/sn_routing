@@ -376,7 +376,7 @@ pub trait Base: Display {
     ) {
         let conn_infos: Vec<_> = dst_targets
             .iter()
-            .filter_map(|dst| dst.resolve(self.peer_map()).cloned())
+            .filter_map(|dst| dst.resolve().cloned())
             .collect();
 
         if conn_infos.len() < dg_size {
@@ -387,7 +387,7 @@ pub trait Base: Display {
                 dst_targets,
                 dst_targets
                     .iter()
-                    .filter(|dst| dst.resolve(self.peer_map()).is_some())
+                    .filter(|dst| dst.resolve().is_some())
                     .format(", "),
                 message
             );
@@ -498,24 +498,18 @@ pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
 
 /// A trait for types used to identify recipients of messages.
 pub trait MessageRecipient: Debug {
-    /// Resolve this recipient to a ConnectionInfo using the given PeerMap.
-    fn resolve<'a>(&'a self, peer_map: &'a PeerMap) -> Option<&'a ConnectionInfo>;
-}
-
-impl MessageRecipient for PublicId {
-    fn resolve<'a>(&'a self, peer_map: &'a PeerMap) -> Option<&'a ConnectionInfo> {
-        peer_map.get_connection_info(self)
-    }
-}
-
-impl MessageRecipient for XorName {
-    fn resolve<'a>(&'a self, peer_map: &'a PeerMap) -> Option<&'a ConnectionInfo> {
-        peer_map.get_connection_info(self)
-    }
+    /// Resolve this recipient to a ConnectionInfo.
+    fn resolve(&self) -> Option<&ConnectionInfo>;
 }
 
 impl MessageRecipient for ConnectionInfo {
-    fn resolve(&self, _: &PeerMap) -> Option<&ConnectionInfo> {
+    fn resolve(&self) -> Option<&ConnectionInfo> {
         Some(self)
+    }
+}
+
+impl MessageRecipient for P2pNode {
+    fn resolve(&self) -> Option<&ConnectionInfo> {
+        Some(self.connection_info())
     }
 }

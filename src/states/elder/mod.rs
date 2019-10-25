@@ -307,8 +307,8 @@ impl Elder {
         self.chain.public_key_set()
     }
 
-    fn handle_parsec_poke(&mut self, msg_version: u64, pub_id: PublicId) {
-        self.send_parsec_gossip(Some((msg_version, pub_id)))
+    fn handle_parsec_poke(&mut self, msg_version: u64, p2p_node: P2pNode) {
+        self.send_parsec_gossip(Some((msg_version, p2p_node)))
     }
 
     /// Votes for `Merge` if necessary, or for the merged `SectionInfo` if both siblings have
@@ -352,7 +352,7 @@ impl Elder {
             if !self.peer_map.has(&pub_id) {
                 self.peer_map
                     .insert(pub_id, p2p_node.connection_info().clone());
-                self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+                self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
             };
         }
 
@@ -367,7 +367,7 @@ impl Elder {
             let pub_id = p2p_node.public_id();
             self.peer_map
                 .insert(*pub_id, p2p_node.connection_info().clone());
-            self.send_direct_message(pub_id, DirectMessage::ConnectionResponse);
+            self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
         }
     }
 
@@ -629,7 +629,7 @@ impl Elder {
             );
             self.peer_map
                 .insert(pub_id, p2p_node.connection_info().clone());
-            self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+            self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
         };
 
         let trimmed_info = GenesisPfxInfo {
@@ -658,14 +658,15 @@ impl Elder {
     // If this returns an error, the peer will be dropped.
     fn handle_bootstrap_request(
         &mut self,
-        pub_id: PublicId,
+        p2p_node: P2pNode,
         name: XorName,
     ) -> Result<(), RoutingError> {
         debug!(
             "{} - Received BootstrapRequest to section at {} from {:?}.",
-            self, name, pub_id
+            self, name, p2p_node
         );
 
+        let pub_id = *p2p_node.public_id();
         if !self.peer_map.has(&pub_id) {
             log_or_panic!(
                 LogLevel::Error,
@@ -692,7 +693,7 @@ impl Elder {
                 self.chain.elder_size() - 1
             );
             self.send_direct_message(
-                &pub_id,
+                &p2p_node,
                 DirectMessage::BootstrapResponse(BootstrapResponse::Error(
                     BootstrapResponseError::TooFewPeers,
                 )),
@@ -701,18 +702,18 @@ impl Elder {
             return Ok(());
         }
 
-        self.respond_to_bootstrap_request(&pub_id, &name);
+        self.respond_to_bootstrap_request(&p2p_node, &name);
 
         Ok(())
     }
 
-    fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId, name: &XorName) {
+    fn respond_to_bootstrap_request(&mut self, p2p_node: &P2pNode, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
             let mut p2p_nodes: Vec<_> = self.chain.our_elders().cloned().collect();
             if let Ok(our_info) = self.our_connection_info() {
                 p2p_nodes.push(P2pNode::new(*self.id(), our_info));
             }
-            debug!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
+            debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
             BootstrapResponse::Join {
                 prefix: *self.chain.our_prefix(),
                 p2p_nodes,
@@ -726,11 +727,11 @@ impl Elder {
                 .collect();
             debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
-                self, pub_id
+                self, p2p_node
             );
             BootstrapResponse::Rebootstrap(conn_infos)
         };
-        self.send_direct_message(pub_id, DirectMessage::BootstrapResponse(response));
+        self.send_direct_message(p2p_node, DirectMessage::BootstrapResponse(response));
     }
 
     fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
@@ -811,7 +812,7 @@ impl Elder {
             MIN_AGE
         };
 
-        self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+        self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
@@ -931,29 +932,47 @@ impl Elder {
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
         let single_target = if let Authority::Node(node_name) = dst {
-            self.peer_map.get_id(&node_name)
+            // WIP: remove calls to peer_map
+            self.peer_map.get_id(&node_name).and_then(|public_id| {
+                self.peer_map
+                    .get_connection_info(public_id)
+                    .map(|connection_info| P2pNode::new(*public_id, connection_info.clone()))
+            })
         } else {
             None
         };
 
-        let (target_pub_ids, dg_size) = if let Some(target) = single_target {
-            (vec![*target], 1)
+        let (target_p2p_nodes, dg_size) = if let Some(target) = single_target {
+            (vec![target], 1)
         } else {
-            self.get_targets(signed_msg.routing_message())?
+            // WIP: neet to get targets without using the peer_map (get_targets uses peer_map
+            // internally)
+            let (targets, dg_size) = self.get_targets(signed_msg.routing_message())?;
+            (
+                targets
+                    .into_iter()
+                    .filter_map(|public_id| {
+                        self.peer_map
+                            .get_connection_info(&public_id)
+                            .map(|conn_info| P2pNode::new(public_id, conn_info.clone()))
+                    })
+                    .collect(),
+                dg_size,
+            )
         };
 
         trace!(
             "{}: Sending message {:?} via targets {:?}",
             self,
             signed_msg,
-            target_pub_ids
+            target_p2p_nodes
         );
 
-        let targets: Vec<_> = target_pub_ids
+        let targets: Vec<_> = target_p2p_nodes
             .into_iter()
-            .filter(|pub_id| {
+            .filter(|p2p_node| {
                 self.routing_msg_filter
-                    .filter_outgoing(signed_msg.routing_message(), pub_id)
+                    .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
                     .is_new()
             })
             .collect();
@@ -1227,11 +1246,12 @@ impl Base for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let pub_id = *p2p_node.public_id();
+
         use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
             BootstrapRequest(name) => {
-                if let Err(error) = self.handle_bootstrap_request(pub_id, name) {
+                if let Err(error) = self.handle_bootstrap_request(p2p_node, name) {
                     warn!(
                         "{} Invalid BootstrapRequest received from {} ({:?}).",
                         self, pub_id, error,
@@ -1240,9 +1260,9 @@ impl Base for Elder {
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             JoinRequest(payload) => self.handle_join_request(p2p_node, payload),
-            ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
+            ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
             ParsecRequest(version, par_request) => {
-                return self.handle_parsec_request(version, par_request, pub_id, outbox);
+                return self.handle_parsec_request(version, par_request, p2p_node, outbox);
             }
             ParsecResponse(version, par_response) => {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
@@ -1312,10 +1332,14 @@ impl Base for Elder {
                     signed_msg.routing_message(),
                     target
                 );
-                self.send_direct_message(
-                    &pub_id,
-                    DirectMessage::MessageSignature(signed_msg.clone()),
-                );
+                // WIP: remove using peer_map (and the unwra
+                if let Some(connection_info) = self.peer_map.get_connection_info(&pub_id) {
+                    let p2p_node = P2pNode::new(pub_id, connection_info.clone());
+                    self.send_direct_message(
+                        &p2p_node,
+                        DirectMessage::MessageSignature(signed_msg.clone()),
+                    );
+                }
             } else {
                 error!(
                     "{} Failed to resolve signature target {:?} for message {:?}",
@@ -1362,7 +1386,7 @@ impl Elder {
 
     pub fn send_msg_to_targets(
         &mut self,
-        dst_targets: &[PublicId],
+        dst_targets: &[P2pNode],
         dg_size: usize,
         message: Message,
     ) {
