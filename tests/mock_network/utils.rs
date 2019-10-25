@@ -218,9 +218,9 @@ pub fn poll_and_resend(nodes: &mut [TestNode]) {
 }
 
 /// Options for polling nodes in the test network.
-pub struct PollOptions {
+pub struct PollOptions<'a> {
     /// If set, polling continues while this predicate returns true even if all nodes are idle.
-    pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
+    pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool + 'a>>,
     /// If set and all nodes become idle, advances the time by this amount (in seconds) and polls
     /// again one more time.
     pub extra_advance: Option<u64>,
@@ -229,7 +229,7 @@ pub struct PollOptions {
     pub fire_join_timeout: bool,
 }
 
-impl Default for PollOptions {
+impl Default for PollOptions<'_> {
     fn default() -> Self {
         Self {
             continue_predicate: None,
@@ -239,10 +239,10 @@ impl Default for PollOptions {
     }
 }
 
-impl PollOptions {
+impl<'a> PollOptions<'a> {
     pub fn continue_if<F>(self, pred: F) -> Self
     where
-        F: Fn(&[TestNode]) -> bool + 'static,
+        F: Fn(&[TestNode]) -> bool + 'a,
     {
         Self {
             continue_predicate: Some(Box::new(pred)),

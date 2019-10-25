@@ -531,6 +531,8 @@ pub enum MessageContent {
     },
     /// Send from a section A to another section B to request a node to be relocated from B to A.
     RelocationRequest,
+    /// Reply to a `RelocationRequest` that cannot be fulfilled due to insufficient section size.
+    RelocationRequestRefused,
 }
 
 impl Debug for HopMessage {
@@ -570,6 +572,7 @@ impl Debug for MessageContent {
                 ack_version,
             } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
             RelocationRequest => write!(formatter, "RelocationRequest"),
+            RelocationRequestRefused => write!(formatter, "RelocationRequestRefused"),
         }
     }
 }

@@ -471,7 +471,7 @@ impl Node {
         self.chain().map(|chain| chain.min_split_size())
     }
 
-    /// Sets a name to be used when the next node relocation request is received by this node.
+    /// Override the next relocation destination.
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
         self.machine
             .current_mut()
@@ -479,7 +479,7 @@ impl Node {
             .next_relocation_dst = dst;
     }
 
-    /// Gets the next relocation distance that was previosly set with `set_next_relocation_dst`.
+    /// Gets the next relocation destination override, if any.
     pub fn next_relocation_dst(&self) -> Option<XorName> {
         self.machine.current().dev_params().next_relocation_dst
     }
@@ -490,6 +490,14 @@ impl Node {
             .current_mut()
             .dev_params_mut()
             .next_relocation_interval = interval;
+    }
+
+    /// Override the next relocation request recipient.
+    pub fn set_next_relocation_request_recipient(&mut self, name: Option<XorName>) {
+        self.machine
+            .current_mut()
+            .dev_params_mut()
+            .next_relocation_request_recipient = name;
     }
 
     /// Indicates if there are any pending observations in the parsec object

@@ -134,23 +134,32 @@ pub fn compute_destination(relocated_name: &XorName, trigger_name: &XorName) -> 
 }
 
 /// Computes the recipient of a relocation request using the current section elders.
-pub fn compute_request_recipient<'a, I: IntoIterator<Item = &'a XorName>>(
+pub fn compute_first_request_recipient<'a, I: IntoIterator<Item = &'a XorName>>(
     sender_prefix: &Prefix<XorName>,
     sender_members: I,
 ) -> XorName {
     // Xor the names together to make the result order-independent.
-    let mut output = sender_members
+    let output = sender_members
         .into_iter()
         .fold(XorName::default(), |mut acc, member| {
             acc ^= member;
             acc
         });
 
-    loop {
-        output = XorName(crypto::sha3_256(&output.0));
+    rehash_name(sender_prefix, output)
+}
 
-        if !sender_prefix.matches(&output) {
-            return output;
+/// Computes the recipient of the next relocation request if the previous one was refused.
+pub fn compute_next_request_recipient(sender_prefix: &Prefix<XorName>, prev: XorName) -> XorName {
+    rehash_name(sender_prefix, prev)
+}
+
+fn rehash_name(prefix: &Prefix<XorName>, mut name: XorName) -> XorName {
+    loop {
+        name = XorName(crypto::sha3_256(&name.0));
+
+        if !prefix.matches(&name) {
+            return name;
         }
     }
 }

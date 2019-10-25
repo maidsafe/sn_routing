@@ -39,6 +39,8 @@ pub struct DevParams {
     // Interval used for relocation in mock network tests.
     // Note: this is currently unused.
     pub next_relocation_interval: Option<XorTargetInterval>,
+    // Name to be used as the next relocation request recipient.
+    pub next_relocation_request_recipient: Option<XorName>,
 }
 
 #[cfg(not(feature = "mock_base"))]

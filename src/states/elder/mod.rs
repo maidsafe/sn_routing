@@ -589,8 +589,12 @@ impl Elder {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
             }
-            (RelocationRequest, Authority::PrefixSection(src), Authority::Section(_)) => {
-                self.handle_relocation_request(src)?;
+            (RelocationRequest, Authority::PrefixSection(src), dst @ Authority::Section(_)) => {
+                self.handle_relocation_request(src, dst)?;
+                Ok(Transition::Stay)
+            }
+            (RelocationRequestRefused, Authority::Section(src), _) => {
+                self.handle_relocation_request_refused(src)?;
                 Ok(Transition::Stay)
             }
             (content, src, dst) => {
@@ -861,10 +865,23 @@ impl Elder {
         }
     }
 
-    fn handle_relocation_request(&mut self, src: Prefix<XorName>) -> Result<(), RoutingError> {
-        debug!("{} - Received RelocationRequest from {:?}", self, src);
-
-        // TODO: only fulfil the request if we have enough nodes
+    fn handle_relocation_request(
+        &mut self,
+        src: Prefix<XorName>,
+        dst: Authority<XorName>,
+    ) -> Result<(), RoutingError> {
+        // TODO: verify this condition is correct and sufficient.
+        if self.chain.our_elders().len() <= self.chain.elder_size() {
+            debug!(
+                "{} - Refusing RelocationRequest from {:?} - not enough nodes in the section",
+                self, src
+            );
+            return self.send_routing_message(RoutingMessage {
+                src: dst,
+                dst: Authority::PrefixSection(src),
+                content: MessageContent::RelocationRequestRefused,
+            });
+        }
 
         // Pick the youngest node.
         let (pub_id, age) = if let Some((pub_id, age)) = self
@@ -879,12 +896,22 @@ impl Elder {
             return Ok(());
         };
 
-        trace!("{} - Relocating {}", self, pub_id);
+        debug!(
+            "{} - Accepting RelocationRequest from {:?} - relocating {}",
+            self, src, pub_id
+        );
         self.vote_for_signed_event(RelocateDetails {
             pub_id,
             destination: src.name(),
             age,
         })
+    }
+
+    fn handle_relocation_request_refused(&mut self, src: XorName) -> Result<(), RoutingError> {
+        info!("{} - RelocationRequest refused by {}", self, src);
+
+        let recipient = relocation::compute_next_request_recipient(self.chain.our_prefix(), src);
+        self.send_relocation_request(recipient)
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -1151,6 +1178,14 @@ impl Elder {
         }
 
         Ok(())
+    }
+
+    fn send_relocation_request(&mut self, dst: XorName) -> Result<(), RoutingError> {
+        self.send_routing_message(RoutingMessage {
+            src: Authority::PrefixSection(*self.chain.our_prefix()),
+            dst: Authority::Section(dst),
+            content: MessageContent::RelocationRequest,
+        })
     }
 }
 
@@ -1437,6 +1472,13 @@ impl Base for Elder {
     }
 }
 
+#[cfg(not(feature = "mock_base"))]
+impl Elder {
+    fn compute_relocation_request_recipient(&self) -> XorName {
+        self.chain.compute_relocation_request_recipient()
+    }
+}
+
 #[cfg(feature = "mock_base")]
 impl Elder {
     pub fn chain(&self) -> &Chain {
@@ -1473,6 +1515,14 @@ impl Elder {
 
     pub fn parsec_last_version(&self) -> u64 {
         self.parsec_map.last_version()
+    }
+
+    fn compute_relocation_request_recipient(&mut self) -> XorName {
+        self.chain
+            .dev_params_mut()
+            .next_relocation_request_recipient
+            .take()
+            .unwrap_or_else(|| self.chain.compute_relocation_request_recipient())
     }
 }
 
@@ -1727,16 +1777,8 @@ impl Approved for Elder {
     fn handle_relocation_request_event(&mut self) -> Result<(), RoutingError> {
         info!("{} - handle RelocationRequest", self);
 
-        let recipient = relocation::compute_request_recipient(
-            self.chain.our_prefix(),
-            self.chain.our_info().member_names(),
-        );
-
-        self.send_routing_message(RoutingMessage {
-            src: Authority::PrefixSection(*self.chain.our_prefix()),
-            dst: Authority::Section(recipient),
-            content: MessageContent::RelocationRequest,
-        })
+        let dst = self.compute_relocation_request_recipient();
+        self.send_relocation_request(dst)
     }
 }
 

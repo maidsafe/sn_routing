@@ -197,49 +197,87 @@ fn relocation_request() {
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    let requester_prefix = *unwrap!(rng.choose(&prefixes));
-    let responder_prefix = *choose_other_prefix(&mut rng, &prefixes, &requester_prefix);
+    let request_prefix = *unwrap!(rng.choose(&prefixes));
+    let respond_prefix = *choose_other_prefix(&mut rng, &prefixes, &request_prefix);
 
-    // Make any relocation go to the same section, effectively disabling relocations.
-    for node in nodes_with_prefix_mut(&mut nodes, &responder_prefix) {
-        node.inner
-            .set_next_relocation_dst(Some(responder_prefix.name()));
-    }
-
-    // Add a couple of nodes to the responder section to make sure it can fulfil the node request.
-    let old_responder_size = nodes_with_prefix(&nodes, &responder_prefix).count();
-    let new_responder_size = NETWORK_PARAMS.elder_size + 1;
-    for _ in old_responder_size..new_responder_size {
-        add_node_to_prefix(&network, &mut nodes, &responder_prefix);
-        poll_and_resend_with_options(
-            &mut nodes,
-            PollOptions::default()
-                .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1))
-                .fire_join_timeout(false),
-        );
-
-        unwrap!(nodes.last_mut())
-            .inner
-            .set_next_relocation_dst(Some(responder_prefix.name()));
-    }
+    // Add a couple of nodes to the responder section to make sure it can fulfil the request.
+    change_section_size(
+        &network,
+        &mut nodes,
+        &respond_prefix,
+        NETWORK_PARAMS.elder_size + 1,
+    );
 
     // Request a node
-    let mut old_requester_size = 0;
+    let mut old_request_size = 0;
 
     // Clippy false positive, already reported: https://github.com/rust-lang/rust-clippy/issues/4732
     #[allow(clippy::explicit_counter_loop)]
-    for node in nodes_with_prefix_mut(&mut nodes, &requester_prefix) {
-        old_requester_size += 1;
+    for node in nodes_with_prefix_mut(&mut nodes, &request_prefix) {
+        old_request_size += 1;
         unwrap!(node.inner.request_node());
     }
 
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default().continue_if(move |nodes| {
-            let new_requester_size = nodes_with_prefix(nodes, &requester_prefix).count();
-            new_requester_size <= old_requester_size
+            let new_request_size = nodes_with_prefix(nodes, &request_prefix).count();
+            new_request_size <= old_request_size
         }),
     )
+}
+
+#[test]
+fn refuse_relocation_request() {
+    let network = Network::new(NETWORK_PARAMS);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
+
+    let prefixes: Vec<_> = current_sections(&nodes).collect();
+    let request_prefix = *unwrap!(rng.choose(&prefixes));
+    let refuse_prefix = *choose_other_prefix(&mut rng, &prefixes, &request_prefix);
+    let accept_prefix = *unwrap!(iter::repeat(())
+        .filter_map(|_| rng.choose(&prefixes))
+        .find(|prefix| { **prefix != request_prefix && **prefix != refuse_prefix }));
+
+    let refuse_size = NETWORK_PARAMS.elder_size;
+    change_section_size(&network, &mut nodes, &refuse_prefix, refuse_size);
+
+    let accept_size = NETWORK_PARAMS.elder_size + 1;
+    change_section_size(&network, &mut nodes, &accept_prefix, accept_size);
+
+    // Force the relocation request to go to the section with insufficient nodes first.
+    for node in nodes_with_prefix_mut(&mut nodes, &request_prefix) {
+        node.inner
+            .set_next_relocation_request_recipient(Some(refuse_prefix.name()));
+    }
+
+    // Trigger the relocation request.
+    let mut old_request_size = 0;
+
+    // Clippy false positive, already reported: https://github.com/rust-lang/rust-clippy/issues/4732
+    #[allow(clippy::explicit_counter_loop)]
+    for node in nodes_with_prefix_mut(&mut nodes, &request_prefix) {
+        old_request_size += 1;
+        unwrap!(node.inner.request_node());
+    }
+
+    poll_and_resend_with_options(
+        &mut nodes,
+        PollOptions::default().continue_if(move |nodes| {
+            let new_request_size = nodes_with_prefix(nodes, &request_prefix).count();
+            new_request_size <= old_request_size
+        }),
+    );
+
+    assert_eq!(
+        nodes_with_prefix(&nodes, &refuse_prefix).count(),
+        refuse_size
+    );
+    assert_eq!(
+        nodes_with_prefix(&nodes, &accept_prefix).count(),
+        accept_size - 1
+    );
 }
 
 // Age counter of the oldest node in the network assuming no nodes were removed or relocated - only
@@ -263,7 +301,6 @@ fn choose_other_prefix<'a, R: Rng>(
     except: &Prefix<XorName>,
 ) -> &'a Prefix<XorName> {
     assert!(prefixes.iter().any(|prefix| prefix != except));
-
     unwrap!(iter::repeat(())
         .filter_map(|_| rng.choose(prefixes))
         .find(|prefix| *prefix != except))
@@ -287,7 +324,7 @@ fn add_node_to_prefix(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pre
 }
 
 fn remove_node_from_prefix(nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) -> TestNode {
-    // Lookup from the end, so we remove the youngest node in the section.
+    // Remove the last (youngest) node in the section.
     let index = nodes.len()
         - unwrap!(nodes
             .iter()
@@ -330,25 +367,65 @@ fn section_churn(
                 unwrap!(nodes.last_mut())
                     .inner
                     .set_next_relocation_dst(next_relocation_dst);
-
-                poll_and_resend_with_options(
-                    nodes,
-                    PollOptions::default()
-                        .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1))
-                        .fire_join_timeout(false),
-                );
+                poll_until_joined(nodes);
             }
             Churn::Remove => {
                 let id = remove_node_from_prefix(nodes, prefix).id();
-                poll_and_resend_with_options(
-                    nodes,
-                    PollOptions::default()
-                        .continue_if(move |nodes| !node_left(nodes, &id))
-                        .fire_join_timeout(false),
-                );
+                poll_until_left(nodes, &id);
             }
         }
     }
+}
+
+// Add or remove nodes to/from the given section until it has the desired size.
+fn change_section_size(
+    network: &Network,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+    new_size: usize,
+) {
+    // Disable relocation by making all relocations go to the same section.
+    let mut old_size = 0;
+    for node in nodes_with_prefix_mut(nodes, prefix) {
+        node.inner.set_next_relocation_dst(Some(prefix.name()));
+        old_size += 1;
+    }
+
+    if new_size > old_size {
+        for _ in old_size..new_size {
+            add_node_to_prefix(network, nodes, prefix);
+            // Also disable relocations for the new node.
+            unwrap!(nodes.last_mut())
+                .inner
+                .set_next_relocation_dst(Some(prefix.name()));
+            poll_until_joined(nodes);
+        }
+    } else if new_size < old_size {
+        for _ in new_size..old_size {
+            let id = remove_node_from_prefix(nodes, prefix).id();
+            poll_until_left(nodes, &id);
+        }
+    }
+}
+
+// Poll until the last node joins.
+fn poll_until_joined(nodes: &mut [TestNode]) {
+    poll_and_resend_with_options(
+        nodes,
+        PollOptions::default()
+            .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1))
+            .fire_join_timeout(false),
+    )
+}
+
+// Poll until node with the given id leaves.
+fn poll_until_left(nodes: &mut [TestNode], id: &PublicId) {
+    poll_and_resend_with_options(
+        nodes,
+        PollOptions::default()
+            .continue_if(move |nodes| !node_left(nodes, id))
+            .fire_join_timeout(false),
+    )
 }
 
 // Returns whether all nodes from its section recognize the node at the given index as joined.

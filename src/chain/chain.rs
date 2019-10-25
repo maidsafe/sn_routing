@@ -1382,6 +1382,13 @@ impl Chain {
         }
     }
 
+    pub fn compute_relocation_request_recipient(&self) -> XorName {
+        relocation::compute_first_request_recipient(
+            self.our_prefix(),
+            self.our_info().member_names(),
+        )
+    }
+
     pub fn dev_params(&self) -> &DevParams {
         &self.dev_params
     }
