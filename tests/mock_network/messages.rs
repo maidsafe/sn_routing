@@ -8,15 +8,25 @@
 
 use super::{create_connected_nodes, poll_all};
 use rand::Rng;
-use routing::{mock::Network, Authority, Event, EventStream, QUORUM_DENOMINATOR, QUORUM_NUMERATOR};
+use routing::{
+    mock::Network, Authority, Event, EventStream, NetworkParams, QUORUM_DENOMINATOR,
+    QUORUM_NUMERATOR,
+};
 
 #[test]
 fn send() {
-    let min_section_size = 8;
-    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
-    let network = Network::new(min_section_size, None);
+    let elder_size = 8;
+    let safe_section_size = 8;
+    let quorum = 1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
+    let mut nodes = create_connected_nodes(&network, elder_size + 1);
 
     let sender_index = rng.gen_range(0, nodes.len());
     let src = Authority::Node(nodes[sender_index].name());
@@ -53,11 +63,18 @@ fn send() {
 
 #[test]
 fn send_and_receive() {
-    let min_section_size = 8;
-    let quorum = 1 + (min_section_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
-    let network = Network::new(min_section_size, None);
+    let elder_size = 8;
+    let safe_section_size = 8;
+    let quorum = 1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, min_section_size + 1);
+    let mut nodes = create_connected_nodes(&network, elder_size + 1);
 
     let sender_index = rng.gen_range(0, nodes.len());
     let src = Authority::Node(nodes[sender_index].name());

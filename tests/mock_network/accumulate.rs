@@ -9,13 +9,20 @@
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
 use routing::{
-    mock::Network, Authority, Event, EventStream, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    mock::Network, Authority, Event, EventStream, NetworkParams, XorName, QUORUM_DENOMINATOR,
+    QUORUM_NUMERATOR,
 };
 
 #[test]
 fn messages_accumulate_with_quorum() {
     let section_size = 15;
-    let network = Network::new(8, None);
+    let network = Network::new(
+        NetworkParams {
+            elder_size: 8,
+            safe_section_size: 8,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, section_size);
 

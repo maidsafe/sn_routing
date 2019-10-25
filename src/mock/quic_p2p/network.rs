@@ -9,7 +9,7 @@
 use super::{node::Node, OurType};
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec;
-use crate::NetworkBytes;
+use crate::{chain::NetworkParams, NetworkBytes};
 use fxhash::{FxHashMap, FxHashSet};
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
@@ -35,7 +35,7 @@ pub struct Network(Rc<RefCell<Inner>>);
 
 impl Network {
     /// Construct new mock network.
-    pub fn new(min_section_size: usize, seed: Option<[u32; 4]>) -> Self {
+    pub fn new(network_cfg: NetworkParams, seed: Option<[u32; 4]>) -> Self {
         let rng = if let Some(seed) = seed {
             SeededRng::from_seed(seed)
         } else {
@@ -48,7 +48,7 @@ impl Network {
         parsec::init_mock();
 
         let inner = Rc::new(RefCell::new(Inner {
-            min_section_size,
+            network_cfg,
             rng,
             nodes: Default::default(),
             connections: Default::default(),
@@ -86,9 +86,19 @@ impl Network {
         self.0.borrow().is_connected(addr0, addr1)
     }
 
-    /// Get min section size.
-    pub fn min_section_size(&self) -> usize {
-        self.0.borrow().min_section_size
+    /// Get the chain network config.
+    pub fn network_cfg(&self) -> NetworkParams {
+        self.0.borrow().network_cfg
+    }
+
+    /// Get the number of elders
+    pub fn elder_size(&self) -> usize {
+        self.0.borrow().network_cfg.elder_size
+    }
+
+    /// Get the safe section size
+    pub fn safe_section_size(&self) -> usize {
+        self.0.borrow().network_cfg.safe_section_size
     }
 
     /// Construct a new random number generator using a seed generated from random data provided by `self`.
@@ -141,7 +151,7 @@ impl Network {
 }
 
 pub(super) struct Inner {
-    min_section_size: usize,
+    network_cfg: NetworkParams,
     rng: SeededRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,

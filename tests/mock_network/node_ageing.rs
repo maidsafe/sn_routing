@@ -8,17 +8,23 @@
 
 use super::{
     add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
-    current_sections, poll_and_resend_with_options, PollOptions, TestNode, MIN_SECTION_SIZE,
+    current_sections, poll_and_resend_with_options, PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::Rng;
-use routing::{mock::Network, FullId, NetworkConfig, Prefix, XorName};
+use routing::{mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, XorName};
 use std::{iter, slice};
 
 #[test]
 fn relocate_without_split() {
     // Create a network of two sections, then trigger relocation of a random node from one section
     // into the other section.
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(
+        NetworkParams {
+            elder_size: LOWERED_ELDER_SIZE,
+            safe_section_size: LOWERED_ELDER_SIZE,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
@@ -56,7 +62,13 @@ fn relocate_causing_split() {
     // Create a network with at least two sections. Pick two sections: source and destination. Add
     // enough nodes to the destination section so it is one node shy of split. Then relocate a
     // random node from the source section to the destination section.
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(
+        NetworkParams {
+            elder_size: LOWERED_ELDER_SIZE,
+            safe_section_size: LOWERED_ELDER_SIZE,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
 
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
@@ -107,7 +119,13 @@ fn relocate_during_split() {
     // Create a network with at least two sections. Pick two sections: source and destination. Add
     // enough nodes to the destination section so it is one node shy of split. Then add one more
     // node to it and simultaneously relocate another random node from the source section to it.
-    let network = Network::new(MIN_SECTION_SIZE, None);
+    let network = Network::new(
+        NetworkParams {
+            elder_size: LOWERED_ELDER_SIZE,
+            safe_section_size: LOWERED_ELDER_SIZE,
+        },
+        None,
+    );
     let mut rng = network.new_rng();
 
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);

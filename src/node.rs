@@ -8,6 +8,7 @@
 
 use crate::{
     action::Action,
+    chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event_stream::{EventStepper, EventStream},
     id::{FullId, PublicId},
@@ -18,7 +19,7 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer},
     xor_name::XorName,
-    Event, NetworkBytes, NetworkConfig, MIN_SECTION_SIZE,
+    Event, NetworkBytes, NetworkConfig,
 };
 #[cfg(feature = "mock_base")]
 use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
@@ -38,7 +39,7 @@ pub struct NodeBuilder {
     first: bool,
     network_config: Option<NetworkConfig>,
     full_id: Option<FullId>,
-    min_section_size: usize,
+    network_cfg: NetworkParams,
 }
 
 impl NodeBuilder {
@@ -63,10 +64,10 @@ impl NodeBuilder {
         }
     }
 
-    /// Override the default min section size.
-    pub fn min_section_size(self, min_section_size: usize) -> Self {
+    /// Override the default network config.
+    pub fn network_cfg(self, network_cfg: NetworkParams) -> Self {
         Self {
-            min_section_size,
+            network_cfg,
             ..self
         }
     }
@@ -97,7 +98,8 @@ impl NodeBuilder {
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
         let full_id = self.full_id.unwrap_or_else(FullId::new);
-        let min_section_size = self.min_section_size;
+
+        let network_cfg = self.network_cfg;
 
         let first = self.first;
 
@@ -109,7 +111,7 @@ impl NodeBuilder {
                 if first {
                     debug!("Creating a first node in the Elder state");
 
-                    states::Elder::first(network_service, full_id, min_section_size, timer, outbox)
+                    states::Elder::first(network_service, full_id, network_cfg, timer, outbox)
                         .map(State::Elder)
                         .unwrap_or(State::Terminated)
                 } else {
@@ -118,7 +120,7 @@ impl NodeBuilder {
                     State::BootstrappingPeer(BootstrappingPeer::new(
                         network_service,
                         full_id,
-                        min_section_size,
+                        network_cfg,
                         timer,
                     ))
                 }
@@ -151,7 +153,7 @@ impl Node {
             first: false,
             network_config: None,
             full_id: None,
-            min_section_size: MIN_SECTION_SIZE,
+            network_cfg: Default::default(),
         }
     }
 
@@ -389,10 +391,10 @@ impl Node {
         self.chain().and_then(|chain| chain.close_names(name))
     }
 
-    /// Returns the minimum section size this vault is using.
-    /// Only if we have a chain (meaning we are elders) we will process this API
-    pub fn min_sec_size(&self) -> Option<usize> {
-        self.chain().map(Chain::min_sec_size)
+    /// Returns the number of elders this vault is using.
+    /// Only if we have a chain (meaning we are elders or adults) we will process this API
+    pub fn elder_size(&self) -> Option<usize> {
+        self.chain().map(Chain::elder_size)
     }
 
     /// Size at which our section splits. Since this is configurable, this method is used to

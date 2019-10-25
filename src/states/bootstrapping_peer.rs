@@ -8,6 +8,7 @@
 
 use super::common::Base;
 use crate::{
+    chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, PublicId},
@@ -41,31 +42,29 @@ pub struct BootstrappingPeer {
     bootstrap_connection: Option<(ConnectionInfo, u64)>,
     network_service: NetworkService,
     full_id: FullId,
-    min_section_size: usize,
     peer_map: PeerMap,
     timer: Timer,
     relocate_details: Option<SignedRelocateDetails>,
+    network_cfg: NetworkParams,
 }
 
 impl BootstrappingPeer {
-    /// Create `BootstrappingPeer` for a node that is joining the network (either for the first
-    /// time or rejoining).
     pub fn new(
         mut network_service: NetworkService,
         full_id: FullId,
-        min_section_size: usize,
+        network_cfg: NetworkParams,
         timer: Timer,
     ) -> Self {
         network_service.service_mut().bootstrap();
         Self {
             network_service,
             full_id,
-            min_section_size,
             timer,
             bootstrap_connection: None,
             nodes_to_await: Default::default(),
             peer_map: PeerMap::new(),
             relocate_details: None,
+            network_cfg,
         }
     }
 
@@ -73,7 +72,7 @@ impl BootstrappingPeer {
     pub fn relocate(
         network_service: NetworkService,
         full_id: FullId,
-        min_section_size: usize,
+        network_cfg: NetworkParams,
         timer: Timer,
         conn_infos: Vec<ConnectionInfo>,
         relocate_details: SignedRelocateDetails,
@@ -81,12 +80,12 @@ impl BootstrappingPeer {
         let mut node = Self {
             network_service,
             full_id,
-            min_section_size,
             timer,
             bootstrap_connection: None,
             nodes_to_await: conn_infos.iter().map(|info| info.peer_addr).collect(),
             peer_map: PeerMap::new(),
             relocate_details: Some(relocate_details),
+            network_cfg,
         };
 
         for conn_info in conn_infos {
@@ -105,7 +104,7 @@ impl BootstrappingPeer {
         Ok(State::JoiningPeer(JoiningPeer::new(
             self.network_service,
             self.full_id,
-            self.min_section_size,
+            self.network_cfg,
             self.timer,
             self.peer_map,
             conn_infos,
@@ -238,10 +237,6 @@ impl Base for BootstrappingPeer {
 
     fn in_authority(&self, _: &Authority<XorName>) -> bool {
         false
-    }
-
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
     }
 
     fn peer_map(&self) -> &PeerMap {
@@ -400,6 +395,7 @@ impl Display for BootstrappingPeer {
 mod tests {
     use super::*;
     use crate::{
+        chain::NetworkParams,
         id::FullId,
         messages::Message,
         mock::Network,
@@ -415,8 +411,15 @@ mod tests {
     // Check that losing our proxy connection while in the `BootstrappingPeer` state doesn't stall
     // and instead triggers a re-bootstrap attempt..
     fn lose_proxy_connection() {
-        let min_section_size = 8;
-        let network = Network::new(min_section_size, None);
+        let network_cfg = if cfg!(feature = "mock_base") {
+            NetworkParams {
+                elder_size: 7,
+                safe_section_size: 30,
+            }
+        } else {
+            Default::default()
+        };
+        let network = Network::new(Default::default(), None);
 
         // Start a bare-bones network service.
         let (event_tx, event_rx) = mpmc::unbounded();
@@ -439,7 +442,7 @@ mod tests {
                 State::BootstrappingPeer(BootstrappingPeer::new(
                     network_service,
                     node_b_full_id,
-                    min_section_size,
+                    network_cfg,
                     timer,
                 ))
             },

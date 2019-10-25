@@ -20,12 +20,11 @@ use crate::{
     outbox::EventBox,
     state_machine::{State, StateMachine, Transition},
     utils::LogIdent,
-    NetworkConfig, NetworkService,
+    NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
 
-const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 // Accumulate even if 1 old node and an additional new node do not vote.
 const NO_SINGLE_VETO_VOTE_COUNT: usize = 7;
 const ACCUMULATE_VOTE_COUNT: usize = 6;
@@ -64,13 +63,11 @@ struct ElderUnderTest {
 
 impl ElderUnderTest {
     fn new() -> Self {
-        Self::with_min_section_size(DEFAULT_MIN_SECTION_SIZE)
+        Self::with_section_size(NO_SINGLE_VETO_VOTE_COUNT)
     }
 
-    fn with_min_section_size(min_section_size: usize) -> Self {
-        let full_ids = (0..NO_SINGLE_VETO_VOTE_COUNT)
-            .map(|_| FullId::new())
-            .collect_vec();
+    fn with_section_size(sec_size: usize) -> Self {
+        let full_ids = (0..sec_size).map(|_| FullId::new()).collect_vec();
 
         let prefix = Prefix::<XorName>::default();
         let elders_info = unwrap!(EldersInfo::new(
@@ -91,7 +88,7 @@ impl ElderUnderTest {
         };
 
         let full_id = full_ids[0].clone();
-        let machine = make_state_machine(&full_id, &gen_pfx_info, min_section_size, &mut ());
+        let machine = make_state_machine(&full_id, &gen_pfx_info, &mut ());
 
         let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
         let other_parsec_map = other_full_ids
@@ -277,7 +274,6 @@ impl ElderUnderTest {
 fn new_elder_state(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
-    min_section_size: usize,
     network_service: NetworkService,
     timer: Timer,
     outbox: &mut dyn EventBox,
@@ -285,7 +281,7 @@ fn new_elder_state(
     let public_id = *full_id.public_id();
 
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
-    let chain = Chain::new(min_section_size, public_id, gen_pfx_info.clone());
+    let chain = Chain::new(Default::default(), public_id, gen_pfx_info.clone());
     let peer_map = PeerMap::new();
 
     let details = ElderDetails {
@@ -311,24 +307,22 @@ fn new_elder_state(
 fn make_state_machine(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
-    min_section_size: usize,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {
-    let network = Network::new(min_section_size, None);
+    let network = Network::new(
+        NetworkParams {
+            elder_size: ELDER_SIZE,
+            safe_section_size: ELDER_SIZE,
+        },
+        None,
+    );
 
     let endpoint = network.gen_addr();
     let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
 
     StateMachine::new(
         move |network_service, timer, outbox2| {
-            new_elder_state(
-                full_id,
-                gen_pfx_info,
-                min_section_size,
-                network_service,
-                timer,
-                outbox2,
-            )
+            new_elder_state(full_id, gen_pfx_info, network_service, timer, outbox2)
         },
         config,
         outbox,
@@ -446,17 +440,17 @@ fn when_accumulate_offline_and_accumulate_remove_elder_and_accumulate_section_in
 }
 
 #[test]
-fn accept_previously_rejected_node_after_reaching_min_section_size() {
-    // Set min_section_size to one more than the initial size of the section. This makes us reject
-    // any bootstrapping nodes.
-    let mut elder_test = ElderUnderTest::with_min_section_size(NO_SINGLE_VETO_VOTE_COUNT + 1);
+fn accept_previously_rejected_node_after_reaching_elder_size() {
+    // Set section size to one less than the desired number of the elders in a section. This makes
+    // us reject any bootstrapping nodes.
+    let mut elder_test = ElderUnderTest::with_section_size(ELDER_SIZE - 1);
     let node = JoiningNodeInfo::with_addr("198.51.100.0:5000");
 
     // Bootstrap fails for insufficient section size.
     elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
     assert!(!elder_test.is_connected(node.public_id()));
 
-    // Add new section member to reach min_section_size.
+    // Add new section member to reach elder_size.
     elder_test.accumulate_online(elder_test.candidate_id);
     elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());

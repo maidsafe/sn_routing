@@ -10,7 +10,7 @@ use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     bls_key_set_from_elders_info, elders_info_for_test, mock::Network,
     section_proof_chain_from_elders_info, Authority, FullId, HopMessage, Message, MessageContent,
-    Prefix, RoutingMessage, SignedRoutingMessage, XorName,
+    NetworkParams, Prefix, RoutingMessage, SignedRoutingMessage, XorName,
 };
 use std::collections::BTreeSet;
 use std::iter;
@@ -44,8 +44,15 @@ fn message_with_invalid_security(fail_type: FailType) {
     //
     // Arrange
     //
-    let min_section_size = 3;
-    let network = Network::new(min_section_size, None);
+    let elder_size = 3;
+    let safe_section_size = 3;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let their_node_pos = 0;

@@ -12,7 +12,7 @@ use super::{
     common::Base,
 };
 use crate::{
-    chain::GenesisPfxInfo,
+    chain::{GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     id::{FullId, PublicId},
     messages::{
@@ -44,20 +44,20 @@ pub struct JoiningPeer {
     routing_msg_filter: RoutingMessageFilter,
     msg_backlog: Vec<SignedRoutingMessage>,
     full_id: FullId,
-    min_section_size: usize,
     peer_map: PeerMap,
     timer: Timer,
     join_token: u64,
     join_attempts: u8,
     conn_infos: Vec<ConnectionInfo>,
     relocate_payload: Option<RelocatePayload>,
+    network_cfg: NetworkParams,
 }
 
 impl JoiningPeer {
     pub fn new(
         network_service: NetworkService,
         full_id: FullId,
-        min_section_size: usize,
+        network_cfg: NetworkParams,
         timer: Timer,
         peer_map: PeerMap,
         conn_infos: Vec<ConnectionInfo>,
@@ -70,13 +70,13 @@ impl JoiningPeer {
             routing_msg_filter: RoutingMessageFilter::new(),
             msg_backlog: vec![],
             full_id,
-            min_section_size,
             timer: timer,
             peer_map,
             join_token,
             join_attempts: 0,
             conn_infos,
             relocate_payload,
+            network_cfg,
         };
 
         joining_peer.send_join_requests();
@@ -93,11 +93,11 @@ impl JoiningPeer {
             event_backlog: vec![],
             full_id: self.full_id,
             gen_pfx_info,
-            min_section_size: self.min_section_size,
             msg_backlog: self.msg_backlog,
             peer_map: self.peer_map,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
+            network_cfg: self.network_cfg,
         };
         Adult::from_joining_peer(details, outbox).map(State::Adult)
     }
@@ -106,7 +106,7 @@ impl JoiningPeer {
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
             FullId::new(),
-            self.min_section_size,
+            self.network_cfg,
             self.timer,
         )))
     }
@@ -176,10 +176,6 @@ impl Base for JoiningPeer {
 
     fn in_authority(&self, dst: &Authority<XorName>) -> bool {
         dst.is_single() && dst.name() == *self.full_id.public_id().name()
-    }
-
-    fn min_section_size(&self) -> usize {
-        self.min_section_size
     }
 
     fn peer_map(&self) -> &PeerMap {

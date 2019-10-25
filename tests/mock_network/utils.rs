@@ -172,10 +172,8 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let (inner, _node_rx) = unwrap!(self
-            .inner
-            .min_section_size(self.network.min_section_size())
-            .create());
+        let (inner, _node_rx) =
+            unwrap!(self.inner.network_cfg(self.network.network_cfg()).create());
 
         TestNode {
             inner,
@@ -357,7 +355,7 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
         verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 
-    let n = cmp::min(nodes.len(), network.min_section_size()) - 1;
+    let n = cmp::min(nodes.len(), network.elder_size()) - 1;
 
     for node in &mut nodes {
         expect_next_event!(node, Event::Connected);
@@ -616,7 +614,7 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
-pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usize) {
+pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     let our_prefix = unwrap!(node.inner.our_prefix());
     let our_name = unwrap!(node.inner.our_name());
     let our_section_elders = node.inner.section_elders(our_prefix);
@@ -630,7 +628,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
 
     if !our_prefix.is_empty() {
         assert!(
-            our_section_elders.len() >= min_section_size,
+            our_section_elders.len() >= elder_size,
             "Our section {:?} is below the minimum size!",
             our_prefix,
         );
@@ -661,7 +659,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
 
     if let Some(prefix) = neighbour_prefixes
         .iter()
-        .find(|prefix| node.inner.section_elders(prefix).len() < min_section_size)
+        .find(|prefix| node.inner.section_elders(prefix).len() < elder_size)
     {
         panic!(
             "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?})",
@@ -716,9 +714,9 @@ pub fn verify_section_invariants_for_node(node: &TestNode, min_section_size: usi
     }
 }
 
-pub fn verify_section_invariants_for_nodes(nodes: &[TestNode], min_section_size: usize) {
+pub fn verify_section_invariants_for_nodes(nodes: &[TestNode], elder_size: usize) {
     for node in nodes.iter() {
-        verify_section_invariants_for_node(node, min_section_size);
+        verify_section_invariants_for_node(node, elder_size);
     }
 }
 
@@ -797,8 +795,8 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
 }
 
 pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode]) {
-    let min_section_size = network.min_section_size();
-    verify_section_invariants_for_nodes(nodes, min_section_size);
+    let elder_size = network.elder_size();
+    verify_section_invariants_for_nodes(nodes, elder_size);
     verify_section_invariants_between_nodes(nodes);
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();

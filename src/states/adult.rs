@@ -13,8 +13,8 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, EldersChange, EldersInfo, GenesisPfxInfo, OnlinePayload, SectionKeyInfo,
-        SendAckMessagePayload,
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
@@ -47,11 +47,11 @@ pub struct AdultDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub min_section_size: usize,
     pub msg_backlog: Vec<SignedRoutingMessage>,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
+    pub network_cfg: NetworkParams,
 }
 
 pub struct Adult {
@@ -80,11 +80,8 @@ impl Adult {
         let add_timer_token = details.timer.schedule(ADD_TIMEOUT);
 
         let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
-        let chain = Chain::new(
-            details.min_section_size,
-            public_id,
-            details.gen_pfx_info.clone(),
-        );
+
+        let chain = Chain::new(details.network_cfg, public_id, details.gen_pfx_info.clone());
 
         let mut node = Self {
             chain,
@@ -116,7 +113,7 @@ impl Adult {
     }
 
     pub fn rebootstrap(self) -> Result<State, RoutingError> {
-        let min_section_size = self.min_section_size();
+        let network_cfg = self.chain.network_cfg();
 
         // Try to join the same section, but using new id, otherwise the section won't accept us
         // due to duplicate votes.
@@ -125,7 +122,7 @@ impl Adult {
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             self.network_service,
             full_id,
-            min_section_size,
+            network_cfg,
             self.timer,
         )))
     }
@@ -278,10 +275,6 @@ impl Base for Adult {
 
     fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.chain.in_authority(auth)
-    }
-
-    fn min_section_size(&self) -> usize {
-        self.chain.min_sec_size()
     }
 
     fn peer_map(&self) -> &PeerMap {
