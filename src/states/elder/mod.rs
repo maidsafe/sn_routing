@@ -1112,7 +1112,11 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, peer_addr: SocketAddr, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_peer_lost(
+        &mut self,
+        peer_addr: SocketAddr,
+        _outbox: &mut dyn EventBox,
+    ) -> Transition {
         let our_members = self.chain.our_members();
         let p2p_node = if let Some(p2p_node) = our_members
             .iter()
@@ -1130,20 +1134,7 @@ impl Base for Elder {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
 
-        if self.chain.is_peer_elder(&pub_id) {
-            debug!(
-                "{} - Sending connection request to {} due to lost peer.",
-                self, pub_id
-            );
-
-            let our_name = *self.name();
-            let _ = self.send_connection_request(
-                pub_id,
-                Authority::Node(our_name),
-                Authority::Node(*pub_id.name()),
-                outbox,
-            );
-        }
+        debug!("{} - Lost peer {}", self, pub_id);
 
         Transition::Stay
     }

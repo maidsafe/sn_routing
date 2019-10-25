@@ -15,12 +15,11 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MessageContent, RelocateDetails, RoutingMessage},
+    messages::{DirectMessage, RelocateDetails},
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
     routing_table::{Authority, Prefix},
     state_machine::Transition,
-    types::MessageId,
     utils,
     xor_name::XorName,
     ConnectionInfo,
@@ -315,36 +314,6 @@ pub trait Approved: Base {
         }
 
         Ok(Transition::Stay)
-    }
-
-    fn send_connection_request(
-        &mut self,
-        their_pub_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        _: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if their_pub_id == *self.id() {
-            trace!("{} - Not sending connection request to ourselves.", self);
-            return Ok(());
-        }
-
-        let content = MessageContent::ConnectionRequest {
-            conn_info: self.our_connection_info()?,
-            pub_id: *self.full_id().public_id(),
-            msg_id: MessageId::new(),
-        };
-
-        debug!("{} - Sending connection request to {}.", self, their_pub_id);
-
-        self.send_routing_message(RoutingMessage { src, dst, content })
-            .map_err(|err| {
-                debug!(
-                    "{} - Failed to send connection request to {}: {:?}.",
-                    self, their_pub_id, err
-                );
-                err
-            })
     }
 
     fn handle_connection_request(
