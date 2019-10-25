@@ -12,8 +12,7 @@
 //! object handling the appropriate types of message.
 
 use crate::event::Event;
-use std::collections::VecDeque;
-use std::default::Default;
+use crossbeam_channel::Sender;
 
 /// An event dispatcher. Collects things to deliver and "sends".
 ///
@@ -24,32 +23,21 @@ pub trait EventBox {
     fn send_event(&mut self, event: Event);
 }
 
-/// Implementor of `EventBox`; stores its events in a `VecDeque`.
-#[derive(Default)]
-pub struct EventBuf {
-    events: VecDeque<Event>,
-}
-
-impl EventBox for EventBuf {
+/// Implementor of `EventBox`; sends its events through an mpmc channel.
+impl EventBox for Sender<Event> {
     fn send_event(&mut self, event: Event) {
-        self.events.push_back(event)
+        let _ = self.send(event);
     }
 }
 
-impl EventBuf {
-    /// Create an empty box
-    pub fn new() -> Self {
-        Default::default()
+/// Stream events into a Vec.
+impl EventBox for Vec<Event> {
+    fn send_event(&mut self, event: Event) {
+        self.push(event);
     }
+}
 
-    /// Take the first Event, if any is stored.
-    pub fn take_first(&mut self) -> Option<Event> {
-        self.events.pop_front()
-    }
-
-    /// Extract the list of events (swapping in an empty list)
-    #[cfg(all(test, feature = "mock_base"))]
-    pub fn take_all(&mut self) -> VecDeque<Event> {
-        std::mem::replace(&mut self.events, Default::default())
-    }
+/// Empty sink for events.
+impl EventBox for () {
+    fn send_event(&mut self, _event: Event) {}
 }

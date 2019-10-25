@@ -17,7 +17,7 @@ use super::*;
 use crate::{
     messages::DirectMessage,
     mock::Network,
-    outbox::{EventBox, EventBuf},
+    outbox::EventBox,
     state_machine::{State, StateMachine, Transition},
     utils::LogIdent,
     NetworkConfig, NetworkService,
@@ -58,7 +58,6 @@ struct ElderUnderTest {
     pub full_id: FullId,
     pub other_full_ids: Vec<FullId>,
     pub other_parsec_map: Vec<ParsecMap>,
-    pub ev_buffer: EventBuf,
     pub elders_info: EldersInfo,
     pub candidate_id: PublicId,
 }
@@ -72,7 +71,6 @@ impl ElderUnderTest {
         let full_ids = (0..NO_SINGLE_VETO_VOTE_COUNT)
             .map(|_| FullId::new())
             .collect_vec();
-        let mut ev_buffer = EventBuf::new();
 
         let prefix = Prefix::<XorName>::default();
         let elders_info = unwrap!(EldersInfo::new(
@@ -93,7 +91,7 @@ impl ElderUnderTest {
         };
 
         let full_id = full_ids[0].clone();
-        let machine = make_state_machine(&full_id, &gen_pfx_info, min_section_size, &mut ev_buffer);
+        let machine = make_state_machine(&full_id, &gen_pfx_info, min_section_size, &mut ());
 
         let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
         let other_parsec_map = other_full_ids
@@ -106,7 +104,6 @@ impl ElderUnderTest {
             full_id,
             other_full_ids,
             other_parsec_map,
-            ev_buffer,
             elders_info,
             candidate_id: *FullId::new().public_id(),
         };
@@ -241,11 +238,10 @@ impl ElderUnderTest {
         &mut self,
         msg: (DirectMessage, PublicId),
     ) -> Result<(), RoutingError> {
-        let _ = self.machine.elder_state_mut().handle_direct_message(
-            msg.0,
-            msg.1,
-            &mut self.ev_buffer,
-        )?;
+        let _ = self
+            .machine
+            .elder_state_mut()
+            .handle_direct_message(msg.0, msg.1, &mut ())?;
         Ok(())
     }
 
@@ -253,7 +249,7 @@ impl ElderUnderTest {
         match self
             .machine
             .elder_state_mut()
-            .handle_connected_to(conn_info, &mut self.ev_buffer)
+            .handle_connected_to(conn_info, &mut ())
         {
             Transition::Stay => (),
             _ => panic!("Unexpected transition"),

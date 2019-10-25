@@ -49,7 +49,9 @@ macro_rules! state_dispatch {
 pub struct StateMachine {
     state: State,
     network_rx: mpmc::Receiver<NetworkEvent>,
+    network_rx_idx: usize,
     action_rx: mpmc::Receiver<Action>,
+    action_rx_idx: usize,
     is_running: bool,
     #[cfg(feature = "mock_base")]
     events: Vec<EventType>,
@@ -296,10 +298,13 @@ impl StateMachine {
             State::Terminated => false,
             _ => true,
         };
+
         let machine = StateMachine {
             state,
             network_rx,
+            network_rx_idx: 0,
             action_rx,
+            action_rx_idx: 0,
             is_running,
             #[cfg(feature = "mock_base")]
             events: Vec::new(),
@@ -329,7 +334,9 @@ impl StateMachine {
         let machine = StateMachine {
             state,
             network_rx,
+            network_rx_idx: 0,
             action_rx,
+            action_rx_idx: 0,
             is_running: true,
             #[cfg(feature = "mock_base")]
             events: Vec::new(),
@@ -393,23 +400,47 @@ impl StateMachine {
         self.is_running = false;
     }
 
-    /// Block until the machine steps and returns some events.
+    /// Register the state machine event channels with the provided [selector](mpmc::Select).
+    pub fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
+        let network_rx_idx = select.recv(&self.network_rx);
+        let action_rx_idx = select.recv(&self.action_rx);
+        self.network_rx_idx = network_rx_idx;
+        self.action_rx_idx = action_rx_idx;
+    }
+
+    /// Processes events received externally from one of the channels.
+    /// For this function to work properly, the state machine event channels need to
+    /// be registered by calling [`StateMachine::register`](#method.register).
+    /// [`Select::ready`] needs to be called to get `op_index`, the event channel index.
+    /// The resulting events are streamed into `outbox`.
     ///
-    /// Errors are permanent failures due to either: state machine termination or
-    /// the permanent closing of the `category_rx` event channel.
-    // TODO: remove the #[allow]s below once crossbeam-channel gets fixed
-    #[allow(clippy::drop_copy)]
-    #[allow(clippy::zero_ptr)]
-    pub fn step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::RecvError> {
-        if self.is_running {
-            mpmc::select! {
-                recv(self.network_rx) -> event => self.handle_network_event(event?, outbox),
-                recv(self.action_rx) -> action => self.handle_action(action?, outbox),
-            }
-            Ok(())
-        } else {
-            Err(mpmc::RecvError)
+    /// This function is non-blocking.
+    ///
+    /// Errors are permanent failures due to either: state machine termination,
+    /// the permanent closing of one of the event channels, or an invalid (unknown)
+    /// channel index.
+    ///
+    /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
+    pub fn step(
+        &mut self,
+        op_index: usize,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), mpmc::RecvError> {
+        if !self.is_running {
+            return Err(mpmc::RecvError);
         }
+        match op_index {
+            idx if idx == self.network_rx_idx => {
+                let event = self.network_rx.recv()?;
+                self.handle_network_event(event, outbox)
+            }
+            idx if idx == self.action_rx_idx => {
+                let action = self.action_rx.recv()?;
+                self.handle_action(action, outbox)
+            }
+            _idx => return Err(mpmc::RecvError),
+        };
+        Ok(())
     }
 
     /// Get reference to the current state.
@@ -452,12 +483,10 @@ impl StateMachine {
     fn handle_event_from_list(&mut self, outbox: &mut dyn EventBox) {
         assert!(!self.events.is_empty());
         let event = self.events.remove(0);
-        let transition = match event {
-            EventType::Action(action) => self.state.handle_action(*action, outbox),
-            EventType::NetworkEvent(event) => self.state.handle_network_event(event, outbox),
+        match event {
+            EventType::Action(action) => self.handle_action(*action, outbox),
+            EventType::NetworkEvent(event) => self.handle_network_event(event, outbox),
         };
-
-        self.apply_transition(transition, outbox)
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).

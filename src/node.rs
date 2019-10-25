@@ -9,29 +9,27 @@
 use crate::{
     action::Action,
     error::{InterfaceError, RoutingError},
-    event::Event,
     event_stream::{EventStepper, EventStream},
     id::{FullId, PublicId},
-    outbox::{EventBox, EventBuf},
+    outbox::EventBox,
     pause::PausedState,
     quic_p2p::OurType,
     routing_table::Authority,
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer},
     xor_name::XorName,
-    NetworkBytes, NetworkConfig, MIN_SECTION_SIZE,
+    Event, NetworkBytes, NetworkConfig, MIN_SECTION_SIZE,
 };
 #[cfg(feature = "mock_base")]
 use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
 use crossbeam_channel as mpmc;
 use quic_p2p::Token;
-use std::net::SocketAddr;
-use std::sync::mpsc;
 #[cfg(feature = "mock_base")]
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{self, Display, Formatter},
 };
+use std::{net::SocketAddr, sync::mpsc};
 #[cfg(feature = "mock_base")]
 use unwrap::unwrap;
 
@@ -79,19 +77,22 @@ impl NodeBuilder {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The initial `Node` object will have newly generated keys.
-    pub fn create(self) -> Result<Node, RoutingError> {
-        let mut ev_buffer = EventBuf::new();
-
+    pub fn create(self) -> Result<(Node, mpmc::Receiver<Event>), RoutingError> {
         // start the handler for routing without a restriction to become a full node
-        let (_, machine) = self.make_state_machine(&mut ev_buffer);
-        let (tx, rx) = mpsc::channel();
+        let (interface_result_tx, interface_result_rx) = mpsc::channel();
+        let (mut user_event_tx, user_event_rx) = mpmc::unbounded();
 
-        Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            machine: machine,
-            event_buffer: ev_buffer,
-        })
+        let (_, machine) = self.make_state_machine(&mut user_event_tx);
+
+        let node = Node {
+            user_event_tx,
+            user_event_rx: user_event_rx.clone(),
+            interface_result_tx,
+            interface_result_rx,
+            machine,
+        };
+
+        Ok((node, user_event_rx))
     }
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
@@ -106,10 +107,14 @@ impl NodeBuilder {
         StateMachine::new(
             move |network_service, timer, outbox| {
                 if first {
+                    debug!("Creating a first node in the Elder state");
+
                     states::Elder::first(network_service, full_id, min_section_size, timer, outbox)
                         .map(State::Elder)
                         .unwrap_or(State::Terminated)
                 } else {
+                    debug!("Creating a node in the BootstrappingPeer state");
+
                     State::BootstrappingPeer(BootstrappingPeer::new(
                         network_service,
                         full_id,
@@ -132,10 +137,11 @@ impl NodeBuilder {
 /// `Node` or as a part of a section or group authority. Their `src` argument indicates that
 /// role, and can be any [`Authority`](enum.Authority.html).
 pub struct Node {
+    user_event_tx: mpmc::Sender<Event>,
+    user_event_rx: mpmc::Receiver<Event>,
     interface_result_tx: mpsc::Sender<Result<(), InterfaceError>>,
     interface_result_rx: mpsc::Receiver<Result<(), InterfaceError>>,
     machine: StateMachine,
-    event_buffer: EventBuf,
 }
 
 impl Node {
@@ -155,17 +161,20 @@ impl Node {
     }
 
     /// Resume previously paused node.
-    pub fn resume(state: PausedState) -> Self {
+    pub fn resume(state: PausedState) -> (Self, mpmc::Receiver<Event>) {
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
-        let event_buffer = EventBuf::new();
+        let (user_event_tx, user_event_rx) = mpmc::unbounded();
         let (_, machine) = StateMachine::resume(state);
 
-        Self {
+        let node = Self {
             interface_result_tx,
             interface_result_rx,
+            user_event_tx,
+            user_event_rx: user_event_rx.clone(),
             machine,
-            event_buffer,
-        }
+        };
+
+        (node, user_event_rx)
     }
 
     /// Returns the first `count` names of the nodes in the routing table which are closest
@@ -181,6 +190,7 @@ impl Node {
 
     /// Vote for a custom event.
     pub fn vote_for(&mut self, event: Vec<u8>) {
+        // TODO: Return interface error here
         let _ = self
             .machine
             .current_mut()
@@ -208,7 +218,7 @@ impl Node {
         self.perform_action(action)
     }
 
-    /// Send a message to a client peer
+    /// Send a message to a client peer.
     pub fn send_message_to_client(
         &mut self,
         peer_addr: SocketAddr,
@@ -228,7 +238,7 @@ impl Node {
         self.perform_action(action)
     }
 
-    /// Disconnect form a client peer
+    /// Disconnect form a client peer.
     pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
@@ -245,10 +255,34 @@ impl Node {
         let transition = self
             .machine
             .current_mut()
-            .handle_action(action, &mut self.event_buffer);
+            .handle_action(action, &mut self.user_event_tx);
         self.machine
-            .apply_transition(transition, &mut self.event_buffer);
+            .apply_transition(transition, &mut self.user_event_tx);
         self.interface_result_rx.recv()?
+    }
+
+    /// Register the node event channels with the provided
+    /// [selector](https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html).
+    pub fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
+        self.machine.register(select)
+    }
+
+    /// Processes events received externally from one of the channels.
+    /// For this function to work properly, the state machine event channels need to
+    /// be registered by calling [`Node::register`].
+    /// [`Select::ready`] needs to be called to get `op_index`,
+    /// the event channel index. The resulting events are streamed into `outbox`.
+    ///
+    /// This function is non-blocking.
+    ///
+    /// Errors are permanent failures due to either: state machine termination,
+    /// the permanent closing of one of the event channels, or an invalid (unknown)
+    /// channel index.
+    ///
+    /// [`Node::register`]: #method.register
+    /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
+    pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<(), mpmc::RecvError> {
+        self.machine.step(op_index, &mut self.user_event_tx)
     }
 }
 
@@ -256,15 +290,19 @@ impl EventStepper for Node {
     type Item = Event;
 
     fn produce_events(&mut self) -> Result<(), mpmc::RecvError> {
-        self.machine.step(&mut self.event_buffer)
+        let mut sel = mpmc::Select::new();
+        self.register(&mut sel);
+
+        let op_index = sel.ready();
+        self.machine.step(op_index, &mut self.user_event_tx)
     }
 
     fn try_produce_events(&mut self) -> Result<(), mpmc::TryRecvError> {
-        self.machine.try_step(&mut self.event_buffer)
+        self.machine.try_step(&mut self.user_event_tx)
     }
 
     fn pop_item(&mut self) -> Option<Event> {
-        self.event_buffer.take_first()
+        self.user_event_rx.try_recv().ok()
     }
 }
 

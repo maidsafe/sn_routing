@@ -403,7 +403,6 @@ mod tests {
         id::FullId,
         messages::Message,
         mock::Network,
-        outbox::EventBuf,
         quic_p2p::{Builder, Peer},
         state_machine::StateMachine,
         states::common::from_network_bytes,
@@ -428,11 +427,13 @@ mod tests {
         // Construct a `StateMachine` which will start in the `BootstrappingPeer` state and
         // bootstrap off the network service above.
         let node_b_endpoint = network.gen_addr();
-        let config = NetworkConfig::client()
+        let config = NetworkConfig::node()
             .with_hard_coded_contact(node_a_endpoint)
             .with_endpoint(node_b_endpoint);
         let node_b_full_id = FullId::new();
-        let mut node_b_outbox = EventBuf::new();
+
+        let mut node_b_outbox = Vec::new();
+
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
             move |network_service, timer, _outbox2| {
                 State::BootstrappingPeer(BootstrappingPeer::new(
@@ -450,9 +451,12 @@ mod tests {
         network.poll();
         match unwrap!(event_rx.try_recv()) {
             NetworkEvent::ConnectedTo {
-                peer: Peer::Client { .. },
+                peer: Peer::Node { .. },
             } => (),
-            _ => panic!("Should have received `ConnectedTo` event."),
+            ev => panic!(
+                "Should have received `ConnectedTo` event, received `{:?}`.",
+                ev
+            ),
         }
 
         // The state machine should have received the `BootstrappedTo` event and this will have
@@ -487,20 +491,24 @@ mod tests {
         // ...which triggers `ConnectionFailure` on the state machine which then attempts to
         // rebootstrap..
         step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
-        assert!(node_b_outbox.take_all().is_empty());
+        assert!(node_b_outbox.is_empty());
         network.poll();
 
         // ... but there is no one to bootstrap to, so the bootstrap fails which causes the state
         // machine to terminate.
         step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
-        let events = node_b_outbox.take_all();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0], Event::Terminated);
+        assert_eq!(node_b_outbox.len(), 1);
+        assert_eq!(node_b_outbox[0], Event::Terminated);
     }
 
     fn step_at_least_once(machine: &mut StateMachine, outbox: &mut dyn EventBox) {
-        // Blocking step for the first one. Must not err.
-        unwrap!(machine.step(outbox));
+        let mut sel = mpmc::Select::new();
+        machine.register(&mut sel);
+
+        // Blocking step for the first one.
+        let op_index = sel.ready();
+        unwrap!(machine.step(op_index, outbox));
+
         // Exhaust any remaining step
         while machine.try_step(outbox).is_ok() {}
     }
