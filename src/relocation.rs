@@ -13,6 +13,7 @@ use crate::{
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
+    routing_table::Prefix,
     xor_name::{XorName, XOR_NAME_LEN},
     BlsSignature,
 };
@@ -122,10 +123,34 @@ impl RelocatePayload {
     }
 }
 
+/// Compute the relocation destination of a node with `relocated_name` triggered by a churn event
+/// of a node with `trigger_name`.
 pub fn compute_destination(relocated_name: &XorName, trigger_name: &XorName) -> XorName {
     let mut buffer = [0; 2 * XOR_NAME_LEN];
     buffer[..XOR_NAME_LEN].copy_from_slice(&relocated_name.0);
     buffer[XOR_NAME_LEN..].copy_from_slice(&trigger_name.0);
 
     XorName(crypto::sha3_256(&buffer))
+}
+
+/// Computes the recipient of a relocation request using the current section elders.
+pub fn compute_request_recipient<'a, I: IntoIterator<Item = &'a XorName>>(
+    sender_prefix: &Prefix<XorName>,
+    sender_members: I,
+) -> XorName {
+    // Xor the names together to make the result order-independent.
+    let mut output = sender_members
+        .into_iter()
+        .fold(XorName::default(), |mut acc, member| {
+            acc ^= member;
+            acc
+        });
+
+    loop {
+        output = XorName(crypto::sha3_256(&output.0));
+
+        if !sender_prefix.matches(&output) {
+            return output;
+        }
+    }
 }

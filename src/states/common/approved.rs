@@ -92,6 +92,9 @@ pub trait Approved: Base {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
+    /// Handle an accumulated `RelocationRequest` event
+    fn handle_relocation_request_event(&mut self) -> Result<(), RoutingError>;
+
     /// Handle an accumulated `User` event
     fn handle_user_event(
         &mut self,
@@ -325,6 +328,7 @@ pub trait Approved: Base {
                 AccumulatingEvent::Relocate(payload) => {
                     self.invoke_handle_relocate_event(payload, event.signature, outbox)?
                 }
+                AccumulatingEvent::RelocationRequest => self.handle_relocation_request_event()?,
                 AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }
 

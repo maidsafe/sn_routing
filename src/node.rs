@@ -287,6 +287,17 @@ impl Node {
         self.perform_action(action)
     }
 
+    /// Try to increase the size of our section by requesting a node to be relocated to us from
+    /// another section in the network.
+    pub fn request_node(&mut self) -> Result<(), InterfaceError> {
+        if let Some(state) = self.machine.current_mut().elder_state_mut() {
+            state.request_node();
+            Ok(())
+        } else {
+            Err(InterfaceError::InvalidState)
+        }
+    }
+
     fn perform_action(&mut self, action: Action) -> Result<(), InterfaceError> {
         let transition = self
             .machine

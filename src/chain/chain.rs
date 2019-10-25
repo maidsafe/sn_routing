@@ -304,6 +304,7 @@ impl Chain {
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
+            | AccumulatingEvent::RelocationRequest
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
@@ -694,6 +695,11 @@ impl Chain {
         self.neighbour_infos().flat_map(EldersInfo::member_nodes)
     }
 
+    /// Returns infos of all members of our section that are in the `Joined` state.
+    pub fn our_joined_members(&self) -> impl Iterator<Item = (&XorName, &MemberInfo)> {
+        self.state.our_joined_members()
+    }
+
     /// Return the keys we know
     pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.state.get_their_keys_info()
@@ -829,7 +835,8 @@ impl Chain {
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::Relocate(_) => {
+            | AccumulatingEvent::Relocate(_) 
+            | AccumulatingEvent::RelocationRequest => {
                 !self.state.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {

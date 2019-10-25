@@ -588,6 +588,10 @@ impl Approved for Adult {
         Ok(())
     }
 
+    fn handle_relocation_request_event(&mut self) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
     fn handle_their_key_info_event(
         &mut self,
         _key_info: SectionKeyInfo,

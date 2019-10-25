@@ -7,9 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split_with_options,
-    current_sections, nodes_with_prefix, nodes_with_prefix_mut, poll_and_resend_with_options,
-    ChurnOptions, PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
+    create_connected_nodes_until_split_with_options, current_sections, nodes_with_prefix,
+    nodes_with_prefix_mut, poll_and_resend_with_options, ChurnOptions, PollOptions, TestNode,
+    LOWERED_ELDER_SIZE,
 };
 use rand::{Rand, Rng};
 use routing::{
@@ -185,6 +186,59 @@ fn relocate_during_split() {
         PollOptions::default()
             .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix))
             .fire_join_timeout(true),
+    )
+}
+
+#[test]
+fn relocation_request() {
+    // Create two sections and make one of them request a node from the other one.
+    let network = Network::new(NETWORK_PARAMS);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+
+    let prefixes: Vec<_> = current_sections(&nodes).collect();
+    let requester_prefix = *unwrap!(rng.choose(&prefixes));
+    let responder_prefix = *choose_other_prefix(&mut rng, &prefixes, &requester_prefix);
+
+    // Make any relocation go to the same section, effectively disabling relocations.
+    for node in nodes_with_prefix_mut(&mut nodes, &responder_prefix) {
+        node.inner
+            .set_next_relocation_dst(Some(responder_prefix.name()));
+    }
+
+    // Add a couple of nodes to the responder section to make sure it can fulfil the node request.
+    let old_responder_size = nodes_with_prefix(&nodes, &responder_prefix).count();
+    let new_responder_size = NETWORK_PARAMS.elder_size + 1;
+    for _ in old_responder_size..new_responder_size {
+        add_node_to_prefix(&network, &mut nodes, &responder_prefix);
+        poll_and_resend_with_options(
+            &mut nodes,
+            PollOptions::default()
+                .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1))
+                .fire_join_timeout(false),
+        );
+
+        unwrap!(nodes.last_mut())
+            .inner
+            .set_next_relocation_dst(Some(responder_prefix.name()));
+    }
+
+    // Request a node
+    let mut old_requester_size = 0;
+
+    // Clippy false positive, already reported: https://github.com/rust-lang/rust-clippy/issues/4732
+    #[allow(clippy::explicit_counter_loop)]
+    for node in nodes_with_prefix_mut(&mut nodes, &requester_prefix) {
+        old_requester_size += 1;
+        unwrap!(node.inner.request_node());
+    }
+
+    poll_and_resend_with_options(
+        &mut nodes,
+        PollOptions::default().continue_if(move |nodes| {
+            let new_requester_size = nodes_with_prefix(nodes, &requester_prefix).count();
+            new_requester_size <= old_requester_size
+        }),
     )
 }
 

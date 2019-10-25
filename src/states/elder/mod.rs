@@ -31,7 +31,7 @@ use crate::{
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
@@ -233,6 +233,10 @@ impl Elder {
         )))
     }
 
+    pub fn request_node(&mut self) {
+        self.vote_for_event(AccumulatingEvent::RelocationRequest)
+    }
+
     fn new(
         details: ElderDetails,
         is_first_node: bool,
@@ -425,7 +429,8 @@ impl Elder {
                 // to carry over. In case it does not, add a comment explaining why.
                 AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::ParsecPrune
-                | AccumulatingEvent::Relocate(_) => false,
+                | AccumulatingEvent::Relocate(_)
+                | AccumulatingEvent::RelocationRequest => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 AccumulatingEvent::SectionInfo(ref elders_info, _)
@@ -582,6 +587,10 @@ impl Elder {
                 Authority::Section(dst),
             ) => {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
+                Ok(Transition::Stay)
+            }
+            (RelocationRequest, Authority::PrefixSection(src), Authority::Section(_)) => {
+                self.handle_relocation_request(src)?;
                 Ok(Transition::Stay)
             }
             (content, src, dst) => {
@@ -850,6 +859,32 @@ impl Elder {
             details,
             conn_infos,
         }
+    }
+
+    fn handle_relocation_request(&mut self, src: Prefix<XorName>) -> Result<(), RoutingError> {
+        debug!("{} - Received RelocationRequest from {:?}", self, src);
+
+        // TODO: only fulfil the request if we have enough nodes
+
+        // Pick the youngest node.
+        let (pub_id, age) = if let Some((pub_id, age)) = self
+            .chain
+            .our_joined_members()
+            .min_by_key(|(_, info)| info.age_counter)
+            .map(|(_, info)| (*info.p2p_node.public_id(), info.age()))
+        {
+            (pub_id, age.saturating_add(1))
+        } else {
+            log_or_panic!(LogLevel::Error, "{} - Can't fulfil relocation request - our section has no members (this should be impossible).", self);
+            return Ok(());
+        };
+
+        trace!("{} - Relocating {}", self, pub_id);
+        self.vote_for_signed_event(RelocateDetails {
+            pub_id,
+            destination: src.name(),
+            age,
+        })
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -1687,6 +1722,21 @@ impl Approved for Elder {
         self.disconnect_by_id_lookup(&pub_id);
 
         Ok(())
+    }
+
+    fn handle_relocation_request_event(&mut self) -> Result<(), RoutingError> {
+        info!("{} - handle RelocationRequest", self);
+
+        let recipient = relocation::compute_request_recipient(
+            self.chain.our_prefix(),
+            self.chain.our_info().member_names(),
+        );
+
+        self.send_routing_message(RoutingMessage {
+            src: Authority::PrefixSection(*self.chain.our_prefix()),
+            dst: Authority::Section(recipient),
+            content: MessageContent::RelocationRequest,
+        })
     }
 }
 

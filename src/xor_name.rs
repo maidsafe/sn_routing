@@ -252,6 +252,14 @@ impl<'a> ops::Div<&'a u32> for &'a XorName {
     }
 }
 
+impl<'a> ops::BitXorAssign<&'a Self> for XorName {
+    fn bitxor_assign(&mut self, rhs: &'a Self) {
+        for (lhs_byte, rhs_byte) in self.0.iter_mut().zip(rhs.0.iter()) {
+            *lhs_byte ^= rhs_byte
+        }
+    }
+}
+
 impl AsRef<XorName> for XorName {
     fn as_ref(&self) -> &Self {
         self
