@@ -19,6 +19,7 @@ use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::net::SocketAddr;
 use std::{ops::RangeInclusive, rc::Rc};
 
 /// Network identity component containing name, and public and private keys.
@@ -236,6 +237,18 @@ impl P2pNode {
         Self {
             public_id,
             connection_info,
+        }
+    }
+
+    /// Creates a new `P2pNode` given a `PublicId` and a `SocketAddr`, meaning we don't set the
+    /// certificate.
+    pub fn new_without_cert(public_id: PublicId, src_addr: SocketAddr) -> Self {
+        Self {
+            public_id,
+            connection_info: ConnectionInfo {
+                peer_addr: src_addr,
+                peer_cert_der: vec![],
+            },
         }
     }
 

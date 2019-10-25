@@ -282,12 +282,13 @@ pub trait Base: Display {
             Message::Direct(msg) => {
                 let (msg, public_id) = msg.open()?;
                 self.peer_map_mut().identify(public_id, src_addr);
-                let connection_info = self
-                    .peer_map()
-                    .get_connection_info(public_id)
-                    .ok_or(RoutingError::UnknownConnection(public_id))?
-                    .clone();
-                self.handle_direct_message(msg, P2pNode::new(public_id, connection_info), outbox)
+                // WIP: Maybe we need the peer_map to keep the certificate and store the mapping
+                // SocketAddr -> ConnectionInfo?
+                self.handle_direct_message(
+                    msg,
+                    P2pNode::new_without_cert(public_id, src_addr),
+                    outbox,
+                )
             }
         }
     }
