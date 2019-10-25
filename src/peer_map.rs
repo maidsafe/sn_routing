@@ -75,6 +75,7 @@ impl PeerMap {
     // Inserts a new entry into the peer map. This is equivalent to calling `connect` followed by
     // `identify` and can be used when we obtain both the public id and the connection info at the
     // same time (for example when a third party sends them to us).
+    #[allow(unused)]
     pub fn insert(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
         let _ = self.pending.remove(&conn_info.peer_addr);
         let _ = self

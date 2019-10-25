@@ -15,7 +15,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, RelocateDetails},
+    messages::RelocateDetails,
     outbox::EventBox,
     parsec::{self, Block, Observation, ParsecMap},
     routing_table::{Authority, Prefix},
@@ -339,10 +339,7 @@ pub trait Approved: Base {
             self, their_pub_id
         );
 
-        self.peer_map_mut()
-            .insert(their_pub_id, their_conn_info.clone());
-        let their_p2p_node = P2pNode::new(their_pub_id, their_conn_info);
-        self.send_direct_message(&their_p2p_node, DirectMessage::ConnectionResponse);
+        self.peer_map_mut().insert(their_pub_id, their_conn_info);
 
         Ok(())
     }

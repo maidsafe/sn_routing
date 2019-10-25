@@ -428,10 +428,7 @@ fn packet_is_parsec_gossip() {
     }
 
     // No other direct message types contain a Parsec request or response.
-    let msgs = [
-        make_message(DirectMessage::ParsecPoke(5)),
-        make_message(DirectMessage::ConnectionResponse),
-    ];
+    let msgs = [make_message(DirectMessage::ParsecPoke(5))];
     for msg in &msgs {
         assert!(!Packet::Message(NetworkBytes::from(serialise(msg)), 0).is_parsec_gossip());
     }

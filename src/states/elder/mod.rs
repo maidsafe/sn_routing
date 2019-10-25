@@ -514,16 +514,6 @@ impl Elder {
         }
 
         match (msg.content, msg.src, msg.dst) {
-            (
-                ConnectionRequest {
-                    conn_info, pub_id, ..
-                },
-                src @ Authority::Node(_),
-                dst @ Authority::Node(_),
-            ) => {
-                self.handle_connection_request(conn_info, pub_id, src, dst, outbox)?;
-                Ok(Transition::Stay)
-            }
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)?;
                 Ok(Transition::Stay)
@@ -696,10 +686,6 @@ impl Elder {
         self.send_direct_message(p2p_node, DirectMessage::BootstrapResponse(response));
     }
 
-    fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
-        debug!("{} - Received connection response from {}", self, pub_id);
-    }
-
     fn handle_join_request(
         &mut self,
         p2p_node: P2pNode,
@@ -774,7 +760,6 @@ impl Elder {
             MIN_AGE
         };
 
-        self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
@@ -1163,7 +1148,6 @@ impl Base for Elder {
                     );
                 }
             }
-            ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             JoinRequest(payload) => self.handle_join_request(p2p_node, payload),
             ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
             ParsecRequest(version, par_request) => {
