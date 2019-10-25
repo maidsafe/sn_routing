@@ -14,7 +14,7 @@ use crate::{
     },
     error::RoutingError,
     event::Event,
-    id::PublicId,
+    id::{P2pNode, PublicId},
     messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
@@ -106,16 +106,19 @@ pub trait Approved: Base {
         &mut self,
         msg_version: u64,
         par_request: parsec::Request,
-        pub_id: PublicId,
+        p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let log_ident = self.log_ident();
-        let (response, poll) =
-            self.parsec_map_mut()
-                .handle_request(msg_version, par_request, pub_id, &log_ident);
+        let (response, poll) = self.parsec_map_mut().handle_request(
+            msg_version,
+            par_request,
+            *p2p_node.public_id(),
+            &log_ident,
+        );
 
         if let Some(response) = response {
-            self.send_direct_message(&pub_id, response);
+            self.send_direct_message(&p2p_node, response);
         }
 
         if poll {
@@ -143,19 +146,27 @@ pub trait Approved: Base {
         }
     }
 
-    fn send_parsec_gossip(&mut self, target: Option<(u64, PublicId)>) {
+    fn send_parsec_gossip(&mut self, target: Option<(u64, P2pNode)>) {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
             None => {
                 let version = self.parsec_map().last_version();
-                let mut recipients = self.parsec_map().gossip_recipients();
+                let recipients = self.parsec_map().gossip_recipients();
                 if recipients.is_empty() {
                     // Parsec hasn't caught up with the event of us joining yet.
                     return;
                 }
 
-                recipients.retain(|pub_id| self.peer_map().has(pub_id));
-                if recipients.is_empty() {
+                let p2p_recipients: Vec<_> = recipients
+                    .into_iter()
+                    .filter_map(|pub_id| {
+                        self.peer_map()
+                            .get_connection_info(pub_id)
+                            .map(|conn_info| P2pNode::new(*pub_id, conn_info.clone()))
+                    })
+                    .collect();
+
+                if p2p_recipients.is_empty() {
                     log_or_panic!(
                         LogLevel::Error,
                         "{} - Not connected to any gossip recipient.",
@@ -164,12 +175,16 @@ pub trait Approved: Base {
                     return;
                 }
 
-                let rand_index = utils::rand_index(recipients.len());
-                (version, *recipients[rand_index])
+                let rand_index = utils::rand_index(p2p_recipients.len());
+                // WIP: need to figure out who to send to without consulting the peer_map
+                (version, p2p_recipients[rand_index].clone())
             }
         };
 
-        if let Some(msg) = self.parsec_map_mut().create_gossip(version, &gossip_target) {
+        if let Some(msg) = self
+            .parsec_map_mut()
+            .create_gossip(version, gossip_target.public_id())
+        {
             self.send_direct_message(&gossip_target, msg);
         }
     }
@@ -400,8 +415,10 @@ pub trait Approved: Base {
             self, their_pub_id
         );
 
-        self.peer_map_mut().insert(their_pub_id, their_conn_info);
-        self.send_direct_message(&their_pub_id, DirectMessage::ConnectionResponse);
+        self.peer_map_mut()
+            .insert(their_pub_id, their_conn_info.clone());
+        let their_p2p_node = P2pNode::new(their_pub_id, their_conn_info);
+        self.send_direct_message(&their_p2p_node, DirectMessage::ConnectionResponse);
 
         Ok(())
     }

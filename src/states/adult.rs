@@ -204,9 +204,8 @@ impl Adult {
         let recipients = self
             .gen_pfx_info
             .latest_info
-            .member_ids()
-            .filter(|pub_id| self.peer_map.has(pub_id))
-            .copied()
+            .member_nodes()
+            .cloned()
             .collect_vec();
 
         for recipient in recipients {
@@ -225,19 +224,19 @@ impl Adult {
     }
 
     // Reject the bootstrap request, because only Elders can handle it.
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId, _destination: XorName) {
+    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, _destination: XorName) {
         debug!(
             "{} - Joining node {:?} rejected: We are not an established node yet.",
-            self, pub_id
+            self, p2p_node,
         );
 
         self.send_direct_message(
-            &pub_id,
+            &p2p_node,
             DirectMessage::BootstrapResponse(BootstrapResponse::Error(
                 BootstrapResponseError::NotApproved,
             )),
         );
-        self.disconnect(&pub_id);
+        self.disconnect(p2p_node.public_id());
     }
 
     fn add_elder(
@@ -352,13 +351,13 @@ impl Base for Adult {
         use crate::messages::DirectMessage::*;
         match msg {
             ParsecRequest(version, par_request) => {
-                self.handle_parsec_request(version, par_request, *p2p_node.public_id(), outbox)
+                self.handle_parsec_request(version, par_request, p2p_node, outbox)
             }
             ParsecResponse(version, par_response) => {
                 self.handle_parsec_response(version, par_response, *p2p_node.public_id(), outbox)
             }
             BootstrapRequest(name) => {
-                self.handle_bootstrap_request(*p2p_node.public_id(), name);
+                self.handle_bootstrap_request(p2p_node, name);
                 Ok(Transition::Stay)
             }
             ConnectionResponse => {
@@ -416,16 +415,23 @@ impl Base for Adult {
 
         // We should only be connected to our own Elders - send to all of them
         // Need to collect IDs first so that self is not borrowed via the iterator
-        let target_ids: Vec<_> = self.peer_map.connected_ids().cloned().collect();
+        //
+        // WIP: this is probably out of date? How else do we know which our section members are?
+        let target_nodes = self
+            .gen_pfx_info
+            .latest_info
+            .member_nodes()
+            .cloned()
+            .collect_vec();
 
-        for pub_id in target_ids {
+        for p2p_node in target_nodes {
             if self
                 .routing_msg_filter
-                .filter_outgoing(signed_msg.routing_message(), &pub_id)
+                .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
                 .is_new()
             {
                 let message = self.to_hop_message(signed_msg.clone())?;
-                self.send_message(&pub_id, message);
+                self.send_message(&p2p_node, message);
             }
         }
 
