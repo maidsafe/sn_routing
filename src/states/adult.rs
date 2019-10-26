@@ -424,14 +424,14 @@ impl Base for Adult {
             .cloned()
             .collect_vec();
 
-        for p2p_node in target_nodes {
+        for p2p_node in &target_nodes {
             if self
                 .routing_msg_filter
                 .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
                 .is_new()
             {
                 let message = self.to_hop_message(signed_msg.clone())?;
-                self.send_message(&p2p_node, message);
+                self.send_message(p2p_node, message);
             }
         }
 

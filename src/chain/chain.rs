@@ -701,6 +701,22 @@ impl Chain {
         self.neighbour_infos().flat_map(EldersInfo::member_nodes)
     }
 
+    /// Returns the elders for a neighbour section.
+    /// Returns None if the `Prefix` provided wasn't our own section or a neigbour.
+    pub fn get_section_elders(
+        &self,
+        names: &Prefix<XorName>,
+    ) -> Option<&BTreeMap<XorName, P2pNode>> {
+        if self.our_prefix() == names {
+            Some(self.our_info().member_map())
+        } else {
+            self.state
+                .neighbour_infos
+                .get(names)
+                .map(|elders_info| elders_info.member_map())
+        }
+    }
+
     /// Return the keys we know
     pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.state.get_their_keys_info()
