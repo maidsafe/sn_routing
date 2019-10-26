@@ -691,6 +691,7 @@ impl Chain {
     }
 
     /// Returns a set of elders we should be connected to.
+    // WIP: should we remove potential duplicates?
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
