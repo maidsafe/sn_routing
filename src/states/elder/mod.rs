@@ -964,20 +964,7 @@ impl Elder {
         let (target_p2p_nodes, dg_size) = if let Some(target) = single_target {
             (vec![target.clone()], 1)
         } else {
-            // WIP: neet to get targets without using the peer_map (get_targets uses peer_map
-            // internally)
-            let (targets, dg_size) = self.get_targets(signed_msg.routing_message())?;
-            (
-                targets
-                    .into_iter()
-                    .filter_map(|public_id| {
-                        self.peer_map
-                            .get_connection_info(&public_id)
-                            .map(|conn_info| P2pNode::new(public_id, conn_info.clone()))
-                    })
-                    .collect(),
-                dg_size,
-            )
+            self.get_targets(signed_msg.routing_message())?
         };
 
         trace!(
@@ -1054,17 +1041,14 @@ impl Elder {
     fn get_targets(
         &self,
         routing_msg: &RoutingMessage,
-    ) -> Result<(Vec<PublicId>, usize), RoutingError> {
-        // TODO: even if having chain reply based on connected_state,
-        // we remove self in targets info and can do same by not
-        // chaining us to conn_peer list here?
-        let conn_peers = self.connected_peers();
+    ) -> Result<(Vec<P2pNode>, usize), RoutingError> {
+        let conn_peers: Vec<_> = self.chain.elders().map(P2pNode::name).collect();
         let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
         Ok((
             targets
                 .into_iter()
-                .filter_map(|name| self.peer_map.get_id(&name))
-                .copied()
+                .filter_map(|name| self.chain.get_p2p_node(&name))
+                .cloned()
                 .collect(),
             dg_size,
         ))

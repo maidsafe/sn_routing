@@ -671,6 +671,10 @@ impl Chain {
             .map(|member_info| &member_info.p2p_node)
     }
 
+    pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state.our_info().member_map().get(name)
+    }
+
     /// Returns a neighbour `P2pNode`
     pub fn get_neighbour_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state
@@ -682,6 +686,7 @@ impl Chain {
 
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.get_member_p2p_node(name)
+            .or_else(|| self.get_our_info_p2p_node(name))
             .or_else(|| self.get_neighbour_p2p_node(name))
     }
 
