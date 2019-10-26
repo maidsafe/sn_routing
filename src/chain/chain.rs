@@ -587,7 +587,7 @@ impl Chain {
             .map(|member_info| member_info.connection_info.clone())
     }
 
-    /// Returns the `ConnectionInfo` for a `XorName`.
+    /// Returns the `ConnectionInfo` for a `XorName` in our section.
     // WIP: this is probably unnecessary slow
     #[cfg(feature = "mock_base")]
     pub fn get_member_name_connection_info(&self, name: &XorName) -> Option<ConnectionInfo> {
@@ -596,6 +596,28 @@ impl Chain {
             .iter()
             .find(|(pub_id, _)| pub_id.name() == name)
             .map(|(_, member_info)| member_info.connection_info.clone())
+    }
+
+    /// Returns a section member `P2pNode`
+    pub fn get_member_p2p_node(&self, name: &XorName) -> Option<P2pNode> {
+        self.state
+            .our_members
+            .iter()
+            .find(|(pub_id, _)| pub_id.name() == name)
+            .map(|(pub_id, member_info)| P2pNode::new(*pub_id, member_info.connection_info.clone()))
+    }
+
+    /// Returns a neighbour `P2pNode`
+    pub fn get_neighbour_p2p_node(&self, name: &XorName) -> Option<P2pNode> {
+        self.neighbour_infos()
+            .flat_map(|elders_info| elders_info.p2p_members().iter())
+            .find(|p2p_node| p2p_node.name() == name)
+            .cloned()
+    }
+
+    pub fn get_p2p_node(&self, name: &XorName) -> Option<P2pNode> {
+        self.get_member_p2p_node(name)
+            .or_else(|| self.get_neighbour_p2p_node(name))
     }
 
     /// Returns a set of elders we should be connected to.
