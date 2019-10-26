@@ -587,6 +587,17 @@ impl Chain {
             .map(|member_info| member_info.connection_info.clone())
     }
 
+    /// Returns the `ConnectionInfo` for a `XorName`.
+    // WIP: this is probably unnecessary slow
+    #[cfg(feature = "mock_base")]
+    pub fn get_member_name_connection_info(&self, name: &XorName) -> Option<ConnectionInfo> {
+        self.state
+            .our_members
+            .iter()
+            .find(|(pub_id, _)| pub_id.name() == name)
+            .map(|(_, member_info)| member_info.connection_info.clone())
+    }
+
     /// Returns a set of elders we should be connected to.
     pub fn elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos()
@@ -638,6 +649,19 @@ impl Chain {
     #[cfg(feature = "mock_base")]
     pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
         self.neighbour_elders_p2p().map(P2pNode::public_id)
+    }
+
+    /// Returns the elders for a neighbour section.
+    /// Returns None if the `Prefix` provided wasn't our own section or a neigbour.
+    pub fn get_section_elders(&self, names: &Prefix<XorName>) -> Option<&BTreeSet<P2pNode>> {
+        if self.our_prefix() == names {
+            Some(self.our_info().p2p_members())
+        } else {
+            self.state
+                .neighbour_infos
+                .get(names)
+                .map(|elders_info| elders_info.p2p_members())
+        }
     }
 
     /// Returns `true` if we know the section with `elders_info`.

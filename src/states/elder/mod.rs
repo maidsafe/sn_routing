@@ -719,11 +719,16 @@ impl Elder {
                 p2p_nodes,
             }
         } else {
-            let names = self.chain.closest_section(name).1;
-            let conn_infos = self
-                .peer_map
-                .get_connection_infos(&names)
-                .cloned()
+            let closest_section = self.chain.closest_section(name).0;
+            let conn_infos: Vec<_> = self
+                .chain
+                .get_section_elders(&closest_section)
+                .iter()
+                .flat_map(|p2p_nodes| {
+                    p2p_nodes
+                        .iter()
+                        .map(|p2p_node| p2p_node.connection_info().clone())
+                })
                 .collect();
             debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
