@@ -1032,18 +1032,6 @@ impl Elder {
         ))
     }
 
-    // TODO: Once `Chain::targets` uses the ideal state instead of the actually connected peers,
-    // this should be removed.
-    /// Returns all peers we are currently connected to, according to the peer manager, including
-    /// ourselves.
-    fn connected_peers(&self) -> Vec<&XorName> {
-        self.peer_map
-            .connected_ids()
-            .map(|pub_id| pub_id.name())
-            .chain(iter::once(self.name()))
-            .collect()
-    }
-
     // Check whether we are connected to any elders. If this node loses all elder connections,
     // it must be restarted.
     fn check_elder_connections(&mut self, outbox: &mut dyn EventBox) -> bool {
@@ -1123,7 +1111,7 @@ impl Base for Elder {
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        let conn_peers = self.connected_peers();
+        let conn_peers: Vec<_> = self.chain.connected_nodes().map(PublicId::name).collect();
         self.chain.closest_names(&name, count, &conn_peers)
     }
 
