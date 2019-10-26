@@ -661,6 +661,11 @@ impl Chain {
         self.state.our_info().p2p_members().iter()
     }
 
+    /// Returns all our members
+    pub fn our_members_id(&self) -> impl Iterator<Item = &PublicId> {
+        self.state.our_members.keys()
+    }
+
     /// Returns all neighbour elders.
     pub fn neighbour_elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos().flat_map(EldersInfo::p2p_members)
@@ -668,7 +673,6 @@ impl Chain {
 
     /// Returns all neighbour elders.
     // WIP: consider remove
-    #[cfg(feature = "mock_base")]
     pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
         self.neighbour_elders_p2p().map(P2pNode::public_id)
     }
@@ -684,6 +688,11 @@ impl Chain {
                 .get(names)
                 .map(|elders_info| elders_info.p2p_members())
         }
+    }
+
+    /// Return our own members and neighbouring elders
+    pub fn connected_nodes(&self) -> impl Iterator<Item = &PublicId> {
+        self.our_members_id().chain(self.neighbour_elders())
     }
 
     /// Returns `true` if we know the section with `elders_info`.
