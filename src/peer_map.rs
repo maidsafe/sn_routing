@@ -146,6 +146,7 @@ impl PeerMap {
     }
 
     // Get PublicId for XorName
+    #[cfg(feature = "mock_base")]
     pub fn get_id(&self, name: &XorName) -> Option<&PublicId> {
         self.forward
             .get(name)

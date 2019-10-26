@@ -1308,21 +1308,17 @@ impl Base for Elder {
                         self.send_signed_message(&mut msg)?;
                     }
                 }
-            } else if let Some(&pub_id) = self.peer_map.get_id(&target) {
+            } else if let Some(p2p_node) = self.chain.get_p2p_node(&target) {
                 trace!(
                     "{} Sending a signature for message {:?} to {:?}",
                     self,
                     signed_msg.routing_message(),
                     target
                 );
-                // WIP: remove using peer_map (and the unwra
-                if let Some(connection_info) = self.peer_map.get_connection_info(&pub_id) {
-                    let p2p_node = P2pNode::new(pub_id, connection_info.clone());
-                    self.send_direct_message(
-                        &p2p_node,
-                        DirectMessage::MessageSignature(signed_msg.clone()),
-                    );
-                }
+                self.send_direct_message(
+                    &p2p_node,
+                    DirectMessage::MessageSignature(signed_msg.clone()),
+                );
             } else {
                 error!(
                     "{} Failed to resolve signature target {:?} for message {:?}",
