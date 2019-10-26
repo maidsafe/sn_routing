@@ -663,6 +663,28 @@ impl Chain {
             .map(|member_info| member_info.p2p_node.connection_info())
     }
 
+    /// Returns a section member `P2pNode`
+    pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state
+            .our_members
+            .get(name)
+            .map(|member_info| &member_info.p2p_node)
+    }
+
+    /// Returns a neighbour `P2pNode`
+    pub fn get_neighbour_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state
+            .neighbour_infos
+            .iter()
+            .find(|(pfx, _)| pfx.matches(name))
+            .and_then(|(_, elders_info)| elders_info.member_map().get(name))
+    }
+
+    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.get_member_p2p_node(name)
+            .or_else(|| self.get_neighbour_p2p_node(name))
+    }
+
     /// Returns a set of elders we should be connected to.
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos()

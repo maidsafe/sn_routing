@@ -954,18 +954,13 @@ impl Elder {
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
         let single_target = if let Authority::Node(node_name) = dst {
-            // WIP: remove calls to peer_map
-            self.peer_map.get_id(&node_name).and_then(|public_id| {
-                self.peer_map
-                    .get_connection_info(public_id)
-                    .map(|connection_info| P2pNode::new(*public_id, connection_info.clone()))
-            })
+            self.chain.get_p2p_node(&node_name)
         } else {
             None
         };
 
         let (target_p2p_nodes, dg_size) = if let Some(target) = single_target {
-            (vec![target], 1)
+            (vec![target.clone()], 1)
         } else {
             // WIP: neet to get targets without using the peer_map (get_targets uses peer_map
             // internally)
