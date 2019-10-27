@@ -31,6 +31,7 @@ use log::LogLevel;
 pub trait Approved: Base {
     fn parsec_map(&self) -> &ParsecMap;
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
+    fn chain(&self) -> &Chain;
     fn chain_mut(&mut self) -> &mut Chain;
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
@@ -155,11 +156,7 @@ pub trait Approved: Base {
 
                 let p2p_recipients: Vec<_> = recipients
                     .into_iter()
-                    .filter_map(|pub_id| {
-                        self.peer_map()
-                            .get_connection_info(pub_id)
-                            .map(|conn_info| P2pNode::new(*pub_id, conn_info.clone()))
-                    })
+                    .filter_map(|pub_id| self.chain().get_member_p2p_node_by_id(&pub_id))
                     .collect();
 
                 if p2p_recipients.is_empty() {
@@ -172,7 +169,6 @@ pub trait Approved: Base {
                 }
 
                 let rand_index = utils::rand_index(p2p_recipients.len());
-                // WIP: need to figure out who to send to without consulting the peer_map
                 (version, p2p_recipients[rand_index].clone())
             }
         };

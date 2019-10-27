@@ -1394,6 +1394,10 @@ impl Approved for Elder {
         &mut self.parsec_map
     }
 
+    fn chain(&self) -> &Chain {
+        &self.chain
+    }
+
     fn chain_mut(&mut self) -> &mut Chain {
         &mut self.chain
     }

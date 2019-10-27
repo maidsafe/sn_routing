@@ -598,6 +598,14 @@ impl Chain {
             .map(|(_, member_info)| member_info.connection_info.clone())
     }
 
+    /// Returns the `P2pNode` for a member of our section.
+    pub fn get_member_p2p_node_by_id(&self, pub_id: &PublicId) -> Option<P2pNode> {
+        self.state
+            .our_members
+            .get(&pub_id)
+            .map(|member_info| P2pNode::new(*pub_id, member_info.connection_info.clone()))
+    }
+
     /// Returns a section member `P2pNode`
     pub fn get_member_p2p_node(&self, name: &XorName) -> Option<P2pNode> {
         self.state
