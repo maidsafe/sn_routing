@@ -264,12 +264,7 @@ impl ElderUnderTest {
     }
 
     fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
-        let peer_addr = conn_info.peer_addr;
-
         self.handle_connected_to(conn_info.clone());
-        self.machine
-            .elder_state_mut()
-            .identify_connection(pub_id, peer_addr);
         unwrap!(self
             .machine
             .elder_state_mut()

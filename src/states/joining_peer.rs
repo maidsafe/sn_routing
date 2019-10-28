@@ -218,15 +218,15 @@ impl Base for JoiningPeer {
                 self.join_token = self.timer.schedule(JOIN_TIMEOUT);
                 self.send_join_requests();
             } else {
-                for peer_addr in self
-                    .peer_map
-                    .remove_all()
-                    .map(|conn_info| conn_info.peer_addr)
-                {
-                    self.network_service
-                        .service_mut()
-                        .disconnect_from(peer_addr);
-                }
+                //for peer_addr in self
+                //    .peer_map
+                //    .remove_all()
+                //    .map(|conn_info| conn_info.peer_addr)
+                //{
+                //    self.network_service
+                //        .service_mut()
+                //        .disconnect_from(peer_addr);
+                //}
 
                 return Transition::Rebootstrap;
             }

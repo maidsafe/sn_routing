@@ -268,15 +268,12 @@ impl Base for Adult {
         } else if self.add_timer_token == token {
             debug!("{} - Timeout when trying to join a section.", self);
 
-            for peer_addr in self
-                .peer_map
-                .remove_all()
-                .map(|conn_info| conn_info.peer_addr)
-            {
-                self.network_service
-                    .service_mut()
-                    .disconnect_from(peer_addr);
-            }
+            // WIP: disconnect from everything
+            //for peer_addr in ...  {
+            //    self.network_service
+            //        .service_mut()
+            //        .disconnect_from(peer_addr);
+            //}
 
             return Transition::Rebootstrap;
         }

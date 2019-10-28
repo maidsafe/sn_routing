@@ -792,11 +792,11 @@ impl Elder {
             .cloned()
             .collect();
 
-        for conn_info in self.peer_map.remove_all() {
-            self.network_service
-                .service_mut()
-                .disconnect_from(conn_info.peer_addr);
-        }
+        //for conn_info in self.peer_map.remove_all() {
+        //    self.network_service
+        //        .service_mut()
+        //        .disconnect_from(conn_info.peer_addr);
+        //}
 
         let details = SignedRelocateDetails::new(payload, src, dst, security_metadata);
 
@@ -1263,10 +1263,6 @@ impl Elder {
 
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.chain.is_peer_our_elder(pub_id)
-    }
-
-    pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
-        self.peer_map.identify(pub_id, peer_addr)
     }
 
     pub fn send_msg_to_targets(

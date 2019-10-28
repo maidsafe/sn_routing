@@ -137,7 +137,6 @@ impl BootstrappingPeer {
             };
 
             self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
-            self.peer_map_mut().connect(dst);
         }
     }
 
@@ -280,8 +279,6 @@ impl Base for BootstrappingPeer {
     }
 
     fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
-        self.peer_map_mut().connect(conn_info.clone());
-
         if self.bootstrap_connection.is_none() {
             debug!(
                 "{} Received BootstrappedTo event from {}.",

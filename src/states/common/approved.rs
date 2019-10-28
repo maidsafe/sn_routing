@@ -318,7 +318,7 @@ pub trait Approved: Base {
 
     fn handle_connection_request(
         &mut self,
-        their_conn_info: ConnectionInfo,
+        _their_conn_info: ConnectionInfo,
         their_pub_id: PublicId,
         src: Authority<XorName>,
         dst: Authority<XorName>,
@@ -338,8 +338,6 @@ pub trait Approved: Base {
             "{} - Received connection request from {:?}.",
             self, their_pub_id
         );
-
-        self.peer_map_mut().insert(their_pub_id, their_conn_info);
 
         Ok(())
     }

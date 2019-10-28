@@ -227,10 +227,9 @@ pub trait Base: Display {
 
     fn handle_connected_to(
         &mut self,
-        conn_info: ConnectionInfo,
+        _conn_info: ConnectionInfo,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        self.peer_map_mut().connect(conn_info);
         Transition::Stay
     }
 
@@ -277,7 +276,6 @@ pub trait Base: Display {
             Message::Hop(msg) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg) => {
                 let (msg, public_id) = msg.open()?;
-                self.peer_map_mut().identify(public_id, src_addr);
                 // WIP: Maybe we need the peer_map to keep the certificate and store the mapping
                 // SocketAddr -> ConnectionInfo?
                 self.handle_direct_message(
@@ -431,11 +429,11 @@ pub trait Base: Display {
             })
     }
 
-    fn disconnect(&mut self, pub_id: &PublicId) {
-        if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
-            info!("{} - Disconnecting from {}", self, pub_id);
-            self.disconnect_from(conn_info.peer_addr);
-        }
+    fn disconnect(&mut self, _pub_id: &PublicId) {
+        //if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
+        //    info!("{} - Disconnecting from {}", self, pub_id);
+        //    self.disconnect_from(conn_info.peer_addr);
+        //}
     }
 
     fn disconnect_from(&mut self, peer_addr: SocketAddr) {
