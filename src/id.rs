@@ -11,6 +11,7 @@ use crate::{
     parsec,
     utils::{self, RngCompat},
     xor_name::XorName,
+    ConnectionInfo,
 };
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rand_crypto::Rng;
@@ -216,6 +217,63 @@ impl AsRef<XorName> for PublicId {
 
 fn name_from_key(public_key: &signing::PublicKey) -> XorName {
     XorName(public_key.to_bytes())
+}
+
+/// Network p2p node identity.
+/// When a node knows another node as a `P2pNode` it's implicitly connected to it. This is separate
+/// from being connected at the network layer, which currently is handled by quic-p2p.
+#[derive(Hash, PartialEq, Eq, Clone)]
+pub struct P2pNode {
+    public_id: PublicId,
+    connection_info: ConnectionInfo,
+}
+
+#[allow(unused)]
+impl P2pNode {
+    /// Creates a new `P2pNode` given a `PublicId` and a `ConnectionInfo`.
+    pub fn new(public_id: PublicId, connection_info: ConnectionInfo) -> Self {
+        Self {
+            public_id,
+            connection_info,
+        }
+    }
+
+    /// Returns the `PublicId`.
+    pub fn public_id(&self) -> &PublicId {
+        &self.public_id
+    }
+
+    /// Returns the `XorName` of the underlying `PublicId`.
+    pub fn name(&self) -> &XorName {
+        &self.public_id.name()
+    }
+
+    /// Returns the `ConnectionInfo`.
+    pub fn connection_info(&self) -> &ConnectionInfo {
+        &self.connection_info
+    }
+}
+
+impl Debug for P2pNode {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "PublicId(name: {})", self.public_id.name())
+    }
+}
+
+impl Serialize for P2pNode {
+    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
+        (&self.public_id, &self.connection_info).serialize(serialiser)
+    }
+}
+
+impl<'de> Deserialize<'de> for P2pNode {
+    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
+        let (public_id, connection_info) = Deserialize::deserialize(deserialiser)?;
+        Ok(P2pNode {
+            public_id,
+            connection_info,
+        })
+    }
 }
 
 #[cfg(test)]
