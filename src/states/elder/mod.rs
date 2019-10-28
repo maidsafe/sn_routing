@@ -352,6 +352,20 @@ impl Elder {
             let dst = Authority::Node(*pub_id.name());
             let _ = self.send_connection_request(pub_id, src, dst, outbox);
         }
+
+        let to_connect: Vec<_> = self
+            .chain
+            .our_elders()
+            .filter(|p2p_node| !self.peer_map.has(p2p_node.public_id()))
+            .cloned()
+            .collect();
+
+        for p2p_node in to_connect.into_iter() {
+            let pub_id = p2p_node.public_id();
+            self.peer_map
+                .insert(*pub_id, p2p_node.connection_info().clone());
+            self.send_direct_message(pub_id, DirectMessage::ConnectionResponse);
+        }
     }
 
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
@@ -592,26 +606,27 @@ impl Elder {
     // Send NodeApproval to the current candidate which promotes them to Adult and allows them to
     // passively participate in parsec consensus (that is, they can receive gossip and poll
     // consensused blocks out of parsec, but they can't vote yet)
-    fn handle_candidate_approval(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
+    fn handle_candidate_approval(&mut self, p2p_node: P2pNode, _outbox: &mut dyn EventBox) {
         info!(
             "{} Our section with {:?} has approved candidate {}.",
             self,
             self.our_prefix(),
-            pub_id
+            p2p_node
         );
 
+        let pub_id = *p2p_node.public_id();
         let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
         if !self.peer_map.has(&pub_id) {
             trace!(
-                "{} - Not yet connected to {} - sending connection request.",
+                "{} - Not yet connected to {} - use p2p_node.",
                 self,
-                pub_id
+                p2p_node
             );
-
-            let src = Authority::Node(*self.name());
-            let _ = self.send_connection_request(pub_id, src, dst, outbox);
+            self.peer_map
+                .insert(pub_id, p2p_node.connection_info().clone());
+            self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
         };
 
         let trimmed_info = GenesisPfxInfo {
@@ -1030,6 +1045,7 @@ impl Elder {
         if self
             .peer_map
             .connected_ids()
+            .filter(|id| self.chain().our_id() != *id)
             .any(|id| self.chain.is_peer_our_elder(id))
         {
             true
@@ -1442,7 +1458,7 @@ impl Approved for Elder {
         info!("{} - handle Online: {:?}.", self, payload);
 
         self.chain.add_member(payload.p2p_node.clone(), payload.age);
-        self.handle_candidate_approval(*payload.p2p_node.public_id(), outbox);
+        self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 

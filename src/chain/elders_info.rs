@@ -87,7 +87,7 @@ impl EldersInfo {
     pub fn members(&self) -> BTreeSet<PublicId> {
         self.members
             .iter()
-            .map(|p2p_node| p2p_node.public_id().clone())
+            .map(|p2p_node| *p2p_node.public_id())
             .collect()
     }
 

@@ -431,14 +431,6 @@ impl Approved for Adult {
         let _ = self.chain.add_elder(pub_id)?;
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
 
-        // As Adult, we only connect to the elders in our section.
-        self.send_connection_request(
-            pub_id,
-            Authority::Node(*self.name()),
-            Authority::Node(*pub_id.name()),
-            outbox,
-        )?;
-
         // If the elder being added is us, start sending parsec gossips.
         if pub_id == *self.id() {
             self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
