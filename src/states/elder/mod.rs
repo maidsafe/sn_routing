@@ -103,17 +103,19 @@ pub struct Elder {
 
 impl Elder {
     pub fn first(
-        network_service: NetworkService,
+        mut network_service: NetworkService,
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
+        let connection_info = network_service.our_connection_info()?;
+        let p2p_node = P2pNode::new(public_id, connection_info);
         let mut first_ages = BTreeMap::new();
         let _ = first_ages.insert(public_id, MIN_AGE_COUNTER);
         let gen_pfx_info = GenesisPfxInfo {
-            first_info: create_first_elders_info(public_id)?,
+            first_info: create_first_elders_info(p2p_node)?,
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
@@ -688,16 +690,7 @@ impl Elder {
 
     fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
-            let mut p2p_nodes: Vec<_> = self
-                .chain
-                .our_elders()
-                .filter_map(|pub_id| {
-                    self.peer_map
-                        .get_connection_info(pub_id)
-                        .map(|conn_info| P2pNode::new(*pub_id, conn_info.clone()))
-                })
-                .collect();
-
+            let mut p2p_nodes: Vec<_> = self.chain.our_elders().cloned().collect();
             if let Ok(our_info) = self.our_connection_info() {
                 p2p_nodes.push(P2pNode::new(*self.id(), our_info));
             }
@@ -726,7 +719,11 @@ impl Elder {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(&mut self, p2p_node: P2pNode, relocate_payload: Option<RelocatePayload>) {
+    fn handle_join_request(
+        &mut self,
+        p2p_node: P2pNode,
+        relocate_payload: Option<RelocatePayload>,
+    ) {
         debug!("{} - Received JoinRequest from {}", self, p2p_node);
 
         let pub_id = *p2p_node.public_id();
@@ -967,7 +964,7 @@ impl Elder {
             Authority::Section(_) => self
                 .chain
                 .our_elders()
-                .map(PublicId::name)
+                .map(|p2p_node| p2p_node.name())
                 .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
             // FIXME: This does not include recently accepted peers which would affect quorum
@@ -1444,7 +1441,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - handle Online: {:?}.", self, payload);
 
-        self.chain.add_member(*payload.p2p_node.public_id(), payload.age);
+        self.chain.add_member(payload.p2p_node.clone(), payload.age);
         self.handle_candidate_approval(*payload.p2p_node.public_id(), outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
@@ -1568,17 +1565,17 @@ impl Display for Elder {
 }
 
 // Create `EldersInfo` for the first node.
-fn create_first_elders_info(public_id: PublicId) -> Result<EldersInfo, RoutingError> {
+fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingError> {
+    let name = *p2p_node.name();
     EldersInfo::new(
-        iter::once(public_id).collect(),
+        iter::once(p2p_node).collect(),
         Prefix::default(),
         iter::empty(),
     )
     .map_err(|err| {
         error!(
             "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
-            public_id.name(),
-            err
+            name, err
         );
         err
     })

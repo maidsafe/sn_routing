@@ -302,10 +302,13 @@ mod tests {
     use super::*;
     use crate::{
         chain::{EldersInfo, MIN_AGE_COUNTER},
+        id::P2pNode,
         routing_table::Prefix,
         xor_name::XorName,
+        ConnectionInfo,
     };
     use serde::Serialize;
+    use std::net::SocketAddr;
     use unwrap::unwrap;
 
     const DEFAULT_MIN_SECTION_SIZE: usize = 4;
@@ -327,7 +330,12 @@ mod tests {
     }
 
     fn create_gen_pfx_info(full_ids: Vec<FullId>, version: u64) -> GenesisPfxInfo {
-        let members = full_ids.iter().map(|id| *id.public_id()).collect();
+        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let connection_info = ConnectionInfo::from(socket_addr);
+        let members = full_ids
+            .iter()
+            .map(|id| P2pNode::new(*id.public_id(), connection_info.clone()))
+            .collect();
         let elders_info = unwrap!(EldersInfo::new_for_test(
             members,
             Prefix::<XorName>::default(),

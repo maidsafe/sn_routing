@@ -466,7 +466,7 @@ impl Approved for Adult {
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Online: {:?}.", self, payload);
-        self.chain.add_member(*payload.p2p_node.public_id(), payload.age);
+        self.chain.add_member(payload.p2p_node, payload.age);
         Ok(())
     }
 

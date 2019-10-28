@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use crate::ConnectionInfo;
+
 /// The type for counting the churn events experienced by a node
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
 pub struct AgeCounter(u32);
@@ -42,15 +44,17 @@ pub const MIN_AGE: u8 = 4;
 const MAX_INFANT_AGE: u32 = MIN_AGE as u32;
 
 /// Information about a member of our section.
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct MemberInfo {
     pub age_counter: AgeCounter,
     pub state: MemberState,
+    // WIP: is Option due to the default constructor
+    pub connection_info: Option<ConnectionInfo>,
 }
 
 impl MemberInfo {
     #[cfg(feature = "mock_base")]
-    pub fn age(self) -> u8 {
+    pub fn age(&self) -> u8 {
         self.age_counter.age()
     }
 
@@ -62,7 +66,7 @@ impl MemberInfo {
         self.age_counter.increment();
     }
 
-    pub fn is_mature(self) -> bool {
+    pub fn is_mature(&self) -> bool {
         self.age_counter > AgeCounter(2u32.pow(MAX_INFANT_AGE))
     }
 }
@@ -72,6 +76,7 @@ impl Default for MemberInfo {
         Self {
             age_counter: MIN_AGE_COUNTER,
             state: MemberState::Joined,
+            connection_info: None,
         }
     }
 }

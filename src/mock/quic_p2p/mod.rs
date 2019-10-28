@@ -305,7 +305,9 @@ impl Peer {
 /// Information about a peer of type node.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct NodeInfo {
+    /// WIP
     pub peer_addr: SocketAddr,
+    /// WIP
     pub peer_cert_der: Vec<u8>,
 }
 

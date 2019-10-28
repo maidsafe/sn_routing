@@ -67,11 +67,16 @@ impl ElderUnderTest {
     }
 
     fn with_section_size(sec_size: usize) -> Self {
+        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let connection_info = ConnectionInfo::from(socket_addr);
         let full_ids = (0..sec_size).map(|_| FullId::new()).collect_vec();
 
         let prefix = Prefix::<XorName>::default();
         let elders_info = unwrap!(EldersInfo::new(
-            full_ids.iter().map(|id| *id.public_id()).collect(),
+            full_ids
+                .iter()
+                .map(|id| P2pNode::new(*id.public_id(), connection_info.clone()))
+                .collect(),
             prefix,
             iter::empty()
         ));
@@ -196,9 +201,9 @@ impl ElderUnderTest {
     fn new_elders_info_with_candidate(&self) -> EldersInfo {
         unwrap!(EldersInfo::new(
             self.elders_info
-                .members()
+                .p2p_members()
                 .iter()
-                .chain(iter::once(self.candidate.public_id()))
+                .chain(iter::once(&self.candidate))
                 .cloned()
                 .collect(),
             *self.elders_info.prefix(),
@@ -209,7 +214,7 @@ impl ElderUnderTest {
     fn new_elders_info_without_candidate(&self) -> EldersInfo {
         let old_info = self.new_elders_info_with_candidate();
         unwrap!(EldersInfo::new(
-            self.elders_info.members().clone(),
+            self.elders_info.p2p_members().clone(),
             *old_info.prefix(),
             Some(&old_info)
         ))
