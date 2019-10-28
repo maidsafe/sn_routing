@@ -14,7 +14,7 @@ use super::{
 use crate::{
     chain::{GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     messages::{
         DirectMessage, HopMessage, MessageContent, RelocatePayload, RoutingMessage,
         SignedRoutingMessage,
@@ -26,7 +26,7 @@ use crate::{
     state_machine::{State, Transition},
     timer::Timer,
     xor_name::XorName,
-    ConnectionInfo, NetworkService,
+    NetworkService,
 };
 use std::{
     fmt::{self, Display, Formatter},
@@ -48,7 +48,7 @@ pub struct JoiningPeer {
     timer: Timer,
     join_token: u64,
     join_attempts: u8,
-    conn_infos: Vec<ConnectionInfo>,
+    p2p_nodes: Vec<P2pNode>,
     relocate_payload: Option<RelocatePayload>,
     network_cfg: NetworkParams,
 }
@@ -60,7 +60,7 @@ impl JoiningPeer {
         network_cfg: NetworkParams,
         timer: Timer,
         peer_map: PeerMap,
-        conn_infos: Vec<ConnectionInfo>,
+        p2p_nodes: Vec<P2pNode>,
         relocate_payload: Option<RelocatePayload>,
     ) -> Self {
         let join_token = timer.schedule(JOIN_TIMEOUT);
@@ -74,7 +74,7 @@ impl JoiningPeer {
             peer_map,
             join_token,
             join_attempts: 0,
-            conn_infos,
+            p2p_nodes,
             relocate_payload,
             network_cfg,
         };
@@ -112,7 +112,11 @@ impl JoiningPeer {
     }
 
     fn send_join_requests(&mut self) {
-        let conn_infos = self.conn_infos.clone();
+        let conn_infos: Vec<_> = self
+            .p2p_nodes
+            .iter()
+            .map(|p2p_node| p2p_node.connection_info().clone())
+            .collect();
         for dst in conn_infos {
             info!("{} - Sending JoinRequest to {:?}", self, dst);
             self.send_direct_message(
