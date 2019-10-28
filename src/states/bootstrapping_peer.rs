@@ -343,7 +343,11 @@ impl Base for BootstrappingPeer {
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, conn_infos }) => {
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, p2p_nodes }) => {
+                let conn_infos: Vec<_> = p2p_nodes
+                    .into_iter()
+                    .map(|n| n.connection_info().clone())
+                    .collect();
                 info!(
                     "{} - Joining a section {:?}: {:?}",
                     self, prefix, conn_infos

@@ -25,7 +25,7 @@ use crate::{
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RelocateDetails,
         RelocatePayload, RoutingMessage, SecurityMetadata, SignedRelocateDetails,
@@ -688,19 +688,23 @@ impl Elder {
 
     fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
-            let mut conn_infos: Vec<_> = self
-                .peer_map
-                .get_connection_infos(self.chain.our_elders())
-                .cloned()
+            let mut p2p_nodes: Vec<_> = self
+                .chain
+                .our_elders()
+                .filter_map(|pub_id| {
+                    self.peer_map
+                        .get_connection_info(pub_id)
+                        .map(|conn_info| P2pNode::new(*pub_id, conn_info.clone()))
+                })
                 .collect();
 
             if let Ok(our_info) = self.our_connection_info() {
-                conn_infos.push(our_info);
+                p2p_nodes.push(P2pNode::new(*self.id(), our_info));
             }
             debug!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
             BootstrapResponse::Join {
                 prefix: *self.chain.our_prefix(),
-                conn_infos,
+                p2p_nodes,
             }
         } else {
             let names = self.chain.closest_section(name).1;
