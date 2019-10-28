@@ -48,7 +48,11 @@ pub trait Base: Display {
         LogIdent::new(self)
     }
 
-    fn handle_peer_lost(&mut self, _pub_id: PublicId, _outbox: &mut dyn EventBox) -> Transition {
+    fn handle_peer_lost(
+        &mut self,
+        _peer_addr: SocketAddr,
+        _outbox: &mut dyn EventBox,
+    ) -> Transition {
         Transition::Stay
     }
 
@@ -236,19 +240,11 @@ pub trait Base: Display {
         outbox: &mut dyn EventBox,
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, peer_addr);
-
         let mut transition = Transition::Stay;
-
-        let pub_ids = self.peer_map_mut().disconnect(peer_addr);
-        for pub_id in pub_ids {
-            trace!("{} - ConnectionFailure from {}", self, pub_id);
-            let other_transition = self.handle_peer_lost(pub_id, outbox);
-
-            if let Transition::Stay = transition {
-                transition = other_transition
-            }
+        let other_transition = self.handle_peer_lost(peer_addr, outbox);
+        if let Transition::Stay = transition {
+            transition = other_transition
         }
-
         transition
     }
 

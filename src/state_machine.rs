@@ -219,14 +219,6 @@ impl State {
             Terminated => Err(RoutingError::InvalidStateForOperation)
         )
     }
-
-    pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
-        state_dispatch!(
-            self,
-            state => state.peer_map().has(name),
-            Terminated => false
-        )
-    }
 }
 
 /// Enum returned from many message handlers

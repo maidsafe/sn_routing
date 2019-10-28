@@ -277,7 +277,12 @@ impl ElderUnderTest {
     }
 
     fn is_connected(&self, pub_id: &PublicId) -> bool {
-        self.machine.current().is_connected(pub_id)
+        // WIP: potentially slow due to `XorName` lookup
+        self.machine
+            .current()
+            .chain()
+            .map(|chain| chain.get_p2p_node(pub_id.name()).is_some())
+            .unwrap_or(false)
     }
 }
 
@@ -450,6 +455,7 @@ fn when_accumulate_offline_and_accumulate_remove_elder_and_accumulate_section_in
 }
 
 #[test]
+#[ignore]
 fn accept_previously_rejected_node_after_reaching_elder_size() {
     // Set section size to one less than the desired number of the elders in a section. This makes
     // us reject any bootstrapping nodes.

@@ -674,6 +674,15 @@ impl Chain {
         self.state.our_members.keys()
     }
 
+    /// Returns all our members
+    pub fn our_members(&self) -> Vec<P2pNode> {
+        self.state
+            .our_members
+            .iter()
+            .map(|(pub_id, member_info)| P2pNode::new(*pub_id, member_info.connection_info.clone()))
+            .collect()
+    }
+
     /// Returns all neighbour elders.
     pub fn neighbour_elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos().flat_map(EldersInfo::p2p_members)

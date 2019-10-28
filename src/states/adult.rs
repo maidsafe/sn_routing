@@ -35,7 +35,10 @@ use crate::{
     NetworkService,
 };
 use itertools::Itertools;
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    net::SocketAddr,
+};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -316,8 +319,8 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, _: &mut dyn EventBox) -> Transition {
-        debug!("{} - Lost peer {}", self, pub_id);
+    fn handle_peer_lost(&mut self, peer_addr: SocketAddr, _: &mut dyn EventBox) -> Transition {
+        debug!("{} - Lost peer {}", self, peer_addr);
         Transition::Stay
     }
 

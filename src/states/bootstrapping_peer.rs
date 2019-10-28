@@ -323,7 +323,6 @@ impl Base for BootstrappingPeer {
         _: &mut dyn EventBox,
     ) -> Transition {
         let _ = self.nodes_to_await.remove(&peer_addr);
-        let _ = self.peer_map_mut().disconnect(peer_addr);
 
         if let Some((conn_info, _)) = self.bootstrap_connection.as_ref() {
             if conn_info.peer_addr == peer_addr {

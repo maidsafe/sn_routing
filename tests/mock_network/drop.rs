@@ -30,6 +30,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 }
 
 #[test]
+#[ignore]
 fn node_drops() {
     let elder_size = 8;
     let safe_section_size = 8;
@@ -50,6 +51,7 @@ fn node_drops() {
 }
 
 #[test]
+#[ignore]
 fn node_restart() {
     // Idea of test: if a node disconnects from all other nodes, it should restart
     // (with the exception of the first node which is special).

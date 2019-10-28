@@ -426,7 +426,9 @@ impl Node {
 
     /// Indicates if this node has the connection info to the given peer.
     pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
-        self.machine.current().is_connected(name)
+        self.chain()
+            .and_then(|chain| chain.get_p2p_node(name.as_ref()))
+            .is_some()
     }
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given
