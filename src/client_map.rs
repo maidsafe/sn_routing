@@ -10,11 +10,23 @@ use fxhash::FxHashSet as HashSet;
 use std::net::SocketAddr;
 
 #[derive(Default)]
-pub struct PeerMap {
+pub struct ClientMap {
     clients: HashSet<SocketAddr>,
 }
 
-impl PeerMap {
+// TODO (quic-p2p): correctly handle these pathological scenarios:
+//
+// 1. Non-unique public id:
+//      1. There is existing connection with pub id P and conn info C
+//      2. We get another connection with conn info D
+//      3. We receive a DirectMessage over connection D but with pub id P
+//
+// 2. Non-unique connection info:
+//      1. There is existing connection with pub id P and conn info C
+//      2. We receive a DirectMessage over connection C but with pub id R
+//
+
+impl ClientMap {
     pub fn new() -> Self {
         Self::default()
     }

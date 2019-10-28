@@ -8,10 +8,10 @@
 
 use crate::{
     chain::{Chain, GenesisPfxInfo},
+    client_map::ClientMap,
     id::FullId,
     messages::SignedRoutingMessage,
     parsec::ParsecMap,
-    peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
     NetworkEvent, NetworkService,
@@ -36,6 +36,6 @@ pub struct PausedState {
     pub(super) network_service: NetworkService,
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,
     pub(super) parsec_map: ParsecMap,
-    pub(super) peer_map: PeerMap,
+    pub(super) client_map: ClientMap,
     pub(super) sig_accumulator: SignatureAccumulator,
 }

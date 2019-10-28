@@ -292,7 +292,7 @@ fn new_elder_state(
 
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
     let chain = Chain::new(Default::default(), public_id, gen_pfx_info.clone());
-    let peer_map = PeerMap::new();
+    let client_map = ClientMap::new();
 
     let details = ElderDetails {
         chain,
@@ -302,7 +302,7 @@ fn new_elder_state(
         gen_pfx_info: gen_pfx_info.clone(),
         msg_queue: Default::default(),
         parsec_map,
-        peer_map,
+        client_map,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,
     };

@@ -22,6 +22,7 @@ use crate::{
         PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
         MIN_AGE_COUNTER,
     },
+    client_map::ClientMap,
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
@@ -34,7 +35,6 @@ use crate::{
     outbox::EventBox,
     parsec::{self, ParsecMap},
     pause::PausedState,
-    peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
@@ -69,7 +69,7 @@ pub struct ElderDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_queue: Vec<SignedRoutingMessage>,
     pub parsec_map: ParsecMap,
-    pub peer_map: PeerMap,
+    pub client_map: ClientMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
 }
@@ -81,7 +81,7 @@ pub struct Elder {
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<SignedRoutingMessage>,
-    peer_map: PeerMap,
+    client_map: ClientMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
@@ -121,7 +121,7 @@ impl Elder {
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(network_cfg, public_id, gen_pfx_info.clone());
-        let peer_map = PeerMap::new();
+        let client_map = ClientMap::new();
 
         let details = ElderDetails {
             chain,
@@ -131,7 +131,7 @@ impl Elder {
             gen_pfx_info,
             msg_queue: Vec::new(),
             parsec_map,
-            peer_map,
+            client_map,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
         };
@@ -168,7 +168,7 @@ impl Elder {
             network_service: self.network_service,
             network_rx: None,
             parsec_map: self.parsec_map,
-            peer_map: self.peer_map,
+            client_map: self.client_map,
             sig_accumulator: self.sig_accumulator,
         })
     }
@@ -183,7 +183,7 @@ impl Elder {
                 gen_pfx_info: state.gen_pfx_info,
                 msg_queue: state.msg_queue,
                 parsec_map: state.parsec_map,
-                peer_map: state.peer_map,
+                client_map: state.client_map,
                 routing_msg_filter: state.msg_filter,
                 timer,
             },
@@ -221,7 +221,7 @@ impl Elder {
             full_id: details.full_id.clone(),
             is_first_node,
             msg_queue: details.msg_queue.into_iter().collect(),
-            peer_map: details.peer_map,
+            client_map: details.client_map,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
             tick_timer_token,
@@ -1036,12 +1036,12 @@ impl Base for Elder {
         self.chain.closest_names(&name, count, &conn_peers)
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+    fn client_map(&self) -> &ClientMap {
+        &self.client_map
     }
 
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+    fn client_map_mut(&mut self) -> &mut ClientMap {
+        &mut self.client_map
     }
 
     fn timer(&mut self) -> &mut Timer {

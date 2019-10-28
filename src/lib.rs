@@ -112,6 +112,7 @@ mod macros;
 
 mod action;
 mod chain;
+mod client_map;
 #[cfg(not(feature = "mock_crypto"))]
 mod crypto;
 mod error;
@@ -124,7 +125,6 @@ mod network_service;
 mod node;
 mod outbox;
 mod pause;
-mod peer_map;
 mod routing_message_filter;
 mod routing_table;
 mod signature_accumulator;

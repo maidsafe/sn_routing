@@ -9,6 +9,7 @@
 use super::common::Base;
 use crate::{
     chain::NetworkParams,
+    client_map::ClientMap,
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode},
@@ -17,7 +18,6 @@ use crate::{
         SignedRelocateDetails,
     },
     outbox::EventBox,
-    peer_map::PeerMap,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     states::JoiningPeer,
@@ -42,7 +42,7 @@ pub struct BootstrappingPeer {
     bootstrap_connection: Option<(ConnectionInfo, u64)>,
     network_service: NetworkService,
     full_id: FullId,
-    peer_map: PeerMap,
+    client_map: ClientMap,
     timer: Timer,
     relocate_details: Option<SignedRelocateDetails>,
     network_cfg: NetworkParams,
@@ -62,7 +62,7 @@ impl BootstrappingPeer {
             timer,
             bootstrap_connection: None,
             nodes_to_await: Default::default(),
-            peer_map: PeerMap::new(),
+            client_map: ClientMap::new(),
             relocate_details: None,
             network_cfg,
         }
@@ -83,7 +83,7 @@ impl BootstrappingPeer {
             timer,
             bootstrap_connection: None,
             nodes_to_await: conn_infos.iter().map(|info| info.peer_addr).collect(),
-            peer_map: PeerMap::new(),
+            client_map: ClientMap::new(),
             relocate_details: Some(relocate_details),
             network_cfg,
         };
@@ -106,7 +106,7 @@ impl BootstrappingPeer {
             self.full_id,
             self.network_cfg,
             self.timer,
-            self.peer_map,
+            self.client_map,
             p2p_nodes,
             relocate_payload,
         )))
@@ -238,12 +238,12 @@ impl Base for BootstrappingPeer {
         false
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+    fn client_map(&self) -> &ClientMap {
+        &self.client_map
     }
 
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+    fn client_map_mut(&mut self) -> &mut ClientMap {
+        &mut self.client_map
     }
 
     fn timer(&mut self) -> &mut Timer {

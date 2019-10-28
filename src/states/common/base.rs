@@ -8,6 +8,7 @@
 
 use crate::{
     action::Action,
+    client_map::ClientMap,
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode, PublicId},
     messages::{
@@ -15,7 +16,6 @@ use crate::{
         SignedRoutingMessage,
     },
     outbox::EventBox,
-    peer_map::PeerMap,
     quic_p2p::{Peer, Token},
     routing_table::Authority,
     state_machine::Transition,
@@ -39,8 +39,8 @@ pub trait Base: Display {
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
     fn in_authority(&self, auth: &Authority<XorName>) -> bool;
-    fn peer_map(&self) -> &PeerMap;
-    fn peer_map_mut(&mut self) -> &mut PeerMap;
+    fn client_map(&self) -> &ClientMap;
+    fn client_map_mut(&mut self) -> &mut ClientMap;
     fn timer(&mut self) -> &mut Timer;
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
 
@@ -93,7 +93,7 @@ pub trait Base: Display {
                 peer_addr,
                 result_tx,
             } => {
-                self.peer_map_mut().remove_client(&peer_addr);
+                self.client_map_mut().remove_client(&peer_addr);
                 self.disconnect_from(peer_addr);
                 let _ = result_tx.send(Ok(()));
             }
@@ -148,13 +148,13 @@ pub trait Base: Display {
             ConnectedTo {
                 peer: Peer::Client { peer_addr },
             } => {
-                self.peer_map_mut().insert_client(peer_addr);
+                self.client_map_mut().insert_client(peer_addr);
                 let client_event = ClientEvent::ConnectedToClient { peer_addr };
                 outbox.send_event(From::from(client_event));
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
-                if self.peer_map().is_known_client(&peer_addr) {
+                if self.client_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::ConnectionFailureToClient { peer_addr };
                     outbox.send_event(client_event.into());
                     Transition::Stay
@@ -163,7 +163,7 @@ pub trait Base: Display {
                 }
             }
             NewMessage { peer_addr, msg } => {
-                if self.peer_map().is_known_client(&peer_addr) {
+                if self.client_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::NewMessageFromClient { peer_addr, msg };
                     outbox.send_event(client_event.into());
                     Transition::Stay
@@ -176,7 +176,7 @@ pub trait Base: Display {
                 msg,
                 token,
             } => {
-                if self.peer_map().is_known_client(&peer_addr) {
+                if self.client_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::UnsentUserMsgToClient {
                         peer_addr,
                         msg,
@@ -193,7 +193,7 @@ pub trait Base: Display {
                 msg,
                 token,
             } => {
-                if self.peer_map().is_known_client(&peer_addr) {
+                if self.client_map().is_known_client(&peer_addr) {
                     let client_event = ClientEvent::SentUserMsgToClient {
                         peer_addr,
                         msg,

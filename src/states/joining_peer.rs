@@ -13,6 +13,7 @@ use super::{
 };
 use crate::{
     chain::{GenesisPfxInfo, NetworkParams},
+    client_map::ClientMap,
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode},
     messages::{
@@ -20,7 +21,6 @@ use crate::{
         SignedRoutingMessage,
     },
     outbox::EventBox,
-    peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
@@ -44,7 +44,7 @@ pub struct JoiningPeer {
     routing_msg_filter: RoutingMessageFilter,
     msg_backlog: Vec<SignedRoutingMessage>,
     full_id: FullId,
-    peer_map: PeerMap,
+    client_map: ClientMap,
     timer: Timer,
     join_token: u64,
     join_attempts: u8,
@@ -59,7 +59,7 @@ impl JoiningPeer {
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
-        peer_map: PeerMap,
+        client_map: ClientMap,
         p2p_nodes: Vec<P2pNode>,
         relocate_payload: Option<RelocatePayload>,
     ) -> Self {
@@ -71,7 +71,7 @@ impl JoiningPeer {
             msg_backlog: vec![],
             full_id,
             timer: timer,
-            peer_map,
+            client_map,
             join_token,
             join_attempts: 0,
             p2p_nodes,
@@ -94,7 +94,7 @@ impl JoiningPeer {
             full_id: self.full_id,
             gen_pfx_info,
             msg_backlog: self.msg_backlog,
-            peer_map: self.peer_map,
+            client_map: self.client_map,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
             network_cfg: self.network_cfg,
@@ -182,12 +182,12 @@ impl Base for JoiningPeer {
         dst.is_single() && dst.name() == *self.full_id.public_id().name()
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+    fn client_map(&self) -> &ClientMap {
+        &self.client_map
     }
 
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+    fn client_map_mut(&mut self) -> &mut ClientMap {
+        &mut self.client_map
     }
 
     fn timer(&mut self) -> &mut Timer {

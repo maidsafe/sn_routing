@@ -16,6 +16,7 @@ use crate::{
         Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
+    client_map::ClientMap,
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, P2pNode, PublicId},
@@ -25,7 +26,6 @@ use crate::{
     },
     outbox::EventBox,
     parsec::ParsecMap,
-    peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
@@ -51,7 +51,7 @@ pub struct AdultDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_backlog: Vec<SignedRoutingMessage>,
-    pub peer_map: PeerMap,
+    pub client_map: ClientMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
@@ -66,7 +66,7 @@ pub struct Adult {
     /// Routing messages addressed to us that we cannot handle until we are established.
     msg_backlog: Vec<SignedRoutingMessage>,
     parsec_map: ParsecMap,
-    peer_map: PeerMap,
+    client_map: ClientMap,
     add_timer_token: u64,
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
@@ -94,7 +94,7 @@ impl Adult {
             gen_pfx_info: details.gen_pfx_info,
             msg_backlog: details.msg_backlog,
             parsec_map,
-            peer_map: details.peer_map,
+            client_map: details.client_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             parsec_timer_token,
@@ -144,7 +144,7 @@ impl Adult {
             gen_pfx_info: self.gen_pfx_info,
             msg_queue: self.msg_backlog.into_iter().collect(),
             parsec_map: self.parsec_map,
-            peer_map: self.peer_map,
+            client_map: self.client_map,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -244,12 +244,12 @@ impl Base for Adult {
         self.chain.in_authority(auth)
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+    fn client_map(&self) -> &ClientMap {
+        &self.client_map
     }
 
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+    fn client_map_mut(&mut self) -> &mut ClientMap {
+        &mut self.client_map
     }
 
     fn timer(&mut self) -> &mut Timer {
