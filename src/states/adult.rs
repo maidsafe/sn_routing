@@ -18,7 +18,7 @@ use crate::{
     },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, RelocateDetails, RoutingMessage,
         SignedRoutingMessage,
@@ -325,23 +325,23 @@ impl Base for Adult {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        pub_id: PublicId,
+        p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         use crate::messages::DirectMessage::*;
         match msg {
             ParsecRequest(version, par_request) => {
-                self.handle_parsec_request(version, par_request, pub_id, outbox)
+                self.handle_parsec_request(version, par_request, *p2p_node.public_id(), outbox)
             }
             ParsecResponse(version, par_response) => {
-                self.handle_parsec_response(version, par_response, pub_id, outbox)
+                self.handle_parsec_response(version, par_response, *p2p_node.public_id(), outbox)
             }
             BootstrapRequest(name) => {
-                self.handle_bootstrap_request(pub_id, name);
+                self.handle_bootstrap_request(*p2p_node.public_id(), name);
                 Ok(Transition::Stay)
             }
             ConnectionResponse => {
-                debug!("{} - Received connection response from {}", self, pub_id);
+                debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
             _ => {
@@ -466,7 +466,7 @@ impl Approved for Adult {
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Online: {:?}.", self, payload);
-        self.chain.add_member(payload.pub_id, payload.age);
+        self.chain.add_member(*payload.p2p_node.public_id(), payload.age);
         Ok(())
     }
 

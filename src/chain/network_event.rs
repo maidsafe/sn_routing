@@ -9,7 +9,7 @@
 use super::{EldersInfo, Proof, SectionKeyInfo};
 use crate::{
     crypto::Digest256,
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     messages::RelocateDetails,
     parsec,
     routing_table::Prefix,
@@ -55,7 +55,7 @@ impl SectionInfoSigPayload {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct OnlinePayload {
-    pub pub_id: PublicId,
+    pub p2p_node: P2pNode,
     pub age: u8,
 }
 

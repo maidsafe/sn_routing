@@ -17,6 +17,7 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rand_crypto::Rng;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
+use std::cmp::Ordering;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::{ops::RangeInclusive, rc::Rc};
 
@@ -260,6 +261,12 @@ impl Debug for P2pNode {
     }
 }
 
+impl Display for P2pNode {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.public_id)
+    }
+}
+
 impl Serialize for P2pNode {
     fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
         (&self.public_id, &self.connection_info).serialize(serialiser)
@@ -273,6 +280,18 @@ impl<'de> Deserialize<'de> for P2pNode {
             public_id,
             connection_info,
         })
+    }
+}
+
+impl PartialOrd for P2pNode {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for P2pNode {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.public_id.cmp(&other.public_id)
     }
 }
 

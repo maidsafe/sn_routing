@@ -14,7 +14,7 @@ use super::{
 use crate::{
     chain::{GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
-    id::{FullId, P2pNode, PublicId},
+    id::{FullId, P2pNode},
     messages::{
         DirectMessage, HopMessage, MessageContent, RelocatePayload, RoutingMessage,
         SignedRoutingMessage,
@@ -238,7 +238,7 @@ impl Base for JoiningPeer {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        _pub_id: PublicId,
+        _p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         debug!("{} Unhandled direct message: {:?}", self, msg);

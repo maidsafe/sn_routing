@@ -11,7 +11,7 @@ use crate::{
     chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event::Event,
-    id::{FullId, P2pNode, PublicId},
+    id::{FullId, P2pNode},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, RelocatePayload, RoutingMessage,
         SignedRelocateDetails,
@@ -339,7 +339,7 @@ impl Base for BootstrappingPeer {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        _pub_id: PublicId,
+        _p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {

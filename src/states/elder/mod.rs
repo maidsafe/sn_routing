@@ -726,9 +726,10 @@ impl Elder {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(&mut self, pub_id: PublicId, relocate_payload: Option<RelocatePayload>) {
-        debug!("{} - Received JoinRequest from {}", self, pub_id);
+    fn handle_join_request(&mut self, p2p_node: P2pNode, relocate_payload: Option<RelocatePayload>) {
+        debug!("{} - Received JoinRequest from {}", self, p2p_node);
 
+        let pub_id = *p2p_node.public_id();
         if !self.chain.our_prefix().matches(pub_id.name()) {
             debug!(
                 "{} - Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
@@ -796,7 +797,7 @@ impl Elder {
         };
 
         self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
-        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { pub_id, age }))
+        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
     fn handle_relocate(
@@ -1206,9 +1207,10 @@ impl Base for Elder {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        pub_id: PublicId,
+        p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        let pub_id = *p2p_node.public_id();
         use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
@@ -1221,7 +1223,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest(payload) => self.handle_join_request(pub_id, payload),
+            JoinRequest(payload) => self.handle_join_request(p2p_node, payload),
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, pub_id, outbox);
@@ -1442,12 +1444,12 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - handle Online: {:?}.", self, payload);
 
-        self.chain.add_member(payload.pub_id, payload.age);
-        self.handle_candidate_approval(payload.pub_id, outbox);
+        self.chain.add_member(*payload.p2p_node.public_id(), payload.age);
+        self.handle_candidate_approval(*payload.p2p_node.public_id(), outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(payload.pub_id));
+        self.vote_for_event(AccumulatingEvent::AddElder(*payload.p2p_node.public_id()));
 
         Ok(())
     }
