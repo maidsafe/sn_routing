@@ -1048,7 +1048,7 @@ impl Elder {
         if self
             .peer_map
             .connected_ids()
-            .filter(|id| self.chain().our_id() != *id)
+            .filter(|id| self.chain.our_id() != *id)
             .any(|id| self.chain.is_peer_our_elder(id))
         {
             true

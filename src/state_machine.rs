@@ -20,10 +20,10 @@ use crate::{
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
     xor_name::XorName,
-    NetworkConfig, NetworkEvent, NetworkService,
+    ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{routing_table::Authority, Chain, ConnectionInfo};
+use crate::{routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use std::{
     fmt::{self, Debug, Display, Formatter},

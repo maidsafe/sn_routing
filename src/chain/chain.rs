@@ -632,6 +632,7 @@ impl Chain {
 
     /// Returns all neighbour elders.
     // WIP: consider remove
+    #[cfg(feature = "mock_base")]
     pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
         self.neighbour_elders_p2p()
             .map(|p2p_node| p2p_node.public_id())
