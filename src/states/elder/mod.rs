@@ -281,7 +281,7 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let neighbour_change = EldersChange {
-            added: self.chain.neighbour_elders().copied().collect(),
+            added: self.chain.neighbour_elders_p2p().cloned().collect(),
             removed: Default::default(),
         };
         let _ = self.handle_section_info_event(elders_info, old_pfx, neighbour_change, outbox)?;
@@ -334,23 +334,26 @@ impl Elder {
 
     // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
     // longer members of our section or elders of neighbour sections.
-    fn update_neighbour_connections(&mut self, change: EldersChange, outbox: &mut dyn EventBox) {
+    fn update_neighbour_connections(&mut self, change: EldersChange, _outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
-            for pub_id in change.removed {
+            for p2p_node in change.removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
-                if self.chain.is_peer_our_member(&pub_id) {
+                if self.chain.is_peer_our_member(p2p_node.public_id()) {
                     continue;
                 }
 
-                self.disconnect(&pub_id);
+                self.disconnect(p2p_node.public_id());
             }
         }
 
-        for pub_id in change.added {
-            let src = Authority::Node(*self.name());
-            let dst = Authority::Node(*pub_id.name());
-            let _ = self.send_connection_request(pub_id, src, dst, outbox);
+        for p2p_node in change.added {
+            let pub_id = *p2p_node.public_id();
+            if !self.peer_map.has(&pub_id) {
+                self.peer_map
+                    .insert(pub_id, p2p_node.connection_info().clone());
+                self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+            };
         }
 
         let to_connect: Vec<_> = self

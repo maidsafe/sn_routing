@@ -270,9 +270,9 @@ impl Chain {
 
         match event {
             AccumulatingEvent::SectionInfo(ref info) => {
-                let old_neighbours: BTreeSet<_> = self.neighbour_elders().copied().collect();
+                let old_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
                 self.add_elders_info(info.clone(), proofs)?;
-                let new_neighbours: BTreeSet<_> = self.neighbour_elders().copied().collect();
+                let new_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
 
                 if let Some((ref cached_info, _)) = self.state.split_cache {
                     if cached_info == info {
@@ -283,11 +283,11 @@ impl Chain {
                 let neighbour_change = EldersChange {
                     added: new_neighbours
                         .difference(&old_neighbours)
-                        .copied()
+                        .cloned()
                         .collect(),
                     removed: old_neighbours
                         .difference(&new_neighbours)
-                        .copied()
+                        .cloned()
                         .collect(),
                 };
 
@@ -1441,9 +1441,9 @@ impl Chain {
 #[derive(Default)]
 pub struct EldersChange {
     // Peers that became elders.
-    pub added: BTreeSet<PublicId>,
+    pub added: BTreeSet<P2pNode>,
     // Peers that ceased to be elders.
-    pub removed: BTreeSet<PublicId>,
+    pub removed: BTreeSet<P2pNode>,
 }
 
 #[cfg(test)]

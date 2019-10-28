@@ -193,19 +193,6 @@ pub trait Approved: Base {
                     );
 
                     for pub_id in group {
-                        // Establish connection with the genesis peer, if not already connected.
-                        if let Err(error) = self.send_connection_request(
-                            *pub_id,
-                            Authority::Node(*self.name()),
-                            Authority::Node(*pub_id.name()),
-                            outbox,
-                        ) {
-                            debug!(
-                                "{} - Failed to send connection request to genesis peer {}: {:?}",
-                                self, pub_id, error
-                            );
-                        }
-
                         // Notify upper layers about the new node.
                         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
                     }
