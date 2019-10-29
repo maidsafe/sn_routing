@@ -425,7 +425,7 @@ impl Chain {
         let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info));
 
         // WIP: remove me by the end of this PR
-        let mut elders = self.state.new_info.members().clone();
+        let mut elders = self.state.new_info.members();
         let _ = elders.insert(pub_id);
 
         // TODO: the split decision should be based on the number of all members, not just elders.
@@ -598,7 +598,7 @@ impl Chain {
     /// Returns a set of elders we should be connected to.
     // WIP: consider removing me
     pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.elders_p2p().map(|p2p_node| p2p_node.public_id())
+        self.elders_p2p().map(P2pNode::public_id)
     }
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
@@ -637,8 +637,7 @@ impl Chain {
     // WIP: consider remove
     #[cfg(feature = "mock_base")]
     pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.neighbour_elders_p2p()
-            .map(|p2p_node| p2p_node.public_id())
+        self.neighbour_elders_p2p().map(P2pNode::public_id)
     }
 
     /// Returns `true` if we know the section with `elders_info`.

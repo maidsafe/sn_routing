@@ -87,7 +87,8 @@ impl EldersInfo {
     pub fn members(&self) -> BTreeSet<PublicId> {
         self.members
             .iter()
-            .map(|p2p_node| *p2p_node.public_id())
+            .map(P2pNode::public_id)
+            .copied()
             .collect()
     }
 
@@ -96,11 +97,7 @@ impl EldersInfo {
     }
 
     pub fn member_names(&self) -> BTreeSet<XorName> {
-        self.members
-            .iter()
-            .map(|p2p_node| p2p_node.name())
-            .copied()
-            .collect()
+        self.members.iter().map(P2pNode::name).copied().collect()
     }
 
     pub fn version(&self) -> &u64 {
