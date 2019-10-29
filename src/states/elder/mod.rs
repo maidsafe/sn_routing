@@ -1155,7 +1155,7 @@ impl Base for Elder {
     }
 
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        debug!("{} - State changed finish to Elder.", self);
+        debug!("{} - State change to Elder finished.", self);
 
         // Complete the polling that was interupted by the transition.
         let _ = self.parsec_poll(outbox);

@@ -78,7 +78,7 @@ pub struct Chain {
     /// actually tests pruning is in place.
     parsec_prune_accumulated: usize,
     /// Marker indicating we are processing churn event
-    process_churn: bool,
+    churn_in_progress: bool,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -125,7 +125,7 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             parsec_prune_accumulated: 0,
-            process_churn: false,
+            churn_in_progress: false,
         }
     }
 
@@ -256,7 +256,7 @@ impl Chain {
     /// containers.
     pub fn poll(&mut self) -> Result<Option<(AccumulatingEvent, EldersChange)>, RoutingError> {
         if self.state.handled_genesis_event
-            && !self.process_churn
+            && !self.churn_in_progress
             && self.state.change == PrefixChange::None
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
@@ -350,7 +350,7 @@ impl Chain {
             _ => false,
         };
 
-        if start_churn_event && self.process_churn {
+        if start_churn_event && self.churn_in_progress {
             trace!("{} churn backlog Accumulating event {:?}", self, event);
             self.state.churn_event_backlog.push_front(event);
             return Ok(None);
@@ -382,7 +382,7 @@ impl Chain {
 
     /// Adds a member to our section.
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
-        self.process_churn = true;
+        self.churn_in_progress = true;
         self.assert_no_prefix_change("add member");
 
         let pub_id = *p2p_node.public_id();
@@ -410,7 +410,7 @@ impl Chain {
 
     /// Remove a member from our section.
     pub fn remove_member(&mut self, pub_id: &PublicId) {
-        self.process_churn = true;
+        self.churn_in_progress = true;
         self.assert_no_prefix_change("remove member");
 
         if let Some(info) = self.state.our_members.get_mut(&pub_id) {
@@ -924,7 +924,7 @@ impl Chain {
             if is_new_elder {
                 self.is_elder = true;
             }
-            self.process_churn = false;
+            self.churn_in_progress = false;
             self.check_and_clean_neighbour_infos(None);
         } else {
             let ppfx = elders_info.prefix().popped();

@@ -59,7 +59,7 @@ pub struct SharedState {
     pub their_knowledge: BTreeMap<Prefix<XorName>, u64>,
     /// Recent keys removed from their_keys
     pub their_recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
-    /// Backlog of completed event that need to be processed when churn complete.
+    /// Backlog of completed events that need to be processed when churn completes.
     pub churn_event_backlog: VecDeque<AccumulatingEvent>,
 }
 

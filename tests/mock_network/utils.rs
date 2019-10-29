@@ -725,7 +725,13 @@ pub fn verify_section_invariants_for_nodes(nodes: &[TestNode], elder_size: usize
 }
 
 pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
-    type NodeSectionInfo = (XorName, Prefix<XorName>, u64, BTreeSet<XorName>);
+    #[derive(Debug)]
+    struct NodeSectionInfo {
+        node_name: XorName,
+        node_prefix: Prefix<XorName>,
+        view_section_version: u64,
+        view_section_elders: BTreeSet<XorName>,
+    };
     let mut sections: BTreeMap<Prefix<XorName>, NodeSectionInfo> = BTreeMap::new();
 
     for node in nodes.iter() {
@@ -734,44 +740,34 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
         for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
-            let our_view_section_elders = node.inner.section_elders(prefix);
-            let our_view_section_version = node.inner.section_elder_info_version(prefix);
+            let our_info = NodeSectionInfo {
+                node_name: *our_name,
+                node_prefix: *our_prefix,
+                view_section_version: node.inner.section_elder_info_version(prefix),
+                view_section_elders: node.inner.section_elders(prefix),
+            };
 
-            if let Some(&(
-                ref their_name,
-                ref their_prefix,
-                ref their_version,
-                ref their_view_section_elders,
-            )) = sections.get(prefix)
-            {
+            if let Some(ref their_info) = sections.get(prefix) {
                 assert_eq!(
-                    (&our_view_section_elders, &our_view_section_version),
-                    (their_view_section_elders, their_version),
+                    (
+                        &our_info.view_section_elders,
+                        &our_info.view_section_version
+                    ),
+                    (
+                        &their_info.view_section_elders,
+                        &their_info.view_section_version
+                    ),
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                     {:?}{:?}: {} {:?},\n{:?}{:?}: {} {:?}",
+                     {:?},\n{:?}",
                     prefix,
-                    our_name,
-                    their_name,
-                    our_name,
-                    our_prefix,
-                    our_view_section_version,
-                    our_view_section_elders,
-                    their_name,
-                    their_prefix,
-                    their_version,
-                    their_view_section_elders,
+                    our_info.node_name,
+                    their_info.node_name,
+                    our_info,
+                    their_info,
                 );
                 continue;
             }
-            let _ = sections.insert(
-                *prefix,
-                (
-                    *our_name,
-                    *our_prefix,
-                    our_view_section_version,
-                    our_view_section_elders,
-                ),
-            );
+            let _ = sections.insert(*prefix, our_info);
         }
     }
 
@@ -787,19 +783,19 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
                      Section {:?}, according to node {:?}: {:?}\n\
                      Section {:?}, according to node {:?}: {:?}",
                     prefix1,
-                    sections[prefix1].0,
-                    sections[prefix1].1,
+                    sections[prefix1].node_name,
+                    sections[prefix1].node_prefix,
                     prefix2,
-                    sections[prefix2].0,
-                    sections[prefix2].1
+                    sections[prefix2].node_name,
+                    sections[prefix2].node_prefix,
                 );
             }
         }
     }
 
     // check that each section contains names agreeing with its prefix
-    for (prefix, (_, _, _, ref members)) in &sections {
-        for name in members {
+    for (prefix, ref info) in &sections {
+        for name in &info.view_section_elders {
             if !prefix.matches(name) {
                 panic!(
                     "Section members should match the prefix, but {:?} \

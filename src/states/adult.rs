@@ -287,7 +287,7 @@ impl Base for Adult {
     }
 
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        debug!("{} - State changed to Adult.", self);
+        debug!("{} - State changed to Adult finished.", self);
 
         for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
             if let Err(err) = self.dispatch_routing_message(msg, outbox) {
