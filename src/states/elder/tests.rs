@@ -58,7 +58,7 @@ struct ElderUnderTest {
     pub other_full_ids: Vec<FullId>,
     pub other_parsec_map: Vec<ParsecMap>,
     pub elders_info: EldersInfo,
-    pub candidate_id: PublicId,
+    pub candidate: P2pNode,
 }
 
 impl ElderUnderTest {
@@ -67,11 +67,16 @@ impl ElderUnderTest {
     }
 
     fn with_section_size(sec_size: usize) -> Self {
+        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let connection_info = ConnectionInfo::from(socket_addr);
         let full_ids = (0..sec_size).map(|_| FullId::new()).collect_vec();
 
         let prefix = Prefix::<XorName>::default();
         let elders_info = unwrap!(EldersInfo::new(
-            full_ids.iter().map(|id| *id.public_id()).collect(),
+            full_ids
+                .iter()
+                .map(|id| P2pNode::new(*id.public_id(), connection_info.clone()))
+                .collect(),
             prefix,
             iter::empty()
         ));
@@ -96,13 +101,19 @@ impl ElderUnderTest {
             .map(|full_id| ParsecMap::new(full_id.clone(), &gen_pfx_info))
             .collect_vec();
 
+        let candidate_addr: SocketAddr = unwrap!("127.0.0.2:9999".parse());
+        let candidate = P2pNode::new(
+            *FullId::new().public_id(),
+            ConnectionInfo::from(candidate_addr),
+        );
+
         let mut elder_test = Self {
             machine,
             full_id,
             other_full_ids,
             other_parsec_map,
             elders_info,
-            candidate_id: *FullId::new().public_id(),
+            candidate,
         };
 
         // Process initial unpolled event
@@ -134,8 +145,10 @@ impl ElderUnderTest {
 
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
         let other_pub_id = *self.other_full_ids[0].public_id();
+        let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
+        let connection_info = ConnectionInfo::from(addr);
         let message = unwrap!(self.other_parsec_map[0].create_gossip(0, self.full_id.public_id()));
-        self.handle_direct_message((message, other_pub_id))
+        self.handle_direct_message((message, P2pNode::new(other_pub_id, connection_info)))
     }
 
     fn n_vote_for_gossipped(
@@ -147,11 +160,11 @@ impl ElderUnderTest {
         self.create_gossip()
     }
 
-    fn accumulate_online(&mut self, pub_id: PublicId) {
+    fn accumulate_online(&mut self, p2p_node: P2pNode) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
             iter::once(AccumulatingEvent::Online(OnlinePayload {
-                pub_id,
+                p2p_node,
                 age: MIN_AGE,
             })),
         );
@@ -188,9 +201,9 @@ impl ElderUnderTest {
     fn new_elders_info_with_candidate(&self) -> EldersInfo {
         unwrap!(EldersInfo::new(
             self.elders_info
-                .members()
+                .p2p_members()
                 .iter()
-                .chain(iter::once(&self.candidate_id))
+                .chain(iter::once(&self.candidate))
                 .cloned()
                 .collect(),
             *self.elders_info.prefix(),
@@ -201,7 +214,7 @@ impl ElderUnderTest {
     fn new_elders_info_without_candidate(&self) -> EldersInfo {
         let old_info = self.new_elders_info_with_candidate();
         unwrap!(EldersInfo::new(
-            self.elders_info.members().clone(),
+            self.elders_info.p2p_members().clone(),
             *old_info.prefix(),
             Some(&old_info)
         ))
@@ -214,13 +227,13 @@ impl ElderUnderTest {
     fn is_candidate_member(&self) -> bool {
         self.elder_state()
             .chain()
-            .is_peer_our_member(&self.candidate_id)
+            .is_peer_our_member(self.candidate.public_id())
     }
 
     fn is_candidate_elder(&self) -> bool {
         self.elder_state()
             .chain()
-            .is_peer_our_elder(&self.candidate_id)
+            .is_peer_our_elder(self.candidate.public_id())
     }
 
     fn is_candidate_in_our_elders_info(&self) -> bool {
@@ -228,13 +241,10 @@ impl ElderUnderTest {
             .chain()
             .our_info()
             .members()
-            .contains(&self.candidate_id)
+            .contains(self.candidate.public_id())
     }
 
-    fn handle_direct_message(
-        &mut self,
-        msg: (DirectMessage, PublicId),
-    ) -> Result<(), RoutingError> {
+    fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {
         let _ = self
             .machine
             .elder_state_mut()
@@ -351,7 +361,7 @@ fn construct() {
 #[test]
 fn when_accumulate_online_then_node_is_added_to_our_members() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.candidate_id);
+    elder_test.accumulate_online(elder_test.candidate.clone());
 
     assert!(elder_test.has_unpolled_observations()); // voted for AddElder
     assert!(elder_test.is_candidate_member());
@@ -362,8 +372,8 @@ fn when_accumulate_online_then_node_is_added_to_our_members() {
 #[test]
 fn when_accumulate_online_and_accumulate_add_elder_then_node_is_promoted_to_elder() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.candidate_id);
-    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_add_elder_if_vote(*elder_test.candidate.public_id());
 
     assert!(!elder_test.has_unpolled_observations());
     assert!(elder_test.is_candidate_member());
@@ -375,8 +385,8 @@ fn when_accumulate_online_and_accumulate_add_elder_then_node_is_promoted_to_elde
 fn when_accumulate_online_and_accumulate_add_elder_and_accumulate_section_info_then_node_is_added_to_our_elders_info(
 ) {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.candidate_id);
-    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_add_elder_if_vote(*elder_test.candidate.public_id());
 
     let new_elders_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_section_info_if_vote(new_elders_info);
@@ -390,11 +400,11 @@ fn when_accumulate_online_and_accumulate_add_elder_and_accumulate_section_info_t
 #[test]
 fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.candidate_id);
-    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_add_elder_if_vote(*elder_test.candidate.public_id());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
 
-    elder_test.accumulate_offline(elder_test.candidate_id);
+    elder_test.accumulate_offline(*elder_test.candidate.public_id());
 
     assert!(elder_test.has_unpolled_observations()); // voted for RemoveElder
     assert!(!elder_test.is_candidate_member());
@@ -408,12 +418,12 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 #[test]
 fn when_accumulate_offline_and_accumulate_remove_elder_then_node_is_not_yet_demoted_from_elder() {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.candidate_id);
-    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_add_elder_if_vote(*elder_test.candidate.public_id());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
 
-    elder_test.accumulate_offline(elder_test.candidate_id);
-    elder_test.accumulate_remove_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_offline(*elder_test.candidate.public_id());
+    elder_test.accumulate_remove_elder_if_vote(*elder_test.candidate.public_id());
 
     assert!(!elder_test.has_unpolled_observations());
     assert!(!elder_test.is_candidate_member());
@@ -425,12 +435,12 @@ fn when_accumulate_offline_and_accumulate_remove_elder_then_node_is_not_yet_demo
 fn when_accumulate_offline_and_accumulate_remove_elder_and_accumulate_section_info_then_node_is_removed_from_our_elders_info(
 ) {
     let mut elder_test = ElderUnderTest::new();
-    elder_test.accumulate_online(elder_test.candidate_id);
-    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_add_elder_if_vote(*elder_test.candidate.public_id());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
 
-    elder_test.accumulate_offline(elder_test.candidate_id);
-    elder_test.accumulate_remove_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_offline(*elder_test.candidate.public_id());
+    elder_test.accumulate_remove_elder_if_vote(*elder_test.candidate.public_id());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_without_candidate());
 
     assert!(!elder_test.has_unpolled_observations());
@@ -451,8 +461,8 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
     assert!(!elder_test.is_connected(node.public_id()));
 
     // Add new section member to reach elder_size.
-    elder_test.accumulate_online(elder_test.candidate_id);
-    elder_test.accumulate_add_elder_if_vote(elder_test.candidate_id);
+    elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_add_elder_if_vote(*elder_test.candidate.public_id());
     elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
 
     // Re-bootstrap now succeeds.

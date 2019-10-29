@@ -10,7 +10,7 @@ use super::{AccumulatingEvent, NetworkEvent, ProofSet, SectionInfoSigPayload};
 use crate::{
     crypto::{self, Digest256},
     error::RoutingError,
-    id::PublicId,
+    id::{P2pNode, PublicId},
     routing_table::Prefix,
     XorName, {QUORUM_DENOMINATOR, QUORUM_NUMERATOR},
 };
@@ -28,7 +28,7 @@ use std::{
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct EldersInfo {
     /// The complete list of the section's elders' IDs.
-    members: BTreeSet<PublicId>,
+    members: BTreeSet<P2pNode>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Thus `EldersInfo`s with compatible prefixes always have different versions.
     version: u64,
@@ -50,7 +50,7 @@ impl Serialize for EldersInfo {
 impl<'de> Deserialize<'de> for EldersInfo {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
         let (members, version, prefix, prev_hash): (
-            BTreeSet<PublicId>,
+            BTreeSet<P2pNode>,
             u64,
             Prefix<XorName>,
             BTreeSet<Digest256>,
@@ -64,7 +64,7 @@ impl EldersInfo {
     /// Creates a `SectionInfo` with the given members, prefix and predecessors.
     #[allow(clippy::new_ret_no_self)]
     pub fn new<'a, I: IntoIterator<Item = &'a Self>>(
-        members: BTreeSet<PublicId>,
+        members: BTreeSet<P2pNode>,
         prefix: Prefix<XorName>,
         prev: I,
     ) -> Result<Self, RoutingError> {
@@ -83,12 +83,21 @@ impl EldersInfo {
         Self::new(members, self.prefix.popped(), vec![self, other])
     }
 
-    pub fn members(&self) -> &BTreeSet<PublicId> {
+    // WIP: remove me (or make less heavy)
+    pub fn members(&self) -> BTreeSet<PublicId> {
+        self.members
+            .iter()
+            .map(P2pNode::public_id)
+            .copied()
+            .collect()
+    }
+
+    pub fn p2p_members(&self) -> &BTreeSet<P2pNode> {
         &self.members
     }
 
     pub fn member_names(&self) -> BTreeSet<XorName> {
-        self.members.iter().map(PublicId::name).cloned().collect()
+        self.members.iter().map(P2pNode::name).copied().collect()
     }
 
     pub fn version(&self) -> &u64 {
@@ -110,13 +119,22 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.members.contains(id)).count() * QUORUM_DENOMINATOR
+        // WIP: the call to members is probably to heavy?
+        proofs
+            .ids()
+            .filter(|id| self.members().contains(id))
+            .count()
+            * QUORUM_DENOMINATOR
             > self.members.len() * QUORUM_NUMERATOR
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.members.contains(id)).count() == self.members.len()
+        proofs
+            .ids()
+            .filter(|id| self.members().contains(id))
+            .count()
+            == self.members.len()
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
@@ -131,7 +149,7 @@ impl EldersInfo {
 
     #[cfg(any(test, feature = "mock_base"))]
     pub fn new_for_test(
-        members: BTreeSet<PublicId>,
+        members: BTreeSet<P2pNode>,
         prefix: Prefix<XorName>,
         version: u64,
     ) -> Result<Self, RoutingError> {
@@ -140,7 +158,7 @@ impl EldersInfo {
 
     /// Creates a new instance with the given fields, and computes its hash.
     fn new_with_fields(
-        members: BTreeSet<PublicId>,
+        members: BTreeSet<P2pNode>,
         version: u64,
         prefix: Prefix<XorName>,
         prev_hash: BTreeSet<Digest256>,
@@ -179,7 +197,7 @@ impl Display for EldersInfo {
         writeln!(formatter, "\t\tversion: {:?},", self.version)?;
         writeln!(formatter, "\t\tprev_hash_len: {},", self.prev_hash.len())?;
         write!(formatter, "\t\tmembers: [")?;
-        for (index, member) in self.members.iter().enumerate() {
+        for (index, member) in self.members().iter().enumerate() {
             let comma = if index == self.members.len() - 1 {
                 ""
             } else {

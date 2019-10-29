@@ -9,7 +9,7 @@
 use crate::{
     crypto::signing::Signature,
     error::{BootstrapResponseError, RoutingError},
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     messages::{SignedRelocateDetails, SignedRoutingMessage},
     parsec,
     routing_table::Prefix,
@@ -61,7 +61,7 @@ pub enum BootstrapResponse {
     /// the section elders and the section prefix are provided.
     Join {
         prefix: Prefix<XorName>,
-        conn_infos: Vec<ConnectionInfo>,
+        p2p_nodes: Vec<P2pNode>,
     },
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.

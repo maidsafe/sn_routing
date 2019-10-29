@@ -9,7 +9,7 @@
 use crate::{
     action::Action,
     error::{InterfaceError, RoutingError},
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     messages::{
         DirectMessage, HopMessage, Message, RoutingMessage, SignedDirectMessage,
         SignedRoutingMessage,
@@ -55,7 +55,7 @@ pub trait Base: Display {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        pub_id: PublicId,
+        p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -280,9 +280,14 @@ pub trait Base: Display {
         match message {
             Message::Hop(msg) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg) => {
-                let (msg, pub_id) = msg.open()?;
-                self.peer_map_mut().identify(pub_id, src_addr);
-                self.handle_direct_message(msg, pub_id, outbox)
+                let (msg, public_id) = msg.open()?;
+                self.peer_map_mut().identify(public_id, src_addr);
+                let connection_info = self
+                    .peer_map()
+                    .get_connection_info(public_id)
+                    .ok_or(RoutingError::UnknownConnection(public_id))?
+                    .clone();
+                self.handle_direct_message(msg, P2pNode::new(public_id, connection_info), outbox)
             }
         }
     }

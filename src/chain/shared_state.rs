@@ -67,15 +67,16 @@ impl SharedState {
         let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
 
         let our_members = elders_info
-            .members()
+            .p2p_members()
             .iter()
-            .copied()
-            .map(|pub_id| {
+            .cloned()
+            .map(|p2p_node| {
                 let info = MemberInfo {
-                    age_counter: *ages.get(&pub_id).unwrap_or(&MIN_AGE_COUNTER),
+                    age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
+                    connection_info: p2p_node.connection_info().clone(),
                 };
-                (pub_id, info)
+                (*p2p_node.public_id(), info)
             })
             .collect();
 
@@ -674,8 +675,9 @@ impl Debug for SectionKeyInfo {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{chain::EldersInfo, FullId, Prefix, XorName};
+    use crate::{chain::EldersInfo, id::P2pNode, ConnectionInfo, FullId, Prefix, XorName};
     use std::collections::BTreeSet;
+    use std::net::SocketAddr;
     use std::str::FromStr;
     use unwrap::unwrap;
 
@@ -684,7 +686,12 @@ mod test {
         let mut members = BTreeSet::new();
         for _ in 0..sec_size {
             let id = FullId::within_range(&pfx.range_inclusive());
-            let _ = members.insert(*id.public_id());
+            let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+            let connection_info = ConnectionInfo {
+                peer_addr: socket_addr,
+                peer_cert_der: vec![],
+            };
+            let _ = members.insert(P2pNode::new(*id.public_id(), connection_info));
         }
         unwrap!(EldersInfo::new_for_test(members, pfx, version))
     }

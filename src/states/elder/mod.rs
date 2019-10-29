@@ -25,7 +25,7 @@ use crate::{
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RelocateDetails,
         RelocatePayload, RoutingMessage, SecurityMetadata, SignedRelocateDetails,
@@ -103,17 +103,19 @@ pub struct Elder {
 
 impl Elder {
     pub fn first(
-        network_service: NetworkService,
+        mut network_service: NetworkService,
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
+        let connection_info = network_service.our_connection_info()?;
+        let p2p_node = P2pNode::new(public_id, connection_info);
         let mut first_ages = BTreeMap::new();
         let _ = first_ages.insert(public_id, MIN_AGE_COUNTER);
         let gen_pfx_info = GenesisPfxInfo {
-            first_info: create_first_elders_info(public_id)?,
+            first_info: create_first_elders_info(p2p_node)?,
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
@@ -279,7 +281,7 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let neighbour_change = EldersChange {
-            added: self.chain.neighbour_elders().copied().collect(),
+            added: self.chain.neighbour_elders_p2p().cloned().collect(),
             removed: Default::default(),
         };
         let _ = self.handle_section_info_event(elders_info, old_pfx, neighbour_change, outbox)?;
@@ -332,23 +334,40 @@ impl Elder {
 
     // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
     // longer members of our section or elders of neighbour sections.
-    fn update_neighbour_connections(&mut self, change: EldersChange, outbox: &mut dyn EventBox) {
+    fn update_neighbour_connections(&mut self, change: EldersChange, _outbox: &mut dyn EventBox) {
         if self.chain.prefix_change() == PrefixChange::None {
-            for pub_id in change.removed {
+            for p2p_node in change.removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
-                if self.chain.is_peer_our_member(&pub_id) {
+                if self.chain.is_peer_our_member(p2p_node.public_id()) {
                     continue;
                 }
 
-                self.disconnect(&pub_id);
+                self.disconnect(p2p_node.public_id());
             }
         }
 
-        for pub_id in change.added {
-            let src = Authority::Node(*self.name());
-            let dst = Authority::Node(*pub_id.name());
-            let _ = self.send_connection_request(pub_id, src, dst, outbox);
+        for p2p_node in change.added {
+            let pub_id = *p2p_node.public_id();
+            if !self.peer_map.has(&pub_id) {
+                self.peer_map
+                    .insert(pub_id, p2p_node.connection_info().clone());
+                self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+            };
+        }
+
+        let to_connect: Vec<_> = self
+            .chain
+            .our_elders()
+            .filter(|p2p_node| !self.peer_map.has(p2p_node.public_id()))
+            .cloned()
+            .collect();
+
+        for p2p_node in to_connect.into_iter() {
+            let pub_id = p2p_node.public_id();
+            self.peer_map
+                .insert(*pub_id, p2p_node.connection_info().clone());
+            self.send_direct_message(pub_id, DirectMessage::ConnectionResponse);
         }
     }
 
@@ -590,26 +609,27 @@ impl Elder {
     // Send NodeApproval to the current candidate which promotes them to Adult and allows them to
     // passively participate in parsec consensus (that is, they can receive gossip and poll
     // consensused blocks out of parsec, but they can't vote yet)
-    fn handle_candidate_approval(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) {
+    fn handle_candidate_approval(&mut self, p2p_node: P2pNode, _outbox: &mut dyn EventBox) {
         info!(
             "{} Our section with {:?} has approved candidate {}.",
             self,
             self.our_prefix(),
-            pub_id
+            p2p_node
         );
 
+        let pub_id = *p2p_node.public_id();
         let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
         if !self.peer_map.has(&pub_id) {
             trace!(
-                "{} - Not yet connected to {} - sending connection request.",
+                "{} - Not yet connected to {} - use p2p_node.",
                 self,
-                pub_id
+                p2p_node
             );
-
-            let src = Authority::Node(*self.name());
-            let _ = self.send_connection_request(pub_id, src, dst, outbox);
+            self.peer_map
+                .insert(pub_id, p2p_node.connection_info().clone());
+            self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
         };
 
         let trimmed_info = GenesisPfxInfo {
@@ -688,19 +708,14 @@ impl Elder {
 
     fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
-            let mut conn_infos: Vec<_> = self
-                .peer_map
-                .get_connection_infos(self.chain.our_elders())
-                .cloned()
-                .collect();
-
+            let mut p2p_nodes: Vec<_> = self.chain.our_elders().cloned().collect();
             if let Ok(our_info) = self.our_connection_info() {
-                conn_infos.push(our_info);
+                p2p_nodes.push(P2pNode::new(*self.id(), our_info));
             }
             debug!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
             BootstrapResponse::Join {
                 prefix: *self.chain.our_prefix(),
-                conn_infos,
+                p2p_nodes,
             }
         } else {
             let names = self.chain.closest_section(name).1;
@@ -722,9 +737,14 @@ impl Elder {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(&mut self, pub_id: PublicId, relocate_payload: Option<RelocatePayload>) {
-        debug!("{} - Received JoinRequest from {}", self, pub_id);
+    fn handle_join_request(
+        &mut self,
+        p2p_node: P2pNode,
+        relocate_payload: Option<RelocatePayload>,
+    ) {
+        debug!("{} - Received JoinRequest from {}", self, p2p_node);
 
+        let pub_id = *p2p_node.public_id();
         if !self.chain.our_prefix().matches(pub_id.name()) {
             debug!(
                 "{} - Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
@@ -792,7 +812,7 @@ impl Elder {
         };
 
         self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
-        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { pub_id, age }))
+        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
     fn handle_relocate(
@@ -962,7 +982,7 @@ impl Elder {
             Authority::Section(_) => self
                 .chain
                 .our_elders()
-                .map(PublicId::name)
+                .map(|p2p_node| p2p_node.name())
                 .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
             // FIXME: This does not include recently accepted peers which would affect quorum
@@ -1028,6 +1048,7 @@ impl Elder {
         if self
             .peer_map
             .connected_ids()
+            .filter(|id| self.chain.our_id() != *id)
             .any(|id| self.chain.is_peer_our_elder(id))
         {
             true
@@ -1202,9 +1223,10 @@ impl Base for Elder {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        pub_id: PublicId,
+        p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        let pub_id = *p2p_node.public_id();
         use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
@@ -1217,7 +1239,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest(payload) => self.handle_join_request(pub_id, payload),
+            JoinRequest(payload) => self.handle_join_request(p2p_node, payload),
             ParsecPoke(version) => self.handle_parsec_poke(version, pub_id),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, pub_id, outbox);
@@ -1438,12 +1460,12 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - handle Online: {:?}.", self, payload);
 
-        self.chain.add_member(payload.pub_id, payload.age);
-        self.handle_candidate_approval(payload.pub_id, outbox);
+        self.chain.add_member(payload.p2p_node.clone(), payload.age);
+        self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(payload.pub_id));
+        self.vote_for_event(AccumulatingEvent::AddElder(*payload.p2p_node.public_id()));
 
         Ok(())
     }
@@ -1562,17 +1584,17 @@ impl Display for Elder {
 }
 
 // Create `EldersInfo` for the first node.
-fn create_first_elders_info(public_id: PublicId) -> Result<EldersInfo, RoutingError> {
+fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingError> {
+    let name = *p2p_node.name();
     EldersInfo::new(
-        iter::once(public_id).collect(),
+        iter::once(p2p_node).collect(),
         Prefix::default(),
         iter::empty(),
     )
     .map_err(|err| {
         error!(
             "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
-            public_id.name(),
-            err
+            name, err
         );
         err
     })

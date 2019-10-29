@@ -76,17 +76,18 @@ mod tests {
     use super::*;
     use crate::{
         chain::{EldersInfo, SectionKeyInfo, SectionProofChain},
-        id::{FullId, PublicId},
+        id::{FullId, P2pNode},
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
             SignedRoutingMessage,
         },
         routing_table::{Authority, Prefix},
-        BlsPublicKeySet,
+        BlsPublicKeySet, ConnectionInfo,
     };
     use itertools::Itertools;
     use rand;
     use std::collections::BTreeSet;
+    use std::net::SocketAddr;
     use unwrap::unwrap;
 
     struct MessageAndSignatures {
@@ -98,7 +99,7 @@ mod tests {
         fn new<'a, I>(
             msg_sender_id: &FullId,
             other_ids: I,
-            all_ids: BTreeSet<PublicId>,
+            all_ids: BTreeSet<P2pNode>,
         ) -> MessageAndSignatures
         where
             I: Iterator<Item = &'a FullId>,
@@ -151,13 +152,18 @@ mod tests {
     impl Env {
         fn new() -> Env {
             let msg_sender_id = FullId::new();
-            let mut pub_ids = vec![*msg_sender_id.public_id()]
-                .into_iter()
-                .collect::<BTreeSet<_>>();
+            let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+            let connection_info = ConnectionInfo::from(socket_addr);
+            let mut pub_ids = vec![P2pNode::new(
+                *msg_sender_id.public_id(),
+                connection_info.clone(),
+            )]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
             let mut other_ids = vec![];
             for _ in 0..8 {
                 let full_id = FullId::new();
-                let _ = pub_ids.insert(*full_id.public_id());
+                let _ = pub_ids.insert(P2pNode::new(*full_id.public_id(), connection_info.clone()));
                 other_ids.push(full_id);
             }
             let msgs_and_sigs = (0..5)

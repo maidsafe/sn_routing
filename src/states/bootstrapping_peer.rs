@@ -11,7 +11,7 @@ use crate::{
     chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event::Event,
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, RelocatePayload, RoutingMessage,
         SignedRelocateDetails,
@@ -97,7 +97,7 @@ impl BootstrappingPeer {
 
     pub fn into_joining(
         self,
-        conn_infos: Vec<ConnectionInfo>,
+        p2p_nodes: Vec<P2pNode>,
         relocate_payload: Option<RelocatePayload>,
         _outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
@@ -107,7 +107,7 @@ impl BootstrappingPeer {
             self.network_cfg,
             self.timer,
             self.peer_map,
-            conn_infos,
+            p2p_nodes,
             relocate_payload,
         )))
     }
@@ -144,7 +144,7 @@ impl BootstrappingPeer {
     fn join_section(
         &mut self,
         prefix: Prefix<XorName>,
-        conn_infos: Vec<ConnectionInfo>,
+        p2p_nodes: Vec<P2pNode>,
     ) -> Result<Transition, RoutingError> {
         let old_full_id = self.full_id.clone();
 
@@ -169,7 +169,7 @@ impl BootstrappingPeer {
         };
 
         Ok(Transition::IntoJoining {
-            conn_infos,
+            p2p_nodes,
             relocate_payload,
         })
     }
@@ -339,16 +339,20 @@ impl Base for BootstrappingPeer {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        _pub_id: PublicId,
+        _p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, conn_infos }) => {
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, p2p_nodes }) => {
+                let conn_infos: Vec<_> = p2p_nodes
+                    .iter()
+                    .map(|n| n.connection_info().clone())
+                    .collect();
                 info!(
                     "{} - Joining a section {:?}: {:?}",
                     self, prefix, conn_infos
                 );
-                self.join_section(prefix, conn_infos)
+                self.join_section(prefix, p2p_nodes)
             }
             DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(

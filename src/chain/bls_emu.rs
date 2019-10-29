@@ -145,13 +145,25 @@ impl BlsPublicKeyForSectionKeyInfo {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::id::FullId;
+    use crate::{
+        id::{FullId, P2pNode},
+        ConnectionInfo,
+    };
+    use std::net::SocketAddr;
     use unwrap::unwrap;
 
     fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
         let ids: Vec<_> = (0..size).map(|_| FullId::new()).collect();
-        let pub_ids = ids.iter().map(|full_id| *full_id.public_id()).collect();
-        let elders_info = unwrap!(EldersInfo::new(pub_ids, Default::default(), None));
+        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let connection_info = ConnectionInfo {
+            peer_addr: socket_addr,
+            peer_cert_der: vec![],
+        };
+        let p2p_nodes = ids
+            .iter()
+            .map(|full_id| P2pNode::new(*full_id.public_id(), connection_info.clone()))
+            .collect();
+        let elders_info = unwrap!(EldersInfo::new(p2p_nodes, Default::default(), None));
         let pk_set = PublicKeySet::from_elders_info(elders_info);
 
         (pk_set, ids.into_iter().map(SecretKeyShare).collect())

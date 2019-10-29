@@ -10,7 +10,7 @@ use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo},
     error::RoutingError,
-    id::PublicId,
+    id::{P2pNode, PublicId},
     messages::{RelocatePayload, SignedRelocateDetails},
     network_service::NetworkBuilder,
     outbox::EventBox,
@@ -236,7 +236,7 @@ pub enum Transition {
     Stay,
     // `BootstrappingPeer` state transitioning to `JoiningPeer`
     IntoJoining {
-        conn_infos: Vec<ConnectionInfo>,
+        p2p_nodes: Vec<P2pNode>,
         relocate_payload: Option<RelocatePayload>,
     },
     // `JoiningPeer` failing to join and transitioning back to `BootstrappingPeer`
@@ -360,11 +360,11 @@ impl StateMachine {
         match transition {
             Stay => (),
             IntoJoining {
-                conn_infos,
+                p2p_nodes,
                 relocate_payload,
             } => self.state.replace_with(|state| match state {
                 State::BootstrappingPeer(src) => {
-                    src.into_joining(conn_infos, relocate_payload, outbox)
+                    src.into_joining(p2p_nodes, relocate_payload, outbox)
                 }
                 _ => unreachable!(),
             }),

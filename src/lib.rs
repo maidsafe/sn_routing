@@ -174,7 +174,7 @@ pub use crate::{
     error::{InterfaceError, RoutingError},
     event::{ClientEvent, Event},
     event_stream::EventStream,
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     node::{Node, NodeBuilder},
     pause::PausedState,
     routing_table::Error as RoutingTableError,
@@ -195,6 +195,7 @@ pub(crate) type NetworkBytes = bytes::Bytes;
 pub(crate) type NetworkBytes = std::rc::Rc<Message>;
 
 pub use self::quic_p2p::Config as NetworkConfig;
+pub use self::quic_p2p::NodeInfo as ConnectionInfo;
 pub(crate) use self::{
     chain::bls_emu::{
         PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
@@ -202,7 +203,7 @@ pub(crate) use self::{
         SignatureShare as BlsSignatureShare,
     },
     network_service::NetworkService,
-    quic_p2p::{Event as NetworkEvent, NodeInfo as ConnectionInfo, QuicP2p},
+    quic_p2p::{Event as NetworkEvent, QuicP2p},
 };
 
 #[cfg(feature = "mock_crypto")]

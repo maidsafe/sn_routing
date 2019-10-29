@@ -597,22 +597,31 @@ mod tests {
     use crate::{
         chain::SectionKeyInfo,
         crypto::signing::{Signature, SIGNATURE_LENGTH},
-        id::FullId,
+        id::{FullId, P2pNode},
         routing_table::{Authority, Prefix},
         xor_name::XorName,
     };
     use rand;
     use std::collections::BTreeSet;
+    use std::net::SocketAddr;
     use unwrap::unwrap;
 
     #[test]
     fn signed_routing_message_check_integrity() {
         let full_id = FullId::new();
         let full_id_2 = FullId::new();
+        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let connection_info = ConnectionInfo {
+            peer_addr: socket_addr,
+            peer_cert_der: vec![],
+        };
         let prefix = Prefix::new(0, *full_id.public_id().name());
-        let pub_ids: BTreeSet<_> = vec![*full_id.public_id(), *full_id_2.public_id()]
-            .into_iter()
-            .collect();
+        let pub_ids: BTreeSet<_> = vec![
+            P2pNode::new(*full_id.public_id(), connection_info.clone()),
+            P2pNode::new(*full_id_2.public_id(), connection_info.clone()),
+        ]
+        .into_iter()
+        .collect();
         let dummy_elders_info = unwrap!(EldersInfo::new(pub_ids, prefix, None));
         let dummy_pk_set = BlsPublicKeySet::from_elders_info(dummy_elders_info.clone());
         let dummy_key_info = SectionKeyInfo::from_elders_info(&dummy_elders_info);
@@ -651,6 +660,11 @@ mod tests {
         let full_id_1 = FullId::new();
         let full_id_2 = FullId::new();
         let full_id_3 = FullId::new();
+        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let connection_info = ConnectionInfo {
+            peer_addr: socket_addr,
+            peer_cert_der: vec![],
+        };
         let content = (0..10).collect();
         let name: XorName = rand::random();
         let msg = RoutingMessage {
@@ -660,10 +674,10 @@ mod tests {
         };
 
         let src_section_nodes = vec![
-            *full_id_0.public_id(),
-            *full_id_1.public_id(),
-            *full_id_2.public_id(),
-            *full_id_3.public_id(),
+            P2pNode::new(*full_id_0.public_id(), connection_info.clone()),
+            P2pNode::new(*full_id_1.public_id(), connection_info.clone()),
+            P2pNode::new(*full_id_2.public_id(), connection_info.clone()),
+            P2pNode::new(*full_id_3.public_id(), connection_info.clone()),
         ];
         let src_section = unwrap!(EldersInfo::new(
             src_section_nodes.into_iter().collect(),
