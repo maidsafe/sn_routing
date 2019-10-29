@@ -1157,25 +1157,26 @@ impl Base for Elder {
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State changed finish to Elder.", self);
 
-        for msg in self.msg_backlog.drain(..).collect_vec() {
-            if let Err(err) = self.handle_filtered_signed_message(msg) {
-                debug!("{} - {:?}", self, err);
-            }
-        }
+        // Complete the polling that was interupted by the transition.
+        let _ = self.parsec_poll(outbox);
 
         let mut transition = Transition::Stay;
         for (pub_id, msg) in self.direct_msg_backlog.drain(..).collect_vec() {
-            match &transition {
-                Transition::Stay => (),
-                _ => {
-                    self.direct_msg_backlog.push((pub_id, msg));
-                    continue;
+            if let Transition::Stay = &transition {
+                match self.handle_direct_message(msg, pub_id, outbox) {
+                    Ok(new_transition) => transition = new_transition,
+                    Err(err) => debug!("{} - {:?}", self, err),
                 }
+            } else {
+                self.direct_msg_backlog.push((pub_id, msg));
             }
+        }
 
-            match self.handle_direct_message(msg, pub_id, outbox) {
-                Ok(new_transition) => transition = new_transition,
-                Err(err) => debug!("{} - {:?}", self, err),
+        if let Transition::Stay = &transition {
+            for msg in self.msg_backlog.drain(..).collect_vec() {
+                if let Err(err) = self.handle_filtered_signed_message(msg) {
+                    debug!("{} - {:?}", self, err);
+                }
             }
         }
 
@@ -1503,7 +1504,11 @@ impl Approved for Elder {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.our_prefix().matches(&payload.p2p_node.public_id().name()) {
+        if !self
+            .chain
+            .our_prefix()
+            .matches(&payload.p2p_node.public_id().name())
+        {
             info!("{} - ignore Online: {:?}.", self, payload);
             return Ok(());
         }
