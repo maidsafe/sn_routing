@@ -261,7 +261,6 @@ impl Chain {
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
                 trace!("{} churn backlog poll Accumulating event {:?}", self, event);
-                self.process_churn = true;
                 return Ok(Some((event, EldersChange::default())));
             }
         }
@@ -351,14 +350,10 @@ impl Chain {
             _ => false,
         };
 
-        if start_churn_event {
-            if self.process_churn {
-                trace!("{} churn backlog Accumulating event {:?}", self, event);
-                self.state.churn_event_backlog.push_front(event);
-                return Ok(None);
-            } else {
-                self.process_churn = true;
-            }
+        if start_churn_event && self.process_churn {
+            trace!("{} churn backlog Accumulating event {:?}", self, event);
+            self.state.churn_event_backlog.push_front(event);
+            return Ok(None);
         }
 
         Ok(Some((event, EldersChange::default())))
@@ -387,6 +382,7 @@ impl Chain {
 
     /// Adds a member to our section.
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
+        self.process_churn = true;
         self.assert_no_prefix_change("add member");
 
         let pub_id = *p2p_node.public_id();
@@ -414,6 +410,7 @@ impl Chain {
 
     /// Remove a member from our section.
     pub fn remove_member(&mut self, pub_id: &PublicId) {
+        self.process_churn = true;
         self.assert_no_prefix_change("remove member");
 
         if let Some(info) = self.state.our_members.get_mut(&pub_id) {
