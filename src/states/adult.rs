@@ -35,7 +35,10 @@ use crate::{
     NetworkService,
 };
 use itertools::Itertools;
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    mem,
+};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -286,25 +289,21 @@ impl Base for Adult {
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State changed to Adult.", self);
 
-        for msg in self.routing_msg_backlog.drain(..).collect_vec() {
+        for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
             if let Err(err) = self.dispatch_routing_message(msg, outbox) {
                 debug!("{} - {:?}", self, err);
             }
         }
 
         let mut transition = Transition::Stay;
-        for (pub_id, msg) in self.direct_msg_backlog.drain(..).collect_vec() {
-            match &transition {
-                Transition::Stay => (),
-                _ => {
-                    self.direct_msg_backlog.push((pub_id, msg));
-                    continue;
+        for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
+            if let Transition::Stay = &transition {
+                match self.handle_direct_message(msg, pub_id, outbox) {
+                    Ok(new_transition) => transition = new_transition,
+                    Err(err) => debug!("{} - {:?}", self, err),
                 }
-            }
-
-            match self.handle_direct_message(msg, pub_id, outbox) {
-                Ok(new_transition) => transition = new_transition,
-                Err(err) => debug!("{} - {:?}", self, err),
+            } else {
+                self.direct_msg_backlog.push((pub_id, msg));
             }
         }
 

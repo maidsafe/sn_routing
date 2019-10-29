@@ -1161,7 +1161,7 @@ impl Base for Elder {
         let _ = self.parsec_poll(outbox);
 
         let mut transition = Transition::Stay;
-        for (pub_id, msg) in self.direct_msg_backlog.drain(..).collect_vec() {
+        for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
                 match self.handle_direct_message(msg, pub_id, outbox) {
                     Ok(new_transition) => transition = new_transition,
@@ -1173,7 +1173,7 @@ impl Base for Elder {
         }
 
         if let Transition::Stay = &transition {
-            for msg in self.routing_msg_backlog.drain(..).collect_vec() {
+            for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
                 if let Err(err) = self.handle_filtered_signed_message(msg) {
                     debug!("{} - {:?}", self, err);
                 }
