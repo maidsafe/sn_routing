@@ -43,6 +43,7 @@ pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
     msg_backlog: Vec<SignedRoutingMessage>,
+    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     full_id: FullId,
     peer_map: PeerMap,
     timer: Timer,
@@ -69,6 +70,7 @@ impl JoiningPeer {
             network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
             msg_backlog: vec![],
+            direct_msg_backlog: vec![],
             full_id,
             timer: timer,
             peer_map,
@@ -94,6 +96,7 @@ impl JoiningPeer {
             full_id: self.full_id,
             gen_pfx_info,
             msg_backlog: self.msg_backlog,
+            direct_msg_backlog: self.direct_msg_backlog,
             peer_map: self.peer_map,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
@@ -250,11 +253,14 @@ impl Base for JoiningPeer {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        _p2p_node: P2pNode,
+        p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        debug!("{} Unhandled direct message: {:?}", self, msg);
-
+        debug!(
+            "{} Unhandled direct message, adding to backlog: {:?}",
+            self, msg
+        );
+        self.direct_msg_backlog.push((p2p_node, msg));
         Ok(Transition::Stay)
     }
 

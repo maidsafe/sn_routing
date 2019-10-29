@@ -69,6 +69,7 @@ pub struct ElderDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_queue: Vec<SignedRoutingMessage>,
+    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -82,6 +83,7 @@ pub struct Elder {
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<SignedRoutingMessage>,
+    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
@@ -131,6 +133,7 @@ impl Elder {
             full_id,
             gen_pfx_info,
             msg_queue: Vec::new(),
+            direct_msg_backlog: Default::default(),
             parsec_map,
             peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -183,6 +186,7 @@ impl Elder {
                 full_id: state.full_id,
                 gen_pfx_info: state.gen_pfx_info,
                 msg_queue: state.msg_queue,
+                direct_msg_backlog: Default::default(),
                 parsec_map: state.parsec_map,
                 peer_map: state.peer_map,
                 routing_msg_filter: state.msg_filter,
@@ -222,6 +226,7 @@ impl Elder {
             full_id: details.full_id.clone(),
             is_first_node,
             msg_queue: details.msg_queue.into_iter().collect(),
+            direct_msg_backlog: details.direct_msg_backlog,
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
@@ -1135,6 +1140,28 @@ impl Base for Elder {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+
+    fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
+        debug!("{} - State changed finish to Elder.", self);
+
+        let mut transition = Transition::Stay;
+        for (pub_id, msg) in self.direct_msg_backlog.drain(..).collect_vec() {
+            match &transition {
+                Transition::Stay => (),
+                _ => {
+                    self.direct_msg_backlog.push((pub_id, msg));
+                    continue;
+                }
+            }
+
+            match self.handle_direct_message(msg, pub_id, outbox) {
+                Ok(new_transition) => transition = new_transition,
+                Err(err) => debug!("{} - {:?}", self, err),
+            }
+        }
+
+        transition
     }
 
     fn handle_send_message(

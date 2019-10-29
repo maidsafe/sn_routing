@@ -128,6 +128,10 @@ pub trait Base: Display {
         Transition::Stay
     }
 
+    fn finish_handle_transition(&mut self, _outbox: &mut dyn EventBox) -> Transition {
+        Transition::Stay
+    }
+
     fn handle_network_event(
         &mut self,
         event: NetworkEvent,

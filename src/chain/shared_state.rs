@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, AccumulatingEvent, AgeCounter, EldersInfo, MemberInfo,
-    MemberPersona, MemberState, MIN_AGE_COUNTER,
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingEvent, AccumulatingProof, AgeCounter,
+    EldersInfo, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
     crypto::Digest256, error::RoutingError, id::PublicId, utils::LogIdent, BlsPublicKey,

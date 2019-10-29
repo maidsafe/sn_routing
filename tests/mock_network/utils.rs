@@ -250,6 +250,7 @@ impl PollOptions {
         }
     }
 
+    #[allow(unused)]
     pub fn stop_if<F>(self, pred: F) -> Self
     where
         F: Fn(&[TestNode]) -> bool + 'static,
@@ -721,7 +722,8 @@ pub fn verify_section_invariants_for_nodes(nodes: &[TestNode], elder_size: usize
 }
 
 pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
-    let mut sections: BTreeMap<Prefix<XorName>, (XorName, BTreeSet<XorName>)> = BTreeMap::new();
+    type NodeSectionInfo = (XorName, Prefix<XorName>, u64, BTreeSet<XorName>);
+    let mut sections: BTreeMap<Prefix<XorName>, NodeSectionInfo> = BTreeMap::new();
 
     for node in nodes.iter() {
         let our_prefix = unwrap!(node.inner.our_prefix());
@@ -730,28 +732,43 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
         // Is this a problem?
         for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
             let our_view_section_elders = node.inner.section_elders(prefix);
+            let our_view_section_version = node.inner.section_elder_info_version(prefix);
 
-            if let Some(&(ref their_name, ref their_view_section_elders)) = sections.get(prefix) {
+            if let Some(&(
+                ref their_name,
+                ref their_prefix,
+                ref their_version,
+                ref their_view_section_elders,
+            )) = sections.get(prefix)
+            {
                 assert_eq!(
-                    &our_view_section_elders,
-                    their_view_section_elders,
+                    (&our_view_section_elders, &our_view_section_version),
+                    (their_view_section_elders, their_version),
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                     {:?}: {:?},\n{:?}: {:?}",
+                     {:?}{:?}: {} {:?},\n{:?}{:?}: {} {:?}",
                     prefix,
                     our_name,
                     their_name,
                     our_name,
+                    our_prefix,
+                    our_view_section_version,
                     our_view_section_elders,
                     their_name,
+                    their_prefix,
+                    their_version,
                     their_view_section_elders,
                 );
-                // NOTE: previous version of this also included an assertion that the section
-                // versions are the same. Removed since we don't expose the section version in the
-                // `Node` public API.
-                // Should we?
                 continue;
             }
-            let _ = sections.insert(*prefix, (*our_name, our_view_section_elders));
+            let _ = sections.insert(
+                *prefix,
+                (
+                    *our_name,
+                    *our_prefix,
+                    our_view_section_version,
+                    our_view_section_elders,
+                ),
+            );
         }
     }
 
@@ -778,7 +795,7 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
     }
 
     // check that each section contains names agreeing with its prefix
-    for (prefix, (_, ref members)) in &sections {
+    for (prefix, (_, _, _, ref members)) in &sections {
         for name in members {
             if !prefix.matches(name) {
                 panic!(

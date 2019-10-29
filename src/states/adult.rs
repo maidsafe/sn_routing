@@ -48,6 +48,7 @@ pub struct AdultDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_backlog: Vec<SignedRoutingMessage>,
+    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -62,6 +63,7 @@ pub struct Adult {
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
     msg_backlog: Vec<SignedRoutingMessage>,
+    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
     add_timer_token: u64,
@@ -73,7 +75,7 @@ pub struct Adult {
 impl Adult {
     pub fn from_joining_peer(
         details: AdultDetails,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
@@ -83,13 +85,14 @@ impl Adult {
 
         let chain = Chain::new(details.network_cfg, public_id, details.gen_pfx_info.clone());
 
-        let mut node = Self {
+        let node = Self {
             chain,
             network_service: details.network_service,
             event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
             msg_backlog: details.msg_backlog,
+            direct_msg_backlog: details.direct_msg_backlog,
             parsec_map,
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
@@ -98,18 +101,7 @@ impl Adult {
             add_timer_token,
         };
 
-        node.init(outbox)?;
         Ok(node)
-    }
-
-    fn init(&mut self, outbox: &mut dyn EventBox) -> Result<(), RoutingError> {
-        debug!("{} - State changed to Adult.", self);
-
-        for msg in self.msg_backlog.drain(..).collect_vec() {
-            self.dispatch_routing_message(msg, outbox)?;
-        }
-
-        Ok(())
     }
 
     pub fn rebootstrap(self) -> Result<State, RoutingError> {
@@ -140,6 +132,7 @@ impl Adult {
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_queue: self.msg_backlog.into_iter().collect(),
+            direct_msg_backlog: self.direct_msg_backlog,
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
             // we reset the message filter so that the node can correctly process some messages as
@@ -289,6 +282,34 @@ impl Base for Adult {
         &mut self.timer
     }
 
+    fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
+        debug!("{} - State changed to Adult.", self);
+
+        for msg in self.msg_backlog.drain(..).collect_vec() {
+            if let Err(err) = self.dispatch_routing_message(msg, outbox) {
+                debug!("{} - {:?}", self, err);
+            }
+        }
+
+        let mut transition = Transition::Stay;
+        for (pub_id, msg) in self.direct_msg_backlog.drain(..).collect_vec() {
+            match &transition {
+                Transition::Stay => (),
+                _ => {
+                    self.direct_msg_backlog.push((pub_id, msg));
+                    continue;
+                }
+            }
+
+            match self.handle_direct_message(msg, pub_id, outbox) {
+                Ok(new_transition) => transition = new_transition,
+                Err(err) => debug!("{} - {:?}", self, err),
+            }
+        }
+
+        transition
+    }
+
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.parsec_timer_token == token {
             if self.chain.is_peer_our_elder(self.id()) {
@@ -344,8 +365,12 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            _ => {
-                debug!("{} Unhandled direct message: {:?}", self, msg);
+            msg => {
+                debug!(
+                    "{} Unhandled direct message, adding to backlog: {:?}",
+                    self, msg
+                );
+                self.direct_msg_backlog.push((p2p_node, msg));
                 Ok(Transition::Stay)
             }
         }
