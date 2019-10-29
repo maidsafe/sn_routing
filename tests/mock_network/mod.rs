@@ -194,11 +194,7 @@ fn node_joins_in_front() {
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
-// FIXME: the test is currently ignored as the new way of handling joining nodes allows for
-// unconsensused observations that will never be consensused, which makes the test fail. Unignore
-// it when we have a better way of detecting the end of a test.
 #[test]
-#[ignore]
 fn multiple_joining_nodes() {
     let network = Network::new(
         NetworkParams {

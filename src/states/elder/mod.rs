@@ -478,8 +478,8 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {
             debug!(
-                "{} - Received message signature from invalid peer {}",
-                self, pub_id
+                "{} - Received message signature from invalid peer {}, {:?}",
+                self, pub_id, msg
             );
             return Err(RoutingError::InvalidSource);
         }
