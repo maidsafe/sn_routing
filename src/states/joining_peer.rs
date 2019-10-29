@@ -139,6 +139,18 @@ impl JoiningPeer {
                 src: Authority::PrefixSection(_),
                 dst: Authority::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
+            RoutingMessage {
+                content:
+                    MessageContent::ConnectionRequest {
+                        conn_info, pub_id, ..
+                    },
+                src: Authority::Node(_),
+                dst: Authority::Node(_),
+            } => {
+                self.peer_map_mut().insert(pub_id, conn_info);
+                self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+                Ok(Transition::Stay)
+            }
             _ => {
                 debug!(
                     "{} - Unhandled routing message, adding to backlog: {:?}",

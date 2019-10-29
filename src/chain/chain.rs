@@ -23,7 +23,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -77,6 +77,10 @@ pub struct Chain {
     /// Temporary. Counting the accumulated prune events. Only used in tests until tests that
     /// actually tests pruning is in place.
     parsec_prune_accumulated: usize,
+    /// Backlog of completed event that need to be processed when churn complete.
+    churn_event_backlog: VecDeque<AccumulatingEvent>,
+    /// Marker indicating we are processing churn event
+    process_churn: bool,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -123,6 +127,8 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             parsec_prune_accumulated: 0,
+            churn_event_backlog: Default::default(),
+            process_churn: false,
         }
     }
 
@@ -252,6 +258,13 @@ impl Chain {
     /// If the event is a `EldersInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
     pub fn poll(&mut self) -> Result<Option<(AccumulatingEvent, EldersChange)>, RoutingError> {
+        if !self.process_churn && self.state.change == PrefixChange::None {
+            if let Some(event) = self.churn_event_backlog.pop_back() {
+                self.process_churn = true;
+                return Ok(Some((event, EldersChange::default())));
+            }
+        }
+
         let (event, proofs) = {
             let opt_event = self
                 .chain_accumulator
@@ -291,6 +304,7 @@ impl Chain {
                         .collect(),
                 };
 
+                self.process_churn = false;
                 return Ok(Some((event, neighbour_change)));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
@@ -330,6 +344,20 @@ impl Chain {
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::SendAckMessage(_)
             | AccumulatingEvent::Relocate(_) => (),
+        }
+
+        let start_churn_event = match event {
+            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
+            _ => false,
+        };
+
+        if start_churn_event {
+            if self.process_churn {
+                self.churn_event_backlog.push_front(event);
+                return Ok(None);
+            } else {
+                self.process_churn = true;
+            }
         }
 
         Ok(Some((event, EldersChange::default())))
@@ -495,6 +523,9 @@ impl Chain {
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
     /// cached and currently accumulated events.
     pub fn finalise_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
+        self.churn_event_backlog.clear();
+        self.process_churn = false;
+
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
         self.state.change = PrefixChange::None;
