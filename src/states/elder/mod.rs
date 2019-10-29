@@ -838,10 +838,12 @@ impl Elder {
             return Transition::Stay;
         }
 
-        let names = self.chain.closest_section(&details.content().destination).1;
-        let conn_infos = self
-            .peer_map
-            .get_connection_infos(&names)
+        let closest_section = self.chain.closest_section(&details.content().destination).0;
+        let conn_infos: Vec<_> = self
+            .chain
+            .get_section_elders(&closest_section)
+            .iter()
+            .flat_map(|nodes| nodes.values().map(P2pNode::connection_info))
             .cloned()
             .collect();
 
