@@ -205,7 +205,7 @@ fn multiple_joining_nodes() {
     );
     let mut nodes = create_connected_nodes(&network, LOWERED_ELDER_SIZE);
 
-    while nodes.len() < 40 {
+    while nodes.len() < 25 {
         info!("Size {}", nodes.len());
 
         // Try adding five nodes at once, possibly to the same section. This makes sure one section
