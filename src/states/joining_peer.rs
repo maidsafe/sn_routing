@@ -42,7 +42,7 @@ const MAX_JOIN_ATTEMPTS: u8 = 3;
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
-    msg_backlog: Vec<SignedRoutingMessage>,
+    routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     full_id: FullId,
     peer_map: PeerMap,
@@ -69,7 +69,7 @@ impl JoiningPeer {
         let mut joining_peer = Self {
             network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
-            msg_backlog: vec![],
+            routing_msg_backlog: vec![],
             direct_msg_backlog: vec![],
             full_id,
             timer: timer,
@@ -95,7 +95,7 @@ impl JoiningPeer {
             event_backlog: vec![],
             full_id: self.full_id,
             gen_pfx_info,
-            msg_backlog: self.msg_backlog,
+            routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
             peer_map: self.peer_map,
             routing_msg_filter: self.routing_msg_filter,
@@ -159,7 +159,7 @@ impl JoiningPeer {
                     "{} - Unhandled routing message, adding to backlog: {:?}",
                     self, msg
                 );
-                self.msg_backlog
+                self.routing_msg_backlog
                     .push(SignedRoutingMessage::from_parts(msg, metadata));
                 Ok(Transition::Stay)
             }
@@ -288,7 +288,7 @@ impl Base for JoiningPeer {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)
         } else {
-            self.msg_backlog.push(msg);
+            self.routing_msg_backlog.push(msg);
             Ok(Transition::Stay)
         }
     }

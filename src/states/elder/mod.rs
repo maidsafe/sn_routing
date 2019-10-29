@@ -69,7 +69,7 @@ pub struct ElderDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_queue: VecDeque<SignedRoutingMessage>,
-    pub msg_backlog: Vec<SignedRoutingMessage>,
+    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
@@ -84,7 +84,7 @@ pub struct Elder {
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<SignedRoutingMessage>,
-    msg_backlog: Vec<SignedRoutingMessage>,
+    routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
@@ -135,7 +135,7 @@ impl Elder {
             full_id,
             gen_pfx_info,
             msg_queue: Default::default(),
-            msg_backlog: Default::default(),
+            routing_msg_backlog: Default::default(),
             direct_msg_backlog: Default::default(),
             parsec_map,
             peer_map,
@@ -189,7 +189,7 @@ impl Elder {
                 full_id: state.full_id,
                 gen_pfx_info: state.gen_pfx_info,
                 msg_queue: state.msg_queue,
-                msg_backlog: Default::default(),
+                routing_msg_backlog: Default::default(),
                 direct_msg_backlog: Default::default(),
                 parsec_map: state.parsec_map,
                 peer_map: state.peer_map,
@@ -230,7 +230,7 @@ impl Elder {
             full_id: details.full_id.clone(),
             is_first_node,
             msg_queue: details.msg_queue,
-            msg_backlog: details.msg_backlog,
+            routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
@@ -1173,7 +1173,7 @@ impl Base for Elder {
         }
 
         if let Transition::Stay = &transition {
-            for msg in self.msg_backlog.drain(..).collect_vec() {
+            for msg in self.routing_msg_backlog.drain(..).collect_vec() {
                 if let Err(err) = self.handle_filtered_signed_message(msg) {
                     debug!("{} - {:?}", self, err);
                 }

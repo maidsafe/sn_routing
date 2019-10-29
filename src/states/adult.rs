@@ -47,7 +47,7 @@ pub struct AdultDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_backlog: Vec<SignedRoutingMessage>,
+    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -62,7 +62,7 @@ pub struct Adult {
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
-    msg_backlog: Vec<SignedRoutingMessage>,
+    routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
@@ -91,7 +91,7 @@ impl Adult {
             event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
-            msg_backlog: details.msg_backlog,
+            routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
             parsec_map,
             peer_map: details.peer_map,
@@ -132,7 +132,7 @@ impl Adult {
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_queue: Default::default(),
-            msg_backlog: self.msg_backlog,
+            routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
@@ -219,7 +219,7 @@ impl Adult {
             self,
             msg
         );
-        self.msg_backlog.push(msg)
+        self.routing_msg_backlog.push(msg)
     }
 
     // Reject the bootstrap request, because only Elders can handle it.
@@ -286,7 +286,7 @@ impl Base for Adult {
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State changed to Adult.", self);
 
-        for msg in self.msg_backlog.drain(..).collect_vec() {
+        for msg in self.routing_msg_backlog.drain(..).collect_vec() {
             if let Err(err) = self.dispatch_routing_message(msg, outbox) {
                 debug!("{} - {:?}", self, err);
             }
@@ -401,7 +401,7 @@ impl Base for Adult {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)?;
         } else {
-            self.msg_backlog.push(msg);
+            self.routing_msg_backlog.push(msg);
         }
         Ok(Transition::Stay)
     }

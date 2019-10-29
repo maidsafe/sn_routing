@@ -301,7 +301,7 @@ fn new_elder_state(
         full_id: full_id.clone(),
         gen_pfx_info: gen_pfx_info.clone(),
         msg_queue: Default::default(),
-        msg_backlog: Default::default(),
+        routing_msg_backlog: Default::default(),
         direct_msg_backlog: Default::default(),
         parsec_map,
         peer_map,
