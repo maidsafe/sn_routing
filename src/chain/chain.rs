@@ -736,8 +736,9 @@ impl Chain {
         self.state
             .their_knowledge
             .iter()
-            .find(|(prefix, _)| prefix.matches(&target.name()))
+            .filter(|(prefix, _)| target.is_compatible(prefix))
             .map(|(_, index)| *index)
+            .min()
             .unwrap_or(0)
     }
 

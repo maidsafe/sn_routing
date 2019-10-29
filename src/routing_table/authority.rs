@@ -54,6 +54,14 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
             Authority::PrefixSection(prefix) => prefix.lower_bound(),
         }
     }
+
+    /// Returns if the authority is compatible with that prefix
+    pub fn is_compatible(&self, other_prefix: &Prefix<N>) -> bool {
+        match self {
+            Authority::Section(name) | Authority::Node(name) => other_prefix.matches(name),
+            Authority::PrefixSection(prefix) => other_prefix.is_compatible(prefix),
+        }
+    }
 }
 
 impl Authority<XorName> {
