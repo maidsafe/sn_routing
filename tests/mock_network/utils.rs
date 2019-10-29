@@ -655,8 +655,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     {
         panic!(
             "Our prefix is compatible with one of the neighbour prefixes:\
-             us: {:?} / neighbour: {:?}",
-            our_prefix, compatible_prefix,
+             us: {:?} / neighbour: {:?}, neighbour_prefixes: {:?}",
+            our_prefix, compatible_prefix, neighbour_prefixes,
         );
     }
 
@@ -665,11 +665,12 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .find(|prefix| node.inner.section_elders(prefix).len() < elder_size)
     {
         panic!(
-            "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?})",
+            "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), neighbour_prefixes: {:?}",
             prefix,
             node.inner.section_elders(prefix).len(),
             our_name,
             our_prefix,
+            neighbour_prefixes,
         );
     }
 

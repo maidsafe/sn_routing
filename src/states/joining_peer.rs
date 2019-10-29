@@ -271,15 +271,24 @@ impl Base for JoiningPeer {
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
 
-        if self
+        if !self
             .routing_msg_filter
             .filter_incoming(msg.routing_message())
             .is_new()
-            && self.in_authority(&msg.routing_message().dst)
         {
+            trace!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                msg.routing_message()
+            );
+            return Ok(Transition::Stay);
+        }
+
+        if self.in_authority(&msg.routing_message().dst) {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)
         } else {
+            self.msg_backlog.push(msg);
             Ok(Transition::Stay)
         }
     }
