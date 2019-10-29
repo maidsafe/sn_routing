@@ -9,8 +9,8 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberPersona, MemberState,
-    NetworkEvent, Proof, ProofSet, SectionProofChain,
+    AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberInfo, MemberPersona,
+    MemberState, NetworkEvent, Proof, ProofSet, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -29,7 +29,7 @@ use std::{
 };
 
 #[cfg(feature = "mock_base")]
-use {super::MemberInfo, crate::crypto::Digest256};
+use crate::crypto::Digest256;
 
 /// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
 /// protect against rapid splitting and merging in the face of moderate churn.
@@ -374,10 +374,13 @@ impl Chain {
         self.increase_members_age(&pub_id);
 
         // TODO: support rejoining
-        let info = self.state.our_members.entry(pub_id).or_default();
+        let info = self
+            .state
+            .our_members
+            .entry(pub_id)
+            .or_insert_with(|| MemberInfo::new(p2p_node.connection_info().clone()));
         info.state = MemberState::Joined;
         info.set_age(age);
-        info.connection_info = Some(p2p_node.connection_info().clone());
     }
 
     /// Remove a member from our section.
@@ -581,7 +584,7 @@ impl Chain {
         self.state
             .our_members
             .get(&pub_id)
-            .and_then(|member_info| member_info.connection_info.clone())
+            .map(|member_info| member_info.connection_info.clone())
     }
 
     /// Returns a set of elders we should be connected to.

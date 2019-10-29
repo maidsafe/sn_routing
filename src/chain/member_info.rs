@@ -48,8 +48,7 @@ const MAX_INFANT_AGE: u32 = MIN_AGE as u32;
 pub struct MemberInfo {
     pub age_counter: AgeCounter,
     pub state: MemberState,
-    // WIP: is Option due to the default constructor
-    pub connection_info: Option<ConnectionInfo>,
+    pub connection_info: ConnectionInfo,
 }
 
 impl MemberInfo {
@@ -71,12 +70,12 @@ impl MemberInfo {
     }
 }
 
-impl Default for MemberInfo {
-    fn default() -> Self {
+impl MemberInfo {
+    pub fn new(connection_info: ConnectionInfo) -> Self {
         Self {
             age_counter: MIN_AGE_COUNTER,
             state: MemberState::Joined,
-            connection_info: None,
+            connection_info,
         }
     }
 }

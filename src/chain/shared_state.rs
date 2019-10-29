@@ -74,7 +74,7 @@ impl SharedState {
                 let info = MemberInfo {
                     age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
-                    connection_info: Some(p2p_node.connection_info().clone()),
+                    connection_info: p2p_node.connection_info().clone(),
                 };
                 (*p2p_node.public_id(), info)
             })
