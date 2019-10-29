@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, AgeCounter, EldersInfo, MemberInfo,
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, AccumulatingEvent, AgeCounter, EldersInfo, MemberInfo,
     MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
@@ -32,6 +32,8 @@ const MAX_THEIR_RECENT_KEYS: usize = 10;
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SharedState {
+    /// Indicate whether nodes are shared state because genesis event was seen
+    pub handled_genesis_event: bool,
     /// The new self elders info, that doesn't necessarily have a full set of signatures yet.
     pub new_info: EldersInfo,
     /// The latest few fully signed infos of our own sections.
@@ -57,6 +59,8 @@ pub struct SharedState {
     pub their_knowledge: BTreeMap<Prefix<XorName>, u64>,
     /// Recent keys removed from their_keys
     pub their_recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
+    /// Backlog of completed event that need to be processed when churn complete.
+    pub churn_event_backlog: VecDeque<AccumulatingEvent>,
 }
 
 impl SharedState {
@@ -81,6 +85,7 @@ impl SharedState {
             .collect();
 
         Self {
+            handled_genesis_event: false,
             new_info: elders_info.clone(),
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
@@ -92,9 +97,11 @@ impl SharedState {
             their_keys,
             their_knowledge: Default::default(),
             their_recent_keys: Default::default(),
+            churn_event_backlog: Default::default(),
         }
     }
 
+    #[allow(clippy::cognitive_complexity)]
     pub fn update_with_genesis_related_info(
         &mut self,
         related_info: &[u8],
@@ -102,6 +109,16 @@ impl SharedState {
     ) -> Result<(), RoutingError> {
         if related_info.is_empty() {
             return Ok(());
+        }
+
+        if self.handled_genesis_event {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - update_with_genesis_related_info different handled_genesis_event:\n{:?},\n{:?}",
+                log_ident,
+                self.handled_genesis_event,
+                false
+            );
         }
 
         let (
@@ -112,6 +129,7 @@ impl SharedState {
             their_keys,
             their_knowledge,
             their_recent_keys,
+            churn_event_backlog,
         ) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
@@ -178,7 +196,17 @@ impl SharedState {
                     their_recent_keys
                 );
             }
+            if self.churn_event_backlog != churn_event_backlog {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} - update_with_genesis_related_info different churn_event_backlog:\n{:?},\n{:?}",
+                    log_ident,
+                    self.churn_event_backlog,
+                    churn_event_backlog
+                );
+            }
         }
+        self.handled_genesis_event = true;
         self.our_infos = our_infos;
         self.our_history = our_history;
         self.our_members = our_members;
@@ -186,6 +214,7 @@ impl SharedState {
         self.their_keys = their_keys;
         self.their_knowledge = their_knowledge;
         self.their_recent_keys = their_recent_keys;
+        self.churn_event_backlog = churn_event_backlog;
 
         Ok(())
     }
@@ -199,6 +228,7 @@ impl SharedState {
             &self.their_keys,
             &self.their_knowledge,
             &self.their_recent_keys,
+            &self.churn_event_backlog,
         ))?)
     }
 
