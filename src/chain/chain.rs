@@ -260,6 +260,7 @@ impl Chain {
             && self.state.change == PrefixChange::None
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
+                trace!("{} churn backlog poll Accumulating event {:?}", self, event);
                 self.process_churn = true;
                 return Ok(Some((event, EldersChange::default())));
             }
@@ -352,6 +353,7 @@ impl Chain {
 
         if start_churn_event {
             if self.process_churn {
+                trace!("{} churn backlog Accumulating event {:?}", self, event);
                 self.state.churn_event_backlog.push_front(event);
                 return Ok(None);
             } else {

@@ -331,9 +331,11 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
             Some(index)
         })
         .collect();
-    for index in &failed_to_join {
-        let _ = nodes.remove(*index);
-    }
+    let removed_nodes: Vec<_> = failed_to_join
+        .iter()
+        .map(|index| nodes.remove(*index).name())
+        .collect();
+    info!("Failed to be Added as Nodes: {:?}", removed_nodes);
     poll_and_resend(nodes);
     failed_to_join.len()
 }

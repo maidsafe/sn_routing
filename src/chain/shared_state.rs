@@ -107,10 +107,6 @@ impl SharedState {
         related_info: &[u8],
         log_ident: &LogIdent,
     ) -> Result<(), RoutingError> {
-        if related_info.is_empty() {
-            return Ok(());
-        }
-
         if self.handled_genesis_event {
             log_or_panic!(
                 LogLevel::Error,
@@ -119,6 +115,11 @@ impl SharedState {
                 self.handled_genesis_event,
                 false
             );
+        }
+        self.handled_genesis_event = true;
+
+        if related_info.is_empty() {
+            return Ok(());
         }
 
         let (
@@ -206,7 +207,6 @@ impl SharedState {
                 );
             }
         }
-        self.handled_genesis_event = true;
         self.our_infos = our_infos;
         self.our_history = our_history;
         self.our_members = our_members;
