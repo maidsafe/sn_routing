@@ -124,11 +124,6 @@ impl AccumulatingProof {
         new_share && new_proof
     }
 
-    /// Returns whether the set contains a signature by that ID.
-    pub fn contains_id(&self, id: &PublicId) -> bool {
-        self.parsec_proofs.contains_id(id)
-    }
-
     pub fn parsec_proof_set(&self) -> &ProofSet {
         &self.parsec_proofs
     }

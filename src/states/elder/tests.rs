@@ -132,9 +132,11 @@ impl ElderUnderTest {
                 .zip(self.other_full_ids.iter())
                 .take(count)
                 .for_each(|(parsec, full_id)| {
-                    let sig_event = event
-                        .elders_info()
-                        .map(|info| unwrap!(SectionInfoSigPayload::new(info, &full_id)));
+                    let sig_event = if let AccumulatingEvent::SectionInfo(ref info) = event {
+                        Some(unwrap!(SectionInfoSigPayload::new(info, &full_id)))
+                    } else {
+                        None
+                    };
                     parsec.vote_for(
                         event.clone().into_network_event_with(sig_event),
                         &LogIdent::new(&0),

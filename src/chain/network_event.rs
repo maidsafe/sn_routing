@@ -120,15 +120,6 @@ impl AccumulatingEvent {
             signature,
         }
     }
-
-    pub fn elders_info(&self) -> Option<&EldersInfo> {
-        match self {
-            AccumulatingEvent::SectionInfo(info) | AccumulatingEvent::NeighbourInfo(info) => {
-                Some(info)
-            }
-            _ => None,
-        }
-    }
 }
 
 impl Debug for AccumulatingEvent {
@@ -169,12 +160,6 @@ pub struct NetworkEvent {
 }
 
 impl NetworkEvent {
-    /// Returns the payload if this is a `SectionInfo` event.
-    #[cfg(feature = "mock_base")]
-    pub fn elders_info(&self) -> Option<&EldersInfo> {
-        self.payload.elders_info()
-    }
-
     /// Convert `NetworkEvent` into a Parsec Observation
     pub fn into_obs(self) -> Result<parsec::Observation<NetworkEvent, PublicId>, RoutingError> {
         Ok(match self {
