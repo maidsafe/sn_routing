@@ -436,7 +436,8 @@ impl Elder {
                 | AccumulatingEvent::Relocate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
-                AccumulatingEvent::SectionInfo(ref elders_info) => {
+                AccumulatingEvent::SectionInfo(ref elders_info)
+                | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
                     our_pfx.is_neighbour(elders_info.prefix())
                 }
 
@@ -891,7 +892,7 @@ impl Elder {
 
     fn handle_neighbour_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
-            self.vote_for_section_info(elders_info)?;
+            self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
         }
         Ok(())
     }

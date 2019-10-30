@@ -282,7 +282,8 @@ impl Chain {
         };
 
         match event {
-            AccumulatingEvent::SectionInfo(ref info) => {
+            AccumulatingEvent::SectionInfo(ref info)
+            | AccumulatingEvent::NeighbourInfo(ref info) => {
                 let old_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
                 self.add_elders_info(info.clone(), proofs)?;
                 let new_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
@@ -753,7 +754,7 @@ impl Chain {
     fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
         let si = match event.payload {
-            AccumulatingEvent::SectionInfo(ref si) => si,
+            AccumulatingEvent::SectionInfo(ref si) | AccumulatingEvent::NeighbourInfo(ref si) => si,
             _ => return false,
         };
 
@@ -781,7 +782,8 @@ impl Chain {
     /// Returns `true` for other types of `NetworkEvent`.
     fn is_valid_transition(&self, network_event: &AccumulatingEvent, proofs: &ProofSet) -> bool {
         match *network_event {
-            AccumulatingEvent::SectionInfo(ref info) => {
+            AccumulatingEvent::SectionInfo(ref info)
+            | AccumulatingEvent::NeighbourInfo(ref info) => {
                 // Reject any info we have a newer compatible info for.
                 let is_newer = |i: &EldersInfo| {
                     info.prefix().is_compatible(i.prefix()) && i.version() >= info.version()
@@ -843,7 +845,8 @@ impl Chain {
             (PrefixChange::None, _)
             | (PrefixChange::Merging, AccumulatingEvent::OurMerge)
             | (PrefixChange::Merging, AccumulatingEvent::NeighbourMerge(_)) => true,
-            (_, AccumulatingEvent::SectionInfo(elders_info)) => {
+            (_, AccumulatingEvent::SectionInfo(elders_info))
+            | (_, AccumulatingEvent::NeighbourInfo(elders_info)) => {
                 if elders_info.prefix().is_compatible(self.our_prefix())
                     && elders_info.version() > self.state.new_info.version()
                 {

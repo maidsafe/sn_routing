@@ -78,7 +78,10 @@ pub enum AccumulatingEvent {
     NeighbourMerge(Digest256),
     SectionInfo(EldersInfo),
 
-    // Voted for received message with keys to we can update their_keys
+    // Voted for received message with info to update neighbour_info.
+    NeighbourInfo(EldersInfo),
+
+    // Voted for received message with keys to update their_keys
     TheirKeyInfo(SectionKeyInfo),
 
     // Voted for received AckMessage to update their_knowledge
@@ -120,7 +123,9 @@ impl AccumulatingEvent {
 
     pub fn elders_info(&self) -> Option<&EldersInfo> {
         match self {
-            AccumulatingEvent::SectionInfo(info) => Some(info),
+            AccumulatingEvent::SectionInfo(info) | AccumulatingEvent::NeighbourInfo(info) => {
+                Some(info)
+            }
             _ => None,
         }
     }
@@ -138,6 +143,9 @@ impl Debug for AccumulatingEvent {
                 write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
             }
             AccumulatingEvent::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
+            AccumulatingEvent::NeighbourInfo(info) => {
+                write!(formatter, "NeighbourInfo({:?})", info)
+            }
             AccumulatingEvent::TheirKeyInfo(payload) => {
                 write!(formatter, "TheirKeyInfo({:?})", payload)
             }
