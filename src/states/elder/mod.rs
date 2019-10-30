@@ -68,7 +68,9 @@ pub struct ElderDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_queue: Vec<SignedRoutingMessage>,
+    pub msg_queue: VecDeque<SignedRoutingMessage>,
+    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
+    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub parsec_map: ParsecMap,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -82,6 +84,8 @@ pub struct Elder {
     /// The queue of routing messages addressed to us. These do not themselves need forwarding,
     /// although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<SignedRoutingMessage>,
+    routing_msg_backlog: Vec<SignedRoutingMessage>,
+    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
@@ -130,7 +134,9 @@ impl Elder {
             event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
-            msg_queue: Vec::new(),
+            msg_queue: Default::default(),
+            routing_msg_backlog: Default::default(),
+            direct_msg_backlog: Default::default(),
             parsec_map,
             peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -165,7 +171,7 @@ impl Elder {
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: self.routing_msg_filter,
-            msg_queue: self.msg_queue.into_iter().collect(),
+            msg_queue: self.msg_queue,
             network_service: self.network_service,
             network_rx: None,
             parsec_map: self.parsec_map,
@@ -183,6 +189,8 @@ impl Elder {
                 full_id: state.full_id,
                 gen_pfx_info: state.gen_pfx_info,
                 msg_queue: state.msg_queue,
+                routing_msg_backlog: Default::default(),
+                direct_msg_backlog: Default::default(),
                 parsec_map: state.parsec_map,
                 peer_map: state.peer_map,
                 routing_msg_filter: state.msg_filter,
@@ -221,7 +229,9 @@ impl Elder {
             network_service: details.network_service,
             full_id: details.full_id.clone(),
             is_first_node,
-            msg_queue: details.msg_queue.into_iter().collect(),
+            msg_queue: details.msg_queue,
+            routing_msg_backlog: details.routing_msg_backlog,
+            direct_msg_backlog: details.direct_msg_backlog,
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
@@ -468,8 +478,8 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {
             debug!(
-                "{} - Received message signature from invalid peer {}",
-                self, pub_id
+                "{} - Received message signature from invalid peer {}, {:?}",
+                self, pub_id, msg
             );
             return Err(RoutingError::InvalidSource);
         }
@@ -484,7 +494,7 @@ impl Elder {
     // to the rest of our section when destination is targeting multiple; if not, forward it.
     fn handle_signed_message(
         &mut self,
-        mut signed_msg: SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         if !self
             .routing_msg_filter
@@ -499,6 +509,13 @@ impl Elder {
             return Ok(());
         }
 
+        self.handle_filtered_signed_message(signed_msg)
+    }
+
+    fn handle_filtered_signed_message(
+        &mut self,
+        mut signed_msg: SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.check_signed_message_trust(&signed_msg)?;
             self.check_signed_message_integrity(&signed_msg)?;
@@ -1137,6 +1154,35 @@ impl Base for Elder {
         &mut self.timer
     }
 
+    fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
+        debug!("{} - State change to Elder finished.", self);
+
+        // Complete the polling that was interupted by the transition.
+        let _ = self.parsec_poll(outbox);
+
+        let mut transition = Transition::Stay;
+        for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
+            if let Transition::Stay = &transition {
+                match self.handle_direct_message(msg, pub_id, outbox) {
+                    Ok(new_transition) => transition = new_transition,
+                    Err(err) => debug!("{} - {:?}", self, err),
+                }
+            } else {
+                self.direct_msg_backlog.push((pub_id, msg));
+            }
+        }
+
+        if let Transition::Stay = &transition {
+            for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
+                if let Err(err) = self.handle_filtered_signed_message(msg) {
+                    debug!("{} - {:?}", self, err);
+                }
+            }
+        }
+
+        transition
+    }
+
     fn handle_send_message(
         &mut self,
         src: Authority<XorName>,
@@ -1458,6 +1504,15 @@ impl Approved for Elder {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        if !self
+            .chain
+            .our_prefix()
+            .matches(&payload.p2p_node.public_id().name())
+        {
+            info!("{} - ignore Online: {:?}.", self, payload);
+            return Ok(());
+        }
+
         info!("{} - handle Online: {:?}.", self, payload);
 
         self.chain.add_member(payload.p2p_node.clone(), payload.age);

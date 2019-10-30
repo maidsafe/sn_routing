@@ -42,7 +42,8 @@ const MAX_JOIN_ATTEMPTS: u8 = 3;
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
-    msg_backlog: Vec<SignedRoutingMessage>,
+    routing_msg_backlog: Vec<SignedRoutingMessage>,
+    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     full_id: FullId,
     peer_map: PeerMap,
     timer: Timer,
@@ -68,7 +69,8 @@ impl JoiningPeer {
         let mut joining_peer = Self {
             network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
-            msg_backlog: vec![],
+            routing_msg_backlog: vec![],
+            direct_msg_backlog: vec![],
             full_id,
             timer: timer,
             peer_map,
@@ -93,7 +95,8 @@ impl JoiningPeer {
             event_backlog: vec![],
             full_id: self.full_id,
             gen_pfx_info,
-            msg_backlog: self.msg_backlog,
+            routing_msg_backlog: self.routing_msg_backlog,
+            direct_msg_backlog: self.direct_msg_backlog,
             peer_map: self.peer_map,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
@@ -139,12 +142,24 @@ impl JoiningPeer {
                 src: Authority::PrefixSection(_),
                 dst: Authority::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
+            RoutingMessage {
+                content:
+                    MessageContent::ConnectionRequest {
+                        conn_info, pub_id, ..
+                    },
+                src: Authority::Node(_),
+                dst: Authority::Node(_),
+            } => {
+                self.peer_map_mut().insert(pub_id, conn_info);
+                self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+                Ok(Transition::Stay)
+            }
             _ => {
                 debug!(
                     "{} - Unhandled routing message, adding to backlog: {:?}",
                     self, msg
                 );
-                self.msg_backlog
+                self.routing_msg_backlog
                     .push(SignedRoutingMessage::from_parts(msg, metadata));
                 Ok(Transition::Stay)
             }
@@ -238,11 +253,14 @@ impl Base for JoiningPeer {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        _p2p_node: P2pNode,
+        p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        debug!("{} Unhandled direct message: {:?}", self, msg);
-
+        debug!(
+            "{} Unhandled direct message, adding to backlog: {:?}",
+            self, msg
+        );
+        self.direct_msg_backlog.push((p2p_node, msg));
         Ok(Transition::Stay)
     }
 
@@ -253,15 +271,24 @@ impl Base for JoiningPeer {
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
 
-        if self
+        if !self
             .routing_msg_filter
             .filter_incoming(msg.routing_message())
             .is_new()
-            && self.in_authority(&msg.routing_message().dst)
         {
+            trace!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                msg.routing_message()
+            );
+            return Ok(Transition::Stay);
+        }
+
+        if self.in_authority(&msg.routing_message().dst) {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)
         } else {
+            self.routing_msg_backlog.push(msg);
             Ok(Transition::Stay)
         }
     }

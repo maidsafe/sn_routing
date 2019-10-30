@@ -35,7 +35,10 @@ use crate::{
     NetworkService,
 };
 use itertools::Itertools;
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    mem,
+};
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -47,7 +50,8 @@ pub struct AdultDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_backlog: Vec<SignedRoutingMessage>,
+    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
+    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -61,7 +65,8 @@ pub struct Adult {
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
-    msg_backlog: Vec<SignedRoutingMessage>,
+    routing_msg_backlog: Vec<SignedRoutingMessage>,
+    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
     add_timer_token: u64,
@@ -73,7 +78,7 @@ pub struct Adult {
 impl Adult {
     pub fn from_joining_peer(
         details: AdultDetails,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
@@ -83,13 +88,14 @@ impl Adult {
 
         let chain = Chain::new(details.network_cfg, public_id, details.gen_pfx_info.clone());
 
-        let mut node = Self {
+        let node = Self {
             chain,
             network_service: details.network_service,
             event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
-            msg_backlog: details.msg_backlog,
+            routing_msg_backlog: details.routing_msg_backlog,
+            direct_msg_backlog: details.direct_msg_backlog,
             parsec_map,
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
@@ -98,18 +104,7 @@ impl Adult {
             add_timer_token,
         };
 
-        node.init(outbox)?;
         Ok(node)
-    }
-
-    fn init(&mut self, outbox: &mut dyn EventBox) -> Result<(), RoutingError> {
-        debug!("{} - State changed to Adult.", self);
-
-        for msg in self.msg_backlog.drain(..).collect_vec() {
-            self.dispatch_routing_message(msg, outbox)?;
-        }
-
-        Ok(())
     }
 
     pub fn rebootstrap(self) -> Result<State, RoutingError> {
@@ -139,7 +134,9 @@ impl Adult {
             event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            msg_queue: self.msg_backlog.into_iter().collect(),
+            msg_queue: Default::default(),
+            routing_msg_backlog: self.routing_msg_backlog,
+            direct_msg_backlog: self.direct_msg_backlog,
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
             // we reset the message filter so that the node can correctly process some messages as
@@ -225,7 +222,7 @@ impl Adult {
             self,
             msg
         );
-        self.msg_backlog.push(msg)
+        self.routing_msg_backlog.push(msg)
     }
 
     // Reject the bootstrap request, because only Elders can handle it.
@@ -289,6 +286,30 @@ impl Base for Adult {
         &mut self.timer
     }
 
+    fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
+        debug!("{} - State changed to Adult finished.", self);
+
+        for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
+            if let Err(err) = self.dispatch_routing_message(msg, outbox) {
+                debug!("{} - {:?}", self, err);
+            }
+        }
+
+        let mut transition = Transition::Stay;
+        for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
+            if let Transition::Stay = &transition {
+                match self.handle_direct_message(msg, pub_id, outbox) {
+                    Ok(new_transition) => transition = new_transition,
+                    Err(err) => debug!("{} - {:?}", self, err),
+                }
+            } else {
+                self.direct_msg_backlog.push((pub_id, msg));
+            }
+        }
+
+        transition
+    }
+
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.parsec_timer_token == token {
             if self.chain.is_peer_our_elder(self.id()) {
@@ -344,8 +365,12 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            _ => {
-                debug!("{} Unhandled direct message: {:?}", self, msg);
+            msg => {
+                debug!(
+                    "{} Unhandled direct message, adding to backlog: {:?}",
+                    self, msg
+                );
+                self.direct_msg_backlog.push((p2p_node, msg));
                 Ok(Transition::Stay)
             }
         }
@@ -358,16 +383,25 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
 
-        if self
+        if !self
             .routing_msg_filter
             .filter_incoming(msg.routing_message())
             .is_new()
-            && self.in_authority(&msg.routing_message().dst)
         {
-            self.check_signed_message_integrity(&msg)?;
-            self.dispatch_routing_message(msg, outbox)?;
+            trace!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                msg.routing_message()
+            );
+            return Ok(Transition::Stay);
         }
 
+        if self.in_authority(&msg.routing_message().dst) {
+            self.check_signed_message_integrity(&msg)?;
+            self.dispatch_routing_message(msg, outbox)?;
+        } else {
+            self.routing_msg_backlog.push(msg);
+        }
         Ok(Transition::Stay)
     }
 
@@ -457,6 +491,15 @@ impl Approved for Adult {
         payload: OnlinePayload,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        if !self
+            .chain
+            .our_prefix()
+            .matches(&payload.p2p_node.public_id().name())
+        {
+            info!("{} - ignore Online: {:?}.", self, payload);
+            return Ok(());
+        }
+
         info!("{} - handle Online: {:?}.", self, payload);
         self.chain.add_member(payload.p2p_node, payload.age);
         Ok(())

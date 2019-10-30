@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
 /// accumulate.
-pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(30);
+pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
@@ -52,7 +52,12 @@ impl SignatureAccumulator {
             .map(|(hash, _)| *hash)
             .collect_vec();
         for hash in expired_msgs {
-            let _ = self.msgs.remove(&hash);
+            if let Some((Some(existing_msg), clock)) = self.msgs.remove(&hash) {
+                error!(
+                    "Remove unaccumulated expired message clock {:?}, msg {:?}",
+                    clock, existing_msg,
+                );
+            }
         }
     }
 

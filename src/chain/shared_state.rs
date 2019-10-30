@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingProof, AgeCounter, EldersInfo, MemberInfo,
-    MemberPersona, MemberState, MIN_AGE_COUNTER,
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingEvent, AccumulatingProof, AgeCounter,
+    EldersInfo, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
     crypto::Digest256, error::RoutingError, id::PublicId, utils::LogIdent, BlsPublicKey,
@@ -32,6 +32,8 @@ const MAX_THEIR_RECENT_KEYS: usize = 10;
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
 pub struct SharedState {
+    /// Indicate whether nodes are shared state because genesis event was seen
+    pub handled_genesis_event: bool,
     /// The new self elders info, that doesn't necessarily have a full set of signatures yet.
     pub new_info: EldersInfo,
     /// The latest few fully signed infos of our own sections.
@@ -57,6 +59,8 @@ pub struct SharedState {
     pub their_knowledge: BTreeMap<Prefix<XorName>, u64>,
     /// Recent keys removed from their_keys
     pub their_recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
+    /// Backlog of completed events that need to be processed when churn completes.
+    pub churn_event_backlog: VecDeque<AccumulatingEvent>,
 }
 
 impl SharedState {
@@ -81,6 +85,7 @@ impl SharedState {
             .collect();
 
         Self {
+            handled_genesis_event: false,
             new_info: elders_info.clone(),
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
@@ -92,6 +97,7 @@ impl SharedState {
             their_keys,
             their_knowledge: Default::default(),
             their_recent_keys: Default::default(),
+            churn_event_backlog: Default::default(),
         }
     }
 
@@ -100,6 +106,14 @@ impl SharedState {
         related_info: &[u8],
         log_ident: &LogIdent,
     ) -> Result<(), RoutingError> {
+        update_with_genesis_related_info_check_same(
+            log_ident,
+            "handled_genesis_event",
+            &self.handled_genesis_event,
+            &false,
+        );
+        self.handled_genesis_event = true;
+
         if related_info.is_empty() {
             return Ok(());
         }
@@ -112,72 +126,58 @@ impl SharedState {
             their_keys,
             their_knowledge,
             their_recent_keys,
+            churn_event_backlog,
         ) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
-            if self.our_infos != our_infos {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} - update_with_genesis_related_info different our_infos:\n{:?},\n{:?}",
-                    log_ident,
-                    self.our_infos,
-                    our_infos
-                );
-            }
-            if self.our_history != our_history {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} - update_with_genesis_related_info different our_history:\n{:?},\n{:?}",
-                    log_ident,
-                    self.our_history,
-                    our_history
-                );
-            }
-            if self.our_members != our_members {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} - update_with_genesis_related_info different our_members:\n{:?},\n{:?}",
-                    log_ident,
-                    self.our_members,
-                    our_members
-                );
-            }
-            if self.neighbour_infos != neighbour_infos {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} - update_with_genesis_related_info different neighbour_infos:\n{:?},\n{:?}",
-                    log_ident,
-                    self.neighbour_infos,
-                    neighbour_infos
-                );
-            }
-            if self.their_keys != their_keys {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} - update_with_genesis_related_info different their_keys:\n{:?},\n{:?}",
-                    log_ident,
-                    self.their_keys,
-                    their_keys
-                );
-            }
-            if self.their_knowledge != their_knowledge {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} - update_with_genesis_related_info different their_knowledge:\n{:?},\n{:?}",
-                    log_ident,
-                    self.their_knowledge,
-                    their_knowledge
-                );
-            }
-            if self.their_recent_keys != their_recent_keys {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} - update_with_genesis_related_info different their_recent_keys:\n{:?},\n{:?}",
-                    log_ident,
-                    self.their_recent_keys,
-                    their_recent_keys
-                );
-            }
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "our_infos",
+                &self.our_infos,
+                &our_infos,
+            );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "our_history",
+                &self.our_history,
+                &our_history,
+            );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "our_members",
+                &self.our_members,
+                &our_members,
+            );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "neighbour_infos",
+                &self.neighbour_infos,
+                &neighbour_infos,
+            );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "their_keys",
+                &self.their_keys,
+                &their_keys,
+            );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "their_knowledge",
+                &self.their_knowledge,
+                &their_knowledge,
+            );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "their_recent_keys",
+                &self.their_recent_keys,
+                &their_recent_keys,
+            );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "churn_event_backlog",
+                &self.churn_event_backlog,
+                &churn_event_backlog,
+            );
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
@@ -186,6 +186,7 @@ impl SharedState {
         self.their_keys = their_keys;
         self.their_knowledge = their_knowledge;
         self.their_recent_keys = their_recent_keys;
+        self.churn_event_backlog = churn_event_backlog;
 
         Ok(())
     }
@@ -199,6 +200,7 @@ impl SharedState {
             &self.their_keys,
             &self.their_knowledge,
             &self.their_recent_keys,
+            &self.churn_event_backlog,
         ))?)
     }
 
@@ -417,6 +419,26 @@ impl SharedState {
     /// Returns their_knowledge
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         &self.their_knowledge
+    }
+}
+
+fn update_with_genesis_related_info_check_same<T>(
+    log_ident: &LogIdent,
+    id: &str,
+    self_info: &T,
+    to_use_info: &T,
+) where
+    T: Eq + Debug,
+{
+    if self_info != to_use_info {
+        log_or_panic!(
+            LogLevel::Error,
+            "{} - update_with_genesis_related_info_check_same different {}:\n{:?},\n{:?}",
+            id,
+            log_ident,
+            self_info,
+            to_use_info
+        );
     }
 }
 

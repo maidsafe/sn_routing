@@ -77,6 +77,8 @@ pub struct Chain {
     /// Temporary. Counting the accumulated prune events. Only used in tests until tests that
     /// actually tests pruning is in place.
     parsec_prune_accumulated: usize,
+    /// Marker indicating we are processing churn event
+    churn_in_progress: bool,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -123,6 +125,7 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             parsec_prune_accumulated: 0,
+            churn_in_progress: false,
         }
     }
 
@@ -252,6 +255,16 @@ impl Chain {
     /// If the event is a `EldersInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
     pub fn poll(&mut self) -> Result<Option<(AccumulatingEvent, EldersChange)>, RoutingError> {
+        if self.state.handled_genesis_event
+            && !self.churn_in_progress
+            && self.state.change == PrefixChange::None
+        {
+            if let Some(event) = self.state.churn_event_backlog.pop_back() {
+                trace!("{} churn backlog poll Accumulating event {:?}", self, event);
+                return Ok(Some((event, EldersChange::default())));
+            }
+        }
+
         let (event, proofs) = {
             let opt_event = self
                 .chain_accumulator
@@ -332,6 +345,17 @@ impl Chain {
             | AccumulatingEvent::Relocate(_) => (),
         }
 
+        let start_churn_event = match event {
+            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
+            _ => false,
+        };
+
+        if start_churn_event && self.churn_in_progress {
+            trace!("{} churn backlog Accumulating event {:?}", self, event);
+            self.state.churn_event_backlog.push_front(event);
+            return Ok(None);
+        }
+
         Ok(Some((event, EldersChange::default())))
     }
 
@@ -358,6 +382,7 @@ impl Chain {
 
     /// Adds a member to our section.
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
+        self.churn_in_progress = true;
         self.assert_no_prefix_change("add member");
 
         let pub_id = *p2p_node.public_id();
@@ -385,6 +410,7 @@ impl Chain {
 
     /// Remove a member from our section.
     pub fn remove_member(&mut self, pub_id: &PublicId) {
+        self.churn_in_progress = true;
         self.assert_no_prefix_change("remove member");
 
         if let Some(info) = self.state.our_members.get_mut(&pub_id) {
@@ -504,6 +530,7 @@ impl Chain {
         let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
             .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
+        self.state.handled_genesis_event = false;
 
         info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
         trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
@@ -709,8 +736,9 @@ impl Chain {
         self.state
             .their_knowledge
             .iter()
-            .find(|(prefix, _)| prefix.matches(&target.name()))
+            .filter(|(prefix, _)| target.is_compatible(prefix))
             .map(|(_, index)| *index)
+            .min()
             .unwrap_or(0)
     }
 
@@ -896,6 +924,7 @@ impl Chain {
             if is_new_elder {
                 self.is_elder = true;
             }
+            self.churn_in_progress = false;
             self.check_and_clean_neighbour_infos(None);
         } else {
             let ppfx = elders_info.prefix().popped();

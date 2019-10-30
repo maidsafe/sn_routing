@@ -250,6 +250,7 @@ impl PollOptions {
         }
     }
 
+    #[allow(unused)]
     pub fn stop_if<F>(self, pred: F) -> Self
     where
         F: Fn(&[TestNode]) -> bool + 'static,
@@ -330,9 +331,11 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
             Some(index)
         })
         .collect();
-    for index in &failed_to_join {
-        let _ = nodes.remove(*index);
-    }
+    let removed_nodes: Vec<_> = failed_to_join
+        .iter()
+        .map(|index| nodes.remove(*index).name())
+        .collect();
+    info!("Failed to be Added as Nodes: {:?}", removed_nodes);
     poll_and_resend(nodes);
     failed_to_join.len()
 }
@@ -652,8 +655,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     {
         panic!(
             "Our prefix is compatible with one of the neighbour prefixes:\
-             us: {:?} / neighbour: {:?}",
-            our_prefix, compatible_prefix,
+             us: {:?} / neighbour: {:?}, neighbour_prefixes: {:?}",
+            our_prefix, compatible_prefix, neighbour_prefixes,
         );
     }
 
@@ -662,11 +665,12 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .find(|prefix| node.inner.section_elders(prefix).len() < elder_size)
     {
         panic!(
-            "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?})",
+            "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), neighbour_prefixes: {:?}",
             prefix,
             node.inner.section_elders(prefix).len(),
             our_name,
             our_prefix,
+            neighbour_prefixes,
         );
     }
 
@@ -721,7 +725,14 @@ pub fn verify_section_invariants_for_nodes(nodes: &[TestNode], elder_size: usize
 }
 
 pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
-    let mut sections: BTreeMap<Prefix<XorName>, (XorName, BTreeSet<XorName>)> = BTreeMap::new();
+    #[derive(Debug)]
+    struct NodeSectionInfo {
+        node_name: XorName,
+        node_prefix: Prefix<XorName>,
+        view_section_version: u64,
+        view_section_elders: BTreeSet<XorName>,
+    };
+    let mut sections: BTreeMap<Prefix<XorName>, NodeSectionInfo> = BTreeMap::new();
 
     for node in nodes.iter() {
         let our_prefix = unwrap!(node.inner.our_prefix());
@@ -729,29 +740,34 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
         for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
-            let our_view_section_elders = node.inner.section_elders(prefix);
+            let our_info = NodeSectionInfo {
+                node_name: *our_name,
+                node_prefix: *our_prefix,
+                view_section_version: node.inner.section_elder_info_version(prefix),
+                view_section_elders: node.inner.section_elders(prefix),
+            };
 
-            if let Some(&(ref their_name, ref their_view_section_elders)) = sections.get(prefix) {
+            if let Some(ref their_info) = sections.get(prefix) {
                 assert_eq!(
-                    &our_view_section_elders,
-                    their_view_section_elders,
+                    (
+                        &our_info.view_section_elders,
+                        &our_info.view_section_version
+                    ),
+                    (
+                        &their_info.view_section_elders,
+                        &their_info.view_section_version
+                    ),
                     "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                     {:?}: {:?},\n{:?}: {:?}",
+                     {:?},\n{:?}",
                     prefix,
-                    our_name,
-                    their_name,
-                    our_name,
-                    our_view_section_elders,
-                    their_name,
-                    their_view_section_elders,
+                    our_info.node_name,
+                    their_info.node_name,
+                    our_info,
+                    their_info,
                 );
-                // NOTE: previous version of this also included an assertion that the section
-                // versions are the same. Removed since we don't expose the section version in the
-                // `Node` public API.
-                // Should we?
                 continue;
             }
-            let _ = sections.insert(*prefix, (*our_name, our_view_section_elders));
+            let _ = sections.insert(*prefix, our_info);
         }
     }
 
@@ -767,19 +783,19 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
                      Section {:?}, according to node {:?}: {:?}\n\
                      Section {:?}, according to node {:?}: {:?}",
                     prefix1,
-                    sections[prefix1].0,
-                    sections[prefix1].1,
+                    sections[prefix1].node_name,
+                    sections[prefix1].node_prefix,
                     prefix2,
-                    sections[prefix2].0,
-                    sections[prefix2].1
+                    sections[prefix2].node_name,
+                    sections[prefix2].node_prefix,
                 );
             }
         }
     }
 
     // check that each section contains names agreeing with its prefix
-    for (prefix, (_, ref members)) in &sections {
-        for name in members {
+    for (prefix, ref info) in &sections {
+        for name in &info.view_section_elders {
             if !prefix.matches(name) {
                 panic!(
                     "Section members should match the prefix, but {:?} \

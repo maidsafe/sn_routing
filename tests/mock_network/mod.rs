@@ -28,7 +28,6 @@ use routing::{
     mock::Network, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
     XorTargetInterval,
 };
-use std::collections::BTreeSet;
 
 pub const LOWERED_ELDER_SIZE: usize = 3;
 
@@ -195,11 +194,7 @@ fn node_joins_in_front() {
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
-// FIXME: the test is currently ignored as the new way of handling joining nodes allows for
-// unconsensused observations that will never be consensused, which makes the test fail. Unignore
-// it when we have a better way of detecting the end of a test.
 #[test]
-#[ignore]
 fn multiple_joining_nodes() {
     let network = Network::new(
         NetworkParams {
@@ -210,7 +205,7 @@ fn multiple_joining_nodes() {
     );
     let mut nodes = create_connected_nodes(&network, LOWERED_ELDER_SIZE);
 
-    while nodes.len() < 40 {
+    while nodes.len() < 25 {
         info!("Size {}", nodes.len());
 
         // Try adding five nodes at once, possibly to the same section. This makes sure one section
@@ -323,52 +318,8 @@ fn simultaneous_joining_nodes(
     // Act
     // Add new nodes and process until complete
     //
-    let first_new_index = nodes.len();
     nodes.extend(nodes_to_add);
-
-    // Stop polling when all nodes register the new nodes as elders in their respective sections.
-    let all_new_nodes_are_elders = move |nodes: &[TestNode]| {
-        for node in nodes.iter() {
-            for new_node in &nodes[first_new_index..] {
-                let new_node_prefix = match new_node.inner.our_prefix() {
-                    Some(prefix) => prefix,
-                    None => return false,
-                };
-
-                let new_node_section = node.inner.section_elders(new_node_prefix);
-                if !new_node_section.is_empty() && !new_node_section.contains(&new_node.name()) {
-                    return false;
-                }
-            }
-        }
-
-        // Also wait until all nodes register all splits.
-        // TODO: this can be removed if we removed the invariant check at the end of this test.
-        let prefixes: BTreeSet<_> = nodes
-            .iter()
-            .flat_map(|node| {
-                node.inner
-                    .our_prefix()
-                    .copied()
-                    .into_iter()
-                    .chain(node.inner.neighbour_prefixes())
-            })
-            .collect();
-        if prefixes
-            .iter()
-            .tuple_combinations()
-            .any(|(a, b)| a.is_compatible(b))
-        {
-            return false;
-        }
-
-        true
-    };
-
-    poll_and_resend_with_options(
-        &mut nodes,
-        PollOptions::default().stop_if(all_new_nodes_are_elders),
-    );
+    poll_and_resend(&mut nodes);
 
     //
     // Assert
