@@ -10,37 +10,67 @@ use super::{AccumulatingEvent, NetworkEvent, Proof, ProofSet, SectionInfoSigPayl
 use crate::id::PublicId;
 use log::LogLevel;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::mem;
+use std::{mem, rc::Rc};
+
+/// An unresponsive node is detected by conunting how many (defined by UNRESPONSIVE_THRESHOLD)
+/// missed votes among the certain number (defined by UNRESPONSIVE_WINDOW) of recent consensused
+/// observations.
 
 /// The threshold (number of unvoted votes) a node to be considered as unresponsive.
 pub const UNRESPONSIVE_THRESHOLD: usize = 48;
-/// The period (X consensued observations) after which node be considered as unresponsive.
+/// The period (X consensued observations) during which node be considered as unresponsive.
 pub const UNRESPONSIVE_WINDOW: usize = 64;
 
-struct VoteStatus {
-    event: AccumulatingEvent,
-    unvoted: BTreeSet<PublicId>,
+#[derive(Default)]
+struct VoteStatuses {
+    tracked_events: VecDeque<Rc<AccumulatingEvent>>,
+    unvoted: BTreeMap<PublicId, BTreeSet<Rc<AccumulatingEvent>>>,
 }
 
-impl VoteStatus {
-    fn new(event: AccumulatingEvent, all_voters: BTreeSet<PublicId>) -> Self {
-        VoteStatus {
-            event: event,
-            unvoted: all_voters,
+impl VoteStatuses {
+    fn add_expectation(
+        &mut self,
+        event: AccumulatingEvent,
+        non_voters: BTreeSet<PublicId>,
+        all_members: &BTreeSet<PublicId>,
+    ) {
+        let event_rc = Rc::new(event);
+        for id in non_voters {
+            let events = self.unvoted.entry(id).or_insert_with(BTreeSet::new);
+            let _ = events.insert(event_rc.clone());
+        }
+        self.tracked_events.push_back(event_rc);
+
+        // Pruning old events
+        if self.tracked_events.len() > UNRESPONSIVE_WINDOW {
+            if let Some(removed_event) = self.tracked_events.pop_front() {
+                for events in self.unvoted.values_mut() {
+                    let _ = events.remove(&removed_event);
+                }
+            }
+        }
+
+        // Pruning old peers
+        if self.unvoted.len() > all_members.len() {
+            self.unvoted = mem::replace(&mut self.unvoted, BTreeMap::new())
+                .into_iter()
+                .filter(|(peer_id, _)| all_members.contains(peer_id))
+                .collect();
         }
     }
 
-    fn add_vote(&mut self, event: &AccumulatingEvent, voter: &PublicId) -> bool {
-        if &self.event == event {
-            let _ = self.unvoted.remove(voter);
-            true
-        } else {
-            false
+    fn add_vote(&mut self, event: &AccumulatingEvent, voter: &PublicId) {
+        if let Some(events) = self.unvoted.get_mut(voter) {
+            let _ = events.remove(event);
         }
     }
 
     fn is_unresponsive(&self, peer: &PublicId) -> bool {
-        self.unvoted.contains(peer)
+        if let Some(events) = self.unvoted.get(peer) {
+            events.len() > UNRESPONSIVE_THRESHOLD
+        } else {
+            false
+        }
     }
 }
 
@@ -54,9 +84,9 @@ pub(super) struct ChainAccumulator {
     /// Events that were handled: Further incoming proofs for these can be ignored.
     /// When an event is completed, it cannot be or inserted in chain_accumulator.
     completed_events: BTreeSet<AccumulatingEvent>,
-    /// A deque retains the order of insertion, and keeps tracking of which node has not involved.
+    /// A struct retains the order of insertion, and keeps tracking of which node has not involved.
     /// Entry will be created when an event reached consensus.
-    vote_statuses: VecDeque<VoteStatus>,
+    vote_statuses: VoteStatuses,
 }
 
 impl ChainAccumulator {
@@ -84,11 +114,7 @@ impl ChainAccumulator {
         signature: Option<SectionInfoSigPayload>,
     ) -> Result<(), InsertError> {
         if self.completed_events.contains(&event) {
-            let _ = self
-                .vote_statuses
-                .iter_mut()
-                .rev()
-                .any(|vote_status| vote_status.add_vote(&event, &proof.pub_id));
+            self.vote_statuses.add_vote(&event, &proof.pub_id);
             return Err(InsertError::AlreadyComplete);
         }
 
@@ -147,28 +173,20 @@ impl ChainAccumulator {
         &mut self,
         event: AccumulatingEvent,
         proofs: &AccumulatingProof,
-        mut all_voters: BTreeSet<PublicId>,
+        all_voters: BTreeSet<PublicId>,
     ) {
+        let mut non_voted = all_voters.clone();
         for id in proofs.parsec_proof_set().ids() {
-            let _ = all_voters.remove(id);
+            let _ = non_voted.remove(id);
         }
         self.vote_statuses
-            .push_front(VoteStatus::new(event, all_voters));
-        if self.vote_statuses.len() > UNRESPONSIVE_WINDOW {
-            let _ = self.vote_statuses.pop_back();
-        }
+            .add_expectation(event, non_voted, &all_voters);
     }
 
     pub fn check_vote_status(&mut self, members: &BTreeSet<PublicId>) -> BTreeSet<PublicId> {
         members
             .iter()
-            .filter(|peer_id| {
-                self.vote_statuses
-                    .iter()
-                    .filter(|vote_status| vote_status.is_unresponsive(peer_id))
-                    .count()
-                    > UNRESPONSIVE_THRESHOLD
-            })
+            .filter(|peer_id| self.vote_statuses.is_unresponsive(peer_id))
             .cloned()
             .collect()
     }
