@@ -784,15 +784,15 @@ impl Chain {
         match *network_event {
             AccumulatingEvent::SectionInfo(ref info)
             | AccumulatingEvent::NeighbourInfo(ref info) => {
-                // Reject any info we have a newer compatible info for.
-                let is_newer = |i: &EldersInfo| {
-                    info.prefix().is_compatible(i.prefix()) && i.version() >= info.version()
+                // Do not process yet any version that is not the immediate follower of the one we have.
+                let not_follow = |i: &EldersInfo| {
+                    info.prefix().is_compatible(i.prefix()) && *info.version() != (i.version() + 1)
                 };
                 if self
                     .compatible_neighbour_info(info)
                     .into_iter()
                     .chain(iter::once(self.our_info()))
-                    .any(is_newer)
+                    .any(not_follow)
                 {
                     return false;
                 }
