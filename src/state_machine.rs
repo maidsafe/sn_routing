@@ -131,6 +131,14 @@ impl State {
         )
     }
 
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
+        state_dispatch!(
+            self,
+            state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
+            Terminated => Err(RoutingError::InvalidStateForOperation)
+        )
+    }
+
     /// Returns this elder mut state.
     pub fn elder_state_mut(&mut self) -> Option<&mut Elder> {
         match *self {
@@ -217,14 +225,6 @@ impl State {
             *self,
             ref state => state.in_authority(auth),
             Terminated => false
-        )
-    }
-
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
-        state_dispatch!(
-            self,
-            state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
-            Terminated => Err(RoutingError::InvalidStateForOperation)
         )
     }
 
