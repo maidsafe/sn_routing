@@ -164,16 +164,7 @@ impl ParsecMap {
 
     pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &LogIdent) {
         if let Some(ref mut parsec) = self.map.values_mut().last() {
-            let obs = match event.into_obs() {
-                Err(_) => {
-                    warn!(
-                        "{} - Failed to convert NetworkEvent to Parsec Observation.",
-                        log_ident
-                    );
-                    return;
-                }
-                Ok(obs) => obs,
-            };
+            let obs = event.into_obs();
 
             if let Err(err) = parsec.vote_for(obs) {
                 trace!("{} - Parsec vote error: {:?}", log_ident, err);

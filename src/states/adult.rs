@@ -436,11 +436,22 @@ impl Approved for Adult {
         false
     }
 
-    fn handle_add_elder_event(
+    fn handle_online_event(
         &mut self,
-        pub_id: PublicId,
+        payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        let pub_id = *payload.p2p_node.public_id();
+
+        if !self.chain.can_add_member(&payload.p2p_node) {
+            info!("{} - ignore Online: {:?}.", self, payload);
+            return Ok(());
+        }
+
+        info!("{} - handle Online: {:?}.", self, payload);
+        self.chain.add_member(payload.p2p_node, payload.age);
+
+        // Simulate handling AddElder as well
         info!("{} - handle AddElder: {}.", self, pub_id);
         let _ = self.chain.add_elder(pub_id)?;
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
@@ -453,37 +464,19 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_remove_elder_event(
+    fn handle_offline_event(
         &mut self,
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        info!("{} - handle Offline: {}.", self, pub_id);
+        self.chain.remove_member(&pub_id);
+
         info!("{} - handle RemoveElder: {}.", self, pub_id);
         let _ = self.chain.remove_elder(pub_id)?;
         self.disconnect(&pub_id);
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
-        Ok(())
-    }
-
-    fn handle_online_event(
-        &mut self,
-        payload: OnlinePayload,
-        _: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.can_add_member(&payload.p2p_node) {
-            info!("{} - ignore Online: {:?}.", self, payload);
-            return Ok(());
-        }
-
-        info!("{} - handle Online: {:?}.", self, payload);
-        self.chain.add_member(payload.p2p_node, payload.age);
-        Ok(())
-    }
-
-    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
-        info!("{} - handle Offline: {}.", self, pub_id);
-        self.chain.remove_member(&pub_id);
         Ok(())
     }
 
@@ -505,7 +498,11 @@ impl Approved for Adult {
         }
     }
 
-    fn handle_relocate_event(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+    fn handle_relocate_event(
+        &mut self,
+        details: RelocateDetails,
+        _: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         info!("{} - handle Relocate: {:?}.", self, details);
 
         if !self.chain.our_prefix().matches(&details.destination) {

@@ -36,20 +36,6 @@ pub trait Approved: Base {
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
 
-    /// Handles an accumulated `AddElder` event.
-    fn handle_add_elder_event(
-        &mut self,
-        new_pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError>;
-
-    /// Handles an accumulated `RemoveElder` event.
-    fn handle_remove_elder_event(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError>;
-
     /// Handles an accumulated `Online` event.
     fn handle_online_event(
         &mut self,
@@ -58,7 +44,11 @@ pub trait Approved: Base {
     ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `Offline` event.
-    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError>;
+    fn handle_offline_event(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `OurMerge` event.
     fn handle_our_merge_event(&mut self) -> Result<(), RoutingError>;
@@ -86,7 +76,11 @@ pub trait Approved: Base {
     ) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `Relocate` event
-    fn handle_relocate_event(&mut self, payload: RelocateDetails) -> Result<(), RoutingError>;
+    fn handle_relocate_event(
+        &mut self,
+        payload: RelocateDetails,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `User` event
     fn handle_user_event(
@@ -219,16 +213,22 @@ pub trait Approved: Base {
                     }
                 }
                 Observation::Add { peer_id, .. } => {
-                    let event = AccumulatingEvent::AddElder(*peer_id).into_network_event();
-                    let proof_set = to_proof_set(&block);
-                    trace!("{} Parsec Add {}: - {}", self, parsec_version, peer_id);
-                    self.chain_mut().handle_churn_event(&event, proof_set)?;
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} Unexpected Parsec Add {}: - {}",
+                        self,
+                        parsec_version,
+                        peer_id
+                    );
                 }
                 Observation::Remove { peer_id, .. } => {
-                    let event = AccumulatingEvent::RemoveElder(*peer_id).into_network_event();
-                    let proof_set = to_proof_set(&block);
-                    trace!("{} Parsec Remove {}: - {}", self, parsec_version, peer_id);
-                    self.chain_mut().handle_churn_event(&event, proof_set)?;
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} Unexpected Parsec Remove {}: - {}",
+                        self,
+                        parsec_version,
+                        peer_id
+                    );
                 }
                 obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
                     log_or_panic!(
@@ -258,17 +258,11 @@ pub trait Approved: Base {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
-                AccumulatingEvent::AddElder(pub_id) => {
-                    self.handle_add_elder_event(pub_id, outbox)?;
-                }
-                AccumulatingEvent::RemoveElder(pub_id) => {
-                    self.handle_remove_elder_event(pub_id, outbox)?;
-                }
                 AccumulatingEvent::Online(payload) => {
                     self.handle_online_event(payload, outbox)?;
                 }
                 AccumulatingEvent::Offline(pub_id) => {
-                    self.handle_offline_event(pub_id)?;
+                    self.handle_offline_event(pub_id, outbox)?;
                 }
                 AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
                 AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
@@ -299,7 +293,9 @@ pub trait Approved: Base {
                         self, event
                     );
                 }
-                AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(payload)?,
+                AccumulatingEvent::Relocate(payload) => {
+                    self.handle_relocate_event(payload, outbox)?
+                }
                 AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }
 
@@ -390,6 +386,7 @@ pub trait Approved: Base {
     }
 }
 
+#[allow(unused)]
 fn to_proof_set(block: &Block) -> ProofSet {
     let sigs = block
         .proofs()

@@ -90,6 +90,7 @@ pub(super) struct ChainAccumulator {
 }
 
 impl ChainAccumulator {
+    #[cfg(test)]
     pub fn insert_with_proof_set(
         &mut self,
         event: AccumulatingEvent,
@@ -199,6 +200,7 @@ pub struct AccumulatingProof {
 }
 
 impl AccumulatingProof {
+    #[allow(unused)]
     pub fn from_proof_set(parsec_proofs: ProofSet) -> AccumulatingProof {
         AccumulatingProof {
             parsec_proofs,

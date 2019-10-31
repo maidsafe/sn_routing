@@ -156,60 +156,6 @@ impl Chain {
             .collect()
     }
 
-    /// Handles an accumulated parsec Observation for membership mutation.
-    ///
-    /// The provided proofs wouldn't be validated against the mapped NetworkEvent as they're
-    /// for parsec::Observation::Add/Remove.
-    pub fn handle_churn_event(
-        &mut self,
-        event: &NetworkEvent,
-        proof_set: ProofSet,
-    ) -> Result<(), RoutingError> {
-        match event.payload {
-            AccumulatingEvent::AddElder(_) | AccumulatingEvent::RemoveElder(_) => (),
-            _ => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Invalid NetworkEvent to handle membership mutation - {:?}",
-                    self,
-                    event
-                );
-                return Err(RoutingError::InvalidStateForOperation);
-            }
-        }
-
-        if !self.can_handle_vote(event) {
-            // force cache with our_id as this is an accumulated event we can trust.
-            let our_id = self.our_id;
-            self.cache_event(event, &our_id)?;
-            return Ok(());
-        }
-
-        let (acc_event, _signature) = AccumulatingEvent::from_network_event(event.clone());
-        match self
-            .chain_accumulator
-            .insert_with_proof_set(acc_event, proof_set)
-        {
-            Err(InsertError::AlreadyComplete) => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Duplicate membership change event.",
-                    self
-                );
-            }
-            Err(InsertError::ReplacedAlreadyInserted) => {
-                log_or_panic!(
-                    LogLevel::Warn,
-                    "{} Ejected existing ProofSet while handling membership mutation.",
-                    self
-                );
-            }
-            Ok(()) => (),
-        }
-
-        Ok(())
-    }
-
     /// Handles an opaque parsec Observation as a NetworkEvent.
     pub fn handle_opaque_event(
         &mut self,
@@ -344,9 +290,7 @@ impl Chain {
                 // TODO: remove once we have real integration tests of `ParsecPrune` accumulating.
                 self.parsec_prune_accumulated += 1;
             }
-            AccumulatingEvent::AddElder(_)
-            | AccumulatingEvent::RemoveElder(_)
-            | AccumulatingEvent::Online(_)
+            AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::SendAckMessage(_)
@@ -817,9 +761,7 @@ impl Chain {
                 true
             }
 
-            AccumulatingEvent::AddElder(_)
-            | AccumulatingEvent::RemoveElder(_)
-            | AccumulatingEvent::Online(_)
+            AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::TheirKeyInfo(_)
             | AccumulatingEvent::ParsecPrune
