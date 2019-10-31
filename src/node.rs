@@ -14,17 +14,16 @@ use crate::{
     id::{FullId, PublicId},
     outbox::EventBox,
     pause::PausedState,
-    quic_p2p::OurType,
+    quic_p2p::{OurType, Token},
     routing_table::Authority,
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer},
     xor_name::XorName,
-    Event, NetworkBytes, NetworkConfig,
+    ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
 #[cfg(feature = "mock_base")]
-use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, ConnectionInfo, Prefix};
+use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix};
 use crossbeam_channel as mpmc;
-use quic_p2p::Token;
 #[cfg(feature = "mock_base")]
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -286,6 +285,11 @@ impl Node {
     pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<(), mpmc::RecvError> {
         self.machine.step(op_index, &mut self.user_event_tx)
     }
+
+    /// Returns connection info of this node.
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
+        self.machine.current_mut().our_connection_info()
+    }
 }
 
 impl EventStepper for Node {
@@ -447,11 +451,6 @@ impl Node {
     /// Checks whether the given authority represents self.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
-    }
-
-    /// Returns connection info of this node.
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
-        self.machine.current_mut().our_connection_info()
     }
 
     /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
