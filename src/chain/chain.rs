@@ -282,7 +282,8 @@ impl Chain {
         };
 
         match event {
-            AccumulatingEvent::SectionInfo(ref info) => {
+            AccumulatingEvent::SectionInfo(ref info)
+            | AccumulatingEvent::NeighbourInfo(ref info) => {
                 let old_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
                 self.add_elders_info(info.clone(), proofs)?;
                 let new_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
@@ -667,26 +668,6 @@ impl Chain {
         self.neighbour_elders_p2p().map(P2pNode::public_id)
     }
 
-    /// Returns `true` if we know the section with `elders_info`.
-    ///
-    /// If `check_signed` is `true`, also trust sections that we have signed but that haven't
-    /// accumulated yet.
-    #[cfg(feature = "mock_base")]
-    pub fn is_trusted(&self, elders_info: &EldersInfo, check_signed: bool) -> bool {
-        let is_proof = |si: &EldersInfo| si == elders_info || si.is_successor_of(elders_info);
-        let mut signed = self
-            .signed_events()
-            .filter_map(AccumulatingEvent::elders_info);
-        if check_signed && signed.any(is_proof) {
-            return true;
-        }
-        if elders_info.prefix().matches(self.our_id.name()) {
-            self.state.our_infos().any(is_proof)
-        } else {
-            self.neighbour_infos().any(is_proof)
-        }
-    }
-
     /// Return the keys we know
     pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.state.get_their_keys_info()
@@ -708,16 +689,12 @@ impl Chain {
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
+    /// Ignore votes we may have produced as Parsec will filter for us.
     pub fn is_new(&self, elders_info: &EldersInfo) -> bool {
         let is_newer = |si: &EldersInfo| {
             si.version() >= elders_info.version() && si.prefix().is_compatible(elders_info.prefix())
         };
-        let mut signed = self
-            .signed_events()
-            .filter_map(AccumulatingEvent::elders_info);
-        if signed.any(is_newer) {
-            return false;
-        }
+
         if elders_info.prefix().matches(self.our_id.name()) {
             !self.state.our_infos().any(is_newer)
         } else {
@@ -753,7 +730,7 @@ impl Chain {
     fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
         let si = match event.payload {
-            AccumulatingEvent::SectionInfo(ref si) => si,
+            AccumulatingEvent::SectionInfo(ref si) | AccumulatingEvent::NeighbourInfo(ref si) => si,
             _ => return false,
         };
 
@@ -781,16 +758,17 @@ impl Chain {
     /// Returns `true` for other types of `NetworkEvent`.
     fn is_valid_transition(&self, network_event: &AccumulatingEvent, proofs: &ProofSet) -> bool {
         match *network_event {
-            AccumulatingEvent::SectionInfo(ref info) => {
-                // Reject any info we have a newer compatible info for.
-                let is_newer = |i: &EldersInfo| {
-                    info.prefix().is_compatible(i.prefix()) && i.version() >= info.version()
+            AccumulatingEvent::SectionInfo(ref info)
+            | AccumulatingEvent::NeighbourInfo(ref info) => {
+                // Do not process yet any version that is not the immediate follower of the one we have.
+                let not_follow = |i: &EldersInfo| {
+                    info.prefix().is_compatible(i.prefix()) && *info.version() != (i.version() + 1)
                 };
                 if self
                     .compatible_neighbour_info(info)
                     .into_iter()
                     .chain(iter::once(self.our_info()))
-                    .any(is_newer)
+                    .any(not_follow)
                 {
                     return false;
                 }
@@ -843,7 +821,8 @@ impl Chain {
             (PrefixChange::None, _)
             | (PrefixChange::Merging, AccumulatingEvent::OurMerge)
             | (PrefixChange::Merging, AccumulatingEvent::NeighbourMerge(_)) => true,
-            (_, AccumulatingEvent::SectionInfo(elders_info)) => {
+            (_, AccumulatingEvent::SectionInfo(elders_info))
+            | (_, AccumulatingEvent::NeighbourInfo(elders_info)) => {
                 if elders_info.prefix().is_compatible(self.our_prefix())
                     && elders_info.version() > self.state.new_info.version()
                 {
@@ -1066,14 +1045,6 @@ impl Chain {
         for pfx in to_remove {
             let _ = self.state.neighbour_infos.remove(&pfx);
         }
-    }
-
-    /// Returns all network events that we have signed but haven't accumulated yet.
-    fn signed_events(&self) -> impl Iterator<Item = &AccumulatingEvent> {
-        self.chain_accumulator
-            .incomplete_events()
-            .filter(move |(_, proofs)| proofs.contains_id(&self.our_id))
-            .map(|(event, _)| event)
     }
 
     // Set of methods ported over from routing_table mostly as-is. The idea is to refactor and

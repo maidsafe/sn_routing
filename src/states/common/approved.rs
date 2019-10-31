@@ -270,7 +270,8 @@ pub trait Approved: Base {
                 }
                 AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
                 AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
-                AccumulatingEvent::SectionInfo(elders_info) => {
+                AccumulatingEvent::SectionInfo(elders_info)
+                | AccumulatingEvent::NeighbourInfo(elders_info) => {
                     match self.handle_section_info_event(
                         elders_info,
                         our_pfx,
