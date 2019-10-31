@@ -774,8 +774,22 @@ impl Chain {
     /// Returns `true` for other types of `NetworkEvent`.
     fn is_valid_transition(&self, network_event: &AccumulatingEvent, proofs: &ProofSet) -> bool {
         match *network_event {
-            AccumulatingEvent::SectionInfo(ref info)
-            | AccumulatingEvent::NeighbourInfo(ref info) => {
+            AccumulatingEvent::SectionInfo(ref info) => {
+                if !self.our_info().is_quorum(proofs) {
+                    return false;
+                }
+
+                if !info.is_successor_of(self.our_info()) {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "We shouldn't have a SectionInfo that is not a direct descendant. our: {:?}, new: {:?}",
+                        self.our_info(), info
+                    );
+                }
+
+                true
+            }
+            AccumulatingEvent::NeighbourInfo(ref info) => {
                 if !self.our_info().is_quorum(proofs) {
                     return false;
                 }
@@ -787,15 +801,7 @@ impl Chain {
                 if self
                     .compatible_neighbour_info(info)
                     .into_iter()
-                    .chain(iter::once(self.our_info()))
                     .any(not_follow)
-                {
-                    return false;
-                }
-
-                // Ensure our infos is forming an unbroken sequence.
-                if info.prefix().matches(self.our_id.name())
-                    && !info.is_successor_of(self.our_info())
                 {
                     return false;
                 }
