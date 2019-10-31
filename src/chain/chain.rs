@@ -260,7 +260,12 @@ impl Chain {
             && self.state.change == PrefixChange::None
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
-                trace!("{} churn backlog poll Accumulating event {:?}", self, event);
+                trace!(
+                    "{} churn backlog poll Accumulating event {:?}, Others: {:?}",
+                    self,
+                    event,
+                    self.state.churn_event_backlog
+                );
                 return Ok(Some((event, EldersChange::default())));
             }
         }
@@ -352,7 +357,12 @@ impl Chain {
         };
 
         if start_churn_event && self.churn_in_progress {
-            trace!("{} churn backlog Accumulating event {:?}", self, event);
+            trace!(
+                "{} churn backlog Accumulating event {:?}, Other: {:?}",
+                self,
+                event,
+                self.state.churn_event_backlog
+            );
             self.state.churn_event_backlog.push_front(event);
             return Ok(None);
         }
@@ -379,6 +389,12 @@ impl Chain {
         {
             member.increase_age();
         }
+    }
+
+    /// Validate if can call add_member on this node.
+    pub fn can_add_member(&mut self, p2p_node: &P2pNode) -> bool {
+        let pub_id = p2p_node.public_id();
+        self.our_prefix().matches(&pub_id.name()) && !self.is_peer_our_member(pub_id)
     }
 
     /// Adds a member to our section.
@@ -760,6 +776,10 @@ impl Chain {
         match *network_event {
             AccumulatingEvent::SectionInfo(ref info)
             | AccumulatingEvent::NeighbourInfo(ref info) => {
+                if !self.our_info().is_quorum(proofs) {
+                    return false;
+                }
+
                 // Do not process yet any version that is not the immediate follower of the one we have.
                 let not_follow = |i: &EldersInfo| {
                     info.prefix().is_compatible(i.prefix()) && *info.version() != (i.version() + 1)
@@ -774,10 +794,13 @@ impl Chain {
                 }
 
                 // Ensure our infos is forming an unbroken sequence.
-                let is_sequence_ok = !info.prefix().matches(self.our_id.name())
-                    || info.is_successor_of(self.our_info());
+                if info.prefix().matches(self.our_id.name())
+                    && !info.is_successor_of(self.our_info())
+                {
+                    return false;
+                }
 
-                is_sequence_ok && self.our_info().is_quorum(proofs)
+                true
             }
 
             AccumulatingEvent::AddElder(_)
