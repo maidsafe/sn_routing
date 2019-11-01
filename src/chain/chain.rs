@@ -469,12 +469,8 @@ impl Chain {
         let mut elders_p2p = self.state.new_info.p2p_members().clone();
         let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info));
 
-        // WIP: remove me by the end of this PR
-        let mut elders = self.state.new_info.members();
-        let _ = elders.insert(pub_id);
-
         // TODO: the split decision should be based on the number of all members, not just elders.
-        if self.should_split(&elders)? {
+        if self.should_split(&elders_p2p)? {
             let (our_info, other_info) = self.split_self(elders_p2p.clone())?;
             self.state.change = PrefixChange::Splitting;
             return Ok(vec![our_info, other_info]);
@@ -1010,15 +1006,18 @@ impl Chain {
     }
 
     /// Returns whether we should split into two sections.
-    fn should_split(&self, members: &BTreeSet<PublicId>) -> Result<bool, RoutingError> {
+    fn should_split(&self, members: &BTreeSet<P2pNode>) -> Result<bool, RoutingError> {
         if self.state.change != PrefixChange::None || self.should_vote_for_merge() {
             return Ok(false);
         }
 
         let new_size = members
             .iter()
-            .filter(|id| {
-                self.our_id.name().common_prefix(id.name()) > self.our_prefix().bit_count()
+            .filter(|p2p_node| {
+                self.our_id
+                    .name()
+                    .common_prefix(p2p_node.public_id().name())
+                    > self.our_prefix().bit_count()
             })
             .count();
         let min_split_size = self.min_split_size();
