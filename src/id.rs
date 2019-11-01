@@ -262,7 +262,12 @@ impl P2pNode {
 
 impl Debug for P2pNode {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "PublicId(name: {})", self.public_id.name())
+        write!(
+            formatter,
+            "P2pNode({} at {})",
+            self.public_id.name(),
+            self.connection_info.peer_addr,
+        )
     }
 }
 
