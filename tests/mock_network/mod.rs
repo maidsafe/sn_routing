@@ -28,6 +28,7 @@ use routing::{
     mock::Network, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
     XorTargetInterval,
 };
+use std::collections::BTreeMap;
 
 pub const LOWERED_ELDER_SIZE: usize = 3;
 
@@ -63,6 +64,56 @@ fn nodes_with_prefix_mut<'a>(
     nodes
         .iter_mut()
         .filter(move |node| prefix.matches(&node.name()))
+}
+
+pub fn count_sections_members_if_split(nodes: &[TestNode]) -> BTreeMap<Prefix<XorName>, usize> {
+    let mut counts = BTreeMap::new();
+    for pfx in nodes.iter().map(node_prefix_if_split) {
+        // Populate both sub-prefixes so the map keys cover the full address space.
+        // Needed as we use the keys to match sub-prefix of new node and we need to find it.
+        *counts.entry(pfx).or_default() += 1;
+        let _ = counts.entry(pfx.sibling()).or_default();
+    }
+    counts
+}
+
+pub fn node_prefix_if_split(node: &TestNode) -> Prefix<XorName> {
+    let prefix = node.our_prefix();
+
+    let sub_prefix = [prefix.pushed(false), prefix.pushed(true)]
+        .iter()
+        .find(|ref pfx| pfx.matches(&node.name()))
+        .cloned();
+    unwrap!(sub_prefix)
+}
+
+fn new_node_prefix_without_split(
+    node: &TestNode,
+    count_if_split_node: &BTreeMap<Prefix<XorName>, usize>,
+    min_split_size: usize,
+) -> Option<Prefix<XorName>> {
+    let (sub_prefix, count) = unwrap!(count_if_split_node
+        .iter()
+        .find(|(pfx, _)| pfx.matches(&node.name())));
+
+    if *count < min_split_size * 2 - 1 {
+        return Some(*sub_prefix);
+    }
+    None
+}
+
+fn can_accept_node_without_split(
+    count_if_split_node: &BTreeMap<Prefix<XorName>, usize>,
+    min_split_size: usize,
+) -> bool {
+    count_if_split_node
+        .values()
+        .any(|count| *count < min_split_size * 2 - 1)
+}
+
+fn create_node_with_contact(network: &Network, contact: &mut TestNode) -> TestNode {
+    let config = NetworkConfig::node().with_hard_coded_contact(contact.endpoint());
+    TestNode::builder(&network).network_config(config).create()
 }
 
 #[test]
@@ -208,16 +259,31 @@ fn multiple_joining_nodes() {
     while nodes.len() < 25 {
         info!("Size {}", nodes.len());
 
+        let mut count_if_split_node = count_sections_members_if_split(&nodes);
+        let min_split_size = unwrap!(nodes[0].inner.min_split_size());
+
         // Try adding five nodes at once, possibly to the same section. This makes sure one section
         // can handle this, either by adding the nodes in sequence or by rejecting some.
+        // Ensure we do not create a situation when a recursive split will occur.
         let count = 5;
         for _ in 0..count {
-            let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-            nodes.push(
-                TestNode::builder(&network)
-                    .network_config(network_config)
-                    .create(),
-            );
+            if !can_accept_node_without_split(&count_if_split_node, min_split_size) {
+                break;
+            }
+
+            loop {
+                let node = create_node_with_contact(&network, &mut nodes[0]);
+                let valid_sub_prefix =
+                    new_node_prefix_without_split(&node, &count_if_split_node, min_split_size);
+
+                if let Some(sub_prefix) = valid_sub_prefix {
+                    *unwrap!(count_if_split_node.get_mut(&sub_prefix)) += 1;
+                    nodes.push(node);
+                    break;
+                } else {
+                    info!("Invalid node {:?}, {:?}", node.name(), count_if_split_node);
+                }
+            }
         }
 
         poll_and_resend(&mut nodes);

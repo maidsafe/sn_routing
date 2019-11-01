@@ -491,11 +491,7 @@ impl Approved for Adult {
         payload: OnlinePayload,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self
-            .chain
-            .our_prefix()
-            .matches(&payload.p2p_node.public_id().name())
-        {
+        if !self.chain.can_add_member(&payload.p2p_node) {
             info!("{} - ignore Online: {:?}.", self, payload);
             return Ok(());
         }
