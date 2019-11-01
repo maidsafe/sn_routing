@@ -467,7 +467,7 @@ impl Chain {
             .ok_or(RoutingError::PeerNotFound(pub_id))?;
 
         let mut elders_p2p = self.state.new_info.p2p_members().clone();
-        let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info));
+        let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info.clone()));
 
         // TODO: the split decision should be based on the number of all members, not just elders.
         if self.should_split(&elders_p2p)? {
@@ -494,7 +494,7 @@ impl Chain {
         let connection_info = self
             .get_member_connection_info(&pub_id)
             .ok_or(RoutingError::PeerNotFound(pub_id))?;
-        let p2p_node = P2pNode::new(pub_id, connection_info);
+        let p2p_node = P2pNode::new(pub_id, connection_info.clone());
         let _ = elders.remove(&p2p_node);
 
         if self.our_id() == &pub_id {
@@ -626,11 +626,11 @@ impl Chain {
     }
 
     /// Returns the `ConnectioInfo` for a member of our section.
-    pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<ConnectionInfo> {
+    pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<&ConnectionInfo> {
         self.state
             .our_members
             .get(&pub_id)
-            .map(|member_info| member_info.connection_info.clone())
+            .map(|member_info| &member_info.connection_info)
     }
 
     /// Returns a set of elders we should be connected to.
