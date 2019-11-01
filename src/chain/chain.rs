@@ -422,7 +422,7 @@ impl Chain {
             .state
             .our_members
             .entry(pub_id)
-            .or_insert_with(|| MemberInfo::new(p2p_node.connection_info().clone()));
+            .or_insert_with(|| MemberInfo::new(p2p_node.into_connection_info()));
         info.state = MemberState::Joined;
         info.set_age(age);
     }

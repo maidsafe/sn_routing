@@ -239,6 +239,11 @@ impl P2pNode {
         }
     }
 
+    /// Creates a `ConnectionInfo` from the `P2pNode` instance.
+    pub fn into_connection_info(self) -> ConnectionInfo {
+        self.connection_info
+    }
+
     /// Returns the `PublicId`.
     pub fn public_id(&self) -> &PublicId {
         &self.public_id
