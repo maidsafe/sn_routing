@@ -299,7 +299,6 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
             FakeClock::advance_time(
                 test_consts::BOOTSTRAP_TIMEOUT
                     .max(test_consts::JOIN_TIMEOUT)
-                    .max(test_consts::ADD_TIMEOUT)
                     .as_secs()
                     * 1000
                     + 1,

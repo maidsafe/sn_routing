@@ -42,9 +42,6 @@ use std::{
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Time after which the node reinitiates the bootstrap if it is not added to the section.
-pub const ADD_TIMEOUT: Duration = Duration::from_secs(120);
-
 pub struct AdultDetails {
     pub network_service: NetworkService,
     pub event_backlog: Vec<Event>,
@@ -69,7 +66,6 @@ pub struct Adult {
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     parsec_map: ParsecMap,
     peer_map: PeerMap,
-    add_timer_token: u64,
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
@@ -82,7 +78,6 @@ impl Adult {
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
-        let add_timer_token = details.timer.schedule(ADD_TIMEOUT);
 
         let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
 
@@ -101,7 +96,6 @@ impl Adult {
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             parsec_timer_token,
-            add_timer_token,
         };
 
         Ok(node)
@@ -319,20 +313,6 @@ impl Base for Adult {
                 self.send_parsec_poke();
                 self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
             }
-        } else if self.add_timer_token == token {
-            debug!("{} - Timeout when trying to join a section.", self);
-
-            for peer_addr in self
-                .peer_map
-                .remove_all()
-                .map(|conn_info| conn_info.peer_addr)
-            {
-                self.network_service
-                    .service_mut()
-                    .disconnect_from(peer_addr);
-            }
-
-            return Transition::Rebootstrap;
         }
 
         Transition::Stay
