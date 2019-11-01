@@ -223,13 +223,12 @@ fn name_from_key(public_key: &signing::PublicKey) -> XorName {
 /// Network p2p node identity.
 /// When a node knows another node as a `P2pNode` it's implicitly connected to it. This is separate
 /// from being connected at the network layer, which currently is handled by quic-p2p.
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct P2pNode {
     public_id: PublicId,
     connection_info: ConnectionInfo,
 }
 
-#[allow(unused)]
 impl P2pNode {
     /// Creates a new `P2pNode` given a `PublicId` and a `ConnectionInfo`.
     pub fn new(public_id: PublicId, connection_info: ConnectionInfo) -> Self {
@@ -274,22 +273,6 @@ impl Debug for P2pNode {
 impl Display for P2pNode {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.public_id)
-    }
-}
-
-impl Serialize for P2pNode {
-    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
-        (&self.public_id, &self.connection_info).serialize(serialiser)
-    }
-}
-
-impl<'de> Deserialize<'de> for P2pNode {
-    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (public_id, connection_info) = Deserialize::deserialize(deserialiser)?;
-        Ok(P2pNode {
-            public_id,
-            connection_info,
-        })
     }
 }
 
