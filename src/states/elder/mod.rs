@@ -403,7 +403,7 @@ impl Elder {
         for obs in drained_obs {
             let event = match obs {
                 parsec::Observation::Remove { peer_id, .. } => {
-                    AccumulatingEvent::Offline(peer_id).into_network_event()
+                    AccumulatingEvent::RemoveElder(peer_id).into_network_event()
                 }
                 parsec::Observation::OpaquePayload(event) => event,
 
@@ -1396,6 +1396,9 @@ impl Elder {
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
+        if !self.chain.is_self_elder() {
+            return false;
+        }
         self.parsec_map.has_unpolled_observations()
     }
 

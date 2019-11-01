@@ -277,8 +277,10 @@ impl Chain {
                 .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
                 .map(|(event, _)| event.clone());
 
-            let opt_event_proofs =
-                opt_event.and_then(|event| self.chain_accumulator.poll_event(event));
+            let opt_event_proofs = opt_event.and_then(|event| {
+                self.chain_accumulator
+                    .poll_event(event, self.our_info().members().clone())
+            });
 
             match opt_event_proofs {
                 None => return Ok(None),
@@ -498,6 +500,10 @@ impl Chain {
             .ok_or(RoutingError::InvalidStateForOperation)?;
         let p2p_node = P2pNode::new(pub_id, connection_info);
         let _ = elders.remove(&p2p_node);
+
+        if self.our_id() == &pub_id {
+            self.is_elder = false;
+        }
 
         self.state.new_info = EldersInfo::new(
             elders,
@@ -740,6 +746,12 @@ impl Chain {
     pub fn prove(&self, target: &Authority<XorName>) -> SectionProofChain {
         let first_index = self.proving_index(target);
         self.state.our_history.slice_from(first_index as usize)
+    }
+
+    /// Check which nodes are unresponsive.
+    pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
+        let members = self.our_info().members().clone();
+        self.chain_accumulator.check_vote_status(&members)
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.

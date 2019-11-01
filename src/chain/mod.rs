@@ -17,6 +17,8 @@ mod network_event;
 mod proof;
 mod shared_state;
 
+#[cfg(feature = "mock_base")]
+pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
 pub use self::{
     chain::{delivery_group_size, Chain, EldersChange, NetworkParams, PrefixChangeOutcome},
     chain_accumulator::AccumulatingProof,

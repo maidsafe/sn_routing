@@ -14,8 +14,10 @@ use super::{
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName,
-    XorTargetInterval, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    mock::Network,
+    test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
+    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, XorTargetInterval,
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -582,5 +584,61 @@ fn messages_during_churn() {
         }
         expectations.verify(&mut nodes);
         verify_invariant_for_all_nodes(&network, &mut nodes);
+    }
+}
+
+#[test]
+fn remove_unresponsive_node() {
+    let elder_size = 4;
+    let safe_section_size = 8;
+    let network = Network::new(
+        NetworkParams {
+            elder_size,
+            safe_section_size,
+        },
+        None,
+    );
+
+    let mut nodes = create_connected_nodes(&network, safe_section_size);
+    poll_and_resend(&mut nodes);
+    // Pause a node to act as non-responsive.
+    let mut rng = network.new_rng();
+    let non_responsive_index = rng.gen_range(1, nodes.len());
+    let non_responsive_name = nodes[non_responsive_index].name();
+    let mut _non_responsive_node = None;
+
+    // Sending some user events to create a sequence of observations.
+    let mut responded = 0;
+    for i in 0..UNRESPONSIVE_WINDOW {
+        let event: Vec<_> = rng.gen_iter().take(100).collect();
+        nodes.iter_mut().for_each(|node| {
+            if node.name() == non_responsive_name {
+                // The extra margin is to avoid votes like ParsecPrune affects the calculation.
+                if responded < (UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 3)
+                    && rng.gen_weighted_bool(3)
+                {
+                    responded += 1;
+                } else {
+                    return;
+                }
+            }
+            let _ = node
+                .inner
+                .elder_state_mut()
+                .map(|state| state.vote_for_user_event(event.clone()));
+        });
+
+        // Required to avoid the case that the non-responsive node doesn't realize its removal,
+        // which blocks the polling infinitely.
+        if i == UNRESPONSIVE_THRESHOLD - 1 {
+            _non_responsive_node = Some(nodes.remove(non_responsive_index));
+        }
+
+        poll_and_resend(&mut nodes);
+    }
+
+    // Verify the other nodes saw the paused node and removed it.
+    for node in nodes.iter_mut() {
+        expect_any_event!(node, Event::NodeLost(_));
     }
 }
