@@ -699,22 +699,21 @@ mod test {
     use super::*;
     use crate::{chain::EldersInfo, id::P2pNode, ConnectionInfo, FullId, Prefix, XorName};
     use std::collections::BTreeSet;
-    use std::net::SocketAddr;
     use std::str::FromStr;
     use unwrap::unwrap;
 
     fn gen_elders_info(pfx: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;
         let mut members = BTreeSet::new();
-        for _ in 0..sec_size {
-            let id = FullId::within_range(&pfx.range_inclusive());
-            let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
-            let connection_info = ConnectionInfo {
-                peer_addr: socket_addr,
-                peer_cert_der: vec![],
-            };
-            let _ = members.insert(P2pNode::new(*id.public_id(), connection_info));
-        }
+        (0..sec_size).for_each(|index| {
+            let _ = members.insert(P2pNode::new(
+                *FullId::within_range(&pfx.range_inclusive()).public_id(),
+                ConnectionInfo {
+                    peer_addr: ([127, 0, 0, 1], 9000 + index).into(),
+                    peer_cert_der: vec![],
+                },
+            ));
+        });
         unwrap!(EldersInfo::new_for_test(members, pfx, version))
     }
 
