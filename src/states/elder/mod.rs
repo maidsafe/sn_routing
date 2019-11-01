@@ -689,7 +689,8 @@ impl Elder {
                 LogLevel::Error,
                 "Not connected to the sender of BootstrapRequest."
             );
-            return Err(RoutingError::UnknownConnection(pub_id));
+            // Note: peer_map and this block is scheduled for removal
+            return Err(RoutingError::PeerNotFound(pub_id));
         };
 
         if self.chain.is_peer_our_member(&pub_id) {

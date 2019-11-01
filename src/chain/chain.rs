@@ -464,7 +464,7 @@ impl Chain {
         // We already have the connection info from when it was added online.
         let connection_info = self
             .get_member_connection_info(&pub_id)
-            .ok_or(RoutingError::InvalidStateForOperation)?;
+            .ok_or(RoutingError::PeerNotFound(pub_id))?;
 
         let mut elders_p2p = self.state.new_info.p2p_members().clone();
         let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info));
@@ -497,7 +497,7 @@ impl Chain {
         let mut elders = self.state.new_info.p2p_members().clone();
         let connection_info = self
             .get_member_connection_info(&pub_id)
-            .ok_or(RoutingError::InvalidStateForOperation)?;
+            .ok_or(RoutingError::PeerNotFound(pub_id))?;
         let p2p_node = P2pNode::new(pub_id, connection_info);
         let _ = elders.remove(&p2p_node);
 
