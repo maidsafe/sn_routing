@@ -154,19 +154,22 @@ mod test {
         id::{FullId, P2pNode},
         ConnectionInfo,
     };
-    use std::net::SocketAddr;
     use unwrap::unwrap;
 
     fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
         let ids: Vec<_> = (0..size).map(|_| FullId::new()).collect();
-        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
-        let connection_info = ConnectionInfo {
-            peer_addr: socket_addr,
-            peer_cert_der: vec![],
-        };
         let p2p_nodes = ids
             .iter()
-            .map(|full_id| P2pNode::new(*full_id.public_id(), connection_info.clone()))
+            .enumerate()
+            .map(|(index, full_id)| {
+                P2pNode::new(
+                    *full_id.public_id(),
+                    ConnectionInfo {
+                        peer_addr: ([127, 0, 0, 1], (index + 9000) as u16).into(),
+                        peer_cert_der: vec![],
+                    },
+                )
+            })
             .collect();
         let elders_info = unwrap!(EldersInfo::new(p2p_nodes, Default::default(), None));
         let pk_set = PublicKeySet::from_elders_info(elders_info);
