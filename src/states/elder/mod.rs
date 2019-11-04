@@ -18,9 +18,8 @@ use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload, PrefixChange,
-        PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
-        MIN_AGE_COUNTER,
+        GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PrefixChange,
+        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -381,22 +380,18 @@ impl Elder {
         }
     }
 
-    fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
-        // Clear any relocation overrides
-        self.next_relocation_dst = None;
-        self.next_relocation_interval = None;
-
+    fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
         let drained_obs: Vec<_> = self
             .parsec_map
             .our_unpolled_observations()
             .cloned()
             .collect();
 
-        let PrefixChangeOutcome {
+        let ParsecResetData {
             gen_pfx_info,
             mut cached_events,
             completed_events,
-        } = self.chain.finalise_prefix_change()?;
+        } = reset_data;
         self.gen_pfx_info = gen_pfx_info;
         self.init_parsec(); // We don't reset the chain on prefix change.
 
@@ -452,6 +447,20 @@ impl Elder {
             });
 
         Ok(())
+    }
+
+    fn reset_parsec(&mut self) -> Result<(), RoutingError> {
+        let reset_data = self.chain.prepare_parsec_reset()?;
+        self.reset_parsec_with_data(reset_data)
+    }
+
+    fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
+        // Clear any relocation overrides
+        self.next_relocation_dst = None;
+        self.next_relocation_interval = None;
+
+        let reset_data = self.chain.finalise_prefix_change()?;
+        self.reset_parsec_with_data(reset_data)
     }
 
     fn send_neighbour_infos(&mut self) {
@@ -1534,6 +1543,8 @@ impl Approved for Elder {
     ) -> Result<Transition, RoutingError> {
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 
+        let self_sec_update = elders_info.prefix().matches(self.name());
+
         if elders_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*elders_info.prefix()), outbox);
@@ -1546,9 +1557,9 @@ impl Approved for Elder {
         } else if old_pfx.is_extension_of(elders_info.prefix()) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*elders_info.prefix()), outbox);
+        } else if self_sec_update {
+            self.reset_parsec()?;
         }
-
-        let self_sec_update = elders_info.prefix().matches(self.name());
 
         self.update_neighbour_connections(neighbour_change, outbox);
 

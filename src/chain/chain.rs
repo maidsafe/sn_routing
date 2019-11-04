@@ -481,24 +481,17 @@ impl Chain {
             .should_vote_for_merge(self.elder_size(), self.neighbour_infos())
     }
 
-    /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
-    /// cached and currently accumulated events.
-    pub fn finalise_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
-        // TODO: Bring back using their_knowledge to clean_older section in our_infos
-        self.check_and_clean_neighbour_infos(None);
-        self.state.change = PrefixChange::None;
-
+    /// Gets the data needed to initialise a new Parsec instance
+    pub fn prepare_parsec_reset(&mut self) -> Result<ParsecResetData, RoutingError> {
         let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
         let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
             .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
+
         self.state.handled_genesis_event = false;
 
-        info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
-        trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
-
-        Ok(PrefixChangeOutcome {
+        Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
@@ -513,6 +506,19 @@ impl Chain {
                 .collect(),
             completed_events: remaining.completed_events,
         })
+    }
+
+    /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
+    /// cached and currently accumulated events.
+    pub fn finalise_prefix_change(&mut self) -> Result<ParsecResetData, RoutingError> {
+        // TODO: Bring back using their_knowledge to clean_older section in our_infos
+        self.check_and_clean_neighbour_infos(None);
+        self.state.change = PrefixChange::None;
+
+        info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
+        trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
+
+        self.prepare_parsec_reset()
     }
 
     /// Returns our public ID
@@ -1356,7 +1362,7 @@ impl Chain {
 }
 
 /// The outcome of a prefix change.
-pub struct PrefixChangeOutcome {
+pub struct ParsecResetData {
     /// The new genesis prefix info.
     pub gen_pfx_info: GenesisPfxInfo,
     /// The cached events that should be revoted.
