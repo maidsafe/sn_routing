@@ -334,11 +334,16 @@ mod tests {
     }
 
     fn create_gen_pfx_info(full_ids: Vec<FullId>, version: u64) -> GenesisPfxInfo {
-        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
         let connection_info = ConnectionInfo::from(socket_addr);
         let members = full_ids
             .iter()
-            .map(|id| P2pNode::new(*id.public_id(), connection_info.clone()))
+            .map(|id| {
+                (
+                    *id.public_id(),
+                    P2pNode::new(*id.public_id(), connection_info.clone()),
+                )
+            })
             .collect();
         let elders_info = unwrap!(EldersInfo::new_for_test(
             members,

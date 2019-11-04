@@ -162,12 +162,15 @@ mod test {
             .iter()
             .enumerate()
             .map(|(index, full_id)| {
-                P2pNode::new(
+                (
                     *full_id.public_id(),
-                    ConnectionInfo {
-                        peer_addr: ([127, 0, 0, 1], (index + 9000) as u16).into(),
-                        peer_cert_der: vec![],
-                    },
+                    P2pNode::new(
+                        *full_id.public_id(),
+                        ConnectionInfo {
+                            peer_addr: ([127, 0, 0, 1], (index + 9000) as u16).into(),
+                            peer_cert_der: vec![],
+                        },
+                    ),
                 )
             })
             .collect();

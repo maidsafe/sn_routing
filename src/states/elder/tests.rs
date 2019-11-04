@@ -73,7 +73,10 @@ impl ElderUnderTest {
         let elders_info = unwrap!(EldersInfo::new(
             full_ids
                 .iter()
-                .map(|id| P2pNode::new(*id.public_id(), connection_info.clone()))
+                .map(|id| (
+                    *id.public_id(),
+                    P2pNode::new(*id.public_id(), connection_info.clone())
+                ))
                 .collect(),
             prefix,
             iter::empty()
@@ -223,10 +226,9 @@ impl ElderUnderTest {
     fn new_elders_info_with_candidate(&self) -> EldersInfo {
         unwrap!(EldersInfo::new(
             self.elders_info
-                .p2p_members()
-                .iter()
+                .member_nodes()
                 .chain(iter::once(&self.candidate))
-                .cloned()
+                .map(|node| (*node.public_id(), node.clone()))
                 .collect(),
             *self.elders_info.prefix(),
             Some(&self.elders_info)

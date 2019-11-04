@@ -81,7 +81,7 @@ mod tests {
     use super::*;
     use crate::{
         chain::{EldersInfo, SectionKeyInfo, SectionProofChain},
-        id::{FullId, P2pNode},
+        id::{FullId, P2pNode, PublicId},
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
             SignedRoutingMessage,
@@ -91,7 +91,7 @@ mod tests {
     };
     use itertools::Itertools;
     use rand;
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
     use std::net::SocketAddr;
     use unwrap::unwrap;
 
@@ -104,7 +104,7 @@ mod tests {
         fn new<'a, I>(
             msg_sender_id: &FullId,
             other_ids: I,
-            all_ids: BTreeSet<P2pNode>,
+            all_nodes: BTreeMap<PublicId, P2pNode>,
         ) -> MessageAndSignatures
         where
             I: Iterator<Item = &'a FullId>,
@@ -118,8 +118,8 @@ mod tests {
                     rand::random(),
                 ]),
             };
-            let prefix = Prefix::new(0, *unwrap!(all_ids.iter().next()).name());
-            let elders_info = unwrap!(EldersInfo::new(all_ids, prefix, None));
+            let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()).name());
+            let elders_info = unwrap!(EldersInfo::new(all_nodes, prefix, None));
             let pk_set = BlsPublicKeySet::from_elders_info(elders_info.clone());
             let key_info = SectionKeyInfo::from_elders_info(&elders_info);
             let proof = SectionProofChain::from_genesis(key_info);
@@ -157,18 +157,20 @@ mod tests {
     impl Env {
         fn new() -> Env {
             let msg_sender_id = FullId::new();
-            let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+            let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
             let connection_info = ConnectionInfo::from(socket_addr);
             let mut pub_ids = vec![P2pNode::new(
                 *msg_sender_id.public_id(),
                 connection_info.clone(),
             )]
             .into_iter()
-            .collect::<BTreeSet<_>>();
+            .map(|p2p_node| (*p2p_node.public_id(), p2p_node))
+            .collect::<BTreeMap<_, _>>();
             let mut other_ids = vec![];
             for _ in 0..8 {
                 let full_id = FullId::new();
-                let _ = pub_ids.insert(P2pNode::new(*full_id.public_id(), connection_info.clone()));
+                let pub_id = *full_id.public_id();
+                let _ = pub_ids.insert(pub_id, P2pNode::new(pub_id, connection_info.clone()));
                 other_ids.push(full_id);
             }
             let msgs_and_sigs = (0..5)

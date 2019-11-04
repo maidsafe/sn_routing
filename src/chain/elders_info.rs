@@ -19,7 +19,7 @@ use maidsafe_utilities::serialisation;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     cmp,
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
 };
 
@@ -29,7 +29,7 @@ use std::{
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct EldersInfo {
     /// The complete list of the section's elders' IDs.
-    members: BTreeSet<P2pNode>,
+    members: BTreeMap<PublicId, P2pNode>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Thus `EldersInfo`s with compatible prefixes always have different versions.
     version: u64,
@@ -51,7 +51,7 @@ impl Serialize for EldersInfo {
 impl<'de> Deserialize<'de> for EldersInfo {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
         let (members, version, prefix, prev_hash): (
-            BTreeSet<P2pNode>,
+            BTreeMap<PublicId, P2pNode>,
             u64,
             Prefix<XorName>,
             BTreeSet<Digest256>,
@@ -65,7 +65,7 @@ impl EldersInfo {
     /// Creates a `SectionInfo` with the given members, prefix and predecessors.
     #[allow(clippy::new_ret_no_self)]
     pub fn new<'a, I: IntoIterator<Item = &'a Self>>(
-        members: BTreeSet<P2pNode>,
+        members: BTreeMap<PublicId, P2pNode>,
         prefix: Prefix<XorName>,
         prev: I,
     ) -> Result<Self, RoutingError> {
@@ -80,25 +80,32 @@ impl EldersInfo {
 
     /// Creates a new `EldersInfo` by merging this and the other one.
     pub fn merge(&self, other: &Self) -> Result<Self, RoutingError> {
-        let members = self.members.iter().chain(&other.members).cloned().collect();
+        let members = self
+            .members
+            .iter()
+            .chain(&other.members)
+            .map(|(pub_id, p2p_node)| (*pub_id, p2p_node.clone()))
+            .collect();
         Self::new(members, self.prefix.popped(), vec![self, other])
     }
 
     // WIP: remove me (or make less heavy)
     pub fn members(&self) -> BTreeSet<PublicId> {
-        self.members
-            .iter()
-            .map(P2pNode::public_id)
-            .copied()
-            .collect()
+        self.members.keys().copied().collect()
     }
 
-    pub fn p2p_members(&self) -> &BTreeSet<P2pNode> {
+    // WIP: remove me?
+    // WIP: rename to member_map?
+    pub fn p2p_members(&self) -> &BTreeMap<PublicId, P2pNode> {
         &self.members
     }
 
+    pub fn member_nodes(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
+        self.members.values()
+    }
+
     pub fn member_names(&self) -> BTreeSet<XorName> {
-        self.members.iter().map(P2pNode::name).copied().collect()
+        self.members.values().map(P2pNode::name).copied().collect()
     }
 
     pub fn version(&self) -> &u64 {
@@ -148,7 +155,7 @@ impl EldersInfo {
 
     #[cfg(any(test, feature = "mock_base"))]
     pub fn new_for_test(
-        members: BTreeSet<P2pNode>,
+        members: BTreeMap<PublicId, P2pNode>,
         prefix: Prefix<XorName>,
         version: u64,
     ) -> Result<Self, RoutingError> {
@@ -157,7 +164,7 @@ impl EldersInfo {
 
     /// Creates a new instance with the given fields, and computes its hash.
     fn new_with_fields(
-        members: BTreeSet<P2pNode>,
+        members: BTreeMap<PublicId, P2pNode>,
         version: u64,
         prefix: Prefix<XorName>,
         prev_hash: BTreeSet<Digest256>,
@@ -204,7 +211,7 @@ impl Display for EldersInfo {
         writeln!(
             formatter,
             "members: [{}]",
-            self.members.iter().map(|member| member.name()).format(", ")
+            self.members.values().map(P2pNode::name).format(", ")
         )?;
         writeln!(formatter, "\t}}")
     }

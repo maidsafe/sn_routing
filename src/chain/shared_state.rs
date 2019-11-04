@@ -73,9 +73,7 @@ impl SharedState {
         let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
 
         let our_members = elders_info
-            .p2p_members()
-            .iter()
-            .cloned()
+            .member_nodes()
             .map(|p2p_node| {
                 let info = MemberInfo {
                     age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
@@ -711,21 +709,25 @@ impl Debug for SectionKeyInfo {
 mod test {
     use super::*;
     use crate::{chain::EldersInfo, id::P2pNode, ConnectionInfo, FullId, Prefix, XorName};
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
     use std::str::FromStr;
     use unwrap::unwrap;
 
     fn gen_elders_info(pfx: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;
-        let mut members = BTreeSet::new();
+        let mut members = BTreeMap::new();
         (0..sec_size).for_each(|index| {
-            let _ = members.insert(P2pNode::new(
-                *FullId::within_range(&pfx.range_inclusive()).public_id(),
-                ConnectionInfo {
-                    peer_addr: ([127, 0, 0, 1], 9000 + index).into(),
-                    peer_cert_der: vec![],
-                },
-            ));
+            let pub_id = *FullId::within_range(&pfx.range_inclusive()).public_id();
+            let _ = members.insert(
+                pub_id,
+                P2pNode::new(
+                    pub_id,
+                    ConnectionInfo {
+                        peer_addr: ([127, 0, 0, 1], 9000 + index).into(),
+                        peer_cert_der: vec![],
+                    },
+                ),
+            );
         });
         unwrap!(EldersInfo::new_for_test(members, pfx, version))
     }

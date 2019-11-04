@@ -288,7 +288,7 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let neighbour_change = EldersChange {
-            added: self.chain.neighbour_elders_p2p().cloned().collect(),
+            added: self.chain.neighbour_elder_nodes().cloned().collect(),
             removed: Default::default(),
         };
         let _ = self.handle_section_info_event(elders_info, old_pfx, neighbour_change, outbox)?;
@@ -1696,12 +1696,8 @@ impl Display for Elder {
 // Create `EldersInfo` for the first node.
 fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingError> {
     let name = *p2p_node.name();
-    EldersInfo::new(
-        iter::once(p2p_node).collect(),
-        Prefix::default(),
-        iter::empty(),
-    )
-    .map_err(|err| {
+    let node = (*p2p_node.public_id(), p2p_node);
+    EldersInfo::new(iter::once(node).collect(), Prefix::default(), iter::empty()).map_err(|err| {
         error!(
             "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
             name, err
