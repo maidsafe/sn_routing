@@ -578,6 +578,7 @@ fn check_section_info_ack() {
 }
 
 #[test]
+#[ignore] // Will be fixed or removed when proper pruning lands
 fn vote_prune() {
     // Create a small network to keep all nodes in a single section. Then repeatedly add and remove
     // nodes (while making sure no split happens) to cause lot of parsec traffic which should make
