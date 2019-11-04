@@ -94,9 +94,7 @@ impl EldersInfo {
         self.members.keys().copied().collect()
     }
 
-    // WIP: remove me?
-    // WIP: rename to member_map?
-    pub fn p2p_members(&self) -> &BTreeMap<PublicId, P2pNode> {
+    pub fn member_map(&self) -> &BTreeMap<PublicId, P2pNode> {
         &self.members
     }
 
@@ -127,7 +125,7 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        if proofs.len() * QUORUM_DENOMINATOR <= self.p2p_members().len() * QUORUM_NUMERATOR {
+        if proofs.len() * QUORUM_DENOMINATOR <= self.member_map().len() * QUORUM_NUMERATOR {
             return false;
         }
 
@@ -139,7 +137,7 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        if proofs.len() < self.p2p_members().len() {
+        if proofs.len() < self.member_map().len() {
             return false;
         }
 

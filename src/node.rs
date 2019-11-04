@@ -26,7 +26,7 @@ use std::{net::SocketAddr, sync::mpsc};
 
 #[cfg(feature = "mock_base")]
 use {
-    crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix},
+    crate::{chain::SectionProofChain, id::P2pNode, utils::XorTargetInterval, Chain, Prefix},
     std::{
         collections::{BTreeMap, BTreeSet},
         fmt::{self, Display, Formatter},
@@ -383,7 +383,10 @@ impl Node {
 
     /// Returns a set of elders we should be connected to.
     pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.chain().into_iter().flat_map(Chain::elders)
+        self.chain()
+            .into_iter()
+            .flat_map(Chain::elders)
+            .map(P2pNode::public_id)
     }
 
     /// Returns whether the given `PublicId` is a member of our section.

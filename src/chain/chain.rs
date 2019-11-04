@@ -504,7 +504,7 @@ impl Chain {
             .get_member_connection_info(&pub_id)
             .ok_or(RoutingError::PeerNotFound(pub_id))?;
 
-        let mut elder_nodes = self.state.new_info.p2p_members().clone();
+        let mut elder_nodes = self.state.new_info.member_map().clone();
         let _ = elder_nodes.insert(pub_id, P2pNode::new(pub_id, connection_info.clone()));
 
         // TODO: the split decision should be based on the number of all members, not just elders.
@@ -528,7 +528,7 @@ impl Chain {
     pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
         self.assert_no_prefix_change("remove elder");
 
-        let mut elders = self.state.new_info.p2p_members().clone();
+        let mut elders = self.state.new_info.member_map().clone();
         let _ = elders.remove(&pub_id);
 
         if self.our_id() == &pub_id {
@@ -666,17 +666,11 @@ impl Chain {
     }
 
     /// Returns a set of elders we should be connected to.
-    pub fn elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
             .flat_map(EldersInfo::member_nodes)
             .chain(self.state.new_info.member_nodes())
-    }
-
-    /// Returns a set of elders we should be connected to.
-    // WIP: consider removing me
-    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.elders_p2p().map(P2pNode::public_id)
     }
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
@@ -1586,7 +1580,7 @@ mod tests {
                 (EldersInfo::new(members, pfx, None).unwrap(), full_ids)
             }
             SecInfoGen::Add(info) => {
-                let mut members = info.p2p_members().clone();
+                let mut members = info.member_map().clone();
                 let some_id = FullId::within_range(&info.prefix().range_inclusive());
                 let connection_info = ConnectionInfo {
                     peer_addr: ([127, 0, 0, 1], 9999).into(),
@@ -1602,7 +1596,7 @@ mod tests {
                 )
             }
             SecInfoGen::Remove(info) => {
-                let members = info.p2p_members().clone();
+                let members = info.member_map().clone();
                 (
                     EldersInfo::new(members, *info.prefix(), Some(info)).unwrap(),
                     Default::default(),

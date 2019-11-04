@@ -238,7 +238,7 @@ impl ElderUnderTest {
     fn new_elders_info_without_candidate(&self) -> EldersInfo {
         let old_info = self.new_elders_info_with_candidate();
         unwrap!(EldersInfo::new(
-            self.elders_info.p2p_members().clone(),
+            self.elders_info.member_map().clone(),
             *old_info.prefix(),
             Some(&old_info)
         ))
