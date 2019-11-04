@@ -7,26 +7,29 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+    create_connected_nodes, poll_all, verify_dropped_nodes, verify_invariant_for_all_nodes,
+    TestNode,
 };
-use rand::Rng;
-use routing::{mock::Network, Event, EventStream, NetworkParams};
+use routing::{mock::Network, NetworkParams, PublicId};
+use std::{collections::BTreeSet, iter};
 
-// Drop node at index and verify its own section detected it.
-fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
+// Drop node at index and verify its still recognise as elder by other section members.
+fn drop_node(nodes: &mut Vec<TestNode>, index: usize) -> BTreeSet<PublicId> {
     let node = nodes.remove(index);
-    let name = node.name();
+    let id = node.id();
     let close_names = node.close_names();
 
     drop(node);
 
     // Using poll_all instead of poll_and_resend here to only let the other nodes realise the node
-    // got disconnected, but not make more progress.
+    // got disconnected, but not make more progress. We expect the node to remain elder until
+    // detected as unresponsive.
     let _ = poll_all(nodes);
 
     for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
-        assert!(!node.inner.is_connected(name));
+        assert!(node.inner.is_peer_our_member(&id));
     }
+    iter::once(id).collect()
 }
 
 #[test]
@@ -38,32 +41,12 @@ fn node_drops() {
         safe_section_size,
     });
     let mut nodes = create_connected_nodes(&network, elder_size + 2);
-    drop_node(&mut nodes, 0);
 
-    // Trigger poll_and_resend to allow remaining nodes to gossip and
-    // update their chain accordingly.
-    poll_and_resend(&mut nodes);
-    verify_invariant_for_all_nodes(&network, &mut nodes);
-}
+    let dropped_node = drop_node(&mut nodes, 0);
 
-#[test]
-fn node_restart() {
-    // Idea of test: if a node disconnects from all other nodes, it should restart
-    // (with the exception of the first node which is special).
-    let elder_size = 5;
-    let safe_section_size = 5;
-    let network = Network::new(NetworkParams {
-        elder_size,
-        safe_section_size,
-    });
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, elder_size);
+    // Ensure the dropped node will be detected and removed later on with more user data exchanged.
+    verify_dropped_nodes(&mut rng, &mut nodes, &dropped_node);
 
-    // Drop all but last node in random order:
-    while nodes.len() > 1 {
-        let index = rng.gen_range(0, nodes.len());
-        drop_node(&mut nodes, index);
-    }
-
-    expect_next_event!(nodes[0], Event::RestartRequired);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 }

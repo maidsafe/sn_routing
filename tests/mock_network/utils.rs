@@ -514,6 +514,36 @@ pub fn add_connected_nodes_until_one_away_from_split(
     prefixes_to_add_to_split
 }
 
+/// To ensure the dropped nodes are removed from correspondent section members.
+/// Sending out enough user data so that the dropped node can be detected via unresponsive tracking.
+pub fn verify_dropped_nodes<R: Rng>(
+    rng: &mut R,
+    mut nodes: &mut Vec<TestNode>,
+    dropped_nodes: &BTreeSet<PublicId>,
+) {
+    let is_still_member = |node: &TestNode| {
+        dropped_nodes
+            .iter()
+            .any(|dropped_node| node.inner.is_peer_our_member(dropped_node))
+    };
+    for _ in 0..test_consts::UNRESPONSIVE_WINDOW {
+        let event: Vec<_> = rng.gen_iter().take(100).collect();
+        nodes.iter_mut().for_each(|node| {
+            let _ = node
+                .inner
+                .elder_state_mut()
+                .map(|state| state.vote_for_user_event(event.clone()));
+        });
+    }
+    poll_and_resend(&mut nodes);
+    if nodes.iter().any(is_still_member) {
+        panic!(
+            "dropped nodes {:?} still considerred as a member by other section members",
+            dropped_nodes
+        );
+    }
+}
+
 // Add connected nodes until reaching the requested size for each prefix. No split expected.
 fn add_connected_nodes_until_sized(
     network: &Network,

@@ -9,16 +9,14 @@
 use super::{
     add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split_with_options,
     current_sections, nodes_with_prefix, nodes_with_prefix_mut, poll_and_resend_with_options,
-    ChurnOptions, PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    verify_dropped_nodes, ChurnOptions, PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{Rand, Rng};
-use routing::{
-    mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, PublicId, XorName, MIN_AGE,
-};
-use std::{iter, slice};
+use routing::{mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, XorName, MIN_AGE};
+use std::{collections::BTreeSet, iter, slice};
 
-// These params are selected such that there can be a section size which allows relocation and at the same time
-// allows churn to happen which doesn't trigger split.
+// These params are selected such that there can be a section size which allows relocation and at
+// the same time allows churn to happen which doesn't trigger split.
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
     elder_size: LOWERED_ELDER_SIZE,
     safe_section_size: LOWERED_ELDER_SIZE + 3,
@@ -285,13 +283,9 @@ fn section_churn(
                 );
             }
             Churn::Remove => {
-                let id = remove_node_from_prefix(nodes, prefix).id();
-                poll_and_resend_with_options(
-                    nodes,
-                    PollOptions::default()
-                        .continue_if(move |nodes| !node_left(nodes, &id))
-                        .fire_join_timeout(false),
-                );
+                let dropped_nodes: BTreeSet<_> =
+                    iter::once(remove_node_from_prefix(nodes, prefix).id()).collect();
+                verify_dropped_nodes(&mut rng, nodes, &dropped_nodes);
             }
         }
     }
@@ -310,11 +304,6 @@ fn node_joined(nodes: &[TestNode], node_index: usize) -> bool {
                 .unwrap_or(false)
         })
         .all(|node| node.inner.is_peer_our_member(&id))
-}
-
-// Returns whether all nodes recognize the node with the given id as left.
-fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
-    nodes.iter().all(|node| !node.inner.is_peer_our_member(id))
 }
 
 // Returns whether the relocation of node at `node_index` from `source_prefix` to `target_prefix`

@@ -353,11 +353,6 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, _: &mut dyn EventBox) -> Transition {
-        debug!("{} - Lost peer {}", self, pub_id);
-        Transition::Stay
-    }
-
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,

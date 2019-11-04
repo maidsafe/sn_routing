@@ -9,15 +9,15 @@
 use super::{
     clear_relocation_overrides, count_sections, create_connected_nodes,
     create_connected_nodes_until_split, current_sections, gen_range, gen_range_except,
-    poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+    poll_and_resend, verify_dropped_nodes, verify_invariant_for_all_nodes, TestNode,
 };
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, QUORUM_DENOMINATOR,
-    QUORUM_NUMERATOR,
+    Authority, Event, EventStream, NetworkConfig, NetworkParams, PublicId, XorName,
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -35,7 +35,7 @@ fn drop_random_nodes<R: Rng>(
     rng: &mut R,
     nodes: &mut Vec<TestNode>,
     max_per_pfx: Option<usize>,
-) -> BTreeSet<XorName> {
+) -> BTreeSet<PublicId> {
     let mut dropped_nodes = BTreeSet::new();
     let elder_size = |node: &TestNode| unwrap!(node.inner.elder_size());
     let node_section_size = |node: &TestNode| {
@@ -75,8 +75,11 @@ fn drop_random_nodes<R: Rng>(
 
         *unwrap!(drop_count.get_mut(&pfx)) += 1;
         let dropped = nodes.remove(i);
-        assert!(dropped_nodes.insert(dropped.name()));
+        assert!(dropped_nodes.insert(dropped.id()));
     }
+
+    verify_dropped_nodes(rng, nodes, &dropped_nodes);
+
     dropped_nodes
 }
 
@@ -226,6 +229,7 @@ fn random_churn<R: Rng>(
     assert!(max_drop > 0);
     let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
     warn!("Dropping nodes: {:?}", dropped_nodes);
+
     BTreeSet::new()
 }
 
