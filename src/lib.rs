@@ -213,7 +213,7 @@ pub(crate) use self::mock::crypto;
 #[doc(hidden)]
 pub mod test_consts {
     pub use crate::chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
-    pub use crate::states::{ADD_TIMEOUT, BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
+    pub use crate::states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 }
 
 #[cfg(test)]
