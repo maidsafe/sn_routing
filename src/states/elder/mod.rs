@@ -899,6 +899,12 @@ impl Elder {
     fn handle_neighbour_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
+        } else {
+            trace!(
+                "{} Ignore not new neighbour neighbour_info: {:?}",
+                self,
+                elders_info
+            );
         }
         Ok(())
     }

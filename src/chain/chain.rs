@@ -672,7 +672,11 @@ impl Chain {
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet and is a neighbouring section.
     pub fn is_new_neighbour(&self, elders_info: &EldersInfo) -> bool {
-        self.our_prefix().is_neighbour(elders_info.prefix()) && self.is_new(elders_info)
+        let our_prefix = self.our_prefix();
+        let other_prefix = elders_info.prefix();
+
+        (our_prefix.is_neighbour(other_prefix) || other_prefix.is_extension_of(our_prefix))
+            && self.is_new(elders_info)
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the target
