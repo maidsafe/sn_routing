@@ -422,7 +422,7 @@ impl Chain {
             .state
             .our_members
             .entry(pub_id)
-            .or_insert_with(|| MemberInfo::new(p2p_node.connection_info().clone()));
+            .or_insert_with(|| MemberInfo::new(p2p_node.into_connection_info()));
         info.state = MemberState::Joined;
         info.set_age(age);
     }
@@ -464,17 +464,13 @@ impl Chain {
         // We already have the connection info from when it was added online.
         let connection_info = self
             .get_member_connection_info(&pub_id)
-            .ok_or(RoutingError::InvalidStateForOperation)?;
+            .ok_or(RoutingError::PeerNotFound(pub_id))?;
 
         let mut elders_p2p = self.state.new_info.p2p_members().clone();
-        let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info));
-
-        // WIP: remove me by the end of this PR
-        let mut elders = self.state.new_info.members();
-        let _ = elders.insert(pub_id);
+        let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info.clone()));
 
         // TODO: the split decision should be based on the number of all members, not just elders.
-        if self.should_split(&elders)? {
+        if self.should_split(&elders_p2p)? {
             let (our_info, other_info) = self.split_self(elders_p2p.clone())?;
             self.state.change = PrefixChange::Splitting;
             return Ok(vec![our_info, other_info]);
@@ -497,8 +493,8 @@ impl Chain {
         let mut elders = self.state.new_info.p2p_members().clone();
         let connection_info = self
             .get_member_connection_info(&pub_id)
-            .ok_or(RoutingError::InvalidStateForOperation)?;
-        let p2p_node = P2pNode::new(pub_id, connection_info);
+            .ok_or(RoutingError::PeerNotFound(pub_id))?;
+        let p2p_node = P2pNode::new(pub_id, connection_info.clone());
         let _ = elders.remove(&p2p_node);
 
         if self.our_id() == &pub_id {
@@ -630,11 +626,11 @@ impl Chain {
     }
 
     /// Returns the `ConnectioInfo` for a member of our section.
-    pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<ConnectionInfo> {
+    pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<&ConnectionInfo> {
         self.state
             .our_members
             .get(&pub_id)
-            .map(|member_info| member_info.connection_info.clone())
+            .map(|member_info| &member_info.connection_info)
     }
 
     /// Returns a set of elders we should be connected to.
@@ -1010,15 +1006,18 @@ impl Chain {
     }
 
     /// Returns whether we should split into two sections.
-    fn should_split(&self, members: &BTreeSet<PublicId>) -> Result<bool, RoutingError> {
+    fn should_split(&self, members: &BTreeSet<P2pNode>) -> Result<bool, RoutingError> {
         if self.state.change != PrefixChange::None || self.should_vote_for_merge() {
             return Ok(false);
         }
 
         let new_size = members
             .iter()
-            .filter(|id| {
-                self.our_id.name().common_prefix(id.name()) > self.our_prefix().bit_count()
+            .filter(|p2p_node| {
+                self.our_id
+                    .name()
+                    .common_prefix(p2p_node.public_id().name())
+                    > self.our_prefix().bit_count()
             })
             .count();
         let min_split_size = self.min_split_size();

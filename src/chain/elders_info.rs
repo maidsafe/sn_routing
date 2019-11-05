@@ -14,6 +14,7 @@ use crate::{
     routing_table::Prefix,
     XorName, {QUORUM_DENOMINATOR, QUORUM_NUMERATOR},
 };
+use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
@@ -196,16 +197,11 @@ impl Display for EldersInfo {
         writeln!(formatter, "\t\tprefix: {:?},", self.prefix)?;
         writeln!(formatter, "\t\tversion: {:?},", self.version)?;
         writeln!(formatter, "\t\tprev_hash_len: {},", self.prev_hash.len())?;
-        write!(formatter, "\t\tmembers: [")?;
-        for (index, member) in self.members().iter().enumerate() {
-            let comma = if index == self.members.len() - 1 {
-                ""
-            } else {
-                ","
-            };
-            write!(formatter, " {}{}", member.name(), comma)?;
-        }
-        writeln!(formatter, " ]")?;
+        writeln!(
+            formatter,
+            "members: [{}]",
+            self.members.iter().map(|member| member.name()).format(", ")
+        )?;
         writeln!(formatter, "\t}}")
     }
 }

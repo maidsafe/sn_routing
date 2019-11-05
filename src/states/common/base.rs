@@ -289,7 +289,7 @@ pub trait Base: Display {
                 let connection_info = self
                     .peer_map()
                     .get_connection_info(public_id)
-                    .ok_or(RoutingError::UnknownConnection(public_id))?
+                    .ok_or(RoutingError::PeerNotFound(public_id))?
                     .clone();
                 self.handle_direct_message(msg, P2pNode::new(public_id, connection_info), outbox)
             }

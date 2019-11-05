@@ -84,8 +84,8 @@ pub enum RoutingError {
     InvalidStateForOperation,
     /// Serialisation Error
     SerialisationError(serialisation::SerialisationError),
-    /// Unknown Connection
-    UnknownConnection(PublicId),
+    /// Peer not found
+    PeerNotFound(PublicId),
     /// Invalid Destination
     InvalidDestination,
     /// Invalid Source
