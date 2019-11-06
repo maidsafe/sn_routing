@@ -64,11 +64,6 @@ pub struct OnlinePayload {
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
-    /// Add new elder once we agreed to add a candidate
-    AddElder(PublicId),
-    /// Remove elder once we agreed to remove the peer
-    RemoveElder(PublicId),
-
     /// Voted for node that is about to join our section
     Online(OnlinePayload),
     /// Voted for node we no longer consider online.
@@ -125,8 +120,6 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            AccumulatingEvent::AddElder(id) => write!(formatter, "AddElder({})", id),
-            AccumulatingEvent::RemoveElder(id) => write!(formatter, "RemoveElder({})", id),
             AccumulatingEvent::Online(payload) => write!(formatter, "Online({:?})", payload),
             AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
             AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
@@ -161,24 +154,8 @@ pub struct NetworkEvent {
 
 impl NetworkEvent {
     /// Convert `NetworkEvent` into a Parsec Observation
-    pub fn into_obs(self) -> Result<parsec::Observation<NetworkEvent, PublicId>, RoutingError> {
-        Ok(match self {
-            NetworkEvent {
-                payload: AccumulatingEvent::AddElder(id),
-                ..
-            } => parsec::Observation::Add {
-                peer_id: id,
-                related_info: Default::default(),
-            },
-            NetworkEvent {
-                payload: AccumulatingEvent::RemoveElder(id),
-                ..
-            } => parsec::Observation::Remove {
-                peer_id: id,
-                related_info: Default::default(),
-            },
-            event => parsec::Observation::OpaquePayload(event),
-        })
+    pub fn into_obs(self) -> parsec::Observation<NetworkEvent, PublicId> {
+        parsec::Observation::OpaquePayload(self)
     }
 }
 

@@ -18,9 +18,8 @@ use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload, PrefixChange,
-        PrefixChangeOutcome, SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
-        MIN_AGE_COUNTER,
+        GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PrefixChange,
+        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -381,34 +380,28 @@ impl Elder {
         }
     }
 
-    fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
-        // Clear any relocation overrides
-        self.next_relocation_dst = None;
-        self.next_relocation_interval = None;
-
+    fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
         let drained_obs: Vec<_> = self
             .parsec_map
             .our_unpolled_observations()
             .cloned()
             .collect();
 
-        let PrefixChangeOutcome {
+        let ParsecResetData {
             gen_pfx_info,
             mut cached_events,
             completed_events,
-        } = self.chain.finalise_prefix_change()?;
+        } = reset_data;
         self.gen_pfx_info = gen_pfx_info;
         self.init_parsec(); // We don't reset the chain on prefix change.
 
         for obs in drained_obs {
             let event = match obs {
-                parsec::Observation::Remove { peer_id, .. } => {
-                    AccumulatingEvent::RemoveElder(peer_id).into_network_event()
-                }
                 parsec::Observation::OpaquePayload(event) => event,
 
                 parsec::Observation::Genesis { .. }
                 | parsec::Observation::Add { .. }
+                | parsec::Observation::Remove { .. }
                 | parsec::Observation::Accusation { .. }
                 | parsec::Observation::StartDkg(_)
                 | parsec::Observation::DkgResult { .. }
@@ -429,9 +422,7 @@ impl Elder {
                 // Drop: no longer relevant after prefix change.
                 // TODO: verify this is really the case. Some/all of these might still make sense
                 // to carry over. In case it does not, add a comment explaining why.
-                AccumulatingEvent::AddElder(_)
-                | AccumulatingEvent::RemoveElder(_)
-                | AccumulatingEvent::Online(_)
+                AccumulatingEvent::Online(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_) => false,
 
@@ -456,6 +447,20 @@ impl Elder {
             });
 
         Ok(())
+    }
+
+    fn reset_parsec(&mut self) -> Result<(), RoutingError> {
+        let reset_data = self.chain.prepare_parsec_reset()?;
+        self.reset_parsec_with_data(reset_data)
+    }
+
+    fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
+        // Clear any relocation overrides
+        self.next_relocation_dst = None;
+        self.next_relocation_interval = None;
+
+        let reset_data = self.chain.finalise_prefix_change()?;
+        self.reset_parsec_with_data(reset_data)
     }
 
     fn send_neighbour_infos(&mut self) {
@@ -894,6 +899,12 @@ impl Elder {
     fn handle_neighbour_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
+        } else {
+            trace!(
+                "{} Ignore not new neighbour neighbour_info: {:?}",
+                self,
+                elders_info
+            );
         }
         Ok(())
     }
@@ -1103,7 +1114,12 @@ impl Elder {
         self.chain.our_prefix()
     }
 
-    fn remove_member(&mut self, pub_id: PublicId, disconnect_time: DisconnectTime) {
+    fn remove_member(
+        &mut self,
+        pub_id: PublicId,
+        disconnect_time: DisconnectTime,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         self.chain.remove_member(&pub_id);
 
         match disconnect_time {
@@ -1116,9 +1132,15 @@ impl Elder {
             }
         }
 
-        if self.chain.is_peer_our_elder(&pub_id) {
-            self.vote_for_event(AccumulatingEvent::RemoveElder(pub_id));
-        }
+        // Temporarily behave as if RemoveElder accumulated simultaneously
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+
+        let self_info = self.chain.remove_elder(pub_id)?;
+        self.vote_for_section_info(self_info)?;
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
+        Ok(())
     }
 }
 
@@ -1466,44 +1488,6 @@ impl Approved for Elder {
         self.pfx_is_successfully_polled
     }
 
-    fn handle_add_elder_event(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        info!("{} - handle AddElder: {}.", self, pub_id);
-
-        let to_vote_infos = self.chain.add_elder(pub_id)?;
-
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        self.print_rt_size();
-
-        for info in to_vote_infos {
-            self.vote_for_section_info(info)?;
-        }
-
-        Ok(())
-    }
-
-    fn handle_remove_elder_event(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-
-        let self_info = self.chain.remove_elder(pub_id)?;
-        self.vote_for_section_info(self_info)?;
-
-        if self.chain.is_peer_our_member(&pub_id) {
-            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
-        }
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-        Ok(())
-    }
-
     fn handle_online_event(
         &mut self,
         payload: OnlinePayload,
@@ -1521,14 +1505,30 @@ impl Approved for Elder {
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
 
-        self.vote_for_event(AccumulatingEvent::AddElder(*payload.p2p_node.public_id()));
+        // pretend as if AddElder accumulated already
+        let pub_id = *payload.p2p_node.public_id();
+        info!("{} - handle AddElder: {}.", self, pub_id);
+
+        let to_vote_infos = self.chain.add_elder(pub_id)?;
+
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        self.print_rt_size();
+
+        for info in to_vote_infos {
+            self.vote_for_section_info(info)?;
+        }
 
         Ok(())
     }
 
-    fn handle_offline_event(&mut self, pub_id: PublicId) -> Result<(), RoutingError> {
+    fn handle_offline_event(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-        self.remove_member(pub_id, DisconnectTime::Now);
+        self.remove_member(pub_id, DisconnectTime::Now, outbox)?;
+
         Ok(())
     }
 
@@ -1549,6 +1549,8 @@ impl Approved for Elder {
     ) -> Result<Transition, RoutingError> {
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 
+        let self_sec_update = elders_info.prefix().matches(self.name());
+
         if elders_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*elders_info.prefix()), outbox);
@@ -1561,9 +1563,9 @@ impl Approved for Elder {
         } else if old_pfx.is_extension_of(elders_info.prefix()) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionMerged(*elders_info.prefix()), outbox);
+        } else if self_sec_update {
+            self.reset_parsec()?;
         }
-
-        let self_sec_update = elders_info.prefix().matches(self.name());
 
         self.update_neighbour_connections(neighbour_change, outbox);
 
@@ -1607,7 +1609,11 @@ impl Approved for Elder {
         self.send_routing_message(RoutingMessage { src, dst, content })
     }
 
-    fn handle_relocate_event(&mut self, payload: RelocateDetails) -> Result<(), RoutingError> {
+    fn handle_relocate_event(
+        &mut self,
+        payload: RelocateDetails,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         info!("{} - handle Relocate: {:?}.", self, payload);
 
         if self.chain.our_prefix().matches(&payload.destination) {
@@ -1627,7 +1633,7 @@ impl Approved for Elder {
         })?;
 
         // Delay the disconnect, to give the peer chance to receive the `Relocate` message.
-        self.remove_member(pub_id, DisconnectTime::Later);
+        self.remove_member(pub_id, DisconnectTime::Later, outbox)?;
 
         Ok(())
     }

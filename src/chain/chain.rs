@@ -156,60 +156,6 @@ impl Chain {
             .collect()
     }
 
-    /// Handles an accumulated parsec Observation for membership mutation.
-    ///
-    /// The provided proofs wouldn't be validated against the mapped NetworkEvent as they're
-    /// for parsec::Observation::Add/Remove.
-    pub fn handle_churn_event(
-        &mut self,
-        event: &NetworkEvent,
-        proof_set: ProofSet,
-    ) -> Result<(), RoutingError> {
-        match event.payload {
-            AccumulatingEvent::AddElder(_) | AccumulatingEvent::RemoveElder(_) => (),
-            _ => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Invalid NetworkEvent to handle membership mutation - {:?}",
-                    self,
-                    event
-                );
-                return Err(RoutingError::InvalidStateForOperation);
-            }
-        }
-
-        if !self.can_handle_vote(event) {
-            // force cache with our_id as this is an accumulated event we can trust.
-            let our_id = self.our_id;
-            self.cache_event(event, &our_id)?;
-            return Ok(());
-        }
-
-        let (acc_event, _signature) = AccumulatingEvent::from_network_event(event.clone());
-        match self
-            .chain_accumulator
-            .insert_with_proof_set(acc_event, proof_set)
-        {
-            Err(InsertError::AlreadyComplete) => {
-                log_or_panic!(
-                    LogLevel::Error,
-                    "{} Duplicate membership change event.",
-                    self
-                );
-            }
-            Err(InsertError::ReplacedAlreadyInserted) => {
-                log_or_panic!(
-                    LogLevel::Warn,
-                    "{} Ejected existing ProofSet while handling membership mutation.",
-                    self
-                );
-            }
-            Ok(()) => (),
-        }
-
-        Ok(())
-    }
-
     /// Handles an opaque parsec Observation as a NetworkEvent.
     pub fn handle_opaque_event(
         &mut self,
@@ -344,9 +290,7 @@ impl Chain {
                 // TODO: remove once we have real integration tests of `ParsecPrune` accumulating.
                 self.parsec_prune_accumulated += 1;
             }
-            AccumulatingEvent::AddElder(_)
-            | AccumulatingEvent::RemoveElder(_)
-            | AccumulatingEvent::Online(_)
+            AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::SendAckMessage(_)
@@ -537,24 +481,17 @@ impl Chain {
             .should_vote_for_merge(self.elder_size(), self.neighbour_infos())
     }
 
-    /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
-    /// cached and currently accumulated events.
-    pub fn finalise_prefix_change(&mut self) -> Result<PrefixChangeOutcome, RoutingError> {
-        // TODO: Bring back using their_knowledge to clean_older section in our_infos
-        self.check_and_clean_neighbour_infos(None);
-        self.state.change = PrefixChange::None;
-
+    /// Gets the data needed to initialise a new Parsec instance
+    pub fn prepare_parsec_reset(&mut self) -> Result<ParsecResetData, RoutingError> {
         let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
         let merges = mem::replace(&mut self.state.merging, Default::default())
             .into_iter()
             .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
+
         self.state.handled_genesis_event = false;
 
-        info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
-        trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
-
-        Ok(PrefixChangeOutcome {
+        Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
@@ -569,6 +506,19 @@ impl Chain {
                 .collect(),
             completed_events: remaining.completed_events,
         })
+    }
+
+    /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
+    /// cached and currently accumulated events.
+    pub fn finalise_prefix_change(&mut self) -> Result<ParsecResetData, RoutingError> {
+        // TODO: Bring back using their_knowledge to clean_older section in our_infos
+        self.check_and_clean_neighbour_infos(None);
+        self.state.change = PrefixChange::None;
+
+        info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
+        trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
+
+        self.prepare_parsec_reset()
     }
 
     /// Returns our public ID
@@ -722,7 +672,11 @@ impl Chain {
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet and is a neighbouring section.
     pub fn is_new_neighbour(&self, elders_info: &EldersInfo) -> bool {
-        self.our_prefix().is_neighbour(elders_info.prefix()) && self.is_new(elders_info)
+        let our_prefix = self.our_prefix();
+        let other_prefix = elders_info.prefix();
+
+        (our_prefix.is_neighbour(other_prefix) || other_prefix.is_extension_of(our_prefix))
+            && self.is_new(elders_info)
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the target
@@ -817,9 +771,7 @@ impl Chain {
                 true
             }
 
-            AccumulatingEvent::AddElder(_)
-            | AccumulatingEvent::RemoveElder(_)
-            | AccumulatingEvent::Online(_)
+            AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::TheirKeyInfo(_)
             | AccumulatingEvent::ParsecPrune
@@ -1414,7 +1366,7 @@ impl Chain {
 }
 
 /// The outcome of a prefix change.
-pub struct PrefixChangeOutcome {
+pub struct ParsecResetData {
     /// The new genesis prefix info.
     pub gen_pfx_info: GenesisPfxInfo,
     /// The cached events that should be revoted.
