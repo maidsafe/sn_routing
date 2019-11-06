@@ -20,6 +20,7 @@ use crate::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PrefixChange,
         SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
+        UNRESPONSIVE_THRESHOLD,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -104,6 +105,11 @@ pub struct Elder {
     delayed_disconnects: HashMap<u64, PublicId>,
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    /// After a bulk polled happens, number of steps that needs to be skipped before carry out
+    /// unresponsive check again.
+    bulk_polled: usize,
+    /// Empty parsec polls since last polled.
+    empty_polls: usize,
 }
 
 impl Elder {
@@ -247,6 +253,8 @@ impl Elder {
             pfx_is_successfully_polled: false,
             delayed_disconnects: HashMap::default(),
             dkg_cache: Default::default(),
+            bulk_polled: 0,
+            empty_polls: 0,
         }
     }
 
@@ -1663,6 +1671,37 @@ impl Approved for Elder {
         self.remove_member(pub_id, DisconnectTime::Later, outbox)?;
 
         Ok(())
+    }
+
+    fn check_voting_status(&mut self, parsec_polled: usize) {
+        // After a bulk parsec poll happens, only carry out check again when:
+        //    1, experienced many empty polls
+        // OR 2, experienced enough non-empty parsec polls
+        if parsec_polled == 0 {
+            self.empty_polls = self.empty_polls.saturating_add(1);
+        } else {
+            self.empty_polls = 0;
+            if parsec_polled > UNRESPONSIVE_THRESHOLD && self.bulk_polled == 0 {
+                self.bulk_polled = self.chain.our_info().members().len();
+                return;
+            }
+            self.bulk_polled = self.bulk_polled.saturating_sub(parsec_polled);
+        }
+
+        let unresponsive_nodes = self.chain.check_vote_status();
+        // Using mock parsec will cause all observations come in within one bulk. Meanwhile polling
+        // during test cannot ensure enough empty polls to happen. Hence the following special
+        // exception is required.
+        if cfg!(feature = "mock_parsec") && unresponsive_nodes.len() == 1 {
+            self.bulk_polled = 0;
+        }
+
+        if self.empty_polls > UNRESPONSIVE_THRESHOLD || self.bulk_polled == 0 {
+            for pub_id in unresponsive_nodes.iter() {
+                debug!("{} vote for {:?} Offline due to unresponsive", self, pub_id);
+                self.vote_for_event(AccumulatingEvent::Offline(*pub_id));
+            }
+        }
     }
 }
 

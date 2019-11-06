@@ -18,10 +18,10 @@ mod proof;
 mod shared_state;
 
 #[cfg(feature = "mock_base")]
-pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
+pub use self::chain_accumulator::UNRESPONSIVE_WINDOW;
 pub use self::{
     chain::{delivery_group_size, Chain, EldersChange, NetworkParams, ParsecResetData},
-    chain_accumulator::AccumulatingProof,
+    chain_accumulator::{AccumulatingProof, UNRESPONSIVE_THRESHOLD},
     elders_info::EldersInfo,
     member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_event::{

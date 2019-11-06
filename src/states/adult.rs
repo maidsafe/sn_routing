@@ -544,6 +544,10 @@ impl Approved for Adult {
         debug!("{} - Unhandled NeighbourMerge event", self);
         Ok(())
     }
+
+    fn check_voting_status(&mut self, _parsec_polled: usize) {
+        debug!("{} - Not Required CheckVotingStatus For Adult", self);
+    }
 }
 
 impl Display for Adult {

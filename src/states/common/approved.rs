@@ -37,6 +37,9 @@ pub trait Approved: Base {
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
 
+    /// Checks peers voting status to detect unresponsive nodes.
+    fn check_voting_status(&mut self, parsec_polled: usize);
+
     /// Handles an accumulated `Online` event.
     fn handle_online_event(
         &mut self,
@@ -173,7 +176,9 @@ pub trait Approved: Base {
     }
 
     fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
+        let mut parsec_polled = 0;
         while let Some(block) = self.parsec_map_mut().poll() {
+            parsec_polled += 1;
             let parsec_version = self.parsec_map_mut().last_version();
             match block.payload() {
                 Observation::Accusation { .. } => {
@@ -260,7 +265,7 @@ pub trait Approved: Base {
             }
         }
 
-        self.check_voting_status();
+        self.check_voting_status(parsec_polled);
 
         Ok(Transition::Stay)
     }
@@ -322,18 +327,6 @@ pub trait Approved: Base {
         }
 
         Ok(Transition::Stay)
-    }
-
-    // Checking members vote status and vote to remove those non-resposive nodes.
-    fn check_voting_status(&mut self) {
-        let unresponsive_nodes = self.chain_mut().check_vote_status();
-        let log_indent = self.log_ident();
-        for pub_id in unresponsive_nodes.iter() {
-            self.parsec_map_mut().vote_for(
-                AccumulatingEvent::Offline(*pub_id).into_network_event(),
-                &log_indent,
-            );
-        }
     }
 
     fn send_connection_request(
