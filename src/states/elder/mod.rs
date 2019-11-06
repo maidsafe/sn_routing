@@ -102,6 +102,8 @@ pub struct Elder {
     pfx_is_successfully_polled: bool,
     /// Peers we will disconnect from in the future.
     delayed_disconnects: HashMap<u64, PublicId>,
+    /// DKG cache
+    dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
 }
 
 impl Elder {
@@ -244,6 +246,7 @@ impl Elder {
             chain: details.chain,
             pfx_is_successfully_polled: false,
             delayed_disconnects: HashMap::default(),
+            dkg_cache: Default::default(),
         }
     }
 
@@ -423,6 +426,7 @@ impl Elder {
                 // TODO: verify this is really the case. Some/all of these might still make sense
                 // to carry over. In case it does not, add a comment explaining why.
                 AccumulatingEvent::Online(_)
+                | AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_) => false,
 
@@ -1136,7 +1140,10 @@ impl Elder {
         info!("{} - handle RemoveElder: {}.", self, pub_id);
 
         let self_info = self.chain.remove_elder(pub_id)?;
-        self.vote_for_section_info(self_info)?;
+
+        let participants = self_info.members();
+        let _ = self.dkg_cache.insert(participants.clone(), self_info);
+        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
 
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
@@ -1515,7 +1522,9 @@ impl Approved for Elder {
         self.print_rt_size();
 
         for info in to_vote_infos {
-            self.vote_for_section_info(info)?;
+            let participants = info.members();
+            let _ = self.dkg_cache.insert(participants.clone(), info);
+            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
         }
 
         Ok(())
@@ -1534,10 +1543,19 @@ impl Approved for Elder {
 
     fn handle_dkg_result_event(
         &mut self,
-        _participants: &BTreeSet<PublicId>,
+        participants: &BTreeSet<PublicId>,
         _dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
-        // TODO
+        if let Some(info) = self.dkg_cache.remove(participants) {
+            self.vote_for_section_info(info)?;
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} DKG for an unexpected info {:?}.",
+                self,
+                participants
+            );
+        }
         Ok(())
     }
 

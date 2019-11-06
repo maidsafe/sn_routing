@@ -271,6 +271,12 @@ pub trait Approved: Base {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
+                AccumulatingEvent::StartDkg(_) => {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "StartDkg came out of Parsec - this shouldn't happen"
+                    );
+                }
                 AccumulatingEvent::Online(payload) => {
                     self.handle_online_event(payload, outbox)?;
                 }

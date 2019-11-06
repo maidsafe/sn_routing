@@ -16,7 +16,10 @@ use crate::{
     BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
 };
 use hex_fmt::HexFmt;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    collections::BTreeSet,
+    fmt::{self, Debug, Formatter},
+};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct AckMessagePayload {
@@ -64,6 +67,9 @@ pub struct OnlinePayload {
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
+    /// Vote to start a DKG instance
+    StartDkg(BTreeSet<PublicId>),
+
     /// Voted for node that is about to join our section
     Online(OnlinePayload),
     /// Voted for node we no longer consider online.
@@ -120,6 +126,9 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
+            AccumulatingEvent::StartDkg(participants) => {
+                write!(formatter, "StartDkg({:?})", participants)
+            }
             AccumulatingEvent::Online(payload) => write!(formatter, "Online({:?})", payload),
             AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
             AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
@@ -155,7 +164,13 @@ pub struct NetworkEvent {
 impl NetworkEvent {
     /// Convert `NetworkEvent` into a Parsec Observation
     pub fn into_obs(self) -> parsec::Observation<NetworkEvent, PublicId> {
-        parsec::Observation::OpaquePayload(self)
+        match self {
+            NetworkEvent {
+                payload: AccumulatingEvent::StartDkg(participants),
+                ..
+            } => parsec::Observation::StartDkg(participants),
+            event => parsec::Observation::OpaquePayload(event),
+        }
     }
 }
 
