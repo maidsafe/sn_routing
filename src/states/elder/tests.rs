@@ -19,7 +19,6 @@ use crate::{
     mock::Network,
     outbox::EventBox,
     state_machine::{State, StateMachine, Transition},
-    utils::LogIdent,
     NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
@@ -56,7 +55,6 @@ struct ElderUnderTest {
     pub machine: StateMachine,
     pub full_id: FullId,
     pub other_full_ids: Vec<FullId>,
-    pub other_parsec_map: Vec<ParsecMap>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
 }
@@ -96,10 +94,6 @@ impl ElderUnderTest {
         let machine = make_state_machine(&full_id, &gen_pfx_info, &mut ());
 
         let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
-        let other_parsec_map = other_full_ids
-            .iter()
-            .map(|full_id| ParsecMap::new(full_id.clone(), &gen_pfx_info))
-            .collect_vec();
 
         let candidate_addr: SocketAddr = unwrap!("127.0.0.2:9999".parse());
         let candidate = P2pNode::new(
@@ -111,12 +105,12 @@ impl ElderUnderTest {
             machine,
             full_id,
             other_full_ids,
-            other_parsec_map,
             elders_info,
             candidate,
         };
 
-        // Process initial unpolled event
+        // Process initial unpolled event including genesis
+        elder_test.n_vote_for_unconsensused_events(elder_test.other_full_ids.len());
         unwrap!(elder_test.create_gossip());
         elder_test
     }
@@ -126,22 +120,36 @@ impl ElderUnderTest {
     }
 
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
+        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
         for event in events {
-            self.other_parsec_map
-                .iter_mut()
-                .zip(self.other_full_ids.iter())
-                .take(count)
-                .for_each(|(parsec, full_id)| {
-                    let sig_event = if let AccumulatingEvent::SectionInfo(ref info) = event {
-                        Some(unwrap!(SectionInfoSigPayload::new(info, &full_id)))
-                    } else {
-                        None
-                    };
-                    parsec.vote_for(
-                        event.clone().into_network_event_with(sig_event),
-                        &LogIdent::new(&0),
-                    )
-                });
+            self.other_full_ids.iter().take(count).for_each(|full_id| {
+                let sig_event = if let AccumulatingEvent::SectionInfo(ref info) = event {
+                    Some(unwrap!(SectionInfoSigPayload::new(info, &full_id)))
+                } else {
+                    None
+                };
+
+                info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
+                parsec.vote_for_as(
+                    event.clone().into_network_event_with(sig_event).into_obs(),
+                    &full_id,
+                );
+            });
+        }
+    }
+
+    fn n_vote_for_unconsensused_events(&mut self, count: usize) {
+        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let events = parsec.our_unpolled_observations().cloned().collect_vec();
+        for event in events.into_iter() {
+            self.other_full_ids.iter().take(count).for_each(|full_id| {
+                info!(
+                    "Vote as {:?} for unconsensused event {:?}",
+                    full_id.public_id(),
+                    event
+                );
+                parsec.vote_for_as(event.clone(), &full_id);
+            });
         }
     }
 
@@ -149,7 +157,9 @@ impl ElderUnderTest {
         let other_pub_id = *self.other_full_ids[0].public_id();
         let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
         let connection_info = ConnectionInfo::from(addr);
-        let message = unwrap!(self.other_parsec_map[0].create_gossip(0, self.full_id.public_id()));
+        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let parsec_version = parsec.last_version();
+        let message = unwrap!(parsec.create_gossip(parsec_version, self.full_id.public_id()));
         self.handle_direct_message((message, P2pNode::new(other_pub_id, connection_info)))
     }
 

@@ -172,6 +172,18 @@ impl ParsecMap {
         }
     }
 
+    // Enable test to simulate other members voting
+    #[cfg(feature = "mock_parsec")]
+    pub fn vote_for_as(
+        &mut self,
+        obs: Observation<chain::NetworkEvent, id::PublicId>,
+        vote_id: &FullId,
+    ) {
+        if let Some(ref mut parsec) = self.map.values_mut().last() {
+            parsec.vote_for_as(obs, vote_id)
+        }
+    }
+
     pub fn last_version(&self) -> u64 {
         if let Some(version) = self.map.keys().last() {
             *version
