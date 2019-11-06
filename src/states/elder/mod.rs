@@ -31,7 +31,7 @@ use crate::{
         SignedRoutingMessage,
     },
     outbox::EventBox,
-    parsec::{self, ParsecMap},
+    parsec::{self, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
@@ -1529,6 +1529,15 @@ impl Approved for Elder {
         info!("{} - handle Offline: {}.", self, pub_id);
         self.remove_member(pub_id, DisconnectTime::Now, outbox)?;
 
+        Ok(())
+    }
+
+    fn handle_dkg_result_event(
+        &mut self,
+        _participants: &BTreeSet<PublicId>,
+        _dkg_result: &DkgResultWrapper,
+    ) -> Result<(), RoutingError> {
+        // TODO
         Ok(())
     }
 

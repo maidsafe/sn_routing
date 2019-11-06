@@ -17,7 +17,7 @@ use crate::{
     id::PublicId,
     messages::{DirectMessage, MessageContent, RelocateDetails, RoutingMessage},
     outbox::EventBox,
-    parsec::{self, Block, Observation, ParsecMap},
+    parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     types::MessageId,
@@ -26,6 +26,7 @@ use crate::{
     ConnectionInfo,
 };
 use log::LogLevel;
+use std::collections::BTreeSet;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -48,6 +49,13 @@ pub trait Approved: Base {
         &mut self,
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
+
+    /// Handles a completed DKG.
+    fn handle_dkg_result_event(
+        &mut self,
+        participants: &BTreeSet<PublicId>,
+        dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `OurMerge` event.
@@ -238,7 +246,12 @@ pub trait Approved: Base {
                         obs
                     );
                 }
-                Observation::DkgResult { .. } => unreachable!("..."),
+                Observation::DkgResult {
+                    participants,
+                    dkg_result,
+                } => {
+                    self.handle_dkg_result_event(participants, dkg_result)?;
+                }
             }
 
             match self.chain_poll(outbox)? {

@@ -24,7 +24,7 @@ use crate::{
         SignedRoutingMessage,
     },
     outbox::EventBox,
-    parsec::ParsecMap,
+    parsec::{DkgResultWrapper, ParsecMap},
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -36,6 +36,7 @@ use crate::{
 };
 use itertools::Itertools;
 use std::{
+    collections::BTreeSet,
     fmt::{self, Display, Formatter},
     mem,
 };
@@ -476,7 +477,15 @@ impl Approved for Adult {
         let _ = self.chain.remove_elder(pub_id)?;
         self.disconnect(&pub_id);
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        Ok(())
+    }
 
+    fn handle_dkg_result_event(
+        &mut self,
+        _participants: &BTreeSet<PublicId>,
+        _dkg_result: &DkgResultWrapper,
+    ) -> Result<(), RoutingError> {
+        // TODO
         Ok(())
     }
 
