@@ -23,7 +23,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -1380,7 +1380,7 @@ pub struct ParsecResetData {
     /// The cached events that should be revoted.
     pub cached_events: BTreeSet<NetworkEvent>,
     /// The completed events.
-    pub completed_events: BTreeSet<AccumulatingEvent>,
+    pub completed_events: HashSet<AccumulatingEvent>,
 }
 
 impl Debug for Chain {

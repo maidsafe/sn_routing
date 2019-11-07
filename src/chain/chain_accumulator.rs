@@ -9,7 +9,7 @@
 use super::{AccumulatingEvent, NetworkEvent, Proof, ProofSet, SectionInfoSigPayload};
 use crate::id::PublicId;
 use log::LogLevel;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::{mem, rc::Rc};
 
 /// An unresponsive node is detected by conunting how many (defined by UNRESPONSIVE_THRESHOLD)
@@ -83,7 +83,7 @@ pub(super) struct ChainAccumulator {
     chain_accumulator: BTreeMap<AccumulatingEvent, AccumulatingProof>,
     /// Events that were handled: Further incoming proofs for these can be ignored.
     /// When an event is completed, it cannot be or inserted in chain_accumulator.
-    completed_events: BTreeSet<AccumulatingEvent>,
+    completed_events: HashSet<AccumulatingEvent>,
     /// A struct retains the order of insertion, and keeps tracking of which node has not involved.
     /// Entry will be created when an event reached consensus.
     vote_statuses: VoteStatuses,
@@ -244,7 +244,7 @@ pub struct RemainingEvents {
     /// The cached events that should be revoted.
     pub cached_events: BTreeSet<NetworkEvent>,
     /// The completed events.
-    pub completed_events: BTreeSet<AccumulatingEvent>,
+    pub completed_events: HashSet<AccumulatingEvent>,
 }
 
 #[cfg(test)]
@@ -521,7 +521,7 @@ mod test {
             result,
             RemainingEvents {
                 cached_events: vec![data.network_event].into_iter().collect(),
-                completed_events: BTreeSet::new(),
+                completed_events: Default::default(),
             }
         );
         assert_eq!(incomplete_events(&acc), vec![]);
