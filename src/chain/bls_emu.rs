@@ -163,7 +163,7 @@ mod test {
             .enumerate()
             .map(|(index, full_id)| {
                 (
-                    *full_id.public_id(),
+                    *full_id.public_id().name(),
                     P2pNode::new(
                         *full_id.public_id(),
                         ConnectionInfo {

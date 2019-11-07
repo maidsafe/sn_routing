@@ -1696,7 +1696,7 @@ impl Display for Elder {
 // Create `EldersInfo` for the first node.
 fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingError> {
     let name = *p2p_node.name();
-    let node = (*p2p_node.public_id(), p2p_node);
+    let node = (name, p2p_node);
     EldersInfo::new(iter::once(node).collect(), Prefix::default(), iter::empty()).map_err(|err| {
         error!(
             "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",

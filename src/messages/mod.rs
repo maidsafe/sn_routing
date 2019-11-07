@@ -616,7 +616,7 @@ mod tests {
             P2pNode::new(*full_id_2.public_id(), connection_info.clone()),
         ]
         .into_iter()
-        .map(|p2p_node| (*p2p_node.public_id(), p2p_node))
+        .map(|p2p_node| (*p2p_node.public_id().name(), p2p_node))
         .collect();
         let dummy_elders_info = unwrap!(EldersInfo::new(pub_ids, prefix, None));
         let dummy_pk_set = BlsPublicKeySet::from_elders_info(dummy_elders_info.clone());
@@ -678,7 +678,7 @@ mod tests {
         let src_section = unwrap!(EldersInfo::new(
             src_section_nodes
                 .into_iter()
-                .map(|node| (*node.public_id(), node))
+                .map(|node| (*node.public_id().name(), node))
                 .collect(),
             prefix,
             None,

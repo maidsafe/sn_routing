@@ -505,7 +505,10 @@ impl Chain {
             .ok_or(RoutingError::PeerNotFound(pub_id))?;
 
         let mut elder_nodes = self.state.new_info.member_map().clone();
-        let _ = elder_nodes.insert(pub_id, P2pNode::new(pub_id, connection_info.clone()));
+        let _ = elder_nodes.insert(
+            *pub_id.name(),
+            P2pNode::new(pub_id, connection_info.clone()),
+        );
 
         // TODO: the split decision should be based on the number of all members, not just elders.
         if self.should_split(&elder_nodes)? {
@@ -529,7 +532,7 @@ impl Chain {
         self.assert_no_prefix_change("remove elder");
 
         let mut elders = self.state.new_info.member_map().clone();
-        let _ = elders.remove(&pub_id);
+        let _ = elders.remove(pub_id.name());
 
         if self.our_id() == &pub_id {
             self.is_elder = false;
@@ -1034,7 +1037,7 @@ impl Chain {
     }
 
     /// Returns whether we should split into two sections.
-    fn should_split(&self, members: &BTreeMap<PublicId, P2pNode>) -> Result<bool, RoutingError> {
+    fn should_split(&self, members: &BTreeMap<XorName, P2pNode>) -> Result<bool, RoutingError> {
         if self.state.change != PrefixChange::None || self.should_vote_for_merge() {
             return Ok(false);
         }
@@ -1056,7 +1059,7 @@ impl Chain {
     /// Splits our section and generates new section infos for the child sections.
     fn split_self(
         &mut self,
-        members: BTreeMap<PublicId, P2pNode>,
+        members: BTreeMap<XorName, P2pNode>,
     ) -> Result<(EldersInfo, EldersInfo), RoutingError> {
         let next_bit = self.our_id.name().bit(self.our_prefix().bit_count());
 
@@ -1065,7 +1068,7 @@ impl Chain {
 
         let (our_new_section, other_section) = members
             .into_iter()
-            .partition(|node| our_prefix.matches(node.1.name()));
+            .partition(|node| our_prefix.matches(&node.0));
 
         let our_new_info =
             EldersInfo::new(our_new_section, our_prefix, Some(&self.state.new_info))?;
@@ -1574,7 +1577,7 @@ mod tests {
                         peer_cert_der: vec![],
                     };
                     let pub_id = *some_id.public_id();
-                    let _ = members.insert(pub_id, P2pNode::new(pub_id, connection_info));
+                    let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
                 (EldersInfo::new(members, pfx, None).unwrap(), full_ids)
@@ -1587,7 +1590,7 @@ mod tests {
                     peer_cert_der: vec![],
                 };
                 let pub_id = *some_id.public_id();
-                let _ = members.insert(pub_id, P2pNode::new(pub_id, connection_info));
+                let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));
                 let mut full_ids = HashMap::new();
                 let _ = full_ids.insert(pub_id, some_id);
                 (

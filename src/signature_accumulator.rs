@@ -81,13 +81,13 @@ mod tests {
     use super::*;
     use crate::{
         chain::{EldersInfo, SectionKeyInfo, SectionProofChain},
-        id::{FullId, P2pNode, PublicId},
+        id::{FullId, P2pNode},
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
             SignedRoutingMessage,
         },
         routing_table::{Authority, Prefix},
-        BlsPublicKeySet, ConnectionInfo,
+        BlsPublicKeySet, ConnectionInfo, XorName,
     };
     use itertools::Itertools;
     use rand;
@@ -104,7 +104,7 @@ mod tests {
         fn new<'a, I>(
             msg_sender_id: &FullId,
             other_ids: I,
-            all_nodes: BTreeMap<PublicId, P2pNode>,
+            all_nodes: BTreeMap<XorName, P2pNode>,
         ) -> MessageAndSignatures
         where
             I: Iterator<Item = &'a FullId>,
@@ -118,7 +118,7 @@ mod tests {
                     rand::random(),
                 ]),
             };
-            let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()).name());
+            let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()));
             let elders_info = unwrap!(EldersInfo::new(all_nodes, prefix, None));
             let pk_set = BlsPublicKeySet::from_elders_info(elders_info.clone());
             let key_info = SectionKeyInfo::from_elders_info(&elders_info);
@@ -164,13 +164,16 @@ mod tests {
                 connection_info.clone(),
             )]
             .into_iter()
-            .map(|p2p_node| (*p2p_node.public_id(), p2p_node))
+            .map(|p2p_node| (*p2p_node.public_id().name(), p2p_node))
             .collect::<BTreeMap<_, _>>();
             let mut other_ids = vec![];
             for _ in 0..8 {
                 let full_id = FullId::new();
                 let pub_id = *full_id.public_id();
-                let _ = pub_ids.insert(pub_id, P2pNode::new(pub_id, connection_info.clone()));
+                let _ = pub_ids.insert(
+                    *pub_id.name(),
+                    P2pNode::new(pub_id, connection_info.clone()),
+                );
                 other_ids.push(full_id);
             }
             let msgs_and_sigs = (0..5)

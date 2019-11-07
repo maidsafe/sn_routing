@@ -74,7 +74,7 @@ impl ElderUnderTest {
             full_ids
                 .iter()
                 .map(|id| (
-                    *id.public_id(),
+                    *id.public_id().name(),
                     P2pNode::new(*id.public_id(), connection_info.clone())
                 ))
                 .collect(),
@@ -228,7 +228,7 @@ impl ElderUnderTest {
             self.elders_info
                 .member_nodes()
                 .chain(iter::once(&self.candidate))
-                .map(|node| (*node.public_id(), node.clone()))
+                .map(|node| (*node.public_id().name(), node.clone()))
                 .collect(),
             *self.elders_info.prefix(),
             Some(&self.elders_info)
