@@ -118,75 +118,75 @@ impl SharedState {
             return Ok(());
         }
 
-        let (
-            our_infos,
-            our_history,
-            our_members,
-            neighbour_infos,
-            their_keys,
-            their_knowledge,
-            their_recent_keys,
-            churn_event_backlog,
-        ) = serialisation::deserialise(related_info)?;
-        if self.our_infos.len() != 1 {
+        if self.our_infos.len() == 1 {
+            let (
+                our_infos,
+                our_history,
+                our_members,
+                neighbour_infos,
+                their_keys,
+                their_knowledge,
+                their_recent_keys,
+                churn_event_backlog,
+            ) = serialisation::deserialise(related_info)?;
             // Check nodes with a history before genesis match the genesis block:
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "our_infos",
-                &self.our_infos,
-                &our_infos,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "our_history",
-                &self.our_history,
-                &our_history,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "our_members",
-                &self.our_members,
-                &our_members,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "neighbour_infos",
-                &self.neighbour_infos,
-                &neighbour_infos,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "their_keys",
-                &self.their_keys,
-                &their_keys,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "their_knowledge",
-                &self.their_knowledge,
-                &their_knowledge,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "their_recent_keys",
-                &self.their_recent_keys,
-                &their_recent_keys,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "churn_event_backlog",
-                &self.churn_event_backlog,
-                &churn_event_backlog,
-            );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "our_infos",
+            //     &self.our_infos,
+            //     &our_infos,
+            // );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "our_history",
+            //     &self.our_history,
+            //     &our_history,
+            // );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "our_members",
+            //     &self.our_members,
+            //     &our_members,
+            // );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "neighbour_infos",
+            //     &self.neighbour_infos,
+            //     &neighbour_infos,
+            // );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "their_keys",
+            //     &self.their_keys,
+            //     &their_keys,
+            // );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "their_knowledge",
+            //     &self.their_knowledge,
+            //     &their_knowledge,
+            // );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "their_recent_keys",
+            //     &self.their_recent_keys,
+            //     &their_recent_keys,
+            // );
+            // update_with_genesis_related_info_check_same(
+            //     log_ident,
+            //     "churn_event_backlog",
+            //     &self.churn_event_backlog,
+            //     &churn_event_backlog,
+            // );
+            self.our_infos = our_infos;
+            self.our_history = our_history;
+            self.our_members = our_members;
+            self.neighbour_infos = neighbour_infos;
+            self.their_keys = their_keys;
+            self.their_knowledge = their_knowledge;
+            self.their_recent_keys = their_recent_keys;
+            self.churn_event_backlog = churn_event_backlog;
         }
-        self.our_infos = our_infos;
-        self.our_history = our_history;
-        self.our_members = our_members;
-        self.neighbour_infos = neighbour_infos;
-        self.their_keys = their_keys;
-        self.their_knowledge = their_knowledge;
-        self.their_recent_keys = their_recent_keys;
-        self.churn_event_backlog = churn_event_backlog;
 
         Ok(())
     }
