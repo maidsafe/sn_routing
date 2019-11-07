@@ -428,7 +428,7 @@ fn aggressive_churn() {
             elder_size,
             safe_section_size,
         },
-        None,
+         Some([1,2,3,4]),
     );
     let mut rng = network.new_rng();
 
@@ -520,7 +520,7 @@ fn messages_during_churn() {
             elder_size,
             safe_section_size,
         },
-        None,
+        Some([1,2,3,4]),
     );
     let mut rng = network.new_rng();
     let prefixes = vec![2, 2, 2, 3, 3];
@@ -596,7 +596,7 @@ fn remove_unresponsive_node() {
             elder_size,
             safe_section_size,
         },
-        None,
+         Some([1,2,3,4]),
     );
 
     let mut nodes = create_connected_nodes(&network, safe_section_size);
