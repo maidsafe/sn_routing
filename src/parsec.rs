@@ -274,16 +274,12 @@ impl ParsecMap {
 fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
     let rng = Box::new(utils::new_rng());
 
-    if gen_pfx_info
-        .first_info
-        .members()
-        .contains(full_id.public_id())
-    {
+    if gen_pfx_info.first_info.is_member(full_id.public_id()) {
         Parsec::from_genesis(
             #[cfg(feature = "mock_parsec")]
             *gen_pfx_info.first_info.hash(),
             full_id,
-            &gen_pfx_info.first_info.members(),
+            &gen_pfx_info.first_info.member_ids().copied().collect(),
             gen_pfx_info.first_state_serialized.clone(),
             ConsensusMode::Single,
             rng,
@@ -293,8 +289,8 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
             #[cfg(feature = "mock_parsec")]
             *gen_pfx_info.first_info.hash(),
             full_id,
-            &gen_pfx_info.first_info.members(),
-            &gen_pfx_info.latest_info.members(),
+            &gen_pfx_info.first_info.member_ids().copied().collect(),
+            &gen_pfx_info.latest_info.member_ids().copied().collect(),
             ConsensusMode::Single,
             rng,
         )
@@ -351,8 +347,7 @@ mod tests {
             version
         ));
         let first_ages = elders_info
-            .members()
-            .iter()
+            .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         GenesisPfxInfo {

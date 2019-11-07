@@ -107,7 +107,7 @@ impl Chain {
         gen_info: GenesisPfxInfo,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_elder = gen_info.first_info.members().contains(&our_id);
+        let is_elder = gen_info.first_info.is_member(&our_id);
         Self {
             network_cfg,
             dev_params,
@@ -217,7 +217,7 @@ impl Chain {
 
             let opt_event_proofs = opt_event.and_then(|event| {
                 self.chain_accumulator
-                    .poll_event(event, self.our_info().members().clone())
+                    .poll_event(event, self.our_info().member_ids().cloned().collect())
             });
 
             match opt_event_proofs {
@@ -544,7 +544,7 @@ impl Chain {
             Some(&self.state.new_info),
         )?;
 
-        if self.state.new_info.members().len() < self.elder_size() {
+        if self.state.new_info.len() < self.elder_size() {
             // set to merge state to prevent extending chain any further.
             // We'd still not Vote for OurMerge until we've updated our_infos
             self.state.change = PrefixChange::Merging;
@@ -688,14 +688,12 @@ impl Chain {
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.our_info().members().contains(pub_id)
-            || self.state.new_info.members().contains(pub_id)
+        self.state.our_info().is_member(pub_id) || self.state.new_info.is_member(pub_id)
     }
 
     /// Returns whether the given peer is elder in one of our neighbour sections.
     pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
-        self.neighbour_infos()
-            .any(|info| info.members().contains(pub_id))
+        self.neighbour_infos().any(|info| info.is_member(pub_id))
     }
 
     /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
@@ -772,8 +770,8 @@ impl Chain {
 
     /// Check which nodes are unresponsive.
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
-        let members = self.our_info().members().clone();
-        self.chain_accumulator.check_vote_status(&members)
+        let members = self.our_info().member_ids();
+        self.chain_accumulator.check_vote_status(members)
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
@@ -964,7 +962,7 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let pfx = *elders_info.prefix();
         if pfx.matches(self.our_id.name()) {
-            let is_new_elder = !self.is_elder && elders_info.members().contains(&self.our_id);
+            let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
             let pk_set = self.public_key_set();
             self.state.push_our_new_info(elders_info, proofs, &pk_set)?;
 
@@ -1142,11 +1140,11 @@ impl Chain {
             .into_iter()
             .flat_map(|(_, si)| {
                 si.member_names()
-                    .into_iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
             })
             .filter(|name| connected_peers.contains(&name))
             .take(count)
+            .copied()
             .collect_vec()
     }
 
@@ -1160,13 +1158,13 @@ impl Chain {
     /// Includes our own name in the case that our prefix matches `name`.
     fn get_section_legacy(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
-            return Some(self.our_info().member_names());
+            return Some(self.our_info().member_names().copied().collect());
         }
         self.state
             .neighbour_infos
             .iter()
             .find(|&(ref pfx, _)| pfx.matches(name))
-            .map(|(_, ref info)| info.member_names())
+            .map(|(_, ref info)| info.member_names().copied().collect())
     }
 
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
@@ -1192,20 +1190,22 @@ impl Chain {
         let mut best_info = self.our_info();
         for (pfx, info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.members().is_empty() && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater
-            {
+            if !info.is_empty() && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater {
                 best_pfx = *pfx;
                 best_info = info;
             }
         }
-        (best_pfx, best_info.member_names())
+        (best_pfx, best_info.member_names().copied().collect())
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
     fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
-        let mut result = vec![(*self.our_prefix(), self.our_info().member_names())];
+        let mut result = vec![(
+            *self.our_prefix(),
+            self.our_info().member_names().copied().collect(),
+        )];
         for (pfx, info) in &self.state.neighbour_infos {
-            result.push((*pfx, info.member_names()));
+            result.push((*pfx, info.member_names().copied().collect()));
         }
         result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
         result
@@ -1327,14 +1327,14 @@ impl Chain {
                         }
                     };
 
-                    let targets = Iterator::flatten(
-                        self.all_sections()
-                            .filter_map(is_compatible)
-                            .map(EldersInfo::member_names),
-                    )
-                    .filter(is_connected)
-                    .filter(|name| name != self.our_id().name())
-                    .collect::<Vec<_>>();
+                    let targets = self
+                        .all_sections()
+                        .filter_map(is_compatible)
+                        .flat_map(EldersInfo::member_names)
+                        .filter(|name| is_connected(name))
+                        .filter(|name| name != &self.our_id().name())
+                        .copied()
+                        .collect::<Vec<_>>();
                     let dg_size = targets.len();
                     return Ok((targets, dg_size));
                 }
@@ -1359,9 +1359,9 @@ impl Chain {
         self.state
             .neighbour_infos
             .values()
-            .map(|info| info.members().len())
+            .map(|info| info.len())
             .sum::<usize>()
-            + self.state.our_info().members().len()
+            + self.state.our_info().len()
             - 1
     }
 
@@ -1469,13 +1469,7 @@ impl Chain {
     /// ours*, otherwise returns `None`.
     pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
         if self.our_prefix().matches(name) {
-            Some(
-                self.our_info()
-                    .members()
-                    .iter()
-                    .map(|id| *id.name())
-                    .collect(),
-            )
+            Some(self.our_info().member_names().copied().collect())
         } else {
             None
         }
@@ -1485,7 +1479,7 @@ impl Chain {
     /// ours*, otherwise returns `None`.
     pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
-            let mut section = self.our_info().member_names();
+            let mut section: BTreeSet<_> = self.our_info().member_names().copied().collect();
             let _ = section.remove(&self.our_id().name());
             Some(section)
         } else {
@@ -1554,7 +1548,7 @@ mod tests {
     use rand::{thread_rng, Rng};
     use serde::Serialize;
     use std::{
-        collections::{BTreeMap, HashMap},
+        collections::{BTreeMap, BTreeSet, HashMap},
         str::FromStr,
     };
     use unwrap::unwrap;
@@ -1647,10 +1641,9 @@ mod tests {
         let mut sections_iter = section_members.into_iter();
 
         let first_info = sections_iter.next().expect("section members");
-        let our_members = first_info.members().clone();
+        let our_members: BTreeSet<_> = first_info.member_ids().copied().collect();
         let first_ages = first_info
-            .members()
-            .iter()
+            .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         let genesis_info = GenesisPfxInfo {
@@ -1685,7 +1678,6 @@ mod tests {
         assert!(!chain
             .get_section(&Prefix::from_str("00").unwrap())
             .expect("No section 00 found!")
-            .members()
             .is_empty());
         assert!(chain.get_section(&Prefix::from_str("").unwrap()).is_none());
     }
@@ -1722,7 +1714,15 @@ mod tests {
                 }
             };
             full_ids.extend(new_ids);
-            let proofs = gen_proofs(&full_ids, &chain.our_info().members(), &new_info);
+            let proofs = gen_proofs(
+                &full_ids,
+                &chain
+                    .our_info()
+                    .member_ids()
+                    .copied()
+                    .collect::<BTreeSet<_>>(),
+                &new_info,
+            );
             unwrap!(chain.add_elders_info(new_info, proofs));
             assert!(chain.validate_our_history());
             check_infos_for_duplication(&chain);

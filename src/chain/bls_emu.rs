@@ -70,7 +70,7 @@ impl PublicKeyShare {
 
 impl PublicKeySet {
     pub fn from_elders_info(elders_info: EldersInfo) -> Self {
-        let threshold = elders_info.members().len() * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
+        let threshold = elders_info.len() * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
         Self {
             threshold,
             elders_info,
@@ -87,7 +87,7 @@ impl PublicKeySet {
     {
         let sigs: BTreeMap<_, _> = shares
             .into_iter()
-            .filter(|(pk, _ss)| self.elders_info.members().contains(&pk.0))
+            .filter(|(pk, _ss)| self.elders_info.is_member(&pk.0))
             .map(|(pk, ss)| (pk.0, *ss))
             .collect();
         // In the BLS scheme, more than `threshold` valid signatures are needed to obtain a
@@ -114,8 +114,7 @@ impl PublicKey {
         sig.sigs
             .iter()
             .filter(|&(pk, ss)| {
-                self.0.elders_info.members().contains(pk)
-                    && PublicKeyShare(*pk).verify(ss, msg.as_ref())
+                self.0.elders_info.is_member(pk) && PublicKeyShare(*pk).verify(ss, msg.as_ref())
             })
             .count()
             > self.0.threshold

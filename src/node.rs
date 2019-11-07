@@ -377,7 +377,7 @@ impl Node {
     pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.chain()
             .and_then(|chain| chain.get_section(prefix))
-            .map(|info| info.member_names())
+            .map(|info| info.member_names().copied().collect())
             .unwrap_or_default()
     }
 

@@ -264,8 +264,7 @@ impl ElderUnderTest {
         self.elder_state()
             .chain()
             .our_info()
-            .members()
-            .contains(self.candidate.public_id())
+            .is_member(self.candidate.public_id())
     }
 
     fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {

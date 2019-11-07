@@ -184,9 +184,11 @@ impl ChainAccumulator {
             .add_expectation(event, non_voted, &all_voters);
     }
 
-    pub fn check_vote_status(&mut self, members: &BTreeSet<PublicId>) -> BTreeSet<PublicId> {
+    pub fn check_vote_status<'a>(
+        &self,
+        members: impl Iterator<Item = &'a PublicId>,
+    ) -> BTreeSet<PublicId> {
         members
-            .iter()
             .filter(|peer_id| self.vote_statuses.is_unresponsive(peer_id))
             .cloned()
             .collect()
@@ -588,7 +590,7 @@ mod test {
         }
 
         let expected: BTreeSet<_> = iter::once(unresponsive_node).collect();
-        let detected = acc.check_vote_status(&members);
+        let detected = acc.check_vote_status(members.iter());
         assert_eq!(detected, expected);
     }
 }

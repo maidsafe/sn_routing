@@ -260,7 +260,7 @@ impl SharedState {
     /// Returns the current persona corresponding to the given PublicId or `None` if such a member
     /// doesn't exist
     pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {
-        if self.our_info().members().contains(pub_id) {
+        if self.our_info().is_member(pub_id) {
             Some(MemberPersona::Elder)
         } else {
             self.our_members.get(pub_id).map(|member| {
@@ -320,13 +320,13 @@ impl SharedState {
             return false;
         }
 
-        if self.our_info().members().len() < min_section_size {
+        if self.our_info().len() < min_section_size {
             return true;
         }
 
         let needs_merge = |si: &EldersInfo| {
             pfx.is_compatible(&si.prefix().sibling())
-                && (si.members().len() < min_section_size || self.merging.contains(si.hash()))
+                && (si.len() < min_section_size || self.merging.contains(si.hash()))
         };
 
         neighbour_infos.into_iter().any(needs_merge)

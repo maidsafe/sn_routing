@@ -204,8 +204,7 @@ impl Adult {
         let recipients = self
             .gen_pfx_info
             .latest_info
-            .members()
-            .iter()
+            .member_ids()
             .filter(|pub_id| self.peer_map.has(pub_id))
             .copied()
             .collect_vec();

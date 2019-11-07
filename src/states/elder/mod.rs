@@ -1007,11 +1007,13 @@ impl Elder {
             // calculation. This even when going via RT would have only allowed route-0 to succeed
             // as by ack-failure, the new node would have been accepted to the RT.
             // Need a better network startup separation.
-            Authority::PrefixSection(pfx) => {
-                Iterator::flatten(self.chain.all_sections().map(|(_, si)| si.member_names()))
-                    .filter(|name| pfx.matches(name))
-                    .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs))
-            }
+            Authority::PrefixSection(pfx) => self
+                .chain
+                .all_sections()
+                .flat_map(|(_, si)| si.member_names())
+                .filter(|name| pfx.matches(name))
+                .copied()
+                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
             Authority::Node(_) => {
                 let mut result = BTreeSet::new();
                 let _ = result.insert(*self.name());
@@ -1132,7 +1134,7 @@ impl Elder {
         self.print_rt_size();
 
         for info in to_vote_infos {
-            let participants = info.members();
+            let participants: BTreeSet<_> = info.member_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
             self.vote_for_event(AccumulatingEvent::StartDkg(participants));
         }
@@ -1147,7 +1149,7 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         let self_info = self.chain.remove_elder(pub_id)?;
 
-        let participants = self_info.members();
+        let participants: BTreeSet<_> = self_info.member_ids().copied().collect();
         let _ = self.dkg_cache.insert(participants.clone(), self_info);
         self.vote_for_event(AccumulatingEvent::StartDkg(participants));
 
@@ -1250,7 +1252,7 @@ impl Base for Elder {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
             // If we're the only node then invoke parsec_poll directly
-            if self.chain.our_info().members().len() == 1 {
+            if self.chain.our_info().len() == 1 {
                 let _ = self.parsec_poll(outbox);
             }
 

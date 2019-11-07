@@ -89,20 +89,10 @@ impl EldersInfo {
         Self::new(members, self.prefix.popped(), vec![self, other])
     }
 
-    // WIP: remove me (or make less heavy)
-    pub fn members(&self) -> BTreeSet<PublicId> {
-        self.members
-            .values()
-            .map(P2pNode::public_id)
-            .copied()
-            .collect()
-    }
-
     pub fn member_map(&self) -> &BTreeMap<XorName, P2pNode> {
         &self.members
     }
 
-    #[allow(unused)]
     pub fn is_member(&self, pub_id: &PublicId) -> bool {
         self.members.contains_key(pub_id.name())
     }
@@ -111,8 +101,20 @@ impl EldersInfo {
         self.members.values()
     }
 
-    pub fn member_names(&self) -> BTreeSet<XorName> {
-        self.members.values().map(P2pNode::name).copied().collect()
+    pub fn member_ids(&self) -> impl Iterator<Item = &PublicId> {
+        self.members.values().map(P2pNode::public_id)
+    }
+
+    pub fn member_names(&self) -> impl Iterator<Item = &XorName> {
+        self.members.values().map(P2pNode::name)
+    }
+
+    pub fn len(&self) -> usize {
+        self.members.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.members.is_empty()
     }
 
     pub fn version(&self) -> &u64 {
@@ -134,25 +136,13 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        if proofs.len() * QUORUM_DENOMINATOR <= self.member_map().len() * QUORUM_NUMERATOR {
-            return false;
-        }
-
-        // WIP: the call to members is probably to heavy?
-        let members = self.members();
-        proofs.ids().filter(|id| members.contains(id)).count() * QUORUM_DENOMINATOR
-            > members.len() * QUORUM_NUMERATOR
+        proofs.ids().filter(|id| self.is_member(id)).count() * QUORUM_DENOMINATOR
+            > self.len() * QUORUM_NUMERATOR
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        if proofs.len() < self.member_map().len() {
-            return false;
-        }
-
-        // WIP: the call to members is probably to heavy?
-        let members = self.members();
-        proofs.ids().filter(|id| members.contains(id)).count() == members.len()
+        proofs.ids().filter(|id| self.is_member(id)).count() == self.len()
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
