@@ -106,7 +106,6 @@ impl ProofSet {
     }
 
     /// Returns the number of signatures.
-    #[cfg(feature = "mock_base")]
     pub fn len(&self) -> usize {
         self.sigs.len()
     }

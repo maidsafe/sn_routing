@@ -120,22 +120,29 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
+        if !(proofs.len() * QUORUM_DENOMINATOR > self.p2p_members().len() * QUORUM_NUMERATOR) {
+            return false;
+        }
+
         // WIP: the call to members is probably to heavy?
-        proofs
-            .ids()
-            .filter(|id| self.members().contains(id))
-            .count()
-            * QUORUM_DENOMINATOR
-            > self.members.len() * QUORUM_NUMERATOR
+        let members = self.members();
+        proofs.ids().filter(|id| members.contains(id)).count() * QUORUM_DENOMINATOR
+            > members.len() * QUORUM_NUMERATOR
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
+        if !(proofs.len() >= self.p2p_members().len()) {
+            return false;
+        }
+
+        // WIP: the call to members is probably to heavy?
+        let members = self.members();
         proofs
             .ids()
-            .filter(|id| self.members().contains(id))
+            .filter(|id| members.contains(id))
             .count()
-            == self.members.len()
+            == members.len()
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
