@@ -292,6 +292,7 @@ impl Chain {
             }
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::SendAckMessage(_)
             | AccumulatingEvent::Relocate(_) => (),
@@ -779,6 +780,13 @@ impl Chain {
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::Relocate(_) => {
                 self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
+            }
+            AccumulatingEvent::StartDkg(_) => {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "StartDkg present in the chain accumulator - should never happen!"
+                );
+                false
             }
             AccumulatingEvent::SendAckMessage(_) => {
                 // We may not reach consensus if malicious peer, but when we do we know all our

@@ -120,6 +120,14 @@ where
         Ok(())
     }
 
+    pub fn vote_for_as(&mut self, observation: Observation<T, S::PublicId>, vote_id: &S) {
+        state::with(self.section_hash, |state| {
+            let holder =
+                ObservationHolder::new(observation, vote_id.public_id(), self.consensus_mode);
+            state.vote(vote_id, holder);
+        });
+    }
+
     pub fn gossip_recipients(&self) -> impl Iterator<Item = &S::PublicId> {
         let iter = if self.peer_list.contains(self.our_id.public_id()) {
             Some(

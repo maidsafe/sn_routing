@@ -34,6 +34,7 @@ pub type Block = inner::Block<chain::NetworkEvent, id::PublicId>;
 pub type Parsec = inner::Parsec<chain::NetworkEvent, FullId>;
 pub type Request = inner::Request<chain::NetworkEvent, id::PublicId>;
 pub type Response = inner::Response<chain::NetworkEvent, id::PublicId>;
+pub use inner::DkgResultWrapper;
 
 // The maximum number of parsec instances to store.
 const MAX_PARSECS: usize = 10;
@@ -169,6 +170,18 @@ impl ParsecMap {
             if let Err(err) = parsec.vote_for(obs) {
                 trace!("{} - Parsec vote error: {:?}", log_ident, err);
             }
+        }
+    }
+
+    // Enable test to simulate other members voting
+    #[cfg(feature = "mock_parsec")]
+    pub fn vote_for_as(
+        &mut self,
+        obs: Observation<chain::NetworkEvent, id::PublicId>,
+        vote_id: &FullId,
+    ) {
+        if let Some(ref mut parsec) = self.map.values_mut().last() {
+            parsec.vote_for_as(obs, vote_id)
         }
     }
 
