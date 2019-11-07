@@ -661,7 +661,7 @@ impl Elder {
 
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
-            first_state_serialized: self.gen_pfx_info.first_state_serialized.clone(),
+            first_state_serialized: Default::default(),
             first_ages: self.gen_pfx_info.first_ages.clone(),
             latest_info: self.chain.our_info().clone(),
         };
