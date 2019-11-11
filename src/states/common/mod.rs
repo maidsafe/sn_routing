@@ -15,4 +15,23 @@ pub use self::{
 };
 use crate::time::Duration;
 
+#[cfg(feature = "mock_base")]
+use crate::{utils::XorTargetInterval, xor_name::XorName};
+
 pub(super) const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Development-only node data (used mainly for the mock-network tests).
+#[cfg(feature = "mock_base")]
+#[derive(Default)]
+pub struct DevParams {
+    // Value which can be set in mock-network tests to be used as the next relocation
+    // destination.
+    pub next_relocation_dst: Option<XorName>,
+    // Interval used for relocation in mock network tests.
+    // Note: this is currently unused.
+    pub next_relocation_interval: Option<XorTargetInterval>,
+}
+
+#[cfg(not(feature = "mock_base"))]
+#[derive(Default)]
+pub struct DevParams;

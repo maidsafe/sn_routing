@@ -21,17 +21,18 @@ use crate::{
     xor_name::XorName,
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
-#[cfg(feature = "mock_base")]
-use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix};
 use crossbeam_channel as mpmc;
-#[cfg(feature = "mock_base")]
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::{self, Display, Formatter},
-};
 use std::{net::SocketAddr, sync::mpsc};
+
 #[cfg(feature = "mock_base")]
-use unwrap::unwrap;
+use {
+    crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix},
+    std::{
+        collections::{BTreeMap, BTreeSet},
+        fmt::{self, Display, Formatter},
+    },
+    unwrap::unwrap,
+};
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
@@ -420,16 +421,23 @@ impl Node {
 
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        let _ = self
-            .elder_state_mut()
-            .map(|state| state.set_next_relocation_dst(dst));
+        self.machine
+            .current_mut()
+            .dev_params_mut()
+            .next_relocation_dst = dst;
+    }
+
+    /// Gets the next relocation distance that was previosly set with `set_next_relocation_dst`.
+    pub fn next_relocation_dst(&self) -> Option<XorName> {
+        self.machine.current().dev_params().next_relocation_dst
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
     pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
-        let _ = self
-            .elder_state_mut()
-            .map(|state| state.set_next_relocation_interval(interval));
+        self.machine
+            .current_mut()
+            .dev_params_mut()
+            .next_relocation_interval = interval;
     }
 
     /// Indicates if there are any pending observations in the parsec object

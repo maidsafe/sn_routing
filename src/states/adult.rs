@@ -8,7 +8,7 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base, GOSSIP_TIMEOUT},
+    common::{Approved, Base, DevParams, GOSSIP_TIMEOUT},
     elder::{Elder, ElderDetails},
 };
 use crate::{
@@ -54,6 +54,7 @@ pub struct AdultDetails {
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
+    pub dev_params: DevParams,
 }
 
 pub struct Adult {
@@ -70,6 +71,7 @@ pub struct Adult {
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
+    dev_params: DevParams,
 }
 
 impl Adult {
@@ -97,6 +99,7 @@ impl Adult {
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             parsec_timer_token,
+            dev_params: details.dev_params,
         };
 
         Ok(node)
@@ -138,6 +141,7 @@ impl Adult {
             // an Elder even if it has already seen them as an Adult
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: self.timer,
+            dev_params: self.dev_params,
         };
 
         Elder::from_adult(details, elders_info, old_pfx, outbox).map(State::Elder)
@@ -409,6 +413,14 @@ impl Base for Adult {
         }
 
         Ok(())
+    }
+
+    fn dev_params(&self) -> &DevParams {
+        &self.dev_params
+    }
+
+    fn dev_params_mut(&mut self) -> &mut DevParams {
+        &mut self.dev_params
     }
 }
 

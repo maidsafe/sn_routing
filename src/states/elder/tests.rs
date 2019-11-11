@@ -329,6 +329,7 @@ fn new_elder_state(
         peer_map,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,
+        dev_params: DevParams::default(),
     };
 
     let section_info = gen_pfx_info.first_info.clone();

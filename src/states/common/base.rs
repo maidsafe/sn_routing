@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::DevParams;
 use crate::{
     action::Action,
     error::{InterfaceError, RoutingError},
@@ -43,6 +44,8 @@ pub trait Base: Display {
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
+    fn dev_params(&self) -> &DevParams;
+    fn dev_params_mut(&mut self) -> &mut DevParams;
 
     fn log_ident(&self) -> LogIdent {
         LogIdent::new(self)

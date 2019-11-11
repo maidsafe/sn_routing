@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::common::Base;
+use super::{
+    common::{Base, DevParams},
+    joining_peer::JoiningPeerDetails,
+};
 use crate::{
     chain::NetworkParams,
     error::{InterfaceError, RoutingError},
@@ -46,6 +49,7 @@ pub struct BootstrappingPeer {
     timer: Timer,
     relocate_details: Option<SignedRelocateDetails>,
     network_cfg: NetworkParams,
+    dev_params: DevParams,
 }
 
 impl BootstrappingPeer {
@@ -65,6 +69,7 @@ impl BootstrappingPeer {
             peer_map: PeerMap::new(),
             relocate_details: None,
             network_cfg,
+            dev_params: DevParams::default(),
         }
     }
 
@@ -76,6 +81,7 @@ impl BootstrappingPeer {
         timer: Timer,
         conn_infos: Vec<ConnectionInfo>,
         relocate_details: SignedRelocateDetails,
+        dev_params: DevParams,
     ) -> Self {
         let mut node = Self {
             network_service,
@@ -86,6 +92,7 @@ impl BootstrappingPeer {
             peer_map: PeerMap::new(),
             relocate_details: Some(relocate_details),
             network_cfg,
+            dev_params,
         };
 
         for conn_info in conn_infos {
@@ -101,15 +108,18 @@ impl BootstrappingPeer {
         relocate_payload: Option<RelocatePayload>,
         _outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
-        Ok(State::JoiningPeer(JoiningPeer::new(
-            self.network_service,
-            self.full_id,
-            self.network_cfg,
-            self.timer,
-            self.peer_map,
+        let details = JoiningPeerDetails {
+            network_service: self.network_service,
+            full_id: self.full_id,
+            network_cfg: self.network_cfg,
+            timer: self.timer,
+            peer_map: self.peer_map,
             p2p_nodes,
             relocate_payload,
-        )))
+            dev_params: self.dev_params,
+        };
+
+        Ok(State::JoiningPeer(JoiningPeer::new(details)))
     }
 
     fn send_bootstrap_request(&mut self, dst: ConnectionInfo) {
@@ -379,6 +389,14 @@ impl Base for BootstrappingPeer {
             routing_msg
         );
         Ok(())
+    }
+
+    fn dev_params(&self) -> &DevParams {
+        &self.dev_params
+    }
+
+    fn dev_params_mut(&mut self) -> &mut DevParams {
+        &mut self.dev_params
     }
 }
 

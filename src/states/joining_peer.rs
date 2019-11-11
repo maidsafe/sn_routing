@@ -9,7 +9,7 @@
 use super::{
     adult::{Adult, AdultDetails},
     bootstrapping_peer::BootstrappingPeer,
-    common::Base,
+    common::{Base, DevParams},
 };
 use crate::{
     chain::{GenesisPfxInfo, NetworkParams},
@@ -38,6 +38,17 @@ pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
 /// How many times will the node try to join the same section before giving up and rebootstrapping.
 const MAX_JOIN_ATTEMPTS: u8 = 3;
 
+pub struct JoiningPeerDetails {
+    pub network_service: NetworkService,
+    pub full_id: FullId,
+    pub network_cfg: NetworkParams,
+    pub peer_map: PeerMap,
+    pub timer: Timer,
+    pub p2p_nodes: Vec<P2pNode>,
+    pub relocate_payload: Option<RelocatePayload>,
+    pub dev_params: DevParams,
+}
+
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
     network_service: NetworkService,
@@ -52,33 +63,27 @@ pub struct JoiningPeer {
     p2p_nodes: Vec<P2pNode>,
     relocate_payload: Option<RelocatePayload>,
     network_cfg: NetworkParams,
+    dev_params: DevParams,
 }
 
 impl JoiningPeer {
-    pub fn new(
-        network_service: NetworkService,
-        full_id: FullId,
-        network_cfg: NetworkParams,
-        timer: Timer,
-        peer_map: PeerMap,
-        p2p_nodes: Vec<P2pNode>,
-        relocate_payload: Option<RelocatePayload>,
-    ) -> Self {
-        let join_token = timer.schedule(JOIN_TIMEOUT);
+    pub fn new(details: JoiningPeerDetails) -> Self {
+        let join_token = details.timer.schedule(JOIN_TIMEOUT);
 
         let mut joining_peer = Self {
-            network_service,
+            network_service: details.network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
             routing_msg_backlog: vec![],
             direct_msg_backlog: vec![],
-            full_id,
-            timer: timer,
-            peer_map,
+            full_id: details.full_id,
+            timer: details.timer,
+            peer_map: details.peer_map,
             join_token,
             join_attempts: 0,
-            p2p_nodes,
-            relocate_payload,
-            network_cfg,
+            p2p_nodes: details.p2p_nodes,
+            relocate_payload: details.relocate_payload,
+            network_cfg: details.network_cfg,
+            dev_params: details.dev_params,
         };
 
         joining_peer.send_join_requests();
@@ -101,6 +106,7 @@ impl JoiningPeer {
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
             network_cfg: self.network_cfg,
+            dev_params: self.dev_params,
         };
         Adult::from_joining_peer(details, outbox).map(State::Adult)
     }
@@ -298,6 +304,14 @@ impl Base for JoiningPeer {
             self, routing_msg
         );
         Ok(())
+    }
+
+    fn dev_params(&self) -> &DevParams {
+        &self.dev_params
+    }
+
+    fn dev_params_mut(&mut self) -> &mut DevParams {
+        &mut self.dev_params
     }
 }
 

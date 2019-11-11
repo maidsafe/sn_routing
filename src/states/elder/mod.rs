@@ -10,11 +10,9 @@
 mod tests;
 
 use super::{
-    common::{Approved, Base, GOSSIP_TIMEOUT},
+    common::{Approved, Base, DevParams, GOSSIP_TIMEOUT},
     BootstrappingPeer,
 };
-#[cfg(feature = "mock_base")]
-use crate::messages::Message;
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
@@ -41,20 +39,21 @@ use crate::{
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    utils::{self, XorTargetInterval},
+    utils,
     xor_name::XorName,
     BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
-#[cfg(feature = "mock_base")]
-use std::net::SocketAddr;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
 };
+
+#[cfg(feature = "mock_base")]
+use {crate::messages::Message, std::net::SocketAddr};
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -74,6 +73,7 @@ pub struct ElderDetails {
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
+    pub dev_params: DevParams,
 }
 
 pub struct Elder {
@@ -90,11 +90,6 @@ pub struct Elder {
     sig_accumulator: SignatureAccumulator,
     tick_timer_token: u64,
     timer: Timer,
-    /// Value which can be set in mock-network tests to be used as the calculated name for the next
-    /// relocation request received by this node.
-    next_relocation_dst: Option<XorName>,
-    /// Interval used for relocation in mock network tests.
-    next_relocation_interval: Option<XorTargetInterval>,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     gossip_timer_token: u64,
@@ -104,6 +99,7 @@ pub struct Elder {
     delayed_disconnects: HashMap<u64, PublicId>,
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    dev_params: DevParams,
 }
 
 impl Elder {
@@ -142,6 +138,7 @@ impl Elder {
             peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
+            dev_params: DevParams::default(),
         };
 
         let node = Self::new(details, true, Default::default());
@@ -196,6 +193,7 @@ impl Elder {
                 peer_map: state.peer_map,
                 routing_msg_filter: state.msg_filter,
                 timer,
+                dev_params: DevParams::default(),
             },
             false,
             state.sig_accumulator,
@@ -214,6 +212,7 @@ impl Elder {
             self.timer,
             conn_infos,
             details,
+            self.dev_params,
         )))
     }
 
@@ -238,8 +237,6 @@ impl Elder {
             sig_accumulator,
             tick_timer_token,
             timer: timer,
-            next_relocation_dst: None,
-            next_relocation_interval: None,
             parsec_map: details.parsec_map,
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
@@ -247,6 +244,7 @@ impl Elder {
             pfx_is_successfully_polled: false,
             delayed_disconnects: HashMap::default(),
             dkg_cache: Default::default(),
+            dev_params: details.dev_params,
         }
     }
 
@@ -460,8 +458,11 @@ impl Elder {
 
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
         // Clear any relocation overrides
-        self.next_relocation_dst = None;
-        self.next_relocation_interval = None;
+        #[cfg(feature = "mock_base")]
+        {
+            self.dev_params.next_relocation_dst = None;
+            self.dev_params.next_relocation_interval = None;
+        }
 
         let reset_data = self.chain.finalise_prefix_change()?;
         self.reset_parsec_with_data(reset_data)
@@ -1131,7 +1132,7 @@ impl Elder {
             return;
         };
 
-        let destination = utils::compute_relocation_destination(pub_id.name(), trigger_name);
+        let destination = self.compute_relocation_destination(pub_id.name(), trigger_name);
         if self.chain.our_prefix().matches(&destination) {
             trace!(
                 "{} - Ignoring relocation of {} - destination is within the current section.",
@@ -1169,6 +1170,14 @@ impl Base for Elder {
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         let conn_peers = self.connected_peers();
         self.chain.closest_names(&name, count, &conn_peers)
+    }
+
+    fn dev_params(&self) -> &DevParams {
+        &self.dev_params
+    }
+
+    fn dev_params_mut(&mut self) -> &mut DevParams {
+        &mut self.dev_params
     }
 
     fn peer_map(&self) -> &PeerMap {
@@ -1405,6 +1414,17 @@ impl Base for Elder {
     }
 }
 
+#[cfg(not(feature = "mock_base"))]
+impl Elder {
+    fn compute_relocation_destination(
+        &self,
+        relocated_name: &XorName,
+        trigger_name: &XorName,
+    ) -> XorName {
+        utils::compute_relocation_destination(relocated_name, trigger_name)
+    }
+}
+
 #[cfg(feature = "mock_base")]
 impl Elder {
     pub fn chain(&self) -> &Chain {
@@ -1413,14 +1433,6 @@ impl Elder {
 
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
-    }
-
-    pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        self.next_relocation_dst = dst;
-    }
-
-    pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
-        self.next_relocation_interval = interval;
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
@@ -1445,6 +1457,17 @@ impl Elder {
         message: Message,
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
+    }
+
+    fn compute_relocation_destination(
+        &mut self,
+        relocated_name: &XorName,
+        trigger_name: &XorName,
+    ) -> XorName {
+        self.dev_params
+            .next_relocation_dst
+            .take()
+            .unwrap_or_else(|| utils::compute_relocation_destination(relocated_name, trigger_name))
     }
 }
 
