@@ -32,9 +32,7 @@ use std::{
 };
 
 /// Time after which bootstrap is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
-/// How many times will the node try to join the same section before giving up and rebootstrapping.
-const MAX_JOIN_ATTEMPTS: u8 = 3;
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(180);
 
 pub struct JoiningPeerDetails {
     pub network_service: NetworkService,
@@ -57,7 +55,6 @@ pub struct JoiningPeer {
     peer_map: PeerMap,
     timer: Timer,
     join_token: u64,
-    join_attempts: u8,
     p2p_nodes: Vec<P2pNode>,
     relocate_payload: Option<RelocatePayload>,
     network_cfg: NetworkParams,
@@ -77,7 +74,6 @@ impl JoiningPeer {
             timer: details.timer,
             peer_map: details.peer_map,
             join_token,
-            join_attempts: 0,
             p2p_nodes: details.p2p_nodes,
             relocate_payload: details.relocate_payload,
             network_cfg: details.network_cfg,
@@ -222,28 +218,22 @@ impl Base for JoiningPeer {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.join_token == token {
-            self.join_attempts += 1;
-            debug!(
-                "{} - Timeout when trying to join a section (attempt {}/{}).",
-                self, self.join_attempts, MAX_JOIN_ATTEMPTS
-            );
+            debug!("{} - Timeout when trying to join a section.", self);
 
-            if self.join_attempts < MAX_JOIN_ATTEMPTS {
-                self.join_token = self.timer.schedule(JOIN_TIMEOUT);
-                self.send_join_requests();
-            } else {
-                for peer_addr in self
-                    .peer_map
-                    .remove_all()
-                    .map(|conn_info| conn_info.peer_addr)
-                {
-                    self.network_service
-                        .service_mut()
-                        .disconnect_from(peer_addr);
-                }
+            // TODO: if we are relocating, preserve the relocation details to rebootstrap to the
+            // same target section.
 
-                return Transition::Rebootstrap;
+            for peer_addr in self
+                .peer_map
+                .remove_all()
+                .map(|conn_info| conn_info.peer_addr)
+            {
+                self.network_service
+                    .service_mut()
+                    .disconnect_from(peer_addr);
             }
+
+            return Transition::Rebootstrap;
         }
 
         Transition::Stay
