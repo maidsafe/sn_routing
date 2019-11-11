@@ -544,12 +544,6 @@ impl Chain {
         self.state.change
     }
 
-    /// Returns our section info with the given hash, if it exists.
-    #[cfg(feature = "mock_base")]
-    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
-        self.state.our_info_by_hash(hash)
-    }
-
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &EldersInfo> {
         self.state.neighbour_infos.values()
@@ -629,13 +623,6 @@ impl Chain {
     /// Returns all neighbour elders.
     pub fn neighbour_elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos().flat_map(EldersInfo::p2p_members)
-    }
-
-    /// Returns all neighbour elders.
-    // WIP: consider remove
-    #[cfg(feature = "mock_base")]
-    pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.neighbour_elders_p2p().map(P2pNode::public_id)
     }
 
     /// Return the keys we know
@@ -1099,36 +1086,6 @@ impl Chain {
             .map(|(_, ref info)| info.member_names())
     }
 
-    /// If our section is the closest one to `name`, returns all names in our section *including
-    /// ours*, otherwise returns `None`.
-    #[cfg(feature = "mock_base")]
-    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
-        if self.our_prefix().matches(name) {
-            Some(
-                self.our_info()
-                    .members()
-                    .iter()
-                    .map(|id| *id.name())
-                    .collect(),
-            )
-        } else {
-            None
-        }
-    }
-
-    /// If our section is the closest one to `name`, returns all names in our section *excluding
-    /// ours*, otherwise returns `None`.
-    #[cfg(feature = "mock_base")]
-    pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
-        if self.our_prefix().matches(name) {
-            let mut section = self.our_info().member_names();
-            let _ = section.remove(&self.our_id().name());
-            Some(section)
-        } else {
-            None
-        }
-    }
-
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
     /// sorted by ascending distance to `name`. If we are not close, returns `None`.
     pub fn closest_names(
@@ -1346,22 +1303,6 @@ impl Chain {
         (network_size.ceil() as u64, is_exact)
     }
 
-    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
-    #[cfg(feature = "mock_base")]
-    pub fn min_len_prefix(&self) -> Prefix<XorName> {
-        *iter::once(self.our_prefix())
-            .chain(self.state.neighbour_infos.keys())
-            .min_by_key(|prefix| prefix.bit_count())
-            .unwrap_or(&self.our_prefix())
-    }
-
-    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
-    /// implemented acting on the accumulated events.
-    #[cfg(feature = "mock_base")]
-    pub fn parsec_prune_accumulated(&self) -> usize {
-        self.parsec_prune_accumulated
-    }
-
     fn assert_no_prefix_change(&self, label: &str) {
         if self.state.change != PrefixChange::None {
             log_or_panic!(
@@ -1440,9 +1381,62 @@ impl Chain {
 
 #[cfg(feature = "mock_base")]
 impl Chain {
+    /// Returns our section info with the given hash, if it exists.
+    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
+        self.state.our_info_by_hash(hash)
+    }
+
+    /// Returns all neighbour elders.
+    // WIP: consider remove
+    pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.neighbour_elders_p2p().map(P2pNode::public_id)
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *including
+    /// ours*, otherwise returns `None`.
+    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
+        if self.our_prefix().matches(name) {
+            Some(
+                self.our_info()
+                    .members()
+                    .iter()
+                    .map(|id| *id.name())
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *excluding
+    /// ours*, otherwise returns `None`.
+    pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
+        if self.our_prefix().matches(name) {
+            let mut section = self.our_info().member_names();
+            let _ = section.remove(&self.our_id().name());
+            Some(section)
+        } else {
+            None
+        }
+    }
+
     /// Returns their_knowledge
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         &self.state.get_their_knowledge()
+    }
+
+    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
+    /// implemented acting on the accumulated events.
+    pub fn parsec_prune_accumulated(&self) -> usize {
+        self.parsec_prune_accumulated
+    }
+
+    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
+    pub fn min_len_prefix(&self) -> Prefix<XorName> {
+        *iter::once(self.our_prefix())
+            .chain(self.state.neighbour_infos.keys())
+            .min_by_key(|prefix| prefix.bit_count())
+            .unwrap_or(&self.our_prefix())
     }
 }
 
