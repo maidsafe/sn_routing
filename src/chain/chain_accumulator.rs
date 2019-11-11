@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, NetworkEvent, Proof, ProofSet, SectionInfoSigPayload};
+use super::{AccumulatingEvent, EventSigPayload, NetworkEvent, Proof, ProofSet};
 use crate::id::PublicId;
 use log::LogLevel;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -112,7 +112,7 @@ impl ChainAccumulator {
         &mut self,
         event: AccumulatingEvent,
         proof: Proof,
-        signature: Option<SectionInfoSigPayload>,
+        signature: Option<EventSigPayload>,
     ) -> Result<(), InsertError> {
         if self.completed_events.contains(&event) {
             self.vote_statuses.add_vote(&event, &proof.pub_id);
@@ -196,7 +196,7 @@ impl ChainAccumulator {
 #[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct AccumulatingProof {
     parsec_proofs: ProofSet,
-    sig_shares: BTreeMap<PublicId, SectionInfoSigPayload>,
+    sig_shares: BTreeMap<PublicId, EventSigPayload>,
 }
 
 impl AccumulatingProof {
@@ -209,7 +209,7 @@ impl AccumulatingProof {
     }
 
     /// Return false if share or proof is replaced
-    pub fn add_proof(&mut self, proof: Proof, info_sig: Option<SectionInfoSigPayload>) -> bool {
+    pub fn add_proof(&mut self, proof: Proof, info_sig: Option<EventSigPayload>) -> bool {
         let new_share = info_sig.map_or(true, |share| {
             self.sig_shares.insert(proof.pub_id, share).is_none()
         });
@@ -227,7 +227,7 @@ impl AccumulatingProof {
         self.parsec_proofs
     }
 
-    pub fn into_sig_shares(self) -> BTreeMap<PublicId, SectionInfoSigPayload> {
+    pub fn into_sig_shares(self) -> BTreeMap<PublicId, EventSigPayload> {
         self.sig_shares
     }
 }
@@ -263,7 +263,7 @@ mod test {
         pub first_proof: Proof,
         pub proofs: ProofSet,
         pub acc_proofs: AccumulatingProof,
-        pub signature: Option<SectionInfoSigPayload>,
+        pub signature: Option<EventSigPayload>,
     }
 
     enum EventType {
@@ -279,9 +279,9 @@ mod test {
         ))
     }
 
-    fn random_section_info_sig_payload() -> SectionInfoSigPayload {
+    fn random_section_info_sig_payload() -> EventSigPayload {
         let (id, first_proof) = random_ids_and_proof();
-        SectionInfoSigPayload {
+        EventSigPayload {
             pub_key_share: BlsPublicKeyShare(*id.public_id()),
             sig_share: first_proof.sig,
         }

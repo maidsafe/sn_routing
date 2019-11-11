@@ -16,8 +16,9 @@ use super::{
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PrefixChange,
-        SectionInfoSigPayload, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
+        EventSigPayload, GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload,
+        ParsecResetData, PrefixChange, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
+        MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -44,6 +45,7 @@ use crate::{
 };
 use itertools::Itertools;
 use log::LogLevel;
+use serde::Serialize;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -329,7 +331,7 @@ impl Elder {
             }
         }
         if let Some(merged_info) = self.chain.try_merge()? {
-            self.vote_for_section_info(merged_info)?;
+            self.vote_for_signed_event(merged_info)?;
         } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
             self.vote_for_event(AccumulatingEvent::OurMerge);
         }
@@ -895,9 +897,15 @@ impl Elder {
         self.vote_for_network_event(event.into_network_event())
     }
 
-    fn vote_for_section_info(&mut self, info: EldersInfo) -> Result<(), RoutingError> {
-        let signature_payload = SectionInfoSigPayload::new(&info, &self.full_id)?;
-        self.vote_for_network_event(info.into_network_event_with(Some(signature_payload)));
+    fn vote_for_signed_event<T: Into<AccumulatingEvent> + Serialize>(
+        &mut self,
+        payload: T,
+    ) -> Result<(), RoutingError> {
+        let signature_payload = EventSigPayload::new(&self.full_id, &payload)?;
+        let event = payload
+            .into()
+            .into_network_event_with(Some(signature_payload));
+        self.vote_for_network_event(event);
         Ok(())
     }
 
@@ -1575,7 +1583,7 @@ impl Approved for Elder {
         _dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
         if let Some(info) = self.dkg_cache.remove(participants) {
-            self.vote_for_section_info(info)?;
+            self.vote_for_signed_event(info)?;
         } else {
             log_or_panic!(
                 LogLevel::Error,

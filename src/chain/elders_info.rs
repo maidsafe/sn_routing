@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, NetworkEvent, ProofSet, SectionInfoSigPayload};
+use super::{AccumulatingEvent, ProofSet};
 use crate::{
     crypto::{self, Digest256},
     error::RoutingError,
@@ -143,11 +143,6 @@ impl EldersInfo {
         self.prev_hash.contains(&other_info.hash)
     }
 
-    /// To AccumulatingEvent::SectionInfo event
-    pub fn into_network_event_with(self, signature: Option<SectionInfoSigPayload>) -> NetworkEvent {
-        AccumulatingEvent::SectionInfo(self).into_network_event_with(signature)
-    }
-
     #[cfg(any(test, feature = "mock_base"))]
     pub fn new_for_test(
         members: BTreeSet<P2pNode>,
@@ -175,6 +170,12 @@ impl EldersInfo {
             prev_hash,
             hash,
         })
+    }
+}
+
+impl From<EldersInfo> for AccumulatingEvent {
+    fn from(src: EldersInfo) -> Self {
+        AccumulatingEvent::SectionInfo(src)
     }
 }
 

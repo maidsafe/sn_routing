@@ -124,7 +124,7 @@ impl ElderUnderTest {
         for event in events {
             self.other_full_ids.iter().take(count).for_each(|full_id| {
                 let sig_event = if let AccumulatingEvent::SectionInfo(ref info) = event {
-                    Some(unwrap!(SectionInfoSigPayload::new(info, &full_id)))
+                    Some(unwrap!(EventSigPayload::new(&full_id, info)))
                 } else {
                     None
                 };

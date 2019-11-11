@@ -25,7 +25,7 @@ pub use self::{
     elders_info::EldersInfo,
     member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_event::{
-        AccumulatingEvent, AckMessagePayload, NetworkEvent, OnlinePayload, SectionInfoSigPayload,
+        AccumulatingEvent, AckMessagePayload, EventSigPayload, NetworkEvent, OnlinePayload,
         SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},

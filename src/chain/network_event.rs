@@ -16,6 +16,7 @@ use crate::{
     BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
 };
 use hex_fmt::HexFmt;
+use serde::Serialize;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -38,18 +39,18 @@ pub struct SendAckMessagePayload {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct SectionInfoSigPayload {
+pub struct EventSigPayload {
     /// The public key share for that signature share
     pub pub_key_share: BlsPublicKeyShare,
     /// The signature share signing the SectionInfo.
     pub sig_share: BlsSignatureShare,
 }
 
-impl SectionInfoSigPayload {
-    pub fn new(info: &EldersInfo, full_id: &FullId) -> Result<SectionInfoSigPayload, RoutingError> {
-        let proof = Proof::new(full_id, &info)?;
+impl EventSigPayload {
+    pub fn new<T: Serialize>(full_id: &FullId, payload: &T) -> Result<Self, RoutingError> {
+        let proof = Proof::new(full_id, payload)?;
 
-        Ok(SectionInfoSigPayload {
+        Ok(Self {
             pub_key_share: BlsPublicKeyShare(proof.pub_id),
             sig_share: proof.sig,
         })
@@ -102,9 +103,7 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn from_network_event(
-        event: NetworkEvent,
-    ) -> (AccumulatingEvent, Option<SectionInfoSigPayload>) {
+    pub fn from_network_event(event: NetworkEvent) -> (AccumulatingEvent, Option<EventSigPayload>) {
         (event.payload, event.signature)
     }
 
@@ -115,7 +114,7 @@ impl AccumulatingEvent {
         }
     }
 
-    pub fn into_network_event_with(self, signature: Option<SectionInfoSigPayload>) -> NetworkEvent {
+    pub fn into_network_event_with(self, signature: Option<EventSigPayload>) -> NetworkEvent {
         NetworkEvent {
             payload: self,
             signature,
@@ -158,7 +157,7 @@ impl Debug for AccumulatingEvent {
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
-    pub signature: Option<SectionInfoSigPayload>,
+    pub signature: Option<EventSigPayload>,
 }
 
 impl NetworkEvent {
