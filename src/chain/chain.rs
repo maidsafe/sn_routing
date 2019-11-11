@@ -25,7 +25,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
 use std::{
-    collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -65,8 +65,6 @@ pub struct Chain {
     parsec_prune_accumulated: usize,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
-    /// Pending relocations.
-    relocate_queue: VecDeque<RelocateDetails>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -120,7 +118,6 @@ impl Chain {
             event_cache: Default::default(),
             parsec_prune_accumulated: 0,
             churn_in_progress: false,
-            relocate_queue: VecDeque::new(),
         }
     }
 
@@ -332,6 +329,7 @@ impl Chain {
         }
 
         let our_prefix = *self.state.our_prefix();
+        let mut details_to_add = Vec::new();
 
         for (pub_id, member_info) in self.state.our_joined_members_mut() {
             if pub_id == trigger_node {
@@ -352,12 +350,15 @@ impl Chain {
                 continue;
             }
 
-            let details = RelocateDetails {
+            details_to_add.push(RelocateDetails {
                 pub_id: *pub_id,
                 destination,
                 age: member_info.age() + 1,
-            };
-            self.relocate_queue.push_front(details);
+            })
+        }
+
+        for details in details_to_add {
+            self.state.relocate_queue.push_front(details)
         }
     }
 
@@ -369,7 +370,7 @@ impl Chain {
             return None;
         }
 
-        let details = self.relocate_queue.pop_back()?;
+        let details = self.state.relocate_queue.pop_back()?;
 
         if self.is_peer_our_elder(&details.pub_id) {
             let num_elders = self.our_elders().len();
@@ -384,7 +385,7 @@ impl Chain {
 
                 // Keep the details in the queue so when we gain more elders we can try to relocate
                 // the node again.
-                self.relocate_queue.push_back(details);
+                self.state.relocate_queue.push_back(details);
 
                 return None;
             }
