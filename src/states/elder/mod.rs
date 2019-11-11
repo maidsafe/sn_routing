@@ -894,8 +894,7 @@ impl Elder {
     }
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        // trace!("{} - Relocating {}", self, details.pub_id);
-        info!("{} - Relocating {}", self, details.pub_id);
+        trace!("{} - Relocating {}", self, details.pub_id);
         self.vote_for_signed_event(details)
     }
 
@@ -1627,6 +1626,11 @@ impl Approved for Elder {
 
         let pub_id = details.pub_id;
 
+        // We need proof that is valid for both the relocating node and the target section. To
+        // construct such proof, we create one proof for the relocating node and one for the target
+        // section and then take the longer of the two. This works because the longer proof is a
+        // superset of the shorter one. We need to do this because in rare cases, the relocating
+        // node might be lagging behind the target section in the knowledge of the source section.
         let proof = {
             let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
             let proof_for_target = self.chain.prove(&Authority::Section(details.destination));

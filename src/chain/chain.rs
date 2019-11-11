@@ -366,7 +366,10 @@ impl Chain {
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until all backlogged churn events have been handled and no
         // additional churn is in progress.
-        if self.churn_in_progress || !self.state.churn_event_backlog.is_empty() {
+        if self.churn_in_progress
+            || !self.state.churn_event_backlog.is_empty()
+            || !self.state.handled_genesis_event
+        {
             return None;
         }
 
@@ -473,7 +476,7 @@ impl Chain {
         } else {
             log_or_panic!(
                 LogLevel::Error,
-                "{} - Removing member that doesn't exists: {}",
+                "{} - Removing member that doesn't exist: {}",
                 self,
                 pub_id
             );
