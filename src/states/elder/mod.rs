@@ -723,14 +723,11 @@ impl Elder {
 
     fn respond_to_bootstrap_request(&mut self, pub_id: &PublicId, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
-            let mut p2p_nodes: Vec<_> = self.chain.our_elders().cloned().collect();
-            if let Ok(our_info) = self.our_connection_info() {
-                p2p_nodes.push(P2pNode::new(*self.id(), our_info));
-            }
             debug!("{} - Sending BootstrapResponse::Join to {}", self, pub_id);
+
             BootstrapResponse::Join {
                 prefix: *self.chain.our_prefix(),
-                p2p_nodes,
+                p2p_nodes: self.chain.our_elders().cloned().collect(),
             }
         } else {
             let names = self.chain.closest_section(name).1;
@@ -1466,11 +1463,10 @@ impl Approved for Elder {
         info!("{} - handle Online: {:?}.", self, payload);
 
         self.chain.add_member(payload.p2p_node.clone(), payload.age);
+        self.chain
+            .increment_age_counters(payload.p2p_node.public_id());
 
-        if let Some(relocate_details) = self
-            .chain
-            .increment_age_counters(payload.p2p_node.public_id())
-        {
+        if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;
         }
         self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
@@ -1507,11 +1503,13 @@ impl Approved for Elder {
 
         info!("{} - handle Offline: {}.", self, pub_id);
 
-        if let Some(relocate_details) = self.chain.increment_age_counters(&pub_id) {
+        self.chain.increment_age_counters(&pub_id);
+        self.chain.remove_member(&pub_id);
+
+        if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;
         }
 
-        self.chain.remove_member(&pub_id);
         self.disconnect(&pub_id);
 
         // Temporarily behave as if RemoveElder accumulated simultaneously
@@ -1592,7 +1590,7 @@ impl Approved for Elder {
 
             self.send_neighbour_infos();
 
-            if let Some(relocate_details) = self.chain.process_next_relocation() {
+            if let Some(relocate_details) = self.chain.poll_relocation() {
                 self.vote_for_relocate(relocate_details)?;
             }
         }

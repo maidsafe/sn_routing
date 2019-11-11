@@ -119,15 +119,10 @@ impl JoiningPeer {
     }
 
     fn send_join_requests(&mut self) {
-        let conn_infos: Vec<_> = self
-            .p2p_nodes
-            .iter()
-            .map(|p2p_node| p2p_node.connection_info().clone())
-            .collect();
-        for dst in conn_infos {
-            info!("{} - Sending JoinRequest to {:?}", self, dst);
+        for dst in self.p2p_nodes.clone() {
+            info!("{} - Sending JoinRequest to {}", self, dst.public_id());
             self.send_direct_message(
-                &dst,
+                dst.connection_info(),
                 DirectMessage::JoinRequest(self.relocate_payload.clone()),
             );
         }
@@ -260,11 +255,17 @@ impl Base for JoiningPeer {
         p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        debug!(
-            "{} Unhandled direct message, adding to backlog: {:?}",
-            self, msg
-        );
-        self.direct_msg_backlog.push((p2p_node, msg));
+        match msg {
+            DirectMessage::ConnectionResponse => (),
+            _ => {
+                debug!(
+                    "{} Unhandled direct message, adding to backlog: {:?}",
+                    self, msg
+                );
+                self.direct_msg_backlog.push((p2p_node, msg));
+            }
+        }
+
         Ok(Transition::Stay)
     }
 

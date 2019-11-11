@@ -318,9 +318,8 @@ impl Chain {
         Ok(Some(AccumulatedEvent::new(event)))
     }
 
-    // Increment the age counters of the members. Returns the relocation details for the next
-    // node to be relocated, if any.
-    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) -> Option<RelocateDetails> {
+    // Increment the age counters of the members.
+    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
         if self.state.our_joined_members().count() >= self.safe_section_size()
             && self
                 .state
@@ -329,7 +328,7 @@ impl Chain {
                 .unwrap_or(true)
         {
             // Do nothing for infants and unknown nodes
-            return None;
+            return;
         }
 
         let our_prefix = *self.state.our_prefix();
@@ -360,14 +359,13 @@ impl Chain {
             };
             self.relocate_queue.push_front(details);
         }
-
-        self.process_next_relocation()
     }
 
-    /// Returns the details of the next scheduled relocation to be voted for, if there are any and
-    /// if churn is currently not in progress.
-    pub fn process_next_relocation(&mut self) -> Option<RelocateDetails> {
-        if !self.churn_in_progress {
+    /// Returns the details of the next scheduled relocation to be voted for, if any.
+    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
+        // Delay relocation until all backlogged churn events have been handled and no
+        // additional churn is in progress.
+        if !self.churn_in_progress && self.state.churn_event_backlog.is_empty() {
             if let Some(details) = self.relocate_queue.pop_back() {
                 self.churn_in_progress = true;
                 return Some(details);

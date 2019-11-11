@@ -643,7 +643,11 @@ pub fn nodes_with_prefix_mut<'a>(
 }
 
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
-    let our_prefix = unwrap!(node.inner.our_prefix());
+    let our_prefix = unwrap!(
+        node.inner.our_prefix(),
+        "{} does not have prefix",
+        node.inner
+    );
     let our_name = node.name();
     let our_section_elders = node.inner.section_elders(our_prefix);
 

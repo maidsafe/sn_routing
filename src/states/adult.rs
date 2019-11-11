@@ -465,7 +465,8 @@ impl Approved for Adult {
 
         let pub_id = *payload.p2p_node.public_id();
         self.chain.add_member(payload.p2p_node, payload.age);
-        let _ = self.chain.increment_age_counters(&pub_id);
+        self.chain.increment_age_counters(&pub_id);
+        let _ = self.chain.poll_relocation();
 
         // Simulate handling AddElder as well
         info!("{} - handle AddElder: {}.", self, pub_id);
@@ -491,8 +492,9 @@ impl Approved for Adult {
         }
 
         info!("{} - handle Offline: {}.", self, pub_id);
-        let _ = self.chain.increment_age_counters(&pub_id);
+        self.chain.increment_age_counters(&pub_id);
         self.chain.remove_member(&pub_id);
+        let _ = self.chain.poll_relocation();
 
         info!("{} - handle RemoveElder: {}.", self, pub_id);
         let _ = self.chain.remove_elder(pub_id)?;
