@@ -13,7 +13,7 @@ use crate::{
     parsec,
     relocation::RelocateDetails,
     routing_table::Prefix,
-    BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
+    BlsPublicKeyShare, BlsSignature, BlsSignatureShare, RoutingError, XorName,
 };
 use hex_fmt::HexFmt;
 use serde::Serialize;
@@ -183,4 +183,27 @@ impl Debug for NetworkEvent {
             self.payload.fmt(formatter)
         }
     }
+}
+
+/// The outcome of polling the chain.
+#[derive(Eq, PartialEq, Serialize, Deserialize)]
+pub struct AccumulatedEvent {
+    pub content: AccumulatingEvent,
+    pub neighbour_change: EldersChange,
+    pub signature: Option<BlsSignature>,
+}
+
+impl Debug for AccumulatedEvent {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "AccumulatedEvent({:?})", self.content)
+    }
+}
+
+// Change to section elders.
+#[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EldersChange {
+    // Peers that became elders.
+    pub added: BTreeSet<P2pNode>,
+    // Peers that ceased to be elders.
+    pub removed: BTreeSet<P2pNode>,
 }

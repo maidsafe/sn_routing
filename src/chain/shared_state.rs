@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingEvent, AccumulatingProof, AgeCounter,
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatedEvent, AccumulatingProof, AgeCounter,
     EldersInfo, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
@@ -60,7 +60,7 @@ pub struct SharedState {
     /// Recent keys removed from their_keys
     pub their_recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
     /// Backlog of completed events that need to be processed when churn completes.
-    pub churn_event_backlog: VecDeque<AccumulatingEvent>,
+    pub churn_event_backlog: VecDeque<AccumulatedEvent>,
 }
 
 impl SharedState {
@@ -520,16 +520,10 @@ impl SectionProofBlock {
         proofs: AccumulatingProof,
         pk_set: &BlsPublicKeySet,
     ) -> Option<Self> {
+        let sig = proofs.combine_signatures(pk_set)?;
         let key_info = SectionKeyInfo::from_elders_info(elders_info);
 
-        let sig_shares = proofs.into_sig_shares();
-        let sig = pk_set.combine_signatures(
-            sig_shares
-                .values()
-                .map(|sig_payload| (sig_payload.pub_key_share, &sig_payload.sig_share)),
-        );
-
-        sig.map(|sig| SectionProofBlock { key_info, sig })
+        Some(Self { key_info, sig })
     }
 
     pub fn key_info(&self) -> &SectionKeyInfo {

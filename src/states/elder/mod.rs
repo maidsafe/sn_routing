@@ -41,7 +41,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_name::XorName,
-    BlsPublicKeySet, ConnectionInfo, NetworkService,
+    BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -823,6 +823,12 @@ impl Elder {
     }
 
     fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Transition {
+        if details.content().pub_id != *self.id() {
+            // This `Relocate` message is not for us - it's most likely a duplicate of a previous
+            // message that we already handled.
+            return Transition::Stay;
+        }
+
         debug!(
             "{} - Received Relocate message to join the section at {}.",
             self,
@@ -1090,16 +1096,25 @@ impl Elder {
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
         if !self.chain.check_trust(&details.proof()) {
+            log_or_panic!(LogLevel::Error, "{} - Untrusted {:?}", self, details);
+            return false;
+        }
+
+        // TODO: signature check temporarily disabled. We need to modify the way we build the proof
+        // chain so its latest block corresponds to the time when the `Relocate` event got
+        // accumulated and not when it gets handled (they might be different due to churn
+        // backlogging).
+        /*
+        if !details.verify() {
             log_or_panic!(
                 LogLevel::Error,
-                "{} - Untrusted RelocationDetails: {:?}",
+                "{} - Invalid signature of {:?}",
                 self,
                 details
             );
             return false;
         }
-
-        // TODO: check signature
+        */
 
         true
     }
@@ -1117,7 +1132,7 @@ impl Elder {
         let relocate_ids = self.chain.remove_member(&pub_id);
         if enable_relocation_trigger {
             for relocate_id in relocate_ids {
-                self.trigger_relocation(relocate_id, pub_id.name());
+                self.trigger_relocation(relocate_id, pub_id.name())?;
             }
         }
 
@@ -1137,7 +1152,11 @@ impl Elder {
         Ok(())
     }
 
-    fn trigger_relocation(&mut self, pub_id: PublicId, trigger_name: &XorName) {
+    fn trigger_relocation(
+        &mut self,
+        pub_id: PublicId,
+        trigger_name: &XorName,
+    ) -> Result<(), RoutingError> {
         if self.chain.is_peer_our_elder(&pub_id) {
             let num_elders = self.chain.our_elders().len();
             if num_elders <= self.chain.elder_size() {
@@ -1148,7 +1167,7 @@ impl Elder {
                     num_elders,
                     self.chain.elder_size() + 1,
                 );
-                return;
+                return Ok(());
             }
         }
 
@@ -1161,7 +1180,7 @@ impl Elder {
                 self,
                 pub_id
             );
-            return;
+            return Err(RoutingError::PeerNotFound(pub_id));
         };
 
         let destination = self.compute_relocation_destination(pub_id.name(), trigger_name);
@@ -1172,16 +1191,16 @@ impl Elder {
                 pub_id,
                 destination,
             );
-            return;
+            return Ok(());
         }
 
         debug!("{} - Relocating {}", self, pub_id);
 
-        self.vote_for_event(AccumulatingEvent::Relocate(RelocateDetails {
+        self.vote_for_signed_event(RelocateDetails {
             pub_id,
             destination,
             age,
-        }))
+        })
     }
 }
 
@@ -1544,7 +1563,7 @@ impl Approved for Elder {
 
         let relocate_ids = self.chain.add_member(payload.p2p_node.clone(), payload.age);
         for relocate_id in relocate_ids {
-            self.trigger_relocation(relocate_id, payload.p2p_node.name());
+            self.trigger_relocation(relocate_id, payload.p2p_node.name())?;
         }
         self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
 
@@ -1675,16 +1694,20 @@ impl Approved for Elder {
     fn handle_relocate_event(
         &mut self,
         payload: RelocateDetails,
+        signature: BlsSignature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Relocate: {:?}.", self, payload);
 
         let pub_id = payload.pub_id;
         let proof = self.chain.prove(&Authority::Section(payload.destination));
-        // TODO: add BLS signature too.
-        let message = DirectMessage::Relocate(SignedRelocateDetails::new(payload, proof));
 
-        self.send_direct_message(&pub_id, message);
+        if let Some(conn_info) = self.chain.get_member_connection_info(&pub_id).cloned() {
+            let message =
+                DirectMessage::Relocate(SignedRelocateDetails::new(payload, proof, signature));
+            self.send_direct_message(&conn_info, message);
+        }
+
         self.remove_member(pub_id, false, outbox)
     }
 }

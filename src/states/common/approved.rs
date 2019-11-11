@@ -9,8 +9,8 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload, Proof, ProofSet,
-        SectionKeyInfo, SendAckMessagePayload,
+        AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload, Proof,
+        ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -24,7 +24,7 @@ use crate::{
     types::MessageId,
     utils,
     xor_name::XorName,
-    ConnectionInfo,
+    BlsSignature, ConnectionInfo,
 };
 use log::LogLevel;
 use std::collections::BTreeSet;
@@ -88,6 +88,7 @@ pub trait Approved: Base {
     fn handle_relocate_event(
         &mut self,
         payload: RelocateDetails,
+        signature: BlsSignature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -268,7 +269,12 @@ pub trait Approved: Base {
 
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut our_pfx = *self.chain_mut().our_prefix();
-        while let Some((event, neighbour_change)) = self.chain_mut().poll()? {
+        while let Some(AccumulatedEvent {
+            content: event,
+            neighbour_change,
+            signature,
+        }) = self.chain_mut().poll()?
+        {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
             match event {
@@ -314,7 +320,16 @@ pub trait Approved: Base {
                     );
                 }
                 AccumulatingEvent::Relocate(payload) => {
-                    self.handle_relocate_event(payload, outbox)?
+                    if let Some(signature) = signature {
+                        self.handle_relocate_event(payload, signature, outbox)?
+                    } else {
+                        log_or_panic!(
+                            LogLevel::Error,
+                            "{} - Unsigned Relocate event {:?}",
+                            self,
+                            payload
+                        );
+                    }
                 }
                 AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }

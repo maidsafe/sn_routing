@@ -9,8 +9,8 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberInfo, MemberPersona,
-    MemberState, NetworkEvent, Proof, ProofSet, SectionProofChain,
+    AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
+    MemberInfo, MemberPersona, MemberState, NetworkEvent, Proof, ProofSet, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -200,19 +200,19 @@ impl Chain {
     ///
     /// If the event is a `EldersInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll(&mut self) -> Result<Option<(AccumulatingEvent, EldersChange)>, RoutingError> {
+    pub fn poll(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
         if self.state.handled_genesis_event
             && !self.churn_in_progress
             && self.state.change == PrefixChange::None
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
                 trace!(
-                    "{} churn backlog poll Accumulating event {:?}, Others: {:?}",
+                    "{} churn backlog poll {:?}, Others: {:?}",
                     self,
-                    event,
+                    event.content,
                     self.state.churn_event_backlog
                 );
-                return Ok(Some((event, EldersChange::default())));
+                return Ok(Some(event));
             }
         }
 
@@ -258,7 +258,11 @@ impl Chain {
                         .collect(),
                 };
 
-                return Ok(Some((event, neighbour_change)));
+                return Ok(Some(AccumulatedEvent {
+                    content: event,
+                    neighbour_change,
+                    signature: None,
+                }));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
                 self.update_their_keys(key_info);
@@ -293,28 +297,42 @@ impl Chain {
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
+            | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::SendAckMessage(_)
-            | AccumulatingEvent::Relocate(_) => (),
+            | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
         let start_churn_event = match event {
-            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
+            AccumulatingEvent::Online(_)
+            | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::Relocate(_) => true,
             _ => false,
+        };
+
+        let signature = if let AccumulatingEvent::Relocate(_) = event {
+            proofs.combine_signatures(&self.public_key_set())
+        } else {
+            None
+        };
+
+        let event = AccumulatedEvent {
+            content: event,
+            neighbour_change: EldersChange::default(),
+            signature,
         };
 
         if start_churn_event && self.churn_in_progress {
             trace!(
-                "{} churn backlog Accumulating event {:?}, Other: {:?}",
+                "{} churn backlog {:?}, Other: {:?}",
                 self,
-                event,
+                event.content,
                 self.state.churn_event_backlog
             );
             self.state.churn_event_backlog.push_front(event);
             return Ok(None);
         }
 
-        Ok(Some((event, EldersChange::default())))
+        Ok(Some(event))
     }
 
     // Increment the age counters of the members. Returns ids of the members whose age increased.
@@ -1459,15 +1477,6 @@ impl Chain {
     pub fn validate_our_history(&self) -> bool {
         self.state.our_history.validate()
     }
-}
-
-// Change to section elders.
-#[derive(Default)]
-pub struct EldersChange {
-    // Peers that became elders.
-    pub added: BTreeSet<P2pNode>,
-    // Peers that ceased to be elders.
-    pub removed: BTreeSet<P2pNode>,
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{AccumulatingEvent, EventSigPayload, NetworkEvent, Proof, ProofSet};
-use crate::id::PublicId;
+use crate::{id::PublicId, BlsPublicKeySet, BlsSignature};
 use log::LogLevel;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::{mem, rc::Rc};
@@ -229,6 +229,14 @@ impl AccumulatingProof {
 
     pub fn into_sig_shares(self) -> BTreeMap<PublicId, EventSigPayload> {
         self.sig_shares
+    }
+
+    pub fn combine_signatures(self, pk_set: &BlsPublicKeySet) -> Option<BlsSignature> {
+        pk_set.combine_signatures(
+            self.sig_shares
+                .values()
+                .map(|sig_payload| (sig_payload.pub_key_share, &sig_payload.sig_share)),
+        )
     }
 }
 

@@ -9,13 +9,15 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    chain::SectionProofChain,
+    chain::{AccumulatingEvent, SectionProofChain},
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
     xor_name::{XorName, XOR_NAME_LEN},
+    BlsSignature,
 };
 use maidsafe_utilities::serialisation::serialise;
+use std::fmt;
 
 /// Details of a relocation: which node to relocate, where to relocate it to and what age it should
 /// get once relocated.
@@ -30,17 +32,32 @@ pub struct RelocateDetails {
     pub age: u8,
 }
 
+impl From<RelocateDetails> for AccumulatingEvent {
+    fn from(src: RelocateDetails) -> Self {
+        Self::Relocate(src)
+    }
+}
+
 /// Relocation details that are signed so the destination section can prove the relocation is
 /// genuine.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedRelocateDetails {
     content: RelocateDetails,
     proof: SectionProofChain,
+    signature: BlsSignature,
 }
 
 impl SignedRelocateDetails {
-    pub fn new(content: RelocateDetails, proof: SectionProofChain) -> Self {
-        Self { content, proof }
+    pub fn new(
+        content: RelocateDetails,
+        proof: SectionProofChain,
+        signature: BlsSignature,
+    ) -> Self {
+        Self {
+            content,
+            proof,
+            signature,
+        }
     }
 
     pub fn content(&self) -> &RelocateDetails {
@@ -49,6 +66,24 @@ impl SignedRelocateDetails {
 
     pub fn proof(&self) -> &SectionProofChain {
         &self.proof
+    }
+
+    // TODO: remove this `allow(unused)` when the Relocate signature issue is solved.
+    #[allow(unused)]
+    pub fn verify(&self) -> bool {
+        serialise(&self.content)
+            .map(|bytes| self.proof.last_public_key().verify(&self.signature, bytes))
+            .unwrap_or(false)
+    }
+}
+
+impl fmt::Debug for SignedRelocateDetails {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SignedRelocateDetails {{ content: {:?}, .. }}",
+            self.content
+        )
     }
 }
 

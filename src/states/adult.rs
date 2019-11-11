@@ -32,7 +32,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_name::XorName,
-    NetworkService,
+    BlsSignature, NetworkService,
 };
 use itertools::Itertools;
 use std::{
@@ -522,14 +522,12 @@ impl Approved for Adult {
     fn handle_relocate_event(
         &mut self,
         details: RelocateDetails,
+        _signature: BlsSignature,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Relocate: {:?}.", self, details);
 
-        if !self.chain.our_prefix().matches(&details.destination) {
-            let _ = self.chain.remove_member(&details.pub_id);
-        }
-
+        let _ = self.chain.remove_member(&details.pub_id);
         Ok(())
     }
 
