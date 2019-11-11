@@ -120,13 +120,7 @@ impl Network {
 
     fn process_packet(&self, connection: &Connection, packet: Packet) {
         let response = if let Some(dst) = self.find_node(&connection.dst) {
-            let msg = if let Packet::Message(ref msg, msg_id) = packet {
-                Some(Packet::MessageSent(msg.clone(), msg_id))
-            } else {
-                None
-            };
-            dst.borrow_mut().receive_packet(connection.src, packet);
-            msg
+            dst.borrow_mut().receive_packet(connection.src, packet)
         } else {
             match packet {
                 Packet::BootstrapRequest(_) => Some(Packet::BootstrapFailure),
