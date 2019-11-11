@@ -8,12 +8,12 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base, DevParams, GOSSIP_TIMEOUT},
+    common::{Approved, Base, GOSSIP_TIMEOUT},
     elder::{Elder, ElderDetails},
 };
 use crate::{
     chain::{
-        Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
+        Chain, DevParams, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
     error::{BootstrapResponseError, RoutingError},

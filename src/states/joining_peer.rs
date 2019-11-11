@@ -9,10 +9,10 @@
 use super::{
     adult::{Adult, AdultDetails},
     bootstrapping_peer::BootstrappingPeer,
-    common::{Base, DevParams},
+    common::Base,
 };
 use crate::{
-    chain::{GenesisPfxInfo, NetworkParams},
+    chain::{DevParams, GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode},
     messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},

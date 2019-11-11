@@ -10,15 +10,15 @@
 mod tests;
 
 use super::{
-    common::{Approved, Base, DevParams, GOSSIP_TIMEOUT},
+    common::{Approved, Base, GOSSIP_TIMEOUT},
     BootstrappingPeer,
 };
 use crate::{
     chain::{
-        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
-        OnlinePayload, ParsecResetData, PrefixChange, SectionKeyInfo, SendAckMessagePayload,
-        MIN_AGE, MIN_AGE_COUNTER,
+        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, DevParams, EldersChange,
+        EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
+        NetworkParams, OnlinePayload, ParsecResetData, PrefixChange, SectionKeyInfo,
+        SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},

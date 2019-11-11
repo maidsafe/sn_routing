@@ -6,12 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    common::{Base, DevParams},
-    joining_peer::JoiningPeerDetails,
-};
+use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
-    chain::NetworkParams,
+    chain::{DevParams, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode},

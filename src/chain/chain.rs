@@ -9,16 +9,16 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
-    MemberInfo, MemberPersona, MemberState, NetworkEvent, Proof, ProofSet, SectionProofChain,
+    AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
+    GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
+    ProofSet, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     routing_table::{Authority, Error},
-    states::DevParams,
     utils::LogIdent,
-    BlsPublicKeySet, ConnectionInfo, Prefix, XorName, Xorable, ELDER_SIZE, SAFE_SECTION_SIZE,
+    BlsPublicKeySet, ConnectionInfo, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -40,24 +40,6 @@ const SPLIT_BUFFER: usize = 1;
 pub fn delivery_group_size(n: usize) -> usize {
     // this is an integer that is ≥ n/3
     (n + 2) / 3
-}
-
-/// Network parameters: number of elders, safe section size
-#[derive(Clone, Copy, Debug)]
-pub struct NetworkParams {
-    /// The number of elders per section
-    pub elder_size: usize,
-    /// Minimum number of nodes we consider safe in a section
-    pub safe_section_size: usize,
-}
-
-impl Default for NetworkParams {
-    fn default() -> Self {
-        Self {
-            elder_size: ELDER_SIZE,
-            safe_section_size: SAFE_SECTION_SIZE,
-        }
-    }
 }
 
 /// Data chain.

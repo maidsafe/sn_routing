@@ -13,8 +13,7 @@ mod elder;
 mod joining_peer;
 
 pub use self::{
-    adult::Adult, bootstrapping_peer::BootstrappingPeer, common::DevParams, elder::Elder,
-    joining_peer::JoiningPeer,
+    adult::Adult, bootstrapping_peer::BootstrappingPeer, elder::Elder, joining_peer::JoiningPeer,
 };
 
 #[cfg(feature = "mock_base")]

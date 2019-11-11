@@ -23,7 +23,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{routing_table::Authority, states::DevParams, Chain};
+use crate::{chain::DevParams, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use std::{
     fmt::{self, Debug, Display, Formatter},
