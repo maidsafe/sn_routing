@@ -14,7 +14,6 @@ use crate::{
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
-    relocation::RelocateDetails,
     routing_table::{Authority, Prefix},
     types::MessageId,
     xor_name::XorName,
@@ -542,8 +541,6 @@ pub enum MessageContent {
         /// The version acknowledged.
         ack_version: u64,
     },
-    /// Send to a node to inform it to relocate itself.
-    Relocate(RelocateDetails),
 }
 
 impl Debug for HopMessage {
@@ -583,7 +580,6 @@ impl Debug for MessageContent {
                 src_prefix,
                 ack_version,
             } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
-            Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
         }
     }
 }

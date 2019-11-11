@@ -25,7 +25,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
-        SecurityMetadata, SignedRoutingMessage,
+        SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, DkgResultWrapper, ParsecMap},
@@ -46,7 +46,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
 };
@@ -56,8 +56,6 @@ use {crate::messages::Message, std::net::SocketAddr};
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
-/// Time after which we disconnect from relocated peer.
-const RELOCATE_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -94,8 +92,6 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
-    // Peers we will disconnect from in the future.
-    delayed_disconnects: HashMap<u64, PublicId>,
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     dev_params: DevParams,
@@ -241,7 +237,6 @@ impl Elder {
             gossip_timer_token,
             chain: details.chain,
             pfx_is_successfully_polled: false,
-            delayed_disconnects: HashMap::default(),
             dkg_cache: Default::default(),
             dev_params: details.dev_params,
         }
@@ -553,7 +548,7 @@ impl Elder {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
 
-        let (msg, metadata) = signed_msg.into_parts();
+        let (msg, _) = signed_msg.into_parts();
 
         match msg.content {
             UserMessage { .. } => (),
@@ -593,9 +588,6 @@ impl Elder {
             ) => {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
-            }
-            (Relocate(payload), src @ Authority::Section(_), dst @ Authority::Node(_)) => {
-                Ok(self.handle_relocate(src, dst, payload, metadata))
             }
             (content, src, dst) => {
                 debug!(
@@ -815,18 +807,11 @@ impl Elder {
                 return;
             }
 
-            let age = details.content().age;
-            let message = SignedRoutingMessage::from(details);
-
-            if self.check_signed_message_integrity(&message).is_err() {
+            if !self.check_signed_relocation_details(&details) {
                 return;
             }
 
-            if self.check_signed_message_trust(&message).is_err() {
-                return;
-            }
-
-            age
+            details.content().age
         } else {
             MIN_AGE
         };
@@ -835,19 +820,18 @@ impl Elder {
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
-    fn handle_relocate(
-        &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        payload: RelocateDetails,
-        security_metadata: SecurityMetadata,
-    ) -> Transition {
+    fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Transition {
         debug!(
             "{} - Received Relocate message to join the section at {}.",
-            self, payload.destination
+            self,
+            details.content().destination
         );
 
-        let names = self.chain.closest_section(&payload.destination).1;
+        if !self.check_signed_relocation_details(&details) {
+            return Transition::Stay;
+        }
+
+        let names = self.chain.closest_section(&details.content().destination).1;
         let conn_infos = self
             .peer_map
             .get_connection_infos(&names)
@@ -859,8 +843,6 @@ impl Elder {
                 .service_mut()
                 .disconnect_from(conn_info.peer_addr);
         }
-
-        let details = SignedRelocateDetails::new(payload, src, dst, security_metadata);
 
         Transition::Relocate {
             details,
@@ -1089,7 +1071,7 @@ impl Elder {
         } else {
             log_or_panic!(
                 LogLevel::Error,
-                "{} Untrusted {:?} --- [{:?}]",
+                "{} - Untrusted {:?} --- [{:?}]",
                 self,
                 msg,
                 self.chain.get_their_keys_info().format(", ")
@@ -1098,8 +1080,53 @@ impl Elder {
         }
     }
 
+    fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
+        if !self.chain.check_trust(&details.proof()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Untrusted RelocationDetails: {:?}",
+                self,
+                details
+            );
+            return false;
+        }
+
+        // TODO: check signature
+
+        true
+    }
+
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
+    }
+
+    fn remove_member(
+        &mut self,
+        pub_id: PublicId,
+        enable_relocation_trigger: bool,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        let relocate_ids = self.chain.remove_member(&pub_id);
+        if enable_relocation_trigger {
+            for relocate_id in relocate_ids {
+                self.trigger_relocation(relocate_id, pub_id.name());
+            }
+        }
+
+        self.disconnect(&pub_id);
+
+        // Temporarily behave as if RemoveElder accumulated simultaneously
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+
+        let self_info = self.chain.remove_elder(pub_id)?;
+
+        let participants = self_info.members();
+        let _ = self.dkg_cache.insert(participants.clone(), self_info);
+        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
+        Ok(())
     }
 
     fn trigger_relocation(&mut self, pub_id: PublicId, trigger_name: &XorName) {
@@ -1249,10 +1276,6 @@ impl Base for Elder {
 
             self.send_parsec_gossip(None);
             self.maintain_parsec();
-        } else if let Some(pub_id) = self.delayed_disconnects.remove(&token) {
-            if !self.chain.is_peer_elder(&pub_id) && !self.chain.is_peer_our_member(&pub_id) {
-                self.disconnect(&pub_id);
-            }
         }
 
         Transition::Stay
@@ -1330,6 +1353,9 @@ impl Base for Elder {
             }
             ParsecResponse(version, par_response) => {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
+            }
+            Relocate(details) => {
+                return Ok(self.handle_relocate(details));
             }
             BootstrapResponse(_) => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
@@ -1540,26 +1566,7 @@ impl Approved for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-
-        let relocate_ids = self.chain.remove_member(&pub_id);
-        for relocate_id in relocate_ids {
-            self.trigger_relocation(relocate_id, pub_id.name());
-        }
-
-        self.disconnect(&pub_id);
-
-        // Temporarily behave as if RemoveElder accumulated simultaneously
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-
-        let self_info = self.chain.remove_elder(pub_id)?;
-
-        let participants = self_info.members();
-        let _ = self.dkg_cache.insert(participants.clone(), self_info);
-        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-        Ok(())
+        self.remove_member(pub_id, true, outbox)
     }
 
     fn handle_dkg_result_event(
@@ -1665,28 +1672,12 @@ impl Approved for Elder {
         info!("{} - handle Relocate: {:?}.", self, payload);
 
         let pub_id = payload.pub_id;
+        let proof = self.chain.prove(&Authority::Section(payload.destination));
+        // TODO: add BLS signature too.
+        let message = DirectMessage::Relocate(SignedRelocateDetails::new(payload, proof));
 
-        self.send_routing_message(RoutingMessage {
-            src: Authority::Section(self.our_prefix().name()),
-            dst: Authority::Node(*payload.pub_id.name()),
-            content: MessageContent::Relocate(payload),
-        })?;
-
-        // Do not trigger further relocation to prevent relocation cascade.
-        let _ = self.chain.remove_member(&pub_id);
-
-        // Delay the disconnect, to give the peer chance to receive the `Relocate` message.
-        let token = self.timer.schedule(RELOCATE_DISCONNECT_TIMEOUT);
-        let _ = self.delayed_disconnects.insert(token, pub_id);
-
-        // Temporarily behave as if RemoveElder accumulated simultaneously
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-        let self_info = self.chain.remove_elder(pub_id)?;
-        self.vote_for_section_info(self_info)?;
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-        Ok(())
+        self.send_direct_message(&pub_id, message);
+        self.remove_member(pub_id, false, outbox)
     }
 }
 

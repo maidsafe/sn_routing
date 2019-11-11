@@ -12,7 +12,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     messages::SignedRoutingMessage,
     parsec,
-    relocation::RelocatePayload,
+    relocation::{RelocatePayload, SignedRelocateDetails},
     routing_table::Prefix,
     xor_name::XorName,
     ConnectionInfo,
@@ -52,6 +52,8 @@ pub enum DirectMessage {
     ParsecRequest(u64, parsec::Request),
     /// Parsec response message
     ParsecResponse(u64, parsec::Response),
+    /// Send from a section to the node being relocated.
+    Relocate(SignedRelocateDetails),
 }
 
 /// Response to a BootstrapRequest
@@ -89,6 +91,7 @@ impl Debug for DirectMessage {
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(v) => write!(formatter, "ParsecPoke({})", v),
+            Relocate(payload) => write!(formatter, "Relocate({:?})", payload.content()),
         }
     }
 }
@@ -121,6 +124,7 @@ impl Hash for DirectMessage {
                 // Fake hash via serialisation
                 serialise(&response).ok().hash(state)
             }
+            Relocate(details) => details.hash(state),
         }
     }
 }

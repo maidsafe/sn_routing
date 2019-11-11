@@ -9,11 +9,10 @@
 //! Relocation related types and utilities.
 
 use crate::{
+    chain::SectionProofChain,
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
-    messages::{MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage},
-    routing_table::Authority,
     xor_name::{XorName, XOR_NAME_LEN},
 };
 use maidsafe_utilities::serialisation::serialise;
@@ -33,44 +32,23 @@ pub struct RelocateDetails {
 
 /// Relocation details that are signed so the destination section can prove the relocation is
 /// genuine.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedRelocateDetails {
     content: RelocateDetails,
-    src: Authority<XorName>,
-    dst: Authority<XorName>,
-    security_metadata: SecurityMetadata,
+    proof: SectionProofChain,
 }
 
 impl SignedRelocateDetails {
-    pub fn new(
-        content: RelocateDetails,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        security_metadata: SecurityMetadata,
-    ) -> Self {
-        Self {
-            content,
-            src,
-            dst,
-            security_metadata,
-        }
+    pub fn new(content: RelocateDetails, proof: SectionProofChain) -> Self {
+        Self { content, proof }
     }
 
     pub fn content(&self) -> &RelocateDetails {
         &self.content
     }
-}
 
-impl From<SignedRelocateDetails> for SignedRoutingMessage {
-    fn from(details: SignedRelocateDetails) -> Self {
-        Self::from_parts(
-            RoutingMessage {
-                content: MessageContent::Relocate(details.content),
-                src: details.src,
-                dst: details.dst,
-            },
-            details.security_metadata,
-        )
+    pub fn proof(&self) -> &SectionProofChain {
+        &self.proof
     }
 }
 
