@@ -241,6 +241,32 @@ impl Adult {
         );
         self.disconnect(&pub_id);
     }
+
+    fn add_elder(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        let _ = self.chain.add_elder(pub_id)?;
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+
+        // If the elder being added is us, start sending parsec gossips.
+        if pub_id == *self.id() {
+            self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
+        }
+
+        Ok(())
+    }
+
+    fn remove_elder(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        let _ = self.chain.remove_elder(pub_id)?;
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        Ok(())
+    }
 }
 
 #[cfg(feature = "mock_base")]
@@ -468,17 +494,7 @@ impl Approved for Adult {
         self.chain.increment_age_counters(&pub_id);
         let _ = self.chain.poll_relocation();
 
-        // Simulate handling AddElder as well
-        info!("{} - handle AddElder: {}.", self, pub_id);
-        let _ = self.chain.add_elder(pub_id)?;
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-
-        // If the elder being added is us, start sending parsec gossips.
-        if pub_id == *self.id() {
-            self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-        }
-
-        Ok(())
+        self.add_elder(pub_id, outbox)
     }
 
     fn handle_offline_event(
@@ -496,10 +512,9 @@ impl Approved for Adult {
         self.chain.remove_member(&pub_id);
         let _ = self.chain.poll_relocation();
 
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-        let _ = self.chain.remove_elder(pub_id)?;
+        self.remove_elder(pub_id, outbox)?;
         self.disconnect(&pub_id);
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
         Ok(())
     }
 
@@ -541,7 +556,7 @@ impl Approved for Adult {
         &mut self,
         details: RelocateDetails,
         _signature: BlsSignature,
-        _: &mut dyn EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&details.pub_id) {
             info!("{} - ignore Relocate: {:?} - not a member", self, details);
@@ -550,6 +565,9 @@ impl Approved for Adult {
 
         info!("{} - handle Relocate: {:?}.", self, details);
         self.chain.remove_member(&details.pub_id);
+        self.remove_elder(details.pub_id, outbox)?;
+        self.disconnect(&details.pub_id);
+
         Ok(())
     }
 

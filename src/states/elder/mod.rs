@@ -1114,6 +1114,41 @@ impl Elder {
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
     }
+
+    fn add_elder(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        let to_vote_infos = self.chain.add_elder(pub_id)?;
+
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        self.print_rt_size();
+
+        for info in to_vote_infos {
+            let participants = info.members();
+            let _ = self.dkg_cache.insert(participants.clone(), info);
+            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+        }
+
+        Ok(())
+    }
+
+    fn remove_elder(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        let self_info = self.chain.remove_elder(pub_id)?;
+
+        let participants = self_info.members();
+        let _ = self.dkg_cache.insert(participants.clone(), self_info);
+        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
+        Ok(())
+    }
 }
 
 impl Base for Elder {
@@ -1451,33 +1486,18 @@ impl Approved for Elder {
 
         info!("{} - handle Online: {:?}.", self, payload);
 
+        let pub_id = *payload.p2p_node.public_id();
         self.chain.add_member(payload.p2p_node.clone(), payload.age);
-        self.chain
-            .increment_age_counters(payload.p2p_node.public_id());
+        self.chain.increment_age_counters(&pub_id);
 
         if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;
         }
-        self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
+
+        self.handle_candidate_approval(payload.p2p_node, outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
-
-        // pretend as if AddElder accumulated already
-        let pub_id = *payload.p2p_node.public_id();
-        info!("{} - handle AddElder: {}.", self, pub_id);
-
-        let to_vote_infos = self.chain.add_elder(pub_id)?;
-
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        self.print_rt_size();
-
-        for info in to_vote_infos {
-            let participants = info.members();
-            let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-        }
-
-        Ok(())
+        self.add_elder(pub_id, outbox)
     }
 
     fn handle_offline_event(
@@ -1491,7 +1511,6 @@ impl Approved for Elder {
         }
 
         info!("{} - handle Offline: {}.", self, pub_id);
-
         self.chain.increment_age_counters(&pub_id);
         self.chain.remove_member(&pub_id);
 
@@ -1499,18 +1518,8 @@ impl Approved for Elder {
             self.vote_for_relocate(relocate_details)?;
         }
 
+        self.remove_elder(pub_id, outbox)?;
         self.disconnect(&pub_id);
-
-        // Temporarily behave as if RemoveElder accumulated simultaneously
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-
-        let self_info = self.chain.remove_elder(pub_id)?;
-
-        let participants = self_info.members();
-        let _ = self.dkg_cache.insert(participants.clone(), self_info);
-        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }
@@ -1652,18 +1661,8 @@ impl Approved for Elder {
         }
 
         self.chain.remove_member(&pub_id);
+        self.remove_elder(pub_id, outbox)?;
         self.disconnect(&pub_id);
-
-        // Temporarily behave as if RemoveElder accumulated simultaneously
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-
-        let self_info = self.chain.remove_elder(pub_id)?;
-
-        let participants = self_info.members();
-        let _ = self.dkg_cache.insert(participants.clone(), self_info);
-        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }
