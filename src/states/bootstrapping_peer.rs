@@ -361,7 +361,7 @@ impl Base for BootstrappingPeer {
                 Ok(Transition::Stay)
             }
             _ => {
-                trace!("{} - Unhandled direct message: {:?}", self, msg);
+                debug!("{} - Unhandled direct message: {:?}", self, msg);
                 Ok(Transition::Stay)
             }
         }
