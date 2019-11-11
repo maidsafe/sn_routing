@@ -143,8 +143,8 @@ impl Chain {
     fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
         self.state
             .our_members
-            .iter()
-            .map(|(pub_id, member_info)| (*pub_id, member_info.age_counter))
+            .values()
+            .map(|member_info| (*member_info.p2p_node.public_id(), member_info.age_counter))
             .collect()
     }
 
@@ -331,8 +331,8 @@ impl Chain {
         let our_prefix = *self.state.our_prefix();
         let mut details_to_add = Vec::new();
 
-        for (pub_id, member_info) in self.state.our_joined_members_mut() {
-            if pub_id == trigger_node {
+        for (name, member_info) in self.state.our_joined_members_mut() {
+            if member_info.p2p_node.public_id() == trigger_node {
                 continue;
             }
 
@@ -340,18 +340,15 @@ impl Chain {
                 continue;
             }
 
-            let destination = compute_relocation_destination(
-                pub_id.name(),
-                trigger_node.name(),
-                &mut self.dev_params,
-            );
+            let destination =
+                compute_relocation_destination(name, trigger_node.name(), &mut self.dev_params);
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
                 continue;
             }
 
             details_to_add.push(RelocateDetails {
-                pub_id: *pub_id,
+                pub_id: *member_info.p2p_node.public_id(),
                 destination,
                 age: member_info.age() + 1,
             })
@@ -427,9 +424,7 @@ impl Chain {
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
         self.assert_no_prefix_change("add member");
 
-        let pub_id = *p2p_node.public_id();
-
-        match self.state.our_members.entry(pub_id) {
+        match self.state.our_members.entry(*p2p_node.name()) {
             Entry::Occupied(mut entry) => {
                 if entry.get().state == MemberState::Left {
                     // Node rejoining
@@ -443,14 +438,14 @@ impl Chain {
                         LogLevel::Error,
                         "{} - Adding member that already exists: {}",
                         self,
-                        pub_id
+                        p2p_node,
                     );
                     return;
                 }
             }
             Entry::Vacant(entry) => {
                 // Node joining for the first time.
-                let _ = entry.insert(MemberInfo::new(age, p2p_node.connection_info().clone()));
+                let _ = entry.insert(MemberInfo::new(age, p2p_node.clone()));
             }
         }
 
@@ -466,7 +461,7 @@ impl Chain {
         if let Some(info) = self
             .state
             .our_members
-            .get_mut(&pub_id)
+            .get_mut(pub_id.name())
             .filter(|info| info.state == MemberState::Joined)
         {
             info.state = MemberState::Left;
@@ -655,7 +650,7 @@ impl Chain {
     pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
         self.state
             .our_members
-            .get(pub_id)
+            .get(pub_id.name())
             .map(|info| info.state == MemberState::Joined)
             .unwrap_or(false)
     }
@@ -664,8 +659,8 @@ impl Chain {
     pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<&ConnectionInfo> {
         self.state
             .our_members
-            .get(&pub_id)
-            .map(|member_info| &member_info.connection_info)
+            .get(pub_id.name())
+            .map(|member_info| member_info.p2p_node.connection_info())
     }
 
     /// Returns a set of elders we should be connected to.

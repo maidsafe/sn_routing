@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::ConnectionInfo;
+use crate::P2pNode;
 
 /// The type for counting the churn events experienced by a node
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Serialize, Deserialize)]
@@ -53,16 +53,16 @@ const MAX_INFANT_AGE: u32 = MIN_AGE as u32;
 pub struct MemberInfo {
     pub age_counter: AgeCounter,
     pub state: MemberState,
-    pub connection_info: ConnectionInfo,
+    pub p2p_node: P2pNode,
 }
 
 impl MemberInfo {
     /// Create new `MemberInfo` in the `Joined` state.
-    pub fn new(age: u8, connection_info: ConnectionInfo) -> Self {
+    pub fn new(age: u8, p2p_node: P2pNode) -> Self {
         Self {
             age_counter: AgeCounter::from_age(age),
             state: MemberState::Joined,
-            connection_info,
+            p2p_node,
         }
     }
 

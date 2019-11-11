@@ -40,7 +40,7 @@ pub struct SharedState {
     /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
     pub our_infos: NonEmptyList<EldersInfo>,
     /// Info about all members of our section - elders, adults and infants.
-    pub our_members: BTreeMap<PublicId, MemberInfo>,
+    pub our_members: BTreeMap<XorName, MemberInfo>,
     /// Maps our neighbours' prefixes to their latest signed elders infos.
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
@@ -78,9 +78,9 @@ impl SharedState {
                 let info = MemberInfo {
                     age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
-                    connection_info: p2p_node.connection_info().clone(),
+                    p2p_node: p2p_node.clone(),
                 };
-                (*p2p_node.public_id(), info)
+                (*p2p_node.name(), info)
             })
             .collect();
 
@@ -239,19 +239,19 @@ impl SharedState {
 
     /// Returns our member infos.
     #[allow(unused)]
-    pub fn our_members(&self) -> &BTreeMap<PublicId, MemberInfo> {
+    pub fn our_members(&self) -> &BTreeMap<XorName, MemberInfo> {
         &self.our_members
     }
 
     /// Returns an iterator over the members that have state == `Joined`.
-    pub fn our_joined_members(&self) -> impl Iterator<Item = (&PublicId, &MemberInfo)> {
+    pub fn our_joined_members(&self) -> impl Iterator<Item = (&XorName, &MemberInfo)> {
         self.our_members
             .iter()
             .filter(|(_, member)| member.state == MemberState::Joined)
     }
 
     /// Returns mutable iterator over the members that have state == `Joined`.
-    pub fn our_joined_members_mut(&mut self) -> impl Iterator<Item = (&PublicId, &mut MemberInfo)> {
+    pub fn our_joined_members_mut(&mut self) -> impl Iterator<Item = (&XorName, &mut MemberInfo)> {
         self.our_members
             .iter_mut()
             .filter(|(_, member)| member.state == MemberState::Joined)
@@ -263,7 +263,7 @@ impl SharedState {
         if self.our_info().is_member(pub_id) {
             Some(MemberPersona::Elder)
         } else {
-            self.our_members.get(pub_id).map(|member| {
+            self.our_members.get(pub_id.name()).map(|member| {
                 if member.is_mature() {
                     MemberPersona::Adult
                 } else {
@@ -277,7 +277,7 @@ impl SharedState {
     pub fn remove_our_members_not_matching_prefix(&mut self, prefix: &Prefix<XorName>) {
         self.our_members = mem::replace(&mut self.our_members, BTreeMap::new())
             .into_iter()
-            .filter(|(pub_id, _)| prefix.matches(pub_id.name()))
+            .filter(|(name, _)| prefix.matches(name))
             .collect();
     }
 
