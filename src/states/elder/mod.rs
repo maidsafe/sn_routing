@@ -10,7 +10,7 @@
 mod tests;
 
 use super::{
-    common::{Approved, Base, GOSSIP_TIMEOUT},
+    common::{Approved, Base},
     BootstrappingPeer,
 };
 use crate::{
@@ -58,6 +58,7 @@ use {crate::messages::Message, std::net::SocketAddr};
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
+const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -1532,6 +1533,7 @@ impl Approved for Elder {
         _dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
         if let Some(info) = self.dkg_cache.remove(participants) {
+            info!("{} - handle DkgResult: {:?}", self, participants);
             self.vote_for_section_info(info)?;
         } else {
             log_or_panic!(

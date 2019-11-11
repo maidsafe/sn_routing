@@ -8,7 +8,7 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base, GOSSIP_TIMEOUT},
+    common::{Approved, Base},
     elder::{Elder, ElderDetails},
 };
 use crate::{
@@ -157,7 +157,6 @@ impl Adult {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
 
         let (msg, metadata) = msg.into_parts();
-        // let src_name = msg.src.name();
 
         match msg {
             RoutingMessage {
@@ -249,12 +248,6 @@ impl Adult {
     ) -> Result<(), RoutingError> {
         let _ = self.chain.add_elder(pub_id)?;
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-
-        // If the elder being added is us, start sending parsec gossips.
-        if pub_id == *self.id() {
-            self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-        }
-
         Ok(())
     }
 
@@ -339,13 +332,8 @@ impl Base for Adult {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.parsec_timer_token == token {
-            if self.chain.is_peer_our_elder(self.id()) {
-                self.send_parsec_gossip(None);
-                self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-            } else {
-                self.send_parsec_poke();
-                self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
-            }
+            self.send_parsec_poke();
+            self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
         }
 
         Transition::Stay
