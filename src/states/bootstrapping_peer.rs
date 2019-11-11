@@ -344,7 +344,7 @@ impl Base for BootstrappingPeer {
     fn handle_direct_message(
         &mut self,
         msg: DirectMessage,
-        _p2p_node: P2pNode,
+        p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
@@ -361,7 +361,12 @@ impl Base for BootstrappingPeer {
                 Ok(Transition::Stay)
             }
             _ => {
-                debug!("{} - Unhandled direct message: {:?}", self, msg);
+                debug!(
+                    "{} - Unhandled direct message from {}: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
+                );
                 Ok(Transition::Stay)
             }
         }

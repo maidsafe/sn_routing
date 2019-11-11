@@ -259,8 +259,10 @@ impl Base for JoiningPeer {
             DirectMessage::ConnectionResponse => (),
             _ => {
                 debug!(
-                    "{} Unhandled direct message, adding to backlog: {:?}",
-                    self, msg
+                    "{} Unhandled direct message from {}, adding to backlog: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
                 );
                 self.direct_msg_backlog.push((p2p_node, msg));
             }
