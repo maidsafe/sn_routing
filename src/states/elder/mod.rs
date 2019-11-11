@@ -1126,35 +1126,6 @@ impl Elder {
         self.chain.our_prefix()
     }
 
-    fn remove_member(
-        &mut self,
-        pub_id: PublicId,
-        enable_relocation_trigger: bool,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        let relocate_ids = self.chain.remove_member(&pub_id);
-        if enable_relocation_trigger {
-            for relocate_id in relocate_ids {
-                self.trigger_relocation(relocate_id, pub_id.name())?;
-            }
-        }
-
-        self.disconnect(&pub_id);
-
-        // Temporarily behave as if RemoveElder accumulated simultaneously
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-
-        let self_info = self.chain.remove_elder(pub_id)?;
-
-        let participants = self_info.members();
-        let _ = self.dkg_cache.insert(participants.clone(), self_info);
-        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-        Ok(())
-    }
-
     fn trigger_relocation(
         &mut self,
         pub_id: PublicId,
@@ -1562,14 +1533,19 @@ impl Approved for Elder {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_add_member(&payload.p2p_node) {
+        if !self.chain.can_add_member(payload.p2p_node.public_id()) {
             info!("{} - ignore Online: {:?}.", self, payload);
             return Ok(());
         }
 
         info!("{} - handle Online: {:?}.", self, payload);
 
-        let relocate_ids = self.chain.add_member(payload.p2p_node.clone(), payload.age);
+        self.chain.add_member(payload.p2p_node.clone(), payload.age);
+
+        let relocate_ids = self
+            .chain
+            .increment_age_counters(payload.p2p_node.public_id());
+
         for relocate_id in relocate_ids {
             self.trigger_relocation(relocate_id, payload.p2p_node.name())?;
         }
@@ -1600,8 +1576,35 @@ impl Approved for Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        if !self.chain.can_remove_member(&pub_id) {
+            info!("{} - ignore Offline: {}.", self, pub_id);
+            return Ok(());
+        }
+
         info!("{} - handle Offline: {}.", self, pub_id);
-        self.remove_member(pub_id, true, outbox)
+
+        let relocate_ids = self.chain.increment_age_counters(&pub_id);
+
+        self.chain.remove_member(&pub_id);
+
+        for relocate_id in relocate_ids {
+            self.trigger_relocation(relocate_id, pub_id.name())?;
+        }
+
+        self.disconnect(&pub_id);
+
+        // Temporarily behave as if RemoveElder accumulated simultaneously
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+
+        let self_info = self.chain.remove_elder(pub_id)?;
+
+        let participants = self_info.members();
+        let _ = self.dkg_cache.insert(participants.clone(), self_info);
+        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
+        Ok(())
     }
 
     fn handle_dkg_result_event(
@@ -1733,7 +1736,21 @@ impl Approved for Elder {
         }
 
         self.chain.finalise_relocation();
-        self.remove_member(pub_id, false, outbox)
+        self.chain.remove_member(&pub_id);
+        self.disconnect(&pub_id);
+
+        // Temporarily behave as if RemoveElder accumulated simultaneously
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+
+        let self_info = self.chain.remove_elder(pub_id)?;
+
+        let participants = self_info.members();
+        let _ = self.dkg_cache.insert(participants.clone(), self_info);
+        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
+        Ok(())
     }
 }
 
