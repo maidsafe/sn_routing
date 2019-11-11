@@ -1194,7 +1194,7 @@ impl Elder {
             return Ok(());
         }
 
-        debug!("{} - Relocating {}", self, pub_id);
+        trace!("{} - Relocating {}", self, pub_id);
 
         self.vote_for_signed_event(RelocateDetails {
             pub_id,
@@ -1700,7 +1700,17 @@ impl Approved for Elder {
         info!("{} - handle Relocate: {:?}.", self, payload);
 
         let pub_id = payload.pub_id;
-        let proof = self.chain.prove(&Authority::Section(payload.destination));
+
+        let proof = {
+            let proof_for_source = self.chain.prove(&Authority::Node(*payload.pub_id.name()));
+            let proof_for_target = self.chain.prove(&Authority::Section(payload.destination));
+
+            if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
+                proof_for_source
+            } else {
+                proof_for_target
+            }
+        };
 
         if let Some(conn_info) = self.chain.get_member_connection_info(&pub_id).cloned() {
             let message =
