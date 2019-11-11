@@ -8,78 +8,71 @@
 
 use super::{
     add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
-    current_sections, poll_and_resend_with_options, PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    current_sections, nodes_with_prefix, nodes_with_prefix_mut, poll_and_resend_with_options,
+    PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
-use rand::Rng;
-use routing::{mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, XorName};
+use rand::{Rand, Rng};
+use routing::{
+    mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, PublicId, XorName, MIN_AGE,
+};
 use std::{iter, slice};
 
-// TODO: un-ignore this test when relocation trigger is handled.
-#[ignore]
-#[allow(unused)]
+const NETWORK_PARAMS: NetworkParams = NetworkParams {
+    elder_size: LOWERED_ELDER_SIZE,
+    safe_section_size: LOWERED_ELDER_SIZE + 3,
+};
+
 #[test]
 fn relocate_without_split() {
-    // Create a network of two sections, then trigger relocation of a random node from one section
-    // into the other section.
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NETWORK_PARAMS, None);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    let source_prefix = *unwrap!(rng.choose(&prefixes));
+
+    // `nodes[0]` is the oldest node, so it's the first one to be relocated when its age increases.
+    // So let's pick the prefix it is in as the source prefix.
+    let source_prefix = *find_matching_prefix(&prefixes, &nodes[0].name());
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
-    let relocate_index = choose_node_from_section(&mut rng, &nodes, &source_prefix);
-    let relocate_id = nodes[relocate_index].id();
-
-    let destination = gen_name_in_prefix(&mut rng, &target_prefix);
-
-    // Trigger relocation.
-    for node in nodes
-        .iter_mut()
-        .filter(|node| source_prefix.matches(&node.name()))
-    {
-        // TODO: relocation is now triggered implicitly. Modify this test accordingly.
-        // node.inner.trigger_relocation(relocate_id, destination);
+    let destination = target_prefix.substituted_in(rng.gen());
+    for node in nodes_with_prefix_mut(&mut nodes, &source_prefix) {
+        node.inner.set_next_relocation_dst(Some(destination));
     }
+
+    // Create enough churn events so that the age of the oldest node increases which causes it to
+    // be relocated.
+    let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
+    let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter;
+
+    // Keep the section size such that relocations can happen but splits can't.
+    section_churn(
+        num_churns,
+        &network,
+        &mut nodes,
+        &source_prefix,
+        NETWORK_PARAMS.elder_size + 1,
+        NETWORK_PARAMS.elder_size + 2,
+    );
 
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| {
-                !relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
-            })
+            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix))
             .fire_join_timeout(false),
     )
 }
 
-// TODO: un-ignore this test when relocation trigger is handled.
-#[ignore]
-#[allow(unused)]
 #[test]
 fn relocate_causing_split() {
-    // Create a network with at least two sections. Pick two sections: source and destination. Add
-    // enough nodes to the destination section so it is one node shy of split. Then relocate a
-    // random node from the source section to the destination section.
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    // Relocate node into a section which is one node shy of splitting.
+    let network = Network::new(NETWORK_PARAMS, None);
     let mut rng = network.new_rng();
-
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    let source_prefix = *unwrap!(rng.choose(&prefixes));
+    let source_prefix = *find_matching_prefix(&prefixes, &nodes[0].name());
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
     let _ = add_connected_nodes_until_one_away_from_split(
@@ -88,26 +81,26 @@ fn relocate_causing_split() {
         slice::from_ref(&target_prefix),
     );
 
-    let relocate_index = choose_node_from_section(&mut rng, &nodes, &source_prefix);
-    let relocate_id = nodes[relocate_index].id();
-
-    let destination = gen_name_in_prefix(&mut rng, &target_prefix);
+    let destination = target_prefix.substituted_in(rng.gen());
+    for node in nodes_with_prefix_mut(&mut nodes, &source_prefix) {
+        node.inner.set_next_relocation_dst(Some(destination));
+    }
 
     // Trigger relocation.
-    for node in nodes
-        .iter_mut()
-        .filter(|node| source_prefix.matches(&node.name()))
-    {
-        // TODO: relocation is now triggered implicitly. Modify this test accordingly.
-        // node.inner.trigger_relocation(relocate_id, destination);
-    }
+    let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter;
+    section_churn(
+        num_churns,
+        &network,
+        &mut nodes,
+        &source_prefix,
+        NETWORK_PARAMS.elder_size + 1,
+        NETWORK_PARAMS.elder_size + 2,
+    );
 
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| {
-                !relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
-            })
+            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix))
             .fire_join_timeout(false),
     )
 }
@@ -120,22 +113,13 @@ fn relocate_causing_split() {
 // fails.
 // TODO: find a way to address this issue.
 #[ignore]
-#[allow(unused)]
 #[test]
 fn relocate_during_split() {
-    // Create a network with at least two sections. Pick two sections: source and destination. Add
-    // enough nodes to the destination section so it is one node shy of split. Then add one more
-    // node to it and simultaneously relocate another random node from the source section to it.
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    // Relocate node into a section which is undergoing split.
+    let network = Network::new(NETWORK_PARAMS, None);
     let mut rng = network.new_rng();
-
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let source_prefix = *unwrap!(rng.choose(&prefixes));
@@ -147,46 +131,48 @@ fn relocate_during_split() {
         slice::from_ref(&target_prefix),
     );
 
-    let relocate_index = choose_node_from_section(&mut rng, &nodes, &source_prefix);
-    let relocate_id = nodes[relocate_index].id();
+    let destination = target_prefix.substituted_in(rng.gen());
+    for node in nodes_with_prefix_mut(&mut nodes, &source_prefix) {
+        node.inner.set_next_relocation_dst(Some(destination));
+    }
 
-    let destination = gen_name_in_prefix(&mut rng, &target_prefix);
+    // Create churn so we are one churn away from relocation.
+    let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter - 1;
+    section_churn(
+        num_churns,
+        &network,
+        &mut nodes,
+        &source_prefix,
+        NETWORK_PARAMS.elder_size + 1,
+        NETWORK_PARAMS.elder_size + 2,
+    );
 
     // Add new node, but do not poll yet.
-    let full_id = FullId::within_range(&target_prefix.range_inclusive());
-    // Make sure the bootstrap node is not the relocated node.
-    // TODO: remove this restriction. We should be able to bootstrap via the relocated node too,
-    // once its relocation completes.
-    let bootstrap_index = unwrap!(iter::repeat(())
-        .map(|_| rng.gen_range(0, nodes.len()))
-        .find(|index| *index != relocate_index));
+    add_node_to_prefix(&network, &mut nodes, &target_prefix);
 
-    let node = TestNode::builder(&network)
-        .network_config(
-            NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint()),
-        )
-        .full_id(full_id)
-        .create();
-    nodes.push(node);
-
-    // Trigger relocation.
-    for node in nodes
-        .iter_mut()
-        .filter(|node| source_prefix.matches(&node.name()))
-    {
-        // TODO: relocation is now triggered implicitly. Modify this test accordingly.
-        // node.inner.trigger_relocation(relocate_id, destination);
-    }
+    // One more churn to trigger the relocation.
+    section_churn(1, &network, &mut nodes, &source_prefix, 6, 7);
 
     // Poll now, so the add and the relocation happen simultaneously.
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| {
-                !relocation_complete(nodes, relocate_index, &source_prefix, &target_prefix)
-            })
+            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix))
             .fire_join_timeout(true),
     )
+}
+
+// Age counter of the oldest node in the network assuming no nodes were removed or relocated - only
+// added.
+fn oldest_age_counter_after_only_adds(nodes: &[TestNode]) -> usize {
+    2usize.pow(u32::from(MIN_AGE)) + (nodes.len() - 1).min(NETWORK_PARAMS.safe_section_size - 2)
+}
+
+fn find_matching_prefix<'a>(
+    prefixes: &'a [Prefix<XorName>],
+    name: &XorName,
+) -> &'a Prefix<XorName> {
+    unwrap!(prefixes.iter().find(|prefix| prefix.matches(name)))
 }
 
 fn choose_other_prefix<'a, R: Rng>(
@@ -201,23 +187,111 @@ fn choose_other_prefix<'a, R: Rng>(
         .find(|prefix| *prefix != except))
 }
 
-fn gen_name_in_prefix<R: Rng>(rng: &mut R, prefix: &Prefix<XorName>) -> XorName {
-    unwrap!(rng.gen_iter().find(|name| prefix.matches(name)))
+fn add_node_to_prefix(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+    let mut rng = network.new_rng();
+
+    let bootstrap_index = unwrap!(iter::repeat(())
+        .map(|_| rng.gen_range(0, nodes.len()))
+        .find(|index| nodes[*index].inner.is_elder()));
+
+    let config = NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
+    let full_id = FullId::within_range(&prefix.range_inclusive());
+    nodes.push(
+        TestNode::builder(network)
+            .network_config(config)
+            .full_id(full_id)
+            .create(),
+    )
 }
 
-fn choose_node_from_section<R: Rng>(
-    rng: &mut R,
-    nodes: &[TestNode],
+fn remove_node_from_prefix(nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) -> TestNode {
+    // Lookup from the end, so we remove the youngest node in the section.
+    let index = nodes.len()
+        - unwrap!(nodes
+            .iter()
+            .rev()
+            .position(|node| prefix.matches(&node.name())))
+        - 1;
+    nodes.remove(index)
+}
+
+// Make the given section churn the given number of times, while maintaining the section size in
+// the given interval.
+fn section_churn(
+    count: usize,
+    network: &Network,
+    nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
-) -> usize {
-    unwrap!(iter::repeat(())
-        .map(|_| rng.gen_range(0, nodes.len()))
-        .find(|index| prefix.matches(&nodes[*index].name())))
+    min_section_size: usize,
+    max_section_size: usize,
+) {
+    assert!(min_section_size < max_section_size);
+
+    let mut rng = network.new_rng();
+    let next_relocation_dst = unwrap!(nodes_with_prefix(nodes, prefix).next())
+        .inner
+        .next_relocation_dst();
+
+    for _ in 0..count {
+        let section_size = nodes_with_prefix(nodes, prefix).count();
+        let churn = if section_size <= min_section_size {
+            Churn::Add
+        } else if section_size >= max_section_size {
+            Churn::Remove
+        } else {
+            rng.gen()
+        };
+
+        match churn {
+            Churn::Add => {
+                add_node_to_prefix(network, nodes, prefix);
+                unwrap!(nodes.last_mut())
+                    .inner
+                    .set_next_relocation_dst(next_relocation_dst);
+
+                poll_and_resend_with_options(
+                    nodes,
+                    PollOptions::default()
+                        .stop_if(|nodes| node_joined(nodes, nodes.len() - 1))
+                        .fire_join_timeout(false),
+                );
+            }
+            Churn::Remove => {
+                let id = remove_node_from_prefix(nodes, prefix).id();
+                poll_and_resend_with_options(
+                    nodes,
+                    PollOptions::default()
+                        .stop_if(move |nodes| node_left(nodes, &id))
+                        .fire_join_timeout(false),
+                );
+            }
+        }
+    }
+}
+
+// Returns whether all nodes from its section recognize the node at the given index as joined.
+fn node_joined(nodes: &[TestNode], node_index: usize) -> bool {
+    let id = nodes[node_index].id();
+
+    nodes
+        .iter()
+        .filter(|node| {
+            node.inner
+                .our_prefix()
+                .map(|prefix| prefix.matches(id.name()))
+                .unwrap_or(false)
+        })
+        .all(|node| node.inner.is_peer_our_member(&id))
+}
+
+// Returns whether all nodes recognize the node with the given id as left.
+fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
+    nodes.iter().all(|node| !node.inner.is_peer_our_member(id))
 }
 
 // Returns whether the relocation of node at `node_index` from `source_prefix` to `target_prefix`
 // is complete.
-fn relocation_complete(
+fn node_relocated(
     nodes: &[TestNode],
     node_index: usize,
     source_prefix: &Prefix<XorName>,
@@ -251,4 +325,20 @@ fn relocation_complete(
     }
 
     true
+}
+
+#[derive(Eq, PartialEq)]
+enum Churn {
+    Add,
+    Remove,
+}
+
+impl Rand for Churn {
+    fn rand<R: Rng>(rng: &mut R) -> Self {
+        if rng.gen() {
+            Self::Add
+        } else {
+            Self::Remove
+        }
+    }
 }

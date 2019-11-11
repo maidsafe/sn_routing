@@ -16,8 +16,8 @@ use rand::Rng;
 use routing::{
     mock::Network,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, XorTargetInterval,
-    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, QUORUM_DENOMINATOR,
+    QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -96,8 +96,6 @@ fn add_nodes<R: Rng>(
         .map(|node| {
             let pfx = *node.our_prefix();
             node.inner.set_next_relocation_dst(Some(pfx.lower_bound()));
-            node.inner
-                .set_next_relocation_interval(Some(XorTargetInterval::new(pfx.range_inclusive())));
             pfx
         })
         .collect();

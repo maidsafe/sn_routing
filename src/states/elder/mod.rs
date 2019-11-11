@@ -1135,9 +1135,10 @@ impl Elder {
         let destination = self.compute_relocation_destination(pub_id.name(), trigger_name);
         if self.chain.our_prefix().matches(&destination) {
             trace!(
-                "{} - Ignoring relocation of {} - destination is within the current section.",
+                "{} - Ignoring relocation of {} - destination {} is within the current section.",
                 self,
-                pub_id
+                pub_id,
+                destination,
             );
             return;
         }
@@ -1508,8 +1509,9 @@ impl Approved for Elder {
 
         info!("{} - handle Online: {:?}.", self, payload);
 
-        for id_to_relocate in self.chain.add_member(payload.p2p_node.clone(), payload.age) {
-            self.trigger_relocation(id_to_relocate, payload.p2p_node.name());
+        let relocate_ids = self.chain.add_member(payload.p2p_node.clone(), payload.age);
+        for relocate_id in relocate_ids {
+            self.trigger_relocation(relocate_id, payload.p2p_node.name());
         }
         self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
 
@@ -1539,9 +1541,10 @@ impl Approved for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-        
-        for id_to_relocate in self.chain.remove_member(&pub_id) {
-            self.trigger_relocation(id_to_relocate, pub_id.name());
+
+        let relocate_ids = self.chain.remove_member(&pub_id);
+        for relocate_id in relocate_ids {
+            self.trigger_relocation(relocate_id, pub_id.name());
         }
 
         self.disconnect(&pub_id);

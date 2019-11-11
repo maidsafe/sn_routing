@@ -391,6 +391,13 @@ impl Node {
         self.chain().into_iter().flat_map(Chain::elders)
     }
 
+    /// Returns whether the given `PublicId` is a member of our section.
+    pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
+        self.chain()
+            .map(|chain| chain.is_peer_our_member(id))
+            .unwrap_or(false)
+    }
+
     /// Returns their knowledge
     pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
         self.chain()

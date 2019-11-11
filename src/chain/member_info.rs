@@ -40,10 +40,10 @@ impl Default for AgeCounter {
     }
 }
 
-/// The minimum allowed value of the Age Counter
-/// The Infants will start at age 4, which is equivalent to the age counter value of 16. This is to
-/// prevent frequent relocations during the beginning of a node's lifetime.
+/// The minimum allowed value of the Age Counter, equivalent to the minimum age of 4.
 pub const MIN_AGE_COUNTER: AgeCounter = AgeCounter(16);
+/// The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent
+/// relocations during the beginning of a node's lifetime.
 pub const MIN_AGE: u8 = 4;
 
 const MAX_INFANT_AGE: u32 = MIN_AGE as u32;

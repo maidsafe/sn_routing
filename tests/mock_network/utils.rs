@@ -616,6 +616,26 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
+/// Iterator over all nodes that belong to the given prefix.
+pub fn nodes_with_prefix<'a>(
+    nodes: &'a [TestNode],
+    prefix: &'a Prefix<XorName>,
+) -> impl Iterator<Item = &'a TestNode> {
+    nodes
+        .iter()
+        .filter(move |node| prefix.matches(&node.name()))
+}
+
+/// Mutable iterator over all nodes that belong to the given prefix.
+pub fn nodes_with_prefix_mut<'a>(
+    nodes: &'a mut [TestNode],
+    prefix: &'a Prefix<XorName>,
+) -> impl Iterator<Item = &'a mut TestNode> {
+    nodes
+        .iter_mut()
+        .filter(move |node| prefix.matches(&node.name()))
+}
+
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     let our_prefix = unwrap!(node.inner.our_prefix());
     let our_name = unwrap!(node.inner.our_name());
