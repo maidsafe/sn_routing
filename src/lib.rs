@@ -125,6 +125,7 @@ mod node;
 mod outbox;
 mod pause;
 mod peer_map;
+mod relocation;
 mod routing_message_filter;
 mod routing_table;
 mod signature_accumulator;

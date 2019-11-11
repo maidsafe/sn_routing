@@ -7,17 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod direct;
-mod relocate;
 
-pub use self::{
-    direct::{BootstrapResponse, DirectMessage, RelocatePayload, SignedDirectMessage},
-    relocate::{RelocateDetails, SignedRelocateDetails},
-};
+pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
+    relocation::RelocateDetails,
     routing_table::{Authority, Prefix},
     types::MessageId,
     xor_name::XorName,

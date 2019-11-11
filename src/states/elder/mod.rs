@@ -24,14 +24,14 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RelocateDetails,
-        RelocatePayload, RoutingMessage, SecurityMetadata, SignedRelocateDetails,
-        SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
+        SecurityMetadata, SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
+    relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
@@ -39,7 +39,6 @@ use crate::{
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    utils,
     xor_name::XorName,
     BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
@@ -1422,7 +1421,7 @@ impl Elder {
         relocated_name: &XorName,
         trigger_name: &XorName,
     ) -> XorName {
-        utils::compute_relocation_destination(relocated_name, trigger_name)
+        relocation::compute_destination(relocated_name, trigger_name)
     }
 }
 
@@ -1468,7 +1467,7 @@ impl Elder {
         self.dev_params
             .next_relocation_dst
             .take()
-            .unwrap_or_else(|| utils::compute_relocation_destination(relocated_name, trigger_name))
+            .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
     }
 }
 

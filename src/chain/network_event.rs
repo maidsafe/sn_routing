@@ -10,8 +10,8 @@ use super::{EldersInfo, Proof, SectionKeyInfo};
 use crate::{
     crypto::Digest256,
     id::{FullId, P2pNode, PublicId},
-    messages::RelocateDetails,
     parsec,
+    relocation::RelocateDetails,
     routing_table::Prefix,
     BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
 };

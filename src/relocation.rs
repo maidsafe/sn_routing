@@ -6,8 +6,17 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage};
-use crate::{id::PublicId, routing_table::Authority, xor_name::XorName};
+//! Relocation related types and utilities.
+
+use crate::{
+    crypto::{self, signing::Signature},
+    error::RoutingError,
+    id::{FullId, PublicId},
+    messages::{MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage},
+    routing_table::Authority,
+    xor_name::{XorName, XOR_NAME_LEN},
+};
+use maidsafe_utilities::serialisation::serialise;
 
 /// Details of a relocation: which node to relocate, where to relocate it to and what age it should
 /// get once relocated.
@@ -63,4 +72,47 @@ impl From<SignedRelocateDetails> for SignedRoutingMessage {
             details.security_metadata,
         )
     }
+}
+
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
+pub struct RelocatePayload {
+    pub details: SignedRelocateDetails,
+    /// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.
+    pub signature_of_new_id_with_old_id: Signature,
+}
+
+impl RelocatePayload {
+    pub fn new(
+        details: SignedRelocateDetails,
+        new_pub_id: &PublicId,
+        old_full_id: &FullId,
+    ) -> Result<Self, RoutingError> {
+        let new_id_serialised = serialise(new_pub_id)?;
+        let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
+
+        Ok(Self {
+            details,
+            signature_of_new_id_with_old_id,
+        })
+    }
+
+    pub fn verify_identity(&self, new_pub_id: &PublicId) -> bool {
+        let new_id_serialised = match serialise(new_pub_id) {
+            Ok(buf) => buf,
+            Err(_) => return false,
+        };
+
+        self.details
+            .content()
+            .pub_id
+            .verify(&new_id_serialised, &self.signature_of_new_id_with_old_id)
+    }
+}
+
+pub fn compute_destination(relocated_name: &XorName, trigger_name: &XorName) -> XorName {
+    let mut buffer = [0; 2 * XOR_NAME_LEN];
+    buffer[..XOR_NAME_LEN].copy_from_slice(&relocated_name.0);
+    buffer[XOR_NAME_LEN..].copy_from_slice(&trigger_name.0);
+
+    XorName(crypto::sha3_256(&buffer))
 }
