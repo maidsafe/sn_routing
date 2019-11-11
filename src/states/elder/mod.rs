@@ -855,9 +855,11 @@ impl Elder {
             return;
         };
 
-        let new_key_info = self.chain.get_their_keys_info().any(|(_, info)| {
-            *info.version() < *key_info.version() && info.prefix().is_compatible(key_info.prefix())
-        });
+        let new_key_info = self
+            .chain
+            .get_their_keys_info()
+            .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
+            .map_or(false, |(_, info)| *info.version() < *key_info.version());
 
         if new_key_info {
             self.vote_for_event(AccumulatingEvent::TheirKeyInfo(key_info.clone()));
