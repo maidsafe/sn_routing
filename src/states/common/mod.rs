@@ -22,7 +22,7 @@ pub(super) const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Development-only node data (used mainly for the mock-network tests).
 #[cfg(feature = "mock_base")]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DevParams {
     // Value which can be set in mock-network tests to be used as the next relocation
     // destination.
@@ -33,5 +33,5 @@ pub struct DevParams {
 }
 
 #[cfg(not(feature = "mock_base"))]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DevParams;

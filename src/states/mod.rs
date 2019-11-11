@@ -13,13 +13,12 @@ mod elder;
 mod joining_peer;
 
 pub use self::{
-    adult::Adult, bootstrapping_peer::BootstrappingPeer, elder::Elder, joining_peer::JoiningPeer,
+    adult::Adult, bootstrapping_peer::BootstrappingPeer, common::DevParams, elder::Elder,
+    joining_peer::JoiningPeer,
 };
 
 #[cfg(feature = "mock_base")]
-pub use self::{
-    bootstrapping_peer::BOOTSTRAP_TIMEOUT, common::DevParams, joining_peer::JOIN_TIMEOUT,
-};
+pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT};
 
 //
 // # The state machine
@@ -30,23 +29,23 @@ pub use self::{
 //      ┌───────────────┐
 //      │ Bootstrapping │──────────┐
 //      └───────────────┘          │
-//              ▲     ▲            │
-//              │     │            │
-//              │     │            ▼
-//              │     │          ┌─────────────┐
-//              │     └──────────│ JoiningNode │
-//              │                └─────────────┘
-//              │                  │
-//              │                  │
-//              │                  ▼
-//              │                ┌───────┐
-//              └────────────────│ Adult │
-//                               └───────┘
-//                                 │
-//                                 │
-//                                 ▼
-//                               ┌───────┐
-//                               │ Elder │
+//        ▲     ▲     ▲            │
+//        │     │     │            │
+//        │     │     │            ▼
+//        │     │     │          ┌─────────────┐
+//        │     │     └──────────│ JoiningNode │
+//        │     │                └─────────────┘
+//        │     │                  │
+//        │     │                  │
+//        │     │                  ▼
+//        │     │                ┌───────┐
+//        │     └────────────────│ Adult │
+//        │                      └───────┘
+//        │                        │
+//        │                        │
+//        │                        ▼
+//        │                      ┌───────┐
+//        └──────────────────────│ Elder │
 //                               └───────┘
 //
 //

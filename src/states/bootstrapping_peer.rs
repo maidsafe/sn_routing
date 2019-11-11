@@ -424,14 +424,13 @@ mod tests {
     // Check that losing our proxy connection while in the `BootstrappingPeer` state doesn't stall
     // and instead triggers a re-bootstrap attempt..
     fn lose_proxy_connection() {
-        let network_cfg = if cfg!(feature = "mock_base") {
-            NetworkParams {
-                elder_size: 7,
-                safe_section_size: 30,
-            }
-        } else {
-            Default::default()
+        let mut network_cfg = NetworkParams::default();
+
+        if cfg!(feature = "mock_base") {
+            network_cfg.elder_size = 7;
+            network_cfg.safe_section_size = 30;
         };
+
         let network = Network::new(Default::default(), None);
 
         // Start a bare-bones network service.

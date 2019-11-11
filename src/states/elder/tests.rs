@@ -313,7 +313,12 @@ fn new_elder_state(
     let public_id = *full_id.public_id();
 
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
-    let chain = Chain::new(Default::default(), public_id, gen_pfx_info.clone());
+    let chain = Chain::new(
+        Default::default(),
+        Default::default(),
+        public_id,
+        gen_pfx_info.clone(),
+    );
     let peer_map = PeerMap::new();
 
     let details = ElderDetails {
@@ -329,7 +334,6 @@ fn new_elder_state(
         peer_map,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,
-        dev_params: DevParams::default(),
     };
 
     let section_info = gen_pfx_info.first_info.clone();

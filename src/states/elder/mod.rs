@@ -72,7 +72,6 @@ pub struct ElderDetails {
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
-    pub dev_params: DevParams,
 }
 
 pub struct Elder {
@@ -97,7 +96,6 @@ pub struct Elder {
     pfx_is_successfully_polled: bool,
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
-    dev_params: DevParams,
 }
 
 impl Elder {
@@ -120,7 +118,12 @@ impl Elder {
             latest_info: EldersInfo::default(),
         };
         let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
-        let chain = Chain::new(network_cfg, public_id, gen_pfx_info.clone());
+        let chain = Chain::new(
+            network_cfg,
+            DevParams::default(),
+            public_id,
+            gen_pfx_info.clone(),
+        );
         let peer_map = PeerMap::new();
 
         let details = ElderDetails {
@@ -136,7 +139,6 @@ impl Elder {
             peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
-            dev_params: DevParams::default(),
         };
 
         let node = Self::new(details, true, Default::default());
@@ -191,7 +193,6 @@ impl Elder {
                 peer_map: state.peer_map,
                 routing_msg_filter: state.msg_filter,
                 timer,
-                dev_params: DevParams::default(),
             },
             false,
             state.sig_accumulator,
@@ -210,7 +211,7 @@ impl Elder {
             self.timer,
             conn_infos,
             details,
-            self.dev_params,
+            self.chain.dev_params().clone(),
         )))
     }
 
@@ -242,7 +243,6 @@ impl Elder {
             chain: details.chain,
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
-            dev_params: details.dev_params,
         }
     }
 
@@ -455,13 +455,6 @@ impl Elder {
     }
 
     fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
-        // Clear any relocation overrides
-        #[cfg(feature = "mock_base")]
-        {
-            self.dev_params.next_relocation_dst = None;
-            self.dev_params.next_relocation_interval = None;
-        }
-
         let reset_data = self.chain.finalise_prefix_change()?;
         self.reset_parsec_with_data(reset_data)
     }
@@ -1206,11 +1199,11 @@ impl Base for Elder {
     }
 
     fn dev_params(&self) -> &DevParams {
-        &self.dev_params
+        self.chain.dev_params()
     }
 
     fn dev_params_mut(&mut self) -> &mut DevParams {
-        &mut self.dev_params
+        self.chain.dev_params_mut()
     }
 
     fn peer_map(&self) -> &PeerMap {
@@ -1496,7 +1489,7 @@ impl Elder {
         relocated_name: &XorName,
         trigger_name: &XorName,
     ) -> XorName {
-        self.dev_params
+        self.dev_params_mut()
             .next_relocation_dst
             .take()
             .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))

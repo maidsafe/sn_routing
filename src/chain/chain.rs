@@ -16,6 +16,7 @@ use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     routing_table::{Authority, Error},
+    states::DevParams,
     utils::LogIdent,
     BlsPublicKeySet, ConnectionInfo, Prefix, XorName, Xorable, ELDER_SIZE, SAFE_SECTION_SIZE,
 };
@@ -63,6 +64,8 @@ impl Default for NetworkParams {
 pub struct Chain {
     /// Network parameters
     network_cfg: NetworkParams,
+    /// Development/testing configuration.
+    dev_params: DevParams,
     /// This node's public ID.
     our_id: PublicId,
     /// The shared state of the section.
@@ -114,11 +117,17 @@ impl Chain {
     }
 
     /// Create a new chain given genesis information
-    pub fn new(network_cfg: NetworkParams, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
+    pub fn new(
+        network_cfg: NetworkParams,
+        dev_params: DevParams,
+        our_id: PublicId,
+        gen_info: GenesisPfxInfo,
+    ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.members().contains(&our_id);
         Self {
             network_cfg,
+            dev_params,
             our_id,
             state: SharedState::new(gen_info.first_info, gen_info.first_ages),
             is_elder,
@@ -514,6 +523,13 @@ impl Chain {
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
     /// cached and currently accumulated events.
     pub fn finalise_prefix_change(&mut self) -> Result<ParsecResetData, RoutingError> {
+        // Clear any relocation overrides
+        #[cfg(feature = "mock_base")]
+        {
+            self.dev_params.next_relocation_dst = None;
+            self.dev_params.next_relocation_interval = None;
+        }
+
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
         self.state.change = PrefixChange::None;
@@ -1325,6 +1341,14 @@ impl Chain {
     pub fn finalise_relocation(&mut self) {
         self.churn_in_progress = false;
     }
+
+    pub fn dev_params(&self) -> &DevParams {
+        &self.dev_params
+    }
+
+    pub fn dev_params_mut(&mut self) -> &mut DevParams {
+        &mut self.dev_params
+    }
 }
 
 /// The outcome of a prefix change.
@@ -1567,7 +1591,12 @@ mod tests {
             latest_info: Default::default(),
         };
 
-        let mut chain = Chain::new(Default::default(), *our_id.public_id(), genesis_info);
+        let mut chain = Chain::new(
+            Default::default(),
+            Default::default(),
+            *our_id.public_id(),
+            genesis_info,
+        );
 
         for neighbour_info in sections_iter {
             let proofs = gen_proofs(&full_ids, &our_members, &neighbour_info);
