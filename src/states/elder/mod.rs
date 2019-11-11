@@ -32,7 +32,7 @@ use crate::{
     parsec::{self, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
@@ -1119,53 +1119,20 @@ impl Elder {
         self.chain.our_prefix()
     }
 
-    fn trigger_relocation(
-        &mut self,
-        pub_id: PublicId,
-        trigger_name: &XorName,
-    ) -> Result<(), RoutingError> {
-        if self.chain.is_peer_our_elder(&pub_id) {
+    fn trigger_relocation(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+        if self.chain.is_peer_our_elder(&details.pub_id) {
             let num_elders = self.chain.our_elders().len();
             if num_elders <= self.chain.elder_size() {
                 debug!(
                     "{} - Not relocating {} - not enough elders in the section ({}/{}).",
                     self,
-                    pub_id,
+                    details.pub_id,
                     num_elders,
                     self.chain.elder_size() + 1,
                 );
                 return Ok(());
             }
         }
-
-        let age = if let Some(info) = self.chain.get_member(&pub_id) {
-            info.age()
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Cannot trigger relocation of {}: unknown peer.",
-                self,
-                pub_id
-            );
-            return Err(RoutingError::PeerNotFound(pub_id));
-        };
-
-        let destination = self.compute_relocation_destination(pub_id.name(), trigger_name);
-        if self.chain.our_prefix().matches(&destination) {
-            trace!(
-                "{} - Not relocating {} - destination {} is within the current section.",
-                self,
-                pub_id,
-                destination,
-            );
-            return Ok(());
-        }
-
-        let details = RelocateDetails {
-            pub_id,
-            destination,
-            age,
-        };
 
         if self.chain.is_churn_in_progress() {
             self.relocate_backlog.push_front(details);
@@ -1439,17 +1406,6 @@ impl Base for Elder {
     }
 }
 
-#[cfg(not(feature = "mock_base"))]
-impl Elder {
-    fn compute_relocation_destination(
-        &self,
-        relocated_name: &XorName,
-        trigger_name: &XorName,
-    ) -> XorName {
-        relocation::compute_destination(relocated_name, trigger_name)
-    }
-}
-
 #[cfg(feature = "mock_base")]
 impl Elder {
     pub fn chain(&self) -> &Chain {
@@ -1482,17 +1438,6 @@ impl Elder {
         message: Message,
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
-    }
-
-    fn compute_relocation_destination(
-        &mut self,
-        relocated_name: &XorName,
-        trigger_name: &XorName,
-    ) -> XorName {
-        self.dev_params_mut()
-            .next_relocation_dst
-            .take()
-            .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
     }
 }
 
@@ -1535,12 +1480,12 @@ impl Approved for Elder {
 
         self.chain.add_member(payload.p2p_node.clone(), payload.age);
 
-        let relocate_ids = self
+        let relocate_details = self
             .chain
             .increment_age_counters(payload.p2p_node.public_id());
 
-        for relocate_id in relocate_ids {
-            self.trigger_relocation(relocate_id, payload.p2p_node.name())?;
+        for details in relocate_details {
+            self.trigger_relocation(details)?;
         }
         self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
 
@@ -1576,12 +1521,12 @@ impl Approved for Elder {
 
         info!("{} - handle Offline: {}.", self, pub_id);
 
-        let relocate_ids = self.chain.increment_age_counters(&pub_id);
+        let relocate_details = self.chain.increment_age_counters(&pub_id);
 
         self.chain.remove_member(&pub_id);
 
-        for relocate_id in relocate_ids {
-            self.trigger_relocation(relocate_id, pub_id.name())?;
+        for details in relocate_details {
+            self.trigger_relocation(details)?;
         }
 
         self.disconnect(&pub_id);

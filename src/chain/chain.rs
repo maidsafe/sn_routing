@@ -16,6 +16,7 @@ use super::{
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
+    relocation::{self, RelocateDetails},
     routing_table::{Authority, Error},
     utils::LogIdent,
     BlsPublicKeySet, ConnectionInfo, Prefix, XorName, Xorable,
@@ -313,8 +314,9 @@ impl Chain {
         Ok(Some(AccumulatedEvent::new(event)))
     }
 
-    // Increment the age counters of the members. Returns ids of the members whose age increased.
-    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) -> Vec<PublicId> {
+    // Increment the age counters of the members. Returns the relocation details of the nodes that
+    // need to be relocated.
+    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) -> Vec<RelocateDetails> {
         if self.state.our_joined_members().count() >= self.safe_section_size()
             && self
                 .state
@@ -326,16 +328,29 @@ impl Chain {
             return vec![];
         }
 
+        let our_prefix = *self.state.our_prefix();
+        let dev_params = &mut self.dev_params;
+
         self.state
             .our_joined_members_mut()
             .filter(|(pub_id, _)| *pub_id != trigger_node)
             .filter_map(|(pub_id, member)| {
                 if member.increment_age_counter() {
-                    Some(*pub_id)
+                    Some((*pub_id, member.age()))
                 } else {
                     None
                 }
             })
+            .map(|(pub_id, age)| {
+                let destination =
+                    compute_relocation_destination(pub_id.name(), trigger_node.name(), dev_params);
+                RelocateDetails {
+                    pub_id,
+                    destination,
+                    age: age + 1,
+                }
+            })
+            .filter(|details| !our_prefix.matches(&details.destination))
             .collect()
     }
 
@@ -559,14 +574,6 @@ impl Chain {
             .get(pub_id)
             .map(|info| info.state == MemberState::Joined)
             .unwrap_or(false)
-    }
-
-    /// Get info about a member of our section.
-    pub fn get_member(&self, pub_id: &PublicId) -> Option<&MemberInfo> {
-        self.state
-            .our_members
-            .get(pub_id)
-            .filter(|info| info.state == MemberState::Joined)
     }
 
     /// Returns the `ConnectioInfo` for a member of our section.
@@ -1451,6 +1458,27 @@ impl Chain {
     pub fn validate_our_history(&self) -> bool {
         self.state.our_history.validate()
     }
+}
+
+#[cfg(not(feature = "mock_base"))]
+fn compute_relocation_destination(
+    relocated_name: &XorName,
+    trigger_name: &XorName,
+    _dev_params: &mut DevParams,
+) -> XorName {
+    relocation::compute_destination(relocated_name, trigger_name)
+}
+
+#[cfg(feature = "mock_base")]
+fn compute_relocation_destination(
+    relocated_name: &XorName,
+    trigger_name: &XorName,
+    dev_params: &mut DevParams,
+) -> XorName {
+    dev_params
+        .next_relocation_dst
+        .take()
+        .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
 }
 
 #[cfg(test)]
