@@ -370,7 +370,21 @@ impl Chain {
             return None;
         }
 
-        let details = self.state.relocate_queue.pop_back()?;
+        let details = loop {
+            if let Some(details) = self.state.relocate_queue.pop_back() {
+                if self.is_peer_our_member(&details.pub_id) {
+                    break details;
+                } else {
+                    trace!(
+                        "{} - Not relocating {} - not a member",
+                        self,
+                        details.pub_id
+                    );
+                }
+            } else {
+                return None;
+            }
+        };
 
         if self.is_peer_our_elder(&details.pub_id) {
             let num_elders = self.our_elders().len();
