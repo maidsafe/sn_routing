@@ -641,8 +641,8 @@ impl Chain {
             .any(|info| info.members().contains(pub_id))
     }
 
-    /// Returns elders from our own section, including ourselves.
-    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
+    /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
+    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
         self.state.our_info().p2p_members().iter()
     }
 

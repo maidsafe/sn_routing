@@ -80,8 +80,8 @@ pub struct Elder {
     network_service: NetworkService,
     full_id: FullId,
     is_first_node: bool,
-    /// The queue of routing messages addressed to us. These do not themselves need forwarding,
-    /// although they may wrap a message which needs forwarding.
+    // The queue of routing messages addressed to us. These do not themselves need forwarding,
+    // although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<SignedRoutingMessage>,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
@@ -95,7 +95,7 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
-    /// Peers we will disconnect from in the future.
+    // Peers we will disconnect from in the future.
     delayed_disconnects: HashMap<u64, PublicId>,
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
@@ -819,19 +819,11 @@ impl Elder {
             let age = details.content().age;
             let message = SignedRoutingMessage::from(details);
 
-            if let Err(err) = message.check_integrity() {
-                debug!(
-                    "{} - Ignoring relocation JoinRequest from {} - invalid integrity of {:?}: {:?}.",
-                    self, pub_id, message, err
-                );
+            if self.check_signed_message_integrity(&message).is_err() {
                 return;
             }
 
-            if !message.check_trust(&self.chain) {
-                debug!(
-                    "{} - Ignoring relocation JoinRequest from {} - untrusted {:?}.",
-                    self, pub_id, message,
-                );
+            if self.check_signed_message_trust(&message).is_err() {
                 return;
             }
 
@@ -851,16 +843,8 @@ impl Elder {
         payload: RelocateDetails,
         security_metadata: SecurityMetadata,
     ) -> Transition {
-        if self.chain.our_prefix().matches(&payload.destination) {
-            debug!(
-                "{} - Ignoring Relocate message - already at the destination.",
-                self
-            );
-            return Transition::Stay;
-        }
-
         debug!(
-            "{} - Received Relocate message - rebootstrapping to join the new section at {}.",
+            "{} - Received Relocate message to join the section at {}.",
             self, payload.destination
         );
 
@@ -1120,6 +1104,20 @@ impl Elder {
     }
 
     fn trigger_relocation(&mut self, pub_id: PublicId, trigger_name: &XorName) {
+        if self.chain.is_peer_our_elder(&pub_id) {
+            let num_elders = self.chain.our_elders().len();
+            if num_elders <= self.chain.elder_size() {
+                debug!(
+                    "{} - Not relocating {} - not enough elders in the section ({}/{}).",
+                    self,
+                    pub_id,
+                    num_elders,
+                    self.chain.elder_size() + 1,
+                );
+                return;
+            }
+        }
+
         let age = if let Some(info) = self.chain.get_member(&pub_id) {
             info.age()
         } else {
@@ -1135,13 +1133,15 @@ impl Elder {
         let destination = self.compute_relocation_destination(pub_id.name(), trigger_name);
         if self.chain.our_prefix().matches(&destination) {
             trace!(
-                "{} - Ignoring relocation of {} - destination {} is within the current section.",
+                "{} - Not relocating {} - destination {} is within the current section.",
                 self,
                 pub_id,
                 destination,
             );
             return;
         }
+
+        debug!("{} - Relocating {}", self, pub_id);
 
         self.vote_for_event(AccumulatingEvent::Relocate(RelocateDetails {
             pub_id,
@@ -1664,14 +1664,6 @@ impl Approved for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Relocate: {:?}.", self, payload);
-
-        if self.chain.our_prefix().matches(&payload.destination) {
-            debug!(
-                "{} - ignoring Relocate event - destination already in our section.",
-                self
-            );
-            return Ok(());
-        }
 
         let pub_id = payload.pub_id;
 

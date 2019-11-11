@@ -345,11 +345,6 @@ impl Node {
         self.chain().map(Chain::our_prefix)
     }
 
-    /// Our `XorName`.
-    pub fn our_name(&self) -> Option<&XorName> {
-        self.chain().map(|chain| chain.our_id().name())
-    }
-
     /// Returns the prefixes of all out neighbours signed by our section
     pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         if let Some(chain) = self.chain() {

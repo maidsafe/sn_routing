@@ -484,6 +484,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
         &network,
         &mut nodes,
         &[small_prefix],
+        ChurnOptions::default(),
     )
     .first());
 

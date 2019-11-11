@@ -7,9 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
+    add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split_with_options,
     current_sections, nodes_with_prefix, nodes_with_prefix_mut, poll_and_resend_with_options,
-    PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    ChurnOptions, PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{Rand, Rng};
 use routing::{
@@ -17,6 +17,8 @@ use routing::{
 };
 use std::{iter, slice};
 
+// These params are selected such that there can be a section size which allows relocation and at the same time
+// allows churn to happen which doesn't trigger split.
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
     elder_size: LOWERED_ELDER_SIZE,
     safe_section_size: LOWERED_ELDER_SIZE + 3,
@@ -26,7 +28,13 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 fn relocate_without_split() {
     let network = Network::new(NETWORK_PARAMS, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let mut nodes = create_connected_nodes_until_split_with_options(
+        &network,
+        vec![1, 1],
+        ChurnOptions {
+            suppress_relocation: true,
+        },
+    );
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
 
@@ -68,7 +76,13 @@ fn relocate_causing_split() {
     // Relocate node into a section which is one node shy of splitting.
     let network = Network::new(NETWORK_PARAMS, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let mut nodes = create_connected_nodes_until_split_with_options(
+        &network,
+        vec![1, 1],
+        ChurnOptions {
+            suppress_relocation: true,
+        },
+    );
     let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
@@ -79,6 +93,9 @@ fn relocate_causing_split() {
         &network,
         &mut nodes,
         slice::from_ref(&target_prefix),
+        ChurnOptions {
+            suppress_relocation: true,
+        },
     );
 
     let destination = target_prefix.substituted_in(rng.gen());
@@ -118,7 +135,13 @@ fn relocate_during_split() {
     // Relocate node into a section which is undergoing split.
     let network = Network::new(NETWORK_PARAMS, None);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let mut nodes = create_connected_nodes_until_split_with_options(
+        &network,
+        vec![1, 1],
+        ChurnOptions {
+            suppress_relocation: true,
+        },
+    );
     let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
@@ -129,6 +152,9 @@ fn relocate_during_split() {
         &network,
         &mut nodes,
         slice::from_ref(&target_prefix),
+        ChurnOptions {
+            suppress_relocation: true,
+        },
     );
 
     let destination = target_prefix.substituted_in(rng.gen());
@@ -165,6 +191,8 @@ fn relocate_during_split() {
 // Age counter of the oldest node in the network assuming no nodes were removed or relocated - only
 // added.
 fn oldest_age_counter_after_only_adds(nodes: &[TestNode]) -> usize {
+    // 2^MIN_AGE is the starting value of the age counter.
+    // There is at most `safe_section_size - 2` churn events that cause age counter bumps.
     2usize.pow(u32::from(MIN_AGE)) + (nodes.len() - 1).min(NETWORK_PARAMS.safe_section_size - 2)
 }
 
@@ -252,7 +280,7 @@ fn section_churn(
                 poll_and_resend_with_options(
                     nodes,
                     PollOptions::default()
-                        .stop_if(|nodes| node_joined(nodes, nodes.len() - 1))
+                        .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1))
                         .fire_join_timeout(false),
                 );
             }
@@ -261,7 +289,7 @@ fn section_churn(
                 poll_and_resend_with_options(
                     nodes,
                     PollOptions::default()
-                        .stop_if(move |nodes| node_left(nodes, &id))
+                        .continue_if(move |nodes| !node_left(nodes, &id))
                         .fire_join_timeout(false),
                 );
             }

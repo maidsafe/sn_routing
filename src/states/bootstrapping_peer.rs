@@ -366,7 +366,7 @@ impl Base for BootstrappingPeer {
                 Ok(Transition::Stay)
             }
             _ => {
-                debug!("{} - Unhandled direct message: {:?}", self, msg);
+                trace!("{} - Unhandled direct message: {:?}", self, msg);
                 Ok(Transition::Stay)
             }
         }
@@ -377,7 +377,7 @@ impl Base for BootstrappingPeer {
         msg: HopMessage,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        debug!("{} - Unhandled hop message: {:?}", self, msg);
+        trace!("{} - Unhandled hop message: {:?}", self, msg);
         Ok(Transition::Stay)
     }
 
