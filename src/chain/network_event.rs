@@ -198,6 +198,27 @@ pub struct AccumulatedEvent {
     pub signature: Option<BlsSignature>,
 }
 
+impl AccumulatedEvent {
+    pub fn new(content: AccumulatingEvent) -> Self {
+        Self {
+            content,
+            neighbour_change: EldersChange::default(),
+            signature: None,
+        }
+    }
+
+    pub fn with_signature(self, signature: Option<BlsSignature>) -> Self {
+        Self { signature, ..self }
+    }
+
+    pub fn with_neighbour_change(self, neighbour_change: EldersChange) -> Self {
+        Self {
+            neighbour_change,
+            ..self
+        }
+    }
+}
+
 impl Debug for AccumulatedEvent {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "AccumulatedEvent({:?})", self.content)

@@ -84,6 +84,7 @@ pub struct Elder {
     msg_queue: VecDeque<SignedRoutingMessage>,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    relocate_backlog: VecDeque<RelocateDetails>,
     peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
@@ -229,6 +230,7 @@ impl Elder {
             msg_queue: details.msg_queue,
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
+            relocate_backlog: VecDeque::new(),
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
@@ -903,6 +905,13 @@ impl Elder {
         self.vote_for_network_event(event.into_network_event())
     }
 
+    fn vote_for_relocate(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+        trace!("{} - Relocating {}", self, details.pub_id);
+
+        self.chain.begin_relocation();
+        self.vote_for_signed_event(details)
+    }
+
     fn vote_for_signed_event<T: IntoAccumulatingEvent + Serialize>(
         &mut self,
         payload: T,
@@ -1100,11 +1109,6 @@ impl Elder {
             return false;
         }
 
-        // TODO: signature check temporarily disabled. We need to modify the way we build the proof
-        // chain so its latest block corresponds to the time when the `Relocate` event got
-        // accumulated and not when it gets handled (they might be different due to churn
-        // backlogging).
-        /*
         if !details.verify() {
             log_or_panic!(
                 LogLevel::Error,
@@ -1114,7 +1118,6 @@ impl Elder {
             );
             return false;
         }
-        */
 
         true
     }
@@ -1194,13 +1197,18 @@ impl Elder {
             return Ok(());
         }
 
-        trace!("{} - Relocating {}", self, pub_id);
-
-        self.vote_for_signed_event(RelocateDetails {
+        let details = RelocateDetails {
             pub_id,
             destination,
             age,
-        })
+        };
+
+        if self.chain.is_churn_in_progress() {
+            self.relocate_backlog.push_front(details);
+            Ok(())
+        } else {
+            self.vote_for_relocate(details)
+        }
     }
 }
 
@@ -1659,6 +1667,12 @@ impl Approved for Elder {
             });
 
             self.send_neighbour_infos();
+
+            if !self.chain.is_churn_in_progress() {
+                if let Some(details) = self.relocate_backlog.pop_back() {
+                    self.vote_for_relocate(details)?;
+                }
+            }
         }
 
         let _ = self.merge_if_necessary();
@@ -1718,6 +1732,7 @@ impl Approved for Elder {
             self.send_direct_message(&conn_info, message);
         }
 
+        self.chain.finalise_relocation();
         self.remove_member(pub_id, false, outbox)
     }
 }

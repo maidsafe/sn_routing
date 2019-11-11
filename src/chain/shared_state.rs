@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatedEvent, AccumulatingProof, AgeCounter,
+    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingEvent, AccumulatingProof, AgeCounter,
     EldersInfo, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
@@ -60,7 +60,7 @@ pub struct SharedState {
     /// Recent keys removed from their_keys
     pub their_recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
     /// Backlog of completed events that need to be processed when churn completes.
-    pub churn_event_backlog: VecDeque<AccumulatedEvent>,
+    pub churn_event_backlog: VecDeque<AccumulatingEvent>,
 }
 
 impl SharedState {

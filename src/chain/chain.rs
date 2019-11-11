@@ -209,10 +209,10 @@ impl Chain {
                 trace!(
                     "{} churn backlog poll {:?}, Others: {:?}",
                     self,
-                    event.content,
+                    event,
                     self.state.churn_event_backlog
                 );
-                return Ok(Some(event));
+                return Ok(Some(AccumulatedEvent::new(event)));
             }
         }
 
@@ -258,11 +258,9 @@ impl Chain {
                         .collect(),
                 };
 
-                return Ok(Some(AccumulatedEvent {
-                    content: event,
-                    neighbour_change,
-                    signature: None,
-                }));
+                return Ok(Some(
+                    AccumulatedEvent::new(event).with_neighbour_change(neighbour_change),
+                ));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
                 self.update_their_keys(key_info);
@@ -294,45 +292,34 @@ impl Chain {
                 // TODO: remove once we have real integration tests of `ParsecPrune` accumulating.
                 self.parsec_prune_accumulated += 1;
             }
+            AccumulatingEvent::Relocate(_) => {
+                let signature = proofs.combine_signatures(&self.public_key_set());
+                return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
+            }
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
         let start_churn_event = match event {
-            AccumulatingEvent::Online(_)
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::Relocate(_) => true,
+            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
             _ => false,
-        };
-
-        let signature = if let AccumulatingEvent::Relocate(_) = event {
-            proofs.combine_signatures(&self.public_key_set())
-        } else {
-            None
-        };
-
-        let event = AccumulatedEvent {
-            content: event,
-            neighbour_change: EldersChange::default(),
-            signature,
         };
 
         if start_churn_event && self.churn_in_progress {
             trace!(
                 "{} churn backlog {:?}, Other: {:?}",
                 self,
-                event.content,
+                event,
                 self.state.churn_event_backlog
             );
             self.state.churn_event_backlog.push_front(event);
             return Ok(None);
         }
 
-        Ok(Some(event))
+        Ok(Some(AccumulatedEvent::new(event)))
     }
 
     // Increment the age counters of the members. Returns ids of the members whose age increased.
@@ -1409,6 +1396,18 @@ impl Chain {
                 label,
             );
         }
+    }
+
+    pub fn is_churn_in_progress(&self) -> bool {
+        self.churn_in_progress
+    }
+
+    pub fn begin_relocation(&mut self) {
+        self.churn_in_progress = true;
+    }
+
+    pub fn finalise_relocation(&mut self) {
+        self.churn_in_progress = false;
     }
 }
 
