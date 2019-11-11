@@ -13,7 +13,6 @@ use crate::ConnectionInfo;
 pub struct AgeCounter(u32);
 
 impl AgeCounter {
-    #[cfg(any(test, feature = "mock_base"))]
     pub fn age(self) -> u8 {
         f64::from(self.0).log2() as u8
     }
@@ -24,8 +23,14 @@ impl AgeCounter {
         self.0 = 2u32.pow(u32::from(age.max(MIN_AGE)))
     }
 
-    pub fn increment(&mut self) {
-        self.0 = self.0.saturating_add(1);
+    /// Increment the counter and return whether the age increased.
+    pub fn increment(&mut self) -> bool {
+        if let Some(new_value) = self.0.checked_add(1) {
+            self.0 = new_value;
+            self.0.is_power_of_two()
+        } else {
+            false
+        }
     }
 }
 
@@ -52,7 +57,6 @@ pub struct MemberInfo {
 }
 
 impl MemberInfo {
-    #[cfg(feature = "mock_base")]
     pub fn age(&self) -> u8 {
         self.age_counter.age()
     }
@@ -61,8 +65,9 @@ impl MemberInfo {
         self.age_counter.set_age(age)
     }
 
-    pub fn increase_age(&mut self) {
-        self.age_counter.increment();
+    // Increment the age counter and return whether the age increased.
+    pub fn increment_age_counter(&mut self) -> bool {
+        self.age_counter.increment()
     }
 
     pub fn is_mature(&self) -> bool {
@@ -109,10 +114,12 @@ mod tests {
         let mut age_counter = AgeCounter::default();
 
         for age in MIN_AGE..16 {
-            for _ in 0..2u32.pow(u32::from(age)) {
+            for _ in 0..2u32.pow(u32::from(age)) - 1 {
                 assert_eq!(age_counter.age(), age);
-                age_counter.increment();
+                assert!(!age_counter.increment());
             }
+
+            assert!(age_counter.increment());
         }
     }
 }

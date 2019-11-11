@@ -41,7 +41,7 @@ use crate::{
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    utils::XorTargetInterval,
+    utils::{self, XorTargetInterval},
     xor_name::XorName,
     BlsPublicKeySet, ConnectionInfo, NetworkService,
 };
@@ -1118,36 +1118,34 @@ impl Elder {
         self.chain.our_prefix()
     }
 
-    fn remove_member(
-        &mut self,
-        pub_id: PublicId,
-        disconnect_time: DisconnectTime,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        self.chain.remove_member(&pub_id);
+    fn trigger_relocation(&mut self, pub_id: PublicId, trigger_name: &XorName) {
+        let age = if let Some(info) = self.chain.get_member(&pub_id) {
+            info.age()
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Cannot trigger relocation of {}: unknown peer.",
+                self,
+                pub_id
+            );
+            return;
+        };
 
-        match disconnect_time {
-            DisconnectTime::Now => {
-                self.disconnect(&pub_id);
-            }
-            DisconnectTime::Later => {
-                let token = self.timer.schedule(RELOCATE_DISCONNECT_TIMEOUT);
-                let _ = self.delayed_disconnects.insert(token, pub_id);
-            }
+        let destination = utils::compute_relocation_destination(pub_id.name(), trigger_name);
+        if self.chain.our_prefix().matches(&destination) {
+            trace!(
+                "{} - Ignoring relocation of {} - destination is within the current section.",
+                self,
+                pub_id
+            );
+            return;
         }
 
-        // Temporarily behave as if RemoveElder accumulated simultaneously
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-
-        let self_info = self.chain.remove_elder(pub_id)?;
-
-        let participants = self_info.members();
-        let _ = self.dkg_cache.insert(participants.clone(), self_info);
-        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-        Ok(())
+        self.vote_for_event(AccumulatingEvent::Relocate(RelocateDetails {
+            pub_id,
+            destination,
+            age,
+        }))
     }
 }
 
@@ -1448,26 +1446,6 @@ impl Elder {
     ) {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
-
-    pub fn trigger_relocation(&mut self, pub_id: PublicId, destination: XorName) {
-        let age = if let Some(info) = self.chain.get_member(&pub_id) {
-            info.age() + 1
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Cannot trigger relocation of {}: unknown peer.",
-                self,
-                pub_id
-            );
-            return;
-        };
-
-        self.vote_for_event(AccumulatingEvent::Relocate(RelocateDetails {
-            pub_id,
-            destination,
-            age,
-        }))
-    }
 }
 
 impl Approved for Elder {
@@ -1507,7 +1485,9 @@ impl Approved for Elder {
 
         info!("{} - handle Online: {:?}.", self, payload);
 
-        self.chain.add_member(payload.p2p_node.clone(), payload.age);
+        for id_to_relocate in self.chain.add_member(payload.p2p_node.clone(), payload.age) {
+            self.trigger_relocation(id_to_relocate, payload.p2p_node.name());
+        }
         self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
 
         // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
@@ -1536,7 +1516,23 @@ impl Approved for Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-        self.remove_member(pub_id, DisconnectTime::Now, outbox)?;
+        
+        for id_to_relocate in self.chain.remove_member(&pub_id) {
+            self.trigger_relocation(id_to_relocate, pub_id.name());
+        }
+
+        self.disconnect(&pub_id);
+
+        // Temporarily behave as if RemoveElder accumulated simultaneously
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+
+        let self_info = self.chain.remove_elder(pub_id)?;
+
+        let participants = self_info.members();
+        let _ = self.dkg_cache.insert(participants.clone(), self_info);
+        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }
@@ -1659,8 +1655,19 @@ impl Approved for Elder {
             content: MessageContent::Relocate(payload),
         })?;
 
+        // Do not trigger further relocation to prevent relocation cascade.
+        let _ = self.chain.remove_member(&pub_id);
+
         // Delay the disconnect, to give the peer chance to receive the `Relocate` message.
-        self.remove_member(pub_id, DisconnectTime::Later, outbox)?;
+        let token = self.timer.schedule(RELOCATE_DISCONNECT_TIMEOUT);
+        let _ = self.delayed_disconnects.insert(token, pub_id);
+
+        // Temporarily behave as if RemoveElder accumulated simultaneously
+        info!("{} - handle RemoveElder: {}.", self, pub_id);
+        let self_info = self.chain.remove_elder(pub_id)?;
+        self.vote_for_section_info(self_info)?;
+
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }
@@ -1687,9 +1694,4 @@ fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingErro
         );
         err
     })
-}
-
-enum DisconnectTime {
-    Now,
-    Later,
 }

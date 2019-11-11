@@ -240,6 +240,13 @@ impl SharedState {
             .filter(|(_, member)| member.state == MemberState::Joined)
     }
 
+    /// Returns mutable iterator over the members that have state == `Joined`.
+    pub fn our_joined_members_mut(&mut self) -> impl Iterator<Item = (&PublicId, &mut MemberInfo)> {
+        self.our_members
+            .iter_mut()
+            .filter(|(_, member)| member.state == MemberState::Joined)
+    }
+
     /// Returns the current persona corresponding to the given PublicId or `None` if such a member
     /// doesn't exist
     pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {

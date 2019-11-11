@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_name::XorName;
+use crate::{
+    crypto,
+    xor_name::{XorName, XOR_NAME_LEN},
+};
 #[cfg(any(test, feature = "mock_base"))]
 use maidsafe_utilities::SeededRng;
 use rand::{OsRng, Rng};
@@ -80,6 +83,14 @@ impl Into<RangeInclusive<XorName>> for XorTargetInterval {
     fn into(self) -> RangeInclusive<XorName> {
         RangeInclusive::new(self.0, self.1)
     }
+}
+
+pub fn compute_relocation_destination(relocated_name: &XorName, trigger_name: &XorName) -> XorName {
+    let mut buffer = [0; 2 * XOR_NAME_LEN];
+    buffer[..XOR_NAME_LEN].copy_from_slice(&relocated_name.0);
+    buffer[XOR_NAME_LEN..].copy_from_slice(&trigger_name.0);
+
+    XorName(crypto::sha3_256(&buffer))
 }
 
 #[cfg(any(test, feature = "mock_base"))]

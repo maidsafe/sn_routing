@@ -450,7 +450,7 @@ impl Approved for Adult {
         }
 
         info!("{} - handle Online: {:?}.", self, payload);
-        self.chain.add_member(payload.p2p_node, payload.age);
+        let _ = self.chain.add_member(payload.p2p_node, payload.age);
 
         // Simulate handling AddElder as well
         info!("{} - handle AddElder: {}.", self, pub_id);
@@ -471,7 +471,7 @@ impl Approved for Adult {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         info!("{} - handle Offline: {}.", self, pub_id);
-        self.chain.remove_member(&pub_id);
+        let _ = self.chain.remove_member(&pub_id);
 
         info!("{} - handle RemoveElder: {}.", self, pub_id);
         let _ = self.chain.remove_elder(pub_id)?;
@@ -515,7 +515,7 @@ impl Approved for Adult {
         info!("{} - handle Relocate: {:?}.", self, details);
 
         if !self.chain.our_prefix().matches(&details.destination) {
-            self.chain.remove_member(&details.pub_id);
+            let _ = self.chain.remove_member(&details.pub_id);
         }
 
         Ok(())

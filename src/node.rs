@@ -458,15 +458,6 @@ impl Node {
     pub fn parsec_prune_accumulated(&self) -> Option<usize> {
         self.chain().map(Chain::parsec_prune_accumulated)
     }
-
-    /// Trigger relocation of the given node to a section matching the given destination address.
-    // TODO: this method exist only so we can test relocation until proper relocation trigger is
-    // implemented. It should be removed afterwards.
-    pub fn trigger_relocation(&mut self, node_id: PublicId, destination_address: XorName) {
-        if let Some(elder) = self.elder_state_mut() {
-            elder.trigger_relocation(node_id, destination_address)
-        }
-    }
 }
 
 #[cfg(feature = "mock_base")]

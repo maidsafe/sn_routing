@@ -317,7 +317,8 @@ impl Chain {
         Ok(Some((event, EldersChange::default())))
     }
 
-    fn increase_members_age(&mut self, trigger_node: &PublicId) {
+    // Increment the age counters of the members. Returns ids of the members whose age increased.
+    fn increment_age_counters(&mut self, trigger_node: &PublicId) -> Vec<PublicId> {
         if self.state.our_joined_members().count() >= self.safe_section_size()
             && self
                 .state
@@ -326,16 +327,20 @@ impl Chain {
                 .unwrap_or(true)
         {
             // Do nothing for infants and unknown nodes
-            return;
+            return vec![];
         }
-        for (_, member) in self
-            .state
-            .our_members
-            .iter_mut()
+
+        self.state
+            .our_joined_members_mut()
             .filter(|(_, member)| member.state == MemberState::Joined)
-        {
-            member.increase_age();
-        }
+            .filter_map(|(pub_id, member)| {
+                if member.increment_age_counter() {
+                    Some(*pub_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Validate if can call add_member on this node.
@@ -344,8 +349,8 @@ impl Chain {
         self.our_prefix().matches(&pub_id.name()) && !self.is_peer_our_member(pub_id)
     }
 
-    /// Adds a member to our section.
-    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
+    /// Adds a member to our section. Returns ids of the members whose age increased.
+    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) -> Vec<PublicId> {
         self.churn_in_progress = true;
         self.assert_no_prefix_change("add member");
 
@@ -360,7 +365,7 @@ impl Chain {
             );
         }
 
-        self.increase_members_age(&pub_id);
+        let aged_nodes = self.increment_age_counters(&pub_id);
 
         // TODO: support rejoining
         let info = self
@@ -370,23 +375,26 @@ impl Chain {
             .or_insert_with(|| MemberInfo::new(p2p_node.into_connection_info()));
         info.state = MemberState::Joined;
         info.set_age(age);
+
+        aged_nodes
     }
 
-    /// Remove a member from our section.
-    pub fn remove_member(&mut self, pub_id: &PublicId) {
+    /// Remove a member from our section. Returns ids of the members whose age increased.
+    pub fn remove_member(&mut self, pub_id: &PublicId) -> Vec<PublicId> {
         self.churn_in_progress = true;
         self.assert_no_prefix_change("remove member");
 
         if let Some(info) = self.state.our_members.get_mut(&pub_id) {
             info.state = MemberState::Left;
-            self.increase_members_age(&pub_id);
+            self.increment_age_counters(&pub_id)
         } else {
             log_or_panic!(
                 LogLevel::Error,
                 "{} - Attempt to remove non-existent member {}.",
                 self,
                 pub_id
-            )
+            );
+            vec![]
         }
     }
 
@@ -568,7 +576,6 @@ impl Chain {
     }
 
     /// Get info about a member of our section.
-    #[cfg(feature = "mock_base")]
     pub fn get_member(&self, pub_id: &PublicId) -> Option<&MemberInfo> {
         self.state
             .our_members
