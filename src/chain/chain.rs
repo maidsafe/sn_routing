@@ -25,7 +25,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -65,6 +65,8 @@ pub struct Chain {
     parsec_prune_accumulated: usize,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
+    /// Pending relocations.
+    relocate_queue: VecDeque<RelocateDetails>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -118,6 +120,7 @@ impl Chain {
             event_cache: Default::default(),
             parsec_prune_accumulated: 0,
             churn_in_progress: false,
+            relocate_queue: VecDeque::new(),
         }
     }
 
@@ -285,6 +288,7 @@ impl Chain {
                 self.parsec_prune_accumulated += 1;
             }
             AccumulatingEvent::Relocate(_) => {
+                self.churn_in_progress = false;
                 let signature = proofs.combine_signatures(&self.public_key_set());
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
@@ -314,9 +318,9 @@ impl Chain {
         Ok(Some(AccumulatedEvent::new(event)))
     }
 
-    // Increment the age counters of the members. Returns the relocation details of the nodes that
-    // need to be relocated.
-    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) -> Vec<RelocateDetails> {
+    // Increment the age counters of the members. Returns the relocation details for the next
+    // node to be relocated, if any.
+    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) -> Option<RelocateDetails> {
         if self.state.our_joined_members().count() >= self.safe_section_size()
             && self
                 .state
@@ -325,33 +329,52 @@ impl Chain {
                 .unwrap_or(true)
         {
             // Do nothing for infants and unknown nodes
-            return vec![];
+            return None;
         }
 
         let our_prefix = *self.state.our_prefix();
-        let dev_params = &mut self.dev_params;
 
-        self.state
-            .our_joined_members_mut()
-            .filter(|(pub_id, _)| *pub_id != trigger_node)
-            .filter_map(|(pub_id, member)| {
-                if member.increment_age_counter() {
-                    Some((*pub_id, member.age()))
-                } else {
-                    None
-                }
-            })
-            .map(|(pub_id, age)| {
-                let destination =
-                    compute_relocation_destination(pub_id.name(), trigger_node.name(), dev_params);
-                RelocateDetails {
-                    pub_id,
-                    destination,
-                    age: age + 1,
-                }
-            })
-            .filter(|details| !our_prefix.matches(&details.destination))
-            .collect()
+        for (pub_id, member_info) in self.state.our_joined_members_mut() {
+            if pub_id == trigger_node {
+                continue;
+            }
+
+            if !member_info.increment_age_counter() {
+                continue;
+            }
+
+            let destination = compute_relocation_destination(
+                pub_id.name(),
+                trigger_node.name(),
+                &mut self.dev_params,
+            );
+            if our_prefix.matches(&destination) {
+                // Relocation destination inside the current section - ignoring.
+                continue;
+            }
+
+            let details = RelocateDetails {
+                pub_id: *pub_id,
+                destination,
+                age: member_info.age() + 1,
+            };
+            self.relocate_queue.push_front(details);
+        }
+
+        self.process_next_relocation()
+    }
+
+    /// Returns the details of the next scheduled relocation to be voted for, if there are any and
+    /// if churn is currently not in progress.
+    pub fn process_next_relocation(&mut self) -> Option<RelocateDetails> {
+        if !self.churn_in_progress {
+            if let Some(details) = self.relocate_queue.pop_back() {
+                self.churn_in_progress = true;
+                return Some(details);
+            }
+        }
+
+        None
     }
 
     /// Validate if can call add_member on this node.
@@ -1317,18 +1340,6 @@ impl Chain {
                 label,
             );
         }
-    }
-
-    pub fn is_churn_in_progress(&self) -> bool {
-        self.churn_in_progress
-    }
-
-    pub fn begin_relocation(&mut self) {
-        self.churn_in_progress = true;
-    }
-
-    pub fn finalise_relocation(&mut self) {
-        self.churn_in_progress = false;
     }
 
     pub fn dev_params(&self) -> &DevParams {

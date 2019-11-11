@@ -83,7 +83,6 @@ pub struct Elder {
     msg_queue: VecDeque<SignedRoutingMessage>,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
-    relocate_backlog: VecDeque<RelocateDetails>,
     peer_map: PeerMap,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
@@ -231,7 +230,6 @@ impl Elder {
             msg_queue: details.msg_queue,
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
-            relocate_backlog: VecDeque::new(),
             peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
@@ -899,9 +897,21 @@ impl Elder {
     }
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        trace!("{} - Relocating {}", self, details.pub_id);
+        if self.chain.is_peer_our_elder(&details.pub_id) {
+            let num_elders = self.chain.our_elders().len();
+            if num_elders <= self.chain.elder_size() {
+                warn!(
+                    "{} - Not relocating {} - not enough elders in the section ({}/{}).",
+                    self,
+                    details.pub_id,
+                    num_elders,
+                    self.chain.elder_size() + 1,
+                );
+                return Ok(());
+            }
+        }
 
-        self.chain.begin_relocation();
+        trace!("{} - Relocating {}", self, details.pub_id);
         self.vote_for_signed_event(details)
     }
 
@@ -1117,29 +1127,6 @@ impl Elder {
 
     fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
-    }
-
-    fn trigger_relocation(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        if self.chain.is_peer_our_elder(&details.pub_id) {
-            let num_elders = self.chain.our_elders().len();
-            if num_elders <= self.chain.elder_size() {
-                debug!(
-                    "{} - Not relocating {} - not enough elders in the section ({}/{}).",
-                    self,
-                    details.pub_id,
-                    num_elders,
-                    self.chain.elder_size() + 1,
-                );
-                return Ok(());
-            }
-        }
-
-        if self.chain.is_churn_in_progress() {
-            self.relocate_backlog.push_front(details);
-            Ok(())
-        } else {
-            self.vote_for_relocate(details)
-        }
     }
 }
 
@@ -1480,12 +1467,11 @@ impl Approved for Elder {
 
         self.chain.add_member(payload.p2p_node.clone(), payload.age);
 
-        let relocate_details = self
+        if let Some(relocate_details) = self
             .chain
-            .increment_age_counters(payload.p2p_node.public_id());
-
-        for details in relocate_details {
-            self.trigger_relocation(details)?;
+            .increment_age_counters(payload.p2p_node.public_id())
+        {
+            self.vote_for_relocate(relocate_details)?;
         }
         self.handle_candidate_approval(payload.p2p_node.clone(), outbox);
 
@@ -1521,14 +1507,11 @@ impl Approved for Elder {
 
         info!("{} - handle Offline: {}.", self, pub_id);
 
-        let relocate_details = self.chain.increment_age_counters(&pub_id);
-
-        self.chain.remove_member(&pub_id);
-
-        for details in relocate_details {
-            self.trigger_relocation(details)?;
+        if let Some(relocate_details) = self.chain.increment_age_counters(&pub_id) {
+            self.vote_for_relocate(relocate_details)?;
         }
 
+        self.chain.remove_member(&pub_id);
         self.disconnect(&pub_id);
 
         // Temporarily behave as if RemoveElder accumulated simultaneously
@@ -1609,10 +1592,8 @@ impl Approved for Elder {
 
             self.send_neighbour_infos();
 
-            if !self.chain.is_churn_in_progress() {
-                if let Some(details) = self.relocate_backlog.pop_back() {
-                    self.vote_for_relocate(details)?;
-                }
+            if let Some(relocate_details) = self.chain.process_next_relocation() {
+                self.vote_for_relocate(relocate_details)?;
             }
         }
 
@@ -1673,7 +1654,6 @@ impl Approved for Elder {
             self.send_direct_message(&conn_info, message);
         }
 
-        self.chain.finalise_relocation();
         self.chain.remove_member(&pub_id);
         self.disconnect(&pub_id);
 
