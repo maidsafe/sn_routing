@@ -13,14 +13,14 @@ use crate::ConnectionInfo;
 pub struct AgeCounter(u32);
 
 impl AgeCounter {
-    pub fn age(self) -> u8 {
-        f64::from(self.0).log2() as u8
+    /// Create `AgeCounter` with the given age. Minimal valid age is `MIN_AGE` so if a smaller
+    /// value is passed in, it's silently changed to `MIN_AGE`.
+    pub fn from_age(age: u8) -> Self {
+        Self(2u32.pow(u32::from(age.max(MIN_AGE))))
     }
 
-    /// Sets the age. Minimal valid age is `MIN_AGE` so if a smaller value is passed in, it's
-    /// silently changed to `MIN_AGE`.
-    pub fn set_age(&mut self, age: u8) {
-        self.0 = 2u32.pow(u32::from(age.max(MIN_AGE)))
+    pub fn age(self) -> u8 {
+        f64::from(self.0).log2() as u8
     }
 
     /// Increment the counter and return whether the age increased.
@@ -57,12 +57,21 @@ pub struct MemberInfo {
 }
 
 impl MemberInfo {
+    /// Create new `MemberInfo` in the `Joined` state.
+    pub fn new(age: u8, connection_info: ConnectionInfo) -> Self {
+        Self {
+            age_counter: AgeCounter::from_age(age),
+            state: MemberState::Joined,
+            connection_info,
+        }
+    }
+
     pub fn age(&self) -> u8 {
         self.age_counter.age()
     }
 
     pub fn set_age(&mut self, age: u8) {
-        self.age_counter.set_age(age)
+        self.age_counter = AgeCounter::from_age(age);
     }
 
     // Increment the age counter and return whether the age increased.
@@ -72,16 +81,6 @@ impl MemberInfo {
 
     pub fn is_mature(&self) -> bool {
         self.age_counter > AgeCounter(2u32.pow(MAX_INFANT_AGE))
-    }
-}
-
-impl MemberInfo {
-    pub fn new(connection_info: ConnectionInfo) -> Self {
-        Self {
-            age_counter: MIN_AGE_COUNTER,
-            state: MemberState::Joined,
-            connection_info,
-        }
     }
 }
 

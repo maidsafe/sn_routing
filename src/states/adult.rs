@@ -526,6 +526,13 @@ impl Approved for Adult {
             })
         } else {
             debug!("{} - Unhandled SectionInfo event", self);
+
+            // Need to pop the relocate queue even though we are not going to vote. Otherwise it
+            // could get out of sync with the rest of the section when we transition to elder.
+            if elders_info.prefix().matches(self.name()) {
+                let _ = self.chain.poll_relocation();
+            }
+
             Ok(Transition::Stay)
         }
     }
@@ -536,8 +543,12 @@ impl Approved for Adult {
         _signature: BlsSignature,
         _: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Relocate: {:?}.", self, details);
+        if !self.chain.can_remove_member(&details.pub_id) {
+            info!("{} - ignore Relocate: {:?} - not a member", self, details);
+            return Ok(());
+        }
 
+        info!("{} - handle Relocate: {:?}.", self, details);
         self.chain.remove_member(&details.pub_id);
         Ok(())
     }

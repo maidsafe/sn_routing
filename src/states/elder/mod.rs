@@ -894,21 +894,8 @@ impl Elder {
     }
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        if self.chain.is_peer_our_elder(&details.pub_id) {
-            let num_elders = self.chain.our_elders().len();
-            if num_elders <= self.chain.elder_size() {
-                warn!(
-                    "{} - Not relocating {} - not enough elders in the section ({}/{}).",
-                    self,
-                    details.pub_id,
-                    num_elders,
-                    self.chain.elder_size() + 1,
-                );
-                return Ok(());
-            }
-        }
-
-        trace!("{} - Relocating {}", self, details.pub_id);
+        // trace!("{} - Relocating {}", self, details.pub_id);
+        info!("{} - Relocating {}", self, details.pub_id);
         self.vote_for_signed_event(details)
     }
 
@@ -1627,17 +1614,22 @@ impl Approved for Elder {
 
     fn handle_relocate_event(
         &mut self,
-        payload: RelocateDetails,
+        details: RelocateDetails,
         signature: BlsSignature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Relocate: {:?}.", self, payload);
+        if !self.chain.can_remove_member(&details.pub_id) {
+            info!("{} - ignore Relocate: {:?} - not a member", self, details);
+            return Ok(());
+        }
 
-        let pub_id = payload.pub_id;
+        info!("{} - handle Relocate: {:?}.", self, details);
+
+        let pub_id = details.pub_id;
 
         let proof = {
-            let proof_for_source = self.chain.prove(&Authority::Node(*payload.pub_id.name()));
-            let proof_for_target = self.chain.prove(&Authority::Section(payload.destination));
+            let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
+            let proof_for_target = self.chain.prove(&Authority::Section(details.destination));
 
             if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
                 proof_for_source
@@ -1648,7 +1640,7 @@ impl Approved for Elder {
 
         if let Some(conn_info) = self.chain.get_member_connection_info(&pub_id).cloned() {
             let message =
-                DirectMessage::Relocate(SignedRelocateDetails::new(payload, proof, signature));
+                DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
             self.send_direct_message(&conn_info, message);
         }
 

@@ -25,7 +25,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -365,14 +365,34 @@ impl Chain {
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until all backlogged churn events have been handled and no
         // additional churn is in progress.
-        if !self.churn_in_progress && self.state.churn_event_backlog.is_empty() {
-            if let Some(details) = self.relocate_queue.pop_back() {
-                self.churn_in_progress = true;
-                return Some(details);
+        if self.churn_in_progress || !self.state.churn_event_backlog.is_empty() {
+            return None;
+        }
+
+        let details = self.relocate_queue.pop_back()?;
+
+        if self.is_peer_our_elder(&details.pub_id) {
+            let num_elders = self.our_elders().len();
+            if num_elders <= self.elder_size() {
+                warn!(
+                    "{} - Not relocating {} - not enough elders in the section ({}/{}).",
+                    self,
+                    details.pub_id,
+                    num_elders,
+                    self.elder_size() + 1,
+                );
+
+                // Keep the details in the queue so when we gain more elders we can try to relocate
+                // the node again.
+                self.relocate_queue.push_back(details);
+
+                return None;
             }
         }
 
-        None
+        self.churn_in_progress = true;
+
+        Some(details)
     }
 
     /// Validate if can call add_member on this node.
@@ -389,33 +409,59 @@ impl Chain {
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
         self.assert_no_prefix_change("add member");
 
+        let pub_id = *p2p_node.public_id();
+
+        match self.state.our_members.entry(pub_id) {
+            Entry::Occupied(mut entry) => {
+                if entry.get().state == MemberState::Left {
+                    // Node rejoining
+                    // TODO: To properly support rejoining, either keep the previous age or set the
+                    // new age to max(old_age, new_age)
+                    entry.get_mut().state = MemberState::Joined;
+                    entry.get_mut().set_age(age);
+                } else {
+                    // Node already joined - this should not happen.
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} - Adding member that already exists: {}",
+                        self,
+                        pub_id
+                    );
+                    return;
+                }
+            }
+            Entry::Vacant(entry) => {
+                // Node joining for the first time.
+                let _ = entry.insert(MemberInfo::new(age, p2p_node.connection_info().clone()));
+            }
+        }
+
         // TODO: switch this to true only when the new member is going to be immediately promoted
         // to elder.
         self.churn_in_progress = true;
-
-        let pub_id = *p2p_node.public_id();
-
-        // Note: it's important that `increment_age_counters` is called *after* the node is added.
-
-        // TODO: support rejoining
-        let info = self
-            .state
-            .our_members
-            .entry(pub_id)
-            .or_insert_with(|| MemberInfo::new(p2p_node.into_connection_info()));
-        info.state = MemberState::Joined;
-        info.set_age(age);
     }
 
     /// Remove a member from our section.
     pub fn remove_member(&mut self, pub_id: &PublicId) {
         self.assert_no_prefix_change("remove member");
 
-        // TODO: switch this to true only if the member is elder.
-        self.churn_in_progress = true;
-
-        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
+        if let Some(info) = self
+            .state
+            .our_members
+            .get_mut(&pub_id)
+            .filter(|info| info.state == MemberState::Joined)
+        {
             info.state = MemberState::Left;
+
+            // TODO: switch this to true only if the member is elder.
+            self.churn_in_progress = true;
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Removing member that doesn't exists: {}",
+                self,
+                pub_id
+            );
         }
     }
 
