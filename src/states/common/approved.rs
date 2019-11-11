@@ -365,7 +365,7 @@ pub trait Approved: Base {
             msg_id: MessageId::new(),
         };
 
-        debug!("{} - Sending connection request to {}.", self, their_pub_id);
+        trace!("{} - Sending connection request to {}.", self, their_pub_id);
 
         self.send_routing_message(RoutingMessage { src, dst, content })
             .map_err(|err| {
