@@ -894,8 +894,11 @@ impl Elder {
     }
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        trace!("{} - Relocating {}", self, details.pub_id);
         self.vote_for_signed_event(details)
+    }
+
+    fn vote_for_section_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
+        self.vote_for_signed_event(elders_info)
     }
 
     fn vote_for_signed_event<T: IntoAccumulatingEvent + Serialize>(
@@ -1518,7 +1521,7 @@ impl Approved for Elder {
         _dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
         if let Some(info) = self.dkg_cache.remove(participants) {
-            self.vote_for_signed_event(info)?;
+            self.vote_for_section_info(info)?;
         } else {
             log_or_panic!(
                 LogLevel::Error,
