@@ -154,6 +154,11 @@ impl Debug for AccumulatingEvent {
     }
 }
 
+/// Trait for AccumulatingEvent payloads.
+pub trait IntoAccumulatingEvent {
+    fn into_accumulating_event(self) -> AccumulatingEvent;
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,

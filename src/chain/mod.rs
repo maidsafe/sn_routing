@@ -26,7 +26,7 @@ pub use self::{
     member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_event::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
-        NetworkEvent, OnlinePayload, SendAckMessagePayload,
+        IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
     shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},

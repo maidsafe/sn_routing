@@ -9,7 +9,7 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    chain::{AccumulatingEvent, SectionProofChain},
+    chain::{AccumulatingEvent, IntoAccumulatingEvent, SectionProofChain},
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
@@ -32,9 +32,9 @@ pub struct RelocateDetails {
     pub age: u8,
 }
 
-impl From<RelocateDetails> for AccumulatingEvent {
-    fn from(src: RelocateDetails) -> Self {
-        Self::Relocate(src)
+impl IntoAccumulatingEvent for RelocateDetails {
+    fn into_accumulating_event(self) -> AccumulatingEvent {
+        AccumulatingEvent::Relocate(self)
     }
 }
 

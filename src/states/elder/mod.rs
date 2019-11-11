@@ -16,9 +16,9 @@ use super::{
 use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        EventSigPayload, GenesisPfxInfo, NetworkEvent, NetworkParams, OnlinePayload,
-        ParsecResetData, PrefixChange, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
-        MIN_AGE_COUNTER,
+        EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
+        OnlinePayload, ParsecResetData, PrefixChange, SectionKeyInfo, SendAckMessagePayload,
+        MIN_AGE, MIN_AGE_COUNTER,
     },
     crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
@@ -903,13 +903,13 @@ impl Elder {
         self.vote_for_network_event(event.into_network_event())
     }
 
-    fn vote_for_signed_event<T: Into<AccumulatingEvent> + Serialize>(
+    fn vote_for_signed_event<T: IntoAccumulatingEvent + Serialize>(
         &mut self,
         payload: T,
     ) -> Result<(), RoutingError> {
         let signature_payload = EventSigPayload::new(&self.full_id, &payload)?;
         let event = payload
-            .into()
+            .into_accumulating_event()
             .into_network_event_with(Some(signature_payload));
         self.vote_for_network_event(event);
         Ok(())
