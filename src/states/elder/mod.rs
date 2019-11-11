@@ -1561,6 +1561,15 @@ impl Approved for Elder {
 
         let self_sec_update = elders_info.prefix().matches(self.name());
 
+        // Poll the relocate queue before the parsec reset, so it is not blocked waiting for the
+        // genesis event. Cast the actual votes only after the parsec reset however, so they already
+        // go to the new instance.
+        let relocate_details = if self_sec_update {
+            self.chain.poll_relocation()
+        } else {
+            None
+        };
+
         if elders_info.prefix().is_extension_of(&old_pfx) {
             self.finalise_prefix_change()?;
             self.send_event(Event::SectionSplit(*elders_info.prefix()), outbox);
@@ -1587,10 +1596,10 @@ impl Approved for Elder {
             });
 
             self.send_neighbour_infos();
+        }
 
-            if let Some(relocate_details) = self.chain.poll_relocation() {
-                self.vote_for_relocate(relocate_details)?;
-            }
+        if let Some(relocate_details) = relocate_details {
+            self.vote_for_relocate(relocate_details)?;
         }
 
         let _ = self.merge_if_necessary();
