@@ -25,7 +25,7 @@ use crate::{
 };
 use log::LogLevel;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     time::Duration,
@@ -36,8 +36,8 @@ pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // State of Client or Node while bootstrapping.
 pub struct BootstrappingPeer {
-    nodes_to_await: HashSet<SocketAddr>,
-    bootstrap_connection: Option<(ConnectionInfo, u64)>,
+    pending_requests: HashSet<SocketAddr>,
+    timeout_tokens: HashMap<u64, SocketAddr>,
     network_service: NetworkService,
     full_id: FullId,
     peer_map: PeerMap,
@@ -59,8 +59,8 @@ impl BootstrappingPeer {
             network_service,
             full_id,
             timer,
-            bootstrap_connection: None,
-            nodes_to_await: Default::default(),
+            pending_requests: Default::default(),
+            timeout_tokens: Default::default(),
             peer_map: PeerMap::new(),
             relocate_details: None,
             network_cfg,
@@ -82,8 +82,8 @@ impl BootstrappingPeer {
             network_service,
             full_id,
             timer,
-            bootstrap_connection: None,
-            nodes_to_await: conn_infos.iter().map(|info| info.peer_addr).collect(),
+            pending_requests: Default::default(),
+            timeout_tokens: Default::default(),
             peer_map: PeerMap::new(),
             relocate_details: Some(relocate_details),
             network_cfg,
@@ -118,32 +118,25 @@ impl BootstrappingPeer {
     }
 
     fn send_bootstrap_request(&mut self, dst: ConnectionInfo) {
-        let _ = self.nodes_to_await.remove(&dst.peer_addr);
-
-        if let Some((bootstrap_dst, _)) = self.bootstrap_connection.as_ref() {
-            if *bootstrap_dst != dst {
-                // we already have an active connection, drop this one
-                self.network_service
-                    .service_mut()
-                    .disconnect_from(dst.peer_addr);
-            }
-        } else {
-            debug!("{} Sending BootstrapRequest to {}.", self, dst.peer_addr);
-
-            let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
-            self.bootstrap_connection = Some((dst.clone(), token));
-
-            // If we are relocating, request bootstrap to the section matching the name given to us
-            // by our section. Otherwise request bootstrap to the section matching our current name.
-            let destination = if let Some(details) = self.relocate_details.as_ref() {
-                details.content().destination
-            } else {
-                *self.name()
-            };
-
-            self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
-            self.peer_map_mut().connect(dst);
+        if !self.pending_requests.insert(dst.peer_addr) {
+            return;
         }
+
+        debug!("{} Sending BootstrapRequest to {}.", self, dst.peer_addr);
+
+        let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
+        let _ = self.timeout_tokens.insert(token, dst.peer_addr);
+
+        // If we are relocating, request bootstrap to the section matching the name given to us
+        // by our section. Otherwise request bootstrap to the section matching our current name.
+        let destination = if let Some(details) = self.relocate_details.as_ref() {
+            details.content().destination
+        } else {
+            *self.name()
+        };
+
+        self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
+        self.peer_map_mut().connect(dst);
     }
 
     fn join_section(
@@ -173,6 +166,8 @@ impl BootstrappingPeer {
             None
         };
 
+        // TODO: disconnect from everyone except the nodes we are joining.
+
         Ok(Transition::IntoJoining {
             p2p_nodes,
             relocate_payload,
@@ -180,50 +175,23 @@ impl BootstrappingPeer {
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
-        if let Some((conn_info, _)) = self.bootstrap_connection.take() {
-            debug!(
-                "{} Dropping connected node at {} and retrying.",
-                self, conn_info.peer_addr
-            );
-
-            // drop the current connection
-            self.network_service
-                .service_mut()
-                .disconnect_from(conn_info.peer_addr);
+        let old_conn_infos: Vec<_> = self.peer_map.remove_all().collect();
+        for conn_info in old_conn_infos {
+            self.disconnect_from(conn_info.peer_addr);
         }
 
-        self.nodes_to_await = new_conn_infos
-            .iter()
-            .map(|conn_info| conn_info.peer_addr)
-            .collect();
+        self.pending_requests.clear();
+        self.timeout_tokens.clear();
 
         for conn_info in new_conn_infos {
-            self.network_service.service_mut().connect_to(conn_info);
+            self.send_bootstrap_request(conn_info);
         }
     }
 
-    fn disconnect_from_bootstrap_proxy(&mut self) {
-        if let Some((conn_info, _)) = self.bootstrap_connection.take() {
-            debug!(
-                "{} Dropping bootstrap node at {} and retrying.",
-                self, conn_info.peer_addr
-            );
-
-            self.network_service
-                .service_mut()
-                .disconnect_from(conn_info.peer_addr);
+    fn request_failed(&mut self) {
+        if self.pending_requests.is_empty() {
+            self.network_service.service_mut().bootstrap();
         }
-    }
-
-    fn rebootstrap(&mut self) {
-        // only rebootstrap if we're not waiting for connections from anyone else -
-        // otherwise we'll just wait and maybe another connection succeeds
-        if !self.nodes_to_await.is_empty() {
-            return;
-        }
-
-        self.disconnect_from_bootstrap_proxy();
-        self.network_service.service_mut().bootstrap();
     }
 }
 
@@ -269,36 +237,26 @@ impl Base for BootstrappingPeer {
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if let Some((conn_info, bootstrap_token)) = self.bootstrap_connection.as_ref() {
-            if *bootstrap_token == token {
-                debug!(
-                    "{} - Timeout when trying to bootstrap against {}.",
-                    self, conn_info.peer_addr
-                );
+        if let Some(peer_addr) = self.timeout_tokens.remove(&token) {
+            debug!(
+                "{} - Timeout when trying to bootstrap against {}.",
+                self, peer_addr
+            );
 
-                self.disconnect_from_bootstrap_proxy();
-                self.rebootstrap();
+            if !self.pending_requests.remove(&peer_addr) {
+                return Transition::Stay;
             }
+
+            let _ = self.peer_map.disconnect(peer_addr);
+            self.disconnect_from(peer_addr);
+            self.request_failed()
         }
 
         Transition::Stay
     }
 
     fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
-        self.peer_map_mut().connect(conn_info.clone());
-
-        if self.bootstrap_connection.is_none() {
-            debug!(
-                "{} Received BootstrappedTo event from {}.",
-                self, conn_info.peer_addr
-            );
-
-            // Established connection. Pending Validity checks
-            self.send_bootstrap_request(conn_info);
-        } else {
-            warn!("{} Received more than one BootstrappedTo event", self);
-        }
-
+        self.send_bootstrap_request(conn_info);
         Transition::Stay
     }
 
@@ -310,15 +268,9 @@ impl Base for BootstrappingPeer {
 
     fn handle_connected_to(
         &mut self,
-        conn_info: ConnectionInfo,
+        _conn_info: ConnectionInfo,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        debug!(
-            "{} Received ConnectedTo event from {}.",
-            self, conn_info.peer_addr
-        );
-
-        self.send_bootstrap_request(conn_info);
         Transition::Stay
     }
 
@@ -327,17 +279,9 @@ impl Base for BootstrappingPeer {
         peer_addr: SocketAddr,
         _: &mut dyn EventBox,
     ) -> Transition {
-        let _ = self.nodes_to_await.remove(&peer_addr);
+        let _ = self.pending_requests.remove(&peer_addr);
         let _ = self.peer_map_mut().disconnect(peer_addr);
-
-        if let Some((conn_info, _)) = self.bootstrap_connection.as_ref() {
-            if conn_info.peer_addr == peer_addr {
-                info!("{} Lost connection to proxy {}.", self, peer_addr);
-                self.disconnect_from_bootstrap_proxy();
-                self.rebootstrap();
-            }
-        }
-
+        self.request_failed();
         Transition::Stay
     }
 
@@ -347,6 +291,9 @@ impl Base for BootstrappingPeer {
         p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        // TODO: ignore messages from peers we don't send `BootstrapRequest` to and disconnect
+        // from them.
+
         match msg {
             DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, p2p_nodes }) => {
                 info!("{} - Joining a section {:?}: {:?}", self, prefix, p2p_nodes);
