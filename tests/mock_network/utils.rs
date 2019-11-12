@@ -12,7 +12,7 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts, Authority, Event, EventStream, FullId, NetworkConfig, Node,
-    NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
+    NodeBuilder, PausedState, Prefix, PublicId, TestRng, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -167,6 +167,13 @@ impl<'a> TestNodeBuilder<'a> {
     pub fn full_id(self, full_id: FullId) -> Self {
         Self {
             inner: self.inner.full_id(full_id),
+            ..self
+        }
+    }
+
+    pub fn rng(self, rng: TestRng) -> Self {
+        Self {
+            inner: self.inner.rng(rng),
             ..self
         }
     }
@@ -930,12 +937,14 @@ fn add_node_to_section(
     prefix: &Prefix<XorName>,
     options: ChurnOptions,
 ) {
+    let mut rng = network.new_rng();
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-    let full_id = FullId::within_range(&prefix.range_inclusive());
+    let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
     nodes.push(
         TestNode::builder(network)
             .network_config(config)
             .full_id(full_id)
+            .rng(rng)
             .create(),
     );
 

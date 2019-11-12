@@ -223,7 +223,7 @@ fn add_node_to_prefix(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pre
         .find(|index| nodes[*index].inner.is_elder()));
 
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
-    let full_id = FullId::within_range(&prefix.range_inclusive());
+    let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
     nodes.push(
         TestNode::builder(network)
             .network_config(config)

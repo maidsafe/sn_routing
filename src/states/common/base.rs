@@ -21,7 +21,7 @@ use crate::{
     routing_table::Authority,
     state_machine::Transition,
     timer::Timer,
-    utils::LogIdent,
+    utils::{DynCryptoRng, LogIdent},
     xor_name::XorName,
     ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
@@ -44,6 +44,7 @@ pub trait Base: Display {
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
+    fn rng(&mut self) -> &mut DynCryptoRng;
     fn dev_params(&self) -> &DevParams;
     fn dev_params_mut(&mut self) -> &mut DevParams;
 

@@ -14,10 +14,11 @@
 use super::authority::Authority;
 use super::prefix::Prefix;
 use super::{Error, RoutingTable};
-use crate::routing_table::xorable::Xorable;
-use crate::routing_table::{OwnMergeState, Sections};
-use maidsafe_utilities::SeededRng;
-use rand::Rng;
+use crate::{
+    routing_table::{xorable::Xorable, OwnMergeState, Sections},
+    test_rng::{Seed, TestRng},
+};
+use rand::{Rng, SeedableRng};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Binary, Debug};
 use std::hash::Hash;
@@ -29,17 +30,17 @@ use unwrap::unwrap;
 #[derive(Default)]
 struct Network {
     min_section_size: usize,
-    rng: SeededRng,
+    rng: TestRng,
     nodes: BTreeMap<u64, RoutingTable<u64>>,
 }
 
 impl Network {
     /// Creates a new empty network with specified minimum section size and a seeded random number
     /// generator.
-    fn new(min_section_size: usize, optional_seed: Option<[u32; 4]>) -> Network {
+    fn new(min_section_size: usize, optional_seed: Option<Seed>) -> Network {
         Network {
             min_section_size: min_section_size,
-            rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
+            rng: optional_seed.map_or_else(TestRng::new, TestRng::from_seed),
             nodes: BTreeMap::new(),
         }
     }

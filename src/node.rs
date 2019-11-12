@@ -18,6 +18,7 @@ use crate::{
     routing_table::Authority,
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer},
+    utils::{self, CryptoRng, DynCryptoRng},
     xor_name::XorName,
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
@@ -37,6 +38,7 @@ use {
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
     first: bool,
+    rng: Option<DynCryptoRng>,
     network_config: Option<NetworkConfig>,
     full_id: Option<FullId>,
     network_cfg: NetworkParams,
@@ -72,6 +74,14 @@ impl NodeBuilder {
         }
     }
 
+    /// Use the supplied random number generator. If this is not called, a default `OsRng` is used.
+    pub fn rng<R: CryptoRng + 'static>(self, rng: R) -> Self {
+        Self {
+            rng: Some(DynCryptoRng::new(rng)),
+            ..self
+        }
+    }
+
     /// Creates new `Node`.
     ///
     /// It will automatically connect to the network in the same way a client does, but then
@@ -97,10 +107,12 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
-        let full_id = self.full_id.unwrap_or_else(FullId::new);
+        let mut rng = self
+            .rng
+            .unwrap_or_else(|| DynCryptoRng::new(utils::new_rng()));
 
+        let full_id = self.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
         let network_cfg = self.network_cfg;
-
         let first = self.first;
 
         let mut network_config = self.network_config.unwrap_or_default();
@@ -111,7 +123,7 @@ impl NodeBuilder {
                 if first {
                     debug!("Creating a first node in the Elder state");
 
-                    states::Elder::first(network_service, full_id, network_cfg, timer, outbox)
+                    states::Elder::first(network_service, full_id, network_cfg, timer, rng, outbox)
                         .map(State::Elder)
                         .unwrap_or(State::Terminated)
                 } else {
@@ -122,6 +134,7 @@ impl NodeBuilder {
                         full_id,
                         network_cfg,
                         timer,
+                        rng,
                     ))
                 }
             },
@@ -151,6 +164,7 @@ impl Node {
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
             first: false,
+            rng: None,
             network_config: None,
             full_id: None,
             network_cfg: Default::default(),

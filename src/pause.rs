@@ -14,6 +14,7 @@ use crate::{
     peer_map::PeerMap,
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
+    utils::DynCryptoRng,
     NetworkEvent, NetworkService,
 };
 use crossbeam_channel as mpmc;
@@ -39,4 +40,5 @@ pub struct PausedState {
     pub(super) parsec_map: ParsecMap,
     pub(super) peer_map: PeerMap,
     pub(super) sig_accumulator: SignatureAccumulator,
+    pub(super) rng: DynCryptoRng,
 }

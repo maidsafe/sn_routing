@@ -19,7 +19,8 @@ use crate::{
     mock::Network,
     outbox::EventBox,
     state_machine::{State, StateMachine, Transition},
-    NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
+    test_rng::TestRng,
+    utils, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
@@ -35,9 +36,9 @@ struct JoiningNodeInfo {
 }
 
 impl JoiningNodeInfo {
-    fn with_addr(addr: &str) -> Self {
+    fn with_addr(rng: &mut TestRng, addr: &str) -> Self {
         Self {
-            full_id: FullId::new(),
+            full_id: FullId::gen(rng),
             addr: unwrap!(addr.parse()),
         }
     }
@@ -52,6 +53,7 @@ impl JoiningNodeInfo {
 }
 
 struct ElderUnderTest {
+    pub rng: TestRng,
     pub machine: StateMachine,
     pub full_id: FullId,
     pub other_full_ids: Vec<FullId>,
@@ -65,9 +67,10 @@ impl ElderUnderTest {
     }
 
     fn with_section_size(sec_size: usize) -> Self {
+        let mut rng = TestRng::new();
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo::from(socket_addr);
-        let full_ids = (0..sec_size).map(|_| FullId::new()).collect_vec();
+        let full_ids = (0..sec_size).map(|_| FullId::gen(&mut rng)).collect_vec();
 
         let prefix = Prefix::<XorName>::default();
         let elders_info = unwrap!(EldersInfo::new(
@@ -94,17 +97,18 @@ impl ElderUnderTest {
         };
 
         let full_id = full_ids[0].clone();
-        let machine = make_state_machine(&full_id, &gen_pfx_info, &mut ());
+        let machine = make_state_machine(&mut rng, &full_id, &gen_pfx_info, &mut ());
 
         let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
 
         let candidate_addr: SocketAddr = unwrap!("127.0.0.2:9999".parse());
         let candidate = P2pNode::new(
-            *FullId::new().public_id(),
+            *FullId::gen(&mut rng).public_id(),
             ConnectionInfo::from(candidate_addr),
         );
 
         let mut elder_test = Self {
+            rng,
             machine,
             full_id,
             other_full_ids,
@@ -309,11 +313,12 @@ fn new_elder_state(
     gen_pfx_info: &GenesisPfxInfo,
     network_service: NetworkService,
     timer: Timer,
+    rng: &mut TestRng,
     outbox: &mut dyn EventBox,
 ) -> State {
     let public_id = *full_id.public_id();
 
-    let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
+    let parsec_map = ParsecMap::new(rng, full_id.clone(), gen_pfx_info);
     let chain = Chain::new(
         Default::default(),
         Default::default(),
@@ -335,6 +340,7 @@ fn new_elder_state(
         peer_map,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,
+        rng: DynCryptoRng::new(utils::new_rng_from(rng)),
     };
 
     let section_info = gen_pfx_info.first_info.clone();
@@ -345,6 +351,7 @@ fn new_elder_state(
 }
 
 fn make_state_machine(
+    rng: &mut TestRng,
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
     outbox: &mut dyn EventBox,
@@ -359,7 +366,7 @@ fn make_state_machine(
 
     StateMachine::new(
         move |network_service, timer, outbox2| {
-            new_elder_state(full_id, gen_pfx_info, network_service, timer, outbox2)
+            new_elder_state(full_id, gen_pfx_info, network_service, timer, rng, outbox2)
         },
         config,
         outbox,
@@ -454,7 +461,7 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
     // Set section size to one less than the desired number of the elders in a section. This makes
     // us reject any bootstrapping nodes.
     let mut elder_test = ElderUnderTest::with_section_size(ELDER_SIZE - 1);
-    let node = JoiningNodeInfo::with_addr("198.51.100.0:5000");
+    let node = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.0:5000");
 
     // Bootstrap fails for insufficient section size.
     elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());

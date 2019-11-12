@@ -21,12 +21,11 @@ use crate::{
     relocation::RelocateDetails,
     routing_table::{Authority, Prefix},
     state_machine::Transition,
-    types::MessageId,
-    utils,
     xor_name::XorName,
     BlsSignature, ConnectionInfo,
 };
 use log::LogLevel;
+use rand::Rng;
 use std::collections::BTreeSet;
 
 /// Common functionality for node states post resource proof.
@@ -175,7 +174,7 @@ pub trait Approved: Base {
                     return;
                 }
 
-                let rand_index = utils::rand_index(p2p_recipients.len());
+                let rand_index = self.rng().gen_range(0, p2p_recipients.len());
                 // WIP: need to figure out who to send to without consulting the peer_map
                 (version, p2p_recipients[rand_index].clone())
             }
@@ -374,10 +373,11 @@ pub trait Approved: Base {
             return Ok(());
         }
 
+        let msg_id = self.rng().gen();
         let content = MessageContent::ConnectionRequest {
             conn_info: self.our_connection_info()?,
             pub_id: *self.full_id().public_id(),
-            msg_id: MessageId::new(),
+            msg_id,
         };
 
         trace!("{} - Sending connection request to {}.", self, their_pub_id);

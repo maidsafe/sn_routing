@@ -7,12 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::xor_name::XorName;
-#[cfg(any(test, feature = "mock_base"))]
-use maidsafe_utilities::SeededRng;
-#[cfg(all(not(test), not(feature = "mock_base")))]
-use rand;
-#[cfg(any(test, feature = "mock_base"))]
-use rand::Rng;
+use rand::{Rand, Rng};
 
 /// Unique ID for messages
 ///
@@ -23,19 +18,6 @@ use rand::Rng;
 pub struct MessageId(XorName);
 
 impl MessageId {
-    /// Generate a new `MessageId` with random content.
-    #[cfg(any(test, feature = "mock_base"))]
-    pub fn new() -> MessageId {
-        let mut rng = SeededRng::thread_rng();
-        MessageId(rng.gen())
-    }
-
-    /// Generate a new `MessageId` with random content.
-    #[cfg(all(not(test), not(feature = "mock_base")))]
-    pub fn new() -> MessageId {
-        MessageId(rand::random())
-    }
-
     /// Generate a `MessageId` with value 0. This should only be used for messages where there is
     /// no danger of duplication.
     pub fn zero() -> MessageId {
@@ -79,6 +61,12 @@ impl MessageId {
 impl Default for MessageId {
     fn default() -> MessageId {
         MessageId::zero()
+    }
+}
+
+impl Rand for MessageId {
+    fn rand<R: Rng>(rng: &mut R) -> Self {
+        Self(rng.gen())
     }
 }
 

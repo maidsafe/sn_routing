@@ -184,14 +184,15 @@ impl PendingConnection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::id::FullId;
+    use crate::{id::FullId, test_rng::TestRng};
     use unwrap::unwrap;
 
     #[test]
     fn connect_then_identify_then_disconnect() {
+        let mut rng = TestRng::new();
         let mut peer_map = PeerMap::new();
         let conn_info = connection_info("198.51.100.0:5555");
-        let pub_id = *FullId::new().public_id();
+        let pub_id = *FullId::gen(&mut rng).public_id();
 
         assert!(peer_map.get_connection_info(&pub_id).is_none());
 
@@ -208,9 +209,10 @@ mod tests {
 
     #[test]
     fn insert() {
+        let mut rng = TestRng::new();
         let mut peer_map = PeerMap::new();
         let conn_info = connection_info("198.51.100.0:5555");
-        let pub_id = *FullId::new().public_id();
+        let pub_id = *FullId::gen(&mut rng).public_id();
 
         assert!(peer_map.get_connection_info(&pub_id).is_none());
 

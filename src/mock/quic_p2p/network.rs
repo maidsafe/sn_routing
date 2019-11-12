@@ -39,7 +39,7 @@ pub struct Network(Rc<RefCell<Inner>>);
 impl Network {
     /// Construct new mock network.
     pub fn new(network_cfg: NetworkParams) -> Self {
-        let seed = Seed::from_env("SEED").unwrap_or_else(|| rand::thread_rng().gen());
+        let seed = Seed::default();
         PRINT_SEED.call_once(|| eprintln!("seed: {}", seed));
 
         #[cfg(feature = "mock_parsec")]

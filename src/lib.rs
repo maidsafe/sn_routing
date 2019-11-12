@@ -172,6 +172,7 @@ pub use crate::{
         section_proof_chain_from_elders_info, NetworkParams, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    test_rng::TestRng,
 };
 pub use crate::{
     error::{InterfaceError, RoutingError},

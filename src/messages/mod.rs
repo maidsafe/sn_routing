@@ -594,6 +594,7 @@ mod tests {
         crypto::signing::{Signature, SIGNATURE_LENGTH},
         id::{FullId, P2pNode},
         routing_table::{Authority, Prefix},
+        test_rng::TestRng,
         xor_name::XorName,
     };
     use rand;
@@ -603,8 +604,10 @@ mod tests {
 
     #[test]
     fn signed_routing_message_check_integrity() {
-        let full_id = FullId::new();
-        let full_id_2 = FullId::new();
+        let mut rng = TestRng::new();
+
+        let full_id = FullId::gen(&mut rng);
+        let full_id_2 = FullId::gen(&mut rng);
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo {
             peer_addr: socket_addr,
@@ -651,11 +654,12 @@ mod tests {
 
     #[test]
     fn signed_routing_message_signatures() {
-        let full_id_0 = FullId::new();
+        let mut rng = TestRng::new();
+        let full_id_0 = FullId::gen(&mut rng);
         let prefix = Prefix::new(0, *full_id_0.public_id().name());
-        let full_id_1 = FullId::new();
-        let full_id_2 = FullId::new();
-        let full_id_3 = FullId::new();
+        let full_id_1 = FullId::gen(&mut rng);
+        let full_id_2 = FullId::gen(&mut rng);
+        let full_id_3 = FullId::gen(&mut rng);
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo {
             peer_addr: socket_addr,

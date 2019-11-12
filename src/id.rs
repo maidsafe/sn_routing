@@ -9,12 +9,12 @@
 use crate::{
     crypto::{encryption, signing},
     parsec,
-    utils::{self, RngCompat},
+    utils::{self, CryptoRng, RngCompat},
     xor_name::XorName,
     ConnectionInfo,
 };
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use rand_crypto::Rng;
+use rand_crypto::Rng as _;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
 use std::{
@@ -36,9 +36,12 @@ pub struct FullId {
 }
 
 impl FullId {
-    /// Construct a `FullId` with newly generated keys.
-    pub fn new() -> FullId {
-        let mut rng = RngCompat(utils::new_rng());
+    /// Construct a `FullId` with randomly generated keys.
+    pub fn gen<R>(rng: &mut R) -> FullId
+    where
+        R: CryptoRng,
+    {
+        let mut rng = RngCompat(rng);
 
         let secret_signing_key = signing::SecretKey::generate(&mut rng);
         let public_signing_key = signing::PublicKey::from(&secret_signing_key);
@@ -59,8 +62,11 @@ impl FullId {
 
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
     /// FIXME(Fraser) - time limit this function? Document behaviour
-    pub fn within_range(range: &RangeInclusive<XorName>) -> FullId {
-        let mut rng = RngCompat(utils::new_rng());
+    pub fn within_range<R>(rng: &mut R, range: &RangeInclusive<XorName>) -> FullId
+    where
+        R: CryptoRng,
+    {
+        let mut rng = RngCompat(rng);
 
         loop {
             let secret_signing_key = signing::SecretKey::generate(&mut rng);
@@ -124,12 +130,6 @@ impl parsec::SecretId for FullId {
     fn decrypt(&self, _from: &Self::PublicId, ciphertext: &[u8]) -> Option<Vec<u8>> {
         let ciphertext: encryption::Ciphertext = deserialise(ciphertext).ok()?;
         self.secret_keys.encryption.decrypt(&ciphertext)
-    }
-}
-
-impl Default for FullId {
-    fn default() -> FullId {
-        FullId::new()
     }
 }
 
@@ -337,11 +337,14 @@ fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u3
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_rng::TestRng;
     use unwrap::unwrap;
 
     #[test]
     fn serialisation() {
-        let full_id = FullId::new();
+        let mut rng = TestRng::new();
+
+        let full_id = FullId::gen(&mut rng);
         let serialised = unwrap!(serialise(full_id.public_id()));
         let parsed = unwrap!(deserialise(&serialised));
         assert_eq!(*full_id.public_id(), parsed);

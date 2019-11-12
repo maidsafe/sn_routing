@@ -20,6 +20,7 @@ use crate::{
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
+    utils::DynCryptoRng,
     xor_name::XorName,
     ConnectionInfo, NetworkService,
 };
@@ -42,6 +43,7 @@ pub struct BootstrappingPeer {
     full_id: FullId,
     peer_map: PeerMap,
     timer: Timer,
+    rng: DynCryptoRng,
     relocate_details: Option<SignedRelocateDetails>,
     network_cfg: NetworkParams,
     dev_params: DevParams,
@@ -53,6 +55,7 @@ impl BootstrappingPeer {
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
+        rng: DynCryptoRng,
     ) -> Self {
         network_service.service_mut().bootstrap();
         Self {
@@ -62,6 +65,7 @@ impl BootstrappingPeer {
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
             peer_map: PeerMap::new(),
+            rng,
             relocate_details: None,
             network_cfg,
             dev_params: DevParams::default(),
@@ -74,6 +78,7 @@ impl BootstrappingPeer {
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
+        rng: DynCryptoRng,
         conn_infos: Vec<ConnectionInfo>,
         relocate_details: SignedRelocateDetails,
         dev_params: DevParams,
@@ -85,6 +90,7 @@ impl BootstrappingPeer {
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
             peer_map: PeerMap::new(),
+            rng,
             relocate_details: Some(relocate_details),
             network_cfg,
             dev_params,
@@ -108,6 +114,7 @@ impl BootstrappingPeer {
             full_id: self.full_id,
             network_cfg: self.network_cfg,
             timer: self.timer,
+            rng: self.rng,
             peer_map: self.peer_map,
             p2p_nodes,
             relocate_payload,
@@ -147,7 +154,7 @@ impl BootstrappingPeer {
         let old_full_id = self.full_id.clone();
 
         if !prefix.matches(self.name()) {
-            let new_full_id = FullId::within_range(&prefix.range_inclusive());
+            let new_full_id = FullId::within_range(&mut self.rng, &prefix.range_inclusive());
             info!(
                 "{} - Changing name to {}.",
                 self,
@@ -220,6 +227,10 @@ impl Base for BootstrappingPeer {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+
+    fn rng(&mut self) -> &mut DynCryptoRng {
+        &mut self.rng
     }
 
     fn handle_send_message(
@@ -387,6 +398,7 @@ mod tests {
         };
 
         let network = Network::new(Default::default());
+        let mut rng = network.new_rng();
 
         // Start a bare-bones network service.
         let (event_tx, event_rx) = mpmc::unbounded();
@@ -400,7 +412,7 @@ mod tests {
         let config = NetworkConfig::node()
             .with_hard_coded_contact(node_a_endpoint)
             .with_endpoint(node_b_endpoint);
-        let node_b_full_id = FullId::new();
+        let node_b_full_id = FullId::gen(&mut rng);
 
         let mut node_b_outbox = Vec::new();
 
@@ -411,6 +423,7 @@ mod tests {
                     node_b_full_id,
                     network_cfg,
                     timer,
+                    DynCryptoRng::new(rng),
                 ))
             },
             config,
