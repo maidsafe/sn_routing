@@ -416,6 +416,9 @@ impl Elder {
                 AccumulatingEvent::Offline(pub_id) => {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
                 }
+                AccumulatingEvent::AckMessage(ref payload) => {
+                    our_pfx.matches(&payload.dst_name) && !completed_events.contains(&event.payload)
+                }
 
                 // Drop: no longer relevant after prefix change.
                 // TODO: verify this is really the case. Some/all of these might still make sense
@@ -437,7 +440,6 @@ impl Elder {
                 // Keep: Still relevant after prefix change.
                 AccumulatingEvent::NeighbourMerge(_)
                 | AccumulatingEvent::TheirKeyInfo(_)
-                | AccumulatingEvent::AckMessage(_)
                 | AccumulatingEvent::SendAckMessage(_)
                 | AccumulatingEvent::User(_) => true,
             })
@@ -600,11 +602,12 @@ impl Elder {
         src_prefix: Prefix<XorName>,
         ack_version: u64,
         _src: XorName,
-        _dst: XorName,
+        dst: XorName,
     ) -> Result<(), RoutingError> {
         // Prefix doesn't need to match, as we may get an ack for the section where we were before
         // splitting.
         self.vote_for_event(AccumulatingEvent::AckMessage(AckMessagePayload {
+            dst_name: dst,
             src_prefix,
             ack_version,
         }));

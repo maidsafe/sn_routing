@@ -24,6 +24,10 @@ use std::{
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct AckMessagePayload {
+    /// The name of the section that message was for. This is important as we may get a message
+    /// when we are still pre-split, think it is for us, but it was not.
+    /// (i.e sent to 00, and we are 01, but lagging at 0 we are valid destination).
+    pub dst_name: XorName,
     /// The prefix of our section when we acknowledge their SectionInfo of version ack_version.
     pub src_prefix: Prefix<XorName>,
     /// The version acknowledged.
