@@ -11,7 +11,7 @@ use crate::{
     chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event_stream::{EventStepper, EventStream},
-    id::{FullId, PublicId},
+    id::{FullId, P2pNode, PublicId},
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::{OurType, Token},
@@ -26,7 +26,7 @@ use std::{net::SocketAddr, sync::mpsc};
 
 #[cfg(feature = "mock_base")]
 use {
-    crate::{chain::SectionProofChain, id::P2pNode, utils::XorTargetInterval, Chain, Prefix},
+    crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix},
     std::{
         collections::{BTreeMap, BTreeSet},
         fmt::{self, Display, Formatter},
@@ -183,6 +183,11 @@ impl Node {
     /// to the given one.
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         self.machine.current().close_group(name, count)
+    }
+
+    /// Returns the connection information of all the current section elders.
+    pub fn our_elders_info(&self) -> Option<impl Iterator<Item = &P2pNode>> {
+        self.machine.current().our_elders()
     }
 
     /// Returns the `PublicId` of this node.

@@ -199,6 +199,10 @@ impl Elder {
         )
     }
 
+    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
+        self.chain.our_elders()
+    }
+
     pub fn relocate(
         self,
         conn_infos: Vec<ConnectionInfo>,
