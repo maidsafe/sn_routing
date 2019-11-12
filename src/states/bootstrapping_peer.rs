@@ -166,8 +166,6 @@ impl BootstrappingPeer {
             None
         };
 
-        // TODO: disconnect from everyone except the nodes we are joining.
-
         Ok(Transition::IntoJoining {
             p2p_nodes,
             relocate_payload,
@@ -291,8 +289,16 @@ impl Base for BootstrappingPeer {
         p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        // TODO: ignore messages from peers we don't send `BootstrapRequest` to and disconnect
-        // from them.
+        // Ignore messages from peers we didn't send `BootstrapRequest` to.
+        if !self.pending_requests.contains(p2p_node.peer_addr()) {
+            debug!(
+                "{} - Ignoring direct message from unexpected peer: {}: {:?}",
+                self, p2p_node, msg
+            );
+            let _ = self.peer_map.disconnect(*p2p_node.peer_addr());
+            self.disconnect_from(*p2p_node.peer_addr());
+            return Ok(Transition::Stay);
+        }
 
         match msg {
             DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, p2p_nodes }) => {
