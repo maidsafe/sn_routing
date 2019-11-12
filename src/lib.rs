@@ -131,6 +131,8 @@ mod routing_table;
 mod signature_accumulator;
 mod state_machine;
 mod states;
+#[cfg(any(test, feature = "mock_base"))]
+mod test_rng;
 mod time;
 mod timer;
 mod types;

@@ -40,13 +40,10 @@ fn nodes_with_candidate(nodes: &[TestNode]) -> Vec<XorName> {
 
 fn test_nodes(percentage_size: usize) {
     let size = LOWERED_ELDER_SIZE * percentage_size / 100;
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let mut nodes = create_connected_nodes(&network, size);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
@@ -105,13 +102,10 @@ fn create_node_with_contact(network: &Network, contact: &mut TestNode) -> TestNo
 // TODO (quic-p2p): This test requires bootstrap blacklist which isn't implemented in quic-p2p.
 #[ignore]
 fn disconnect_on_rebootstrap() {
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let mut nodes = create_connected_nodes(&network, 2);
 
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
@@ -182,13 +176,10 @@ fn candidate_expiration() {
 #[test]
 fn single_section() {
     let sec_size = 10;
-    let network = Network::new(
-        NetworkParams {
-            elder_size: sec_size,
-            safe_section_size: sec_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: sec_size,
+        safe_section_size: sec_size,
+    });
     let mut nodes = create_connected_nodes(&network, sec_size);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
@@ -210,13 +201,10 @@ fn more_than_section_size_nodes() {
 
 #[test]
 fn node_joins_in_front() {
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let mut nodes = create_connected_nodes(&network, 2 * LOWERED_ELDER_SIZE);
     let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.insert(
@@ -237,13 +225,10 @@ fn node_joins_in_front() {
 #[test]
 #[cfg_attr(not(feature = "mock_parsec"), ignore)]
 fn multiple_joining_nodes() {
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let mut nodes = create_connected_nodes(&network, LOWERED_ELDER_SIZE);
 
     while nodes.len() < 25 {
@@ -295,13 +280,10 @@ fn multiple_joining_nodes() {
 
 #[test]
 fn multi_split() {
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
@@ -393,13 +375,10 @@ fn simultaneous_joining_nodes(
 #[test]
 fn simultaneous_joining_nodes_two_sections() {
     // Create a network with two sections:
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
@@ -426,13 +405,10 @@ fn simultaneous_joining_nodes_two_sections() {
 #[test]
 fn simultaneous_joining_nodes_two_sections_switch_section() {
     // Create a network with two sections:
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
@@ -464,13 +440,10 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let safe_section_size = LOWERED_ELDER_SIZE + 1;
 
     // Create a network with three sections:
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     // The created sections
@@ -517,13 +490,10 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 #[test]
 fn check_close_names_for_elder_size_nodes() {
     let nodes = create_connected_nodes(
-        &Network::new(
-            NetworkParams {
-                elder_size: LOWERED_ELDER_SIZE,
-                safe_section_size: LOWERED_ELDER_SIZE,
-            },
-            None,
-        ),
+        &Network::new(NetworkParams {
+            elder_size: LOWERED_ELDER_SIZE,
+            safe_section_size: LOWERED_ELDER_SIZE,
+        }),
         LOWERED_ELDER_SIZE,
     );
     let close_sections_complete = nodes
@@ -539,13 +509,10 @@ fn check_section_info_ack() {
     //
     let elder_size = 8;
     let safe_section_size = 8;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
 
     //
     // Act
@@ -578,13 +545,10 @@ fn vote_prune() {
     let max_section_size = 2 * LOWERED_ELDER_SIZE;
     let steps = 10;
 
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let mut nodes = create_connected_nodes(&network, max_section_size);
 
     for _ in 0..steps {
@@ -608,13 +572,10 @@ fn vote_prune() {
 
 #[test]
 fn node_pause_and_resume() {
-    let network = Network::new(
-        NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
     let mut nodes = create_connected_nodes(&network, 8);
 
     let index = network.new_rng().gen_range(0, nodes.len());

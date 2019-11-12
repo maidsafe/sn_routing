@@ -349,13 +349,10 @@ fn make_state_machine(
     gen_pfx_info: &GenesisPfxInfo,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {
-    let network = Network::new(
-        NetworkParams {
-            elder_size: ELDER_SIZE,
-            safe_section_size: ELDER_SIZE,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: ELDER_SIZE,
+        safe_section_size: ELDER_SIZE,
+    });
 
     let endpoint = network.gen_addr();
     let config = NetworkConfig::node().with_hard_coded_contact(endpoint);

@@ -51,13 +51,10 @@ fn message_with_invalid_security(fail_type: FailType) {
     //
     let elder_size = 3;
     let safe_section_size = 3;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let their_node_pos = 0;

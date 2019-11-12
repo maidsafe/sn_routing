@@ -9,10 +9,13 @@
 use super::{node::Node, OurType};
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec;
-use crate::{chain::NetworkParams, NetworkBytes};
+use crate::{
+    chain::NetworkParams,
+    test_rng::{Seed, TestRng},
+    NetworkBytes,
+};
 use fxhash::{FxHashMap, FxHashSet};
-use maidsafe_utilities::SeededRng;
-use rand::Rng;
+use rand::{self, Rng, SeedableRng};
 use std::{
     cell::RefCell,
     cmp,
@@ -35,21 +38,16 @@ pub struct Network(Rc<RefCell<Inner>>);
 
 impl Network {
     /// Construct new mock network.
-    pub fn new(network_cfg: NetworkParams, seed: Option<[u32; 4]>) -> Self {
-        let rng = if let Some(seed) = seed {
-            SeededRng::from_seed(seed)
-        } else {
-            SeededRng::new()
-        };
-
-        PRINT_SEED.call_once(|| eprintln!("{:?}", rng));
+    pub fn new(network_cfg: NetworkParams) -> Self {
+        let seed = Seed::from_env("SEED").unwrap_or_else(|| rand::thread_rng().gen());
+        PRINT_SEED.call_once(|| eprintln!("seed: {}", seed));
 
         #[cfg(feature = "mock_parsec")]
         parsec::init_mock();
 
         let inner = Rc::new(RefCell::new(Inner {
             network_cfg,
-            rng,
+            rng: TestRng::from_seed(seed),
             nodes: Default::default(),
             connections: Default::default(),
             used_ips: Default::default(),
@@ -102,7 +100,7 @@ impl Network {
     }
 
     /// Construct a new random number generator using a seed generated from random data provided by `self`.
-    pub fn new_rng(&self) -> SeededRng {
+    pub fn new_rng(&self) -> TestRng {
         self.0.borrow_mut().rng.new_rng()
     }
 
@@ -146,7 +144,7 @@ impl Network {
 
 pub(super) struct Inner {
     network_cfg: NetworkParams,
-    rng: SeededRng,
+    rng: TestRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
     used_ips: FxHashSet<IpAddr>,
@@ -311,7 +309,7 @@ impl Queue {
     }
 
     // This function will pop random msg from the queue.
-    fn pop_random_msg(&mut self, rng: &mut SeededRng) -> Option<Packet> {
+    fn pop_random_msg(&mut self, rng: &mut TestRng) -> Option<Packet> {
         let first_non_msg_packet = self
             .0
             .iter()

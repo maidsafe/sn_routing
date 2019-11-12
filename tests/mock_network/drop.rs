@@ -33,13 +33,10 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 fn node_drops() {
     let elder_size = 8;
     let safe_section_size = 8;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut nodes = create_connected_nodes(&network, elder_size + 2);
     drop_node(&mut nodes, 0);
 
@@ -55,13 +52,10 @@ fn node_restart() {
     // (with the exception of the first node which is special).
     let elder_size = 5;
     let safe_section_size = 5;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, elder_size);
 

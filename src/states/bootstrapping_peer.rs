@@ -386,7 +386,7 @@ mod tests {
             network_cfg.safe_section_size = 30;
         };
 
-        let network = Network::new(Default::default(), None);
+        let network = Network::new(Default::default());
 
         // Start a bare-bones network service.
         let (event_tx, event_rx) = mpmc::unbounded();
