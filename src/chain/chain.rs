@@ -1187,25 +1187,6 @@ impl Chain {
             .collect_vec()
     }
 
-    /// Returns whether the table contains the given `name`.
-    fn has(&self, name: &XorName) -> bool {
-        self.get_section_legacy(name)
-            .map_or(false, |section| section.contains(name))
-    }
-
-    /// Returns the section matching the given `name`, if present.
-    /// Includes our own name in the case that our prefix matches `name`.
-    fn get_section_legacy(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
-        if self.our_prefix().matches(name) {
-            return Some(self.our_info().member_names().copied().collect());
-        }
-        self.state
-            .neighbour_infos
-            .iter()
-            .find(|&(ref pfx, _)| pfx.matches(name))
-            .map(|(_, ref info)| info.member_names().copied().collect())
-    }
-
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
     /// sorted by ascending distance to `name`. If we are not close, returns `None`.
     pub fn closest_names(
@@ -1280,15 +1261,7 @@ impl Chain {
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(
-        &self,
-        dst: &Authority<XorName>,
-        connected_peers: &[&XorName],
-    ) -> Result<(Vec<XorName>, usize), Error> {
-        // FIXME: only filtering for now to match RT.
-        // should confirm if needed esp after msg_relay changes.
-        let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
-
+    pub fn targets(&self, dst: &Authority<XorName>) -> Result<(Vec<&P2pNode>, usize), Error> {
         let candidates = |target_name: &XorName| {
             let filtered_sections =
                 self.closest_sections_info(*target_name)
@@ -1297,7 +1270,7 @@ impl Chain {
                         (
                             prefix,
                             members.len(),
-                            members.member_names().collect::<Vec<_>>(),
+                            members.member_nodes().collect::<Vec<_>>(),
                         )
                     });
 
@@ -1309,7 +1282,8 @@ impl Chain {
 
                 if prefix == self.our_prefix() {
                     // Send to all connected targets so they can forward the message
-                    nodes_to_send.retain(|&x| x != *self.our_id().name());
+                    let our_name = self.our_id().name();
+                    nodes_to_send.retain(|&node| node.name() != our_name);
                     dg_size = nodes_to_send.len();
                     break;
                 }
@@ -1318,7 +1292,7 @@ impl Chain {
                     break;
                 }
             }
-            nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs));
+            nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
 
             if dg_size > 0 && nodes_to_send.len() >= dg_size {
                 Ok((dg_size, nodes_to_send))
@@ -1332,8 +1306,8 @@ impl Chain {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
                 }
-                if self.has(target_name) && is_connected(&target_name) {
-                    return Ok((vec![*target_name], 1));
+                if let Some(node) = self.get_p2p_node(target_name) {
+                    return Ok((vec![node], 1));
                 }
                 candidates(target_name)?
             }
@@ -1341,15 +1315,13 @@ impl Chain {
                 let (prefix, section) = self.closest_section_info(*target_name);
                 if prefix == self.our_prefix() {
                     // Exclude our name since we don't need to send to ourself
-                    let our_name = &self.our_id().name();
+                    let our_name = self.our_id().name();
 
                     // FIXME: only doing this for now to match RT.
                     // should confirm if needed esp after msg_relay changes.
                     let section: Vec<_> = section
-                        .member_names()
-                        .filter(|name| name != our_name)
-                        .filter(|name| is_connected(name))
-                        .copied()
+                        .member_nodes()
+                        .filter(|node| node.name() != our_name)
                         .collect();
                     let dg_size = section.len();
                     return Ok((section, dg_size));
@@ -1373,13 +1345,14 @@ impl Chain {
                         }
                     };
 
+                    // Exclude our name since we don't need to send to ourself
+                    let our_name = self.our_id().name();
+
                     let targets = self
                         .all_sections()
                         .filter_map(is_compatible)
-                        .flat_map(EldersInfo::member_names)
-                        .filter(|name| is_connected(name))
-                        .filter(|name| name != &self.our_id().name())
-                        .copied()
+                        .flat_map(EldersInfo::member_nodes)
+                        .filter(|node| node.name() != our_name)
                         .collect::<Vec<_>>();
                     let dg_size = targets.len();
                     return Ok((targets, dg_size));

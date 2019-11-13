@@ -1042,16 +1042,8 @@ impl Elder {
         &self,
         routing_msg: &RoutingMessage,
     ) -> Result<(Vec<P2pNode>, usize), RoutingError> {
-        let conn_peers: Vec<_> = self.chain.elders().map(P2pNode::name).collect();
-        let (targets, dg_size) = self.chain.targets(&routing_msg.dst, &conn_peers)?;
-        Ok((
-            targets
-                .into_iter()
-                .filter_map(|name| self.chain.get_p2p_node(&name))
-                .cloned()
-                .collect(),
-            dg_size,
-        ))
+        let (targets, dg_size) = self.chain.targets(&routing_msg.dst)?;
+        Ok((targets.into_iter().cloned().collect(), dg_size))
     }
 
     // Check whether we are connected to any elders. If this node loses all elder connections,
