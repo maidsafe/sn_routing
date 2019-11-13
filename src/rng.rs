@@ -281,7 +281,8 @@ mod seed_printer {
     impl SeedPrinter {
         /// Create new `SeedPrinter` that will print the given seed on failure.
         pub fn on_failure(seed: Seed) -> Self {
-            // TODO: print on Ctrl+C too (include the current thread name too).
+            interrupt::activate(seed);
+
             Self {
                 seed,
                 mode: Mode::OnFailure,
@@ -305,19 +306,69 @@ mod seed_printer {
 
     impl Drop for SeedPrinter {
         fn drop(&mut self) {
+            interrupt::deactivate();
+
             if thread::panicking() {
                 if self.mode == Mode::OnFailure {
-                    print_seed(&self.seed);
+                    print_seed(&self.seed, "");
                 }
             } else if self.mode == Mode::OnSuccess {
-                print_seed(&self.seed);
+                print_seed(&self.seed, "");
             }
         }
     }
 
-    fn print_seed(seed: &Seed) {
-        let msg = format!("{}", seed);
+    fn print_seed(seed: &Seed, label: &str) {
+        let msg = if label.is_empty() {
+            format!("{}", seed)
+        } else {
+            format!("{}: {}", label, seed)
+        };
+
         let border = (0..msg.len()).map(|_| "=").collect::<String>();
         eprintln!("\n{}\n{}\n{}\n", border, msg, border);
+    }
+
+    // Print the seed also on SIGINT and SIGTERM
+    mod interrupt {
+        use super::{print_seed, Seed};
+        use lazy_static::lazy_static;
+        use std::{
+            collections::HashMap,
+            process,
+            sync::{Mutex, Once},
+            thread::{self, ThreadId},
+        };
+
+        static HANDLER_SET: Once = Once::new();
+
+        lazy_static! {
+            static ref ACTIVE_SEEDS: Mutex<HashMap<ThreadId, (String, Seed)>> =
+                Mutex::new(HashMap::new());
+        }
+
+        pub fn activate(seed: Seed) {
+            let mut map = ACTIVE_SEEDS.lock().unwrap();
+            let _ = map.insert(
+                thread::current().id(),
+                (thread::current().name().unwrap_or("???").to_owned(), seed),
+            );
+
+            HANDLER_SET.call_once(|| {
+                let _ = ctrlc::set_handler(|| {
+                    let map = ACTIVE_SEEDS.lock().unwrap();
+                    for (name, seed) in map.values() {
+                        print_seed(seed, name)
+                    }
+
+                    process::abort();
+                });
+            })
+        }
+
+        pub fn deactivate() {
+            let mut map = ACTIVE_SEEDS.lock().unwrap();
+            let _ = map.remove(&thread::current().id());
+        }
     }
 }
