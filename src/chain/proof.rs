@@ -105,11 +105,6 @@ impl ProofSet {
         self.sigs.keys()
     }
 
-    /// Returns the number of signatures.
-    pub fn len(&self) -> usize {
-        self.sigs.len()
-    }
-
     /// Removes the node's signature. Returns `false` if it already didn't exist.
     #[cfg(feature = "mock_base")]
     pub fn remove(&mut self, id: &PublicId) -> bool {

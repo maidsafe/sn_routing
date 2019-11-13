@@ -20,7 +20,8 @@ use serde::{Deserializer, Serialize, Serializer};
 use std::{
     cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},
-    net::SocketAddr,
+    hash::{Hash, Hasher},
+    net::{Ipv6Addr, SocketAddr},
     ops::RangeInclusive,
     rc::Rc,
 };
@@ -227,10 +228,10 @@ fn name_from_key(public_key: &signing::PublicKey) -> XorName {
 /// Network p2p node identity.
 /// When a node knows another node as a `P2pNode` it's implicitly connected to it. This is separate
 /// from being connected at the network layer, which currently is handled by quic-p2p.
-#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Hash, PartialOrd, Ord, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct P2pNode {
     public_id: PublicId,
-    connection_info: ConnectionInfo,
+    connection_info: OrderedConnectionInfo,
 }
 
 impl P2pNode {
@@ -238,13 +239,13 @@ impl P2pNode {
     pub fn new(public_id: PublicId, connection_info: ConnectionInfo) -> Self {
         Self {
             public_id,
-            connection_info,
+            connection_info: OrderedConnectionInfo(connection_info),
         }
     }
 
     /// Creates a `ConnectionInfo` from the `P2pNode` instance.
     pub fn into_connection_info(self) -> ConnectionInfo {
-        self.connection_info
+        self.connection_info.0
     }
 
     /// Returns the `PublicId`.
@@ -259,12 +260,12 @@ impl P2pNode {
 
     /// Returns the `ConnectionInfo`.
     pub fn connection_info(&self) -> &ConnectionInfo {
-        &self.connection_info
+        &self.connection_info.0
     }
 
     /// Returns the `SocketAddr`.
     pub fn peer_addr(&self) -> &SocketAddr {
-        &self.connection_info.peer_addr
+        &self.connection_info.0.peer_addr
     }
 }
 
@@ -274,7 +275,7 @@ impl Debug for P2pNode {
             formatter,
             "P2pNode({} at {})",
             self.public_id.name(),
-            self.connection_info.peer_addr,
+            self.connection_info.0.peer_addr,
         )
     }
 }
@@ -285,15 +286,51 @@ impl Display for P2pNode {
     }
 }
 
-impl PartialOrd for P2pNode {
+#[derive(Clone, Serialize, Deserialize)]
+struct OrderedConnectionInfo(pub ConnectionInfo);
+
+impl Hash for OrderedConnectionInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        deconstruct_connection_info(&self.0).hash(state);
+    }
+}
+
+impl PartialEq for OrderedConnectionInfo {
+    fn eq(&self, other: &Self) -> bool {
+        deconstruct_connection_info(&self.0).eq(&deconstruct_connection_info(&other.0))
+    }
+}
+
+impl Eq for OrderedConnectionInfo {}
+
+impl PartialOrd for OrderedConnectionInfo {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for P2pNode {
+impl Ord for OrderedConnectionInfo {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.public_id.cmp(&other.public_id)
+        deconstruct_connection_info(&self.0).cmp(&deconstruct_connection_info(&other.0))
+    }
+}
+
+fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u32, u32, &Vec<u8>) {
+    match conn_info.peer_addr {
+        SocketAddr::V4(addr) => (
+            addr.ip().to_ipv6_compatible(),
+            addr.port(),
+            0_u32,
+            0_u32,
+            &conn_info.peer_cert_der,
+        ),
+        SocketAddr::V6(addr) => (
+            *addr.ip(),
+            addr.port(),
+            addr.flowinfo(),
+            addr.scope_id(),
+            &conn_info.peer_cert_der,
+        ),
     }
 }
 

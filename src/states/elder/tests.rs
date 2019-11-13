@@ -73,7 +73,10 @@ impl ElderUnderTest {
         let elders_info = unwrap!(EldersInfo::new(
             full_ids
                 .iter()
-                .map(|id| P2pNode::new(*id.public_id(), connection_info.clone()))
+                .map(|id| (
+                    *id.public_id().name(),
+                    P2pNode::new(*id.public_id(), connection_info.clone())
+                ))
                 .collect(),
             prefix,
             iter::empty()
@@ -223,10 +226,9 @@ impl ElderUnderTest {
     fn new_elders_info_with_candidate(&self) -> EldersInfo {
         unwrap!(EldersInfo::new(
             self.elders_info
-                .p2p_members()
-                .iter()
+                .member_nodes()
                 .chain(iter::once(&self.candidate))
-                .cloned()
+                .map(|node| (*node.public_id().name(), node.clone()))
                 .collect(),
             *self.elders_info.prefix(),
             Some(&self.elders_info)
@@ -236,7 +238,7 @@ impl ElderUnderTest {
     fn new_elders_info_without_candidate(&self) -> EldersInfo {
         let old_info = self.new_elders_info_with_candidate();
         unwrap!(EldersInfo::new(
-            self.elders_info.p2p_members().clone(),
+            self.elders_info.member_map().clone(),
             *old_info.prefix(),
             Some(&old_info)
         ))
@@ -262,8 +264,7 @@ impl ElderUnderTest {
         self.elder_state()
             .chain()
             .our_info()
-            .members()
-            .contains(self.candidate.public_id())
+            .is_member(self.candidate.public_id())
     }
 
     fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {

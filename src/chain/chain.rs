@@ -107,7 +107,7 @@ impl Chain {
         gen_info: GenesisPfxInfo,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_elder = gen_info.first_info.members().contains(&our_id);
+        let is_elder = gen_info.first_info.is_member(&our_id);
         Self {
             network_cfg,
             dev_params,
@@ -217,7 +217,7 @@ impl Chain {
 
             let opt_event_proofs = opt_event.and_then(|event| {
                 self.chain_accumulator
-                    .poll_event(event, self.our_info().members().clone())
+                    .poll_event(event, self.our_info().member_ids().cloned().collect())
             });
 
             match opt_event_proofs {
@@ -229,9 +229,9 @@ impl Chain {
         match event {
             AccumulatingEvent::SectionInfo(ref info)
             | AccumulatingEvent::NeighbourInfo(ref info) => {
-                let old_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
+                let old_neighbours: BTreeSet<_> = self.neighbour_elder_nodes().cloned().collect();
                 self.add_elders_info(info.clone(), proofs)?;
-                let new_neighbours: BTreeSet<_> = self.neighbour_elders_p2p().cloned().collect();
+                let new_neighbours: BTreeSet<_> = self.neighbour_elder_nodes().cloned().collect();
 
                 if let Some((ref cached_info, _)) = self.state.split_cache {
                     if cached_info == info {
@@ -504,18 +504,21 @@ impl Chain {
             .get_member_connection_info(&pub_id)
             .ok_or(RoutingError::PeerNotFound(pub_id))?;
 
-        let mut elders_p2p = self.state.new_info.p2p_members().clone();
-        let _ = elders_p2p.insert(P2pNode::new(pub_id, connection_info.clone()));
+        let mut elder_nodes = self.state.new_info.member_map().clone();
+        let _ = elder_nodes.insert(
+            *pub_id.name(),
+            P2pNode::new(pub_id, connection_info.clone()),
+        );
 
         // TODO: the split decision should be based on the number of all members, not just elders.
-        if self.should_split(&elders_p2p)? {
-            let (our_info, other_info) = self.split_self(elders_p2p.clone())?;
+        if self.should_split(&elder_nodes)? {
+            let (our_info, other_info) = self.split_self(elder_nodes.clone())?;
             self.state.change = PrefixChange::Splitting;
             return Ok(vec![our_info, other_info]);
         }
 
         self.state.new_info = EldersInfo::new(
-            elders_p2p,
+            elder_nodes,
             *self.state.new_info.prefix(),
             Some(&self.state.new_info),
         )?;
@@ -528,12 +531,8 @@ impl Chain {
     pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
         self.assert_no_prefix_change("remove elder");
 
-        let mut elders = self.state.new_info.p2p_members().clone();
-        let connection_info = self
-            .get_member_connection_info(&pub_id)
-            .ok_or(RoutingError::PeerNotFound(pub_id))?;
-        let p2p_node = P2pNode::new(pub_id, connection_info.clone());
-        let _ = elders.remove(&p2p_node);
+        let mut elders = self.state.new_info.member_map().clone();
+        let _ = elders.remove(pub_id.name());
 
         if self.our_id() == &pub_id {
             self.is_elder = false;
@@ -545,7 +544,7 @@ impl Chain {
             Some(&self.state.new_info),
         )?;
 
-        if self.state.new_info.members().len() < self.elder_size() {
+        if self.state.new_info.len() < self.elder_size() {
             // set to merge state to prevent extending chain any further.
             // We'd still not Vote for OurMerge until we've updated our_infos
             self.state.change = PrefixChange::Merging;
@@ -670,17 +669,11 @@ impl Chain {
     }
 
     /// Returns a set of elders we should be connected to.
-    pub fn elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
+    pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
-            .flat_map(EldersInfo::p2p_members)
-            .chain(self.state.new_info.p2p_members())
-    }
-
-    /// Returns a set of elders we should be connected to.
-    // WIP: consider removing me
-    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.elders_p2p().map(P2pNode::public_id)
+            .flat_map(EldersInfo::member_nodes)
+            .chain(self.state.new_info.member_nodes())
     }
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
@@ -695,24 +688,22 @@ impl Chain {
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.our_info().members().contains(pub_id)
-            || self.state.new_info.members().contains(pub_id)
+        self.state.our_info().is_member(pub_id) || self.state.new_info.is_member(pub_id)
     }
 
     /// Returns whether the given peer is elder in one of our neighbour sections.
     pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
-        self.neighbour_infos()
-            .any(|info| info.members().contains(pub_id))
+        self.neighbour_infos().any(|info| info.is_member(pub_id))
     }
 
     /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
-        self.state.our_info().p2p_members().iter()
+        self.state.our_info().member_nodes()
     }
 
     /// Returns all neighbour elders.
-    pub fn neighbour_elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
-        self.neighbour_infos().flat_map(EldersInfo::p2p_members)
+    pub fn neighbour_elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.neighbour_infos().flat_map(EldersInfo::member_nodes)
     }
 
     /// Return the keys we know
@@ -779,8 +770,8 @@ impl Chain {
 
     /// Check which nodes are unresponsive.
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
-        let members = self.our_info().members().clone();
-        self.chain_accumulator.check_vote_status(&members)
+        let members = self.our_info().member_ids();
+        self.chain_accumulator.check_vote_status(members)
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
@@ -971,7 +962,7 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let pfx = *elders_info.prefix();
         if pfx.matches(self.our_id.name()) {
-            let is_new_elder = !self.is_elder && elders_info.members().contains(&self.our_id);
+            let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
             let pk_set = self.public_key_set();
             self.state.push_our_new_info(elders_info, proofs, &pk_set)?;
 
@@ -1044,13 +1035,13 @@ impl Chain {
     }
 
     /// Returns whether we should split into two sections.
-    fn should_split(&self, members: &BTreeSet<P2pNode>) -> Result<bool, RoutingError> {
+    fn should_split(&self, members: &BTreeMap<XorName, P2pNode>) -> Result<bool, RoutingError> {
         if self.state.change != PrefixChange::None || self.should_vote_for_merge() {
             return Ok(false);
         }
 
         let new_size = members
-            .iter()
+            .values()
             .filter(|p2p_node| {
                 self.our_id
                     .name()
@@ -1066,7 +1057,7 @@ impl Chain {
     /// Splits our section and generates new section infos for the child sections.
     fn split_self(
         &mut self,
-        members: BTreeSet<P2pNode>,
+        members: BTreeMap<XorName, P2pNode>,
     ) -> Result<(EldersInfo, EldersInfo), RoutingError> {
         let next_bit = self.our_id.name().bit(self.our_prefix().bit_count());
 
@@ -1075,7 +1066,7 @@ impl Chain {
 
         let (our_new_section, other_section) = members
             .into_iter()
-            .partition(|p2p_node| our_prefix.matches(p2p_node.name()));
+            .partition(|node| our_prefix.matches(&node.0));
 
         let our_new_info =
             EldersInfo::new(our_new_section, our_prefix, Some(&self.state.new_info))?;
@@ -1149,11 +1140,11 @@ impl Chain {
             .into_iter()
             .flat_map(|(_, si)| {
                 si.member_names()
-                    .into_iter()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
             })
             .filter(|name| connected_peers.contains(&name))
             .take(count)
+            .copied()
             .collect_vec()
     }
 
@@ -1167,13 +1158,13 @@ impl Chain {
     /// Includes our own name in the case that our prefix matches `name`.
     fn get_section_legacy(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
-            return Some(self.our_info().member_names());
+            return Some(self.our_info().member_names().copied().collect());
         }
         self.state
             .neighbour_infos
             .iter()
             .find(|&(ref pfx, _)| pfx.matches(name))
-            .map(|(_, ref info)| info.member_names())
+            .map(|(_, ref info)| info.member_names().copied().collect())
     }
 
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
@@ -1199,20 +1190,22 @@ impl Chain {
         let mut best_info = self.our_info();
         for (pfx, info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.members().is_empty() && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater
-            {
+            if !info.is_empty() && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater {
                 best_pfx = *pfx;
                 best_info = info;
             }
         }
-        (best_pfx, best_info.member_names())
+        (best_pfx, best_info.member_names().copied().collect())
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
     fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
-        let mut result = vec![(*self.our_prefix(), self.our_info().member_names())];
+        let mut result = vec![(
+            *self.our_prefix(),
+            self.our_info().member_names().copied().collect(),
+        )];
         for (pfx, info) in &self.state.neighbour_infos {
-            result.push((*pfx, info.member_names()));
+            result.push((*pfx, info.member_names().copied().collect()));
         }
         result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
         result
@@ -1334,14 +1327,14 @@ impl Chain {
                         }
                     };
 
-                    let targets = Iterator::flatten(
-                        self.all_sections()
-                            .filter_map(is_compatible)
-                            .map(EldersInfo::member_names),
-                    )
-                    .filter(is_connected)
-                    .filter(|name| name != self.our_id().name())
-                    .collect::<Vec<_>>();
+                    let targets = self
+                        .all_sections()
+                        .filter_map(is_compatible)
+                        .flat_map(EldersInfo::member_names)
+                        .filter(|name| is_connected(name))
+                        .filter(|name| name != &self.our_id().name())
+                        .copied()
+                        .collect::<Vec<_>>();
                     let dg_size = targets.len();
                     return Ok((targets, dg_size));
                 }
@@ -1366,9 +1359,9 @@ impl Chain {
         self.state
             .neighbour_infos
             .values()
-            .map(|info| info.members().len())
+            .map(|info| info.len())
             .sum::<usize>()
-            + self.state.our_info().members().len()
+            + self.state.our_info().len()
             - 1
     }
 
@@ -1472,23 +1465,11 @@ impl Chain {
         self.state.our_info_by_hash(hash)
     }
 
-    /// Returns all neighbour elders.
-    // WIP: consider remove
-    pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.neighbour_elders_p2p().map(P2pNode::public_id)
-    }
-
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
     pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
         if self.our_prefix().matches(name) {
-            Some(
-                self.our_info()
-                    .members()
-                    .iter()
-                    .map(|id| *id.name())
-                    .collect(),
-            )
+            Some(self.our_info().member_names().copied().collect())
         } else {
             None
         }
@@ -1498,7 +1479,7 @@ impl Chain {
     /// ours*, otherwise returns `None`.
     pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
-            let mut section = self.our_info().member_names();
+            let mut section: BTreeSet<_> = self.our_info().member_names().copied().collect();
             let _ = section.remove(&self.our_id().name());
             Some(section)
         } else {
@@ -1567,8 +1548,7 @@ mod tests {
     use rand::{thread_rng, Rng};
     use serde::Serialize;
     use std::{
-        collections::{BTreeSet, HashMap},
-        net::SocketAddr,
+        collections::{BTreeMap, BTreeSet, HashMap},
         str::FromStr,
     };
     use unwrap::unwrap;
@@ -1583,37 +1563,37 @@ mod tests {
         match gen {
             SecInfoGen::New(pfx, n) => {
                 let mut full_ids = HashMap::new();
-                let mut members = BTreeSet::new();
+                let mut members = BTreeMap::new();
                 for _ in 0..n {
                     let some_id = FullId::within_range(&pfx.range_inclusive());
-                    let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
                     let connection_info = ConnectionInfo {
-                        peer_addr: socket_addr,
+                        peer_addr: ([127, 0, 0, 1], 9999).into(),
                         peer_cert_der: vec![],
                     };
-                    let _ = members.insert(P2pNode::new(*some_id.public_id(), connection_info));
+                    let pub_id = *some_id.public_id();
+                    let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
                 (EldersInfo::new(members, pfx, None).unwrap(), full_ids)
             }
             SecInfoGen::Add(info) => {
-                let mut members = info.p2p_members().clone();
+                let mut members = info.member_map().clone();
                 let some_id = FullId::within_range(&info.prefix().range_inclusive());
-                let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
                 let connection_info = ConnectionInfo {
-                    peer_addr: socket_addr,
+                    peer_addr: ([127, 0, 0, 1], 9999).into(),
                     peer_cert_der: vec![],
                 };
-                let _ = members.insert(P2pNode::new(*some_id.public_id(), connection_info));
+                let pub_id = *some_id.public_id();
+                let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));
                 let mut full_ids = HashMap::new();
-                let _ = full_ids.insert(*some_id.public_id(), some_id);
+                let _ = full_ids.insert(pub_id, some_id);
                 (
                     EldersInfo::new(members, *info.prefix(), Some(info)).unwrap(),
                     full_ids,
                 )
             }
             SecInfoGen::Remove(info) => {
-                let members = info.p2p_members().clone();
+                let members = info.member_map().clone();
                 (
                     EldersInfo::new(members, *info.prefix(), Some(info)).unwrap(),
                     Default::default(),
@@ -1661,10 +1641,9 @@ mod tests {
         let mut sections_iter = section_members.into_iter();
 
         let first_info = sections_iter.next().expect("section members");
-        let our_members = first_info.members().clone();
+        let our_members: BTreeSet<_> = first_info.member_ids().copied().collect();
         let first_ages = first_info
-            .members()
-            .iter()
+            .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         let genesis_info = GenesisPfxInfo {
@@ -1699,7 +1678,6 @@ mod tests {
         assert!(!chain
             .get_section(&Prefix::from_str("00").unwrap())
             .expect("No section 00 found!")
-            .members()
             .is_empty());
         assert!(chain.get_section(&Prefix::from_str("").unwrap()).is_none());
     }
@@ -1736,7 +1714,15 @@ mod tests {
                 }
             };
             full_ids.extend(new_ids);
-            let proofs = gen_proofs(&full_ids, &chain.our_info().members(), &new_info);
+            let proofs = gen_proofs(
+                &full_ids,
+                &chain
+                    .our_info()
+                    .member_ids()
+                    .copied()
+                    .collect::<BTreeSet<_>>(),
+                &new_info,
+            );
             unwrap!(chain.add_elders_info(new_info, proofs));
             assert!(chain.validate_our_history());
             check_infos_for_duplication(&chain);

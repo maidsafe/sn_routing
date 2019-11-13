@@ -37,8 +37,6 @@ use crate::PublicId;
 #[cfg(feature = "mock_base")]
 use crate::{error::RoutingError, id::P2pNode, BlsPublicKeySet, Prefix, XorName};
 use std::collections::BTreeMap;
-#[cfg(feature = "mock_base")]
-use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -76,7 +74,7 @@ pub fn bls_key_set_from_elders_info(elders_info: EldersInfo) -> BlsPublicKeySet 
 #[cfg(feature = "mock_base")]
 /// Test helper to create arbitrary elders nfo.
 pub fn elders_info_for_test(
-    members: BTreeSet<P2pNode>,
+    members: BTreeMap<PublicId, P2pNode>,
     prefix: Prefix<XorName>,
     version: u64,
 ) -> Result<EldersInfo, RoutingError> {

@@ -19,7 +19,7 @@ use maidsafe_utilities::serialisation;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     cmp,
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
 };
 
@@ -28,8 +28,8 @@ use std::{
 /// change, due to an elder being added or removed, or the section splitting or merging.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct EldersInfo {
-    /// The complete list of the section's elders' IDs.
-    members: BTreeSet<P2pNode>,
+    /// The section's complete set of elders as a map from their name to a `P2pNode`.
+    members: BTreeMap<XorName, P2pNode>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Thus `EldersInfo`s with compatible prefixes always have different versions.
     version: u64,
@@ -51,7 +51,7 @@ impl Serialize for EldersInfo {
 impl<'de> Deserialize<'de> for EldersInfo {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
         let (members, version, prefix, prev_hash): (
-            BTreeSet<P2pNode>,
+            BTreeMap<XorName, P2pNode>,
             u64,
             Prefix<XorName>,
             BTreeSet<Digest256>,
@@ -65,7 +65,7 @@ impl EldersInfo {
     /// Creates a `SectionInfo` with the given members, prefix and predecessors.
     #[allow(clippy::new_ret_no_self)]
     pub fn new<'a, I: IntoIterator<Item = &'a Self>>(
-        members: BTreeSet<P2pNode>,
+        members: BTreeMap<XorName, P2pNode>,
         prefix: Prefix<XorName>,
         prev: I,
     ) -> Result<Self, RoutingError> {
@@ -80,25 +80,41 @@ impl EldersInfo {
 
     /// Creates a new `EldersInfo` by merging this and the other one.
     pub fn merge(&self, other: &Self) -> Result<Self, RoutingError> {
-        let members = self.members.iter().chain(&other.members).cloned().collect();
+        let members = self
+            .members
+            .iter()
+            .chain(&other.members)
+            .map(|(name, p2p_node)| (*name, p2p_node.clone()))
+            .collect();
         Self::new(members, self.prefix.popped(), vec![self, other])
     }
 
-    // WIP: remove me (or make less heavy)
-    pub fn members(&self) -> BTreeSet<PublicId> {
-        self.members
-            .iter()
-            .map(P2pNode::public_id)
-            .copied()
-            .collect()
-    }
-
-    pub fn p2p_members(&self) -> &BTreeSet<P2pNode> {
+    pub fn member_map(&self) -> &BTreeMap<XorName, P2pNode> {
         &self.members
     }
 
-    pub fn member_names(&self) -> BTreeSet<XorName> {
-        self.members.iter().map(P2pNode::name).copied().collect()
+    pub fn is_member(&self, pub_id: &PublicId) -> bool {
+        self.members.contains_key(pub_id.name())
+    }
+
+    pub fn member_nodes(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
+        self.members.values()
+    }
+
+    pub fn member_ids(&self) -> impl Iterator<Item = &PublicId> {
+        self.members.values().map(P2pNode::public_id)
+    }
+
+    pub fn member_names(&self) -> impl Iterator<Item = &XorName> {
+        self.members.values().map(P2pNode::name)
+    }
+
+    pub fn len(&self) -> usize {
+        self.members.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.members.is_empty()
     }
 
     pub fn version(&self) -> &u64 {
@@ -120,25 +136,13 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        if proofs.len() * QUORUM_DENOMINATOR <= self.p2p_members().len() * QUORUM_NUMERATOR {
-            return false;
-        }
-
-        // WIP: the call to members is probably to heavy?
-        let members = self.members();
-        proofs.ids().filter(|id| members.contains(id)).count() * QUORUM_DENOMINATOR
-            > members.len() * QUORUM_NUMERATOR
+        proofs.ids().filter(|id| self.is_member(id)).count() * QUORUM_DENOMINATOR
+            > self.len() * QUORUM_NUMERATOR
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        if proofs.len() < self.p2p_members().len() {
-            return false;
-        }
-
-        // WIP: the call to members is probably to heavy?
-        let members = self.members();
-        proofs.ids().filter(|id| members.contains(id)).count() == members.len()
+        proofs.ids().filter(|id| self.is_member(id)).count() == self.len()
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
@@ -148,16 +152,20 @@ impl EldersInfo {
 
     #[cfg(any(test, feature = "mock_base"))]
     pub fn new_for_test(
-        members: BTreeSet<P2pNode>,
+        members: BTreeMap<PublicId, P2pNode>,
         prefix: Prefix<XorName>,
         version: u64,
     ) -> Result<Self, RoutingError> {
+        let members = members
+            .into_iter()
+            .map(|(pub_id, node)| (*pub_id.name(), node))
+            .collect();
         Self::new_with_fields(members, version, prefix, BTreeSet::new())
     }
 
     /// Creates a new instance with the given fields, and computes its hash.
     fn new_with_fields(
-        members: BTreeSet<P2pNode>,
+        members: BTreeMap<XorName, P2pNode>,
         version: u64,
         prefix: Prefix<XorName>,
         prev_hash: BTreeSet<Digest256>,
@@ -204,7 +212,7 @@ impl Display for EldersInfo {
         writeln!(
             formatter,
             "members: [{}]",
-            self.members.iter().map(|member| member.name()).format(", ")
+            self.members.values().map(P2pNode::name).format(", ")
         )?;
         writeln!(formatter, "\t}}")
     }

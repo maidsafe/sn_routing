@@ -12,7 +12,7 @@ use routing::{
     section_proof_chain_from_elders_info, Authority, ConnectionInfo, FullId, HopMessage, Message,
     MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SignedRoutingMessage, XorName,
 };
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::iter;
 use std::net::SocketAddr;
 
@@ -65,8 +65,11 @@ fn message_with_invalid_security(fail_type: FailType) {
     let fake_full = FullId::new();
     let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
     let connection_info = ConnectionInfo::from(socket_addr);
-    let members: BTreeSet<_> =
-        iter::once(P2pNode::new(*fake_full.public_id(), connection_info)).collect();
+    let members: BTreeMap<_, _> = iter::once((
+        *fake_full.public_id(),
+        P2pNode::new(*fake_full.public_id(), connection_info),
+    ))
+    .collect();
     let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001,));
 
     let routing_msg = RoutingMessage {

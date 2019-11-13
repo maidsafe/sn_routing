@@ -597,7 +597,7 @@ mod tests {
         xor_name::XorName,
     };
     use rand;
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
     use std::net::SocketAddr;
     use unwrap::unwrap;
 
@@ -611,11 +611,12 @@ mod tests {
             peer_cert_der: vec![],
         };
         let prefix = Prefix::new(0, *full_id.public_id().name());
-        let pub_ids: BTreeSet<_> = vec![
+        let pub_ids: BTreeMap<_, _> = vec![
             P2pNode::new(*full_id.public_id(), connection_info.clone()),
             P2pNode::new(*full_id_2.public_id(), connection_info.clone()),
         ]
         .into_iter()
+        .map(|p2p_node| (*p2p_node.public_id().name(), p2p_node))
         .collect();
         let dummy_elders_info = unwrap!(EldersInfo::new(pub_ids, prefix, None));
         let dummy_pk_set = BlsPublicKeySet::from_elders_info(dummy_elders_info.clone());
@@ -675,7 +676,10 @@ mod tests {
             P2pNode::new(*full_id_3.public_id(), connection_info.clone()),
         ];
         let src_section = unwrap!(EldersInfo::new(
-            src_section_nodes.into_iter().collect(),
+            src_section_nodes
+                .into_iter()
+                .map(|node| (*node.public_id().name(), node))
+                .collect(),
             prefix,
             None,
         ));

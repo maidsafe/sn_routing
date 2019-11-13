@@ -274,16 +274,12 @@ impl ParsecMap {
 fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
     let rng = Box::new(utils::new_rng());
 
-    if gen_pfx_info
-        .first_info
-        .members()
-        .contains(full_id.public_id())
-    {
+    if gen_pfx_info.first_info.is_member(full_id.public_id()) {
         Parsec::from_genesis(
             #[cfg(feature = "mock_parsec")]
             *gen_pfx_info.first_info.hash(),
             full_id,
-            &gen_pfx_info.first_info.members(),
+            &gen_pfx_info.first_info.member_ids().copied().collect(),
             gen_pfx_info.first_state_serialized.clone(),
             ConsensusMode::Single,
             rng,
@@ -293,8 +289,8 @@ fn create(full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
             #[cfg(feature = "mock_parsec")]
             *gen_pfx_info.first_info.hash(),
             full_id,
-            &gen_pfx_info.first_info.members(),
-            &gen_pfx_info.latest_info.members(),
+            &gen_pfx_info.first_info.member_ids().copied().collect(),
+            &gen_pfx_info.latest_info.member_ids().copied().collect(),
             ConsensusMode::Single,
             rng,
         )
@@ -334,11 +330,16 @@ mod tests {
     }
 
     fn create_gen_pfx_info(full_ids: Vec<FullId>, version: u64) -> GenesisPfxInfo {
-        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+        let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
         let connection_info = ConnectionInfo::from(socket_addr);
         let members = full_ids
             .iter()
-            .map(|id| P2pNode::new(*id.public_id(), connection_info.clone()))
+            .map(|id| {
+                (
+                    *id.public_id(),
+                    P2pNode::new(*id.public_id(), connection_info.clone()),
+                )
+            })
             .collect();
         let elders_info = unwrap!(EldersInfo::new_for_test(
             members,
@@ -346,8 +347,7 @@ mod tests {
             version
         ));
         let first_ages = elders_info
-            .members()
-            .iter()
+            .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         GenesisPfxInfo {
