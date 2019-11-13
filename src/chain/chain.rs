@@ -1225,28 +1225,31 @@ impl Chain {
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     pub(crate) fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
-        let mut best_pfx = *self.our_prefix();
+        let (best_pfx, best_info) = self.closest_section_info(*name);
+        (*best_pfx, best_info.member_names().copied().collect())
+    }
+
+    /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
+    /// belongs in that section or not, and the section itself.
+    pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
+        let mut best_pfx = self.our_prefix();
         let mut best_info = self.our_info();
-        for (pfx, info) in &self.state.neighbour_infos {
+        for (ref pfx, ref info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.is_empty() && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater {
-                best_pfx = *pfx;
+            if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
+                best_pfx = pfx;
                 best_info = info;
             }
         }
-        (best_pfx, best_info.member_names().copied().collect())
+        (best_pfx, best_info)
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
-    fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
-        let mut result = vec![(
-            *self.our_prefix(),
-            self.our_info().member_names().copied().collect(),
-        )];
-        for (pfx, info) in &self.state.neighbour_infos {
-            result.push((*pfx, info.member_names().copied().collect()));
-        }
-        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
+    fn closest_sections_info(&self, name: XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
+        let mut result: Vec<_> = iter::once((self.our_prefix(), self.our_info()))
+            .chain(self.state.neighbour_infos.iter())
+            .collect();
+        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, &name));
         result
     }
 
@@ -1288,13 +1291,13 @@ impl Chain {
 
         let candidates = |target_name: &XorName| {
             let filtered_sections =
-                self.closest_sections(target_name)
+                self.closest_sections_info(*target_name)
                     .into_iter()
                     .map(|(prefix, members)| {
                         (
                             prefix,
                             members.len(),
-                            members.into_iter().filter(is_connected).collect::<Vec<_>>(),
+                            members.member_names().collect::<Vec<_>>(),
                         )
                     });
 
@@ -1304,7 +1307,7 @@ impl Chain {
                 nodes_to_send.extend(connected.into_iter());
                 dg_size = delivery_group_size(len);
 
-                if &prefix == self.our_prefix() {
+                if prefix == self.our_prefix() {
                     // Send to all connected targets so they can forward the message
                     nodes_to_send.retain(|&x| x != *self.our_id().name());
                     dg_size = nodes_to_send.len();
@@ -1335,15 +1338,19 @@ impl Chain {
                 candidates(target_name)?
             }
             Authority::Section(ref target_name) => {
-                let (prefix, section) = self.closest_section(target_name);
-                if &prefix == self.our_prefix() {
+                let (prefix, section) = self.closest_section_info(*target_name);
+                if prefix == self.our_prefix() {
                     // Exclude our name since we don't need to send to ourself
-                    let mut section = section.clone();
-                    let _ = section.remove(&self.our_id().name());
+                    let our_name = &self.our_id().name();
 
                     // FIXME: only doing this for now to match RT.
                     // should confirm if needed esp after msg_relay changes.
-                    let section: Vec<_> = section.into_iter().filter(is_connected).collect();
+                    let section: Vec<_> = section
+                        .member_names()
+                        .filter(|name| name != our_name)
+                        .filter(|name| is_connected(name))
+                        .copied()
+                        .collect();
                     let dg_size = section.len();
                     return Ok((section, dg_size));
                 }
