@@ -15,17 +15,23 @@ use crate::{
     NetworkBytes,
 };
 use fxhash::{FxHashMap, FxHashSet};
+use maidsafe_utilities::log;
 use rand::{self, Rng, SeedableRng};
 use std::{
     cell::RefCell,
     cmp,
     collections::{hash_map::Entry, VecDeque},
+    env,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     rc::{Rc, Weak},
+    sync::Once,
 };
+use unwrap::unwrap;
 
 const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;
+
+static LOG_INIT: Once = Once::new();
 
 /// Handle to the mock network. Create one before testing with mocks. Call `set_next_node_addr` or
 /// `gen_next_node_addr` before creating a `QuicP2p` instance.
@@ -38,10 +44,19 @@ pub struct Network {
 impl Network {
     /// Construct new mock network.
     pub fn new(network_cfg: NetworkParams) -> Self {
-        let seed = Seed::default();
+        LOG_INIT.call_once(|| {
+            if env::var("RUST_LOG")
+                .map(|value| !value.is_empty())
+                .unwrap_or(false)
+            {
+                unwrap!(log::init(true));
+            }
+        });
 
         #[cfg(feature = "mock_parsec")]
         parsec::init_mock();
+
+        let seed = Seed::default();
 
         let inner = Rc::new(RefCell::new(Inner {
             network_cfg,
