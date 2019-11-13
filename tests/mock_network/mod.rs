@@ -186,7 +186,7 @@ fn single_section() {
 
 #[test]
 fn less_than_section_size_nodes() {
-    test_nodes(80)
+    test_nodes(80);
 }
 
 #[test]

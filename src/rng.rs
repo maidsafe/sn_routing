@@ -7,6 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 pub use self::implementation::{new, new_from, MainRng};
+#[cfg(any(feature = "mock_base"))]
+pub use self::seed_printer::SeedPrinter;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test::Seed;
 
@@ -115,6 +117,14 @@ mod test {
         fn next_u32(&mut self) -> u32 {
             self.0.next_u32()
         }
+
+        fn next_u64(&mut self) -> u64 {
+            self.0.next_u64()
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            self.0.fill_bytes(dest)
+        }
     }
 
     impl SeedableRng<Seed> for TestRng {
@@ -123,7 +133,7 @@ mod test {
         }
 
         fn reseed(&mut self, seed: Seed) {
-            self.0.reseed(seed.0)
+            self.0.reseed(seed.0);
         }
     }
 
@@ -248,5 +258,68 @@ mod test {
             );
             assert_eq!("".parse(), Err::<Seed, _>(ParseError));
         }
+    }
+}
+
+#[cfg(feature = "mock_base")]
+mod seed_printer {
+    use super::Seed;
+    use std::thread;
+
+    /// Helper struct that prints a seed on scope exit.
+    pub struct SeedPrinter {
+        seed: Seed,
+        mode: Mode,
+    }
+
+    #[derive(Eq, PartialEq)]
+    enum Mode {
+        OnFailure,
+        OnSuccess,
+    }
+
+    impl SeedPrinter {
+        /// Create new `SeedPrinter` that will print the given seed on failure.
+        pub fn on_failure(seed: Seed) -> Self {
+            // TODO: print on Ctrl+C too (include the current thread name too).
+            Self {
+                seed,
+                mode: Mode::OnFailure,
+            }
+        }
+
+        /// Create new `SeedPrinter` that will print the given seed on success (exiting the scope
+        /// without panic).
+        pub fn on_success(seed: Seed) -> Self {
+            Self {
+                seed,
+                mode: Mode::OnSuccess,
+            }
+        }
+
+        /// Returns the seed this printer will print.
+        pub fn seed(&self) -> &Seed {
+            &self.seed
+        }
+    }
+
+    impl Drop for SeedPrinter {
+        fn drop(&mut self) {
+            if thread::panicking() {
+                if self.mode == Mode::OnFailure {
+                    print_seed(&self.seed);
+                }
+            } else {
+                if self.mode == Mode::OnSuccess {
+                    print_seed(&self.seed);
+                }
+            }
+        }
+    }
+
+    fn print_seed(seed: &Seed) {
+        let msg = format!("{}", seed);
+        let border = (0..msg.len()).map(|_| "=").collect::<String>();
+        eprintln!("\n{}\n{}\n{}\n", border, msg, border);
     }
 }

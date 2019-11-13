@@ -8,7 +8,7 @@
 
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
-    bls_key_set_from_elders_info, elders_info_for_test, mock::Network, rng,
+    bls_key_set_from_elders_info, elders_info_for_test, mock::Network,
     section_proof_chain_from_elders_info, Authority, ConnectionInfo, FullId, HopMessage, Message,
     MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SignedRoutingMessage, XorName,
 };
@@ -49,13 +49,14 @@ fn message_with_invalid_security(fail_type: FailType) {
     //
     // Arrange
     //
-    let mut rng = rng::new();
     let elder_size = 3;
     let safe_section_size = 3;
-    let network = Network::new(NetworkParams {
+    let mut network = Network::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
+    network.expect_panic();
+
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let their_node_pos = 0;
@@ -64,7 +65,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     let our_node_pos = get_position_with_other_prefix(&nodes, &their_prefix);
     let our_prefix = get_prefix(&nodes[our_node_pos]);
 
-    let fake_full = FullId::gen(&mut rng);
+    let fake_full = FullId::gen(&mut network.new_rng());
     let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
     let connection_info = ConnectionInfo::from(socket_addr);
     let members: BTreeMap<_, _> = iter::once((
