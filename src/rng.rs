@@ -163,7 +163,7 @@ mod test {
 
     impl Default for Seed {
         fn default() -> Self {
-            Self::from_env().unwrap_or_else(|| Self::random())
+            Self::from_env().unwrap_or_else(Self::random)
         }
     }
 
@@ -309,10 +309,8 @@ mod seed_printer {
                 if self.mode == Mode::OnFailure {
                     print_seed(&self.seed);
                 }
-            } else {
-                if self.mode == Mode::OnSuccess {
-                    print_seed(&self.seed);
-                }
+            } else if self.mode == Mode::OnSuccess {
+                print_seed(&self.seed);
             }
         }
     }

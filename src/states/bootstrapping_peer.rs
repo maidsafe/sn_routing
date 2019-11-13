@@ -35,6 +35,15 @@ use std::{
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
+pub struct BootstrappingPeerDetails {
+    pub network_service: NetworkService,
+    pub full_id: FullId,
+    pub network_cfg: NetworkParams,
+    pub timer: Timer,
+    pub rng: MainRng,
+    pub dev_params: DevParams,
+}
+
 // State of Client or Node while bootstrapping.
 pub struct BootstrappingPeer {
     pending_requests: HashSet<SocketAddr>,
@@ -50,50 +59,39 @@ pub struct BootstrappingPeer {
 }
 
 impl BootstrappingPeer {
-    pub fn new(
-        mut network_service: NetworkService,
-        full_id: FullId,
-        network_cfg: NetworkParams,
-        timer: Timer,
-        rng: MainRng,
-    ) -> Self {
-        network_service.service_mut().bootstrap();
+    pub fn new(mut details: BootstrappingPeerDetails) -> Self {
+        details.network_service.service_mut().bootstrap();
         Self {
-            network_service,
-            full_id,
-            timer,
+            network_service: details.network_service,
+            full_id: details.full_id,
+            timer: details.timer,
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
-            peer_map: PeerMap::new(),
-            rng,
+            peer_map: PeerMap::default(),
+            rng: details.rng,
             relocate_details: None,
-            network_cfg,
-            dev_params: DevParams::default(),
+            network_cfg: details.network_cfg,
+            dev_params: details.dev_params,
         }
     }
 
     /// Create `BootstrappingPeer` for a node that is being relocated into another sections.
     pub fn relocate(
-        network_service: NetworkService,
-        full_id: FullId,
-        network_cfg: NetworkParams,
-        timer: Timer,
-        rng: MainRng,
+        details: BootstrappingPeerDetails,
         conn_infos: Vec<ConnectionInfo>,
         relocate_details: SignedRelocateDetails,
-        dev_params: DevParams,
     ) -> Self {
         let mut node = Self {
-            network_service,
-            full_id,
-            timer,
+            network_service: details.network_service,
+            full_id: details.full_id,
+            timer: details.timer,
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
             peer_map: PeerMap::new(),
-            rng,
+            rng: details.rng,
             relocate_details: Some(relocate_details),
-            network_cfg,
-            dev_params,
+            network_cfg: details.network_cfg,
+            dev_params: details.dev_params,
         };
 
         for conn_info in conn_infos {
@@ -418,13 +416,14 @@ mod tests {
 
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
             move |network_service, timer, _outbox2| {
-                State::BootstrappingPeer(BootstrappingPeer::new(
+                State::BootstrappingPeer(BootstrappingPeer::new(BootstrappingPeerDetails {
                     network_service,
-                    node_b_full_id,
+                    full_id: node_b_full_id,
                     network_cfg,
                     timer,
                     rng,
-                ))
+                    dev_params: Default::default(),
+                }))
             },
             config,
             &mut node_b_outbox,

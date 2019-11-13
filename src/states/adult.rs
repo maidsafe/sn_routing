@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bootstrapping_peer::BootstrappingPeer,
+    bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     common::{Approved, Base},
     elder::{Elder, ElderDetails},
 };
@@ -125,11 +125,14 @@ impl Adult {
             FullId::within_range(&mut self.rng, &self.chain.our_prefix().range_inclusive());
 
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
-            self.network_service,
-            full_id,
-            network_cfg,
-            self.timer,
-            self.rng,
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id,
+                network_cfg,
+                timer: self.timer,
+                rng: self.rng,
+                dev_params: self.chain.dev_params().clone(),
+            },
         )))
     }
 

@@ -8,7 +8,7 @@
 
 use super::{
     adult::{Adult, AdultDetails},
-    bootstrapping_peer::BootstrappingPeer,
+    bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     common::Base,
 };
 use crate::{
@@ -114,11 +114,14 @@ impl JoiningPeer {
         let full_id = FullId::gen(&mut self.rng);
 
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
-            self.network_service,
-            full_id,
-            self.network_cfg,
-            self.timer,
-            self.rng,
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id,
+                network_cfg: self.network_cfg,
+                timer: self.timer,
+                rng: self.rng,
+                dev_params: self.dev_params,
+            },
         )))
     }
 

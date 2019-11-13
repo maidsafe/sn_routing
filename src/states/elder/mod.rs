@@ -11,7 +11,7 @@ mod tests;
 
 use super::{
     common::{Approved, Base},
-    BootstrappingPeer,
+    BootstrappingPeer, BootstrappingPeerDetails,
 };
 use crate::{
     chain::{
@@ -215,14 +215,16 @@ impl Elder {
         details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
-            self.network_service,
-            self.full_id,
-            self.chain.network_cfg(),
-            self.timer,
-            self.rng,
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id: self.full_id,
+                network_cfg: self.chain.network_cfg(),
+                timer: self.timer,
+                rng: self.rng,
+                dev_params: self.chain.dev_params().clone(),
+            },
             conn_infos,
             details,
-            self.chain.dev_params().clone(),
         )))
     }
 

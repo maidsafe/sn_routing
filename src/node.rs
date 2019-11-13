@@ -18,7 +18,7 @@ use crate::{
     rng::{self, MainRng},
     routing_table::Authority,
     state_machine::{State, StateMachine},
-    states::{self, BootstrappingPeer},
+    states::{self, BootstrappingPeer, BootstrappingPeerDetails},
     xor_name::XorName,
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
@@ -127,13 +127,14 @@ impl NodeBuilder {
                 } else {
                     debug!("Creating a node in the BootstrappingPeer state");
 
-                    State::BootstrappingPeer(BootstrappingPeer::new(
+                    State::BootstrappingPeer(BootstrappingPeer::new(BootstrappingPeerDetails {
                         network_service,
                         full_id,
                         network_cfg,
                         timer,
                         rng,
-                    ))
+                        dev_params: Default::default(),
+                    }))
                 }
             },
             network_config,
