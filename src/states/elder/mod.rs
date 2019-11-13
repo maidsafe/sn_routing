@@ -33,6 +33,7 @@ use crate::{
     pause::PausedState,
     peer_map::PeerMap,
     relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
@@ -40,7 +41,6 @@ use crate::{
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    utils::DynCryptoRng,
     xor_name::XorName,
     BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
 };
@@ -74,7 +74,7 @@ pub struct ElderDetails {
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
-    pub rng: DynCryptoRng,
+    pub rng: MainRng,
 }
 
 pub struct Elder {
@@ -98,7 +98,7 @@ pub struct Elder {
     pfx_is_successfully_polled: bool,
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
-    rng: DynCryptoRng,
+    rng: MainRng,
 }
 
 impl Elder {
@@ -107,7 +107,7 @@ impl Elder {
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
-        mut rng: DynCryptoRng,
+        mut rng: MainRng,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
@@ -180,7 +180,6 @@ impl Elder {
             parsec_map: self.parsec_map,
             peer_map: self.peer_map,
             sig_accumulator: self.sig_accumulator,
-            rng: self.rng,
         })
     }
 
@@ -199,7 +198,7 @@ impl Elder {
                 peer_map: state.peer_map,
                 routing_msg_filter: state.msg_filter,
                 timer,
-                rng: state.rng,
+                rng: rng::new(),
             },
             false,
             state.sig_accumulator,
@@ -1202,7 +1201,7 @@ impl Base for Elder {
         &mut self.timer
     }
 
-    fn rng(&mut self) -> &mut DynCryptoRng {
+    fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
     }
 

@@ -714,13 +714,16 @@ impl Debug for SectionKeyInfo {
 mod test {
     use super::*;
     use crate::{
-        chain::EldersInfo, id::P2pNode, test_rng::TestRng, ConnectionInfo, FullId, Prefix, XorName,
+        chain::EldersInfo,
+        id::P2pNode,
+        rng::{self, MainRng},
+        ConnectionInfo, FullId, Prefix, XorName,
     };
     use std::collections::BTreeMap;
     use std::str::FromStr;
     use unwrap::unwrap;
 
-    fn gen_elders_info(rng: &mut TestRng, pfx: Prefix<XorName>, version: u64) -> EldersInfo {
+    fn gen_elders_info(rng: &mut MainRng, pfx: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;
         let mut members = BTreeMap::new();
         (0..sec_size).for_each(|index| {
@@ -746,12 +749,12 @@ mod test {
     //           the prefix is the prefix of the section whose key we check
     //           the index is the index in the `updates` vector, which should have generated the
     //           key we expect to get for the given prefix
-    fn update_keys_and_check(rng: &mut TestRng, updates: Vec<&str>, expected: Vec<(&str, usize)>) {
+    fn update_keys_and_check(rng: &mut MainRng, updates: Vec<&str>, expected: Vec<(&str, usize)>) {
         update_keys_and_check_with_version(rng, updates.into_iter().enumerate().collect(), expected)
     }
 
     fn update_keys_and_check_with_version(
-        rng: &mut TestRng,
+        rng: &mut MainRng,
         updates: Vec<(usize, &str)>,
         expected: Vec<(&str, usize)>,
     ) {
@@ -807,9 +810,8 @@ mod test {
 
     #[test]
     fn single_prefix_multiple_updates() {
-        let mut rng = TestRng::new();
         update_keys_and_check(
-            &mut rng,
+            &mut rng::new(),
             vec!["0", "1", "1", "1", "1"],
             vec![("0", 0), ("1", 4), ("1", 3), ("1", 2), ("1", 1)],
         );
@@ -817,10 +819,9 @@ mod test {
 
     #[test]
     fn single_prefix_multiple_updates_out_of_order() {
-        let mut rng = TestRng::new();
         // Late version ignored
         update_keys_and_check_with_version(
-            &mut rng,
+            &mut rng::new(),
             vec![(0, "0"), (0, "1"), (2, "1"), (1, "1"), (3, "1")],
             vec![("0", 0), ("1", 4), ("1", 2), ("1", 1)],
         );
@@ -828,9 +829,8 @@ mod test {
 
     #[test]
     fn simple_split() {
-        let mut rng = TestRng::new();
         update_keys_and_check(
-            &mut rng,
+            &mut rng::new(),
             vec!["0", "10", "11", "101"],
             vec![("0", 0), ("100", 1), ("101", 3), ("11", 2), ("10", 1)],
         );
@@ -838,10 +838,9 @@ mod test {
 
     #[test]
     fn simple_split_out_of_order() {
-        let mut rng = TestRng::new();
         // Late version ignored
         update_keys_and_check_with_version(
-            &mut rng,
+            &mut rng::new(),
             vec![(0, "0"), (5, "10"), (5, "11"), (7, "101"), (6, "10")],
             vec![("0", 0), ("100", 1), ("101", 3), ("11", 2), ("10", 1)],
         );
@@ -849,10 +848,9 @@ mod test {
 
     #[test]
     fn our_section_not_sibling_of_ancestor() {
-        let mut rng = TestRng::new();
         // 01 Not the sibling of the single bit parent prefix of 111
         update_keys_and_check(
-            &mut rng,
+            &mut rng::new(),
             vec!["01", "1", "111"],
             vec![("01", 0), ("10", 1), ("110", 1), ("111", 2), ("1", 1)],
         );
@@ -860,9 +858,8 @@ mod test {
 
     #[test]
     fn multiple_split() {
-        let mut rng = TestRng::new();
         update_keys_and_check(
-            &mut rng,
+            &mut rng::new(),
             vec!["0", "1", "1011001"],
             vec![
                 ("0", 0),

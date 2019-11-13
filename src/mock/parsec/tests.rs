@@ -10,7 +10,7 @@ use super::{
     init_mock, Block, ConsensusMode, DkgResult, NetworkEvent, Observation, Parsec, PublicId,
     Request, Response, SecretId,
 };
-use crate::test_rng::TestRng;
+use crate::rng;
 use itertools::Itertools;
 use rand::Rng;
 use std::{
@@ -378,7 +378,7 @@ fn randomized_static_network() {
     let gossip_prob = 0.1;
     let max_steps = 1000;
 
-    let mut rng = TestRng::new();
+    let mut rng = rng::new();
     let mut peers: BTreeMap<_, _> = create_nodes(num_peers, ConsensusMode::Supermajority)
         .map(|peer| (*peer.our_pub_id(), Peer::from(peer)))
         .collect();

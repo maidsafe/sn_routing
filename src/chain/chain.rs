@@ -1571,8 +1571,7 @@ mod tests {
     use super::Chain;
     use crate::{
         id::{FullId, P2pNode, PublicId},
-        test_rng::TestRng,
-        ConnectionInfo, {Prefix, XorName},
+        rng, ConnectionInfo, {Prefix, XorName},
     };
     use rand::{thread_rng, Rng};
     use serde::Serialize;
@@ -1589,7 +1588,7 @@ mod tests {
     }
 
     fn gen_section_info(gen: SecInfoGen) -> (EldersInfo, HashMap<PublicId, FullId>) {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
 
         match gen {
             SecInfoGen::New(pfx, n) => {

@@ -389,14 +389,14 @@ fn packet_is_parsec_gossip() {
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
+        rng,
         routing_table::Authority,
-        test_rng::TestRng,
     };
 
     use maidsafe_utilities::serialisation;
     use serde::Serialize;
 
-    let mut rng = TestRng::new();
+    let mut rng = rng::new();
     let full_id = FullId::gen(&mut rng);
 
     fn serialise<T: Serialize>(msg: &T) -> Vec<u8> {
@@ -692,11 +692,11 @@ fn gen_message() -> NetworkBytes {
         use crate::{
             id::FullId,
             messages::{DirectMessage, Message, SignedDirectMessage},
-            test_rng::TestRng,
+            rng,
         };
 
         thread_local! {
-            static FULL_ID: FullId = FullId::gen(&mut TestRng::new());
+            static FULL_ID: FullId = FullId::gen(&mut rng::new());
         }
 
         // The actual content of the message doesn't matter for the purposes of these tests, only

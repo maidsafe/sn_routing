@@ -261,7 +261,11 @@ pub struct RemainingEvents {
 mod test {
     use super::super::EldersInfo;
     use super::*;
-    use crate::{id::FullId, test_rng::TestRng, BlsPublicKeyShare};
+    use crate::{
+        id::FullId,
+        rng::{self, MainRng},
+        BlsPublicKeyShare,
+    };
     use parsec::SecretId;
     use std::iter;
     use unwrap::unwrap;
@@ -289,7 +293,7 @@ mod test {
         ))
     }
 
-    fn random_section_info_sig_payload(rng: &mut TestRng) -> EventSigPayload {
+    fn random_section_info_sig_payload(rng: &mut MainRng) -> EventSigPayload {
         let (id, first_proof) = random_ids_and_proof(rng);
         EventSigPayload {
             pub_key_share: BlsPublicKeyShare(*id.public_id()),
@@ -297,7 +301,7 @@ mod test {
         }
     }
 
-    fn random_ids_and_proof(rng: &mut TestRng) -> (FullId, Proof) {
+    fn random_ids_and_proof(rng: &mut MainRng) -> (FullId, Proof) {
         let id = FullId::gen(rng);
         let pub_id = *id.public_id();
         let sig = id.sign_detached(&[1]);
@@ -305,7 +309,7 @@ mod test {
         (id, Proof { pub_id, sig })
     }
 
-    fn test_data_random_key(rng: &mut TestRng, event_type: EventType) -> TestData {
+    fn test_data_random_key(rng: &mut MainRng, event_type: EventType) -> TestData {
         let (id, first_proof) = random_ids_and_proof(rng);
         let proofs = ProofSet {
             sigs: iter::once((first_proof.pub_id, first_proof.sig)).collect(),
@@ -357,8 +361,10 @@ mod test {
 
     #[test]
     fn insert_with_proof_set_no_sig() {
-        let mut rng = TestRng::new();
-        insert_with_proof_set(test_data_random_key(&mut rng, EventType::NoSignature));
+        insert_with_proof_set(test_data_random_key(
+            &mut rng::new(),
+            EventType::NoSignature,
+        ));
     }
 
     fn insert_with_proof_set(data: TestData) {
@@ -371,8 +377,10 @@ mod test {
 
     #[test]
     fn poll_proof_no_sig() {
-        let mut rng = TestRng::new();
-        poll_proof(test_data_random_key(&mut rng, EventType::NoSignature));
+        poll_proof(test_data_random_key(
+            &mut rng::new(),
+            EventType::NoSignature,
+        ));
     }
 
     fn poll_proof(data: TestData) {
@@ -388,7 +396,7 @@ mod test {
 
     #[test]
     fn re_insert_with_proof_set_no_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         re_insert_with_proof_set(
             test_data_random_key(&mut rng, EventType::NoSignature),
             test_data_random_key(&mut rng, EventType::NoSignature),
@@ -410,7 +418,7 @@ mod test {
 
     #[test]
     fn re_insert_with_proof_set_after_poll_no_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         re_insert_with_proof_set_after_poll(
             test_data_random_key(&mut rng, EventType::NoSignature),
             test_data_random_key(&mut rng, EventType::NoSignature),
@@ -430,14 +438,18 @@ mod test {
 
     #[test]
     fn add_proof_no_sig() {
-        let mut rng = TestRng::new();
-        add_proof(test_data_random_key(&mut rng, EventType::NoSignature));
+        add_proof(test_data_random_key(
+            &mut rng::new(),
+            EventType::NoSignature,
+        ));
     }
 
     #[test]
     fn add_proof_with_sig() {
-        let mut rng = TestRng::new();
-        add_proof(test_data_random_key(&mut rng, EventType::WithSignature));
+        add_proof(test_data_random_key(
+            &mut rng::new(),
+            EventType::WithSignature,
+        ));
     }
 
     fn add_proof(data: TestData) {
@@ -450,14 +462,18 @@ mod test {
 
     #[test]
     fn re_add_proof_no_sig() {
-        let mut rng = TestRng::new();
-        re_add_proof(test_data_random_key(&mut rng, EventType::NoSignature));
+        re_add_proof(test_data_random_key(
+            &mut rng::new(),
+            EventType::NoSignature,
+        ));
     }
 
     #[test]
     fn re_add_proof_with_sig() {
-        let mut rng = TestRng::new();
-        re_add_proof(test_data_random_key(&mut rng, EventType::WithSignature));
+        re_add_proof(test_data_random_key(
+            &mut rng::new(),
+            EventType::WithSignature,
+        ));
     }
 
     fn re_add_proof(data: TestData) {
@@ -472,13 +488,13 @@ mod test {
 
     #[test]
     fn re_add_proof_after_poll_no_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         re_add_proof_after_poll(test_data_random_key(&mut rng, EventType::NoSignature));
     }
 
     #[test]
     fn re_add_proof_after_poll_with_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         re_add_proof_after_poll(test_data_random_key(&mut rng, EventType::WithSignature));
     }
 
@@ -495,13 +511,13 @@ mod test {
 
     #[test]
     fn reset_all_completed_no_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         reset_all_completed(test_data_random_key(&mut rng, EventType::NoSignature));
     }
 
     #[test]
     fn reset_all_completed_with_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         reset_all_completed(test_data_random_key(&mut rng, EventType::WithSignature));
     }
 
@@ -525,13 +541,13 @@ mod test {
 
     #[test]
     fn reset_none_completed_no_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         reset_none_completed(test_data_random_key(&mut rng, EventType::NoSignature));
     }
 
     #[test]
     fn reset_none_completed_with_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         reset_none_completed(test_data_random_key(&mut rng, EventType::WithSignature));
     }
 
@@ -554,19 +570,19 @@ mod test {
 
     #[test]
     fn reset_none_completed_none_our_id_no_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         let test_data = test_data_random_key(&mut rng, EventType::NoSignature);
         reset_none_completed_none_our_id(&mut rng, test_data);
     }
 
     #[test]
     fn reset_none_completed_none_our_id_with_sig() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         let test_data = test_data_random_key(&mut rng, EventType::WithSignature);
         reset_none_completed_none_our_id(&mut rng, test_data);
     }
 
-    fn reset_none_completed_none_our_id(rng: &mut TestRng, data: TestData) {
+    fn reset_none_completed_none_our_id(rng: &mut MainRng, data: TestData) {
         let our_id = *FullId::gen(rng).public_id();
         let mut acc = ChainAccumulator::default();
         let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
@@ -580,7 +596,7 @@ mod test {
 
     #[test]
     fn tracking_responsiveness() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
 
         let ids_and_proofs: Vec<_> = (0..8)
             .map(|_| {

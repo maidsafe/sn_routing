@@ -16,11 +16,11 @@ use crate::{
     outbox::EventBox,
     peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
+    rng::MainRng,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
-    utils::DynCryptoRng,
     xor_name::XorName,
     ConnectionInfo, NetworkService,
 };
@@ -43,7 +43,7 @@ pub struct BootstrappingPeer {
     full_id: FullId,
     peer_map: PeerMap,
     timer: Timer,
-    rng: DynCryptoRng,
+    rng: MainRng,
     relocate_details: Option<SignedRelocateDetails>,
     network_cfg: NetworkParams,
     dev_params: DevParams,
@@ -55,7 +55,7 @@ impl BootstrappingPeer {
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
-        rng: DynCryptoRng,
+        rng: MainRng,
     ) -> Self {
         network_service.service_mut().bootstrap();
         Self {
@@ -78,7 +78,7 @@ impl BootstrappingPeer {
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
-        rng: DynCryptoRng,
+        rng: MainRng,
         conn_infos: Vec<ConnectionInfo>,
         relocate_details: SignedRelocateDetails,
         dev_params: DevParams,
@@ -229,7 +229,7 @@ impl Base for BootstrappingPeer {
         &mut self.timer
     }
 
-    fn rng(&mut self) -> &mut DynCryptoRng {
+    fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
     }
 
@@ -423,7 +423,7 @@ mod tests {
                     node_b_full_id,
                     network_cfg,
                     timer,
-                    DynCryptoRng::new(rng),
+                    rng,
                 ))
             },
             config,

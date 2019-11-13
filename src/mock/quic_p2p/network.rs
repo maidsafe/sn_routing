@@ -11,7 +11,7 @@ use super::{node::Node, OurType};
 use crate::mock::parsec;
 use crate::{
     chain::NetworkParams,
-    test_rng::{Seed, TestRng},
+    rng::{self, MainRng, Seed},
     NetworkBytes,
 };
 use fxhash::{FxHashMap, FxHashSet};
@@ -47,7 +47,7 @@ impl Network {
 
         let inner = Rc::new(RefCell::new(Inner {
             network_cfg,
-            rng: TestRng::from_seed(seed),
+            rng: MainRng::from_seed(seed),
             nodes: Default::default(),
             connections: Default::default(),
             used_ips: Default::default(),
@@ -100,8 +100,8 @@ impl Network {
     }
 
     /// Construct a new random number generator using a seed generated from random data provided by `self`.
-    pub fn new_rng(&self) -> TestRng {
-        self.0.borrow_mut().rng.new_rng()
+    pub fn new_rng(&self) -> MainRng {
+        rng::new_from(&mut self.0.borrow_mut().rng)
     }
 
     /// Return whether sent any message since previous query and reset the flag.
@@ -144,7 +144,7 @@ impl Network {
 
 pub(super) struct Inner {
     network_cfg: NetworkParams,
-    rng: TestRng,
+    rng: MainRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
     used_ips: FxHashSet<IpAddr>,
@@ -309,7 +309,7 @@ impl Queue {
     }
 
     // This function will pop random msg from the queue.
-    fn pop_random_msg(&mut self, rng: &mut TestRng) -> Option<Packet> {
+    fn pop_random_msg(&mut self, rng: &mut MainRng) -> Option<Packet> {
         let first_non_msg_packet = self
             .0
             .iter()

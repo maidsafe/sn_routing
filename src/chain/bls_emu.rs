@@ -151,13 +151,12 @@ mod test {
     use super::*;
     use crate::{
         id::{FullId, P2pNode},
-        test_rng::TestRng,
-        ConnectionInfo,
+        rng, ConnectionInfo,
     };
     use unwrap::unwrap;
 
     fn gen_section(size: usize) -> (PublicKeySet, Vec<SecretKeyShare>) {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         let ids: Vec<_> = (0..size).map(|_| FullId::gen(&mut rng)).collect();
         let p2p_nodes = ids
             .iter()

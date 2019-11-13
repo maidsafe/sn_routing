@@ -18,10 +18,11 @@ use crate::{
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::{Peer, Token},
+    rng::MainRng,
     routing_table::Authority,
     state_machine::Transition,
     timer::Timer,
-    utils::{DynCryptoRng, LogIdent},
+    utils::LogIdent,
     xor_name::XorName,
     ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
@@ -44,7 +45,7 @@ pub trait Base: Display {
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
-    fn rng(&mut self) -> &mut DynCryptoRng;
+    fn rng(&mut self) -> &mut MainRng;
     fn dev_params(&self) -> &DevParams;
     fn dev_params_mut(&mut self) -> &mut DevParams;
 

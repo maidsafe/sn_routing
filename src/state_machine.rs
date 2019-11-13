@@ -23,7 +23,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{chain::DevParams, routing_table::Authority, utils::DynCryptoRng, Chain};
+use crate::{chain::DevParams, rng::MainRng, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -262,7 +262,7 @@ impl State {
         )
     }
 
-    pub fn rng(&mut self) -> &mut DynCryptoRng {
+    pub fn rng(&mut self) -> &mut MainRng {
         state_dispatch!(
             self,
             state => state.rng(),

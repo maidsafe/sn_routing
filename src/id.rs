@@ -9,7 +9,7 @@
 use crate::{
     crypto::{encryption, signing},
     parsec,
-    utils::{self, CryptoRng, RngCompat},
+    rng::{self, MainRng, RngCompat},
     xor_name::XorName,
     ConnectionInfo,
 };
@@ -37,10 +37,7 @@ pub struct FullId {
 
 impl FullId {
     /// Construct a `FullId` with randomly generated keys.
-    pub fn gen<R>(rng: &mut R) -> FullId
-    where
-        R: CryptoRng,
-    {
+    pub fn gen(rng: &mut MainRng) -> FullId {
         let mut rng = RngCompat(rng);
 
         let secret_signing_key = signing::SecretKey::generate(&mut rng);
@@ -62,10 +59,7 @@ impl FullId {
 
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
     /// FIXME(Fraser) - time limit this function? Document behaviour
-    pub fn within_range<R>(rng: &mut R, range: &RangeInclusive<XorName>) -> FullId
-    where
-        R: CryptoRng,
-    {
+    pub fn within_range(rng: &mut MainRng, range: &RangeInclusive<XorName>) -> FullId {
         let mut rng = RngCompat(rng);
 
         loop {
@@ -120,7 +114,7 @@ impl parsec::SecretId for FullId {
     }
 
     fn encrypt<M: AsRef<[u8]>>(&self, to: &Self::PublicId, plaintext: M) -> Option<Vec<u8>> {
-        let mut rng = RngCompat(utils::new_rng());
+        let mut rng = RngCompat(rng::new());
         let ciphertext = to
             .public_encryption_key
             .encrypt_with_rng(&mut rng, plaintext);
@@ -337,14 +331,12 @@ fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_rng::TestRng;
+    use crate::rng;
     use unwrap::unwrap;
 
     #[test]
     fn serialisation() {
-        let mut rng = TestRng::new();
-
-        let full_id = FullId::gen(&mut rng);
+        let full_id = FullId::gen(&mut rng::new());
         let serialised = unwrap!(serialise(full_id.public_id()));
         let parsed = unwrap!(deserialise(&serialised));
         assert_eq!(*full_id.public_id(), parsed);

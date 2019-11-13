@@ -86,8 +86,8 @@ mod tests {
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
             SignedRoutingMessage,
         },
+        rng,
         routing_table::{Authority, Prefix},
-        test_rng::TestRng,
         BlsPublicKeySet, ConnectionInfo, XorName,
     };
     use itertools::Itertools;
@@ -157,7 +157,7 @@ mod tests {
 
     impl Env {
         fn new() -> Env {
-            let mut rng = TestRng::new();
+            let mut rng = rng::new();
             let msg_sender_id = FullId::gen(&mut rng);
             let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
             let connection_info = ConnectionInfo::from(socket_addr);

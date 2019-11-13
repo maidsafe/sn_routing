@@ -8,10 +8,9 @@
 
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
-    bls_key_set_from_elders_info, elders_info_for_test, mock::Network,
+    bls_key_set_from_elders_info, elders_info_for_test, mock::Network, rng,
     section_proof_chain_from_elders_info, Authority, ConnectionInfo, FullId, HopMessage, Message,
-    MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SignedRoutingMessage, TestRng,
-    XorName,
+    MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SignedRoutingMessage, XorName,
 };
 use std::collections::BTreeMap;
 use std::iter;
@@ -50,7 +49,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     //
     // Arrange
     //
-    let mut rng = TestRng::new();
+    let mut rng = rng::new();
     let elder_size = 3;
     let safe_section_size = 3;
     let network = Network::new(NetworkParams {

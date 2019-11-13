@@ -7,15 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::xor_name::XorName;
-use rand::{OsRng, Rng};
 use std::{
     fmt::{self, Display, Formatter},
     ops::RangeInclusive,
     time::Duration,
 };
-
-#[cfg(any(test, feature = "mock_base"))]
-use {crate::test_rng::TestRng, rand::SeedableRng};
 
 /// Display a "number" to the given number of decimal places
 pub trait DisplayDuration {
@@ -81,92 +77,6 @@ impl Into<RangeInclusive<XorName>> for XorTargetInterval {
     fn into(self) -> RangeInclusive<XorName> {
         RangeInclusive::new(self.0, self.1)
     }
-}
-
-// `CryptoRng` trait shim. TODO: remove this when we update rand to more recent version as it has
-// its own `CryptoRng`.
-pub trait CryptoRng: Rng {}
-
-impl<'a, R: CryptoRng> CryptoRng for &'a mut R {}
-
-impl CryptoRng for OsRng {}
-
-// Note: `TestRng` is not really a CSPRNG (it uses xor-shift under the hood), but that is OK as
-// this is used only in tests.
-#[cfg(any(test, feature = "mock_base"))]
-impl CryptoRng for TestRng {}
-
-// Wrapper around `Box<dyn CryptoRng>` that itself implements `Rng` and so allows to also call
-// methods that require `self: Sized`.
-pub struct DynCryptoRng(Box<dyn CryptoRng>);
-
-impl DynCryptoRng {
-    pub fn new<R: CryptoRng + 'static>(rng: R) -> Self {
-        Self(Box::new(rng))
-    }
-}
-
-impl Rng for DynCryptoRng {
-    fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0.next_u64()
-    }
-}
-
-impl CryptoRng for DynCryptoRng {}
-
-// Note: routing uses different version of the rand crate than threshold_crypto. This is a
-// compatibility adapter between the two.
-pub struct RngCompat<R>(pub R);
-
-impl<R: Rng> rand_crypto::RngCore for RngCompat<R> {
-    fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0.next_u64()
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.fill_bytes(dest)
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand_crypto::Error> {
-        self.0.fill_bytes(dest);
-        Ok(())
-    }
-}
-
-impl<R: CryptoRng> rand_crypto::CryptoRng for RngCompat<R> {}
-
-// Create new Rng instance. Use `TestRng` in test/mock, to allow reproducible test results and
-// to avoid opening too many file handles which could happen on some platforms if we used `OsRng`.
-#[cfg(any(test, feature = "mock_base"))]
-pub fn new_rng() -> TestRng {
-    TestRng::new()
-}
-
-// Create new Rng instance. Use `OsRng` in production for maximum cryptographic security.
-#[cfg(not(any(test, feature = "mock_base")))]
-pub fn new_rng() -> OsRng {
-    match OsRng::new() {
-        Ok(rng) => rng,
-        Err(error) => panic!("Failed to create OsRng: {:?}", error),
-    }
-}
-
-#[cfg(not(any(test, feature = "mock_base")))]
-pub fn new_rng_from<R: Rng>(_: &mut R) -> OsRng {
-    new_rng()
-}
-
-#[cfg(any(test, feature = "mock_base"))]
-pub fn new_rng_from<R: Rng>(rng: &mut R) -> TestRng {
-    TestRng::from_seed(rng.gen())
 }
 
 #[cfg(test)]

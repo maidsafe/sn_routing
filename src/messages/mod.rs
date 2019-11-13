@@ -593,8 +593,8 @@ mod tests {
         chain::SectionKeyInfo,
         crypto::signing::{Signature, SIGNATURE_LENGTH},
         id::{FullId, P2pNode},
+        rng,
         routing_table::{Authority, Prefix},
-        test_rng::TestRng,
         xor_name::XorName,
     };
     use rand;
@@ -604,7 +604,7 @@ mod tests {
 
     #[test]
     fn signed_routing_message_check_integrity() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
 
         let full_id = FullId::gen(&mut rng);
         let full_id_2 = FullId::gen(&mut rng);
@@ -654,7 +654,7 @@ mod tests {
 
     #[test]
     fn signed_routing_message_signatures() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         let full_id_0 = FullId::gen(&mut rng);
         let prefix = Prefix::new(0, *full_id_0.public_id().name());
         let full_id_1 = FullId::gen(&mut rng);

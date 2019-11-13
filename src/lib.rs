@@ -131,13 +131,17 @@ mod routing_table;
 mod signature_accumulator;
 mod state_machine;
 mod states;
-#[cfg(any(test, feature = "mock_base"))]
-mod test_rng;
 mod time;
 mod timer;
 mod types;
 mod utils;
 mod xor_name;
+
+/// Random number generation utilities.
+#[cfg(feature = "mock_base")]
+pub mod rng;
+#[cfg(not(feature = "mock_base"))]
+mod rng;
 
 /// Mocking utilities.
 #[cfg(feature = "mock_base")]
@@ -172,7 +176,6 @@ pub use crate::{
         section_proof_chain_from_elders_info, NetworkParams, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    test_rng::TestRng,
 };
 pub use crate::{
     error::{InterfaceError, RoutingError},

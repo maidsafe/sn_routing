@@ -15,10 +15,10 @@ use crate::{
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::{OurType, Token},
+    rng::{self, MainRng},
     routing_table::Authority,
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer},
-    utils::{self, CryptoRng, DynCryptoRng},
     xor_name::XorName,
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
@@ -38,7 +38,7 @@ use {
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
     first: bool,
-    rng: Option<DynCryptoRng>,
+    rng: Option<MainRng>,
     network_config: Option<NetworkConfig>,
     full_id: Option<FullId>,
     network_cfg: NetworkParams,
@@ -75,9 +75,9 @@ impl NodeBuilder {
     }
 
     /// Use the supplied random number generator. If this is not called, a default `OsRng` is used.
-    pub fn rng<R: CryptoRng + 'static>(self, rng: R) -> Self {
+    pub fn rng(self, rng: MainRng) -> Self {
         Self {
-            rng: Some(DynCryptoRng::new(rng)),
+            rng: Some(rng),
             ..self
         }
     }
@@ -107,9 +107,7 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
-        let mut rng = self
-            .rng
-            .unwrap_or_else(|| DynCryptoRng::new(utils::new_rng()));
+        let mut rng = self.rng.unwrap_or_else(rng::new);
 
         let full_id = self.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
         let network_cfg = self.network_cfg;

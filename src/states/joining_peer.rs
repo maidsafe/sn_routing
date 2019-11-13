@@ -19,11 +19,11 @@ use crate::{
     outbox::EventBox,
     peer_map::PeerMap,
     relocation::RelocatePayload,
+    rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
     timer::Timer,
-    utils::DynCryptoRng,
     xor_name::XorName,
     NetworkService,
 };
@@ -41,7 +41,7 @@ pub struct JoiningPeerDetails {
     pub network_cfg: NetworkParams,
     pub peer_map: PeerMap,
     pub timer: Timer,
-    pub rng: DynCryptoRng,
+    pub rng: MainRng,
     pub p2p_nodes: Vec<P2pNode>,
     pub relocate_payload: Option<RelocatePayload>,
     pub dev_params: DevParams,
@@ -56,7 +56,7 @@ pub struct JoiningPeer {
     full_id: FullId,
     peer_map: PeerMap,
     timer: Timer,
-    rng: DynCryptoRng,
+    rng: MainRng,
     join_token: u64,
     p2p_nodes: Vec<P2pNode>,
     relocate_payload: Option<RelocatePayload>,
@@ -212,7 +212,7 @@ impl Base for JoiningPeer {
         &mut self.timer
     }
 
-    fn rng(&mut self) -> &mut DynCryptoRng {
+    fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
     }
 

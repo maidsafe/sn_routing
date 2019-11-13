@@ -18,9 +18,9 @@ use crate::{
     messages::DirectMessage,
     mock::Network,
     outbox::EventBox,
+    rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    test_rng::TestRng,
-    utils, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
+    NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
@@ -36,7 +36,7 @@ struct JoiningNodeInfo {
 }
 
 impl JoiningNodeInfo {
-    fn with_addr(rng: &mut TestRng, addr: &str) -> Self {
+    fn with_addr(rng: &mut MainRng, addr: &str) -> Self {
         Self {
             full_id: FullId::gen(rng),
             addr: unwrap!(addr.parse()),
@@ -53,7 +53,7 @@ impl JoiningNodeInfo {
 }
 
 struct ElderUnderTest {
-    pub rng: TestRng,
+    pub rng: MainRng,
     pub machine: StateMachine,
     pub full_id: FullId,
     pub other_full_ids: Vec<FullId>,
@@ -67,7 +67,7 @@ impl ElderUnderTest {
     }
 
     fn with_section_size(sec_size: usize) -> Self {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo::from(socket_addr);
         let full_ids = (0..sec_size).map(|_| FullId::gen(&mut rng)).collect_vec();
@@ -313,7 +313,7 @@ fn new_elder_state(
     gen_pfx_info: &GenesisPfxInfo,
     network_service: NetworkService,
     timer: Timer,
-    rng: &mut TestRng,
+    rng: &mut MainRng,
     outbox: &mut dyn EventBox,
 ) -> State {
     let public_id = *full_id.public_id();
@@ -340,7 +340,7 @@ fn new_elder_state(
         peer_map,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,
-        rng: DynCryptoRng::new(utils::new_rng_from(rng)),
+        rng: rng::new_from(rng),
     };
 
     let section_info = gen_pfx_info.first_info.clone();
@@ -351,7 +351,7 @@ fn new_elder_state(
 }
 
 fn make_state_machine(
-    rng: &mut TestRng,
+    rng: &mut MainRng,
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
     outbox: &mut dyn EventBox,

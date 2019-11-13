@@ -26,12 +26,12 @@ use crate::{
     parsec::{DkgResultWrapper, ParsecMap},
     peer_map::PeerMap,
     relocation::RelocateDetails,
+    rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
-    utils::DynCryptoRng,
     xor_name::XorName,
     BlsSignature, NetworkService,
 };
@@ -56,7 +56,7 @@ pub struct AdultDetails {
     pub timer: Timer,
     pub network_cfg: NetworkParams,
     pub dev_params: DevParams,
-    pub rng: DynCryptoRng,
+    pub rng: MainRng,
 }
 
 pub struct Adult {
@@ -73,7 +73,7 @@ pub struct Adult {
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
-    rng: DynCryptoRng,
+    rng: MainRng,
 }
 
 impl Adult {
@@ -315,7 +315,7 @@ impl Base for Adult {
         &mut self.timer
     }
 
-    fn rng(&mut self) -> &mut DynCryptoRng {
+    fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
     }
 

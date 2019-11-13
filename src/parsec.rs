@@ -12,13 +12,13 @@ use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
     messages::DirectMessage,
-    utils::{self, LogIdent},
+    rng::{self, MainRng},
+    utils::LogIdent,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 #[cfg(not(feature = "mock_parsec"))]
 use parsec as inner;
-use rand::Rng;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt, mem,
@@ -83,7 +83,7 @@ pub struct ParsecMap {
 }
 
 impl ParsecMap {
-    pub fn new<R: Rng>(rng: &mut R, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Self {
+    pub fn new(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Self {
         let mut map = BTreeMap::new();
         let _ = map.insert(
             *gen_pfx_info.first_info.version(),
@@ -94,9 +94,9 @@ impl ParsecMap {
         Self { map, size_counter }
     }
 
-    pub fn init<R: Rng>(
+    pub fn init(
         &mut self,
-        rng: &mut R,
+        rng: &mut MainRng,
         full_id: FullId,
         gen_pfx_info: &GenesisPfxInfo,
         log_ident: &LogIdent,
@@ -255,9 +255,9 @@ impl ParsecMap {
         }
     }
 
-    fn add_new<R: Rng>(
+    fn add_new(
         &mut self,
-        rng: &mut R,
+        rng: &mut MainRng,
         full_id: FullId,
         gen_pfx_info: &GenesisPfxInfo,
         log_ident: &LogIdent,
@@ -284,7 +284,7 @@ impl ParsecMap {
 }
 
 /// Create Parsec instance.
-fn create<R: Rng>(rng: &mut R, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
+fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
     if gen_pfx_info.first_info.is_member(full_id.public_id()) {
         Parsec::from_genesis(
             #[cfg(feature = "mock_parsec")]
@@ -293,7 +293,7 @@ fn create<R: Rng>(rng: &mut R, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -
             &gen_pfx_info.first_info.member_ids().copied().collect(),
             gen_pfx_info.first_state_serialized.clone(),
             ConsensusMode::Single,
-            Box::new(utils::new_rng_from(rng)),
+            Box::new(rng::new_from(rng)),
         )
     } else {
         Parsec::from_existing(
@@ -303,7 +303,7 @@ fn create<R: Rng>(rng: &mut R, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -
             &gen_pfx_info.first_info.member_ids().copied().collect(),
             &gen_pfx_info.latest_info.member_ids().copied().collect(),
             ConsensusMode::Single,
-            Box::new(utils::new_rng_from(rng)),
+            Box::new(rng::new_from(rng)),
         )
     }
 }
@@ -314,8 +314,8 @@ mod tests {
     use crate::{
         chain::{EldersInfo, MIN_AGE_COUNTER},
         id::P2pNode,
+        rng::MainRng,
         routing_table::Prefix,
-        test_rng::TestRng,
         xor_name::XorName,
         ConnectionInfo,
     };
@@ -335,7 +335,7 @@ mod tests {
         assert!(counter.needs_pruning());
     }
 
-    fn create_full_ids(rng: &mut TestRng) -> Vec<FullId> {
+    fn create_full_ids(rng: &mut MainRng) -> Vec<FullId> {
         (0..DEFAULT_MIN_SECTION_SIZE)
             .map(|_| FullId::gen(rng))
             .collect()
@@ -370,7 +370,7 @@ mod tests {
         }
     }
 
-    fn create_parsec_map(rng: &mut TestRng, size: u64) -> ParsecMap {
+    fn create_parsec_map(rng: &mut MainRng, size: u64) -> ParsecMap {
         let log_ident = LogIdent::new("node");
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
@@ -386,7 +386,7 @@ mod tests {
         parsec_map
     }
 
-    fn add_to_parsec_map(rng: &mut TestRng, parsec_map: &mut ParsecMap, version: u64) {
+    fn add_to_parsec_map(rng: &mut MainRng, parsec_map: &mut ParsecMap, version: u64) {
         let log_ident = LogIdent::new("node");
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
@@ -450,7 +450,7 @@ mod tests {
     }
 
     fn check_prune_needed_after_msg<T: HandleRequestResponse + Serialize>(
-        rng: &mut TestRng,
+        rng: &mut MainRng,
         msg: T,
         parsec_age: u64,
         prune_needed: bool,
@@ -475,35 +475,31 @@ mod tests {
 
     #[test]
     fn prune_not_required_for_resp_to_old_parsec() {
-        let mut rng = TestRng::new();
         let parsec_age = 1;
-        let _ = check_prune_needed_after_msg(&mut rng, Response::new(), parsec_age, false);
+        let _ = check_prune_needed_after_msg(&mut rng::new(), Response::new(), parsec_age, false);
     }
 
     #[test]
     fn prune_required_for_resp_to_latest_parsec() {
-        let mut rng = TestRng::new();
         let parsec_age = 0;
-        let _ = check_prune_needed_after_msg(&mut rng, Response::new(), parsec_age, true);
+        let _ = check_prune_needed_after_msg(&mut rng::new(), Response::new(), parsec_age, true);
     }
 
     #[test]
     fn prune_not_required_for_req_to_old_parsec() {
-        let mut rng = TestRng::new();
         let parsec_age = 1;
-        let _ = check_prune_needed_after_msg(&mut rng, Request::new(), parsec_age, false);
+        let _ = check_prune_needed_after_msg(&mut rng::new(), Request::new(), parsec_age, false);
     }
 
     #[test]
     fn prune_required_for_req_to_latest_parsec() {
-        let mut rng = TestRng::new();
         let parsec_age = 0;
-        let _ = check_prune_needed_after_msg(&mut rng, Request::new(), parsec_age, true);
+        let _ = check_prune_needed_after_msg(&mut rng::new(), Request::new(), parsec_age, true);
     }
 
     #[test]
     fn prune_required_is_reset_on_adding_parsec() {
-        let mut rng = TestRng::new();
+        let mut rng = rng::new();
         let parsec_age = 0;
         let mut parsec_map =
             check_prune_needed_after_msg(&mut rng, Response::new(), parsec_age, true);
@@ -516,10 +512,9 @@ mod tests {
 
     #[test]
     fn prune_required_is_reset_on_voting() {
-        let mut rng = TestRng::new();
         let parsec_age = 0;
         let mut parsec_map =
-            check_prune_needed_after_msg(&mut rng, Response::new(), parsec_age, true);
+            check_prune_needed_after_msg(&mut rng::new(), Response::new(), parsec_age, true);
 
         assert_eq!(parsec_map.needs_pruning(), true);
         parsec_map.set_pruning_voted_for();
