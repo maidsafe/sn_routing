@@ -11,8 +11,8 @@ use super::{
     EldersInfo, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
-    crypto::Digest256, error::RoutingError, id::PublicId, utils::LogIdent, BlsPublicKey,
-    BlsPublicKeySet, BlsSignature, Prefix, XorName,
+    crypto::Digest256, error::RoutingError, id::PublicId, relocation::RelocateDetails,
+    utils::LogIdent, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -61,6 +61,8 @@ pub struct SharedState {
     pub their_recent_keys: VecDeque<(Prefix<XorName>, SectionKeyInfo)>,
     /// Backlog of completed events that need to be processed when churn completes.
     pub churn_event_backlog: VecDeque<AccumulatingEvent>,
+    /// Queue of pending relocations.
+    pub relocate_queue: VecDeque<RelocateDetails>,
 }
 
 impl SharedState {
@@ -98,6 +100,7 @@ impl SharedState {
             their_knowledge: Default::default(),
             their_recent_keys: Default::default(),
             churn_event_backlog: Default::default(),
+            relocate_queue: VecDeque::new(),
         }
     }
 
@@ -127,6 +130,7 @@ impl SharedState {
             their_knowledge,
             their_recent_keys,
             churn_event_backlog,
+            relocate_queue,
         ) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
@@ -178,6 +182,12 @@ impl SharedState {
                 &self.churn_event_backlog,
                 &churn_event_backlog,
             );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "relocate_queue",
+                &self.relocate_queue,
+                &relocate_queue,
+            );
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
@@ -187,6 +197,7 @@ impl SharedState {
         self.their_knowledge = their_knowledge;
         self.their_recent_keys = their_recent_keys;
         self.churn_event_backlog = churn_event_backlog;
+        self.relocate_queue = relocate_queue;
 
         Ok(())
     }
@@ -201,6 +212,7 @@ impl SharedState {
             &self.their_knowledge,
             &self.their_recent_keys,
             &self.churn_event_backlog,
+            &self.relocate_queue,
         ))?)
     }
 
@@ -237,6 +249,13 @@ impl SharedState {
     pub fn our_joined_members(&self) -> impl Iterator<Item = (&PublicId, &MemberInfo)> {
         self.our_members
             .iter()
+            .filter(|(_, member)| member.state == MemberState::Joined)
+    }
+
+    /// Returns mutable iterator over the members that have state == `Joined`.
+    pub fn our_joined_members_mut(&mut self) -> impl Iterator<Item = (&PublicId, &mut MemberInfo)> {
+        self.our_members
+            .iter_mut()
             .filter(|(_, member)| member.state == MemberState::Joined)
     }
 
@@ -513,16 +532,10 @@ impl SectionProofBlock {
         proofs: AccumulatingProof,
         pk_set: &BlsPublicKeySet,
     ) -> Option<Self> {
+        let sig = proofs.combine_signatures(pk_set)?;
         let key_info = SectionKeyInfo::from_elders_info(elders_info);
 
-        let sig_shares = proofs.into_sig_shares();
-        let sig = pk_set.combine_signatures(
-            sig_shares
-                .values()
-                .map(|sig_payload| (sig_payload.pub_key_share, &sig_payload.sig_share)),
-        );
-
-        sig.map(|sig| SectionProofBlock { key_info, sig })
+        Some(Self { key_info, sig })
     }
 
     pub fn key_info(&self) -> &SectionKeyInfo {

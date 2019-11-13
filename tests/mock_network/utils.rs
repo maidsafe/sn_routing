@@ -218,8 +218,6 @@ pub fn poll_and_resend(nodes: &mut [TestNode]) {
 pub struct PollOptions {
     /// If set, polling continues while this predicate returns true even if all nodes are idle.
     pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
-    /// If this predicate returns true, the polling stops even if some nodes are still busy.
-    pub stop_predicate: Box<dyn Fn(&[TestNode]) -> bool>,
     /// If set and all nodes become idle, advances the time by this amount (in seconds) and polls
     /// again one more time.
     pub extra_advance: Option<u64>,
@@ -232,7 +230,6 @@ impl Default for PollOptions {
     fn default() -> Self {
         Self {
             continue_predicate: None,
-            stop_predicate: Box::new(|_| false),
             extra_advance: None,
             fire_join_timeout: true,
         }
@@ -250,17 +247,6 @@ impl PollOptions {
         }
     }
 
-    #[allow(unused)]
-    pub fn stop_if<F>(self, pred: F) -> Self
-    where
-        F: Fn(&[TestNode]) -> bool + 'static,
-    {
-        Self {
-            stop_predicate: Box::new(pred),
-            ..self
-        }
-    }
-
     pub fn fire_join_timeout(self, fire_join_timeout: bool) -> Self {
         Self {
             fire_join_timeout,
@@ -272,10 +258,6 @@ impl PollOptions {
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
     for _ in 0..MAX_POLL_CALLS {
-        if (options.stop_predicate)(nodes) {
-            return;
-        }
-
         let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
@@ -339,6 +321,14 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
     failed_to_join.len()
 }
 
+/// Options that control adding and removing nodes to the mock network.
+#[derive(Default, Copy, Clone)]
+pub struct ChurnOptions {
+    /// Suppress any relocations that would be caused by adding/removing a node by setting the next
+    /// relocation destination of the existing nodes to lie within their current sections.
+    pub suppress_relocation: bool,
+}
+
 pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     let mut nodes = Vec::new();
 
@@ -388,12 +378,24 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
 }
 
 pub fn create_connected_nodes_until_split(network: &Network, prefix_lengths: Vec<usize>) -> Nodes {
+    create_connected_nodes_until_split_with_options(
+        network,
+        prefix_lengths,
+        ChurnOptions::default(),
+    )
+}
+
+pub fn create_connected_nodes_until_split_with_options(
+    network: &Network,
+    prefix_lengths: Vec<usize>,
+    options: ChurnOptions,
+) -> Nodes {
     // Start first node.
     let mut nodes = vec![TestNode::builder(network).first().create()];
     let _ = nodes[0].poll();
     expect_next_event!(nodes[0], Event::Connected);
 
-    add_connected_nodes_until_split(network, &mut nodes, prefix_lengths);
+    add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, options);
     Nodes(nodes)
 }
 
@@ -411,6 +413,7 @@ pub fn add_connected_nodes_until_split(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     mut prefix_lengths: Vec<usize>,
+    options: ChurnOptions,
 ) {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
@@ -427,7 +430,7 @@ pub fn add_connected_nodes_until_split(
         .iter()
         .map(|prefix| (*prefix, min_split_size))
         .collect_vec();
-    add_nodes_to_prefixes(network, nodes, &prefixes_new_count);
+    add_nodes_to_prefixes(network, nodes, &prefixes_new_count, options);
 
     // If recursive splits are added to Routing (https://maidsafe.atlassian.net/browse/MAID-1861)
     // this next step can be removed.
@@ -460,7 +463,7 @@ pub fn add_connected_nodes_until_split(
             }
         }
         if let Some(prefix_to_split) = found_prefix {
-            add_node_to_section(network, nodes, &prefix_to_split);
+            add_node_to_section(network, nodes, &prefix_to_split, options);
         } else {
             break;
         }
@@ -499,11 +502,12 @@ pub fn add_connected_nodes_until_one_away_from_split(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_to_nearly_split: &[Prefix<XorName>],
+    options: ChurnOptions,
 ) -> Vec<Prefix<XorName>> {
     let (prefixes_and_counts, prefixes_to_add_to_split) =
         prefixes_and_count_to_split_with_only_one_extra_node(nodes, prefixes_to_nearly_split);
 
-    add_connected_nodes_until_sized(network, nodes, &prefixes_and_counts);
+    add_connected_nodes_until_sized(network, nodes, &prefixes_and_counts, options);
     prefixes_to_add_to_split
 }
 
@@ -512,10 +516,11 @@ fn add_connected_nodes_until_sized(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
+    options: ChurnOptions,
 ) {
     clear_all_event_queues(nodes, |_| {});
 
-    add_nodes_to_prefixes(network, nodes, prefixes_new_count);
+    add_nodes_to_prefixes(network, nodes, prefixes_new_count, options);
 
     clear_all_event_queues(nodes, |_| {});
     clear_relocation_overrides(nodes);
@@ -531,6 +536,7 @@ fn add_nodes_to_prefixes(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
+    options: ChurnOptions,
 ) {
     for (prefix, target_count) in prefixes_new_count {
         let num_in_section = nodes
@@ -549,7 +555,7 @@ fn add_nodes_to_prefixes(
         );
         let to_add_count = target_count - num_in_section;
         for _ in 0..to_add_count {
-            add_node_to_section(network, nodes, prefix);
+            add_node_to_section(network, nodes, prefix, options);
         }
     }
 }
@@ -616,13 +622,37 @@ pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
+/// Iterator over all nodes that belong to the given prefix.
+pub fn nodes_with_prefix<'a>(
+    nodes: &'a [TestNode],
+    prefix: &'a Prefix<XorName>,
+) -> impl Iterator<Item = &'a TestNode> {
+    nodes
+        .iter()
+        .filter(move |node| prefix.matches(&node.name()))
+}
+
+/// Mutable iterator over all nodes that belong to the given prefix.
+pub fn nodes_with_prefix_mut<'a>(
+    nodes: &'a mut [TestNode],
+    prefix: &'a Prefix<XorName>,
+) -> impl Iterator<Item = &'a mut TestNode> {
+    nodes
+        .iter_mut()
+        .filter(move |node| prefix.matches(&node.name()))
+}
+
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
-    let our_prefix = unwrap!(node.inner.our_prefix());
-    let our_name = unwrap!(node.inner.our_name());
+    let our_prefix = unwrap!(
+        node.inner.our_prefix(),
+        "{} does not have prefix",
+        node.inner
+    );
+    let our_name = node.name();
     let our_section_elders = node.inner.section_elders(our_prefix);
 
     assert!(
-        our_prefix.matches(our_name),
+        our_prefix.matches(&our_name),
         "Our prefix doesn't match our name: {:?}, {:?}",
         our_prefix,
         our_name,
@@ -735,12 +765,12 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
 
     for node in nodes.iter() {
         let our_prefix = unwrap!(node.inner.our_prefix());
-        let our_name = unwrap!(node.inner.our_name());
+        let our_name = node.name();
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
         for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
             let our_info = NodeSectionInfo {
-                node_name: *our_name,
+                node_name: our_name,
                 node_prefix: *our_prefix,
                 view_section_version: node.inner.section_elder_info_version(prefix),
                 view_section_elders: node.inner.section_elders(prefix),
@@ -894,8 +924,13 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
     prefixes
 }
 
-fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
-    let config = NetworkConfig::node().with_hard_coded_contacts(iter::once(nodes[0].endpoint()));
+fn add_node_to_section(
+    network: &Network,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+    options: ChurnOptions,
+) {
+    let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     let full_id = FullId::within_range(&prefix.range_inclusive());
     nodes.push(
         TestNode::builder(network)
@@ -903,6 +938,15 @@ fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pr
             .full_id(full_id)
             .create(),
     );
+
+    if options.suppress_relocation {
+        // Send all relocations to the same section, effectively disabling them.
+        let dst = prefix.name();
+        for node in nodes_with_prefix_mut(nodes, prefix) {
+            node.inner.set_next_relocation_dst(Some(dst));
+        }
+    }
+
     // Poll until the new node transitions to the `Elder` state.
     poll_and_resend_with_options(
         nodes,

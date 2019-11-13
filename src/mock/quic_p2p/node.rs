@@ -112,7 +112,7 @@ impl Node {
         }
     }
 
-    pub fn receive_packet(&mut self, src: SocketAddr, packet: Packet) {
+    pub fn receive_packet(&mut self, src: SocketAddr, packet: Packet) -> Option<Packet> {
         match packet {
             Packet::BootstrapRequest(peer_type) => {
                 if self.peers.insert(src, ConnectionType::Bootstrap).is_none() {
@@ -189,14 +189,11 @@ impl Node {
                 if self.peers.contains_key(&src) {
                     self.fire_event(Event::NewMessage {
                         peer_addr: src,
-                        msg,
-                    })
+                        msg: msg.clone(),
+                    });
+                    return Some(Packet::MessageSent(msg, token));
                 } else {
-                    self.network.borrow_mut().send(
-                        self.addr,
-                        src,
-                        Packet::MessageFailure(msg, token),
-                    )
+                    return Some(Packet::MessageFailure(msg, token));
                 }
             }
             Packet::MessageFailure(msg, token) => self.fire_event(Event::UnsentUserMessage {
@@ -218,6 +215,8 @@ impl Node {
                 }
             }
         }
+
+        None
     }
 
     pub fn our_connection_info(&self) -> Result<NodeInfo, Error> {

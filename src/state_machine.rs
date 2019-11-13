@@ -11,10 +11,10 @@ use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     error::RoutingError,
     id::{P2pNode, PublicId},
-    messages::{RelocatePayload, SignedRelocateDetails},
     network_service::NetworkBuilder,
     outbox::EventBox,
     pause::PausedState,
+    relocation::{RelocatePayload, SignedRelocateDetails},
     routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
@@ -23,7 +23,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{routing_table::Authority, Chain};
+use crate::{chain::DevParams, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -187,6 +187,22 @@ impl Debug for State {
 
 #[cfg(feature = "mock_base")]
 impl State {
+    pub fn dev_params(&self) -> &DevParams {
+        state_dispatch!(
+            *self,
+            ref state => state.dev_params(),
+            Terminated => unreachable!()
+        )
+    }
+
+    pub fn dev_params_mut(&mut self) -> &mut DevParams {
+        state_dispatch!(
+            *self,
+            ref mut state => state.dev_params_mut(),
+            Terminated => unreachable!()
+        )
+    }
+
     pub fn chain(&self) -> Option<&Chain> {
         match *self {
             State::Adult(ref state) => Some(state.chain()),

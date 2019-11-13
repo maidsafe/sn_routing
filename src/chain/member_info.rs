@@ -13,19 +13,24 @@ use crate::ConnectionInfo;
 pub struct AgeCounter(u32);
 
 impl AgeCounter {
-    #[cfg(any(test, feature = "mock_base"))]
+    /// Create `AgeCounter` with the given age. Minimal valid age is `MIN_AGE` so if a smaller
+    /// value is passed in, it's silently changed to `MIN_AGE`.
+    pub fn from_age(age: u8) -> Self {
+        Self(2u32.pow(u32::from(age.max(MIN_AGE))))
+    }
+
     pub fn age(self) -> u8 {
         f64::from(self.0).log2() as u8
     }
 
-    /// Sets the age. Minimal valid age is `MIN_AGE` so if a smaller value is passed in, it's
-    /// silently changed to `MIN_AGE`.
-    pub fn set_age(&mut self, age: u8) {
-        self.0 = 2u32.pow(u32::from(age.max(MIN_AGE)))
-    }
-
-    pub fn increment(&mut self) {
-        self.0 = self.0.saturating_add(1);
+    /// Increment the counter and return whether the age increased.
+    pub fn increment(&mut self) -> bool {
+        if let Some(new_value) = self.0.checked_add(1) {
+            self.0 = new_value;
+            self.0.is_power_of_two()
+        } else {
+            false
+        }
     }
 }
 
@@ -35,10 +40,10 @@ impl Default for AgeCounter {
     }
 }
 
-/// The minimum allowed value of the Age Counter
-/// The Infants will start at age 4, which is equivalent to the age counter value of 16. This is to
-/// prevent frequent relocations during the beginning of a node's lifetime.
+/// The minimum allowed value of the Age Counter, equivalent to the minimum age of 4.
 pub const MIN_AGE_COUNTER: AgeCounter = AgeCounter(16);
+/// The minimum age a node can have. The Infants will start at age 4. This is to prevent frequent
+/// relocations during the beginning of a node's lifetime.
 pub const MIN_AGE: u8 = 4;
 
 const MAX_INFANT_AGE: u32 = MIN_AGE as u32;
@@ -52,31 +57,30 @@ pub struct MemberInfo {
 }
 
 impl MemberInfo {
-    #[cfg(feature = "mock_base")]
+    /// Create new `MemberInfo` in the `Joined` state.
+    pub fn new(age: u8, connection_info: ConnectionInfo) -> Self {
+        Self {
+            age_counter: AgeCounter::from_age(age),
+            state: MemberState::Joined,
+            connection_info,
+        }
+    }
+
     pub fn age(&self) -> u8 {
         self.age_counter.age()
     }
 
     pub fn set_age(&mut self, age: u8) {
-        self.age_counter.set_age(age)
+        self.age_counter = AgeCounter::from_age(age);
     }
 
-    pub fn increase_age(&mut self) {
-        self.age_counter.increment();
+    // Increment the age counter and return whether the age increased.
+    pub fn increment_age_counter(&mut self) -> bool {
+        self.age_counter.increment()
     }
 
     pub fn is_mature(&self) -> bool {
         self.age_counter > AgeCounter(2u32.pow(MAX_INFANT_AGE))
-    }
-}
-
-impl MemberInfo {
-    pub fn new(connection_info: ConnectionInfo) -> Self {
-        Self {
-            age_counter: MIN_AGE_COUNTER,
-            state: MemberState::Joined,
-            connection_info,
-        }
     }
 }
 
@@ -109,10 +113,12 @@ mod tests {
         let mut age_counter = AgeCounter::default();
 
         for age in MIN_AGE..16 {
-            for _ in 0..2u32.pow(u32::from(age)) {
+            for _ in 0..2u32.pow(u32::from(age)) - 1 {
                 assert_eq!(age_counter.age(), age);
-                age_counter.increment();
+                assert!(!age_counter.increment());
             }
+
+            assert!(age_counter.increment());
         }
     }
 }

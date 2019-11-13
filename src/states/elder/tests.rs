@@ -124,7 +124,7 @@ impl ElderUnderTest {
         for event in events {
             self.other_full_ids.iter().take(count).for_each(|full_id| {
                 let sig_event = if let AccumulatingEvent::SectionInfo(ref info) = event {
-                    Some(unwrap!(SectionInfoSigPayload::new(info, &full_id)))
+                    Some(unwrap!(EventSigPayload::new(&full_id, info)))
                 } else {
                     None
                 };
@@ -313,7 +313,12 @@ fn new_elder_state(
     let public_id = *full_id.public_id();
 
     let parsec_map = ParsecMap::new(full_id.clone(), gen_pfx_info);
-    let chain = Chain::new(Default::default(), public_id, gen_pfx_info.clone());
+    let chain = Chain::new(
+        Default::default(),
+        Default::default(),
+        public_id,
+        gen_pfx_info.clone(),
+    );
     let peer_map = PeerMap::new();
 
     let details = ElderDetails {

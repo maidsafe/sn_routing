@@ -11,6 +11,7 @@ pub(crate) mod bls_emu;
 #[allow(clippy::module_inception)]
 mod chain;
 mod chain_accumulator;
+mod config;
 mod elders_info;
 mod member_info;
 mod network_event;
@@ -20,13 +21,14 @@ mod shared_state;
 #[cfg(feature = "mock_base")]
 pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
 pub use self::{
-    chain::{delivery_group_size, Chain, EldersChange, NetworkParams, ParsecResetData},
+    chain::{delivery_group_size, Chain, ParsecResetData},
     chain_accumulator::AccumulatingProof,
+    config::{DevParams, NetworkParams},
     elders_info::EldersInfo,
     member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_event::{
-        AccumulatingEvent, AckMessagePayload, NetworkEvent, OnlinePayload, SectionInfoSigPayload,
-        SendAckMessagePayload,
+        AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
+        IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
     shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},

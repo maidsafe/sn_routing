@@ -12,15 +12,13 @@ use super::{
     common::Base,
 };
 use crate::{
-    chain::{GenesisPfxInfo, NetworkParams},
+    chain::{DevParams, GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode},
-    messages::{
-        DirectMessage, HopMessage, MessageContent, RelocatePayload, RoutingMessage,
-        SignedRoutingMessage,
-    },
+    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
     outbox::EventBox,
     peer_map::PeerMap,
+    relocation::RelocatePayload,
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
@@ -34,9 +32,18 @@ use std::{
 };
 
 /// Time after which bootstrap is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(120);
-/// How many times will the node try to join the same section before giving up and rebootstrapping.
-const MAX_JOIN_ATTEMPTS: u8 = 3;
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(180);
+
+pub struct JoiningPeerDetails {
+    pub network_service: NetworkService,
+    pub full_id: FullId,
+    pub network_cfg: NetworkParams,
+    pub peer_map: PeerMap,
+    pub timer: Timer,
+    pub p2p_nodes: Vec<P2pNode>,
+    pub relocate_payload: Option<RelocatePayload>,
+    pub dev_params: DevParams,
+}
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
@@ -48,37 +55,29 @@ pub struct JoiningPeer {
     peer_map: PeerMap,
     timer: Timer,
     join_token: u64,
-    join_attempts: u8,
     p2p_nodes: Vec<P2pNode>,
     relocate_payload: Option<RelocatePayload>,
     network_cfg: NetworkParams,
+    dev_params: DevParams,
 }
 
 impl JoiningPeer {
-    pub fn new(
-        network_service: NetworkService,
-        full_id: FullId,
-        network_cfg: NetworkParams,
-        timer: Timer,
-        peer_map: PeerMap,
-        p2p_nodes: Vec<P2pNode>,
-        relocate_payload: Option<RelocatePayload>,
-    ) -> Self {
-        let join_token = timer.schedule(JOIN_TIMEOUT);
+    pub fn new(details: JoiningPeerDetails) -> Self {
+        let join_token = details.timer.schedule(JOIN_TIMEOUT);
 
         let mut joining_peer = Self {
-            network_service,
+            network_service: details.network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
             routing_msg_backlog: vec![],
             direct_msg_backlog: vec![],
-            full_id,
-            timer: timer,
-            peer_map,
+            full_id: details.full_id,
+            timer: details.timer,
+            peer_map: details.peer_map,
             join_token,
-            join_attempts: 0,
-            p2p_nodes,
-            relocate_payload,
-            network_cfg,
+            p2p_nodes: details.p2p_nodes,
+            relocate_payload: details.relocate_payload,
+            network_cfg: details.network_cfg,
+            dev_params: details.dev_params,
         };
 
         joining_peer.send_join_requests();
@@ -101,6 +100,7 @@ impl JoiningPeer {
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
             network_cfg: self.network_cfg,
+            dev_params: self.dev_params,
         };
         Adult::from_joining_peer(details, outbox).map(State::Adult)
     }
@@ -115,15 +115,10 @@ impl JoiningPeer {
     }
 
     fn send_join_requests(&mut self) {
-        let conn_infos: Vec<_> = self
-            .p2p_nodes
-            .iter()
-            .map(|p2p_node| p2p_node.connection_info().clone())
-            .collect();
-        for dst in conn_infos {
-            info!("{} - Sending JoinRequest to {:?}", self, dst);
+        for dst in self.p2p_nodes.clone() {
+            info!("{} - Sending JoinRequest to {}", self, dst.public_id());
             self.send_direct_message(
-                &dst,
+                dst.connection_info(),
                 DirectMessage::JoinRequest(self.relocate_payload.clone()),
             );
         }
@@ -223,28 +218,22 @@ impl Base for JoiningPeer {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.join_token == token {
-            self.join_attempts += 1;
-            debug!(
-                "{} - Timeout when trying to join a section (attempt {}/{}).",
-                self, self.join_attempts, MAX_JOIN_ATTEMPTS
-            );
+            debug!("{} - Timeout when trying to join a section.", self);
 
-            if self.join_attempts < MAX_JOIN_ATTEMPTS {
-                self.join_token = self.timer.schedule(JOIN_TIMEOUT);
-                self.send_join_requests();
-            } else {
-                for peer_addr in self
-                    .peer_map
-                    .remove_all()
-                    .map(|conn_info| conn_info.peer_addr)
-                {
-                    self.network_service
-                        .service_mut()
-                        .disconnect_from(peer_addr);
-                }
+            // TODO: if we are relocating, preserve the relocation details to rebootstrap to the
+            // same target section.
 
-                return Transition::Rebootstrap;
+            for peer_addr in self
+                .peer_map
+                .remove_all()
+                .map(|conn_info| conn_info.peer_addr)
+            {
+                self.network_service
+                    .service_mut()
+                    .disconnect_from(peer_addr);
             }
+
+            return Transition::Rebootstrap;
         }
 
         Transition::Stay
@@ -256,11 +245,19 @@ impl Base for JoiningPeer {
         p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        debug!(
-            "{} Unhandled direct message, adding to backlog: {:?}",
-            self, msg
-        );
-        self.direct_msg_backlog.push((p2p_node, msg));
+        match msg {
+            DirectMessage::ConnectionResponse => (),
+            _ => {
+                debug!(
+                    "{} Unhandled direct message from {}, adding to backlog: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
+                );
+                self.direct_msg_backlog.push((p2p_node, msg));
+            }
+        }
+
         Ok(Transition::Stay)
     }
 
@@ -298,6 +295,14 @@ impl Base for JoiningPeer {
             self, routing_msg
         );
         Ok(())
+    }
+
+    fn dev_params(&self) -> &DevParams {
+        &self.dev_params
+    }
+
+    fn dev_params_mut(&mut self) -> &mut DevParams {
+        &mut self.dev_params
     }
 }
 

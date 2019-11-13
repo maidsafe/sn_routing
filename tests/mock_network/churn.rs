@@ -16,8 +16,8 @@ use rand::Rng;
 use routing::{
     mock::Network,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, XorTargetInterval,
-    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
+    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, QUORUM_DENOMINATOR,
+    QUORUM_NUMERATOR,
 };
 use std::{
     cmp,
@@ -83,8 +83,6 @@ fn drop_random_nodes<R: Rng>(
 /// Adds node per existing prefix using a random proxy. Returns new node indices.
 /// skip_some_prefixes: skip adding to prefixes randomly to allowing sections to merge
 /// when this is executed in the same iteration as `drop_random_nodes`.
-///
-/// Note: This does not clear relocation overrides. Should be cleared after polling.
 fn add_nodes<R: Rng>(
     rng: &mut R,
     network: &Network,
@@ -92,14 +90,9 @@ fn add_nodes<R: Rng>(
     skip_some_prefixes: bool,
 ) -> BTreeSet<usize> {
     let mut prefixes: BTreeSet<_> = nodes
-        .iter_mut()
-        .map(|node| {
-            let pfx = *node.our_prefix();
-            node.inner.set_next_relocation_dst(Some(pfx.lower_bound()));
-            node.inner
-                .set_next_relocation_interval(Some(XorTargetInterval::new(pfx.range_inclusive())));
-            pfx
-        })
+        .iter()
+        .filter_map(|node| node.inner.our_prefix())
+        .copied()
         .collect();
 
     let mut added_nodes = Vec::new();
@@ -202,7 +195,6 @@ fn add_nodes_and_poll<R: Rng>(
         drop(nodes.remove(index));
     }
 
-    clear_relocation_overrides(nodes);
     poll_and_resend(&mut nodes);
     shuffle_nodes(rng, nodes);
 

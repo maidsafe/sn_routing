@@ -7,12 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod direct;
-mod relocate;
 
-pub use self::{
-    direct::{BootstrapResponse, DirectMessage, RelocatePayload, SignedDirectMessage},
-    relocate::{RelocateDetails, SignedRelocateDetails},
-};
+pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
     crypto::{self, signing::Signature, Digest256},
@@ -402,7 +398,9 @@ impl SignedRoutingMessage {
     // valid).
     fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<BlsPublicKeyShare> {
         match self.security_metadata {
-            SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => vec![],
+            SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => {
+                vec![]
+            }
             SecurityMetadata::Partial(ref partial) => {
                 let invalid: Vec<_> = partial
                     .shares
@@ -545,8 +543,6 @@ pub enum MessageContent {
         /// The version acknowledged.
         ack_version: u64,
     },
-    /// Send to a node to inform it to relocate itself.
-    Relocate(RelocateDetails),
 }
 
 impl Debug for HopMessage {
@@ -586,7 +582,6 @@ impl Debug for MessageContent {
                 src_prefix,
                 ack_version,
             } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
-            Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
         }
     }
 }

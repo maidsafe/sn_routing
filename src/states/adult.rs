@@ -8,31 +8,31 @@
 
 use super::{
     bootstrapping_peer::BootstrappingPeer,
-    common::{Approved, Base, GOSSIP_TIMEOUT},
+    common::{Approved, Base},
     elder::{Elder, ElderDetails},
 };
 use crate::{
     chain::{
-        Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
+        Chain, DevParams, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
     error::{BootstrapResponseError, RoutingError},
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, RelocateDetails, RoutingMessage,
-        SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{DkgResultWrapper, ParsecMap},
     peer_map::PeerMap,
+    relocation::RelocateDetails,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
     xor_name::XorName,
-    NetworkService,
+    BlsSignature, NetworkService,
 };
 use itertools::Itertools;
 use std::{
@@ -54,6 +54,7 @@ pub struct AdultDetails {
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
+    pub dev_params: DevParams,
 }
 
 pub struct Adult {
@@ -82,7 +83,12 @@ impl Adult {
 
         let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
 
-        let chain = Chain::new(details.network_cfg, public_id, details.gen_pfx_info.clone());
+        let chain = Chain::new(
+            details.network_cfg,
+            details.dev_params,
+            public_id,
+            details.gen_pfx_info.clone(),
+        );
 
         let node = Self {
             chain,
@@ -151,7 +157,6 @@ impl Adult {
         use crate::{messages::MessageContent::*, routing_table::Authority::*};
 
         let (msg, metadata) = msg.into_parts();
-        // let src_name = msg.src.name();
 
         match msg {
             RoutingMessage {
@@ -235,6 +240,26 @@ impl Adult {
         );
         self.disconnect(&pub_id);
     }
+
+    fn add_elder(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        let _ = self.chain.add_elder(pub_id)?;
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        Ok(())
+    }
+
+    fn remove_elder(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        let _ = self.chain.remove_elder(pub_id)?;
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        Ok(())
+    }
 }
 
 #[cfg(feature = "mock_base")]
@@ -307,13 +332,8 @@ impl Base for Adult {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.parsec_timer_token == token {
-            if self.chain.is_peer_our_elder(self.id()) {
-                self.send_parsec_gossip(None);
-                self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-            } else {
-                self.send_parsec_poke();
-                self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
-            }
+            self.send_parsec_poke();
+            self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
         }
 
         Transition::Stay
@@ -348,8 +368,10 @@ impl Base for Adult {
             }
             msg => {
                 debug!(
-                    "{} Unhandled direct message, adding to backlog: {:?}",
-                    self, msg
+                    "{} Unhandled direct message from {}, adding to backlog: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
                 );
                 self.direct_msg_backlog.push((p2p_node, msg));
                 Ok(Transition::Stay)
@@ -410,6 +432,14 @@ impl Base for Adult {
 
         Ok(())
     }
+
+    fn dev_params(&self) -> &DevParams {
+        self.chain.dev_params()
+    }
+
+    fn dev_params_mut(&mut self) -> &mut DevParams {
+        self.chain.dev_params_mut()
+    }
 }
 
 impl Approved for Adult {
@@ -442,27 +472,19 @@ impl Approved for Adult {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let pub_id = *payload.p2p_node.public_id();
-
-        if !self.chain.can_add_member(&payload.p2p_node) {
+        if !self.chain.can_add_member(payload.p2p_node.public_id()) {
             info!("{} - ignore Online: {:?}.", self, payload);
             return Ok(());
         }
 
         info!("{} - handle Online: {:?}.", self, payload);
+
+        let pub_id = *payload.p2p_node.public_id();
         self.chain.add_member(payload.p2p_node, payload.age);
+        self.chain.increment_age_counters(&pub_id);
+        let _ = self.chain.poll_relocation();
 
-        // Simulate handling AddElder as well
-        info!("{} - handle AddElder: {}.", self, pub_id);
-        let _ = self.chain.add_elder(pub_id)?;
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-
-        // If the elder being added is us, start sending parsec gossips.
-        if pub_id == *self.id() {
-            self.parsec_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-        }
-
-        Ok(())
+        self.add_elder(pub_id, outbox)
     }
 
     fn handle_offline_event(
@@ -470,13 +492,19 @@ impl Approved for Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Offline: {}.", self, pub_id);
-        self.chain.remove_member(&pub_id);
+        if !self.chain.can_remove_member(&pub_id) {
+            info!("{} - ignore Offline: {}.", self, pub_id);
+            return Ok(());
+        }
 
-        info!("{} - handle RemoveElder: {}.", self, pub_id);
-        let _ = self.chain.remove_elder(pub_id)?;
+        info!("{} - handle Offline: {}.", self, pub_id);
+        self.chain.increment_age_counters(&pub_id);
+        self.chain.remove_member(&pub_id);
+        let _ = self.chain.poll_relocation();
+
+        self.remove_elder(pub_id, outbox)?;
         self.disconnect(&pub_id);
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
         Ok(())
     }
 
@@ -503,6 +531,13 @@ impl Approved for Adult {
             })
         } else {
             debug!("{} - Unhandled SectionInfo event", self);
+
+            // Need to pop the relocate queue even though we are not going to vote. Otherwise it
+            // could get out of sync with the rest of the section when we transition to elder.
+            if elders_info.prefix().matches(self.name()) {
+                let _ = self.chain.poll_relocation();
+            }
+
             Ok(Transition::Stay)
         }
     }
@@ -510,13 +545,18 @@ impl Approved for Adult {
     fn handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        _: &mut dyn EventBox,
+        _signature: BlsSignature,
+        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle Relocate: {:?}.", self, details);
-
-        if !self.chain.our_prefix().matches(&details.destination) {
-            self.chain.remove_member(&details.pub_id);
+        if !self.chain.can_remove_member(&details.pub_id) {
+            info!("{} - ignore Relocate: {:?} - not a member", self, details);
+            return Ok(());
         }
+
+        info!("{} - handle Relocate: {:?}.", self, details);
+        self.chain.remove_member(&details.pub_id);
+        self.remove_elder(details.pub_id, outbox)?;
+        self.disconnect(&details.pub_id);
 
         Ok(())
     }

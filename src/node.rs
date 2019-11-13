@@ -21,17 +21,18 @@ use crate::{
     xor_name::XorName,
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
-#[cfg(feature = "mock_base")]
-use crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix};
 use crossbeam_channel as mpmc;
-#[cfg(feature = "mock_base")]
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::{self, Display, Formatter},
-};
 use std::{net::SocketAddr, sync::mpsc};
+
 #[cfg(feature = "mock_base")]
-use unwrap::unwrap;
+use {
+    crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix},
+    std::{
+        collections::{BTreeMap, BTreeSet},
+        fmt::{self, Display, Formatter},
+    },
+    unwrap::unwrap,
+};
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
@@ -344,11 +345,6 @@ impl Node {
         self.chain().map(Chain::our_prefix)
     }
 
-    /// Our `XorName`.
-    pub fn our_name(&self) -> Option<&XorName> {
-        self.chain().map(|chain| chain.our_id().name())
-    }
-
     /// Returns the prefixes of all out neighbours signed by our section
     pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         if let Some(chain) = self.chain() {
@@ -390,6 +386,13 @@ impl Node {
         self.chain().into_iter().flat_map(Chain::elders)
     }
 
+    /// Returns whether the given `PublicId` is a member of our section.
+    pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
+        self.chain()
+            .map(|chain| chain.is_peer_our_member(id))
+            .unwrap_or(false)
+    }
+
     /// Returns their knowledge
     pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
         self.chain()
@@ -420,16 +423,23 @@ impl Node {
 
     /// Sets a name to be used when the next node relocation request is received by this node.
     pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        let _ = self
-            .elder_state_mut()
-            .map(|state| state.set_next_relocation_dst(dst));
+        self.machine
+            .current_mut()
+            .dev_params_mut()
+            .next_relocation_dst = dst;
+    }
+
+    /// Gets the next relocation distance that was previosly set with `set_next_relocation_dst`.
+    pub fn next_relocation_dst(&self) -> Option<XorName> {
+        self.machine.current().dev_params().next_relocation_dst
     }
 
     /// Sets an interval to be used when a node is required to generate a new name.
     pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
-        let _ = self
-            .elder_state_mut()
-            .map(|state| state.set_next_relocation_interval(interval));
+        self.machine
+            .current_mut()
+            .dev_params_mut()
+            .next_relocation_interval = interval;
     }
 
     /// Indicates if there are any pending observations in the parsec object
@@ -457,15 +467,6 @@ impl Node {
     /// implemented acting on the accumulated events, at which point this function will be removed.
     pub fn parsec_prune_accumulated(&self) -> Option<usize> {
         self.chain().map(Chain::parsec_prune_accumulated)
-    }
-
-    /// Trigger relocation of the given node to a section matching the given destination address.
-    // TODO: this method exist only so we can test relocation until proper relocation trigger is
-    // implemented. It should be removed afterwards.
-    pub fn trigger_relocation(&mut self, node_id: PublicId, destination_address: XorName) {
-        if let Some(elder) = self.elder_state_mut() {
-            elder.trigger_relocation(node_id, destination_address)
-        }
     }
 }
 

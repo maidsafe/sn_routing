@@ -8,6 +8,7 @@
 
 use crate::{
     action::Action,
+    chain::DevParams,
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode, PublicId},
     messages::{
@@ -43,6 +44,8 @@ pub trait Base: Display {
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
+    fn dev_params(&self) -> &DevParams;
+    fn dev_params_mut(&mut self) -> &mut DevParams;
 
     fn log_ident(&self) -> LogIdent {
         LogIdent::new(self)
@@ -286,11 +289,19 @@ pub trait Base: Display {
             Message::Direct(msg) => {
                 let (msg, public_id) = msg.open()?;
                 self.peer_map_mut().identify(public_id, src_addr);
-                let connection_info = self
-                    .peer_map()
-                    .get_connection_info(public_id)
-                    .ok_or(RoutingError::PeerNotFound(public_id))?
-                    .clone();
+                let connection_info =
+                    if let Some(connection_info) = self.peer_map().get_connection_info(public_id) {
+                        connection_info.clone()
+                    } else {
+                        trace!(
+                            "{} - Received direct message from unconnected peer {}: {:?}",
+                            self,
+                            public_id,
+                            msg
+                        );
+                        return Ok(Transition::Stay);
+                    };
+
                 self.handle_direct_message(msg, P2pNode::new(public_id, connection_info), outbox)
             }
         }

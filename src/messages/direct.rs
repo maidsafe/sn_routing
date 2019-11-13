@@ -10,8 +10,9 @@ use crate::{
     crypto::signing::Signature,
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, P2pNode, PublicId},
-    messages::{SignedRelocateDetails, SignedRoutingMessage},
+    messages::SignedRoutingMessage,
     parsec,
+    relocation::{RelocatePayload, SignedRelocateDetails},
     routing_table::Prefix,
     xor_name::XorName,
     ConnectionInfo,
@@ -51,6 +52,8 @@ pub enum DirectMessage {
     ParsecRequest(u64, parsec::Request),
     /// Parsec response message
     ParsecResponse(u64, parsec::Response),
+    /// Send from a section to the node being relocated.
+    Relocate(SignedRelocateDetails),
 }
 
 /// Response to a BootstrapRequest
@@ -68,41 +71,6 @@ pub enum BootstrapResponse {
     Rebootstrap(Vec<ConnectionInfo>),
     /// An error has occurred
     Error(BootstrapResponseError),
-}
-
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
-pub struct RelocatePayload {
-    pub details: SignedRelocateDetails,
-    /// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.
-    pub signature_of_new_id_with_old_id: Signature,
-}
-
-impl RelocatePayload {
-    pub fn new(
-        details: SignedRelocateDetails,
-        new_pub_id: &PublicId,
-        old_full_id: &FullId,
-    ) -> Result<Self, RoutingError> {
-        let new_id_serialised = serialise(new_pub_id)?;
-        let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
-
-        Ok(Self {
-            details,
-            signature_of_new_id_with_old_id,
-        })
-    }
-
-    pub fn verify_identity(&self, new_pub_id: &PublicId) -> bool {
-        let new_id_serialised = match serialise(new_pub_id) {
-            Ok(buf) => buf,
-            Err(_) => return false,
-        };
-
-        self.details
-            .content()
-            .pub_id
-            .verify(&new_id_serialised, &self.signature_of_new_id_with_old_id)
-    }
 }
 
 impl Debug for DirectMessage {
@@ -123,6 +91,7 @@ impl Debug for DirectMessage {
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(v) => write!(formatter, "ParsecPoke({})", v),
+            Relocate(payload) => write!(formatter, "Relocate({:?})", payload.content()),
         }
     }
 }
@@ -155,6 +124,7 @@ impl Hash for DirectMessage {
                 // Fake hash via serialisation
                 serialise(&response).ok().hash(state)
             }
+            Relocate(details) => details.hash(state),
         }
     }
 }

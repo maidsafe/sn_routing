@@ -13,6 +13,3 @@ pub use self::{
     approved::Approved,
     base::{from_network_bytes, Base},
 };
-use crate::time::Duration;
-
-pub(super) const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);

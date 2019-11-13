@@ -15,15 +15,16 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::PublicId,
-    messages::{DirectMessage, MessageContent, RelocateDetails, RoutingMessage},
+    messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
+    relocation::RelocateDetails,
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     types::MessageId,
     utils,
     xor_name::XorName,
-    ConnectionInfo,
+    BlsSignature, ConnectionInfo,
 };
 use log::LogLevel;
 use std::collections::BTreeSet;
@@ -87,6 +88,7 @@ pub trait Approved: Base {
     fn handle_relocate_event(
         &mut self,
         payload: RelocateDetails,
+        signature: BlsSignature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -267,10 +269,10 @@ pub trait Approved: Base {
 
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut our_pfx = *self.chain_mut().our_prefix();
-        while let Some((event, neighbour_change)) = self.chain_mut().poll()? {
+        while let Some(event) = self.chain_mut().poll()? {
             trace!("{} Handle accumulated event: {:?}", self, event);
 
-            match event {
+            match event.content {
                 AccumulatingEvent::StartDkg(_) => {
                     log_or_panic!(
                         LogLevel::Error,
@@ -290,7 +292,7 @@ pub trait Approved: Base {
                     match self.handle_section_info_event(
                         elders_info,
                         our_pfx,
-                        neighbour_change,
+                        event.neighbour_change,
                         outbox,
                     )? {
                         Transition::Stay => (),
@@ -313,7 +315,7 @@ pub trait Approved: Base {
                     );
                 }
                 AccumulatingEvent::Relocate(payload) => {
-                    self.handle_relocate_event(payload, outbox)?
+                    self.invoke_handle_relocate_event(payload, event.signature, outbox)?
                 }
                 AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }
@@ -363,7 +365,7 @@ pub trait Approved: Base {
             msg_id: MessageId::new(),
         };
 
-        debug!("{} - Sending connection request to {}.", self, their_pub_id);
+        trace!("{} - Sending connection request to {}.", self, their_pub_id);
 
         self.send_routing_message(RoutingMessage { src, dst, content })
             .map_err(|err| {
@@ -402,6 +404,25 @@ pub trait Approved: Base {
         self.send_direct_message(&their_pub_id, DirectMessage::ConnectionResponse);
 
         Ok(())
+    }
+
+    fn invoke_handle_relocate_event(
+        &mut self,
+        details: RelocateDetails,
+        signature: Option<BlsSignature>,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if let Some(signature) = signature {
+            self.handle_relocate_event(details, signature, outbox)
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Unsigned Relocate event {:?}",
+                self,
+                details
+            );
+            Err(RoutingError::FailedSignature)
+        }
     }
 }
 

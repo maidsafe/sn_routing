@@ -15,13 +15,7 @@ mod node_ageing;
 mod secure_message_delivery;
 mod utils;
 
-pub use self::utils::{
-    add_connected_nodes_until_one_away_from_split, add_connected_nodes_until_split,
-    clear_relocation_overrides, count_sections, create_connected_nodes,
-    create_connected_nodes_until_split, current_sections, gen_bytes, gen_range, gen_range_except,
-    poll_all, poll_and_resend, poll_and_resend_with_options, remove_nodes_which_failed_to_connect,
-    sort_nodes_by_distance_to, verify_invariant_for_all_nodes, Nodes, PollOptions, TestNode,
-};
+pub use self::utils::*;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
@@ -55,15 +49,6 @@ fn test_nodes(percentage_size: usize) {
     );
     let mut nodes = create_connected_nodes(&network, size);
     verify_invariant_for_all_nodes(&network, &mut nodes);
-}
-
-fn nodes_with_prefix_mut<'a>(
-    nodes: &'a mut [TestNode],
-    prefix: &'a Prefix<XorName>,
-) -> impl Iterator<Item = &'a mut TestNode> {
-    nodes
-        .iter_mut()
-        .filter(move |node| prefix.matches(&node.name()))
 }
 
 pub fn count_sections_members_if_split(nodes: &[TestNode]) -> BTreeMap<Prefix<XorName>, usize> {
@@ -499,6 +484,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
         &network,
         &mut nodes,
         &[small_prefix],
+        ChurnOptions::default(),
     )
     .first());
 

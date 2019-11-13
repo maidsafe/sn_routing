@@ -17,9 +17,13 @@ use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rand_crypto::Rng;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
-use std::cmp::Ordering;
-use std::fmt::{self, Debug, Display, Formatter};
-use std::{ops::RangeInclusive, rc::Rc};
+use std::{
+    cmp::Ordering,
+    fmt::{self, Debug, Display, Formatter},
+    net::SocketAddr,
+    ops::RangeInclusive,
+    rc::Rc,
+};
 
 /// Network identity component containing name, and public and private keys.
 #[derive(Clone)]
@@ -256,6 +260,11 @@ impl P2pNode {
     /// Returns the `ConnectionInfo`.
     pub fn connection_info(&self) -> &ConnectionInfo {
         &self.connection_info
+    }
+
+    /// Returns the `SocketAddr`.
+    pub fn peer_addr(&self) -> &SocketAddr {
+        &self.connection_info.peer_addr
     }
 }
 

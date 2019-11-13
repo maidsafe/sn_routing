@@ -125,6 +125,7 @@ mod node;
 mod outbox;
 mod pause;
 mod peer_map;
+mod relocation;
 mod routing_message_filter;
 mod routing_table;
 mod signature_accumulator;
@@ -166,7 +167,7 @@ use crate::mock::quic_p2p;
 pub use crate::{
     chain::{
         bls_key_set_from_elders_info, delivery_group_size, elders_info_for_test,
-        section_proof_chain_from_elders_info, NetworkParams,
+        section_proof_chain_from_elders_info, NetworkParams, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
 };

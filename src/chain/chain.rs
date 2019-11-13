@@ -9,21 +9,23 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{PrefixChange, SectionKeyInfo, SharedState},
-    AccumulatingEvent, AgeCounter, EldersInfo, GenesisPfxInfo, MemberInfo, MemberPersona,
-    MemberState, NetworkEvent, Proof, ProofSet, SectionProofChain,
+    AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
+    GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
+    ProofSet, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
+    relocation::{self, RelocateDetails},
     routing_table::{Authority, Error},
     utils::LogIdent,
-    BlsPublicKeySet, ConnectionInfo, Prefix, XorName, Xorable, ELDER_SIZE, SAFE_SECTION_SIZE,
+    BlsPublicKeySet, ConnectionInfo, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
 use std::cmp::Ordering;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
 };
@@ -41,28 +43,12 @@ pub fn delivery_group_size(n: usize) -> usize {
     (n + 2) / 3
 }
 
-/// Network parameters: number of elders, safe section size
-#[derive(Clone, Copy, Debug)]
-pub struct NetworkParams {
-    /// The number of elders per section
-    pub elder_size: usize,
-    /// Minimum number of nodes we consider safe in a section
-    pub safe_section_size: usize,
-}
-
-impl Default for NetworkParams {
-    fn default() -> Self {
-        Self {
-            elder_size: ELDER_SIZE,
-            safe_section_size: SAFE_SECTION_SIZE,
-        }
-    }
-}
-
 /// Data chain.
 pub struct Chain {
     /// Network parameters
     network_cfg: NetworkParams,
+    /// Development/testing configuration.
+    dev_params: DevParams,
     /// This node's public ID.
     our_id: PublicId,
     /// The shared state of the section.
@@ -114,11 +100,17 @@ impl Chain {
     }
 
     /// Create a new chain given genesis information
-    pub fn new(network_cfg: NetworkParams, our_id: PublicId, gen_info: GenesisPfxInfo) -> Self {
+    pub fn new(
+        network_cfg: NetworkParams,
+        dev_params: DevParams,
+        our_id: PublicId,
+        gen_info: GenesisPfxInfo,
+    ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.members().contains(&our_id);
         Self {
             network_cfg,
+            dev_params,
             our_id,
             state: SharedState::new(gen_info.first_info, gen_info.first_ages),
             is_elder,
@@ -200,19 +192,19 @@ impl Chain {
     ///
     /// If the event is a `EldersInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll(&mut self) -> Result<Option<(AccumulatingEvent, EldersChange)>, RoutingError> {
+    pub fn poll(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
         if self.state.handled_genesis_event
             && !self.churn_in_progress
             && self.state.change == PrefixChange::None
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
                 trace!(
-                    "{} churn backlog poll Accumulating event {:?}, Others: {:?}",
+                    "{} churn backlog poll {:?}, Others: {:?}",
                     self,
                     event,
                     self.state.churn_event_backlog
                 );
-                return Ok(Some((event, EldersChange::default())));
+                return Ok(Some(AccumulatedEvent::new(event)));
             }
         }
 
@@ -258,7 +250,9 @@ impl Chain {
                         .collect(),
                 };
 
-                return Ok(Some((event, neighbour_change)));
+                return Ok(Some(
+                    AccumulatedEvent::new(event).with_neighbour_change(neighbour_change),
+                ));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
                 self.update_their_keys(key_info);
@@ -290,12 +284,16 @@ impl Chain {
                 // TODO: remove once we have real integration tests of `ParsecPrune` accumulating.
                 self.parsec_prune_accumulated += 1;
             }
+            AccumulatingEvent::Relocate(_) => {
+                self.churn_in_progress = false;
+                let signature = proofs.combine_signatures(&self.public_key_set());
+                return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
+            }
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::SendAckMessage(_)
-            | AccumulatingEvent::Relocate(_) => (),
+            | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
         let start_churn_event = match event {
@@ -305,7 +303,7 @@ impl Chain {
 
         if start_churn_event && self.churn_in_progress {
             trace!(
-                "{} churn backlog Accumulating event {:?}, Other: {:?}",
+                "{} churn backlog {:?}, Other: {:?}",
                 self,
                 event,
                 self.state.churn_event_backlog
@@ -314,10 +312,11 @@ impl Chain {
             return Ok(None);
         }
 
-        Ok(Some((event, EldersChange::default())))
+        Ok(Some(AccumulatedEvent::new(event)))
     }
 
-    fn increase_members_age(&mut self, trigger_node: &PublicId) {
+    // Increment the age counters of the members.
+    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
         if self.state.our_joined_members().count() >= self.safe_section_size()
             && self
                 .state
@@ -328,65 +327,159 @@ impl Chain {
             // Do nothing for infants and unknown nodes
             return;
         }
-        for (_, member) in self
-            .state
-            .our_members
-            .iter_mut()
-            .filter(|(_, member)| member.state == MemberState::Joined)
-        {
-            member.increase_age();
+
+        let our_prefix = *self.state.our_prefix();
+        let mut details_to_add = Vec::new();
+
+        for (pub_id, member_info) in self.state.our_joined_members_mut() {
+            if pub_id == trigger_node {
+                continue;
+            }
+
+            if !member_info.increment_age_counter() {
+                continue;
+            }
+
+            let destination = compute_relocation_destination(
+                pub_id.name(),
+                trigger_node.name(),
+                &mut self.dev_params,
+            );
+            if our_prefix.matches(&destination) {
+                // Relocation destination inside the current section - ignoring.
+                continue;
+            }
+
+            details_to_add.push(RelocateDetails {
+                pub_id: *pub_id,
+                destination,
+                age: member_info.age() + 1,
+            })
+        }
+
+        for details in details_to_add {
+            self.state.relocate_queue.push_front(details)
         }
     }
 
+    /// Returns the details of the next scheduled relocation to be voted for, if any.
+    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
+        // Delay relocation until all backlogged churn events have been handled and no
+        // additional churn is in progress.
+        if self.churn_in_progress
+            || !self.state.churn_event_backlog.is_empty()
+            || !self.state.handled_genesis_event
+        {
+            return None;
+        }
+
+        let details = loop {
+            if let Some(details) = self.state.relocate_queue.pop_back() {
+                if self.is_peer_our_member(&details.pub_id) {
+                    break details;
+                } else {
+                    trace!(
+                        "{} - Not relocating {} - not a member",
+                        self,
+                        details.pub_id
+                    );
+                }
+            } else {
+                return None;
+            }
+        };
+
+        if self.is_peer_our_elder(&details.pub_id) {
+            let num_elders = self.our_elders().len();
+            if num_elders <= self.elder_size() {
+                warn!(
+                    "{} - Not relocating {} - not enough elders in the section ({}/{}).",
+                    self,
+                    details.pub_id,
+                    num_elders,
+                    self.elder_size() + 1,
+                );
+
+                // Keep the details in the queue so when we gain more elders we can try to relocate
+                // the node again.
+                self.state.relocate_queue.push_back(details);
+
+                return None;
+            }
+        }
+
+        self.churn_in_progress = true;
+
+        Some(details)
+    }
+
     /// Validate if can call add_member on this node.
-    pub fn can_add_member(&mut self, p2p_node: &P2pNode) -> bool {
-        let pub_id = p2p_node.public_id();
-        self.our_prefix().matches(&pub_id.name()) && !self.is_peer_our_member(pub_id)
+    pub fn can_add_member(&mut self, pub_id: &PublicId) -> bool {
+        self.our_prefix().matches(pub_id.name()) && !self.is_peer_our_member(pub_id)
+    }
+
+    /// Validate if can call remove_member on this node.
+    pub fn can_remove_member(&mut self, pub_id: &PublicId) -> bool {
+        self.is_peer_our_member(pub_id)
     }
 
     /// Adds a member to our section.
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
-        self.churn_in_progress = true;
         self.assert_no_prefix_change("add member");
 
         let pub_id = *p2p_node.public_id();
-        if !self.our_prefix().matches(&pub_id.name()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Adding member {} whose name does not match our prefix {:?}.",
-                self,
-                pub_id,
-                self.our_prefix()
-            );
+
+        match self.state.our_members.entry(pub_id) {
+            Entry::Occupied(mut entry) => {
+                if entry.get().state == MemberState::Left {
+                    // Node rejoining
+                    // TODO: To properly support rejoining, either keep the previous age or set the
+                    // new age to max(old_age, new_age)
+                    entry.get_mut().state = MemberState::Joined;
+                    entry.get_mut().set_age(age);
+                } else {
+                    // Node already joined - this should not happen.
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} - Adding member that already exists: {}",
+                        self,
+                        pub_id
+                    );
+                    return;
+                }
+            }
+            Entry::Vacant(entry) => {
+                // Node joining for the first time.
+                let _ = entry.insert(MemberInfo::new(age, p2p_node.connection_info().clone()));
+            }
         }
 
-        self.increase_members_age(&pub_id);
-
-        // TODO: support rejoining
-        let info = self
-            .state
-            .our_members
-            .entry(pub_id)
-            .or_insert_with(|| MemberInfo::new(p2p_node.into_connection_info()));
-        info.state = MemberState::Joined;
-        info.set_age(age);
+        // TODO: switch this to true only when the new member is going to be immediately promoted
+        // to elder.
+        self.churn_in_progress = true;
     }
 
     /// Remove a member from our section.
     pub fn remove_member(&mut self, pub_id: &PublicId) {
-        self.churn_in_progress = true;
         self.assert_no_prefix_change("remove member");
 
-        if let Some(info) = self.state.our_members.get_mut(&pub_id) {
+        if let Some(info) = self
+            .state
+            .our_members
+            .get_mut(&pub_id)
+            .filter(|info| info.state == MemberState::Joined)
+        {
             info.state = MemberState::Left;
-            self.increase_members_age(&pub_id);
+
+            // TODO: switch this to true only if the member is elder.
+            self.churn_in_progress = true;
         } else {
             log_or_panic!(
                 LogLevel::Error,
-                "{} - Attempt to remove non-existent member {}.",
+                "{} - Removing member that doesn't exist: {}",
                 self,
                 pub_id
-            )
+            );
         }
     }
 
@@ -512,6 +605,13 @@ impl Chain {
     /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
     /// cached and currently accumulated events.
     pub fn finalise_prefix_change(&mut self) -> Result<ParsecResetData, RoutingError> {
+        // Clear any relocation overrides
+        #[cfg(feature = "mock_base")]
+        {
+            self.dev_params.next_relocation_dst = None;
+            self.dev_params.next_relocation_interval = None;
+        }
+
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
         self.state.change = PrefixChange::None;
@@ -542,12 +642,6 @@ impl Chain {
         self.state.change
     }
 
-    /// Returns our section info with the given hash, if it exists.
-    #[cfg(feature = "mock_base")]
-    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
-        self.state.our_info_by_hash(hash)
-    }
-
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &EldersInfo> {
         self.state.neighbour_infos.values()
@@ -565,15 +659,6 @@ impl Chain {
             .get(pub_id)
             .map(|info| info.state == MemberState::Joined)
             .unwrap_or(false)
-    }
-
-    /// Get info about a member of our section.
-    #[cfg(feature = "mock_base")]
-    pub fn get_member(&self, pub_id: &PublicId) -> Option<&MemberInfo> {
-        self.state
-            .our_members
-            .get(pub_id)
-            .filter(|info| info.state == MemberState::Joined)
     }
 
     /// Returns the `ConnectioInfo` for a member of our section.
@@ -620,21 +705,14 @@ impl Chain {
             .any(|info| info.members().contains(pub_id))
     }
 
-    /// Returns elders from our own section, including ourselves.
-    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
+    /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
+    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
         self.state.our_info().p2p_members().iter()
     }
 
     /// Returns all neighbour elders.
     pub fn neighbour_elders_p2p(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos().flat_map(EldersInfo::p2p_members)
-    }
-
-    /// Returns all neighbour elders.
-    // WIP: consider remove
-    #[cfg(feature = "mock_base")]
-    pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.neighbour_elders_p2p().map(P2pNode::public_id)
     }
 
     /// Return the keys we know
@@ -1098,36 +1176,6 @@ impl Chain {
             .map(|(_, ref info)| info.member_names())
     }
 
-    /// If our section is the closest one to `name`, returns all names in our section *including
-    /// ours*, otherwise returns `None`.
-    #[cfg(feature = "mock_base")]
-    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
-        if self.our_prefix().matches(name) {
-            Some(
-                self.our_info()
-                    .members()
-                    .iter()
-                    .map(|id| *id.name())
-                    .collect(),
-            )
-        } else {
-            None
-        }
-    }
-
-    /// If our section is the closest one to `name`, returns all names in our section *excluding
-    /// ours*, otherwise returns `None`.
-    #[cfg(feature = "mock_base")]
-    pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
-        if self.our_prefix().matches(name) {
-            let mut section = self.our_info().member_names();
-            let _ = section.remove(&self.our_id().name());
-            Some(section)
-        } else {
-            None
-        }
-    }
-
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
     /// sorted by ascending distance to `name`. If we are not close, returns `None`.
     pub fn closest_names(
@@ -1345,22 +1393,6 @@ impl Chain {
         (network_size.ceil() as u64, is_exact)
     }
 
-    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
-    #[cfg(feature = "mock_base")]
-    pub fn min_len_prefix(&self) -> Prefix<XorName> {
-        *iter::once(self.our_prefix())
-            .chain(self.state.neighbour_infos.keys())
-            .min_by_key(|prefix| prefix.bit_count())
-            .unwrap_or(&self.our_prefix())
-    }
-
-    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
-    /// implemented acting on the accumulated events.
-    #[cfg(feature = "mock_base")]
-    pub fn parsec_prune_accumulated(&self) -> usize {
-        self.parsec_prune_accumulated
-    }
-
     fn assert_no_prefix_change(&self, label: &str) {
         if self.state.change != PrefixChange::None {
             log_or_panic!(
@@ -1370,6 +1402,14 @@ impl Chain {
                 label,
             );
         }
+    }
+
+    pub fn dev_params(&self) -> &DevParams {
+        &self.dev_params
+    }
+
+    pub fn dev_params_mut(&mut self) -> &mut DevParams {
+        &mut self.dev_params
     }
 }
 
@@ -1427,9 +1467,62 @@ impl Chain {
 
 #[cfg(feature = "mock_base")]
 impl Chain {
+    /// Returns our section info with the given hash, if it exists.
+    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
+        self.state.our_info_by_hash(hash)
+    }
+
+    /// Returns all neighbour elders.
+    // WIP: consider remove
+    pub fn neighbour_elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.neighbour_elders_p2p().map(P2pNode::public_id)
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *including
+    /// ours*, otherwise returns `None`.
+    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
+        if self.our_prefix().matches(name) {
+            Some(
+                self.our_info()
+                    .members()
+                    .iter()
+                    .map(|id| *id.name())
+                    .collect(),
+            )
+        } else {
+            None
+        }
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *excluding
+    /// ours*, otherwise returns `None`.
+    pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
+        if self.our_prefix().matches(name) {
+            let mut section = self.our_info().member_names();
+            let _ = section.remove(&self.our_id().name());
+            Some(section)
+        } else {
+            None
+        }
+    }
+
     /// Returns their_knowledge
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         &self.state.get_their_knowledge()
+    }
+
+    /// Get the number of accumulated `ParsecPrune` events. This is only used until we have
+    /// implemented acting on the accumulated events.
+    pub fn parsec_prune_accumulated(&self) -> usize {
+        self.parsec_prune_accumulated
+    }
+
+    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
+    pub fn min_len_prefix(&self) -> Prefix<XorName> {
+        *iter::once(self.our_prefix())
+            .chain(self.state.neighbour_infos.keys())
+            .min_by_key(|prefix| prefix.bit_count())
+            .unwrap_or(&self.our_prefix())
     }
 }
 
@@ -1440,13 +1533,25 @@ impl Chain {
     }
 }
 
-// Change to section elders.
-#[derive(Default)]
-pub struct EldersChange {
-    // Peers that became elders.
-    pub added: BTreeSet<P2pNode>,
-    // Peers that ceased to be elders.
-    pub removed: BTreeSet<P2pNode>,
+#[cfg(not(feature = "mock_base"))]
+fn compute_relocation_destination(
+    relocated_name: &XorName,
+    trigger_name: &XorName,
+    _dev_params: &mut DevParams,
+) -> XorName {
+    relocation::compute_destination(relocated_name, trigger_name)
+}
+
+#[cfg(feature = "mock_base")]
+fn compute_relocation_destination(
+    relocated_name: &XorName,
+    trigger_name: &XorName,
+    dev_params: &mut DevParams,
+) -> XorName {
+    dev_params
+        .next_relocation_dst
+        .take()
+        .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
 }
 
 #[cfg(test)]
@@ -1569,7 +1674,12 @@ mod tests {
             latest_info: Default::default(),
         };
 
-        let mut chain = Chain::new(Default::default(), *our_id.public_id(), genesis_info);
+        let mut chain = Chain::new(
+            Default::default(),
+            Default::default(),
+            *our_id.public_id(),
+            genesis_info,
+        );
 
         for neighbour_info in sections_iter {
             let proofs = gen_proofs(&full_ids, &our_members, &neighbour_info);

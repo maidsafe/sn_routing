@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, NetworkEvent, ProofSet, SectionInfoSigPayload};
+use super::{AccumulatingEvent, IntoAccumulatingEvent, ProofSet};
 use crate::{
     crypto::{self, Digest256},
     error::RoutingError,
@@ -120,32 +120,30 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
+        if proofs.len() * QUORUM_DENOMINATOR <= self.p2p_members().len() * QUORUM_NUMERATOR {
+            return false;
+        }
+
         // WIP: the call to members is probably to heavy?
-        proofs
-            .ids()
-            .filter(|id| self.members().contains(id))
-            .count()
-            * QUORUM_DENOMINATOR
-            > self.members.len() * QUORUM_NUMERATOR
+        let members = self.members();
+        proofs.ids().filter(|id| members.contains(id)).count() * QUORUM_DENOMINATOR
+            > members.len() * QUORUM_NUMERATOR
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        proofs
-            .ids()
-            .filter(|id| self.members().contains(id))
-            .count()
-            == self.members.len()
+        if proofs.len() < self.p2p_members().len() {
+            return false;
+        }
+
+        // WIP: the call to members is probably to heavy?
+        let members = self.members();
+        proofs.ids().filter(|id| members.contains(id)).count() == members.len()
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
     pub fn is_successor_of(&self, other_info: &Self) -> bool {
         self.prev_hash.contains(&other_info.hash)
-    }
-
-    /// To AccumulatingEvent::SectionInfo event
-    pub fn into_network_event_with(self, signature: Option<SectionInfoSigPayload>) -> NetworkEvent {
-        AccumulatingEvent::SectionInfo(self).into_network_event_with(signature)
     }
 
     #[cfg(any(test, feature = "mock_base"))]
@@ -175,6 +173,12 @@ impl EldersInfo {
             prev_hash,
             hash,
         })
+    }
+}
+
+impl IntoAccumulatingEvent for EldersInfo {
+    fn into_accumulating_event(self) -> AccumulatingEvent {
+        AccumulatingEvent::SectionInfo(self)
     }
 }
 

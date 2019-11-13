@@ -10,12 +10,13 @@ use super::{EldersInfo, Proof, SectionKeyInfo};
 use crate::{
     crypto::Digest256,
     id::{FullId, P2pNode, PublicId},
-    messages::RelocateDetails,
     parsec,
+    relocation::RelocateDetails,
     routing_table::Prefix,
-    BlsPublicKeyShare, BlsSignatureShare, RoutingError, XorName,
+    BlsPublicKeyShare, BlsSignature, BlsSignatureShare, RoutingError, XorName,
 };
 use hex_fmt::HexFmt;
+use serde::Serialize;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -23,6 +24,10 @@ use std::{
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct AckMessagePayload {
+    /// The name of the section that message was for. This is important as we may get a message
+    /// when we are still pre-split, think it is for us, but it was not.
+    /// (i.e sent to 00, and we are 01, but lagging at 0 we are valid destination).
+    pub dst_name: XorName,
     /// The prefix of our section when we acknowledge their SectionInfo of version ack_version.
     pub src_prefix: Prefix<XorName>,
     /// The version acknowledged.
@@ -38,18 +43,18 @@ pub struct SendAckMessagePayload {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct SectionInfoSigPayload {
+pub struct EventSigPayload {
     /// The public key share for that signature share
     pub pub_key_share: BlsPublicKeyShare,
     /// The signature share signing the SectionInfo.
     pub sig_share: BlsSignatureShare,
 }
 
-impl SectionInfoSigPayload {
-    pub fn new(info: &EldersInfo, full_id: &FullId) -> Result<SectionInfoSigPayload, RoutingError> {
-        let proof = Proof::new(full_id, &info)?;
+impl EventSigPayload {
+    pub fn new<T: Serialize>(full_id: &FullId, payload: &T) -> Result<Self, RoutingError> {
+        let proof = Proof::new(full_id, payload)?;
 
-        Ok(SectionInfoSigPayload {
+        Ok(Self {
             pub_key_share: BlsPublicKeyShare(proof.pub_id),
             sig_share: proof.sig,
         })
@@ -102,9 +107,7 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn from_network_event(
-        event: NetworkEvent,
-    ) -> (AccumulatingEvent, Option<SectionInfoSigPayload>) {
+    pub fn from_network_event(event: NetworkEvent) -> (AccumulatingEvent, Option<EventSigPayload>) {
         (event.payload, event.signature)
     }
 
@@ -115,7 +118,7 @@ impl AccumulatingEvent {
         }
     }
 
-    pub fn into_network_event_with(self, signature: Option<SectionInfoSigPayload>) -> NetworkEvent {
+    pub fn into_network_event_with(self, signature: Option<EventSigPayload>) -> NetworkEvent {
         NetworkEvent {
             payload: self,
             signature,
@@ -155,10 +158,15 @@ impl Debug for AccumulatingEvent {
     }
 }
 
+/// Trait for AccumulatingEvent payloads.
+pub trait IntoAccumulatingEvent {
+    fn into_accumulating_event(self) -> AccumulatingEvent;
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
-    pub signature: Option<SectionInfoSigPayload>,
+    pub signature: Option<EventSigPayload>,
 }
 
 impl NetworkEvent {
@@ -184,4 +192,48 @@ impl Debug for NetworkEvent {
             self.payload.fmt(formatter)
         }
     }
+}
+
+/// The outcome of polling the chain.
+#[derive(Eq, PartialEq, Serialize, Deserialize)]
+pub struct AccumulatedEvent {
+    pub content: AccumulatingEvent,
+    pub neighbour_change: EldersChange,
+    pub signature: Option<BlsSignature>,
+}
+
+impl AccumulatedEvent {
+    pub fn new(content: AccumulatingEvent) -> Self {
+        Self {
+            content,
+            neighbour_change: EldersChange::default(),
+            signature: None,
+        }
+    }
+
+    pub fn with_signature(self, signature: Option<BlsSignature>) -> Self {
+        Self { signature, ..self }
+    }
+
+    pub fn with_neighbour_change(self, neighbour_change: EldersChange) -> Self {
+        Self {
+            neighbour_change,
+            ..self
+        }
+    }
+}
+
+impl Debug for AccumulatedEvent {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "AccumulatedEvent({:?})", self.content)
+    }
+}
+
+// Change to section elders.
+#[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EldersChange {
+    // Peers that became elders.
+    pub added: BTreeSet<P2pNode>,
+    // Peers that ceased to be elders.
+    pub removed: BTreeSet<P2pNode>,
 }
