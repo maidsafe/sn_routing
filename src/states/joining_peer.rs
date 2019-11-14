@@ -261,7 +261,7 @@ impl Base for JoiningPeer {
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::ConnectionResponse => (),
+            DirectMessage::ConnectionResponse | DirectMessage::BootstrapResponse(_) => (),
             _ => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
