@@ -143,8 +143,8 @@ impl Chain {
     fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
         self.state
             .our_members
-            .iter()
-            .map(|(pub_id, member_info)| (*pub_id, member_info.age_counter))
+            .values()
+            .map(|member_info| (*member_info.p2p_node.public_id(), member_info.age_counter))
             .collect()
     }
 
@@ -331,8 +331,8 @@ impl Chain {
         let our_prefix = *self.state.our_prefix();
         let mut details_to_add = Vec::new();
 
-        for (pub_id, member_info) in self.state.our_joined_members_mut() {
-            if pub_id == trigger_node {
+        for (name, member_info) in self.state.our_joined_members_mut() {
+            if member_info.p2p_node.public_id() == trigger_node {
                 continue;
             }
 
@@ -340,18 +340,15 @@ impl Chain {
                 continue;
             }
 
-            let destination = compute_relocation_destination(
-                pub_id.name(),
-                trigger_node.name(),
-                &mut self.dev_params,
-            );
+            let destination =
+                compute_relocation_destination(name, trigger_node.name(), &mut self.dev_params);
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
                 continue;
             }
 
             details_to_add.push(RelocateDetails {
-                pub_id: *pub_id,
+                pub_id: *member_info.p2p_node.public_id(),
                 destination,
                 age: member_info.age() + 1,
             })
@@ -427,9 +424,7 @@ impl Chain {
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
         self.assert_no_prefix_change("add member");
 
-        let pub_id = *p2p_node.public_id();
-
-        match self.state.our_members.entry(pub_id) {
+        match self.state.our_members.entry(*p2p_node.name()) {
             Entry::Occupied(mut entry) => {
                 if entry.get().state == MemberState::Left {
                     // Node rejoining
@@ -443,14 +438,14 @@ impl Chain {
                         LogLevel::Error,
                         "{} - Adding member that already exists: {}",
                         self,
-                        pub_id
+                        p2p_node,
                     );
                     return;
                 }
             }
             Entry::Vacant(entry) => {
                 // Node joining for the first time.
-                let _ = entry.insert(MemberInfo::new(age, p2p_node.connection_info().clone()));
+                let _ = entry.insert(MemberInfo::new(age, p2p_node.clone()));
             }
         }
 
@@ -466,7 +461,7 @@ impl Chain {
         if let Some(info) = self
             .state
             .our_members
-            .get_mut(&pub_id)
+            .get_mut(pub_id.name())
             .filter(|info| info.state == MemberState::Joined)
         {
             info.state = MemberState::Left;
@@ -655,7 +650,7 @@ impl Chain {
     pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
         self.state
             .our_members
-            .get(pub_id)
+            .get(pub_id.name())
             .map(|info| info.state == MemberState::Joined)
             .unwrap_or(false)
     }
@@ -664,11 +659,48 @@ impl Chain {
     pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<&ConnectionInfo> {
         self.state
             .our_members
-            .get(&pub_id)
-            .map(|member_info| &member_info.connection_info)
+            .get(pub_id.name())
+            .map(|member_info| member_info.p2p_node.connection_info())
+    }
+
+    /// Returns a section member `P2pNode`
+    pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state
+            .our_members
+            .get(name)
+            .map(|member_info| &member_info.p2p_node)
+    }
+
+    /// Returns an old section member `P2pNode`
+    fn get_post_split_sibling_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state
+            .post_split_sibling_members
+            .get(name)
+            .map(|member_info| &member_info.p2p_node)
+    }
+
+    pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state.our_info().member_map().get(name)
+    }
+
+    /// Returns a neighbour `P2pNode`
+    pub fn get_neighbour_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state
+            .neighbour_infos
+            .iter()
+            .find(|(pfx, _)| pfx.matches(name))
+            .and_then(|(_, elders_info)| elders_info.member_map().get(name))
+    }
+
+    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.get_member_p2p_node(name)
+            .or_else(|| self.get_our_info_p2p_node(name))
+            .or_else(|| self.get_neighbour_p2p_node(name))
+            .or_else(|| self.get_post_split_sibling_member_p2p_node(name))
     }
 
     /// Returns a set of elders we should be connected to.
+    // WIP: should we remove potential duplicates?
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
@@ -704,6 +736,22 @@ impl Chain {
     /// Returns all neighbour elders.
     pub fn neighbour_elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos().flat_map(EldersInfo::member_nodes)
+    }
+
+    /// Returns the elders for a neighbour section.
+    /// Returns None if the `Prefix` provided wasn't our own section or a neigbour.
+    pub fn get_section_elders(
+        &self,
+        names: &Prefix<XorName>,
+    ) -> Option<&BTreeMap<XorName, P2pNode>> {
+        if self.our_prefix() == names {
+            Some(self.our_info().member_map())
+        } else {
+            self.state
+                .neighbour_infos
+                .get(names)
+                .map(|elders_info| elders_info.member_map())
+        }
     }
 
     /// Return the keys we know
@@ -1148,25 +1196,6 @@ impl Chain {
             .collect_vec()
     }
 
-    /// Returns whether the table contains the given `name`.
-    fn has(&self, name: &XorName) -> bool {
-        self.get_section_legacy(name)
-            .map_or(false, |section| section.contains(name))
-    }
-
-    /// Returns the section matching the given `name`, if present.
-    /// Includes our own name in the case that our prefix matches `name`.
-    fn get_section_legacy(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
-        if self.our_prefix().matches(name) {
-            return Some(self.our_info().member_names().copied().collect());
-        }
-        self.state
-            .neighbour_infos
-            .iter()
-            .find(|&(ref pfx, _)| pfx.matches(name))
-            .map(|(_, ref info)| info.member_names().copied().collect())
-    }
-
     /// Returns the `count` closest entries to `name` in the routing table, including our own name,
     /// sorted by ascending distance to `name`. If we are not close, returns `None`.
     pub fn closest_names(
@@ -1186,28 +1215,31 @@ impl Chain {
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     pub(crate) fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
-        let mut best_pfx = *self.our_prefix();
+        let (best_pfx, best_info) = self.closest_section_info(*name);
+        (*best_pfx, best_info.member_names().copied().collect())
+    }
+
+    /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
+    /// belongs in that section or not, and the section itself.
+    pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
+        let mut best_pfx = self.our_prefix();
         let mut best_info = self.our_info();
-        for (pfx, info) in &self.state.neighbour_infos {
+        for (ref pfx, ref info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.is_empty() && best_pfx.cmp_distance(&pfx, name) == Ordering::Greater {
-                best_pfx = *pfx;
+            if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
+                best_pfx = pfx;
                 best_info = info;
             }
         }
-        (best_pfx, best_info.member_names().copied().collect())
+        (best_pfx, best_info)
     }
 
     /// Returns the known sections sorted by the distance from a given XorName.
-    fn closest_sections(&self, name: &XorName) -> Vec<(Prefix<XorName>, BTreeSet<XorName>)> {
-        let mut result = vec![(
-            *self.our_prefix(),
-            self.our_info().member_names().copied().collect(),
-        )];
-        for (pfx, info) in &self.state.neighbour_infos {
-            result.push((*pfx, info.member_names().copied().collect()));
-        }
-        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(&rhs.0, name));
+    fn closest_sections_info(&self, name: XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
+        let mut result: Vec<_> = iter::once((self.our_prefix(), self.our_info()))
+            .chain(self.state.neighbour_infos.iter())
+            .collect();
+        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, &name));
         result
     }
 
@@ -1238,24 +1270,16 @@ impl Chain {
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(
-        &self,
-        dst: &Authority<XorName>,
-        connected_peers: &[&XorName],
-    ) -> Result<(Vec<XorName>, usize), Error> {
-        // FIXME: only filtering for now to match RT.
-        // should confirm if needed esp after msg_relay changes.
-        let is_connected = |target_name: &XorName| connected_peers.contains(&target_name);
-
+    pub fn targets(&self, dst: &Authority<XorName>) -> Result<(Vec<&P2pNode>, usize), Error> {
         let candidates = |target_name: &XorName| {
             let filtered_sections =
-                self.closest_sections(target_name)
+                self.closest_sections_info(*target_name)
                     .into_iter()
                     .map(|(prefix, members)| {
                         (
                             prefix,
                             members.len(),
-                            members.into_iter().filter(is_connected).collect::<Vec<_>>(),
+                            members.member_nodes().collect::<Vec<_>>(),
                         )
                     });
 
@@ -1265,9 +1289,10 @@ impl Chain {
                 nodes_to_send.extend(connected.into_iter());
                 dg_size = delivery_group_size(len);
 
-                if &prefix == self.our_prefix() {
+                if prefix == self.our_prefix() {
                     // Send to all connected targets so they can forward the message
-                    nodes_to_send.retain(|&x| x != *self.our_id().name());
+                    let our_name = self.our_id().name();
+                    nodes_to_send.retain(|&node| node.name() != our_name);
                     dg_size = nodes_to_send.len();
                     break;
                 }
@@ -1276,7 +1301,7 @@ impl Chain {
                     break;
                 }
             }
-            nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs, rhs));
+            nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
 
             if dg_size > 0 && nodes_to_send.len() >= dg_size {
                 Ok((dg_size, nodes_to_send))
@@ -1290,21 +1315,23 @@ impl Chain {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
                 }
-                if self.has(target_name) && is_connected(&target_name) {
-                    return Ok((vec![*target_name], 1));
+                if let Some(node) = self.get_p2p_node(target_name) {
+                    return Ok((vec![node], 1));
                 }
                 candidates(target_name)?
             }
             Authority::Section(ref target_name) => {
-                let (prefix, section) = self.closest_section(target_name);
-                if &prefix == self.our_prefix() {
+                let (prefix, section) = self.closest_section_info(*target_name);
+                if prefix == self.our_prefix() {
                     // Exclude our name since we don't need to send to ourself
-                    let mut section = section.clone();
-                    let _ = section.remove(&self.our_id().name());
+                    let our_name = self.our_id().name();
 
                     // FIXME: only doing this for now to match RT.
                     // should confirm if needed esp after msg_relay changes.
-                    let section: Vec<_> = section.into_iter().filter(is_connected).collect();
+                    let section: Vec<_> = section
+                        .member_nodes()
+                        .filter(|node| node.name() != our_name)
+                        .collect();
                     let dg_size = section.len();
                     return Ok((section, dg_size));
                 }
@@ -1327,13 +1354,14 @@ impl Chain {
                         }
                     };
 
+                    // Exclude our name since we don't need to send to ourself
+                    let our_name = self.our_id().name();
+
                     let targets = self
                         .all_sections()
                         .filter_map(is_compatible)
-                        .flat_map(EldersInfo::member_names)
-                        .filter(|name| is_connected(name))
-                        .filter(|name| name != &self.our_id().name())
-                        .copied()
+                        .flat_map(EldersInfo::member_nodes)
+                        .filter(|node| node.name() != our_name)
                         .collect::<Vec<_>>();
                     let dg_size = targets.len();
                     return Ok((targets, dg_size));

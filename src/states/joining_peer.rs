@@ -145,8 +145,8 @@ impl JoiningPeer {
                 src: Authority::Node(_),
                 dst: Authority::Node(_),
             } => {
-                self.peer_map_mut().insert(pub_id, conn_info);
-                self.send_direct_message(&pub_id, DirectMessage::ConnectionResponse);
+                self.peer_map_mut().insert(pub_id, conn_info.clone());
+                self.send_direct_message(&conn_info, DirectMessage::ConnectionResponse);
                 Ok(Transition::Stay)
             }
             _ => {

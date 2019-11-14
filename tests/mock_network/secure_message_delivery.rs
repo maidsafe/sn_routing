@@ -25,7 +25,11 @@ fn get_position_with_other_prefix(nodes: &Nodes, prefix: &Prefix<XorName>) -> us
 }
 
 fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
-    let targets = vec![unwrap!(nodes[dst].inner.id())];
+    let public_id = unwrap!(nodes[dst].inner.id());
+    let connection_info = unwrap!(nodes[dst].inner.our_connection_info());
+    let p2p_node = P2pNode::new(public_id, connection_info);
+    let targets = vec![p2p_node];
+
     let _ = nodes[src]
         .inner
         .elder_state_mut()
