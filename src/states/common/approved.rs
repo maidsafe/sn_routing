@@ -417,8 +417,7 @@ pub trait Approved: Base {
 
         self.peer_map_mut()
             .insert(their_pub_id, their_conn_info.clone());
-        let their_p2p_node = P2pNode::new(their_pub_id, their_conn_info);
-        self.send_direct_message(&their_p2p_node, DirectMessage::ConnectionResponse);
+        self.send_direct_message(&their_conn_info, DirectMessage::ConnectionResponse);
 
         Ok(())
     }
