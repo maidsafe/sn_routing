@@ -1543,6 +1543,14 @@ impl Approved for Elder {
         // go to the new instance.
         let relocate_details = self.chain.poll_relocation();
 
+        for pub_id in &elders_change.own_added {
+            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        }
+
+        for pub_id in &elders_change.own_removed {
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        }
+
         if !is_member {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
             // i.e the one that would be received with NodeApproval.
@@ -1559,14 +1567,6 @@ impl Approved for Elder {
             );
         } else {
             self.reset_parsec()?;
-        }
-
-        for pub_id in &elders_change.own_added {
-            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        }
-
-        for pub_id in &elders_change.own_removed {
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
         }
 
         self.update_peer_connections(elders_change);
