@@ -131,6 +131,16 @@ impl State {
         )
     }
 
+    pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
+        match *self {
+            State::Elder(ref state) => Some(state.our_elders()),
+            State::BootstrappingPeer(_)
+            | State::JoiningPeer(_)
+            | State::Adult(_)
+            | State::Terminated => None,
+        }
+    }
+
     pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         state_dispatch!(
             self,
