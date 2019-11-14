@@ -520,6 +520,7 @@ impl Chain {
                 );
             }
 
+            self.churn_in_progress = true;
             Ok(vec![new_info])
         } else {
             Ok(vec![])
