@@ -26,8 +26,8 @@ use unwrap::unwrap;
 
 // Number of recent keys we keep: i.e how many other section churns we can handle before a
 // message send with a previous version of a section is no longer trusted.
-// With low churn rate, a ad hoc 10 should be big enough to avoid losing messages.
-const MAX_THEIR_RECENT_KEYS: usize = 10;
+// With low churn rate, a ad hoc 20 should be big enough to avoid losing messages.
+const MAX_THEIR_RECENT_KEYS: usize = 20;
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
 #[derive(Debug, PartialEq, Eq)]
