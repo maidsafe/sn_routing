@@ -41,6 +41,8 @@ pub struct SharedState {
     pub our_infos: NonEmptyList<EldersInfo>,
     /// Info about all members of our section - elders, adults and infants.
     pub our_members: BTreeMap<XorName, MemberInfo>,
+    /// members that we had before last split.
+    pub post_split_sibling_members: BTreeMap<XorName, MemberInfo>,
     /// Maps our neighbours' prefixes to their latest signed elders infos.
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
@@ -90,6 +92,7 @@ impl SharedState {
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
             our_members,
+            post_split_sibling_members: Default::default(),
             change: PrefixChange::None,
             split_cache: None,
             merging: Default::default(),
@@ -275,10 +278,12 @@ impl SharedState {
 
     /// Remove all entries from `out_members` whose name does not match `prefix`.
     pub fn remove_our_members_not_matching_prefix(&mut self, prefix: &Prefix<XorName>) {
-        self.our_members = mem::replace(&mut self.our_members, BTreeMap::new())
-            .into_iter()
-            .filter(|(name, _)| prefix.matches(name))
-            .collect();
+        let (our_members, post_split_sibling_members) =
+            mem::replace(&mut self.our_members, BTreeMap::new())
+                .into_iter()
+                .partition(|(name, _)| prefix.matches(name));
+        self.our_members = our_members;
+        self.post_split_sibling_members = post_split_sibling_members;
     }
 
     /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.

@@ -671,6 +671,14 @@ impl Chain {
             .map(|member_info| &member_info.p2p_node)
     }
 
+    /// Returns an old section member `P2pNode`
+    fn get_post_split_sibling_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.state
+            .post_split_sibling_members
+            .get(name)
+            .map(|member_info| &member_info.p2p_node)
+    }
+
     pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state.our_info().member_map().get(name)
     }
@@ -688,6 +696,7 @@ impl Chain {
         self.get_member_p2p_node(name)
             .or_else(|| self.get_our_info_p2p_node(name))
             .or_else(|| self.get_neighbour_p2p_node(name))
+            .or_else(|| self.get_post_split_sibling_member_p2p_node(name))
     }
 
     /// Returns a set of elders we should be connected to.
