@@ -146,8 +146,7 @@ impl JoiningPeer {
                 dst: Authority::Node(_),
             } => {
                 self.peer_map_mut().insert(pub_id, conn_info.clone());
-                let p2p_node = P2pNode::new(pub_id, conn_info);
-                self.send_direct_message(&p2p_node, DirectMessage::ConnectionResponse);
+                self.send_direct_message(&conn_info, DirectMessage::ConnectionResponse);
                 Ok(Transition::Stay)
             }
             _ => {
