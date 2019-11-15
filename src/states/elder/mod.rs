@@ -11,7 +11,7 @@ mod tests;
 
 use super::{
     common::{Approved, Base},
-    BootstrappingPeer,
+    BootstrappingPeer, BootstrappingPeerDetails,
 };
 use crate::{
     chain::{
@@ -33,6 +33,7 @@ use crate::{
     pause::PausedState,
     peer_map::PeerMap,
     relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
@@ -73,6 +74,7 @@ pub struct ElderDetails {
     pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
+    pub rng: MainRng,
 }
 
 pub struct Elder {
@@ -96,6 +98,7 @@ pub struct Elder {
     pfx_is_successfully_polled: bool,
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    rng: MainRng,
 }
 
 impl Elder {
@@ -104,6 +107,7 @@ impl Elder {
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
+        mut rng: MainRng,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
@@ -117,7 +121,7 @@ impl Elder {
             first_ages,
             latest_info: EldersInfo::default(),
         };
-        let parsec_map = ParsecMap::new(full_id.clone(), &gen_pfx_info);
+        let parsec_map = ParsecMap::new(&mut rng, full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(
             network_cfg,
             DevParams::default(),
@@ -139,6 +143,7 @@ impl Elder {
             peer_map,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
+            rng,
         };
 
         let node = Self::new(details, true, Default::default());
@@ -193,6 +198,7 @@ impl Elder {
                 peer_map: state.peer_map,
                 routing_msg_filter: state.msg_filter,
                 timer,
+                rng: rng::new(),
             },
             false,
             state.sig_accumulator,
@@ -209,13 +215,16 @@ impl Elder {
         details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
-            self.network_service,
-            self.full_id,
-            self.chain.network_cfg(),
-            self.timer,
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id: self.full_id,
+                network_cfg: self.chain.network_cfg(),
+                timer: self.timer,
+                rng: self.rng,
+                dev_params: self.chain.dev_params().clone(),
+            },
             conn_infos,
             details,
-            self.chain.dev_params().clone(),
         )))
     }
 
@@ -246,6 +255,7 @@ impl Elder {
             chain: details.chain,
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
+            rng: details.rng,
         }
     }
 
@@ -672,9 +682,15 @@ impl Elder {
     }
 
     fn init_parsec(&mut self) {
+        let log_ident = self.log_ident();
+
         self.set_pfx_successfully_polled(false);
-        self.parsec_map
-            .init(self.full_id.clone(), &self.gen_pfx_info, &self.log_ident())
+        self.parsec_map.init(
+            &mut self.rng,
+            self.full_id.clone(),
+            &self.gen_pfx_info,
+            &log_ident,
+        )
     }
 
     // If this returns an error, the peer will be dropped.
@@ -1185,6 +1201,10 @@ impl Base for Elder {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+
+    fn rng(&mut self) -> &mut MainRng {
+        &mut self.rng
     }
 
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {

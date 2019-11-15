@@ -8,7 +8,7 @@
 
 use super::{
     adult::{Adult, AdultDetails},
-    bootstrapping_peer::BootstrappingPeer,
+    bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     common::Base,
 };
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
     outbox::EventBox,
     peer_map::PeerMap,
     relocation::RelocatePayload,
+    rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
     routing_table::Authority,
     state_machine::{State, Transition},
@@ -40,6 +41,7 @@ pub struct JoiningPeerDetails {
     pub network_cfg: NetworkParams,
     pub peer_map: PeerMap,
     pub timer: Timer,
+    pub rng: MainRng,
     pub p2p_nodes: Vec<P2pNode>,
     pub relocate_payload: Option<RelocatePayload>,
     pub dev_params: DevParams,
@@ -54,6 +56,7 @@ pub struct JoiningPeer {
     full_id: FullId,
     peer_map: PeerMap,
     timer: Timer,
+    rng: MainRng,
     join_token: u64,
     p2p_nodes: Vec<P2pNode>,
     relocate_payload: Option<RelocatePayload>,
@@ -72,6 +75,7 @@ impl JoiningPeer {
             direct_msg_backlog: vec![],
             full_id: details.full_id,
             timer: details.timer,
+            rng: details.rng,
             peer_map: details.peer_map,
             join_token,
             p2p_nodes: details.p2p_nodes,
@@ -99,18 +103,25 @@ impl JoiningPeer {
             peer_map: self.peer_map,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
+            rng: self.rng,
             network_cfg: self.network_cfg,
             dev_params: self.dev_params,
         };
         Adult::from_joining_peer(details, outbox).map(State::Adult)
     }
 
-    pub fn rebootstrap(self) -> Result<State, RoutingError> {
+    pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
+        let full_id = FullId::gen(&mut self.rng);
+
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
-            self.network_service,
-            FullId::new(),
-            self.network_cfg,
-            self.timer,
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id,
+                network_cfg: self.network_cfg,
+                timer: self.timer,
+                rng: self.rng,
+                dev_params: self.dev_params,
+            },
         )))
     }
 
@@ -202,6 +213,10 @@ impl Base for JoiningPeer {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+
+    fn rng(&mut self) -> &mut MainRng {
+        &mut self.rng
     }
 
     fn handle_send_message(

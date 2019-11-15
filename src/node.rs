@@ -15,9 +15,10 @@ use crate::{
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::{OurType, Token},
+    rng::{self, MainRng},
     routing_table::Authority,
     state_machine::{State, StateMachine},
-    states::{self, BootstrappingPeer},
+    states::{self, BootstrappingPeer, BootstrappingPeerDetails},
     xor_name::XorName,
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
@@ -37,6 +38,7 @@ use {
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
     first: bool,
+    rng: Option<MainRng>,
     network_config: Option<NetworkConfig>,
     full_id: Option<FullId>,
     network_cfg: NetworkParams,
@@ -72,6 +74,14 @@ impl NodeBuilder {
         }
     }
 
+    /// Use the supplied random number generator. If this is not called, a default `OsRng` is used.
+    pub fn rng(self, rng: MainRng) -> Self {
+        Self {
+            rng: Some(rng),
+            ..self
+        }
+    }
+
     /// Creates new `Node`.
     ///
     /// It will automatically connect to the network in the same way a client does, but then
@@ -97,10 +107,10 @@ impl NodeBuilder {
     }
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
-        let full_id = self.full_id.unwrap_or_else(FullId::new);
+        let mut rng = self.rng.unwrap_or_else(rng::new);
 
+        let full_id = self.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
         let network_cfg = self.network_cfg;
-
         let first = self.first;
 
         let mut network_config = self.network_config.unwrap_or_default();
@@ -111,18 +121,20 @@ impl NodeBuilder {
                 if first {
                     debug!("Creating a first node in the Elder state");
 
-                    states::Elder::first(network_service, full_id, network_cfg, timer, outbox)
+                    states::Elder::first(network_service, full_id, network_cfg, timer, rng, outbox)
                         .map(State::Elder)
                         .unwrap_or(State::Terminated)
                 } else {
                     debug!("Creating a node in the BootstrappingPeer state");
 
-                    State::BootstrappingPeer(BootstrappingPeer::new(
+                    State::BootstrappingPeer(BootstrappingPeer::new(BootstrappingPeerDetails {
                         network_service,
                         full_id,
                         network_cfg,
                         timer,
-                    ))
+                        rng,
+                        dev_params: Default::default(),
+                    }))
                 }
             },
             network_config,
@@ -151,6 +163,7 @@ impl Node {
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
             first: false,
+            rng: None,
             network_config: None,
             full_id: None,
             network_cfg: Default::default(),

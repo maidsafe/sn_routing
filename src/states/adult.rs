@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bootstrapping_peer::BootstrappingPeer,
+    bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     common::{Approved, Base},
     elder::{Elder, ElderDetails},
 };
@@ -26,6 +26,7 @@ use crate::{
     parsec::{DkgResultWrapper, ParsecMap},
     peer_map::PeerMap,
     relocation::RelocateDetails,
+    rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
@@ -55,6 +56,7 @@ pub struct AdultDetails {
     pub timer: Timer,
     pub network_cfg: NetworkParams,
     pub dev_params: DevParams,
+    pub rng: MainRng,
 }
 
 pub struct Adult {
@@ -71,17 +73,22 @@ pub struct Adult {
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
+    rng: MainRng,
 }
 
 impl Adult {
     pub fn from_joining_peer(
-        details: AdultDetails,
+        mut details: AdultDetails,
         _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
 
-        let parsec_map = ParsecMap::new(details.full_id.clone(), &details.gen_pfx_info);
+        let parsec_map = ParsecMap::new(
+            &mut details.rng,
+            details.full_id.clone(),
+            &details.gen_pfx_info,
+        );
 
         let chain = Chain::new(
             details.network_cfg,
@@ -103,23 +110,29 @@ impl Adult {
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             parsec_timer_token,
+            rng: details.rng,
         };
 
         Ok(node)
     }
 
-    pub fn rebootstrap(self) -> Result<State, RoutingError> {
+    pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
         let network_cfg = self.chain.network_cfg();
 
         // Try to join the same section, but using new id, otherwise the section won't accept us
         // due to duplicate votes.
-        let full_id = FullId::within_range(&self.chain.our_prefix().range_inclusive());
+        let full_id =
+            FullId::within_range(&mut self.rng, &self.chain.our_prefix().range_inclusive());
 
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
-            self.network_service,
-            full_id,
-            network_cfg,
-            self.timer,
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id,
+                network_cfg,
+                timer: self.timer,
+                rng: self.rng,
+                dev_params: self.chain.dev_params().clone(),
+            },
         )))
     }
 
@@ -144,6 +157,7 @@ impl Adult {
             // an Elder even if it has already seen them as an Adult
             routing_msg_filter: RoutingMessageFilter::new(),
             timer: self.timer,
+            rng: self.rng,
         };
 
         Elder::from_adult(details, elders_info, old_pfx, outbox).map(State::Elder)
@@ -302,6 +316,10 @@ impl Base for Adult {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+
+    fn rng(&mut self) -> &mut MainRng {
+        &mut self.rng
     }
 
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {

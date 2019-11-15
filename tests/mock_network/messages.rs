@@ -18,13 +18,10 @@ fn send() {
     let elder_size = 8;
     let safe_section_size = 8;
     let quorum = 1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, elder_size + 1);
 
@@ -66,13 +63,10 @@ fn send_and_receive() {
     let elder_size = 8;
     let safe_section_size = 8;
     let quorum = 1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, elder_size + 1);
 

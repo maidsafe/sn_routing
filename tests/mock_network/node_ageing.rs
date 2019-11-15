@@ -26,7 +26,7 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 
 #[test]
 fn relocate_without_split() {
-    let network = Network::new(NETWORK_PARAMS, None);
+    let network = Network::new(NETWORK_PARAMS);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split_with_options(
         &network,
@@ -74,7 +74,7 @@ fn relocate_without_split() {
 #[test]
 fn relocate_causing_split() {
     // Relocate node into a section which is one node shy of splitting.
-    let network = Network::new(NETWORK_PARAMS, None);
+    let network = Network::new(NETWORK_PARAMS);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split_with_options(
         &network,
@@ -133,7 +133,7 @@ fn relocate_causing_split() {
 #[test]
 fn relocate_during_split() {
     // Relocate node into a section which is undergoing split.
-    let network = Network::new(NETWORK_PARAMS, None);
+    let network = Network::new(NETWORK_PARAMS);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split_with_options(
         &network,
@@ -223,7 +223,7 @@ fn add_node_to_prefix(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pre
         .find(|index| nodes[*index].inner.is_elder()));
 
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
-    let full_id = FullId::within_range(&prefix.range_inclusive());
+    let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
     nodes.push(
         TestNode::builder(network)
             .network_config(config)

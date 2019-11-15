@@ -86,6 +86,7 @@ mod tests {
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
             SignedRoutingMessage,
         },
+        rng,
         routing_table::{Authority, Prefix},
         BlsPublicKeySet, ConnectionInfo, XorName,
     };
@@ -156,7 +157,8 @@ mod tests {
 
     impl Env {
         fn new() -> Env {
-            let msg_sender_id = FullId::new();
+            let mut rng = rng::new();
+            let msg_sender_id = FullId::gen(&mut rng);
             let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
             let connection_info = ConnectionInfo::from(socket_addr);
             let mut pub_ids = vec![P2pNode::new(
@@ -168,7 +170,7 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
             let mut other_ids = vec![];
             for _ in 0..8 {
-                let full_id = FullId::new();
+                let full_id = FullId::gen(&mut rng);
                 let pub_id = *full_id.public_id();
                 let _ = pub_ids.insert(
                     *pub_id.name(),

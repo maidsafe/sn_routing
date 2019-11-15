@@ -1571,7 +1571,7 @@ mod tests {
     use super::Chain;
     use crate::{
         id::{FullId, P2pNode, PublicId},
-        ConnectionInfo, {Prefix, XorName},
+        rng, ConnectionInfo, {Prefix, XorName},
     };
     use rand::{thread_rng, Rng};
     use serde::Serialize;
@@ -1588,12 +1588,14 @@ mod tests {
     }
 
     fn gen_section_info(gen: SecInfoGen) -> (EldersInfo, HashMap<PublicId, FullId>) {
+        let mut rng = rng::new();
+
         match gen {
             SecInfoGen::New(pfx, n) => {
                 let mut full_ids = HashMap::new();
                 let mut members = BTreeMap::new();
                 for _ in 0..n {
-                    let some_id = FullId::within_range(&pfx.range_inclusive());
+                    let some_id = FullId::within_range(&mut rng, &pfx.range_inclusive());
                     let connection_info = ConnectionInfo {
                         peer_addr: ([127, 0, 0, 1], 9999).into(),
                         peer_cert_der: vec![],
@@ -1606,7 +1608,7 @@ mod tests {
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.member_map().clone();
-                let some_id = FullId::within_range(&info.prefix().range_inclusive());
+                let some_id = FullId::within_range(&mut rng, &info.prefix().range_inclusive());
                 let connection_info = ConnectionInfo {
                     peer_addr: ([127, 0, 0, 1], 9999).into(),
                     peer_cert_der: vec![],

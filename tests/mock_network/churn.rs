@@ -415,13 +415,10 @@ fn aggressive_churn() {
     let safe_section_size = 4;
     let target_section_num = 5;
     let target_network_size = 35;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
 
     // Create an initial network, increase until we have several sections, then
@@ -507,13 +504,10 @@ fn aggressive_churn() {
 fn messages_during_churn() {
     let elder_size = 4;
     let safe_section_size = 4;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
     let prefixes = vec![2, 2, 2, 3, 3];
     let max_prefixes_len = prefixes.len() * 2;
@@ -583,13 +577,10 @@ fn messages_during_churn() {
 fn remove_unresponsive_node() {
     let elder_size = 4;
     let safe_section_size = 8;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
 
     let mut nodes = create_connected_nodes(&network, safe_section_size);
     poll_and_resend(&mut nodes);

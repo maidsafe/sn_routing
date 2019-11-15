@@ -10,7 +10,7 @@
 //! instead.
 
 use super::{DkgResult, PublicId};
-use crate::utils::RngCompat;
+use crate::rng::RngCompat;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use threshold_crypto::SecretKeySet;

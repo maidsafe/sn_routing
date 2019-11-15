@@ -137,6 +137,12 @@ mod types;
 mod utils;
 mod xor_name;
 
+/// Random number generation utilities.
+#[cfg(feature = "mock_base")]
+pub mod rng;
+#[cfg(not(feature = "mock_base"))]
+mod rng;
+
 /// Mocking utilities.
 #[cfg(feature = "mock_base")]
 pub mod mock;

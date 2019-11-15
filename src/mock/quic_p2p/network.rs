@@ -9,47 +9,58 @@
 use super::{node::Node, OurType};
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec;
-use crate::{chain::NetworkParams, NetworkBytes};
+use crate::{
+    chain::NetworkParams,
+    rng::{self, MainRng, Seed, SeedPrinter},
+    NetworkBytes,
+};
 use fxhash::{FxHashMap, FxHashSet};
-use maidsafe_utilities::SeededRng;
-use rand::Rng;
+use maidsafe_utilities::log;
+use rand::{self, Rng, SeedableRng};
 use std::{
     cell::RefCell,
     cmp,
     collections::{hash_map::Entry, VecDeque},
+    env,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     rc::{Rc, Weak},
     sync::Once,
 };
+use unwrap::unwrap;
 
 const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;
 
-static PRINT_SEED: Once = Once::new();
+static LOG_INIT: Once = Once::new();
 
 /// Handle to the mock network. Create one before testing with mocks. Call `set_next_node_addr` or
 /// `gen_next_node_addr` before creating a `QuicP2p` instance.
 /// This handle is cheap to clone. Each clone refers to the same underlying mock network instance.
-#[derive(Clone)]
-pub struct Network(Rc<RefCell<Inner>>);
+pub struct Network {
+    inner: Rc<RefCell<Inner>>,
+    seed_printer: Option<SeedPrinter>,
+}
 
 impl Network {
     /// Construct new mock network.
-    pub fn new(network_cfg: NetworkParams, seed: Option<[u32; 4]>) -> Self {
-        let rng = if let Some(seed) = seed {
-            SeededRng::from_seed(seed)
-        } else {
-            SeededRng::new()
-        };
-
-        PRINT_SEED.call_once(|| eprintln!("{:?}", rng));
+    pub fn new(network_cfg: NetworkParams) -> Self {
+        LOG_INIT.call_once(|| {
+            if env::var("RUST_LOG")
+                .map(|value| !value.is_empty())
+                .unwrap_or(false)
+            {
+                unwrap!(log::init(true));
+            }
+        });
 
         #[cfg(feature = "mock_parsec")]
         parsec::init_mock();
 
+        let seed = Seed::default();
+
         let inner = Rc::new(RefCell::new(Inner {
             network_cfg,
-            rng,
+            rng: MainRng::from_seed(seed),
             nodes: Default::default(),
             connections: Default::default(),
             used_ips: Default::default(),
@@ -58,12 +69,15 @@ impl Network {
 
         NETWORK.with(|network| *network.borrow_mut() = Some(inner.clone()));
 
-        Network(inner)
+        Network {
+            inner,
+            seed_printer: Some(SeedPrinter::on_failure(seed)),
+        }
     }
 
     /// Generate new unique socket addrs.
     pub fn gen_addr(&self) -> SocketAddr {
-        self.0.borrow_mut().gen_addr(None, None)
+        self.inner.borrow_mut().gen_addr(None, None)
     }
 
     /// Poll the network by delivering the queued messages.
@@ -75,7 +89,7 @@ impl Network {
 
     /// Disconnect peer at `addr0` from the peer at `addr1`.
     pub fn disconnect(&self, addr0: &SocketAddr, addr1: &SocketAddr) {
-        let node = self.0.borrow().find_node(addr0);
+        let node = self.inner.borrow().find_node(addr0);
         if let Some(node) = node {
             node.borrow_mut().disconnect(*addr1)
         }
@@ -83,39 +97,47 @@ impl Network {
 
     /// Is the peer at `addr0` connected to the one at `addr1`?
     pub fn is_connected(&self, addr0: &SocketAddr, addr1: &SocketAddr) -> bool {
-        self.0.borrow().is_connected(addr0, addr1)
+        self.inner.borrow().is_connected(addr0, addr1)
     }
 
     /// Get the chain network config.
     pub fn network_cfg(&self) -> NetworkParams {
-        self.0.borrow().network_cfg
+        self.inner.borrow().network_cfg
     }
 
     /// Get the number of elders
     pub fn elder_size(&self) -> usize {
-        self.0.borrow().network_cfg.elder_size
+        self.inner.borrow().network_cfg.elder_size
     }
 
     /// Get the safe section size
     pub fn safe_section_size(&self) -> usize {
-        self.0.borrow().network_cfg.safe_section_size
+        self.inner.borrow().network_cfg.safe_section_size
     }
 
     /// Construct a new random number generator using a seed generated from random data provided by `self`.
-    pub fn new_rng(&self) -> SeededRng {
-        self.0.borrow_mut().rng.new_rng()
+    pub fn new_rng(&self) -> MainRng {
+        rng::new_from(&mut self.inner.borrow_mut().rng)
     }
 
     /// Return whether sent any message since previous query and reset the flag.
     pub fn reset_message_sent(&self) -> bool {
-        let mut inner = self.0.borrow_mut();
+        let mut inner = self.inner.borrow_mut();
         let message_sent = inner.message_sent;
         inner.message_sent = false;
         message_sent
     }
 
+    /// Call this in tests annotated with `#[should_panic]` to suppress printing the seed. Will
+    /// instead print the seed if the panic does *not* happen.
+    pub fn expect_panic(&mut self) {
+        if let Some(seed) = self.seed_printer.as_ref().map(|printer| *printer.seed()) {
+            self.seed_printer = Some(SeedPrinter::on_success(seed));
+        }
+    }
+
     fn pop_random_packet(&self) -> Option<(Connection, Packet)> {
-        self.0.borrow_mut().pop_random_packet()
+        self.inner.borrow_mut().pop_random_packet()
     }
 
     fn process_packet(&self, connection: &Connection, packet: Packet) {
@@ -136,17 +158,26 @@ impl Network {
     }
 
     fn find_node(&self, addr: &SocketAddr) -> Option<Rc<RefCell<Node>>> {
-        self.0.borrow().find_node(addr)
+        self.inner.borrow().find_node(addr)
     }
 
     fn send(&self, src: SocketAddr, dst: SocketAddr, packet: Packet) {
-        self.0.borrow_mut().send(src, dst, packet)
+        self.inner.borrow_mut().send(src, dst, packet)
+    }
+}
+
+impl Clone for Network {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            seed_printer: None,
+        }
     }
 }
 
 pub(super) struct Inner {
     network_cfg: NetworkParams,
-    rng: SeededRng,
+    rng: MainRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
     used_ips: FxHashSet<IpAddr>,
@@ -311,7 +342,7 @@ impl Queue {
     }
 
     // This function will pop random msg from the queue.
-    fn pop_random_msg(&mut self, rng: &mut SeededRng) -> Option<Packet> {
+    fn pop_random_msg(&mut self, rng: &mut MainRng) -> Option<Packet> {
         let first_non_msg_packet = self
             .0
             .iter()

@@ -18,13 +18,10 @@ use routing::{mock::Network, Event, EventStream, NetworkParams, Prefix, XorName,
 fn merge(prefix_lengths: Vec<usize>) {
     let elder_size = 4;
     let safe_section_size = 4;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, prefix_lengths);
     verify_invariant_for_all_nodes(&network, &mut nodes);
@@ -108,13 +105,10 @@ fn merge_five_sections_into_one() {
 fn concurrent_merge() {
     let elder_size = 4;
     let safe_section_size = 4;
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 3, 3]);
     verify_invariant_for_all_nodes(&network, &mut nodes);
@@ -181,13 +175,10 @@ fn merge_drop_multiple_nodes() {
         nodes_to_drop > 1,
         "elder_size needs to be large enough to drop multiple nodes"
     );
-    let network = Network::new(
-        NetworkParams {
-            elder_size,
-            safe_section_size,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
     verify_invariant_for_all_nodes(&network, &mut nodes);

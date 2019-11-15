@@ -16,13 +16,10 @@ use routing::{
 #[test]
 fn messages_accumulate_with_quorum() {
     let section_size = 15;
-    let network = Network::new(
-        NetworkParams {
-            elder_size: 8,
-            safe_section_size: 8,
-        },
-        None,
-    );
+    let network = Network::new(NetworkParams {
+        elder_size: 8,
+        safe_section_size: 8,
+    });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, section_size);
 

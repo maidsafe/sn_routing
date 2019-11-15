@@ -23,7 +23,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{chain::DevParams, routing_table::Authority, Chain};
+use crate::{chain::DevParams, rng::MainRng, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -259,6 +259,14 @@ impl State {
             self,
             state => state.peer_map().has(name),
             Terminated => false
+        )
+    }
+
+    pub fn rng(&mut self) -> &mut MainRng {
+        state_dispatch!(
+            self,
+            state => state.rng(),
+            Terminated => unreachable!()
         )
     }
 }
@@ -532,7 +540,6 @@ impl StateMachine {
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
     pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
         use itertools::Itertools;
-        use maidsafe_utilities::SeededRng;
         use rand::Rng;
         use std::iter;
 
@@ -576,7 +583,9 @@ impl StateMachine {
             .take(timed_out_events.len())
             .chain(iter::repeat(false).take(events.len()))
             .collect_vec();
-        SeededRng::thread_rng().shuffle(&mut positions);
+
+        self.state.rng().shuffle(&mut positions);
+
         let mut interleaved = positions
             .iter()
             .filter_map(|is_timed_out| {
