@@ -543,7 +543,7 @@ impl Chain {
                 first_bls_keys: self.our_section_bls_keys().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
                 first_ages: self.get_age_counters(),
-                latest_info: Default::default(),
+                latest_info: self.our_info().clone(),
                 parsec_version,
             },
             cached_events: remaining
