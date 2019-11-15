@@ -588,7 +588,7 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_relocation_request_event(&mut self) -> Result<(), RoutingError> {
+    fn handle_relocation_request_event(&mut self, _dst: XorName) -> Result<(), RoutingError> {
         Ok(())
     }
 

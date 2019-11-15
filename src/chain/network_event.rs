@@ -122,8 +122,10 @@ pub enum AccumulatingEvent {
     // Voted for node to be relocated out of our section.
     Relocate(RelocateDetails),
 
-    // Voted to trigger a request to the network for a node to be relocated to our section.
-    RelocationRequest,
+    // Voted to trigger a request for a node to be relocated to our section.
+    // To make the vote unique within a single parsec instance, it contains the recipient of the
+    // previous request, if any.
+    RelocationRequest(Option<XorName>),
 
     // Opaque user-defined event.
     User(Vec<u8>),
@@ -172,7 +174,9 @@ impl Debug for AccumulatingEvent {
             }
             AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
             AccumulatingEvent::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
-            AccumulatingEvent::RelocationRequest => write!(formatter, "RelocationRequest"),
+            AccumulatingEvent::RelocationRequest(dst) => {
+                write!(formatter, "RelocationRequest({:?})", dst)
+            }
             AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }

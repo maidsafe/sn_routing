@@ -304,7 +304,7 @@ impl Chain {
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::RelocationRequest
+            | AccumulatingEvent::RelocationRequest(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
@@ -836,7 +836,7 @@ impl Chain {
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::Relocate(_) 
-            | AccumulatingEvent::RelocationRequest => {
+            | AccumulatingEvent::RelocationRequest(_) => {
                 !self.state.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {
@@ -1382,11 +1382,23 @@ impl Chain {
         }
     }
 
-    pub fn compute_relocation_request_recipient(&self) -> XorName {
-        relocation::compute_first_request_recipient(
-            self.our_prefix(),
-            self.our_info().member_names(),
-        )
+    pub fn compute_relocation_request_recipient(&mut self, old_dst: Option<XorName>) -> XorName {
+        let new_dst = if let Some(old_dst) = old_dst {
+            self.compute_next_relocation_request_recipient(old_dst)
+        } else {
+            self.compute_first_relocation_request_recipient()
+        };
+
+        self.state.relocation_request_recipient = Some(new_dst);
+        new_dst
+    }
+
+    pub fn is_current_relocation_request_recipient(&self, name: &XorName) -> bool {
+        self.state.relocation_request_recipient.as_ref() == Some(name)
+    }
+
+    pub fn reset_relocation_request(&mut self) {
+        self.state.relocation_request_recipient = None;
     }
 
     pub fn dev_params(&self) -> &DevParams {
@@ -1398,45 +1410,17 @@ impl Chain {
     }
 }
 
-/// The outcome of a prefix change.
-pub struct ParsecResetData {
-    /// The new genesis prefix info.
-    pub gen_pfx_info: GenesisPfxInfo,
-    /// The cached events that should be revoted.
-    pub cached_events: BTreeSet<NetworkEvent>,
-    /// The completed events.
-    pub completed_events: BTreeSet<AccumulatingEvent>,
-}
-
-impl Debug for Chain {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        writeln!(formatter, "Chain {{")?;
-        writeln!(formatter, "\tour_id: {},", self.our_id)?;
-        writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
-        writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
-        writeln!(
-            formatter,
-            "\tsplit_in_progress: {}",
-            self.state.split_in_progress
-        )?;
-
-        writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
-        for info in self.state.our_infos() {
-            writeln!(formatter, "\t{}", info)?;
-        }
-
-        writeln!(formatter, "\tneighbour_infos:")?;
-        for (pfx, info) in &self.state.neighbour_infos {
-            writeln!(formatter, "\t {:?}\t {}", pfx, info)?;
-        }
-
-        writeln!(formatter, "}}")
+#[cfg(not(feature = "mock_base"))]
+impl Chain {
+    fn compute_first_relocation_request_recipient(&mut self) -> XorName {
+        relocation::compute_first_request_recipient(
+            self.our_prefix(),
+            self.our_info().member_names(),
+        )
     }
-}
 
-impl Display for Chain {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "Node({}({:b}))", self.our_id(), self.state.our_prefix())
+    fn compute_next_relocation_request_recipient(&mut self, prev: XorName) -> XorName {
+        relocation::compute_next_request_recipient(self.our_prefix(), prev)
     }
 }
 
@@ -1493,6 +1477,25 @@ impl Chain {
             .min_by_key(|prefix| prefix.bit_count())
             .unwrap_or(&self.our_prefix())
     }
+
+    fn compute_first_relocation_request_recipient(&mut self) -> XorName {
+        self.dev_params
+            .next_relocation_request_recipient
+            .take()
+            .unwrap_or_else(|| {
+                relocation::compute_first_request_recipient(
+                    self.our_prefix(),
+                    self.our_info().member_names(),
+                )
+            })
+    }
+
+    fn compute_next_relocation_request_recipient(&mut self, prev: XorName) -> XorName {
+        self.dev_params
+            .next_relocation_request_recipient
+            .take()
+            .unwrap_or_else(|| relocation::compute_next_request_recipient(self.our_prefix(), prev))
+    }
 }
 
 #[cfg(test)]
@@ -1500,6 +1503,48 @@ impl Chain {
     pub fn validate_our_history(&self) -> bool {
         self.state.our_history.validate()
     }
+}
+
+impl Debug for Chain {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        writeln!(formatter, "Chain {{")?;
+        writeln!(formatter, "\tour_id: {},", self.our_id)?;
+        writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
+        writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
+        writeln!(
+            formatter,
+            "\tsplit_in_progress: {}",
+            self.state.split_in_progress
+        )?;
+
+        writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
+        for info in self.state.our_infos() {
+            writeln!(formatter, "\t{}", info)?;
+        }
+
+        writeln!(formatter, "\tneighbour_infos:")?;
+        for (pfx, info) in &self.state.neighbour_infos {
+            writeln!(formatter, "\t {:?}\t {}", pfx, info)?;
+        }
+
+        writeln!(formatter, "}}")
+    }
+}
+
+impl Display for Chain {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Node({}({:b}))", self.our_id(), self.state.our_prefix())
+    }
+}
+
+/// The outcome of a prefix change.
+pub struct ParsecResetData {
+    /// The new genesis prefix info.
+    pub gen_pfx_info: GenesisPfxInfo,
+    /// The cached events that should be revoted.
+    pub cached_events: BTreeSet<NetworkEvent>,
+    /// The completed events.
+    pub completed_events: BTreeSet<AccumulatingEvent>,
 }
 
 fn key_matching_first_elder_name(

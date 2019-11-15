@@ -64,6 +64,8 @@ pub struct SharedState {
     pub churn_event_backlog: VecDeque<AccumulatingEvent>,
     /// Queue of pending relocations.
     pub relocate_queue: VecDeque<RelocateDetails>,
+    /// Recipient of the currently ongoing relocation request, if any.
+    pub relocation_request_recipient: Option<XorName>,
 }
 
 impl SharedState {
@@ -103,6 +105,7 @@ impl SharedState {
             their_recent_keys: Default::default(),
             churn_event_backlog: Default::default(),
             relocate_queue: VecDeque::new(),
+            relocation_request_recipient: None,
         }
     }
 
@@ -133,6 +136,7 @@ impl SharedState {
             their_recent_keys,
             churn_event_backlog,
             relocate_queue,
+            relocation_request_recipient,
         ) = serialisation::deserialise(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
@@ -190,6 +194,12 @@ impl SharedState {
                 &self.relocate_queue,
                 &relocate_queue,
             );
+            update_with_genesis_related_info_check_same(
+                log_ident,
+                "relocation_request_recipient",
+                &self.relocation_request_recipient,
+                &relocation_request_recipient,
+            );
         }
         self.our_infos = our_infos;
         self.our_history = our_history;
@@ -200,6 +210,7 @@ impl SharedState {
         self.their_recent_keys = their_recent_keys;
         self.churn_event_backlog = churn_event_backlog;
         self.relocate_queue = relocate_queue;
+        self.relocation_request_recipient = relocation_request_recipient;
 
         Ok(())
     }
@@ -215,6 +226,7 @@ impl SharedState {
             &self.their_recent_keys,
             &self.churn_event_backlog,
             &self.relocate_queue,
+            &self.relocation_request_recipient,
         ))?)
     }
 

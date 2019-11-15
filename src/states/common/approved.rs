@@ -93,7 +93,7 @@ pub trait Approved: Base {
     ) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `RelocationRequest` event
-    fn handle_relocation_request_event(&mut self) -> Result<(), RoutingError>;
+    fn handle_relocation_request_event(&mut self, dst: XorName) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `User` event
     fn handle_user_event(
@@ -299,7 +299,7 @@ pub trait Approved: Base {
                     );
                 }
                 AccumulatingEvent::Online(payload) => {
-                    self.handle_online_event(payload, outbox)?;
+                    self.invoke_handle_online_event(payload, outbox)?;
                 }
                 AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id, outbox)?;
@@ -328,7 +328,9 @@ pub trait Approved: Base {
                 AccumulatingEvent::Relocate(payload) => {
                     self.invoke_handle_relocate_event(payload, event.signature, outbox)?
                 }
-                AccumulatingEvent::RelocationRequest => self.handle_relocation_request_event()?,
+                AccumulatingEvent::RelocationRequest(old_dst) => {
+                    self.invoke_handle_relocation_request_event(old_dst)?
+                }
                 AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }
 
@@ -434,6 +436,15 @@ pub trait Approved: Base {
         };
     }
 
+    fn invoke_handle_online_event(
+        &mut self,
+        payload: OnlinePayload,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        self.chain_mut().reset_relocation_request();
+        self.handle_online_event(payload, outbox)
+    }
+
     fn invoke_handle_relocate_event(
         &mut self,
         details: RelocateDetails,
@@ -451,6 +462,16 @@ pub trait Approved: Base {
             );
             Err(RoutingError::FailedSignature)
         }
+    }
+
+    fn invoke_handle_relocation_request_event(
+        &mut self,
+        old_dst: Option<XorName>,
+    ) -> Result<(), RoutingError> {
+        let new_dst = self
+            .chain_mut()
+            .compute_relocation_request_recipient(old_dst);
+        self.handle_relocation_request_event(new_dst)
     }
 }
 

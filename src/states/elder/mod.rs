@@ -31,7 +31,7 @@ use crate::{
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    relocation::{self, RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
@@ -234,7 +234,7 @@ impl Elder {
     }
 
     pub fn request_node(&mut self) {
-        self.vote_for_event(AccumulatingEvent::RelocationRequest)
+        self.vote_for_event(AccumulatingEvent::RelocationRequest(None))
     }
 
     fn new(
@@ -430,7 +430,7 @@ impl Elder {
                 AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_)
-                | AccumulatingEvent::RelocationRequest => false,
+                | AccumulatingEvent::RelocationRequest(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 AccumulatingEvent::SectionInfo(ref elders_info, _)
@@ -594,7 +594,7 @@ impl Elder {
                 Ok(Transition::Stay)
             }
             (RelocationRequestRefused, Authority::Section(src), _) => {
-                self.handle_relocation_request_refused(src)?;
+                self.handle_relocation_request_refused(src);
                 Ok(Transition::Stay)
             }
             (content, src, dst) => {
@@ -907,11 +907,19 @@ impl Elder {
         })
     }
 
-    fn handle_relocation_request_refused(&mut self, src: XorName) -> Result<(), RoutingError> {
-        info!("{} - RelocationRequest refused by {}", self, src);
+    fn handle_relocation_request_refused(&mut self, src: XorName) {
+        if !self.chain.is_current_relocation_request_recipient(&src) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Unexpected sender of RelocationRequestRefused: {}",
+                self,
+                src,
+            );
+            return;
+        }
 
-        let recipient = relocation::compute_next_request_recipient(self.chain.our_prefix(), src);
-        self.send_relocation_request(recipient)
+        info!("{} - Relocation request to {} refused", self, src);
+        self.vote_for_event(AccumulatingEvent::RelocationRequest(Some(src)))
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -1178,14 +1186,6 @@ impl Elder {
         }
 
         Ok(())
-    }
-
-    fn send_relocation_request(&mut self, dst: XorName) -> Result<(), RoutingError> {
-        self.send_routing_message(RoutingMessage {
-            src: Authority::PrefixSection(*self.chain.our_prefix()),
-            dst: Authority::Section(dst),
-            content: MessageContent::RelocationRequest,
-        })
     }
 }
 
@@ -1472,13 +1472,6 @@ impl Base for Elder {
     }
 }
 
-#[cfg(not(feature = "mock_base"))]
-impl Elder {
-    fn compute_relocation_request_recipient(&self) -> XorName {
-        self.chain.compute_relocation_request_recipient()
-    }
-}
-
 #[cfg(feature = "mock_base")]
 impl Elder {
     pub fn chain(&self) -> &Chain {
@@ -1515,14 +1508,6 @@ impl Elder {
 
     pub fn parsec_last_version(&self) -> u64 {
         self.parsec_map.last_version()
-    }
-
-    fn compute_relocation_request_recipient(&mut self) -> XorName {
-        self.chain
-            .dev_params_mut()
-            .next_relocation_request_recipient
-            .take()
-            .unwrap_or_else(|| self.chain.compute_relocation_request_recipient())
     }
 }
 
@@ -1774,11 +1759,14 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_relocation_request_event(&mut self) -> Result<(), RoutingError> {
-        info!("{} - handle RelocationRequest", self);
+    fn handle_relocation_request_event(&mut self, dst: XorName) -> Result<(), RoutingError> {
+        info!("{} - handle RelocationRequest to {}", self, dst);
 
-        let dst = self.compute_relocation_request_recipient();
-        self.send_relocation_request(dst)
+        self.send_routing_message(RoutingMessage {
+            src: Authority::PrefixSection(*self.chain.our_prefix()),
+            dst: Authority::Section(dst),
+            content: MessageContent::RelocationRequest,
+        })
     }
 }
 
