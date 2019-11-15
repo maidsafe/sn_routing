@@ -196,7 +196,16 @@ mod test {
 
     impl Rand for Seed {
         fn rand<R: Rng>(rng: &mut R) -> Self {
-            Self(rng.gen())
+            // Note: the `wrapping_add` trick is a workaround for what seems to be a weakness in
+            // `XorShiftRng`. Without it we would sometimes end up with multiple rngs producing
+            // identical values.
+            // The idea is taken from: https://github.com/maidsafe/maidsafe_utilities/blob/24dfcbc6ee07a14bf64f3bc573f68cea01e06862/src/seeded_rng.rs#L92
+            Self([
+                rng.next_u32().wrapping_add(rng.next_u32()),
+                rng.next_u32().wrapping_add(rng.next_u32()),
+                rng.next_u32().wrapping_add(rng.next_u32()),
+                rng.next_u32().wrapping_add(rng.next_u32()),
+            ])
         }
     }
 
