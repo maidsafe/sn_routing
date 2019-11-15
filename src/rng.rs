@@ -324,9 +324,8 @@ mod seed_printer {
         } else {
             format!("{}: {}", label, seed)
         };
-
         let border = (0..msg.len()).map(|_| "=").collect::<String>();
-        eprintln!("\n{}\n{}\n{}\n", border, msg, border);
+        println!("\n{}\n{}\n{}\n", border, msg, border);
     }
 
     // Print the seed also on SIGINT and SIGTERM

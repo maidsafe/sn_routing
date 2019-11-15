@@ -11,8 +11,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, rng::MainRng, test_consts, Authority, Event, EventStream, FullId, NetworkConfig,
-    Node, NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
+    mock::Network, test_consts, Authority, Event, EventStream, FullId, NetworkConfig, Node,
+    NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -171,16 +171,12 @@ impl<'a> TestNodeBuilder<'a> {
         }
     }
 
-    pub fn rng(self, rng: MainRng) -> Self {
-        Self {
-            inner: self.inner.rng(rng),
-            ..self
-        }
-    }
-
     pub fn create(self) -> TestNode {
-        let (inner, _node_rx) =
-            unwrap!(self.inner.network_cfg(self.network.network_cfg()).create());
+        let (inner, _node_rx) = unwrap!(self
+            .inner
+            .network_cfg(self.network.network_cfg())
+            .rng(self.network.new_rng())
+            .create());
 
         TestNode {
             inner,
@@ -944,7 +940,6 @@ fn add_node_to_section(
         TestNode::builder(network)
             .network_config(config)
             .full_id(full_id)
-            .rng(rng)
             .create(),
     );
 
