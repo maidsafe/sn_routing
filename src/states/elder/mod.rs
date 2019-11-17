@@ -427,6 +427,10 @@ impl Elder {
             .iter()
             .filter(|event| match event.payload {
                 // Only re-vote not yet accumulated events and still relevant to our new prefix.
+                AccumulatingEvent::Online(ref payload) => {
+                    our_pfx.matches(payload.p2p_node.name())
+                        && !completed_events.contains(&event.payload)
+                }
                 AccumulatingEvent::Offline(pub_id) => {
                     our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
                 }
@@ -437,8 +441,7 @@ impl Elder {
                 // Drop: no longer relevant after prefix change.
                 // TODO: verify this is really the case. Some/all of these might still make sense
                 // to carry over. In case it does not, add a comment explaining why.
-                AccumulatingEvent::Online(_)
-                | AccumulatingEvent::StartDkg(_)
+                AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_) => false,
 
