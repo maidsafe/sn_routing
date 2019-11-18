@@ -326,7 +326,6 @@ fn new_elder_state(
         public_id,
         gen_pfx_info.clone(),
     );
-    let peer_map = PeerMap::new();
 
     let details = ElderDetails {
         chain,
@@ -338,7 +337,6 @@ fn new_elder_state(
         routing_msg_backlog: Default::default(),
         direct_msg_backlog: Default::default(),
         parsec_map,
-        peer_map,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,
         rng: rng::new_from(rng),

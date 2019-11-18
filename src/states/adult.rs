@@ -51,7 +51,6 @@ pub struct AdultDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
-    pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
@@ -69,7 +68,6 @@ pub struct Adult {
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     parsec_map: ParsecMap,
-    peer_map: PeerMap,
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
@@ -106,7 +104,6 @@ impl Adult {
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
             parsec_map,
-            peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             parsec_timer_token,
@@ -152,7 +149,6 @@ impl Adult {
             routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
             parsec_map: self.parsec_map,
-            peer_map: self.peer_map,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -307,11 +303,11 @@ impl Base for Adult {
     }
 
     fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+        &self.network_service().peer_map
     }
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+        &mut self.network_service_mut().peer_map
     }
 
     fn timer(&mut self) -> &mut Timer {
