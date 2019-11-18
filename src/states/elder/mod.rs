@@ -423,6 +423,9 @@ impl Elder {
                 AccumulatingEvent::AckMessage(ref payload) => {
                     our_pfx.matches(&payload.dst_name) && !completed_events.contains(&event.payload)
                 }
+                AccumulatingEvent::RefuseRelocationRequest { dst, .. } => {
+                    our_pfx.matches(&dst) && !completed_events.contains(&event.payload)
+                }
 
                 // Drop: no longer relevant after prefix change.
                 // TODO: verify this is really the case. Some/all of these might still make sense
@@ -589,7 +592,7 @@ impl Elder {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
             }
-            (RelocationRequest, Authority::PrefixSection(src), dst @ Authority::Section(_)) => {
+            (RelocationRequest, Authority::PrefixSection(src), Authority::Section(dst)) => {
                 self.handle_relocation_request(src, dst)?;
                 Ok(Transition::Stay)
             }
@@ -868,7 +871,7 @@ impl Elder {
     fn handle_relocation_request(
         &mut self,
         src: Prefix<XorName>,
-        dst: Authority<XorName>,
+        dst: XorName,
     ) -> Result<(), RoutingError> {
         // TODO: verify this condition is correct and sufficient.
         if self.chain.our_elders().len() <= self.chain.elder_size() {
@@ -876,11 +879,8 @@ impl Elder {
                 "{} - Refusing RelocationRequest from {:?} - not enough nodes in the section",
                 self, src
             );
-            return self.send_routing_message(RoutingMessage {
-                src: dst,
-                dst: Authority::PrefixSection(src),
-                content: MessageContent::RelocationRequestRefused,
-            });
+            self.vote_for_event(AccumulatingEvent::RefuseRelocationRequest { src, dst });
+            return Ok(());
         }
 
         // Pick the youngest node.
@@ -1766,6 +1766,18 @@ impl Approved for Elder {
             src: Authority::PrefixSection(*self.chain.our_prefix()),
             dst: Authority::Section(dst),
             content: MessageContent::RelocationRequest,
+        })
+    }
+
+    fn handle_refuse_relocation_request_event(
+        &mut self,
+        src: Prefix<XorName>,
+        dst: XorName,
+    ) -> Result<(), RoutingError> {
+        self.send_routing_message(RoutingMessage {
+            src: Authority::Section(dst),
+            dst: Authority::PrefixSection(src),
+            content: MessageContent::RelocationRequestRefused,
         })
     }
 }

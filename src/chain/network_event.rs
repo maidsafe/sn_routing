@@ -123,9 +123,15 @@ pub enum AccumulatingEvent {
     Relocate(RelocateDetails),
 
     // Voted to trigger a request for a node to be relocated to our section.
-    // To make the vote unique within a single parsec instance, it contains the recipient of the
-    // previous request, if any.
+    // To make the vote unique within a single parsec instance, it contains the recipient name of
+    // the previous request, if any.
     RelocationRequest(Option<XorName>),
+
+    // Voted to refuse a relocation request.
+    RefuseRelocationRequest {
+        src: Prefix<XorName>,
+        dst: XorName,
+    },
 
     // Opaque user-defined event.
     User(Vec<u8>),
@@ -177,6 +183,11 @@ impl Debug for AccumulatingEvent {
             AccumulatingEvent::RelocationRequest(dst) => {
                 write!(formatter, "RelocationRequest({:?})", dst)
             }
+            AccumulatingEvent::RefuseRelocationRequest { src, dst } => write!(
+                formatter,
+                "RefuseRelocationRequest {{ src: {:?}, dst: {:?} }}",
+                src, dst
+            ),
             AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }

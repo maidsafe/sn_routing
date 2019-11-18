@@ -95,6 +95,13 @@ pub trait Approved: Base {
     /// Handle an accumulated `RelocationRequest` event
     fn handle_relocation_request_event(&mut self, dst: XorName) -> Result<(), RoutingError>;
 
+    /// Handle an accumulated `RefuseRelocationRequest` event
+    fn handle_refuse_relocation_request_event(
+        &mut self,
+        src: Prefix<XorName>,
+        dst: XorName,
+    ) -> Result<(), RoutingError>;
+
     /// Handle an accumulated `User` event
     fn handle_user_event(
         &mut self,
@@ -330,6 +337,9 @@ pub trait Approved: Base {
                 }
                 AccumulatingEvent::RelocationRequest(old_dst) => {
                     self.invoke_handle_relocation_request_event(old_dst)?
+                }
+                AccumulatingEvent::RefuseRelocationRequest { src, dst } => {
+                    self.handle_refuse_relocation_request_event(src, dst)?
                 }
                 AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }

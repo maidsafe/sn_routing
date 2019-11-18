@@ -592,6 +592,14 @@ impl Approved for Adult {
         Ok(())
     }
 
+    fn handle_refuse_relocation_request_event(
+        &mut self,
+        _src: Prefix<XorName>,
+        _dst: XorName,
+    ) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
     fn handle_their_key_info_event(
         &mut self,
         _key_info: SectionKeyInfo,
