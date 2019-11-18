@@ -588,11 +588,11 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_relocation_request_event(&mut self, _dst: XorName) -> Result<(), RoutingError> {
+    fn handle_relocate_request_event(&mut self, _dst: XorName) -> Result<(), RoutingError> {
         Ok(())
     }
 
-    fn handle_refuse_relocation_request_event(
+    fn handle_deny_relocate_request_event(
         &mut self,
         _src: Prefix<XorName>,
         _dst: XorName,

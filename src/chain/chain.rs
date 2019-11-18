@@ -304,8 +304,8 @@ impl Chain {
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::RelocationRequest(_)
-            | AccumulatingEvent::RefuseRelocationRequest { .. }
+            | AccumulatingEvent::RelocateRequest(_)
+            | AccumulatingEvent::DenyRelocateRequest { .. }
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
@@ -837,8 +837,8 @@ impl Chain {
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::Relocate(_) 
-            | AccumulatingEvent::RelocationRequest(_)
-            | AccumulatingEvent::RefuseRelocationRequest { .. } => {
+            | AccumulatingEvent::RelocateRequest(_)
+            | AccumulatingEvent::DenyRelocateRequest { .. } => {
                 !self.state.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {
@@ -1384,23 +1384,23 @@ impl Chain {
         }
     }
 
-    pub fn compute_relocation_request_recipient(&mut self, old_dst: Option<XorName>) -> XorName {
+    pub fn compute_relocate_request_recipient(&mut self, old_dst: Option<XorName>) -> XorName {
         let new_dst = if let Some(old_dst) = old_dst {
-            self.compute_next_relocation_request_recipient(old_dst)
+            self.compute_next_relocate_request_recipient(old_dst)
         } else {
-            self.compute_first_relocation_request_recipient()
+            self.compute_first_relocate_request_recipient()
         };
 
-        self.state.relocation_request_recipient = Some(new_dst);
+        self.state.relocate_request_recipient = Some(new_dst);
         new_dst
     }
 
-    pub fn is_current_relocation_request_recipient(&self, name: &XorName) -> bool {
-        self.state.relocation_request_recipient.as_ref() == Some(name)
+    pub fn is_current_relocate_request_recipient(&self, name: &XorName) -> bool {
+        self.state.relocate_request_recipient.as_ref() == Some(name)
     }
 
-    pub fn reset_relocation_request(&mut self) {
-        self.state.relocation_request_recipient = None;
+    pub fn reset_relocate_request(&mut self) {
+        self.state.relocate_request_recipient = None;
     }
 
     pub fn dev_params(&self) -> &DevParams {
@@ -1414,14 +1414,14 @@ impl Chain {
 
 #[cfg(not(feature = "mock_base"))]
 impl Chain {
-    fn compute_first_relocation_request_recipient(&mut self) -> XorName {
+    fn compute_first_relocate_request_recipient(&mut self) -> XorName {
         relocation::compute_first_request_recipient(
             self.our_prefix(),
             self.our_info().member_names(),
         )
     }
 
-    fn compute_next_relocation_request_recipient(&mut self, prev: XorName) -> XorName {
+    fn compute_next_relocate_request_recipient(&mut self, prev: XorName) -> XorName {
         relocation::compute_next_request_recipient(self.our_prefix(), prev)
     }
 }
@@ -1480,7 +1480,7 @@ impl Chain {
             .unwrap_or(&self.our_prefix())
     }
 
-    fn compute_first_relocation_request_recipient(&mut self) -> XorName {
+    fn compute_first_relocate_request_recipient(&mut self) -> XorName {
         self.dev_params
             .next_relocation_request_recipient
             .take()
@@ -1492,7 +1492,7 @@ impl Chain {
             })
     }
 
-    fn compute_next_relocation_request_recipient(&mut self, prev: XorName) -> XorName {
+    fn compute_next_relocate_request_recipient(&mut self, prev: XorName) -> XorName {
         self.dev_params
             .next_relocation_request_recipient
             .take()

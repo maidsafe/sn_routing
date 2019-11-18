@@ -122,13 +122,13 @@ pub enum AccumulatingEvent {
     // Voted for node to be relocated out of our section.
     Relocate(RelocateDetails),
 
-    // Voted to trigger a request for a node to be relocated to our section.
+    // Voted to send a request for a node to be relocated to our section.
     // To make the vote unique within a single parsec instance, it contains the recipient name of
     // the previous request, if any.
-    RelocationRequest(Option<XorName>),
+    RelocateRequest(Option<XorName>),
 
-    // Voted to refuse a relocation request.
-    RefuseRelocationRequest {
+    // Voted to deny a relocate request.
+    DenyRelocateRequest {
         src: Prefix<XorName>,
         dst: XorName,
     },
@@ -180,12 +180,12 @@ impl Debug for AccumulatingEvent {
             }
             AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
             AccumulatingEvent::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
-            AccumulatingEvent::RelocationRequest(dst) => {
-                write!(formatter, "RelocationRequest({:?})", dst)
+            AccumulatingEvent::RelocateRequest(dst) => {
+                write!(formatter, "RelocateRequest({:?})", dst)
             }
-            AccumulatingEvent::RefuseRelocationRequest { src, dst } => write!(
+            AccumulatingEvent::DenyRelocateRequest { src, dst } => write!(
                 formatter,
-                "RefuseRelocationRequest {{ src: {:?}, dst: {:?} }}",
+                "DenyRelocateRequest {{ src: {:?}, dst: {:?} }}",
                 src, dst
             ),
             AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),

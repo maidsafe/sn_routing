@@ -190,7 +190,7 @@ fn relocate_during_split() {
 }
 
 #[test]
-fn relocation_request() {
+fn relocate_request() {
     // Create two sections and make one of them request a node from the other one.
     let network = Network::new(NETWORK_PARAMS);
     let mut rng = network.new_rng();
@@ -228,31 +228,31 @@ fn relocation_request() {
 }
 
 #[test]
-fn refuse_relocation_request() {
+fn deny_relocate_request() {
     let network = Network::new(NETWORK_PARAMS);
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let request_prefix = *unwrap!(rng.choose(&prefixes));
-    let refuse_prefix = *choose_other_prefix(&mut rng, &prefixes, &request_prefix);
+    let deny_prefix = *choose_other_prefix(&mut rng, &prefixes, &request_prefix);
     let accept_prefix = *unwrap!(iter::repeat(())
         .filter_map(|_| rng.choose(&prefixes))
-        .find(|prefix| { **prefix != request_prefix && **prefix != refuse_prefix }));
+        .find(|prefix| { **prefix != request_prefix && **prefix != deny_prefix }));
 
     let refuse_size = NETWORK_PARAMS.elder_size;
-    change_section_size(&network, &mut nodes, &refuse_prefix, refuse_size);
+    change_section_size(&network, &mut nodes, &deny_prefix, refuse_size);
 
     let accept_size = NETWORK_PARAMS.elder_size + 1;
     change_section_size(&network, &mut nodes, &accept_prefix, accept_size);
 
-    // Force the relocation request to go to the section with insufficient nodes first.
+    // Force the relocate request to go to the section with insufficient nodes first.
     for node in nodes_with_prefix_mut(&mut nodes, &request_prefix) {
         node.inner
-            .set_next_relocation_request_recipient(Some(refuse_prefix.name()));
+            .set_next_relocation_request_recipient(Some(deny_prefix.name()));
     }
 
-    // Trigger the relocation request.
+    // Trigger the relocate request.
     let mut old_request_size = 0;
 
     // Clippy false positive, already reported: https://github.com/rust-lang/rust-clippy/issues/4732
@@ -270,10 +270,7 @@ fn refuse_relocation_request() {
         }),
     );
 
-    assert_eq!(
-        nodes_with_prefix(&nodes, &refuse_prefix).count(),
-        refuse_size
-    );
+    assert_eq!(nodes_with_prefix(&nodes, &deny_prefix).count(), refuse_size);
     assert_eq!(
         nodes_with_prefix(&nodes, &accept_prefix).count(),
         accept_size - 1

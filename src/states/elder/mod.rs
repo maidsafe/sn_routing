@@ -234,7 +234,7 @@ impl Elder {
     }
 
     pub fn request_node(&mut self) {
-        self.vote_for_event(AccumulatingEvent::RelocationRequest(None))
+        self.vote_for_event(AccumulatingEvent::RelocateRequest(None))
     }
 
     fn new(
@@ -423,7 +423,7 @@ impl Elder {
                 AccumulatingEvent::AckMessage(ref payload) => {
                     our_pfx.matches(&payload.dst_name) && !completed_events.contains(&event.payload)
                 }
-                AccumulatingEvent::RefuseRelocationRequest { dst, .. } => {
+                AccumulatingEvent::DenyRelocateRequest { dst, .. } => {
                     our_pfx.matches(&dst) && !completed_events.contains(&event.payload)
                 }
 
@@ -433,7 +433,7 @@ impl Elder {
                 AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_)
-                | AccumulatingEvent::RelocationRequest(_) => false,
+                | AccumulatingEvent::RelocateRequest(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
                 AccumulatingEvent::SectionInfo(ref elders_info, _)
@@ -592,12 +592,12 @@ impl Elder {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
             }
-            (RelocationRequest, Authority::PrefixSection(src), Authority::Section(dst)) => {
-                self.handle_relocation_request(src, dst)?;
+            (RelocateRequest, Authority::PrefixSection(src), Authority::Section(dst)) => {
+                self.handle_relocate_request(src, dst)?;
                 Ok(Transition::Stay)
             }
-            (RelocationRequestRefused, Authority::Section(src), _) => {
-                self.handle_relocation_request_refused(src);
+            (RelocateRequestDenied, Authority::Section(src), _) => {
+                self.handle_relocate_request_denied(src);
                 Ok(Transition::Stay)
             }
             (content, src, dst) => {
@@ -868,7 +868,7 @@ impl Elder {
         }
     }
 
-    fn handle_relocation_request(
+    fn handle_relocate_request(
         &mut self,
         src: Prefix<XorName>,
         dst: XorName,
@@ -876,10 +876,10 @@ impl Elder {
         // TODO: verify this condition is correct and sufficient.
         if self.chain.our_elders().len() <= self.chain.elder_size() {
             debug!(
-                "{} - Refusing RelocationRequest from {:?} - not enough nodes in the section",
+                "{} - Deny RelocateRequest from {:?} - not enough nodes in the section",
                 self, src
             );
-            self.vote_for_event(AccumulatingEvent::RefuseRelocationRequest { src, dst });
+            self.vote_for_event(AccumulatingEvent::DenyRelocateRequest { src, dst });
             return Ok(());
         }
 
@@ -892,12 +892,12 @@ impl Elder {
         {
             (pub_id, age.saturating_add(1))
         } else {
-            log_or_panic!(LogLevel::Error, "{} - Can't fulfil relocation request - our section has no members (this should be impossible).", self);
+            log_or_panic!(LogLevel::Error, "{} - Can't fulfil relocate request - our section has no members (this should be impossible).", self);
             return Ok(());
         };
 
         debug!(
-            "{} - Accepting RelocationRequest from {:?} - relocating {}",
+            "{} - Accept RelocateRequest from {:?} - relocating {}",
             self, src, pub_id
         );
         self.vote_for_signed_event(RelocateDetails {
@@ -907,19 +907,21 @@ impl Elder {
         })
     }
 
-    fn handle_relocation_request_refused(&mut self, src: XorName) {
-        if !self.chain.is_current_relocation_request_recipient(&src) {
+    fn handle_relocate_request_denied(&mut self, src: XorName) {
+        if !self.chain.is_current_relocate_request_recipient(&src) {
             log_or_panic!(
                 LogLevel::Error,
-                "{} - Unexpected sender of RelocationRequestRefused: {}",
+                "{} - Unexpected sender of RelocateRequestDenied: {}",
                 self,
                 src,
             );
             return;
         }
 
-        info!("{} - Relocation request to {} refused", self, src);
-        self.vote_for_event(AccumulatingEvent::RelocationRequest(Some(src)))
+        info!("{} - Relocate request to {} denied", self, src);
+
+        // Try again
+        self.vote_for_event(AccumulatingEvent::RelocateRequest(Some(src)))
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -1759,25 +1761,27 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_relocation_request_event(&mut self, dst: XorName) -> Result<(), RoutingError> {
-        info!("{} - handle RelocationRequest to {}", self, dst);
+    fn handle_relocate_request_event(&mut self, dst: XorName) -> Result<(), RoutingError> {
+        info!("{} - handle RelocateRequest to {}", self, dst);
 
         self.send_routing_message(RoutingMessage {
             src: Authority::PrefixSection(*self.chain.our_prefix()),
             dst: Authority::Section(dst),
-            content: MessageContent::RelocationRequest,
+            content: MessageContent::RelocateRequest,
         })
     }
 
-    fn handle_refuse_relocation_request_event(
+    fn handle_deny_relocate_request_event(
         &mut self,
         src: Prefix<XorName>,
         dst: XorName,
     ) -> Result<(), RoutingError> {
+        info!("{} - handle DenyRelocateRequest from {}", self, dst);
+
         self.send_routing_message(RoutingMessage {
             src: Authority::Section(dst),
             dst: Authority::PrefixSection(src),
-            content: MessageContent::RelocationRequestRefused,
+            content: MessageContent::RelocateRequestDenied,
         })
     }
 }
