@@ -26,14 +26,9 @@ use crate::{
     xor_name::XorName,
     ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
-use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-use std::{
-    fmt::{Debug, Display},
-    net::SocketAddr,
-    slice,
-};
+use std::{fmt::Display, net::SocketAddr, slice};
 
 // Trait for all states.
 pub trait Base: Display {
@@ -370,7 +365,7 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message<T: MessageRecipient>(&mut self, dst: &T, content: DirectMessage) {
+    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: DirectMessage) {
         let message = if let Ok(message) = self.to_signed_direct_message(content) {
             message
         } else {
@@ -380,32 +375,20 @@ pub trait Base: Display {
         self.send_message(dst, message);
     }
 
-    fn send_message<T: MessageRecipient>(&mut self, dst: &T, message: Message) {
+    fn send_message(&mut self, dst: &ConnectionInfo, message: Message) {
         self.send_message_to_targets(slice::from_ref(dst), 1, message);
     }
 
-    fn send_message_to_targets<T: MessageRecipient>(
+    fn send_message_to_targets(
         &mut self,
-        dst_targets: &[T],
+        conn_infos: &[ConnectionInfo],
         dg_size: usize,
         message: Message,
     ) {
-        let conn_infos: Vec<_> = dst_targets
-            .iter()
-            .filter_map(|dst| dst.resolve().cloned())
-            .collect();
-
         if conn_infos.len() < dg_size {
             warn!(
-                "{} Less than dg_size valid targets! dg_size = {}; targets = {:?}; valid targets = [{:?}]; msg = {:?}",
-                self,
-                dg_size,
-                dst_targets,
-                dst_targets
-                    .iter()
-                    .filter(|dst| dst.resolve().is_some())
-                    .format(", "),
-                message
+                "{} Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
+                self, dg_size, conn_infos, message
             );
         }
 
@@ -414,7 +397,7 @@ pub trait Base: Display {
 
     fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: Vec<ConnectionInfo>,
+        conn_infos: &[ConnectionInfo],
         dg_size: usize,
         message: Message,
     ) {
@@ -510,22 +493,4 @@ pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
     let result = Ok((*data).clone());
 
     result
-}
-
-/// A trait for types used to identify recipients of messages.
-pub trait MessageRecipient: Debug {
-    /// Resolve this recipient to a ConnectionInfo.
-    fn resolve(&self) -> Option<&ConnectionInfo>;
-}
-
-impl MessageRecipient for ConnectionInfo {
-    fn resolve(&self) -> Option<&ConnectionInfo> {
-        Some(self)
-    }
-}
-
-impl MessageRecipient for P2pNode {
-    fn resolve(&self) -> Option<&ConnectionInfo> {
-        Some(self.connection_info())
-    }
 }

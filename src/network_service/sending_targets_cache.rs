@@ -49,7 +49,7 @@ impl SendingTargetsCache {
     pub fn insert_message(
         &mut self,
         token: Token,
-        initial_targets: Vec<ConnectionInfo>,
+        initial_targets: &[ConnectionInfo],
         dg_size: usize,
     ) {
         // When a message is inserted into the cache initially, we are only sending it to `dg_size`
@@ -57,11 +57,11 @@ impl SendingTargetsCache {
         // states to Sending(0), and the rest to Failed(0) (indicating that we haven't sent to
         // them, and so they haven't failed yet)
         let targets = initial_targets
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(idx, tgt_info)| {
                 (
-                    tgt_info,
+                    tgt_info.clone(),
                     if idx < dg_size {
                         TargetState::Sending(0)
                     } else {

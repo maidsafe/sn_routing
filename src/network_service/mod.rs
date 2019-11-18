@@ -44,7 +44,7 @@ impl NetworkService {
 
     pub fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: Vec<ConnectionInfo>,
+        conn_infos: &[ConnectionInfo],
         dg_size: usize,
         msg: NetworkBytes,
     ) {

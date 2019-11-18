@@ -121,7 +121,7 @@ pub trait Approved: Base {
         );
 
         if let Some(response) = response {
-            self.send_direct_message(&p2p_node, response);
+            self.send_direct_message(p2p_node.connection_info(), response);
         }
 
         if poll {
@@ -184,7 +184,7 @@ pub trait Approved: Base {
             .parsec_map_mut()
             .create_gossip(version, gossip_target.public_id())
         {
-            self.send_direct_message(&gossip_target, msg);
+            self.send_direct_message(gossip_target.connection_info(), msg);
         }
     }
 

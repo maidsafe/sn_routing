@@ -215,6 +215,7 @@ impl Adult {
             .gen_pfx_info
             .latest_info
             .member_nodes()
+            .map(P2pNode::connection_info)
             .cloned()
             .collect_vec();
 
@@ -241,7 +242,7 @@ impl Adult {
         );
 
         self.send_direct_message(
-            &p2p_node,
+            p2p_node.connection_info(),
             DirectMessage::BootstrapResponse(BootstrapResponse::Error(
                 BootstrapResponseError::NotApproved,
             )),
@@ -445,7 +446,7 @@ impl Base for Adult {
                 .is_new()
             {
                 let message = self.to_hop_message(signed_msg.clone())?;
-                self.send_message(p2p_node, message);
+                self.send_message(p2p_node.connection_info(), message);
             }
         }
 
