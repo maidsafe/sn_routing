@@ -183,7 +183,8 @@ impl Node {
             Packet::ConnectFailure => {
                 // Note: the real quic-p2p does not emit anything on unsuccessful connection
                 // attempts, only when a previously successfully established connection gets
-                // dropped.
+                // dropped, but it will in the future.
+                self.clear_pending_messages(src);
             }
             Packet::Message(msg, token) => {
                 if self.peers.contains_key(&src) {
@@ -207,6 +208,7 @@ impl Node {
                 token,
             }),
             Packet::Disconnect => {
+                self.clear_pending_messages(src);
                 if self.peers.remove(&src).is_some() {
                     self.fire_event(Event::ConnectionFailure {
                         peer_addr: src,
@@ -270,6 +272,22 @@ impl Node {
 
         for (msg, token) in messages {
             self.send_message(addr, msg, token)
+        }
+    }
+
+    fn clear_pending_messages(&mut self, addr: SocketAddr) {
+        let messages = if let Some(messages) = self.pending_messages.remove(&addr) {
+            messages
+        } else {
+            return;
+        };
+
+        for (msg, token) in messages {
+            self.fire_event(Event::UnsentUserMessage {
+                peer_addr: addr,
+                msg,
+                token,
+            })
         }
     }
 }

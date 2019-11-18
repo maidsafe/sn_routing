@@ -387,14 +387,13 @@ impl Chain {
         };
 
         if self.is_peer_our_elder(&details.pub_id) {
+            let min_elders = self.elder_size() + 1;
             let num_elders = self.our_elders().len();
-            if num_elders <= self.elder_size() {
+
+            if num_elders < min_elders {
                 warn!(
                     "{} - Not relocating {} - not enough elders in the section ({}/{}).",
-                    self,
-                    details.pub_id,
-                    num_elders,
-                    self.elder_size() + 1,
+                    self, details.pub_id, num_elders, min_elders,
                 );
 
                 // Keep the details in the queue so when we gain more elders we can try to relocate
