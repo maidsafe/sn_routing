@@ -305,7 +305,7 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::RelocateRequest(_)
-            | AccumulatingEvent::DenyRelocateRequest { .. }
+            | AccumulatingEvent::RelocateResponse { .. }
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
@@ -838,7 +838,7 @@ impl Chain {
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::Relocate(_) 
             | AccumulatingEvent::RelocateRequest(_)
-            | AccumulatingEvent::DenyRelocateRequest { .. } => {
+            | AccumulatingEvent::RelocateResponse { .. } => {
                 !self.state.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {

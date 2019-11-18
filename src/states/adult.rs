@@ -592,7 +592,7 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_deny_relocate_request_event(
+    fn handle_relocate_response_event(
         &mut self,
         _src: Prefix<XorName>,
         _dst: XorName,

@@ -127,8 +127,8 @@ pub enum AccumulatingEvent {
     // the previous request, if any.
     RelocateRequest(Option<XorName>),
 
-    // Voted to deny a relocate request.
-    DenyRelocateRequest {
+    // Voted to respond to a relocate request.
+    RelocateResponse {
         src: Prefix<XorName>,
         dst: XorName,
     },
@@ -183,9 +183,9 @@ impl Debug for AccumulatingEvent {
             AccumulatingEvent::RelocateRequest(dst) => {
                 write!(formatter, "RelocateRequest({:?})", dst)
             }
-            AccumulatingEvent::DenyRelocateRequest { src, dst } => write!(
+            AccumulatingEvent::RelocateResponse { src, dst } => write!(
                 formatter,
-                "DenyRelocateRequest {{ src: {:?}, dst: {:?} }}",
+                "RelocateResponse {{ src: {:?}, dst: {:?} }}",
                 src, dst
             ),
             AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),

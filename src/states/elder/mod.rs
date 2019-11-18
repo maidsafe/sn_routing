@@ -423,7 +423,7 @@ impl Elder {
                 AccumulatingEvent::AckMessage(ref payload) => {
                     our_pfx.matches(&payload.dst_name) && !completed_events.contains(&event.payload)
                 }
-                AccumulatingEvent::DenyRelocateRequest { dst, .. } => {
+                AccumulatingEvent::RelocateResponse { dst, .. } => {
                     our_pfx.matches(&dst) && !completed_events.contains(&event.payload)
                 }
 
@@ -593,7 +593,7 @@ impl Elder {
                 Ok(Transition::Stay)
             }
             (RelocateRequest, Authority::PrefixSection(src), Authority::Section(dst)) => {
-                self.handle_relocate_request(src, dst)?;
+                self.handle_relocate_request(src, dst);
                 Ok(Transition::Stay)
             }
             (RelocateRequestDenied, Authority::Section(src), _) => {
@@ -868,43 +868,9 @@ impl Elder {
         }
     }
 
-    fn handle_relocate_request(
-        &mut self,
-        src: Prefix<XorName>,
-        dst: XorName,
-    ) -> Result<(), RoutingError> {
-        // TODO: verify this condition is correct and sufficient.
-        if self.chain.our_elders().len() <= self.chain.elder_size() {
-            debug!(
-                "{} - Deny RelocateRequest from {:?} - not enough nodes in the section",
-                self, src
-            );
-            self.vote_for_event(AccumulatingEvent::DenyRelocateRequest { src, dst });
-            return Ok(());
-        }
-
-        // Pick the youngest node.
-        let (pub_id, age) = if let Some((pub_id, age)) = self
-            .chain
-            .our_joined_members()
-            .min_by_key(|(_, info)| info.age_counter)
-            .map(|(_, info)| (*info.p2p_node.public_id(), info.age()))
-        {
-            (pub_id, age.saturating_add(1))
-        } else {
-            log_or_panic!(LogLevel::Error, "{} - Can't fulfil relocate request - our section has no members (this should be impossible).", self);
-            return Ok(());
-        };
-
-        debug!(
-            "{} - Accept RelocateRequest from {:?} - relocating {}",
-            self, src, pub_id
-        );
-        self.vote_for_signed_event(RelocateDetails {
-            pub_id,
-            destination: src.name(),
-            age,
-        })
+    fn handle_relocate_request(&mut self, src: Prefix<XorName>, dst: XorName) {
+        debug!("{} - Received RelocateRequest from {:?}", self, src);
+        self.vote_for_event(AccumulatingEvent::RelocateResponse { src, dst })
     }
 
     fn handle_relocate_request_denied(&mut self, src: XorName) {
@@ -1771,17 +1737,46 @@ impl Approved for Elder {
         })
     }
 
-    fn handle_deny_relocate_request_event(
+    fn handle_relocate_response_event(
         &mut self,
         src: Prefix<XorName>,
         dst: XorName,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle DenyRelocateRequest from {}", self, dst);
+        // TODO: verify this condition is correct and sufficient.
+        if self.chain.our_elders().len() <= self.chain.elder_size() {
+            info!(
+                "{} - Deny RelocateRequest from {:?} - not enough nodes in the section",
+                self, src
+            );
+            self.send_routing_message(RoutingMessage {
+                src: Authority::Section(dst),
+                dst: Authority::PrefixSection(src),
+                content: MessageContent::RelocateRequestDenied,
+            })?;
+            return Ok(());
+        }
 
-        self.send_routing_message(RoutingMessage {
-            src: Authority::Section(dst),
-            dst: Authority::PrefixSection(src),
-            content: MessageContent::RelocateRequestDenied,
+        // Pick the youngest node.
+        let (pub_id, age) = if let Some((pub_id, age)) = self
+            .chain
+            .our_joined_members()
+            .min_by_key(|(_, info)| info.age_counter)
+            .map(|(_, info)| (*info.p2p_node.public_id(), info.age()))
+        {
+            (pub_id, age.saturating_add(1))
+        } else {
+            log_or_panic!(LogLevel::Error, "{} - Can't fulfil relocate request - our section has no members (this should be impossible).", self);
+            return Ok(());
+        };
+
+        info!(
+            "{} - Accept RelocateRequest from {:?} - relocating {}",
+            self, src, pub_id
+        );
+        self.vote_for_signed_event(RelocateDetails {
+            pub_id,
+            destination: src.name(),
+            age,
         })
     }
 }
