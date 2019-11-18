@@ -432,6 +432,8 @@ impl Base for Adult {
         // Need to collect IDs first so that self is not borrowed via the iterator
         //
         // WIP: this is probably out of date? How else do we know which our section members are?
+        // WIP: once ConnectionRequest/ConnectionResponse is removed this whole function can
+        // probably be removed.
         let target_nodes = self
             .gen_pfx_info
             .latest_info
