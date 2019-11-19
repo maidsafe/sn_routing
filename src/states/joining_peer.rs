@@ -39,7 +39,6 @@ pub struct JoiningPeerDetails {
     pub network_service: NetworkService,
     pub full_id: FullId,
     pub network_cfg: NetworkParams,
-    pub peer_map: PeerMap,
     pub timer: Timer,
     pub rng: MainRng,
     pub p2p_nodes: Vec<P2pNode>,
@@ -54,7 +53,6 @@ pub struct JoiningPeer {
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     full_id: FullId,
-    peer_map: PeerMap,
     timer: Timer,
     rng: MainRng,
     join_token: u64,
@@ -76,7 +74,6 @@ impl JoiningPeer {
             full_id: details.full_id,
             timer: details.timer,
             rng: details.rng,
-            peer_map: details.peer_map,
             join_token,
             p2p_nodes: details.p2p_nodes,
             relocate_payload: details.relocate_payload,
@@ -100,7 +97,6 @@ impl JoiningPeer {
             gen_pfx_info,
             routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
-            peer_map: self.peer_map,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
             rng: self.rng,
@@ -204,11 +200,11 @@ impl Base for JoiningPeer {
     }
 
     fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+        &self.network_service().peer_map
     }
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+        &mut self.network_service_mut().peer_map
     }
 
     fn timer(&mut self) -> &mut Timer {
@@ -238,15 +234,7 @@ impl Base for JoiningPeer {
             // TODO: if we are relocating, preserve the relocation details to rebootstrap to the
             // same target section.
 
-            for peer_addr in self
-                .peer_map
-                .remove_all()
-                .map(|conn_info| conn_info.peer_addr)
-            {
-                self.network_service
-                    .service_mut()
-                    .disconnect_from(peer_addr);
-            }
+            self.network_service_mut().remove_and_disconnect_all();
 
             return Transition::Rebootstrap;
         }

@@ -32,6 +32,7 @@ use std::collections::BTreeSet;
 pub trait Approved: Base {
     fn parsec_map(&self) -> &ParsecMap;
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
+    fn chain(&self) -> &Chain;
     fn chain_mut(&mut self) -> &mut Chain;
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
@@ -120,7 +121,7 @@ pub trait Approved: Base {
         );
 
         if let Some(response) = response {
-            self.send_direct_message(&p2p_node, response);
+            self.send_direct_message(p2p_node.connection_info(), response);
         }
 
         if poll {
@@ -161,11 +162,8 @@ pub trait Approved: Base {
 
                 let p2p_recipients: Vec<_> = recipients
                     .into_iter()
-                    .filter_map(|pub_id| {
-                        self.peer_map()
-                            .get_connection_info(pub_id)
-                            .map(|conn_info| P2pNode::new(*pub_id, conn_info.clone()))
-                    })
+                    .filter_map(|pub_id| self.chain().get_member_p2p_node(pub_id.name()))
+                    .cloned()
                     .collect();
 
                 if p2p_recipients.is_empty() {
@@ -178,7 +176,6 @@ pub trait Approved: Base {
                 }
 
                 let rand_index = self.rng().gen_range(0, p2p_recipients.len());
-                // WIP: need to figure out who to send to without consulting the peer_map
                 (version, p2p_recipients[rand_index].clone())
             }
         };
@@ -187,7 +184,7 @@ pub trait Approved: Base {
             .parsec_map_mut()
             .create_gossip(version, gossip_target.public_id())
         {
-            self.send_direct_message(&gossip_target, msg);
+            self.send_direct_message(gossip_target.connection_info(), msg);
         }
     }
 

@@ -695,12 +695,10 @@ impl Chain {
     }
 
     /// Returns a set of elders we should be connected to.
-    // WIP: should we remove potential duplicates?
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
             .flat_map(EldersInfo::member_nodes)
-            .chain(self.state.new_info.member_nodes())
     }
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.

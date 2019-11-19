@@ -51,7 +51,6 @@ pub struct AdultDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
-    pub peer_map: PeerMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
@@ -69,7 +68,6 @@ pub struct Adult {
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     parsec_map: ParsecMap,
-    peer_map: PeerMap,
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
@@ -106,7 +104,6 @@ impl Adult {
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
             parsec_map,
-            peer_map: details.peer_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
             parsec_timer_token,
@@ -152,7 +149,6 @@ impl Adult {
             routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
             parsec_map: self.parsec_map,
-            peer_map: self.peer_map,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -219,6 +215,7 @@ impl Adult {
             .gen_pfx_info
             .latest_info
             .member_nodes()
+            .map(P2pNode::connection_info)
             .cloned()
             .collect_vec();
 
@@ -245,7 +242,7 @@ impl Adult {
         );
 
         self.send_direct_message(
-            &p2p_node,
+            p2p_node.connection_info(),
             DirectMessage::BootstrapResponse(BootstrapResponse::Error(
                 BootstrapResponseError::NotApproved,
             )),
@@ -307,11 +304,11 @@ impl Base for Adult {
     }
 
     fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+        &self.network_service().peer_map
     }
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+        &mut self.network_service_mut().peer_map
     }
 
     fn timer(&mut self) -> &mut Timer {
@@ -435,6 +432,8 @@ impl Base for Adult {
         // Need to collect IDs first so that self is not borrowed via the iterator
         //
         // WIP: this is probably out of date? How else do we know which our section members are?
+        // WIP: once ConnectionRequest/ConnectionResponse is removed this whole function can
+        // probably be removed.
         let target_nodes = self
             .gen_pfx_info
             .latest_info
@@ -449,7 +448,7 @@ impl Base for Adult {
                 .is_new()
             {
                 let message = self.to_hop_message(signed_msg.clone())?;
-                self.send_message(p2p_node, message);
+                self.send_message(p2p_node.connection_info(), message);
             }
         }
 
@@ -476,6 +475,10 @@ impl Approved for Adult {
 
     fn parsec_map_mut(&mut self) -> &mut ParsecMap {
         &mut self.parsec_map
+    }
+
+    fn chain(&self) -> &Chain {
+        &self.chain
     }
 
     fn chain_mut(&mut self) -> &mut Chain {

@@ -50,7 +50,6 @@ pub struct BootstrappingPeer {
     timeout_tokens: HashMap<u64, SocketAddr>,
     network_service: NetworkService,
     full_id: FullId,
-    peer_map: PeerMap,
     timer: Timer,
     rng: MainRng,
     relocate_details: Option<SignedRelocateDetails>,
@@ -67,7 +66,6 @@ impl BootstrappingPeer {
             timer: details.timer,
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
-            peer_map: PeerMap::default(),
             rng: details.rng,
             relocate_details: None,
             network_cfg: details.network_cfg,
@@ -87,7 +85,6 @@ impl BootstrappingPeer {
             timer: details.timer,
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
-            peer_map: PeerMap::new(),
             rng: details.rng,
             relocate_details: Some(relocate_details),
             network_cfg: details.network_cfg,
@@ -113,7 +110,6 @@ impl BootstrappingPeer {
             network_cfg: self.network_cfg,
             timer: self.timer,
             rng: self.rng,
-            peer_map: self.peer_map,
             p2p_nodes,
             relocate_payload,
             dev_params: self.dev_params,
@@ -178,7 +174,7 @@ impl BootstrappingPeer {
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
-        let old_conn_infos: Vec<_> = self.peer_map.remove_all().collect();
+        let old_conn_infos: Vec<_> = self.peer_map_mut().remove_all().collect();
         for conn_info in old_conn_infos {
             self.disconnect_from(conn_info.peer_addr);
         }
@@ -216,11 +212,11 @@ impl Base for BootstrappingPeer {
     }
 
     fn peer_map(&self) -> &PeerMap {
-        &self.peer_map
+        &self.network_service().peer_map
     }
 
     fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.peer_map
+        &mut self.network_service_mut().peer_map
     }
 
     fn timer(&mut self) -> &mut Timer {
@@ -254,7 +250,7 @@ impl Base for BootstrappingPeer {
                 return Transition::Stay;
             }
 
-            let _ = self.peer_map.disconnect(peer_addr);
+            let _ = self.peer_map_mut().disconnect(peer_addr);
             self.disconnect_from(peer_addr);
             self.request_failed()
         }
@@ -304,7 +300,7 @@ impl Base for BootstrappingPeer {
                 "{} - Ignoring direct message from unexpected peer: {}: {:?}",
                 self, p2p_node, msg
             );
-            let _ = self.peer_map.disconnect(*p2p_node.peer_addr());
+            let _ = self.peer_map_mut().disconnect(*p2p_node.peer_addr());
             self.disconnect_from(*p2p_node.peer_addr());
             return Ok(Transition::Stay);
         }
