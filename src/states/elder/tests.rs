@@ -94,6 +94,7 @@ impl ElderUnderTest {
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
+            parsec_version: 0,
         };
 
         let full_id = full_ids[0].clone();

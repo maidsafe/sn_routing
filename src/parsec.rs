@@ -7,6 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 #[cfg(feature = "mock_parsec")]
+use crate::crypto;
+#[cfg(feature = "mock_parsec")]
 use crate::mock::parsec as inner;
 use crate::{
     chain::{self, GenesisPfxInfo},
@@ -23,6 +25,8 @@ use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt, mem,
 };
+#[cfg(feature = "mock_parsec")]
+use unwrap::unwrap;
 
 #[cfg(feature = "mock_parsec")]
 pub use crate::mock::parsec::{
@@ -45,10 +49,10 @@ const MAX_PARSECS: usize = 10;
 const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
 // Limit in integration tests
 #[cfg(all(feature = "mock_base", not(feature = "mock_parsec")))]
-const PARSEC_SIZE_LIMIT: u64 = 200_000;
+const PARSEC_SIZE_LIMIT: u64 = 20_000_000;
 // Limit for integration tests with mock-parsec
 #[cfg(feature = "mock_parsec")]
-const PARSEC_SIZE_LIMIT: u64 = 100;
+const PARSEC_SIZE_LIMIT: u64 = 500;
 
 // Keep track of size in case we need to prune.
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -86,7 +90,7 @@ impl ParsecMap {
     pub fn new(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Self {
         let mut map = BTreeMap::new();
         let _ = map.insert(
-            *gen_pfx_info.first_info.version(),
+            gen_pfx_info.parsec_version,
             create(rng, full_id, gen_pfx_info),
         );
         let size_counter = ParsecSizeCounter::default();
@@ -224,17 +228,6 @@ impl ParsecMap {
             .flatten()
     }
 
-    #[cfg(feature = "mock_base")]
-    pub fn has_unpolled_observations(&self) -> bool {
-        let parsec = if let Some(parsec) = self.map.values().last() {
-            parsec
-        } else {
-            return false;
-        };
-
-        parsec.has_unpolled_observations()
-    }
-
     pub fn needs_pruning(&self) -> bool {
         self.size_counter.needs_pruning()
     }
@@ -262,7 +255,7 @@ impl ParsecMap {
         gen_pfx_info: &GenesisPfxInfo,
         log_ident: &LogIdent,
     ) {
-        if let Entry::Vacant(entry) = self.map.entry(*gen_pfx_info.first_info.version()) {
+        if let Entry::Vacant(entry) = self.map.entry(gen_pfx_info.parsec_version) {
             let _ = entry.insert(create(rng, full_id, gen_pfx_info));
             self.size_counter = ParsecSizeCounter::default();
             info!(
@@ -283,12 +276,35 @@ impl ParsecMap {
     }
 }
 
+#[cfg(feature = "mock_base")]
+impl ParsecMap {
+    pub fn has_unpolled_observations(&self) -> bool {
+        let parsec = if let Some(parsec) = self.map.values().last() {
+            parsec
+        } else {
+            return false;
+        };
+
+        parsec.has_unpolled_observations()
+    }
+
+    pub fn get_size(&self) -> u64 {
+        self.size_counter.size_counter
+    }
+}
+
 /// Create Parsec instance.
 fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
+    #[cfg(feature = "mock_parsec")]
+    let hash = {
+        let fields = (gen_pfx_info.first_info.hash(), gen_pfx_info.parsec_version);
+        crypto::sha3_256(&unwrap!(serialisation::serialise(&fields)))
+    };
+
     if gen_pfx_info.first_info.is_member(full_id.public_id()) {
         Parsec::from_genesis(
             #[cfg(feature = "mock_parsec")]
-            *gen_pfx_info.first_info.hash(),
+            hash,
             full_id,
             &gen_pfx_info.first_info.member_ids().copied().collect(),
             gen_pfx_info.first_state_serialized.clone(),
@@ -298,7 +314,7 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
     } else {
         Parsec::from_existing(
             #[cfg(feature = "mock_parsec")]
-            *gen_pfx_info.first_info.hash(),
+            hash,
             full_id,
             &gen_pfx_info.first_info.member_ids().copied().collect(),
             &gen_pfx_info.latest_info.member_ids().copied().collect(),
@@ -367,6 +383,7 @@ mod tests {
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
+            parsec_version: version,
         }
     }
 

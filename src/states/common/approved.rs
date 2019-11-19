@@ -101,6 +101,9 @@ pub trait Approved: Base {
         Ok(())
     }
 
+    /// Handles an accumulated `ParsecPrune` event.
+    fn handle_prune(&mut self) -> Result<(), RoutingError>;
+
     fn handle_parsec_request(
         &mut self,
         msg_version: u64,
@@ -322,12 +325,7 @@ pub trait Approved: Base {
                 AccumulatingEvent::SendAckMessage(payload) => {
                     self.handle_send_ack_message_event(payload)?
                 }
-                AccumulatingEvent::ParsecPrune => {
-                    info!(
-                        "{} Handling chain {:?} not yet implemented, ignoring.",
-                        self, event
-                    );
-                }
+                AccumulatingEvent::ParsecPrune => self.handle_prune()?,
                 AccumulatingEvent::Relocate(payload) => {
                     self.invoke_handle_relocate_event(payload, event.signature, outbox)?
                 }
