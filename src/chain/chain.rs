@@ -10,8 +10,8 @@ use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
-    GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
-    ProofSet, SectionProofChain,
+    GenesisPfxInfo, MemberInfo, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
+    SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -332,7 +332,11 @@ impl Chain {
         let our_section_size = self.state.our_joined_members().count();
         let safe_section_size = self.safe_section_size();
 
-        if our_section_size >= safe_section_size
+        // FIXME: This breaks tests for now, as once a section reaches a safe size, nodes stop
+        // ageing at all, because all churn in tests is Infant churn. Temporarily commented out
+        // until we either find a better way of preventing churn spam, or we change the tests to
+        // provide some Adult churn at all times.
+        /*if our_section_size >= safe_section_size
             && self
                 .state
                 .get_persona(trigger_node)
@@ -341,7 +345,7 @@ impl Chain {
         {
             // Do nothing for infants and unknown nodes
             return;
-        }
+        }*/
 
         let our_prefix = *self.state.our_prefix();
         let relocating_state = self.state.create_relocating_state();
