@@ -11,11 +11,20 @@ use crate::{
     crypto::Digest256,
     id::{FullId, P2pNode, PublicId},
     parsec,
+    //parsec::DkgResult,
     relocation::RelocateDetails,
     routing_table::Prefix,
-    BlsPublicKeyShare, BlsSignature, BlsSignatureShare, RoutingError, XorName,
+    BlsPublicKeyShare,
+    BlsSignature,
+    BlsSignatureShare,
+    RealBlsPublicKeyShare,
+    RealBlsSecretKeyShare,
+    RealBlsSignatureShare,
+    RoutingError,
+    XorName,
 };
 use hex_fmt::HexFmt;
+use maidsafe_utilities::serialisation;
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
@@ -57,6 +66,29 @@ impl EventSigPayload {
         Ok(Self {
             pub_key_share: BlsPublicKeyShare(proof.pub_id),
             sig_share: proof.sig,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct RealBlsEventSigPayload {
+    /// The public key share for that signature share
+    pub pub_key_share: RealBlsPublicKeyShare,
+    /// The signature share signing the SectionInfo.
+    pub sig_share: RealBlsSignatureShare,
+}
+
+impl RealBlsEventSigPayload {
+    pub fn new<T: Serialize>(
+        key_share: &RealBlsSecretKeyShare,
+        payload: &T,
+    ) -> Result<Self, RoutingError> {
+        let sig_share = key_share.sign(&serialisation::serialise(&payload)?[..]);
+        let pub_key_share = key_share.public_key_share();
+
+        Ok(Self {
+            pub_key_share,
+            sig_share,
         })
     }
 }
@@ -115,13 +147,19 @@ impl AccumulatingEvent {
         NetworkEvent {
             payload: self,
             signature: None,
+            real_signature: None,
         }
     }
 
-    pub fn into_network_event_with(self, signature: Option<EventSigPayload>) -> NetworkEvent {
+    pub fn into_network_event_with(
+        self,
+        signature: Option<EventSigPayload>,
+        real_signature: Option<RealBlsEventSigPayload>,
+    ) -> NetworkEvent {
         NetworkEvent {
             payload: self,
             signature,
+            real_signature,
         }
     }
 }
@@ -167,6 +205,7 @@ pub trait IntoAccumulatingEvent {
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
     pub signature: Option<EventSigPayload>,
+    pub real_signature: Option<RealBlsEventSigPayload>,
 }
 
 impl NetworkEvent {

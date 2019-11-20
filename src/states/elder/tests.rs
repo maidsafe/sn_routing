@@ -20,7 +20,7 @@ use crate::{
     outbox::EventBox,
     rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
+    NetworkConfig, NetworkParams, NetworkService, RealBlsSecretKeyShare, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
@@ -89,8 +89,10 @@ impl ElderUnderTest {
             .map(|id| (*id.public_id(), MIN_AGE_COUNTER))
             .collect();
 
+        let dkg_result = generate_first_dkg_result(&mut rng);
         let gen_pfx_info = GenesisPfxInfo {
             first_info: elders_info.clone(),
+            first_bls_keys: dkg_result.public_key_set,
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
@@ -98,7 +100,13 @@ impl ElderUnderTest {
         };
 
         let full_id = full_ids[0].clone();
-        let machine = make_state_machine(&mut rng, &full_id, &gen_pfx_info, &mut ());
+        let machine = make_state_machine(
+            &mut rng,
+            &full_id,
+            &gen_pfx_info,
+            dkg_result.secret_key_share,
+            &mut (),
+        );
 
         let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
 
@@ -139,7 +147,10 @@ impl ElderUnderTest {
 
                 info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                 parsec.vote_for_as(
-                    event.clone().into_network_event_with(sig_event).into_obs(),
+                    event
+                        .clone()
+                        .into_network_event_with(sig_event, None)
+                        .into_obs(),
                     &full_id,
                 );
             });
@@ -312,6 +323,7 @@ impl ElderUnderTest {
 fn new_elder_state(
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
+    secret_key_share: Option<RealBlsSecretKeyShare>,
     network_service: NetworkService,
     timer: Timer,
     rng: &mut MainRng,
@@ -325,6 +337,7 @@ fn new_elder_state(
         Default::default(),
         public_id,
         gen_pfx_info.clone(),
+        secret_key_share,
     );
 
     let details = ElderDetails {
@@ -353,6 +366,7 @@ fn make_state_machine(
     rng: &mut MainRng,
     full_id: &FullId,
     gen_pfx_info: &GenesisPfxInfo,
+    secret_key_share: Option<RealBlsSecretKeyShare>,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {
     let network = Network::new(NetworkParams {
@@ -365,7 +379,15 @@ fn make_state_machine(
 
     StateMachine::new(
         move |network_service, timer, outbox2| {
-            new_elder_state(full_id, gen_pfx_info, network_service, timer, rng, outbox2)
+            new_elder_state(
+                full_id,
+                gen_pfx_info,
+                secret_key_share,
+                network_service,
+                timer,
+                rng,
+                outbox2,
+            )
         },
         config,
         outbox,

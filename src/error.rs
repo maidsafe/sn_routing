@@ -98,6 +98,8 @@ pub enum RoutingError {
     UntrustedMessage,
     /// A new SectionInfo is invalid.
     InvalidNewSectionInfo,
+    /// An Elder DKG result is invalid.
+    InvalidElderDkgResult,
 }
 
 impl From<RoutingTableError> for RoutingError {

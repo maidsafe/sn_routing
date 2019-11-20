@@ -266,6 +266,8 @@ pub trait Approved: Base {
                     participants,
                     dkg_result,
                 } => {
+                    self.chain_mut()
+                        .handle_dkg_result_event(participants, dkg_result)?;
                     self.handle_dkg_result_event(participants, dkg_result)?;
                 }
             }

@@ -29,7 +29,7 @@ use crate::{
         SignedRoutingMessage,
     },
     outbox::EventBox,
-    parsec::{self, DkgResultWrapper, ParsecMap},
+    parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
     relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
@@ -113,8 +113,10 @@ impl Elder {
         let p2p_node = P2pNode::new(public_id, connection_info);
         let mut first_ages = BTreeMap::new();
         let _ = first_ages.insert(public_id, MIN_AGE_COUNTER);
+        let first_dkg_result = generate_first_dkg_result(&mut rng);
         let gen_pfx_info = GenesisPfxInfo {
             first_info: create_first_elders_info(p2p_node)?,
+            first_bls_keys: first_dkg_result.public_key_set,
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
@@ -126,6 +128,7 @@ impl Elder {
             DevParams::default(),
             public_id,
             gen_pfx_info.clone(),
+            first_dkg_result.secret_key_share,
         );
 
         let details = ElderDetails {
@@ -676,6 +679,7 @@ impl Elder {
 
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
+            first_bls_keys: self.gen_pfx_info.first_bls_keys.clone(),
             first_state_serialized: Default::default(),
             first_ages: self.gen_pfx_info.first_ages.clone(),
             latest_info: self.chain.our_info().clone(),
@@ -940,7 +944,14 @@ impl Elder {
     }
 
     fn vote_for_section_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
-        self.vote_for_signed_event(elders_info)
+        let signature_payload = EventSigPayload::new(&self.full_id, &elders_info)?;
+        let real_signature_payload = self.chain.our_section_next_bls_keys_sig(&elders_info)?;
+
+        let event = elders_info
+            .into_accumulating_event()
+            .into_network_event_with(Some(signature_payload), real_signature_payload);
+        self.vote_for_network_event(event);
+        Ok(())
     }
 
     fn vote_for_signed_event<T: IntoAccumulatingEvent + Serialize>(
@@ -948,9 +959,10 @@ impl Elder {
         payload: T,
     ) -> Result<(), RoutingError> {
         let signature_payload = EventSigPayload::new(&self.full_id, &payload)?;
+
         let event = payload
             .into_accumulating_event()
-            .into_network_event_with(Some(signature_payload));
+            .into_network_event_with(Some(signature_payload), None);
         self.vote_for_network_event(event);
         Ok(())
     }
