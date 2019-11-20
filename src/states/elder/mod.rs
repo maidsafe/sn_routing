@@ -944,7 +944,14 @@ impl Elder {
     }
 
     fn vote_for_section_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
-        self.vote_for_signed_event(elders_info)
+        let signature_payload = EventSigPayload::new(&self.full_id, &elders_info)?;
+        let real_signature_payload = self.chain.our_section_next_bls_keys_sig(&elders_info)?;
+
+        let event = elders_info
+            .into_accumulating_event()
+            .into_network_event_with(Some(signature_payload), real_signature_payload);
+        self.vote_for_network_event(event);
+        Ok(())
     }
 
     fn vote_for_signed_event<T: IntoAccumulatingEvent + Serialize>(
@@ -952,9 +959,10 @@ impl Elder {
         payload: T,
     ) -> Result<(), RoutingError> {
         let signature_payload = EventSigPayload::new(&self.full_id, &payload)?;
+
         let event = payload
             .into_accumulating_event()
-            .into_network_event_with(Some(signature_payload));
+            .into_network_event_with(Some(signature_payload), None);
         self.vote_for_network_event(event);
         Ok(())
     }

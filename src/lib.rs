@@ -196,8 +196,9 @@ pub(crate) use chain::Chain;
 use quic_p2p;
 
 pub use threshold_crypto::{
-    PublicKeySet as RealBlsPublicKeySet, SecretKeySet as RealBlsSecretKeySet,
-    SecretKeyShare as RealBlsSecretKeyShare, SignatureShare as RealBlsSignatureShare,
+    PublicKeySet as RealBlsPublicKeySet, PublicKeyShare as RealBlsPublicKeyShare,
+    SecretKeySet as RealBlsSecretKeySet, SecretKeyShare as RealBlsSecretKeyShare,
+    SignatureShare as RealBlsSignatureShare,
 };
 
 // Format that can be sent between peers

@@ -163,7 +163,7 @@ impl ChainAccumulator {
                 .into_iter()
                 .filter(|&(_, ref proofs)| proofs.parsec_proofs.contains_id(our_id))
                 .map(|(event, proofs)| {
-                    event.into_network_event_with(proofs.into_sig_shares().remove(our_id))
+                    event.into_network_event_with(proofs.into_sig_shares().remove(our_id), None)
                 })
                 .collect(),
             completed_events,
@@ -336,7 +336,7 @@ mod test {
                     our_id: *id.public_id(),
                     event: AccumulatingEvent::SectionInfo(elders_info.clone()),
                     network_event: AccumulatingEvent::SectionInfo(elders_info.clone())
-                        .into_network_event_with(Some(sig_payload.clone())),
+                        .into_network_event_with(Some(sig_payload.clone()), None),
                     first_proof,
                     proofs: proofs.clone(),
                     acc_proofs: AccumulatingProof {

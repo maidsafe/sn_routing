@@ -147,7 +147,10 @@ impl ElderUnderTest {
 
                 info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                 parsec.vote_for_as(
-                    event.clone().into_network_event_with(sig_event).into_obs(),
+                    event
+                        .clone()
+                        .into_network_event_with(sig_event, None)
+                        .into_obs(),
                     &full_id,
                 );
             });
