@@ -59,12 +59,6 @@ pub trait Approved: Base {
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError>;
 
-    /// Handles an accumulated `OurMerge` event.
-    fn handle_our_merge_event(&mut self) -> Result<(), RoutingError>;
-
-    /// Handles an accumulated `NeighbourMerge` event.
-    fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError>;
-
     /// Handles an accumulated `SectionInfo` event.
     fn handle_section_info_event(
         &mut self,
@@ -301,8 +295,6 @@ pub trait Approved: Base {
                 AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id, outbox)?;
                 }
-                AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
-                AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
                 AccumulatingEvent::SectionInfo(elders_info)
                 | AccumulatingEvent::NeighbourInfo(elders_info) => {
                     match self.handle_section_info_event(

@@ -17,10 +17,9 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, DevParams, EldersChange,
         EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
-        NetworkParams, OnlinePayload, ParsecResetData, PrefixChange, SectionKeyInfo,
-        SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
+        NetworkParams, OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload,
+        MIN_AGE, MIN_AGE_COUNTER,
     },
-    crypto::Digest256,
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode, PublicId},
@@ -329,31 +328,10 @@ impl Elder {
         self.send_parsec_gossip(Some((msg_version, p2p_node)))
     }
 
-    /// Votes for `Merge` if necessary, or for the merged `SectionInfo` if both siblings have
-    /// already accumulated `Merge`.
-    fn merge_if_necessary(&mut self) -> Result<(), RoutingError> {
-        let sibling_pfx = self.our_prefix().sibling();
-        if self.chain.is_self_merge_ready() && self.chain.other_prefixes().contains(&sibling_pfx) {
-            let payload = *self.chain.our_info().hash();
-            let src = Authority::PrefixSection(*self.our_prefix());
-            let dst = Authority::PrefixSection(sibling_pfx);
-            let content = MessageContent::Merge(payload);
-            if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
-                debug!("{} Failed to send Merge: {:?}.", self, err);
-            }
-        }
-        if let Some(merged_info) = self.chain.try_merge()? {
-            self.vote_for_signed_event(merged_info)?;
-        } else if self.chain.should_vote_for_merge() && !self.chain.is_self_merge_ready() {
-            self.vote_for_event(AccumulatingEvent::OurMerge);
-        }
-        Ok(())
-    }
-
     // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
     // longer members of our section or elders of neighbour sections.
     fn update_neighbour_connections(&mut self, change: EldersChange, _outbox: &mut dyn EventBox) {
-        if self.chain.prefix_change() == PrefixChange::None {
+        if !self.chain.split_in_progress() {
             for p2p_node in change.removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
@@ -454,12 +432,8 @@ impl Elder {
                     our_pfx.is_neighbour(elders_info.prefix())
                 }
 
-                // Drop: condition may have changed.
-                AccumulatingEvent::OurMerge => false,
-
                 // Keep: Still relevant after prefix change.
-                AccumulatingEvent::NeighbourMerge(_)
-                | AccumulatingEvent::TheirKeyInfo(_)
+                AccumulatingEvent::TheirKeyInfo(_)
                 | AccumulatingEvent::SendAckMessage(_)
                 | AccumulatingEvent::User(_) => true,
             })
@@ -590,10 +564,6 @@ impl Elder {
             }
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)?;
-                Ok(Transition::Stay)
-            }
-            (Merge(digest), Authority::PrefixSection(_), Authority::PrefixSection(_)) => {
-                self.handle_merge(digest)?;
                 Ok(Transition::Stay)
             }
             (UserMessage(content), src, dst) => {
@@ -920,11 +890,6 @@ impl Elder {
                 elders_info
             );
         }
-        Ok(())
-    }
-
-    fn handle_merge(&mut self, digest: Digest256) -> Result<(), RoutingError> {
-        self.vote_for_event(AccumulatingEvent::NeighbourMerge(digest));
         Ok(())
     }
 
@@ -1593,16 +1558,8 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_our_merge_event(&mut self) -> Result<(), RoutingError> {
-        self.merge_if_necessary()
-    }
-
-    fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
-        self.merge_if_necessary()
-    }
-
     fn handle_prune(&mut self) -> Result<(), RoutingError> {
-        if self.chain.prefix_change() != PrefixChange::None {
+        if self.chain.split_in_progress() {
             log_or_panic!(
                 LogLevel::Warn,
                 "{} Tring to prune parsec during prefix change.",
@@ -1651,8 +1608,12 @@ impl Approved for Elder {
                 self.send_neighbour_infos();
             }
         } else if old_pfx.is_extension_of(elders_info.prefix()) {
-            self.finalise_prefix_change()?;
-            self.send_event(Event::SectionMerged(*elders_info.prefix()), outbox);
+            panic!(
+                "{} - Merge not supported: {:?} -> {:?}",
+                self,
+                old_pfx,
+                elders_info.prefix()
+            );
         } else if self_sec_update {
             self.reset_parsec()?;
         }
@@ -1672,8 +1633,6 @@ impl Approved for Elder {
         if let Some(relocate_details) = relocate_details {
             self.vote_for_relocate(relocate_details)?;
         }
-
-        let _ = self.merge_if_necessary();
 
         Ok(Transition::Stay)
     }

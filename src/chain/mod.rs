@@ -32,7 +32,7 @@ pub use self::{
         SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
-    shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},
+    shared_state::{SectionKeyInfo, SectionProofChain},
 };
 #[cfg(feature = "mock_base")]
 use crate::{error::RoutingError, id::P2pNode, BlsPublicKeySet, Prefix, XorName};

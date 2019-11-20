@@ -9,7 +9,6 @@
 mod accumulate;
 mod churn;
 mod drop;
-mod merge;
 mod messages;
 mod node_ageing;
 mod secure_message_delivery;

@@ -602,16 +602,6 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_our_merge_event(&mut self) -> Result<(), RoutingError> {
-        debug!("{} - Unhandled OurMerge event", self);
-        Ok(())
-    }
-
-    fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
-        debug!("{} - Unhandled NeighbourMerge event", self);
-        Ok(())
-    }
-
     fn handle_prune(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled ParsecPrune event", self);
         Ok(())

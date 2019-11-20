@@ -316,18 +316,21 @@ mod test {
         };
 
         match event_type {
-            EventType::NoSignature => TestData {
-                our_id: *id.public_id(),
-                event: AccumulatingEvent::OurMerge,
-                network_event: AccumulatingEvent::OurMerge.into_network_event(),
-                first_proof,
-                proofs: proofs.clone(),
-                acc_proofs: AccumulatingProof {
-                    parsec_proofs: proofs,
-                    sig_shares: Default::default(),
-                },
-                signature: None,
-            },
+            EventType::NoSignature => {
+                let event = AccumulatingEvent::User(vec![0]);
+                TestData {
+                    our_id: *id.public_id(),
+                    event: event.clone(),
+                    network_event: event.into_network_event(),
+                    first_proof,
+                    proofs: proofs.clone(),
+                    acc_proofs: AccumulatingProof {
+                        parsec_proofs: proofs,
+                        sig_shares: Default::default(),
+                    },
+                    signature: None,
+                }
+            }
             EventType::WithSignature => {
                 let elders_info = empty_elders_info();
                 let sig_payload = random_section_info_sig_payload(rng);

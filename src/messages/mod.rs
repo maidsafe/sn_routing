@@ -19,7 +19,6 @@ use crate::{
     xor_name::XorName,
     BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare, ConnectionInfo,
 };
-use hex_fmt::HexFmt;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use std::{
@@ -527,9 +526,6 @@ pub enum MessageContent {
     },
     /// Inform neighbours about our new section.
     NeighbourInfo(EldersInfo),
-    /// Inform neighbours that we need to merge, and that the successor of the section info with
-    /// the given hash will be the merged section.
-    Merge(Digest256),
     /// User-facing message
     UserMessage(Vec<u8>),
     /// Approves the joining node as a routing node.
@@ -575,7 +571,6 @@ impl Debug for MessageContent {
                 pub_id, msg_id
             ),
             NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
-            Merge(digest) => write!(formatter, "Merge({:.14?})", HexFmt(digest)),
             UserMessage(content) => write!(formatter, "UserMessage({:?})", content,),
             NodeApproval(gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
             AckMessage {
