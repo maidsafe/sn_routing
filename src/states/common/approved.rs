@@ -302,7 +302,7 @@ pub trait Approved: Base {
                 AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id, outbox)?;
                 }
-                AccumulatingEvent::SectionInfo(elders_info) => {
+                AccumulatingEvent::SectionInfo(elders_info, _) => {
                     match self.handle_section_info_event(
                         elders_info,
                         our_pfx,

@@ -491,7 +491,7 @@ impl SectionProofBlock {
     }
 
     pub fn verify_with_pk(&self, pk: &BlsPublicKey) -> bool {
-        if let Some(to_verify) = self.key_info.serialise_for_signature() {
+        if let Ok(to_verify) = self.key_info.serialise_for_signature() {
             pk.verify(&self.sig, to_verify)
         } else {
             false
@@ -634,8 +634,10 @@ impl SectionKeyInfo {
         self.key_info_holder.internal_elders_info().version()
     }
 
-    pub fn serialise_for_signature(&self) -> Option<Vec<u8>> {
-        serialisation::serialise(self.key_info_holder.internal_elders_info()).ok()
+    pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
+        Ok(serialisation::serialise(
+            self.key_info_holder.internal_elders_info(),
+        )?)
     }
 }
 

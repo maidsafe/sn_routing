@@ -139,7 +139,7 @@ impl ElderUnderTest {
         let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
         for event in events {
             self.other_full_ids.iter().take(count).for_each(|full_id| {
-                let sig_event = if let AccumulatingEvent::SectionInfo(ref info) = event {
+                let sig_event = if let AccumulatingEvent::SectionInfo(ref info, _) = event {
                     Some(unwrap!(EventSigPayload::new(&full_id, info)))
                 } else {
                     None
@@ -202,9 +202,13 @@ impl ElderUnderTest {
     }
 
     fn accumulate_section_info_if_vote(&mut self, section_info_payload: EldersInfo) {
+        let section_key_info = SectionKeyInfo::from_elders_info(&section_info_payload);
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
-            iter::once(AccumulatingEvent::SectionInfo(section_info_payload)),
+            iter::once(AccumulatingEvent::SectionInfo(
+                section_info_payload,
+                section_key_info,
+            )),
         );
     }
 

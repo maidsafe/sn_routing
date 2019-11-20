@@ -102,19 +102,9 @@ impl Chain {
         &self,
         info: &EldersInfo,
     ) -> Result<Option<RealBlsEventSigPayload>, RoutingError> {
-        if !info.is_member(self.our_id()) {
-            return Ok(None);
-        }
-
-        let next_public_key_set = &self
-            .new_section_bls_keys
-            .as_ref()
-            .ok_or(RoutingError::InvalidElderDkgResult)?
-            .public_key_set;
-
-        Ok(Some(RealBlsEventSigPayload::new(
+        Ok(Some(RealBlsEventSigPayload::new_for_section_key_info(
             self.our_section_bls_secret_key_share()?,
-            next_public_key_set,
+            &SectionKeyInfo::from_elders_info(info),
         )?))
     }
 
@@ -278,7 +268,7 @@ impl Chain {
         };
 
         match event {
-            AccumulatingEvent::SectionInfo(ref info) => {
+            AccumulatingEvent::SectionInfo(ref info, _) => {
                 let change = NeighbourChangeBuilder::new(self);
                 if self.add_elders_info(info.clone(), proofs)? {
                     let change = change.build(self);
@@ -834,7 +824,8 @@ impl Chain {
     fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
         // FIXME: may also need to handle non SI votes to not get handled multiple times
         let si = match event.payload {
-            AccumulatingEvent::SectionInfo(ref si) | AccumulatingEvent::NeighbourInfo(ref si) => si,
+            AccumulatingEvent::SectionInfo(ref si, _)
+            | AccumulatingEvent::NeighbourInfo(ref si) => si,
             _ => return false,
         };
 
@@ -862,7 +853,7 @@ impl Chain {
     /// Returns `true` for other types of `NetworkEvent`.
     fn is_valid_transition(&self, network_event: &AccumulatingEvent, proofs: &ProofSet) -> bool {
         match *network_event {
-            AccumulatingEvent::SectionInfo(ref info) => {
+            AccumulatingEvent::SectionInfo(ref info, _) => {
                 if !self.our_info().is_quorum(proofs) {
                     return false;
                 }
@@ -938,7 +929,7 @@ impl Chain {
         }
 
         match &event.payload {
-            AccumulatingEvent::SectionInfo(elders_info)
+            AccumulatingEvent::SectionInfo(elders_info, _)
             | AccumulatingEvent::NeighbourInfo(elders_info) => {
                 if elders_info.prefix().is_compatible(self.our_prefix())
                     && elders_info.version() > self.state.new_info.version()

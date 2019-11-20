@@ -421,7 +421,7 @@ impl Elder {
                 | AccumulatingEvent::Relocate(_) => false,
 
                 // Keep: Additional signatures for neighbours for sec-msg-relay.
-                AccumulatingEvent::SectionInfo(ref elders_info)
+                AccumulatingEvent::SectionInfo(ref elders_info, _)
                 | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
                     our_pfx.is_neighbour(elders_info.prefix())
                 }
@@ -907,10 +907,11 @@ impl Elder {
     fn vote_for_section_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
         let signature_payload = EventSigPayload::new(&self.full_id, &elders_info)?;
         let real_signature_payload = self.chain.our_section_next_bls_keys_sig(&elders_info)?;
+        let key_info = SectionKeyInfo::from_elders_info(&elders_info);
+        let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
-        let event = elders_info
-            .into_accumulating_event()
-            .into_network_event_with(Some(signature_payload), real_signature_payload);
+        let event =
+            acc_event.into_network_event_with(Some(signature_payload), real_signature_payload);
         self.vote_for_network_event(event);
         Ok(())
     }

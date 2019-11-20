@@ -259,7 +259,7 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
-    use super::super::EldersInfo;
+    use super::super::{EldersInfo, SectionKeyInfo};
     use super::*;
     use crate::{
         id::FullId,
@@ -334,12 +334,13 @@ mod test {
             EventType::WithSignature => {
                 let elders_info = empty_elders_info();
                 let sig_payload = random_section_info_sig_payload(rng);
+                let key_info = SectionKeyInfo::from_elders_info(&elders_info);
+                let event = AccumulatingEvent::SectionInfo(elders_info.clone(), key_info);
 
                 TestData {
                     our_id: *id.public_id(),
-                    event: AccumulatingEvent::SectionInfo(elders_info.clone()),
-                    network_event: AccumulatingEvent::SectionInfo(elders_info.clone())
-                        .into_network_event_with(Some(sig_payload.clone()), None),
+                    event: event.clone(),
+                    network_event: event.into_network_event_with(Some(sig_payload.clone()), None),
                     first_proof,
                     proofs: proofs.clone(),
                     acc_proofs: AccumulatingProof {
