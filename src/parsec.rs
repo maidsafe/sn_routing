@@ -14,8 +14,9 @@ use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
     messages::DirectMessage,
-    rng::{self, MainRng},
+    rng::{self, MainRng, RngCompat},
     utils::LogIdent,
+    RealBlsSecretKeySet,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -39,7 +40,7 @@ pub type Block = inner::Block<chain::NetworkEvent, id::PublicId>;
 pub type Parsec = inner::Parsec<chain::NetworkEvent, FullId>;
 pub type Request = inner::Request<chain::NetworkEvent, id::PublicId>;
 pub type Response = inner::Response<chain::NetworkEvent, id::PublicId>;
-pub use inner::DkgResultWrapper;
+pub use inner::{DkgResult, DkgResultWrapper};
 
 // The maximum number of parsec instances to store.
 const MAX_PARSECS: usize = 10;
@@ -293,6 +294,16 @@ impl ParsecMap {
     }
 }
 
+// Generate a DkgResult that can be used for the first node
+pub fn generate_first_dkg_result(rng: &mut MainRng) -> DkgResult {
+    let threshold = 0;
+    let index = 0;
+
+    let secret_key_set = RealBlsSecretKeySet::random(threshold, &mut RngCompat(rng));
+    let secret_key_share = secret_key_set.secret_key_share(index);
+    DkgResult::new(secret_key_set.public_keys(), Some(secret_key_share))
+}
+
 /// Create Parsec instance.
 fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
     #[cfg(feature = "mock_parsec")]
@@ -357,7 +368,11 @@ mod tests {
             .collect()
     }
 
-    fn create_gen_pfx_info(full_ids: Vec<FullId>, version: u64) -> GenesisPfxInfo {
+    fn create_gen_pfx_info(
+        rng: &mut MainRng,
+        full_ids: Vec<FullId>,
+        version: u64,
+    ) -> GenesisPfxInfo {
         let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
         let connection_info = ConnectionInfo::from(socket_addr);
         let members = full_ids
@@ -380,6 +395,7 @@ mod tests {
             .collect();
         GenesisPfxInfo {
             first_info: elders_info,
+            first_bls_keys: generate_first_dkg_result(rng).public_key_set,
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
@@ -392,11 +408,11 @@ mod tests {
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
 
-        let gen_pfx_info = create_gen_pfx_info(full_ids.clone(), 0);
+        let gen_pfx_info = create_gen_pfx_info(rng, full_ids.clone(), 0);
         let mut parsec_map = ParsecMap::new(rng, full_id.clone(), &gen_pfx_info);
 
         for parsec_no in 1..=size {
-            let gen_pfx_info = create_gen_pfx_info(full_ids.clone(), parsec_no);
+            let gen_pfx_info = create_gen_pfx_info(rng, full_ids.clone(), parsec_no);
             parsec_map.init(rng, full_id.clone(), &gen_pfx_info, &log_ident);
         }
 
@@ -408,7 +424,7 @@ mod tests {
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
 
-        let gen_pfx_info = create_gen_pfx_info(full_ids, version);
+        let gen_pfx_info = create_gen_pfx_info(rng, full_ids, version);
         parsec_map.init(rng, full_id, &gen_pfx_info, &log_ident);
     }
 

@@ -93,6 +93,7 @@ impl Adult {
             details.dev_params,
             public_id,
             details.gen_pfx_info.clone(),
+            None,
         );
 
         let node = Self {

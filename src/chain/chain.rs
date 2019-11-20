@@ -16,10 +16,12 @@ use super::{
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
+    parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
     routing_table::{Authority, Error},
     utils::LogIdent,
-    BlsPublicKeySet, ConnectionInfo, Prefix, XorName, Xorable,
+    BlsPublicKeySet, ConnectionInfo, Prefix, RealBlsPublicKeySet, RealBlsSecretKeyShare, XorName,
+    Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -51,6 +53,8 @@ pub struct Chain {
     dev_params: DevParams,
     /// This node's public ID.
     our_id: PublicId,
+    /// Our current Section BLS keys.
+    our_section_bls_keys: DkgResult,
     /// The shared state of the section.
     state: SharedState,
     /// If we're an elder of the section yet. This will be toggled once we get a `EldersInfo`
@@ -62,6 +66,8 @@ pub struct Chain {
     event_cache: BTreeSet<NetworkEvent>,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
+    /// The new dkg key to use when SectinInfo completes.
+    new_section_bls_keys: Option<DkgResult>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -79,6 +85,17 @@ impl Chain {
     /// Returns the full NetworkParams structure (if present)
     pub fn network_cfg(&self) -> NetworkParams {
         self.network_cfg
+    }
+
+    pub fn our_section_bls_keys(&self) -> &RealBlsPublicKeySet {
+        &self.our_section_bls_keys.public_key_set
+    }
+
+    pub fn our_section_bls_secret_key_share(&self) -> Result<&RealBlsSecretKeyShare, RoutingError> {
+        self.our_section_bls_keys
+            .secret_key_share
+            .as_ref()
+            .ok_or(RoutingError::InvalidElderDkgResult)
     }
 
     /// Returns the number of nodes which need to exist in each subsection of a given section to
@@ -102,6 +119,7 @@ impl Chain {
         dev_params: DevParams,
         our_id: PublicId,
         gen_info: GenesisPfxInfo,
+        secret_key_share: Option<RealBlsSecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.is_member(&our_id);
@@ -109,11 +127,16 @@ impl Chain {
             network_cfg,
             dev_params,
             our_id,
+            our_section_bls_keys: DkgResult {
+                public_key_set: gen_info.first_bls_keys,
+                secret_key_share,
+            },
             state: SharedState::new(gen_info.first_info, gen_info.first_ages),
             is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             churn_in_progress: false,
+            new_section_bls_keys: None,
         }
     }
 
@@ -128,6 +151,18 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         self.state
             .update_with_genesis_related_info(related_info, &LogIdent::new(self))
+    }
+
+    /// Handles a completed parsec DKG Observation.
+    pub fn handle_dkg_result_event(
+        &mut self,
+        participants: &BTreeSet<PublicId>,
+        dkg_result: &DkgResultWrapper,
+    ) -> Result<(), RoutingError> {
+        if participants.contains(self.our_id()) {
+            self.new_section_bls_keys = Some(dkg_result.0.clone());
+        }
+        Ok(())
     }
 
     /// Get the serialized shared state that will be the starting point when processing
@@ -573,6 +608,7 @@ impl Chain {
         Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
                 first_info: self.our_info().clone(),
+                first_bls_keys: self.our_section_bls_keys().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
                 first_ages: self.get_age_counters(),
                 latest_info: Default::default(),
@@ -1010,7 +1046,12 @@ impl Chain {
         if pfx.matches(self.our_id.name()) {
             let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
             let pk_set = self.public_key_set();
+
             self.state.push_our_new_info(elders_info, proofs, &pk_set)?;
+            self.our_section_bls_keys = self
+                .new_section_bls_keys
+                .take()
+                .ok_or(RoutingError::InvalidElderDkgResult)?;
 
             if is_new_elder {
                 self.is_elder = true;
@@ -1563,9 +1604,12 @@ mod tests {
     use super::Chain;
     use crate::{
         id::{FullId, P2pNode, PublicId},
-        rng, ConnectionInfo, {Prefix, XorName},
+        parsec::generate_first_dkg_result,
+        rng,
+        rng::MainRng,
+        ConnectionInfo, {Prefix, XorName},
     };
-    use rand::{thread_rng, Rng};
+    use rand::Rng;
     use serde::Serialize;
     use std::{
         collections::{BTreeMap, BTreeSet, HashMap},
@@ -1579,15 +1623,16 @@ mod tests {
         Remove(&'a EldersInfo),
     }
 
-    fn gen_section_info(gen: SecInfoGen) -> (EldersInfo, HashMap<PublicId, FullId>) {
-        let mut rng = rng::new();
-
+    fn gen_section_info(
+        rng: &mut MainRng,
+        gen: SecInfoGen,
+    ) -> (EldersInfo, HashMap<PublicId, FullId>) {
         match gen {
             SecInfoGen::New(pfx, n) => {
                 let mut full_ids = HashMap::new();
                 let mut members = BTreeMap::new();
                 for _ in 0..n {
-                    let some_id = FullId::within_range(&mut rng, &pfx.range_inclusive());
+                    let some_id = FullId::within_range(rng, &pfx.range_inclusive());
                     let connection_info = ConnectionInfo {
                         peer_addr: ([127, 0, 0, 1], 9999).into(),
                         peer_cert_der: vec![],
@@ -1600,7 +1645,7 @@ mod tests {
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.member_map().clone();
-                let some_id = FullId::within_range(&mut rng, &info.prefix().range_inclusive());
+                let some_id = FullId::within_range(rng, &info.prefix().range_inclusive());
                 let connection_info = ConnectionInfo {
                     peer_addr: ([127, 0, 0, 1], 9999).into(),
                     peer_cert_der: vec![],
@@ -1643,7 +1688,7 @@ mod tests {
         AccumulatingProof::from_proof_set(proofs)
     }
 
-    fn gen_chain<T>(sections: T) -> (Chain, HashMap<PublicId, FullId>)
+    fn gen_chain<T>(rng: &mut MainRng, sections: T) -> (Chain, HashMap<PublicId, FullId>)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -1651,7 +1696,7 @@ mod tests {
         let mut our_id = None;
         let mut section_members = vec![];
         for (pfx, size) in sections {
-            let (info, ids) = gen_section_info(SecInfoGen::New(pfx, size));
+            let (info, ids) = gen_section_info(rng, SecInfoGen::New(pfx, size));
             if our_id.is_none() {
                 our_id = Some(unwrap!(ids.values().next()).clone());
             }
@@ -1668,8 +1713,10 @@ mod tests {
             .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
+        let dkg_result = generate_first_dkg_result(rng);
         let genesis_info = GenesisPfxInfo {
             first_info,
+            first_bls_keys: dkg_result.public_key_set,
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: Default::default(),
@@ -1681,6 +1728,7 @@ mod tests {
             Default::default(),
             *our_id.public_id(),
             genesis_info,
+            dkg_result.secret_key_share,
         );
 
         for neighbour_info in sections_iter {
@@ -1693,11 +1741,15 @@ mod tests {
 
     #[test]
     fn generate_chain() {
-        let (chain, _ids) = gen_chain(vec![
-            (Prefix::from_str("00").unwrap(), 8),
-            (Prefix::from_str("01").unwrap(), 8),
-            (Prefix::from_str("10").unwrap(), 8),
-        ]);
+        let mut rng = rng::new();
+        let (chain, _ids) = gen_chain(
+            &mut rng,
+            vec![
+                (Prefix::from_str("00").unwrap(), 8),
+                (Prefix::from_str("01").unwrap(), 8),
+                (Prefix::from_str("10").unwrap(), 8),
+            ],
+        );
         assert!(!chain
             .get_section(&Prefix::from_str("00").unwrap())
             .expect("No section 00 found!")
@@ -1721,19 +1773,19 @@ mod tests {
 
     #[test]
     fn neighbour_info_cleaning() {
-        let mut rng = thread_rng();
+        let mut rng = rng::new();
         let p_00 = Prefix::from_str("00").unwrap();
         let p_01 = Prefix::from_str("01").unwrap();
         let p_10 = Prefix::from_str("10").unwrap();
-        let (mut chain, mut full_ids) = gen_chain(vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
+        let (mut chain, mut full_ids) = gen_chain(&mut rng, vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
         for _ in 0..1000 {
             let (new_info, new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();
                 let info = rng.choose(&old_info).expect("neighbour infos");
                 if rng.gen_weighted_bool(2) {
-                    gen_section_info(SecInfoGen::Add(info))
+                    gen_section_info(&mut rng, SecInfoGen::Add(info))
                 } else {
-                    gen_section_info(SecInfoGen::Remove(info))
+                    gen_section_info(&mut rng, SecInfoGen::Remove(info))
                 }
             };
             full_ids.extend(new_ids);

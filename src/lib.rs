@@ -195,6 +195,11 @@ pub(crate) use chain::Chain;
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 
+pub use threshold_crypto::{
+    PublicKeySet as RealBlsPublicKeySet, SecretKeySet as RealBlsSecretKeySet,
+    SecretKeyShare as RealBlsSecretKeyShare, SignatureShare as RealBlsSignatureShare,
+};
+
 // Format that can be sent between peers
 #[cfg(not(feature = "mock_serialise"))]
 pub(crate) type NetworkBytes = bytes::Bytes;

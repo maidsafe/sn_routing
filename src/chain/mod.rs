@@ -33,15 +33,16 @@ pub use self::{
     proof::{Proof, ProofSet},
     shared_state::{PrefixChange, SectionKeyInfo, SectionProofChain},
 };
-use crate::PublicId;
 #[cfg(feature = "mock_base")]
 use crate::{error::RoutingError, id::P2pNode, BlsPublicKeySet, Prefix, XorName};
+use crate::{PublicId, RealBlsPublicKeySet};
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
     pub first_info: EldersInfo,
+    pub first_bls_keys: RealBlsPublicKeySet,
     pub first_state_serialized: Vec<u8>,
     pub first_ages: BTreeMap<PublicId, AgeCounter>,
     pub latest_info: EldersInfo,
