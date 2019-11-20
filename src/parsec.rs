@@ -16,7 +16,7 @@ use crate::{
     messages::DirectMessage,
     rng::{self, MainRng, RngCompat},
     utils::LogIdent,
-    RealBlsSecretKeySet,
+    BlsSecretKeySet,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -324,12 +324,12 @@ pub fn generate_first_dkg_result(rng: &mut MainRng) -> DkgResult {
 pub fn generate_bls_threshold_secret_key(
     rng: &mut MainRng,
     participants: usize,
-) -> RealBlsSecretKeySet {
+) -> BlsSecretKeySet {
     // The BLS scheme will require more than `participants / 3`
     // shares in order to construct a full key or signature.
     let threshold = participants.saturating_sub(1) / 3;
 
-    RealBlsSecretKeySet::random(threshold, &mut RngCompat(rng))
+    BlsSecretKeySet::random(threshold, &mut RngCompat(rng))
 }
 
 /// Create Parsec instance.

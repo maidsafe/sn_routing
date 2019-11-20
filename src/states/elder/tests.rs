@@ -15,15 +15,13 @@
 
 use super::*;
 use crate::{
-    chain::RealBlsEventSigPayload,
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
     mock::Network,
     outbox::EventBox,
     rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    NetworkConfig, NetworkParams, NetworkService, RealBlsPublicKeySet, RealBlsSecretKeyShare,
-    ELDER_SIZE,
+    BlsSecretKeyShare, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
@@ -39,8 +37,8 @@ struct JoiningNodeInfo {
 }
 struct DkgToSectionInfo {
     participants: BTreeSet<PublicId>,
-    new_pk_set: RealBlsPublicKeySet,
-    new_other_ids: Vec<(FullId, RealBlsSecretKeyShare)>,
+    new_pk_set: BlsPublicKeySet,
+    new_other_ids: Vec<(FullId, BlsSecretKeyShare)>,
     new_elder_info: EldersInfo,
 }
 
@@ -64,8 +62,8 @@ impl JoiningNodeInfo {
 struct ElderUnderTest {
     pub rng: MainRng,
     pub machine: StateMachine,
-    pub full_id: (FullId, RealBlsSecretKeyShare),
-    pub other_ids: Vec<(FullId, RealBlsSecretKeyShare)>,
+    pub full_id: (FullId, BlsSecretKeyShare),
+    pub other_ids: Vec<(FullId, BlsSecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
 }
@@ -157,25 +155,19 @@ impl ElderUnderTest {
                 .iter()
                 .take(count)
                 .for_each(|(full_id, bls_id)| {
-                    let (sig_event, real_sig_event) =
-                        if let AccumulatingEvent::SectionInfo(ref info, ref section_key) = event {
-                            (
-                                Some(unwrap!(EventSigPayload::new(&full_id, info))),
-                                Some(unwrap!(RealBlsEventSigPayload::new_for_section_key_info(
-                                    &bls_id,
-                                    section_key
-                                ))),
-                            )
+                    let sig_event =
+                        if let AccumulatingEvent::SectionInfo(ref _info, ref section_key) = event {
+                            Some(unwrap!(EventSigPayload::new_for_section_key_info(
+                                &bls_id,
+                                section_key
+                            )))
                         } else {
-                            (None, None)
+                            None
                         };
 
                     info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                     parsec.vote_for_as(
-                        event
-                            .clone()
-                            .into_network_event_with(sig_event, real_sig_event)
-                            .into_obs(),
+                        event.clone().into_network_event_with(sig_event).into_obs(),
                         &full_id,
                     );
                 });
@@ -227,8 +219,9 @@ impl ElderUnderTest {
     }
 
     fn updated_other_ids(&mut self, new_elder_info: EldersInfo) -> DkgToSectionInfo {
-        let participants: BTreeSet<PublicId> = new_elder_info.member_ids().copied().collect();
+        let participants: BTreeSet<_> = new_elder_info.member_ids().copied().collect();
         let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+
         let dkg_results = self
             .other_ids
             .iter()
@@ -254,7 +247,7 @@ impl ElderUnderTest {
     }
 
     fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
-        let section_key_info = RealSectionKeyInfo::from_elders_info(
+        let section_key_info = SectionKeyInfo::from_elders_info(
             &new_info.new_elder_info,
             new_info.new_pk_set.public_key(),
         );
@@ -371,7 +364,7 @@ impl ElderUnderTest {
 }
 
 fn new_elder_state(
-    (full_id, secret_key_share): (&FullId, &RealBlsSecretKeyShare),
+    (full_id, secret_key_share): (&FullId, &BlsSecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
     network_service: NetworkService,
     timer: Timer,
@@ -413,7 +406,7 @@ fn new_elder_state(
 
 fn make_state_machine(
     rng: &mut MainRng,
-    full_id: (&FullId, &RealBlsSecretKeyShare),
+    full_id: (&FullId, &BlsSecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {

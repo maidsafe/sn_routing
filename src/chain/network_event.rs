@@ -6,23 +6,22 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, Proof, RealSectionKeyInfo, SectionKeyInfo};
+use super::{EldersInfo, SectionKeyInfo};
 use crate::{
-    id::{FullId, P2pNode, PublicId},
+    id::{P2pNode, PublicId},
     parsec,
     //parsec::DkgResult,
     relocation::RelocateDetails,
     routing_table::Prefix,
     BlsPublicKeyShare,
+    BlsSecretKeyShare,
     BlsSignature,
     BlsSignatureShare,
-    RealBlsPublicKeyShare,
-    RealBlsSecretKeyShare,
-    RealBlsSignatureShare,
     RoutingError,
     XorName,
 };
 use hex_fmt::HexFmt;
+use maidsafe_utilities::serialisation;
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
@@ -58,28 +57,21 @@ pub struct EventSigPayload {
 }
 
 impl EventSigPayload {
-    pub fn new<T: Serialize>(full_id: &FullId, payload: &T) -> Result<Self, RoutingError> {
-        let proof = Proof::new(full_id, payload)?;
+    pub fn new<T: Serialize>(
+        key_share: &BlsSecretKeyShare,
+        payload: &T,
+    ) -> Result<Self, RoutingError> {
+        let sig_share = key_share.sign(&serialisation::serialise(&payload)?[..]);
+        let pub_key_share = key_share.public_key_share();
 
         Ok(Self {
-            pub_key_share: BlsPublicKeyShare(proof.pub_id),
-            sig_share: proof.sig,
+            pub_key_share,
+            sig_share,
         })
     }
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct RealBlsEventSigPayload {
-    /// The public key share for that signature share
-    pub pub_key_share: RealBlsPublicKeyShare,
-    /// The signature share signing the SectionInfo.
-    pub sig_share: RealBlsSignatureShare,
-}
-
-impl RealBlsEventSigPayload {
     pub fn new_for_section_key_info(
-        key_share: &RealBlsSecretKeyShare,
-        section_key_info: &RealSectionKeyInfo,
+        key_share: &BlsSecretKeyShare,
+        section_key_info: &SectionKeyInfo,
     ) -> Result<Self, RoutingError> {
         let sig_share = key_share.sign(&section_key_info.serialise_for_signature()?);
         let pub_key_share = key_share.public_key_share();
@@ -110,7 +102,7 @@ pub enum AccumulatingEvent {
     /// Voted for node we no longer consider online.
     Offline(PublicId),
 
-    SectionInfo(EldersInfo, RealSectionKeyInfo),
+    SectionInfo(EldersInfo, SectionKeyInfo),
 
     // Voted for received message with info to update neighbour_info.
     NeighbourInfo(EldersInfo),
@@ -143,19 +135,13 @@ impl AccumulatingEvent {
         NetworkEvent {
             payload: self,
             signature: None,
-            real_signature: None,
         }
     }
 
-    pub fn into_network_event_with(
-        self,
-        signature: Option<EventSigPayload>,
-        real_signature: Option<RealBlsEventSigPayload>,
-    ) -> NetworkEvent {
+    pub fn into_network_event_with(self, signature: Option<EventSigPayload>) -> NetworkEvent {
         NetworkEvent {
             payload: self,
             signature,
-            real_signature,
         }
     }
 }
@@ -197,7 +183,6 @@ pub trait IntoAccumulatingEvent {
 pub struct NetworkEvent {
     pub payload: AccumulatingEvent,
     pub signature: Option<EventSigPayload>,
-    pub real_signature: Option<RealBlsEventSigPayload>,
 }
 
 impl NetworkEvent {
@@ -217,14 +202,8 @@ impl parsec::NetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        if self.signature.is_some() || self.real_signature.is_some() {
-            write!(
-                formatter,
-                "{:?}(signature {} {})",
-                self.payload,
-                self.signature.is_some(),
-                self.real_signature.is_some()
-            )
+        if self.signature.is_some() {
+            write!(formatter, "{:?}(signature)", self.payload)
         } else {
             self.payload.fmt(formatter)
         }

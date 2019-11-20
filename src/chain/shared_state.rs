@@ -7,12 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    bls_emu::BlsPublicKeyForSectionKeyInfo, AccumulatingEvent, AccumulatingProof, AgeCounter,
-    EldersInfo, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER,
+    AccumulatingEvent, AccumulatingProof, AgeCounter, EldersInfo, MemberInfo, MemberPersona,
+    MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
     error::RoutingError, id::PublicId, relocation::RelocateDetails, utils::LogIdent, BlsPublicKey,
-    BlsPublicKeySet, BlsSignature, Prefix, RealBlsPublicKey, XorName,
+    BlsPublicKeySet, BlsSignature, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -53,7 +53,7 @@ pub struct SharedState {
     /// Is split of the section currently in progress.
     pub split_in_progress: bool,
     // The accumulated `EldersInfo`(self or sibling) and proofs during a split pfx change.
-    pub split_cache: Option<(EldersInfo, AccumulatingProof)>,
+    pub split_cache: Option<(EldersInfo, SectionKeyInfo, AccumulatingProof)>,
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
@@ -69,8 +69,12 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn new(elders_info: EldersInfo, ages: BTreeMap<PublicId, AgeCounter>) -> Self {
-        let pk_info = SectionKeyInfo::from_elders_info(&elders_info);
+    pub fn new(
+        elders_info: EldersInfo,
+        bls_keys: BlsPublicKeySet,
+        ages: BTreeMap<PublicId, AgeCounter>,
+    ) -> Self {
+        let pk_info = SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
         let our_history = SectionProofChain::from_genesis(pk_info);
         let their_key_info = our_history.last_public_key_info();
         let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
@@ -289,12 +293,15 @@ impl SharedState {
     pub fn push_our_new_info(
         &mut self,
         elders_info: EldersInfo,
+        key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
         pk_set: &BlsPublicKeySet,
     ) -> Result<(), RoutingError> {
-        let proof_block = if let Some(proof_block) =
-            SectionProofBlock::from_elders_info_with_proofs(&elders_info, proofs, pk_set)
-        {
+        let proof_block = if let Some(proof_block) = SectionProofBlock::from_elders_info_with_proofs(
+            key_info,
+            proofs,
+            (pk_set, self.our_infos.last()),
+        ) {
             proof_block
         } else {
             return Err(RoutingError::InvalidNewSectionInfo);
@@ -464,21 +471,20 @@ impl Debug for SectionProofBlock {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SectionProofBlock {{ key_info: {:?}, sig: .. }}",
-            self.key_info()
+            "SectionProofBlock {{ key_info: {:?}, sig: {:?} }}",
+            self.key_info(),
+            self.sig,
         )
     }
 }
 
 impl SectionProofBlock {
     pub fn from_elders_info_with_proofs(
-        elders_info: &EldersInfo,
+        key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
-        pk_set: &BlsPublicKeySet,
+        pk_set_and_info: (&BlsPublicKeySet, &EldersInfo),
     ) -> Option<Self> {
-        let sig = proofs.combine_signatures(pk_set)?;
-        let key_info = SectionKeyInfo::from_elders_info(elders_info);
-
+        let sig = proofs.combine_signatures(pk_set_and_info.1, pk_set_and_info.0)?;
         Some(Self { key_info, sig })
     }
 
@@ -490,7 +496,7 @@ impl SectionProofBlock {
         self.key_info.key()
     }
 
-    pub fn verify_with_pk(&self, pk: &BlsPublicKey) -> bool {
+    pub fn verify_with_pk(&self, pk: BlsPublicKey) -> bool {
         if let Ok(to_verify) = self.key_info.serialise_for_signature() {
             pk.verify(&self.sig, to_verify)
         } else {
@@ -518,7 +524,7 @@ impl hash::Hash for SectionProofBlock {
 
 impl Eq for SectionProofBlock {}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_key_info: SectionKeyInfo,
     blocks: Vec<SectionProofBlock>,
@@ -541,12 +547,12 @@ impl SectionProofChain {
     }
 
     pub fn validate(&self) -> bool {
-        let mut current_pk = self.genesis_key_info.key();
+        let mut current_pk = *self.genesis_key_info.key();
         for block in &self.blocks {
             if !block.verify_with_pk(current_pk) {
                 return false;
             }
-            current_pk = block.key();
+            current_pk = *block.key();
         }
         true
     }
@@ -587,6 +593,17 @@ impl SectionProofChain {
         }
     }
 }
+impl Debug for SectionProofChain {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "SectionProofChain {{ genesis_key_info: {:?}, blocks: {:?}, validate: {} }}",
+            self.genesis_key_info,
+            self.blocks,
+            self.validate(),
+        )
+    }
+}
 
 // TODO: remove this impl (replace with a `derive`d one) when we switch to real BLS. For more
 // details see the TODO comment on the `PartialEq` impl of `SectionProofBlock`.
@@ -610,55 +627,34 @@ impl hash::Hash for SectionProofChain {
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionKeyInfo {
-    // Hold all the information that is signed. When switching to real BLS, SectionKeyInfo
-    // will hold the BlsPublicKey, prefix and version and will be the item to sign.
-    key_info_holder: BlsPublicKeyForSectionKeyInfo,
-}
-
-impl SectionKeyInfo {
-    pub fn from_elders_info(info: &EldersInfo) -> Self {
-        Self {
-            key_info_holder: BlsPublicKeyForSectionKeyInfo::from_elders_info(info),
-        }
-    }
-
-    pub fn key(&self) -> &BlsPublicKey {
-        self.key_info_holder.key()
-    }
-
-    pub fn prefix(&self) -> &Prefix<XorName> {
-        self.key_info_holder.internal_elders_info().prefix()
-    }
-
-    pub fn version(&self) -> &u64 {
-        self.key_info_holder.internal_elders_info().version()
-    }
-
-    pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
-        Ok(serialisation::serialise(
-            self.key_info_holder.internal_elders_info(),
-        )?)
-    }
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct RealSectionKeyInfo {
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Identical to `ElderInfo`'s.
     version: u64,
     /// The section prefix. It matches all the members' names.
     prefix: Prefix<XorName>,
     /// The section BLS public key set
-    key: RealBlsPublicKey,
+    key: BlsPublicKey,
 }
 
-impl RealSectionKeyInfo {
-    pub fn from_elders_info(info: &EldersInfo, key: RealBlsPublicKey) -> Self {
+impl SectionKeyInfo {
+    pub fn from_elders_info(info: &EldersInfo, key: BlsPublicKey) -> Self {
         Self {
             version: *info.version(),
             prefix: *info.prefix(),
             key,
         }
+    }
+
+    pub fn key(&self) -> &BlsPublicKey {
+        &self.key
+    }
+
+    pub fn prefix(&self) -> &Prefix<XorName> {
+        &self.prefix
+    }
+
+    pub fn version(&self) -> &u64 {
+        &self.version
     }
 
     pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
@@ -684,6 +680,7 @@ mod test {
     use crate::{
         chain::EldersInfo,
         id::P2pNode,
+        parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
         ConnectionInfo, FullId, Prefix, XorName,
     };
@@ -734,8 +731,10 @@ mod test {
             .map(|(version, pfx_str)| {
                 let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
                 let elders_info = gen_elders_info(rng, pfx, version as u64);
-                let key_info = SectionKeyInfo::from_elders_info(&elders_info);
-                (key_info, elders_info)
+                let bls_keys = generate_bls_threshold_secret_key(rng, 1).public_keys();
+                let key_info =
+                    SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
+                (key_info, elders_info, bls_keys)
             })
             .collect::<Vec<_>>();
         let expected_keys = expected
@@ -747,14 +746,16 @@ mod test {
             .collect::<Vec<_>>();
 
         let mut state = {
-            let start_section = unwrap!(keys_to_update.first()).1.clone();
-            SharedState::new(start_section, Default::default())
+            let start_section = unwrap!(keys_to_update.first());
+            let info = start_section.1.clone();
+            let keys = start_section.2.clone();
+            SharedState::new(info, keys, Default::default())
         };
 
         //
         // Act
         //
-        for (key_info, _) in keys_to_update.iter().skip(1) {
+        for (key_info, _, _) in keys_to_update.iter().skip(1) {
             state.update_their_keys(key_info);
         }
 
@@ -768,7 +769,7 @@ mod test {
                     *p,
                     keys_to_update
                         .iter()
-                        .position(|(key_info, _)| key_info == info),
+                        .position(|(key_info, _, _)| key_info == info),
                 )
             })
             .collect::<Vec<_>>();

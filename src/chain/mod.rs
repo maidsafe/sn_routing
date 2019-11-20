@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 // The `chain` submodule contains the `Chain` implementation, which we reexport here.
-pub(crate) mod bls_emu;
+
 #[allow(clippy::module_inception)]
 mod chain;
 mod chain_accumulator;
@@ -28,22 +28,21 @@ pub use self::{
     member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_event::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
-        IntoAccumulatingEvent, NetworkEvent, OnlinePayload, RealBlsEventSigPayload,
-        SendAckMessagePayload,
+        IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
-    shared_state::{RealSectionKeyInfo, SectionKeyInfo, SectionProofChain},
+    shared_state::{SectionKeyInfo, SectionProofChain},
 };
 #[cfg(feature = "mock_base")]
-use crate::{error::RoutingError, id::P2pNode, BlsPublicKeySet, Prefix, XorName};
-use crate::{PublicId, RealBlsPublicKeySet};
+use crate::{error::RoutingError, id::P2pNode, BlsPublicKey, Prefix, XorName};
+use crate::{BlsPublicKeySet, PublicId};
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
     pub first_info: EldersInfo,
-    pub first_bls_keys: RealBlsPublicKeySet,
+    pub first_bls_keys: BlsPublicKeySet,
     pub first_state_serialized: Vec<u8>,
     pub first_ages: BTreeMap<PublicId, AgeCounter>,
     pub latest_info: EldersInfo,
@@ -65,14 +64,11 @@ impl Debug for GenesisPfxInfo {
 
 #[cfg(feature = "mock_base")]
 /// Test helper to create arbitrary proof.
-pub fn section_proof_chain_from_elders_info(elders_info: &EldersInfo) -> SectionProofChain {
-    SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(&elders_info))
-}
-
-#[cfg(feature = "mock_base")]
-/// Test helper to create arbitrary BLS key set.
-pub fn bls_key_set_from_elders_info(elders_info: EldersInfo) -> BlsPublicKeySet {
-    BlsPublicKeySet::from_elders_info(elders_info)
+pub fn section_proof_chain_from_elders_info(
+    elders_info: &EldersInfo,
+    key: BlsPublicKey,
+) -> SectionProofChain {
+    SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(&elders_info, key))
 }
 
 #[cfg(feature = "mock_base")]

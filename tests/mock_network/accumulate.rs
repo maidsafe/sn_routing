@@ -8,10 +8,7 @@
 
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
-use routing::{
-    mock::Network, Authority, Event, EventStream, NetworkParams, XorName, THRESHOLD_DENOMINATOR,
-    THRESHOLD_NUMERATOR,
-};
+use routing::{mock::Network, Authority, Event, EventStream, NetworkParams, XorName};
 
 #[test]
 fn messages_accumulate_with_quorum() {
@@ -33,8 +30,11 @@ fn messages_accumulate_with_quorum() {
     let dst = Authority::Node(nodes[0].name()); // The closest node.
     let content = gen_bytes(&mut rng, 8);
 
-    // The smallest number such that `quorum * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR`:
-    let quorum = 1 + section_size * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
+    // The BLS scheme will require more than `participants / 3`
+    // shares in order to construct a full key or signature.
+    // The smallest number such that `quorum > threshold`:
+    let threshold = section_size.saturating_sub(1) / 3;
+    let quorum = 1 + threshold;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a

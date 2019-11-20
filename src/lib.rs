@@ -172,8 +172,8 @@ use crate::mock::quic_p2p;
 #[cfg(feature = "mock_base")]
 pub use crate::{
     chain::{
-        bls_key_set_from_elders_info, delivery_group_size, elders_info_for_test,
-        section_proof_chain_from_elders_info, NetworkParams, MIN_AGE,
+        delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
+        NetworkParams, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,
@@ -197,9 +197,10 @@ pub(crate) use chain::Chain;
 use quic_p2p;
 
 pub use threshold_crypto::{
-    PublicKey as RealBlsPublicKey, PublicKeySet as RealBlsPublicKeySet,
-    PublicKeyShare as RealBlsPublicKeyShare, SecretKeySet as RealBlsSecretKeySet,
-    SecretKeyShare as RealBlsSecretKeyShare, SignatureShare as RealBlsSignatureShare,
+    PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
+    PublicKeyShare as BlsPublicKeyShare, SecretKeySet as BlsSecretKeySet,
+    SecretKeyShare as BlsSecretKeyShare, Signature as BlsSignature,
+    SignatureShare as BlsSignatureShare,
 };
 
 // Format that can be sent between peers
@@ -211,11 +212,6 @@ pub(crate) type NetworkBytes = std::rc::Rc<Message>;
 pub use self::quic_p2p::Config as NetworkConfig;
 pub use self::quic_p2p::NodeInfo as ConnectionInfo;
 pub(crate) use self::{
-    chain::bls_emu::{
-        PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
-        PublicKeyShare as BlsPublicKeyShare, Signature as BlsSignature,
-        SignatureShare as BlsSignatureShare,
-    },
     network_service::NetworkService,
     quic_p2p::{Event as NetworkEvent, QuicP2p},
 };
@@ -229,9 +225,6 @@ pub mod test_consts {
     pub use crate::chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
     pub use crate::states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 }
-
-#[cfg(feature = "mock_base")]
-pub use self::chain::bls_emu::{THRESHOLD_DENOMINATOR, THRESHOLD_NUMERATOR};
 
 #[cfg(test)]
 mod tests {
