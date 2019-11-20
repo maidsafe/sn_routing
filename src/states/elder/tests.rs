@@ -339,20 +339,15 @@ impl ElderUnderTest {
     }
 
     fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
-        let peer_addr = conn_info.peer_addr;
-
         self.handle_connected_to(conn_info.clone());
-        self.machine
-            .elder_state_mut()
-            .identify_connection(pub_id, peer_addr);
         unwrap!(self
             .machine
             .elder_state_mut()
             .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name()));
     }
 
-    fn is_connected(&self, pub_id: &PublicId) -> bool {
-        self.machine.current().is_connected(pub_id)
+    fn is_connected(&self, peer_addr: &SocketAddr) -> bool {
+        self.machine.current().is_connected(peer_addr)
     }
 }
 
@@ -515,7 +510,7 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
 
     // Bootstrap fails for insufficient section size.
     elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
-    assert!(!elder_test.is_connected(node.public_id()));
+    assert!(!elder_test.is_connected(&node.connection_info().peer_addr));
 
     // Add new section member to reach elder_size.
     let new_info = elder_test.new_elders_info_with_candidate();
@@ -524,5 +519,5 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
 
     // Re-bootstrap now succeeds.
     elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
-    assert!(elder_test.is_connected(node.public_id()));
+    assert!(elder_test.is_connected(&node.connection_info().peer_addr));
 }

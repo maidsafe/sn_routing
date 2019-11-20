@@ -51,10 +51,11 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
+    net::SocketAddr,
 };
 
 #[cfg(feature = "mock_base")]
-use {crate::messages::Message, std::net::SocketAddr};
+use crate::messages::Message;
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -244,7 +245,7 @@ impl Elder {
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator,
             tick_timer_token,
-            timer: timer,
+            timer,
             parsec_map: details.parsec_map,
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
@@ -339,12 +340,12 @@ impl Elder {
                     continue;
                 }
 
-                self.disconnect(p2p_node.public_id());
+                self.disconnect(p2p_node.peer_addr());
             }
         }
 
         for p2p_node in change.added {
-            if !self.peer_map().has(p2p_node.public_id()) {
+            if !self.peer_map().has(p2p_node.peer_addr()) {
                 self.establish_connection(p2p_node)
             }
         }
@@ -352,7 +353,7 @@ impl Elder {
         let to_connect: Vec<_> = self
             .chain
             .our_elders()
-            .filter(|p2p_node| !self.peer_map().has(p2p_node.public_id()))
+            .filter(|p2p_node| !self.peer_map().has(p2p_node.peer_addr()))
             .cloned()
             .collect();
 
@@ -363,8 +364,7 @@ impl Elder {
 
     fn establish_connection(&mut self, node: P2pNode) {
         self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
-        self.peer_map_mut()
-            .insert(*node.public_id(), node.into_connection_info());
+        self.peer_map_mut().connect(node.connection_info().clone())
     }
 
     fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
@@ -629,14 +629,14 @@ impl Elder {
         let dst = Authority::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
-        if !self.peer_map().has(&pub_id) {
+        if !self.peer_map().has(p2p_node.peer_addr()) {
             trace!(
                 "{} - Not yet connected to {} - use p2p_node.",
                 self,
                 p2p_node
             );
             self.peer_map_mut()
-                .insert(pub_id, p2p_node.connection_info().clone());
+                .connect(p2p_node.connection_info().clone());
             self.send_direct_message(
                 p2p_node.connection_info(),
                 DirectMessage::ConnectionResponse,
@@ -686,7 +686,7 @@ impl Elder {
         );
 
         let pub_id = *p2p_node.public_id();
-        if !self.peer_map().has(&pub_id) {
+        if !self.peer_map().has(p2p_node.peer_addr()) {
             log_or_panic!(
                 LogLevel::Error,
                 "Not connected to the sender of BootstrapRequest."
@@ -718,7 +718,7 @@ impl Elder {
                     BootstrapResponseError::TooFewPeers,
                 )),
             );
-            self.disconnect(&pub_id);
+            self.disconnect(p2p_node.peer_addr());
             return Ok(());
         }
 
@@ -1059,11 +1059,10 @@ impl Elder {
     // Check whether we are connected to any elders. If this node loses all elder connections,
     // it must be restarted.
     fn check_elder_connections(&mut self, outbox: &mut dyn EventBox) -> bool {
+        let our_name = self.name();
         if self
-            .peer_map()
-            .connected_ids()
-            .filter(|id| self.chain.our_id() != *id)
-            .any(|id| self.chain.is_peer_our_elder(id))
+            .our_elders()
+            .any(|node| node.name() != our_name && self.peer_map().has(node.peer_addr()))
         {
             true
         } else {
@@ -1275,13 +1274,24 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, outbox: &mut dyn EventBox) -> Transition {
-        debug!("{} - Lost peer {}", self, pub_id);
+    fn handle_peer_lost(&mut self, peer_addr: SocketAddr, outbox: &mut dyn EventBox) -> Transition {
+        debug!("{} - Lost peer {}", self, peer_addr);
 
         if !self.check_elder_connections(outbox) {
             return Transition::Terminate;
         }
 
+        let p2p_node = if let Some(node) = self.chain.find_p2p_node_from_addr(&peer_addr) {
+            node
+        } else {
+            info!(
+                "{} - Lost connection to a peer we don't know: {}",
+                self, peer_addr
+            );
+            return Transition::Stay;
+        };
+
+        let pub_id = *p2p_node.public_id();
         if self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
@@ -1446,10 +1456,6 @@ impl Elder {
         self.chain.is_peer_our_elder(pub_id)
     }
 
-    pub fn identify_connection(&mut self, pub_id: PublicId, peer_addr: SocketAddr) {
-        self.peer_map_mut().identify(pub_id, peer_addr)
-    }
-
     pub fn send_msg_to_targets(
         &mut self,
         dst_targets: &[ConnectionInfo],
@@ -1538,7 +1544,7 @@ impl Approved for Elder {
         }
 
         self.remove_elder(pub_id, outbox)?;
-        self.disconnect(&pub_id);
+        self.disconnect_by_id_lookup(&pub_id);
 
         Ok(())
     }
@@ -1702,7 +1708,7 @@ impl Approved for Elder {
 
         self.chain.remove_member(&pub_id);
         self.remove_elder(pub_id, outbox)?;
-        self.disconnect(&pub_id);
+        self.disconnect_by_id_lookup(&pub_id);
 
         Ok(())
     }
