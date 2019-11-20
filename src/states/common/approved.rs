@@ -68,6 +68,13 @@ pub trait Approved: Base {
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
+    /// Handles an accumulated `NeighbourInfo` event.
+    fn handle_neighbour_info_event(
+        &mut self,
+        elders_info: EldersInfo,
+        neighbour_change: EldersChange,
+    ) -> Result<(), RoutingError>;
+
     /// Handle an accumulated `TheirKeyInfo` event
     fn handle_their_key_info_event(&mut self, key_info: SectionKeyInfo)
         -> Result<(), RoutingError>;
@@ -295,8 +302,7 @@ pub trait Approved: Base {
                 AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id, outbox)?;
                 }
-                AccumulatingEvent::SectionInfo(elders_info)
-                | AccumulatingEvent::NeighbourInfo(elders_info) => {
+                AccumulatingEvent::SectionInfo(elders_info) => {
                     match self.handle_section_info_event(
                         elders_info,
                         our_pfx,
@@ -306,6 +312,9 @@ pub trait Approved: Base {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
+                }
+                AccumulatingEvent::NeighbourInfo(elders_info) => {
+                    self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
                 }
                 AccumulatingEvent::TheirKeyInfo(key_info) => {
                     self.handle_their_key_info_event(key_info)?

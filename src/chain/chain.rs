@@ -278,31 +278,24 @@ impl Chain {
         };
 
         match event {
-            AccumulatingEvent::SectionInfo(ref info)
-            | AccumulatingEvent::NeighbourInfo(ref info) => {
-                let old_neighbours: BTreeSet<_> = self.neighbour_elder_nodes().cloned().collect();
-                self.add_elders_info(info.clone(), proofs)?;
-                let new_neighbours: BTreeSet<_> = self.neighbour_elder_nodes().cloned().collect();
-
-                if let Some((ref cached_info, _)) = self.state.split_cache {
-                    if cached_info == info {
-                        return Ok(None);
-                    }
+            AccumulatingEvent::SectionInfo(ref info) => {
+                let change = NeighbourChangeBuilder::new(self);
+                if self.add_elders_info(info.clone(), proofs)? {
+                    let change = change.build(self);
+                    return Ok(Some(
+                        AccumulatedEvent::new(event).with_neighbour_change(change),
+                    ));
+                } else {
+                    return Ok(None);
                 }
-
-                let neighbour_change = EldersChange {
-                    added: new_neighbours
-                        .difference(&old_neighbours)
-                        .cloned()
-                        .collect(),
-                    removed: old_neighbours
-                        .difference(&new_neighbours)
-                        .cloned()
-                        .collect(),
-                };
+            }
+            AccumulatingEvent::NeighbourInfo(ref info) => {
+                let change = NeighbourChangeBuilder::new(self);
+                let _ = self.add_elders_info(info.clone(), proofs)?;
+                let change = change.build(self);
 
                 return Ok(Some(
-                    AccumulatedEvent::new(event).with_neighbour_change(neighbour_change),
+                    AccumulatedEvent::new(event).with_neighbour_change(change),
                 ));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
@@ -981,17 +974,18 @@ impl Chain {
     }
 
     /// Handles our own section info, or the section info of our sibling directly after a split.
+    /// Returns whether the event should be handled by the caller.
     fn add_elders_info(
         &mut self,
         info: EldersInfo,
         proofs: AccumulatingProof,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<bool, RoutingError> {
         // Split handling alone. wouldn't cater to merge
         if info.prefix().is_extension_of(self.our_prefix()) {
             match self.state.split_cache.take() {
                 None => {
                     self.state.split_cache = Some((info, proofs));
-                    return Ok(());
+                    Ok(false)
                 }
                 Some((cache_info, cache_proofs)) => {
                     let cache_pfx = *cache_info.prefix();
@@ -1005,12 +999,13 @@ impl Chain {
                         self.do_add_elders_info(info, proofs)?;
                         self.do_add_elders_info(cache_info, cache_proofs)?;
                     }
-                    return Ok(());
+                    Ok(true)
                 }
             }
+        } else {
+            self.do_add_elders_info(info, proofs)?;
+            Ok(true)
         }
-
-        self.do_add_elders_info(info, proofs)
     }
 
     fn do_add_elders_info(
@@ -1573,6 +1568,26 @@ fn compute_relocation_destination(
         .next_relocation_dst
         .take()
         .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
+}
+
+struct NeighbourChangeBuilder {
+    old: BTreeSet<P2pNode>,
+}
+
+impl NeighbourChangeBuilder {
+    fn new(chain: &Chain) -> Self {
+        Self {
+            old: chain.neighbour_elder_nodes().cloned().collect(),
+        }
+    }
+
+    fn build(self, chain: &Chain) -> EldersChange {
+        let new: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+        EldersChange {
+            added: new.difference(&self.old).cloned().collect(),
+            removed: self.old.difference(&new).cloned().collect(),
+        }
+    }
 }
 
 #[cfg(test)]

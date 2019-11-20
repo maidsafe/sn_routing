@@ -297,11 +297,11 @@ impl Elder {
         }
 
         // Handle the SectionInfo event which triggered us becoming established node.
-        let neighbour_change = EldersChange {
+        let change = EldersChange {
             added: self.chain.neighbour_elder_nodes().cloned().collect(),
             removed: Default::default(),
         };
-        let _ = self.handle_section_info_event(elders_info, old_pfx, neighbour_change, outbox)?;
+        let _ = self.handle_section_info_event(elders_info, old_pfx, change, outbox)?;
 
         Ok(())
     }
@@ -328,9 +328,9 @@ impl Elder {
         self.send_parsec_gossip(Some((msg_version, p2p_node)))
     }
 
-    // Connect to all neighbour elders we are not yet connected to and disconnect from peers that are no
-    // longer members of our section or elders of neighbour sections.
-    fn update_neighbour_connections(&mut self, change: EldersChange, _outbox: &mut dyn EventBox) {
+    // Connect to all elders from our section or neighbour sections that we are not yet connected
+    // to and disconnect from peers that are no longer elders of neighbour sections.
+    fn update_peer_connections(&mut self, change: EldersChange) {
         if !self.chain.split_in_progress() {
             for p2p_node in change.removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
@@ -344,15 +344,9 @@ impl Elder {
         }
 
         for p2p_node in change.added {
-            let pub_id = *p2p_node.public_id();
-            if !self.peer_map().has(&pub_id) {
-                self.peer_map_mut()
-                    .insert(pub_id, p2p_node.connection_info().clone());
-                self.send_direct_message(
-                    p2p_node.connection_info(),
-                    DirectMessage::ConnectionResponse,
-                );
-            };
+            if !self.peer_map().has(p2p_node.public_id()) {
+                self.establish_connection(p2p_node)
+            }
         }
 
         let to_connect: Vec<_> = self
@@ -363,14 +357,14 @@ impl Elder {
             .collect();
 
         for p2p_node in to_connect.into_iter() {
-            let pub_id = p2p_node.public_id();
-            self.peer_map_mut()
-                .insert(*pub_id, p2p_node.connection_info().clone());
-            self.send_direct_message(
-                p2p_node.connection_info(),
-                DirectMessage::ConnectionResponse,
-            );
+            self.establish_connection(p2p_node)
         }
+    }
+
+    fn establish_connection(&mut self, node: P2pNode) {
+        self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
+        self.peer_map_mut()
+            .insert(*node.public_id(), node.into_connection_info());
     }
 
     fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
@@ -451,11 +445,13 @@ impl Elder {
         self.reset_parsec_with_data(reset_data)
     }
 
-    fn finalise_prefix_change(&mut self) -> Result<(), RoutingError> {
+    fn finalise_split(&mut self, outbox: &mut dyn EventBox) -> Result<(), RoutingError> {
         let reset_data = self
             .chain
             .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
-        self.reset_parsec_with_data(reset_data)
+        self.reset_parsec_with_data(reset_data)?;
+        self.send_event(Event::SectionSplit(*self.chain.our_prefix()), outbox);
+        Ok(())
     }
 
     fn send_neighbour_infos(&mut self) {
@@ -1587,26 +1583,13 @@ impl Approved for Elder {
     ) -> Result<Transition, RoutingError> {
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 
-        let self_sec_update = elders_info.prefix().matches(self.name());
-
         // Poll the relocate queue before the parsec reset, so it is not blocked waiting for the
         // genesis event. Cast the actual votes only after the parsec reset however, so they already
         // go to the new instance.
-        let relocate_details = if self_sec_update {
-            self.chain.poll_relocation()
-        } else {
-            None
-        };
+        let relocate_details = self.chain.poll_relocation();
 
         if elders_info.prefix().is_extension_of(&old_pfx) {
-            self.finalise_prefix_change()?;
-            self.send_event(Event::SectionSplit(*elders_info.prefix()), outbox);
-            // After a section split, the normal `send_neighbour_infos` action for the neighbouring
-            // section will be triggered here (and only here).  Meanwhile own section's sending
-            // action will be triggered at the other place later on (`self_sec_update` is true).
-            if !elders_info.prefix().matches(self.name()) {
-                self.send_neighbour_infos();
-            }
+            self.finalise_split(outbox)?;
         } else if old_pfx.is_extension_of(elders_info.prefix()) {
             panic!(
                 "{} - Merge not supported: {:?} -> {:?}",
@@ -1614,27 +1597,34 @@ impl Approved for Elder {
                 old_pfx,
                 elders_info.prefix()
             );
-        } else if self_sec_update {
+        } else {
             self.reset_parsec()?;
         }
 
-        self.update_neighbour_connections(neighbour_change, outbox);
+        self.update_peer_connections(neighbour_change);
+        self.send_neighbour_infos();
 
-        if self_sec_update {
-            // Vote to update our self messages proof
-            self.vote_send_section_info_ack(SendAckMessagePayload {
-                ack_prefix: *elders_info.prefix(),
-                ack_version: *elders_info.version(),
-            });
-
-            self.send_neighbour_infos();
-        }
+        // Vote to update our self messages proof
+        self.vote_send_section_info_ack(SendAckMessagePayload {
+            ack_prefix: *elders_info.prefix(),
+            ack_version: *elders_info.version(),
+        });
 
         if let Some(relocate_details) = relocate_details {
             self.vote_for_relocate(relocate_details)?;
         }
 
         Ok(Transition::Stay)
+    }
+
+    fn handle_neighbour_info_event(
+        &mut self,
+        elders_info: EldersInfo,
+        neighbour_change: EldersChange,
+    ) -> Result<(), RoutingError> {
+        info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
+        self.update_peer_connections(neighbour_change);
+        Ok(())
     }
 
     fn handle_their_key_info_event(
