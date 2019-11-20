@@ -11,7 +11,7 @@ use super::{
     shared_state::{SectionKeyInfo, SharedState},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
     GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
-    ProofSet, RealBlsEventSigPayload, SectionProofChain,
+    ProofSet, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -96,16 +96,6 @@ impl Chain {
             .secret_key_share
             .as_ref()
             .ok_or(RoutingError::InvalidElderDkgResult)
-    }
-
-    pub fn our_section_next_bls_keys_sig(
-        &self,
-        info: &EldersInfo,
-    ) -> Result<Option<RealBlsEventSigPayload>, RoutingError> {
-        Ok(Some(RealBlsEventSigPayload::new_for_section_key_info(
-            self.our_section_bls_secret_key_share()?,
-            &SectionKeyInfo::from_elders_info(info),
-        )?))
     }
 
     /// Returns the number of nodes which need to exist in each subsection of a given section to

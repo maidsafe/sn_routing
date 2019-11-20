@@ -17,8 +17,8 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, DevParams, EldersChange,
         EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
-        NetworkParams, OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload,
-        MIN_AGE, MIN_AGE_COUNTER,
+        NetworkParams, OnlinePayload, ParsecResetData, RealBlsEventSigPayload, RealSectionKeyInfo,
+        SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
@@ -41,7 +41,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_name::XorName,
-    BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
+    BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService, RealBlsPublicKey,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -904,14 +904,21 @@ impl Elder {
         self.vote_for_signed_event(details)
     }
 
-    fn vote_for_section_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
+    fn vote_for_section_info(
+        &mut self,
+        elders_info: EldersInfo,
+        section_key: RealBlsPublicKey,
+    ) -> Result<(), RoutingError> {
         let signature_payload = EventSigPayload::new(&self.full_id, &elders_info)?;
-        let real_signature_payload = self.chain.our_section_next_bls_keys_sig(&elders_info)?;
-        let key_info = SectionKeyInfo::from_elders_info(&elders_info);
+        let key_info = RealSectionKeyInfo::from_elders_info(&elders_info, section_key);
+        let real_signature_payload = RealBlsEventSigPayload::new_for_section_key_info(
+            self.chain.our_section_bls_secret_key_share()?,
+            &key_info,
+        )?;
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
-        let event =
-            acc_event.into_network_event_with(Some(signature_payload), real_signature_payload);
+        let event = acc_event
+            .into_network_event_with(Some(signature_payload), Some(real_signature_payload));
         self.vote_for_network_event(event);
         Ok(())
     }
@@ -1539,11 +1546,11 @@ impl Approved for Elder {
     fn handle_dkg_result_event(
         &mut self,
         participants: &BTreeSet<PublicId>,
-        _dkg_result: &DkgResultWrapper,
+        dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
         if let Some(info) = self.dkg_cache.remove(participants) {
             info!("{} - handle DkgResult: {:?}", self, participants);
-            self.vote_for_section_info(info)?;
+            self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
         } else {
             log_or_panic!(
                 LogLevel::Error,

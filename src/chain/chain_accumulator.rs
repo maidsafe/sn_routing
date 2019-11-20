@@ -259,16 +259,19 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
-    use super::super::{EldersInfo, SectionKeyInfo};
+    use super::super::{EldersInfo, RealBlsEventSigPayload, RealSectionKeyInfo};
     use super::*;
     use crate::{
         id::FullId,
+        parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        BlsPublicKeyShare,
+        BlsPublicKeyShare, RealBlsPublicKeySet,
     };
     use parsec::SecretId;
     use std::iter;
     use unwrap::unwrap;
+
+    const TEST_DATA_FOR_SIGN: [u8; 1] = [1u8];
 
     struct TestData {
         pub our_id: PublicId,
@@ -293,18 +296,32 @@ mod test {
         ))
     }
 
-    fn random_section_info_sig_payload(rng: &mut MainRng) -> EventSigPayload {
+    fn random_section_info_sig_payload(
+        rng: &mut MainRng,
+    ) -> (EventSigPayload, RealBlsEventSigPayload, RealBlsPublicKeySet) {
+        let participants = 2;
+        let first_secret_key_index = 0;
+        let bls_keys = generate_bls_threshold_secret_key(rng, participants);
+        let bls_secret_key_share = bls_keys.secret_key_share(first_secret_key_index);
         let (id, first_proof) = random_ids_and_proof(rng);
-        EventSigPayload {
-            pub_key_share: BlsPublicKeyShare(*id.public_id()),
-            sig_share: first_proof.sig,
-        }
+
+        (
+            EventSigPayload {
+                pub_key_share: BlsPublicKeyShare(*id.public_id()),
+                sig_share: first_proof.sig,
+            },
+            RealBlsEventSigPayload {
+                pub_key_share: bls_secret_key_share.public_key_share(),
+                sig_share: bls_secret_key_share.sign(&TEST_DATA_FOR_SIGN),
+            },
+            bls_keys.public_keys(),
+        )
     }
 
     fn random_ids_and_proof(rng: &mut MainRng) -> (FullId, Proof) {
         let id = FullId::gen(rng);
         let pub_id = *id.public_id();
-        let sig = id.sign_detached(&[1]);
+        let sig = id.sign_detached(&TEST_DATA_FOR_SIGN);
 
         (id, Proof { pub_id, sig })
     }
@@ -333,8 +350,9 @@ mod test {
             }
             EventType::WithSignature => {
                 let elders_info = empty_elders_info();
-                let sig_payload = random_section_info_sig_payload(rng);
-                let key_info = SectionKeyInfo::from_elders_info(&elders_info);
+                let (sig_payload, _real_sig_payload, keys) = random_section_info_sig_payload(rng);
+                let key_info =
+                    RealSectionKeyInfo::from_elders_info(&elders_info, keys.public_key());
                 let event = AccumulatingEvent::SectionInfo(elders_info.clone(), key_info);
 
                 TestData {

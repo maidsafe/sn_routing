@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     error::RoutingError, id::PublicId, relocation::RelocateDetails, utils::LogIdent, BlsPublicKey,
-    BlsPublicKeySet, BlsSignature, Prefix, XorName,
+    BlsPublicKeySet, BlsSignature, Prefix, RealBlsPublicKey, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -638,6 +638,31 @@ impl SectionKeyInfo {
         Ok(serialisation::serialise(
             self.key_info_holder.internal_elders_info(),
         )?)
+    }
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+pub struct RealSectionKeyInfo {
+    /// The section version. This increases monotonically whenever the set of elders changes.
+    /// Identical to `ElderInfo`'s.
+    version: u64,
+    /// The section prefix. It matches all the members' names.
+    prefix: Prefix<XorName>,
+    /// The section BLS public key set
+    key: RealBlsPublicKey,
+}
+
+impl RealSectionKeyInfo {
+    pub fn from_elders_info(info: &EldersInfo, key: RealBlsPublicKey) -> Self {
+        Self {
+            version: *info.version(),
+            prefix: *info.prefix(),
+            key,
+        }
+    }
+
+    pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
+        Ok(serialisation::serialise(&self)?)
     }
 }
 

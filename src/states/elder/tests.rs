@@ -15,12 +15,15 @@
 
 use super::*;
 use crate::{
+    chain::RealBlsEventSigPayload,
+    generate_bls_threshold_secret_key,
     messages::DirectMessage,
     mock::Network,
     outbox::EventBox,
     rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    NetworkConfig, NetworkParams, NetworkService, RealBlsSecretKeyShare, ELDER_SIZE,
+    NetworkConfig, NetworkParams, NetworkService, RealBlsPublicKeySet, RealBlsSecretKeyShare,
+    ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
@@ -33,6 +36,12 @@ const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 5;
 struct JoiningNodeInfo {
     full_id: FullId,
     addr: SocketAddr,
+}
+struct DkgToSectionInfo {
+    participants: BTreeSet<PublicId>,
+    new_pk_set: RealBlsPublicKeySet,
+    new_other_ids: Vec<(FullId, RealBlsSecretKeyShare)>,
+    new_elder_info: EldersInfo,
 }
 
 impl JoiningNodeInfo {
@@ -55,8 +64,8 @@ impl JoiningNodeInfo {
 struct ElderUnderTest {
     pub rng: MainRng,
     pub machine: StateMachine,
-    pub full_id: FullId,
-    pub other_full_ids: Vec<FullId>,
+    pub full_id: (FullId, RealBlsSecretKeyShare),
+    pub other_ids: Vec<(FullId, RealBlsSecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
 }
@@ -70,14 +79,19 @@ impl ElderUnderTest {
         let mut rng = rng::new();
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo::from(socket_addr);
-        let full_ids = (0..sec_size).map(|_| FullId::gen(&mut rng)).collect_vec();
+        let full_ids: BTreeMap<_, _> = (0..sec_size)
+            .map(|_| {
+                let id = FullId::gen(&mut rng);
+                (*id.public_id().name(), id)
+            })
+            .collect();
 
         let prefix = Prefix::<XorName>::default();
         let elders_info = unwrap!(EldersInfo::new(
             full_ids
                 .iter()
-                .map(|id| (
-                    *id.public_id().name(),
+                .map(|(name, id)| (
+                    *name,
                     P2pNode::new(*id.public_id(), connection_info.clone())
                 ))
                 .collect(),
@@ -85,30 +99,31 @@ impl ElderUnderTest {
             iter::empty()
         ));
         let first_ages = full_ids
-            .iter()
+            .values()
             .map(|id| (*id.public_id(), MIN_AGE_COUNTER))
             .collect();
 
-        let dkg_result = generate_first_dkg_result(&mut rng);
+        let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
         let gen_pfx_info = GenesisPfxInfo {
             first_info: elders_info.clone(),
-            first_bls_keys: dkg_result.public_key_set,
+            first_bls_keys: secret_key_set.public_keys(),
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: EldersInfo::default(),
             parsec_version: 0,
         };
 
-        let full_id = full_ids[0].clone();
-        let machine = make_state_machine(
-            &mut rng,
-            &full_id,
-            &gen_pfx_info,
-            dkg_result.secret_key_share,
-            &mut (),
-        );
+        let full_and_bls_ids = full_ids
+            .values()
+            .enumerate()
+            .map(|(idx, full_id)| (full_id.clone(), secret_key_set.secret_key_share(idx)))
+            .collect_vec();
 
-        let other_full_ids = full_ids[1..].iter().cloned().collect_vec();
+        let full_id = full_and_bls_ids[0].clone();
+        let machine =
+            make_state_machine(&mut rng, (&full_id.0, &full_id.1), &gen_pfx_info, &mut ());
+
+        let other_ids = full_and_bls_ids[1..].iter().cloned().collect_vec();
 
         let candidate_addr: SocketAddr = unwrap!("127.0.0.2:9999".parse());
         let candidate = P2pNode::new(
@@ -120,13 +135,13 @@ impl ElderUnderTest {
             rng,
             machine,
             full_id,
-            other_full_ids,
+            other_ids,
             elders_info,
             candidate,
         };
 
         // Process initial unpolled event including genesis
-        elder_test.n_vote_for_unconsensused_events(elder_test.other_full_ids.len());
+        elder_test.n_vote_for_unconsensused_events(elder_test.other_ids.len());
         unwrap!(elder_test.create_gossip());
         elder_test
     }
@@ -138,22 +153,32 @@ impl ElderUnderTest {
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
         let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
         for event in events {
-            self.other_full_ids.iter().take(count).for_each(|full_id| {
-                let sig_event = if let AccumulatingEvent::SectionInfo(ref info, _) = event {
-                    Some(unwrap!(EventSigPayload::new(&full_id, info)))
-                } else {
-                    None
-                };
+            self.other_ids
+                .iter()
+                .take(count)
+                .for_each(|(full_id, bls_id)| {
+                    let (sig_event, real_sig_event) =
+                        if let AccumulatingEvent::SectionInfo(ref info, ref section_key) = event {
+                            (
+                                Some(unwrap!(EventSigPayload::new(&full_id, info))),
+                                Some(unwrap!(RealBlsEventSigPayload::new_for_section_key_info(
+                                    &bls_id,
+                                    section_key
+                                ))),
+                            )
+                        } else {
+                            (None, None)
+                        };
 
-                info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
-                parsec.vote_for_as(
-                    event
-                        .clone()
-                        .into_network_event_with(sig_event, None)
-                        .into_obs(),
-                    &full_id,
-                );
-            });
+                    info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
+                    parsec.vote_for_as(
+                        event
+                            .clone()
+                            .into_network_event_with(sig_event, real_sig_event)
+                            .into_obs(),
+                        &full_id,
+                    );
+                });
         }
     }
 
@@ -161,7 +186,7 @@ impl ElderUnderTest {
         let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
         for event in events.into_iter() {
-            self.other_full_ids.iter().take(count).for_each(|full_id| {
+            self.other_ids.iter().take(count).for_each(|(full_id, _)| {
                 info!(
                     "Vote as {:?} for unconsensused event {:?}",
                     full_id.public_id(),
@@ -173,12 +198,12 @@ impl ElderUnderTest {
     }
 
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
-        let other_pub_id = *self.other_full_ids[0].public_id();
+        let other_pub_id = *self.other_ids[0].0.public_id();
         let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
         let connection_info = ConnectionInfo::from(addr);
         let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
         let parsec_version = parsec.last_version();
-        let message = unwrap!(parsec.create_gossip(parsec_version, self.full_id.public_id()));
+        let message = unwrap!(parsec.create_gossip(parsec_version, self.full_id.0.public_id()));
         self.handle_direct_message((message, P2pNode::new(other_pub_id, connection_info)))
     }
 
@@ -201,12 +226,42 @@ impl ElderUnderTest {
         );
     }
 
-    fn accumulate_section_info_if_vote(&mut self, section_info_payload: EldersInfo) {
-        let section_key_info = SectionKeyInfo::from_elders_info(&section_info_payload);
+    fn updated_other_ids(&mut self, new_elder_info: EldersInfo) -> DkgToSectionInfo {
+        let participants: BTreeSet<PublicId> = new_elder_info.member_ids().copied().collect();
+        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let dkg_results = self
+            .other_ids
+            .iter()
+            .map(|(full_id, _)| {
+                (
+                    full_id.clone(),
+                    unwrap!(parsec.get_dkg_result_as(participants.clone(), &full_id)),
+                )
+            })
+            .collect_vec();
+
+        let new_pk_set = unwrap!(dkg_results.first()).1.public_key_set.clone();
+        let new_other_ids = dkg_results
+            .into_iter()
+            .filter_map(|(full_id, result)| (result.secret_key_share.map(|share| (full_id, share))))
+            .collect_vec();
+        DkgToSectionInfo {
+            participants,
+            new_pk_set,
+            new_other_ids,
+            new_elder_info,
+        }
+    }
+
+    fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
+        let section_key_info = RealSectionKeyInfo::from_elders_info(
+            &new_info.new_elder_info,
+            new_info.new_pk_set.public_key(),
+        );
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
             iter::once(AccumulatingEvent::SectionInfo(
-                section_info_payload,
+                new_info.new_elder_info.clone(),
                 section_key_info,
             )),
         );
@@ -224,27 +279,15 @@ impl ElderUnderTest {
         );
     }
 
-    fn get_participants(&self) -> BTreeSet<PublicId> {
-        iter::once(*self.full_id.public_id())
-            .chain(self.other_full_ids.iter().map(|f_id| *f_id.public_id()))
-            .collect()
-    }
-
-    fn accumulate_start_dkg(&mut self, participants: BTreeSet<PublicId>) {
+    fn accumulate_start_dkg(&mut self, info: &DkgToSectionInfo) {
         let _ = self.n_vote_for_gossipped(
             ACCUMULATE_VOTE_COUNT,
-            iter::once(AccumulatingEvent::StartDkg(participants)),
+            iter::once(AccumulatingEvent::StartDkg(info.participants.clone())),
         );
     }
 
-    fn accumulate_start_dkg_with(&mut self, added: PublicId) {
-        let mut participants = self.get_participants();
-        let _ = participants.insert(added);
-        self.accumulate_start_dkg(participants);
-    }
-
-    fn new_elders_info_with_candidate(&self) -> EldersInfo {
-        unwrap!(EldersInfo::new(
+    fn new_elders_info_with_candidate(&mut self) -> DkgToSectionInfo {
+        let new_elder_info = unwrap!(EldersInfo::new(
             self.elders_info
                 .member_nodes()
                 .chain(iter::once(&self.candidate))
@@ -252,16 +295,19 @@ impl ElderUnderTest {
                 .collect(),
             *self.elders_info.prefix(),
             Some(&self.elders_info)
-        ))
+        ));
+
+        self.updated_other_ids(new_elder_info)
     }
 
-    fn new_elders_info_without_candidate(&self) -> EldersInfo {
+    fn new_elders_info_without_candidate(&mut self) -> DkgToSectionInfo {
         let old_info = self.new_elders_info_with_candidate();
-        unwrap!(EldersInfo::new(
+        let new_elder_info = unwrap!(EldersInfo::new(
             self.elders_info.member_map().clone(),
-            *old_info.prefix(),
-            Some(&old_info)
-        ))
+            *old_info.new_elder_info.prefix(),
+            Some(&old_info.new_elder_info)
+        ));
+        self.updated_other_ids(new_elder_info)
     }
 
     fn has_unpolled_observations(&self) -> bool {
@@ -325,9 +371,8 @@ impl ElderUnderTest {
 }
 
 fn new_elder_state(
-    full_id: &FullId,
+    (full_id, secret_key_share): (&FullId, &RealBlsSecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
-    secret_key_share: Option<RealBlsSecretKeyShare>,
     network_service: NetworkService,
     timer: Timer,
     rng: &mut MainRng,
@@ -341,7 +386,7 @@ fn new_elder_state(
         Default::default(),
         public_id,
         gen_pfx_info.clone(),
-        secret_key_share,
+        Some(secret_key_share.clone()),
     );
 
     let details = ElderDetails {
@@ -368,9 +413,8 @@ fn new_elder_state(
 
 fn make_state_machine(
     rng: &mut MainRng,
-    full_id: &FullId,
+    full_id: (&FullId, &RealBlsSecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
-    secret_key_share: Option<RealBlsSecretKeyShare>,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {
     let network = Network::new(NetworkParams {
@@ -383,15 +427,7 @@ fn make_state_machine(
 
     StateMachine::new(
         move |network_service, timer, outbox2| {
-            new_elder_state(
-                full_id,
-                gen_pfx_info,
-                secret_key_share,
-                network_service,
-                timer,
-                rng,
-                outbox2,
-            )
+            new_elder_state(full_id, gen_pfx_info, network_service, timer, rng, outbox2)
         },
         config,
         outbox,
@@ -420,8 +456,9 @@ fn construct() {
 #[test]
 fn when_accumulate_online_then_node_is_added_to_our_members() {
     let mut elder_test = ElderUnderTest::new();
+    let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg_with(*elder_test.candidate.public_id());
+    elder_test.accumulate_start_dkg(&new_info);
 
     assert!(!elder_test.has_unpolled_observations());
     assert!(elder_test.is_candidate_member());
@@ -432,11 +469,11 @@ fn when_accumulate_online_then_node_is_added_to_our_members() {
 #[test]
 fn when_accumulate_online_and_accumulate_section_info_then_node_is_added_to_our_elders_info() {
     let mut elder_test = ElderUnderTest::new();
+    let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg_with(*elder_test.candidate.public_id());
+    elder_test.accumulate_start_dkg(&new_info);
 
-    let new_elders_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_section_info_if_vote(new_elders_info);
+    elder_test.accumulate_section_info_if_vote(&new_info);
     elder_test.accumulate_voted_unconsensused_events();
 
     assert!(!elder_test.has_unpolled_observations());
@@ -448,13 +485,16 @@ fn when_accumulate_online_and_accumulate_section_info_then_node_is_added_to_our_
 #[test]
 fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     let mut elder_test = ElderUnderTest::new();
+    let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg_with(*elder_test.candidate.public_id());
-    elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
+    elder_test.accumulate_start_dkg(&new_info);
+    elder_test.accumulate_section_info_if_vote(&new_info);
     elder_test.accumulate_voted_unconsensused_events();
 
+    elder_test.other_ids = new_info.new_other_ids;
+    let new_info = elder_test.new_elders_info_without_candidate();
     elder_test.accumulate_offline(*elder_test.candidate.public_id());
-    elder_test.accumulate_start_dkg(elder_test.get_participants());
+    elder_test.accumulate_start_dkg(&new_info);
 
     assert!(!elder_test.has_unpolled_observations());
     assert!(!elder_test.is_candidate_member());
@@ -465,14 +505,17 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 #[test]
 fn when_accumulate_offline_and_accumulate_section_info_then_node_is_removed_from_our_elders_info() {
     let mut elder_test = ElderUnderTest::new();
+    let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg_with(*elder_test.candidate.public_id());
-    elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
+    elder_test.accumulate_start_dkg(&new_info);
+    elder_test.accumulate_section_info_if_vote(&new_info);
     elder_test.accumulate_voted_unconsensused_events();
 
+    elder_test.other_ids = new_info.new_other_ids;
+    let new_info = elder_test.new_elders_info_without_candidate();
     elder_test.accumulate_offline(*elder_test.candidate.public_id());
-    elder_test.accumulate_start_dkg(elder_test.get_participants());
-    elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_without_candidate());
+    elder_test.accumulate_start_dkg(&new_info);
+    elder_test.accumulate_section_info_if_vote(&new_info);
     elder_test.accumulate_voted_unconsensused_events();
 
     assert!(!elder_test.has_unpolled_observations());
@@ -493,8 +536,9 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
     assert!(!elder_test.is_connected(node.public_id()));
 
     // Add new section member to reach elder_size.
+    let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_section_info_if_vote(elder_test.new_elders_info_with_candidate());
+    elder_test.accumulate_section_info_if_vote(&new_info);
 
     // Re-bootstrap now succeeds.
     elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
