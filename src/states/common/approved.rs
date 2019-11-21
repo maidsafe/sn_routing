@@ -304,13 +304,13 @@ pub trait Approved: Base {
                 AccumulatingEvent::SectionInfo(_, _) => {
                     // Use chain our_info for the already processed ElderInfo.
                     // During split the AccumulatingEvent is only one side and so is misleading.
-                    match self.handle_section_info_event(our_pfx, event.neighbour_change, outbox)? {
+                    match self.handle_section_info_event(our_pfx, event.elders_change, outbox)? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
                 }
                 AccumulatingEvent::NeighbourInfo(elders_info) => {
-                    self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
+                    self.handle_neighbour_info_event(elders_info, event.elders_change)?;
                 }
                 AccumulatingEvent::TheirKeyInfo(key_info) => {
                     self.handle_their_key_info_event(key_info)?
