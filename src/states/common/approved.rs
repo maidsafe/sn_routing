@@ -59,12 +59,6 @@ pub trait Approved: Base {
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError>;
 
-    /// Handles an accumulated `OurMerge` event.
-    fn handle_our_merge_event(&mut self) -> Result<(), RoutingError>;
-
-    /// Handles an accumulated `NeighbourMerge` event.
-    fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError>;
-
     /// Handles an accumulated `SectionInfo` event.
     fn handle_section_info_event(
         &mut self,
@@ -73,6 +67,13 @@ pub trait Approved: Base {
         neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
+
+    /// Handles an accumulated `NeighbourInfo` event.
+    fn handle_neighbour_info_event(
+        &mut self,
+        elders_info: EldersInfo,
+        neighbour_change: EldersChange,
+    ) -> Result<(), RoutingError>;
 
     /// Handle an accumulated `TheirKeyInfo` event
     fn handle_their_key_info_event(&mut self, key_info: SectionKeyInfo)
@@ -301,10 +302,7 @@ pub trait Approved: Base {
                 AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id, outbox)?;
                 }
-                AccumulatingEvent::OurMerge => self.handle_our_merge_event()?,
-                AccumulatingEvent::NeighbourMerge(_) => self.handle_neighbour_merge_event()?,
-                AccumulatingEvent::SectionInfo(elders_info)
-                | AccumulatingEvent::NeighbourInfo(elders_info) => {
+                AccumulatingEvent::SectionInfo(elders_info) => {
                     match self.handle_section_info_event(
                         elders_info,
                         our_pfx,
@@ -314,6 +312,9 @@ pub trait Approved: Base {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
+                }
+                AccumulatingEvent::NeighbourInfo(elders_info) => {
+                    self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
                 }
                 AccumulatingEvent::TheirKeyInfo(key_info) => {
                     self.handle_their_key_info_event(key_info)?

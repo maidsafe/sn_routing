@@ -85,9 +85,6 @@ pub enum Event {
     NodeLost(XorName),
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
-    /// Our own section requires merged with others, resulting in the included `Prefix` for our new
-    /// section.
-    SectionMerged(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// Disconnected or failed to connect - restart required.
@@ -130,9 +127,6 @@ impl Debug for Event {
             Event::NodeLost(ref node_name) => write!(formatter, "Event::NodeLost({:?})", node_name),
             Event::SectionSplit(ref prefix) => {
                 write!(formatter, "Event::SectionSplit({:?})", prefix)
-            }
-            Event::SectionMerged(ref prefix) => {
-                write!(formatter, "Event::SectionMerged({:?})", prefix)
             }
             Event::Connected => write!(formatter, "Event::Connected"),
             Event::RestartRequired => write!(formatter, "Event::RestartRequired"),

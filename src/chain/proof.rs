@@ -139,7 +139,7 @@ mod tests {
     fn confirm_proof() {
         let mut rng = rng::new();
         let full_id = FullId::gen(&mut rng);
-        let payload = AccumulatingEvent::OurMerge;
+        let payload = AccumulatingEvent::User(vec![0]);
         let proof = unwrap!(Proof::new(&full_id, &payload));
         assert!(proof.validate_signature(&payload));
     }
@@ -150,7 +150,7 @@ mod tests {
         let mut rng = rng::new();
         let full_id = FullId::gen(&mut rng);
         let pub_id = *full_id.public_id();
-        let payload = AccumulatingEvent::OurMerge;
+        let payload = AccumulatingEvent::User(vec![0]);
         let other_payload = AccumulatingEvent::Offline(pub_id);
         let proof = unwrap!(Proof::new(&full_id, &payload));
         assert!(!proof.validate_signature(&other_payload));

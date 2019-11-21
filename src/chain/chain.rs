@@ -8,7 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{PrefixChange, SectionKeyInfo, SharedState},
+    shared_state::{SectionKeyInfo, SharedState},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
     GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
     ProofSet, RealBlsEventSigPayload, SectionProofChain,
@@ -241,12 +241,12 @@ impl Chain {
 
     /// Returns the next accumulated event.
     ///
-    /// If the event is a `EldersInfo` or `NeighbourInfo`, it also updates the corresponding
+    /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
     pub fn poll(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
         if self.state.handled_genesis_event
             && !self.churn_in_progress
-            && self.state.change == PrefixChange::None
+            && !self.state.split_in_progress
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
                 trace!(
@@ -278,31 +278,24 @@ impl Chain {
         };
 
         match event {
-            AccumulatingEvent::SectionInfo(ref info)
-            | AccumulatingEvent::NeighbourInfo(ref info) => {
-                let old_neighbours: BTreeSet<_> = self.neighbour_elder_nodes().cloned().collect();
-                self.add_elders_info(info.clone(), proofs)?;
-                let new_neighbours: BTreeSet<_> = self.neighbour_elder_nodes().cloned().collect();
-
-                if let Some((ref cached_info, _)) = self.state.split_cache {
-                    if cached_info == info {
-                        return Ok(None);
-                    }
+            AccumulatingEvent::SectionInfo(ref info) => {
+                let change = NeighbourChangeBuilder::new(self);
+                if self.add_elders_info(info.clone(), proofs)? {
+                    let change = change.build(self);
+                    return Ok(Some(
+                        AccumulatedEvent::new(event).with_neighbour_change(change),
+                    ));
+                } else {
+                    return Ok(None);
                 }
-
-                let neighbour_change = EldersChange {
-                    added: new_neighbours
-                        .difference(&old_neighbours)
-                        .cloned()
-                        .collect(),
-                    removed: old_neighbours
-                        .difference(&new_neighbours)
-                        .cloned()
-                        .collect(),
-                };
+            }
+            AccumulatingEvent::NeighbourInfo(ref info) => {
+                let change = NeighbourChangeBuilder::new(self);
+                let _ = self.add_elders_info(info.clone(), proofs)?;
+                let change = change.build(self);
 
                 return Ok(Some(
-                    AccumulatedEvent::new(event).with_neighbour_change(neighbour_change),
+                    AccumulatedEvent::new(event).with_neighbour_change(change),
                 ));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
@@ -310,22 +303,6 @@ impl Chain {
             }
             AccumulatingEvent::AckMessage(ref ack_payload) => {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
-            }
-            AccumulatingEvent::OurMerge => {
-                // use new_info here as our_info might still be accumulating signatures
-                // and we'd want to perform the merge eventually with our current latest state.
-                let our_hash = *self.state.new_info.hash();
-                let _ = self.state.merging.insert(our_hash);
-                self.state.change = PrefixChange::Merging;
-                panic!(
-                    "Merge not supported: AccumulatingEvent::OurMerge {:?}: {:?}",
-                    self.our_id(),
-                    self.state.new_info
-                );
-            }
-            AccumulatingEvent::NeighbourMerge(digest) => {
-                // TODO: Check that the section is known and not already merged.
-                let _ = self.state.merging.insert(digest);
             }
             AccumulatingEvent::Relocate(_) => {
                 self.churn_in_progress = false;
@@ -551,7 +528,7 @@ impl Chain {
         // TODO: the split decision should be based on the number of all members, not just elders.
         if self.should_split(&elder_nodes)? {
             let (our_info, other_info) = self.split_self(elder_nodes.clone())?;
-            self.state.change = PrefixChange::Splitting;
+            self.state.split_in_progress = true;
             return Ok(vec![our_info, other_info]);
         }
 
@@ -583,9 +560,6 @@ impl Chain {
         )?;
 
         if self.state.new_info.len() < self.elder_size() {
-            // set to merge state to prevent extending chain any further.
-            // We'd still not Vote for OurMerge until we've updated our_infos
-            self.state.change = PrefixChange::Merging;
             panic!(
                 "Merge not supported: remove_member < min_sec_size {:?}: {:?}",
                 self.our_id(),
@@ -596,22 +570,6 @@ impl Chain {
         Ok(self.state.new_info.clone())
     }
 
-    /// Returns the next section info if both we and our sibling have signalled for merging.
-    pub fn try_merge(&mut self) -> Result<Option<EldersInfo>, RoutingError> {
-        self.state.try_merge()
-    }
-
-    /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.
-    pub fn is_self_merge_ready(&self) -> bool {
-        self.state.is_self_merge_ready()
-    }
-
-    /// Returns `true` if we should merge.
-    pub fn should_vote_for_merge(&self) -> bool {
-        self.state
-            .should_vote_for_merge(self.elder_size(), self.neighbour_infos())
-    }
-
     /// Gets the data needed to initialise a new Parsec instance
     pub fn prepare_parsec_reset(
         &mut self,
@@ -619,9 +577,6 @@ impl Chain {
     ) -> Result<ParsecResetData, RoutingError> {
         let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
         let event_cache = mem::replace(&mut self.event_cache, Default::default());
-        let merges = mem::replace(&mut self.state.merging, Default::default())
-            .into_iter()
-            .map(|digest| AccumulatingEvent::NeighbourMerge(digest).into_network_event());
 
         self.state.handled_genesis_event = false;
 
@@ -638,7 +593,6 @@ impl Chain {
                 .cached_events
                 .into_iter()
                 .chain(event_cache)
-                .chain(merges)
                 .collect(),
             completed_events: remaining.completed_events,
         })
@@ -659,7 +613,7 @@ impl Chain {
 
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
-        self.state.change = PrefixChange::None;
+        self.state.split_in_progress = false;
 
         info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
         trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
@@ -682,9 +636,9 @@ impl Chain {
         self.state.our_prefix()
     }
 
-    /// Returns whether our section is in the process of changing (splitting or merging).
-    pub fn prefix_change(&self) -> PrefixChange {
-        self.state.change
+    /// Returns whether our section is in the process of splitting.
+    pub fn split_in_progress(&self) -> bool {
+        self.state.split_in_progress
     }
 
     /// Neighbour infos signed by our section
@@ -950,7 +904,7 @@ impl Chain {
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::Relocate(_) => {
-                self.state.change == PrefixChange::None && self.our_info().is_quorum(proofs)
+                !self.state.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {
                 log_or_panic!(
@@ -962,11 +916,7 @@ impl Chain {
             AccumulatingEvent::SendAckMessage(_) => {
                 // We may not reach consensus if malicious peer, but when we do we know all our
                 // nodes have updated `their_keys`.
-                self.state.change == PrefixChange::None
-                    && self.our_info().is_total_consensus(proofs)
-            }
-            AccumulatingEvent::OurMerge | AccumulatingEvent::NeighbourMerge(_) => {
-                self.our_info().is_quorum(proofs)
+                !self.state.split_in_progress && self.our_info().is_total_consensus(proofs)
             }
         }
     }
@@ -983,14 +933,13 @@ impl Chain {
     /// Returns `true` if we are not in the process of waiting for a pfx change
     /// or if incoming event is a vote for the ongoing pfx change.
     fn can_handle_vote(&self, event: &NetworkEvent) -> bool {
-        // TODO: is the merge state check even needed in the following match?
-        // we only seem to set self.state = Merging after accumulation of OurMerge
-        match (self.state.change, &event.payload) {
-            (PrefixChange::None, _)
-            | (PrefixChange::Merging, AccumulatingEvent::OurMerge)
-            | (PrefixChange::Merging, AccumulatingEvent::NeighbourMerge(_)) => true,
-            (_, AccumulatingEvent::SectionInfo(elders_info))
-            | (_, AccumulatingEvent::NeighbourInfo(elders_info)) => {
+        if !self.state.split_in_progress {
+            return true;
+        }
+
+        match &event.payload {
+            AccumulatingEvent::SectionInfo(elders_info)
+            | AccumulatingEvent::NeighbourInfo(elders_info) => {
                 if elders_info.prefix().is_compatible(self.our_prefix())
                     && elders_info.version() > self.state.new_info.version()
                 {
@@ -1002,7 +951,7 @@ impl Chain {
                 }
                 true
             }
-            (_, _) => false, // Don't want to handle any events other than `EldersInfo`.
+            _ => false,
         }
     }
 
@@ -1012,10 +961,10 @@ impl Chain {
         net_event: &NetworkEvent,
         sender_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        if self.state.change == PrefixChange::None {
+        if !self.state.split_in_progress {
             log_or_panic!(
                 LogLevel::Error,
-                "Shouldn't be caching events while not splitting or merging."
+                "Shouldn't be caching events while not splitting."
             );
         }
         if self.our_id == *sender_id {
@@ -1025,17 +974,18 @@ impl Chain {
     }
 
     /// Handles our own section info, or the section info of our sibling directly after a split.
+    /// Returns whether the event should be handled by the caller.
     fn add_elders_info(
         &mut self,
         info: EldersInfo,
         proofs: AccumulatingProof,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<bool, RoutingError> {
         // Split handling alone. wouldn't cater to merge
         if info.prefix().is_extension_of(self.our_prefix()) {
             match self.state.split_cache.take() {
                 None => {
                     self.state.split_cache = Some((info, proofs));
-                    return Ok(());
+                    Ok(false)
                 }
                 Some((cache_info, cache_proofs)) => {
                     let cache_pfx = *cache_info.prefix();
@@ -1049,12 +999,13 @@ impl Chain {
                         self.do_add_elders_info(info, proofs)?;
                         self.do_add_elders_info(cache_info, cache_proofs)?;
                     }
-                    return Ok(());
+                    Ok(true)
                 }
             }
+        } else {
+            self.do_add_elders_info(info, proofs)?;
+            Ok(true)
         }
-
-        self.do_add_elders_info(info, proofs)
     }
 
     fn do_add_elders_info(
@@ -1143,7 +1094,7 @@ impl Chain {
 
     /// Returns whether we should split into two sections.
     fn should_split(&self, members: &BTreeMap<XorName, P2pNode>) -> Result<bool, RoutingError> {
-        if self.state.change != PrefixChange::None || self.should_vote_for_merge() {
+        if self.state.split_in_progress {
             return Ok(false);
         }
 
@@ -1474,7 +1425,7 @@ impl Chain {
     }
 
     fn assert_no_prefix_change(&self, label: &str) {
-        if self.state.change != PrefixChange::None {
+        if self.state.split_in_progress {
             log_or_panic!(
                 LogLevel::Warn,
                 "{} - attempt to {} during prefix change.",
@@ -1506,12 +1457,15 @@ pub struct ParsecResetData {
 impl Debug for Chain {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         writeln!(formatter, "Chain {{")?;
-        writeln!(formatter, "\tchange: {:?},", self.state.change)?;
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
         writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
         writeln!(formatter, "\tnew_info: {}", self.state.new_info)?;
-        writeln!(formatter, "\tmerging: {:?}", self.state.merging)?;
+        writeln!(
+            formatter,
+            "\tsplit_in_progress: {}",
+            self.state.split_in_progress
+        )?;
 
         writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
         for info in self.state.our_infos() {
@@ -1614,6 +1568,26 @@ fn compute_relocation_destination(
         .next_relocation_dst
         .take()
         .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
+}
+
+struct NeighbourChangeBuilder {
+    old: BTreeSet<P2pNode>,
+}
+
+impl NeighbourChangeBuilder {
+    fn new(chain: &Chain) -> Self {
+        Self {
+            old: chain.neighbour_elder_nodes().cloned().collect(),
+        }
+    }
+
+    fn build(self, chain: &Chain) -> EldersChange {
+        let new: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+        EldersChange {
+            added: new.difference(&self.old).cloned().collect(),
+            removed: self.old.difference(&new).cloned().collect(),
+        }
+    }
 }
 
 #[cfg(test)]

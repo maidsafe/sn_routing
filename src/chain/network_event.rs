@@ -8,7 +8,6 @@
 
 use super::{EldersInfo, Proof, SectionKeyInfo};
 use crate::{
-    crypto::Digest256,
     id::{FullId, P2pNode, PublicId},
     parsec,
     //parsec::DkgResult,
@@ -112,8 +111,6 @@ pub enum AccumulatingEvent {
     /// Voted for node we no longer consider online.
     Offline(PublicId),
 
-    OurMerge,
-    NeighbourMerge(Digest256),
     SectionInfo(EldersInfo),
 
     // Voted for received message with info to update neighbour_info.
@@ -172,10 +169,6 @@ impl Debug for AccumulatingEvent {
             }
             AccumulatingEvent::Online(payload) => write!(formatter, "Online({:?})", payload),
             AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
-            AccumulatingEvent::OurMerge => write!(formatter, "OurMerge"),
-            AccumulatingEvent::NeighbourMerge(digest) => {
-                write!(formatter, "NeighbourMerge({:.14?})", HexFmt(digest))
-            }
             AccumulatingEvent::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
             AccumulatingEvent::NeighbourInfo(info) => {
                 write!(formatter, "NeighbourInfo({:?})", info)

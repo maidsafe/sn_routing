@@ -11,18 +11,21 @@ use super::{
     EldersInfo, MemberInfo, MemberPersona, MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
-    crypto::Digest256, error::RoutingError, id::PublicId, relocation::RelocateDetails,
-    utils::LogIdent, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
+    error::RoutingError, id::PublicId, relocation::RelocateDetails, utils::LogIdent, BlsPublicKey,
+    BlsPublicKeySet, BlsSignature, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     fmt::{self, Debug, Formatter},
     hash, iter, mem,
 };
 use unwrap::unwrap;
+
+#[cfg(feature = "mock_base")]
+use crate::crypto::Digest256;
 
 // Number of recent keys we keep: i.e how many other section churns we can handle before a
 // message send with a previous version of a section is no longer trusted.
@@ -47,12 +50,10 @@ pub struct SharedState {
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
     pub neighbour_infos: BTreeMap<Prefix<XorName>, EldersInfo>,
-    /// Any change (split or merge) to the section that is currently in progress.
-    pub change: PrefixChange,
+    /// Is split of the section currently in progress.
+    pub split_in_progress: bool,
     // The accumulated `EldersInfo`(self or sibling) and proofs during a split pfx change.
     pub split_cache: Option<(EldersInfo, AccumulatingProof)>,
-    /// The set of section info hashes that are currently merging.
-    pub merging: BTreeSet<Digest256>,
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
@@ -93,9 +94,8 @@ impl SharedState {
             neighbour_infos: Default::default(),
             our_members,
             post_split_sibling_members: Default::default(),
-            change: PrefixChange::None,
+            split_in_progress: false,
             split_cache: None,
-            merging: Default::default(),
             our_history,
             their_keys,
             their_knowledge: Default::default(),
@@ -286,57 +286,6 @@ impl SharedState {
         self.post_split_sibling_members = post_split_sibling_members;
     }
 
-    /// Returns `true` if we have accumulated self `AccumulatingEvent::OurMerge`.
-    pub(super) fn is_self_merge_ready(&self) -> bool {
-        self.merging.contains(self.our_info().hash())
-    }
-
-    /// Returns the next section info if both we and our sibling have signalled for merging.
-    pub(super) fn try_merge(&mut self) -> Result<Option<EldersInfo>, RoutingError> {
-        let their_info = match self.neighbour_infos.get(&self.our_prefix().sibling()) {
-            Some(info) => info,
-            None => return Ok(None),
-        };
-
-        let our_hash = *self.our_info().hash();
-        let their_hash = their_info.hash();
-
-        if self.merging.contains(their_hash) && self.merging.contains(&our_hash) {
-            let _ = self.merging.remove(their_hash);
-            let _ = self.merging.remove(&our_hash);
-            self.new_info = self.our_info().merge(their_info)?;
-            Ok(Some(self.new_info.clone()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Returns `true` if we should merge.
-    pub(super) fn should_vote_for_merge<'a, I>(
-        &self,
-        min_section_size: usize,
-        neighbour_infos: I,
-    ) -> bool
-    where
-        I: IntoIterator<Item = &'a EldersInfo>,
-    {
-        let pfx = self.our_prefix();
-        if pfx.is_empty() || self.change == PrefixChange::Splitting {
-            return false;
-        }
-
-        if self.our_info().len() < min_section_size {
-            return true;
-        }
-
-        let needs_merge = |si: &EldersInfo| {
-            pfx.is_compatible(&si.prefix().sibling())
-                && (si.len() < min_section_size || self.merging.contains(si.hash()))
-        };
-
-        neighbour_infos.into_iter().any(needs_merge)
-    }
-
     pub fn push_our_new_info(
         &mut self,
         elders_info: EldersInfo,
@@ -462,14 +411,6 @@ fn update_with_genesis_related_info_check_same<T>(
             to_use_info
         );
     }
-}
-
-/// The prefix-affecting change (split or merge) to our own section that is currently in progress.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum PrefixChange {
-    None,
-    Splitting,
-    Merging,
 }
 
 /// Vec-like container that is guaranteed to contain at least one element.

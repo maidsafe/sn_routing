@@ -78,17 +78,6 @@ impl EldersInfo {
         Self::new_with_fields(members, version, prefix, prev_hash)
     }
 
-    /// Creates a new `EldersInfo` by merging this and the other one.
-    pub fn merge(&self, other: &Self) -> Result<Self, RoutingError> {
-        let members = self
-            .members
-            .iter()
-            .chain(&other.members)
-            .map(|(name, p2p_node)| (*name, p2p_node.clone()))
-            .collect();
-        Self::new(members, self.prefix.popped(), vec![self, other])
-    }
-
     pub fn member_map(&self) -> &BTreeMap<XorName, P2pNode> {
         &self.members
     }
@@ -130,6 +119,7 @@ impl EldersInfo {
         &self.prev_hash
     }
 
+    #[cfg(feature = "mock_base")]
     pub fn hash(&self) -> &Digest256 {
         &self.hash
     }

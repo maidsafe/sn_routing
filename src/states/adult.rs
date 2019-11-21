@@ -561,12 +561,18 @@ impl Approved for Adult {
 
             // Need to pop the relocate queue even though we are not going to vote. Otherwise it
             // could get out of sync with the rest of the section when we transition to elder.
-            if elders_info.prefix().matches(self.name()) {
-                let _ = self.chain.poll_relocation();
-            }
+            let _ = self.chain.poll_relocation();
 
             Ok(Transition::Stay)
         }
+    }
+
+    fn handle_neighbour_info_event(
+        &mut self,
+        _elders_info: EldersInfo,
+        _neighbour_change: EldersChange,
+    ) -> Result<(), RoutingError> {
+        Ok(())
     }
 
     fn handle_relocate_event(
@@ -599,16 +605,6 @@ impl Approved for Adult {
         &mut self,
         _ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError> {
-        Ok(())
-    }
-
-    fn handle_our_merge_event(&mut self) -> Result<(), RoutingError> {
-        debug!("{} - Unhandled OurMerge event", self);
-        Ok(())
-    }
-
-    fn handle_neighbour_merge_event(&mut self) -> Result<(), RoutingError> {
-        debug!("{} - Unhandled NeighbourMerge event", self);
         Ok(())
     }
 
