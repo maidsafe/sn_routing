@@ -128,6 +128,19 @@ where
         });
     }
 
+    pub fn get_dkg_result_as(
+        &mut self,
+        participants: BTreeSet<S::PublicId>,
+        vote_id: &S,
+    ) -> DkgResult {
+        state::with(
+            self.section_hash,
+            |state: &mut SectionState<T, S::PublicId>| {
+                state.get_or_generate_keys(&mut self.rng, vote_id.public_id(), participants.clone())
+            },
+        )
+    }
+
     pub fn gossip_recipients(&self) -> impl Iterator<Item = &S::PublicId> {
         let iter = if self.peer_list.contains(self.our_id.public_id()) {
             Some(

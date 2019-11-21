@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, IntoAccumulatingEvent, ProofSet};
+use super::ProofSet;
 use crate::{
     crypto::{self, Digest256},
     error::RoutingError,
@@ -171,12 +171,6 @@ impl EldersInfo {
             prev_hash,
             hash,
         })
-    }
-}
-
-impl IntoAccumulatingEvent for EldersInfo {
-    fn into_accumulating_event(self) -> AccumulatingEvent {
-        AccumulatingEvent::SectionInfo(self)
     }
 }
 

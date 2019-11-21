@@ -176,6 +176,7 @@ pub use crate::{
         section_proof_chain_from_elders_info, NetworkParams, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    parsec::generate_bls_threshold_secret_key,
 };
 pub use crate::{
     error::{InterfaceError, RoutingError},
@@ -196,9 +197,9 @@ pub(crate) use chain::Chain;
 use quic_p2p;
 
 pub use threshold_crypto::{
-    PublicKeySet as RealBlsPublicKeySet, PublicKeyShare as RealBlsPublicKeyShare,
-    SecretKeySet as RealBlsSecretKeySet, SecretKeyShare as RealBlsSecretKeyShare,
-    SignatureShare as RealBlsSignatureShare,
+    PublicKey as RealBlsPublicKey, PublicKeySet as RealBlsPublicKeySet,
+    PublicKeyShare as RealBlsPublicKeyShare, SecretKeySet as RealBlsSecretKeySet,
+    SecretKeyShare as RealBlsSecretKeyShare, SignatureShare as RealBlsSignatureShare,
 };
 
 // Format that can be sent between peers

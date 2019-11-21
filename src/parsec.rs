@@ -22,6 +22,8 @@ use log::LogLevel;
 use maidsafe_utilities::serialisation;
 #[cfg(not(feature = "mock_parsec"))]
 use parsec as inner;
+#[cfg(feature = "mock_parsec")]
+use std::collections::BTreeSet;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt, mem,
@@ -197,6 +199,19 @@ impl ParsecMap {
         }
     }
 
+    // Enable test to simulate other members signing and getting the right pk_set
+    #[cfg(feature = "mock_parsec")]
+    pub fn get_dkg_result_as(
+        &mut self,
+        participants: BTreeSet<id::PublicId>,
+        vote_id: &FullId,
+    ) -> Option<DkgResult> {
+        if let Some(ref mut parsec) = self.map.values_mut().last() {
+            return Some(parsec.get_dkg_result_as(participants, vote_id));
+        }
+        None
+    }
+
     pub fn last_version(&self) -> u64 {
         if let Some(version) = self.map.keys().last() {
             *version
@@ -296,12 +311,25 @@ impl ParsecMap {
 
 // Generate a DkgResult that can be used for the first node
 pub fn generate_first_dkg_result(rng: &mut MainRng) -> DkgResult {
-    let threshold = 0;
+    let participants = 1;
     let index = 0;
 
-    let secret_key_set = RealBlsSecretKeySet::random(threshold, &mut RngCompat(rng));
+    let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
     let secret_key_share = secret_key_set.secret_key_share(index);
     DkgResult::new(secret_key_set.public_keys(), Some(secret_key_share))
+}
+
+/// Generate a BLS SecretKeySet for the given number of participants.
+/// Used for generating first node, or for test.
+pub fn generate_bls_threshold_secret_key(
+    rng: &mut MainRng,
+    participants: usize,
+) -> RealBlsSecretKeySet {
+    // The BLS scheme will require more than `participants / 3`
+    // shares in order to construct a full key or signature.
+    let threshold = participants.saturating_sub(1) / 3;
+
+    RealBlsSecretKeySet::random(threshold, &mut RngCompat(rng))
 }
 
 /// Create Parsec instance.

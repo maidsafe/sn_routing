@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, Proof, SectionKeyInfo};
+use super::{EldersInfo, Proof, RealSectionKeyInfo, SectionKeyInfo};
 use crate::{
     id::{FullId, P2pNode, PublicId},
     parsec,
@@ -23,7 +23,6 @@ use crate::{
     XorName,
 };
 use hex_fmt::HexFmt;
-use maidsafe_utilities::serialisation;
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
@@ -78,11 +77,11 @@ pub struct RealBlsEventSigPayload {
 }
 
 impl RealBlsEventSigPayload {
-    pub fn new<T: Serialize>(
+    pub fn new_for_section_key_info(
         key_share: &RealBlsSecretKeyShare,
-        payload: &T,
+        section_key_info: &RealSectionKeyInfo,
     ) -> Result<Self, RoutingError> {
-        let sig_share = key_share.sign(&serialisation::serialise(&payload)?[..]);
+        let sig_share = key_share.sign(&section_key_info.serialise_for_signature()?);
         let pub_key_share = key_share.public_key_share();
 
         Ok(Self {
@@ -111,7 +110,7 @@ pub enum AccumulatingEvent {
     /// Voted for node we no longer consider online.
     Offline(PublicId),
 
-    SectionInfo(EldersInfo),
+    SectionInfo(EldersInfo, RealSectionKeyInfo),
 
     // Voted for received message with info to update neighbour_info.
     NeighbourInfo(EldersInfo),
@@ -169,7 +168,7 @@ impl Debug for AccumulatingEvent {
             }
             AccumulatingEvent::Online(payload) => write!(formatter, "Online({:?})", payload),
             AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
-            AccumulatingEvent::SectionInfo(info) => write!(formatter, "SectionInfo({:?})", info),
+            AccumulatingEvent::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
             AccumulatingEvent::NeighbourInfo(info) => {
                 write!(formatter, "NeighbourInfo({:?})", info)
             }
@@ -218,8 +217,14 @@ impl parsec::NetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        if self.signature.is_some() {
-            write!(formatter, "{:?}(signature)", self.payload)
+        if self.signature.is_some() || self.real_signature.is_some() {
+            write!(
+                formatter,
+                "{:?}(signature {} {})",
+                self.payload,
+                self.signature.is_some(),
+                self.real_signature.is_some()
+            )
         } else {
             self.payload.fmt(formatter)
         }
