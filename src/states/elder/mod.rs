@@ -17,8 +17,8 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, DevParams, EldersChange,
         EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
-        NetworkParams, OnlinePayload, ParsecResetData, RealBlsEventSigPayload, RealSectionKeyInfo,
-        SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
+        NetworkParams, OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload,
+        MIN_AGE, MIN_AGE_COUNTER,
     },
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
@@ -41,7 +41,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_name::XorName,
-    BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService, RealBlsPublicKey,
+    BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -320,8 +320,8 @@ impl Elder {
         Transition::Stay
     }
 
-    fn public_key_set(&self) -> BlsPublicKeySet {
-        self.chain.public_key_set()
+    fn our_section_bls_keys(&self) -> &BlsPublicKeySet {
+        self.chain.our_section_bls_keys()
     }
 
     fn handle_parsec_poke(&mut self, msg_version: u64, p2p_node: P2pNode) {
@@ -907,18 +907,16 @@ impl Elder {
     fn vote_for_section_info(
         &mut self,
         elders_info: EldersInfo,
-        section_key: RealBlsPublicKey,
+        section_key: BlsPublicKey,
     ) -> Result<(), RoutingError> {
-        let signature_payload = EventSigPayload::new(&self.full_id, &elders_info)?;
-        let key_info = RealSectionKeyInfo::from_elders_info(&elders_info, section_key);
-        let real_signature_payload = RealBlsEventSigPayload::new_for_section_key_info(
+        let key_info = SectionKeyInfo::from_elders_info(&elders_info, section_key);
+        let signature_payload = EventSigPayload::new_for_section_key_info(
             self.chain.our_section_bls_secret_key_share()?,
             &key_info,
         )?;
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
-        let event = acc_event
-            .into_network_event_with(Some(signature_payload), Some(real_signature_payload));
+        let event = acc_event.into_network_event_with(Some(signature_payload));
         self.vote_for_network_event(event);
         Ok(())
     }
@@ -927,11 +925,12 @@ impl Elder {
         &mut self,
         payload: T,
     ) -> Result<(), RoutingError> {
-        let signature_payload = EventSigPayload::new(&self.full_id, &payload)?;
+        let signature_payload =
+            EventSigPayload::new(self.chain.our_section_bls_secret_key_share()?, &payload)?;
 
         let event = payload
             .into_accumulating_event()
-            .into_network_event_with(Some(signature_payload), None);
+            .into_network_event_with(Some(signature_payload));
         self.vote_for_network_event(event);
         Ok(())
     }
@@ -1384,8 +1383,9 @@ impl Base for Elder {
         }
 
         let proof = self.chain.prove(&routing_msg.dst);
-        let pk_set = self.public_key_set();
-        let signed_msg = SignedRoutingMessage::new(routing_msg, &self.full_id, pk_set, proof)?;
+        let pk_set = self.our_section_bls_keys().clone();
+        let secret_key = self.chain.our_section_bls_secret_key_share()?;
+        let signed_msg = SignedRoutingMessage::new(routing_msg, secret_key, pk_set, proof)?;
 
         for target in Iterator::flatten(
             self.get_signature_targets(&signed_msg.routing_message().src)

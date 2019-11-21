@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    crypto::signing::Signature,
-    error::Result,
-    id::{FullId, PublicId},
-};
+use crate::{crypto::signing::Signature, id::PublicId};
+#[cfg(test)]
+use crate::{error::Result, id::FullId};
 use itertools::Itertools;
+#[cfg(any(test, feature = "mock_base"))]
 use maidsafe_utilities::serialisation;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -36,6 +35,7 @@ impl Proof {
     }
 
     /// Create a new proof for `payload`
+    #[cfg(test)]
     #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Serialize>(full_id: &FullId, payload: &S) -> Result<Self> {
         let sig = full_id.sign(&serialisation::serialise(&payload)?[..]);
@@ -69,12 +69,6 @@ pub struct ProofSet {
 }
 
 impl ProofSet {
-    /// Creates a new empty set.
-    #[cfg(any(test, feature = "mock_base"))]
-    pub fn new() -> ProofSet {
-        ProofSet::default()
-    }
-
     /// Inserts a proof into the set. Returns `true` if it wasn't already there.
     pub fn add_proof(&mut self, Proof { pub_id, sig }: Proof) -> bool {
         self.sigs.insert(pub_id, sig).is_none()

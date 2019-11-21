@@ -8,7 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{SectionKeyInfo, SharedState},
+    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
     GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
     ProofSet, SectionProofChain,
@@ -20,8 +20,7 @@ use crate::{
     relocation::{self, RelocateDetails},
     routing_table::{Authority, Error},
     utils::LogIdent,
-    BlsPublicKeySet, ConnectionInfo, Prefix, RealBlsPublicKeySet, RealBlsSecretKeyShare, XorName,
-    Xorable,
+    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -87,11 +86,11 @@ impl Chain {
         self.network_cfg
     }
 
-    pub fn our_section_bls_keys(&self) -> &RealBlsPublicKeySet {
+    pub fn our_section_bls_keys(&self) -> &BlsPublicKeySet {
         &self.our_section_bls_keys.public_key_set
     }
 
-    pub fn our_section_bls_secret_key_share(&self) -> Result<&RealBlsSecretKeyShare, RoutingError> {
+    pub fn our_section_bls_secret_key_share(&self) -> Result<&BlsSecretKeyShare, RoutingError> {
         self.our_section_bls_keys
             .secret_key_share
             .as_ref()
@@ -119,7 +118,7 @@ impl Chain {
         dev_params: DevParams,
         our_id: PublicId,
         gen_info: GenesisPfxInfo,
-        secret_key_share: Option<RealBlsSecretKeyShare>,
+        secret_key_share: Option<BlsSecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.is_member(&our_id);
@@ -128,10 +127,14 @@ impl Chain {
             dev_params,
             our_id,
             our_section_bls_keys: DkgResult {
-                public_key_set: gen_info.first_bls_keys,
+                public_key_set: gen_info.first_bls_keys.clone(),
                 secret_key_share,
             },
-            state: SharedState::new(gen_info.first_info, gen_info.first_ages),
+            state: SharedState::new(
+                gen_info.first_info,
+                gen_info.first_bls_keys,
+                gen_info.first_ages,
+            ),
             is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
@@ -258,9 +261,9 @@ impl Chain {
         };
 
         match event {
-            AccumulatingEvent::SectionInfo(ref info, _) => {
+            AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = NeighbourChangeBuilder::new(self);
-                if self.add_elders_info(info.clone(), proofs)? {
+                if self.add_elders_info(info.clone(), key_info.clone(), proofs)? {
                     let change = change.build(self);
                     return Ok(Some(
                         AccumulatedEvent::new(event).with_neighbour_change(change),
@@ -271,7 +274,7 @@ impl Chain {
             }
             AccumulatingEvent::NeighbourInfo(ref info) => {
                 let change = NeighbourChangeBuilder::new(self);
-                let _ = self.add_elders_info(info.clone(), proofs)?;
+                self.add_neighbour_elders_info(info.clone())?;
                 let change = change.build(self);
 
                 return Ok(Some(
@@ -286,7 +289,7 @@ impl Chain {
             }
             AccumulatingEvent::Relocate(_) => {
                 self.churn_in_progress = false;
-                let signature = proofs.combine_signatures(&self.public_key_set());
+                let signature = self.combine_signatures(proofs);
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
             AccumulatingEvent::Online(_)
@@ -958,33 +961,38 @@ impl Chain {
     /// Returns whether the event should be handled by the caller.
     fn add_elders_info(
         &mut self,
-        info: EldersInfo,
+        elders_info: EldersInfo,
+        key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<bool, RoutingError> {
         // Split handling alone. wouldn't cater to merge
-        if info.prefix().is_extension_of(self.our_prefix()) {
+        if elders_info.prefix().is_extension_of(self.our_prefix()) {
             match self.state.split_cache.take() {
                 None => {
-                    self.state.split_cache = Some((info, proofs));
+                    self.state.split_cache = Some(SplitCache {
+                        elders_info,
+                        key_info,
+                        proofs,
+                    });
                     Ok(false)
                 }
-                Some((cache_info, cache_proofs)) => {
-                    let cache_pfx = *cache_info.prefix();
+                Some(cache) => {
+                    let cache_pfx = *cache.elders_info.prefix();
 
                     // Add our_info first so when we add sibling info, its a valid neighbour prefix
                     // which does not get immediately purged.
                     if cache_pfx.matches(self.our_id.name()) {
-                        self.do_add_elders_info(cache_info, cache_proofs)?;
-                        self.do_add_elders_info(info, proofs)?;
+                        self.do_add_elders_info(cache.elders_info, cache.key_info, cache.proofs)?;
+                        self.add_neighbour_elders_info(elders_info)?;
                     } else {
-                        self.do_add_elders_info(info, proofs)?;
-                        self.do_add_elders_info(cache_info, cache_proofs)?;
+                        self.do_add_elders_info(elders_info, key_info, proofs)?;
+                        self.add_neighbour_elders_info(cache.elders_info)?;
                     }
                     Ok(true)
                 }
             }
         } else {
-            self.do_add_elders_info(info, proofs)?;
+            self.do_add_elders_info(elders_info, key_info, proofs)?;
             Ok(true)
         }
     }
@@ -992,63 +1000,77 @@ impl Chain {
     fn do_add_elders_info(
         &mut self,
         elders_info: EldersInfo,
+        key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
-        let pfx = *elders_info.prefix();
-        if pfx.matches(self.our_id.name()) {
-            let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
-            let pk_set = self.public_key_set();
+        let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
+        let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
 
-            self.state.push_our_new_info(elders_info, proofs, &pk_set)?;
-            self.our_section_bls_keys = self
-                .new_section_bls_keys
-                .take()
-                .ok_or(RoutingError::InvalidElderDkgResult)?;
+        self.state.push_our_new_info(elders_info, proof_block);
+        self.our_section_bls_keys = self
+            .new_section_bls_keys
+            .take()
+            .ok_or(RoutingError::InvalidElderDkgResult)?;
 
-            if is_new_elder {
-                self.is_elder = true;
-            }
-            self.churn_in_progress = false;
-            self.check_and_clean_neighbour_infos(None);
-        } else {
-            let ppfx = elders_info.prefix().popped();
-            let spfx = elders_info.prefix().sibling();
-            let new_elders_info_version = *elders_info.version();
-
-            if let Some(old_elders_info) = self.state.neighbour_infos.insert(pfx, elders_info) {
-                if *old_elders_info.version() > new_elders_info_version {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "{} Ejected newer neighbour info {:?}",
-                        self,
-                        old_elders_info
-                    );
-                }
-            }
-
-            // If we just split an existing neighbour and we also need its sibling,
-            // add the sibling prefix with the parent prefix sigs.
-            if let Some(sinfo) = self
-                .state
-                .neighbour_infos
-                .get(&ppfx)
-                .filter(|pinfo| {
-                    *pinfo.version() < new_elders_info_version
-                        && self.our_prefix().is_neighbour(&spfx)
-                        && !self.state.neighbour_infos.contains_key(&spfx)
-                })
-                .cloned()
-            {
-                let _ = self.state.neighbour_infos.insert(spfx, sinfo);
-            }
-
-            self.check_and_clean_neighbour_infos(Some(&pfx));
+        if is_new_elder {
+            self.is_elder = true;
         }
+        self.churn_in_progress = false;
+        self.check_and_clean_neighbour_infos(None);
         Ok(())
     }
 
-    pub(crate) fn public_key_set(&self) -> BlsPublicKeySet {
-        BlsPublicKeySet::from_elders_info(self.our_info().clone())
+    fn add_neighbour_elders_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
+        let pfx = *elders_info.prefix();
+        let ppfx = elders_info.prefix().popped();
+        let spfx = elders_info.prefix().sibling();
+        let new_elders_info_version = *elders_info.version();
+
+        if let Some(old_elders_info) = self.state.neighbour_infos.insert(pfx, elders_info) {
+            if *old_elders_info.version() > new_elders_info_version {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} Ejected newer neighbour info {:?}",
+                    self,
+                    old_elders_info
+                );
+            }
+        }
+
+        // If we just split an existing neighbour and we also need its sibling,
+        // add the sibling prefix with the parent prefix sigs.
+        if let Some(sinfo) = self
+            .state
+            .neighbour_infos
+            .get(&ppfx)
+            .filter(|pinfo| {
+                *pinfo.version() < new_elders_info_version
+                    && self.our_prefix().is_neighbour(&spfx)
+                    && !self.state.neighbour_infos.contains_key(&spfx)
+            })
+            .cloned()
+        {
+            let _ = self.state.neighbour_infos.insert(spfx, sinfo);
+        }
+
+        self.check_and_clean_neighbour_infos(Some(&pfx));
+        Ok(())
+    }
+
+    pub fn combine_signatures_for_section_proof_block(
+        &self,
+        key_info: SectionKeyInfo,
+        proofs: AccumulatingProof,
+    ) -> Result<SectionProofBlock, RoutingError> {
+        Ok(SectionProofBlock::new(
+            key_info,
+            self.combine_signatures(proofs)
+                .ok_or(RoutingError::InvalidNewSectionInfo)?,
+        ))
+    }
+
+    pub fn combine_signatures(&self, proofs: AccumulatingProof) -> Option<BlsSignature> {
+        proofs.combine_signatures(self.our_info(), self.our_section_bls_keys())
     }
 
     /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
@@ -1573,10 +1595,8 @@ impl NeighbourChangeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        AccumulatingProof, EldersInfo, GenesisPfxInfo, Proof, ProofSet, MIN_AGE_COUNTER,
-    };
-    use super::Chain;
+    use super::super::{EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER};
+    use super::*;
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_first_dkg_result,
@@ -1585,9 +1605,8 @@ mod tests {
         ConnectionInfo, {Prefix, XorName},
     };
     use rand::Rng;
-    use serde::Serialize;
     use std::{
-        collections::{BTreeMap, BTreeSet, HashMap},
+        collections::{BTreeMap, HashMap},
         str::FromStr,
     };
     use unwrap::unwrap;
@@ -1644,23 +1663,15 @@ mod tests {
         }
     }
 
-    fn gen_proofs<'a, S, I>(
-        full_ids: &HashMap<PublicId, FullId>,
-        members: I,
-        payload: &S,
-    ) -> AccumulatingProof
-    where
-        S: Serialize,
-        I: IntoIterator<Item = &'a PublicId>,
-    {
-        let mut proofs = ProofSet::new();
-        for member in members {
-            let _ = full_ids.get(member).map(|full_id| {
-                let proof = unwrap!(Proof::new(full_id, payload,));
-                let _ = proofs.add_proof(proof);
-            });
-        }
-        AccumulatingProof::from_proof_set(proofs)
+    fn add_neighbour_elders_info(
+        chain: &mut Chain,
+        neighbour_info: EldersInfo,
+    ) -> Result<(), RoutingError> {
+        assert!(
+            !neighbour_info.prefix().matches(chain.our_id.name()),
+            "Only add neighbours."
+        );
+        chain.add_neighbour_elders_info(neighbour_info)
     }
 
     fn gen_chain<T>(rng: &mut MainRng, sections: T) -> (Chain, HashMap<PublicId, FullId>)
@@ -1683,7 +1694,6 @@ mod tests {
         let mut sections_iter = section_members.into_iter();
 
         let first_info = sections_iter.next().expect("section members");
-        let our_members: BTreeSet<_> = first_info.member_ids().copied().collect();
         let first_ages = first_info
             .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
@@ -1707,8 +1717,7 @@ mod tests {
         );
 
         for neighbour_info in sections_iter {
-            let proofs = gen_proofs(&full_ids, &our_members, &neighbour_info);
-            unwrap!(chain.add_elders_info(neighbour_info, proofs));
+            unwrap!(add_neighbour_elders_info(&mut chain, neighbour_info));
         }
 
         (chain, full_ids)
@@ -1752,9 +1761,9 @@ mod tests {
         let p_00 = Prefix::from_str("00").unwrap();
         let p_01 = Prefix::from_str("01").unwrap();
         let p_10 = Prefix::from_str("10").unwrap();
-        let (mut chain, mut full_ids) = gen_chain(&mut rng, vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
+        let (mut chain, _) = gen_chain(&mut rng, vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
         for _ in 0..1000 {
-            let (new_info, new_ids) = {
+            let (new_info, _new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();
                 let info = rng.choose(&old_info).expect("neighbour infos");
                 if rng.gen_weighted_bool(2) {
@@ -1763,17 +1772,8 @@ mod tests {
                     gen_section_info(&mut rng, SecInfoGen::Remove(info))
                 }
             };
-            full_ids.extend(new_ids);
-            let proofs = gen_proofs(
-                &full_ids,
-                &chain
-                    .our_info()
-                    .member_ids()
-                    .copied()
-                    .collect::<BTreeSet<_>>(),
-                &new_info,
-            );
-            unwrap!(chain.add_elders_info(new_info, proofs));
+
+            unwrap!(add_neighbour_elders_info(&mut chain, new_info));
             assert!(chain.validate_our_history());
             check_infos_for_duplication(&chain);
         }

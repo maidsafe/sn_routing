@@ -17,7 +17,7 @@ use crate::{
     routing_table::{Authority, Prefix},
     types::MessageId,
     xor_name::XorName,
-    BlsPublicKeySet, BlsPublicKeyShare, BlsSignature, BlsSignatureShare, ConnectionInfo,
+    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, BlsSignatureShare, ConnectionInfo,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
@@ -66,7 +66,7 @@ impl HopMessage {
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
     proof: SectionProofChain,
-    shares: BTreeMap<BlsPublicKeyShare, BlsSignatureShare>,
+    shares: BTreeMap<usize, BlsSignatureShare>,
     pk_set: BlsPublicKeySet,
 }
 
@@ -173,14 +173,20 @@ impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     pub fn new(
         content: RoutingMessage,
-        full_id: &FullId,
+        key_share: &BlsSecretKeyShare,
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
         let mut signatures = BTreeMap::new();
-        let pk_share = BlsPublicKeyShare(*full_id.public_id());
-        let sig = full_id.sign(&serialise(&content)?);
-        let _ = signatures.insert(pk_share, sig);
+        let pk_share = key_share.public_key_share();
+        // WIP: Get more efficient.
+        let position = (0..100)
+            .map(|i| pk_set.public_key_share(i))
+            .position(|share| share == pk_share)
+            .ok_or(RoutingError::InvalidElderDkgResult)?;
+
+        let sig = key_share.sign(&serialise(&content)?);
+        let _ = signatures.insert(position, sig);
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
             pk_set,
@@ -285,11 +291,7 @@ impl SignedRoutingMessage {
 
     /// Adds a proof if it is new, without validating it.
     #[cfg(test)]
-    pub fn add_signature_share(
-        &mut self,
-        pk_share: BlsPublicKeyShare,
-        sig_share: BlsSignatureShare,
-    ) {
+    pub fn add_signature_share(&mut self, pk_share: usize, sig_share: BlsSignatureShare) {
         if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
             let _ = partial.shares.insert(pk_share, sig_share);
         }
@@ -312,7 +314,7 @@ impl SignedRoutingMessage {
     pub fn combine_signatures(&mut self) {
         match mem::replace(&mut self.security_metadata, SecurityMetadata::None) {
             SecurityMetadata::Partial(partial) => {
-                if let Some(full_sig) = partial
+                if let Ok(full_sig) = partial
                     .pk_set
                     .combine_signatures(partial.shares.iter().map(|(key, sig)| (*key, sig)))
                 {
@@ -395,16 +397,17 @@ impl SignedRoutingMessage {
 
     // Returns a list of all invalid signatures (not from an expected key or not cryptographically
     // valid).
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<BlsPublicKeyShare> {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<usize> {
         match self.security_metadata {
             SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => {
                 vec![]
             }
             SecurityMetadata::Partial(ref partial) => {
+                let key_set = &partial.pk_set;
                 let invalid: Vec<_> = partial
                     .shares
                     .iter()
-                    .filter(|&(key, sig)| !key.verify(sig, signed_bytes))
+                    .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, signed_bytes))
                     .map(|(key, _)| *key)
                     .collect();
                 if !invalid.is_empty() {
@@ -426,7 +429,7 @@ impl SignedRoutingMessage {
     }
 
     #[cfg(test)]
-    pub fn signatures(&self) -> Option<&BTreeMap<BlsPublicKeyShare, BlsSignatureShare>> {
+    pub fn signatures(&self) -> Option<&BTreeMap<usize, BlsSignatureShare>> {
         match &self.security_metadata {
             SecurityMetadata::Partial(partial) => Some(&partial.shares),
             _ => None,
@@ -586,8 +589,8 @@ mod tests {
     use super::*;
     use crate::{
         chain::SectionKeyInfo,
-        crypto::signing::{Signature, SIGNATURE_LENGTH},
         id::{FullId, P2pNode},
+        parsec::generate_bls_threshold_secret_key,
         rng,
         routing_table::{Authority, Prefix},
         xor_name::XorName,
@@ -603,6 +606,8 @@ mod tests {
 
         let full_id = FullId::gen(&mut rng);
         let full_id_2 = FullId::gen(&mut rng);
+        let bls_keys = generate_bls_threshold_secret_key(&mut rng, 2);
+        let bls_secret_key_share = bls_keys.secret_key_share(0);
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo {
             peer_addr: socket_addr,
@@ -617,8 +622,9 @@ mod tests {
         .map(|p2p_node| (*p2p_node.public_id().name(), p2p_node))
         .collect();
         let dummy_elders_info = unwrap!(EldersInfo::new(pub_ids, prefix, None));
-        let dummy_pk_set = BlsPublicKeySet::from_elders_info(dummy_elders_info.clone());
-        let dummy_key_info = SectionKeyInfo::from_elders_info(&dummy_elders_info);
+        let dummy_pk_set = bls_keys.public_keys();
+        let dummy_key_info =
+            SectionKeyInfo::from_elders_info(&dummy_elders_info, dummy_pk_set.public_key());
         let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
 
         let msg = RoutingMessage {
@@ -628,7 +634,7 @@ mod tests {
         };
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
             msg.clone(),
-            &full_id,
+            &bls_secret_key_share,
             dummy_pk_set,
             dummy_proof,
         ));
@@ -638,7 +644,7 @@ mod tests {
         assert!(signed_msg
             .signatures()
             .expect("no signatures")
-            .contains_key(&BlsPublicKeyShare(*full_id.public_id())));
+            .contains_key(&0));
 
         assert!(signed_msg.check_integrity().is_err());
 
@@ -650,11 +656,16 @@ mod tests {
     #[test]
     fn signed_routing_message_signatures() {
         let mut rng = rng::new();
+
         let full_id_0 = FullId::gen(&mut rng);
-        let prefix = Prefix::new(0, *full_id_0.public_id().name());
         let full_id_1 = FullId::gen(&mut rng);
         let full_id_2 = FullId::gen(&mut rng);
         let full_id_3 = FullId::gen(&mut rng);
+
+        let bls_keys = generate_bls_threshold_secret_key(&mut rng, 4);
+        let bls_secret_key_share_0 = bls_keys.secret_key_share(0);
+        let bls_secret_key_share_3 = bls_keys.secret_key_share(3);
+
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo {
             peer_addr: socket_addr,
@@ -668,6 +679,7 @@ mod tests {
             content: MessageContent::UserMessage(content),
         };
 
+        let prefix = Prefix::new(0, *full_id_0.public_id().name());
         let src_section_nodes = vec![
             P2pNode::new(*full_id_0.public_id(), connection_info.clone()),
             P2pNode::new(*full_id_1.public_id(), connection_info.clone()),
@@ -682,12 +694,12 @@ mod tests {
             prefix,
             None,
         ));
-        let pk_set = BlsPublicKeySet::from_elders_info(src_section.clone());
-        let dummy_key_info = SectionKeyInfo::from_elders_info(&src_section);
+        let pk_set = bls_keys.public_keys();
+        let dummy_key_info = SectionKeyInfo::from_elders_info(&src_section, pk_set.public_key());
         let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
             msg,
-            &full_id_0,
+            &bls_secret_key_share_0,
             pk_set,
             dummy_proof
         ));
@@ -696,13 +708,14 @@ mod tests {
         assert!(!signed_msg.check_fully_signed());
 
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
-        for full_id in &[full_id_1, full_id_2] {
-            let sig = full_id.sign(&unwrap!(serialise(signed_msg.routing_message())));
-            signed_msg.add_signature_share(BlsPublicKeyShare(*full_id.public_id()), sig);
+        for key_share_idx in 1..3 {
+            let key_share = bls_keys.secret_key_share(key_share_idx);
+            let sig = key_share.sign(&unwrap!(serialise(signed_msg.routing_message())));
+            signed_msg.add_signature_share(key_share_idx, sig);
         }
 
-        let bad_sig = unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH]));
-        signed_msg.add_signature_share(BlsPublicKeyShare(*full_id_3.public_id()), bad_sig);
+        let bad_sig = bls_secret_key_share_3.sign(&[1]);
+        signed_msg.add_signature_share(3, bad_sig);
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 4);
         assert!(signed_msg.check_fully_signed());
 
@@ -711,6 +724,6 @@ mod tests {
         assert!(!signed_msg
             .signatures()
             .expect("no signatures")
-            .contains_key(&BlsPublicKeyShare(*full_id_3.public_id())));
+            .contains_key(&3));
     }
 }

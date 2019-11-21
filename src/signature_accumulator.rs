@@ -86,9 +86,10 @@ mod tests {
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
             SignedRoutingMessage,
         },
+        parsec::generate_bls_threshold_secret_key,
         rng,
         routing_table::{Authority, Prefix},
-        BlsPublicKeySet, ConnectionInfo, XorName,
+        BlsPublicKeySet, BlsSecretKeyShare, ConnectionInfo, XorName,
     };
     use itertools::Itertools;
     use rand;
@@ -102,14 +103,12 @@ mod tests {
     }
 
     impl MessageAndSignatures {
-        fn new<'a, I>(
-            msg_sender_id: &FullId,
-            other_ids: I,
-            all_nodes: BTreeMap<XorName, P2pNode>,
-        ) -> MessageAndSignatures
-        where
-            I: Iterator<Item = &'a FullId>,
-        {
+        fn new(
+            secret_ids: &BTreeMap<XorName, FullId>,
+            all_nodes: &BTreeMap<XorName, P2pNode>,
+            secret_bls_ids: &BTreeMap<XorName, BlsSecretKeyShare>,
+            pk_set: &BlsPublicKeySet,
+        ) -> MessageAndSignatures {
             let routing_msg = RoutingMessage {
                 src: Authority::Section(rand::random()),
                 dst: Authority::Section(rand::random()),
@@ -119,27 +118,30 @@ mod tests {
                     rand::random(),
                 ]),
             };
+
+            let msg_sender_secret_bls = unwrap!(secret_bls_ids.values().next());
+            let other_ids = secret_ids.values().zip(secret_bls_ids.values()).skip(1);
+
             let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()));
-            let elders_info = unwrap!(EldersInfo::new(all_nodes, prefix, None));
-            let pk_set = BlsPublicKeySet::from_elders_info(elders_info.clone());
-            let key_info = SectionKeyInfo::from_elders_info(&elders_info);
+            let elders_info = unwrap!(EldersInfo::new(all_nodes.clone(), prefix, None));
+            let key_info = SectionKeyInfo::from_elders_info(&elders_info, pk_set.public_key());
             let proof = SectionProofChain::from_genesis(key_info);
             let signed_msg = unwrap!(SignedRoutingMessage::new(
                 routing_msg.clone(),
-                msg_sender_id,
+                msg_sender_secret_bls,
                 pk_set.clone(),
                 proof.clone(),
             ));
             let signature_msgs = other_ids
-                .map(|id| {
+                .map(|(id, bls_id)| {
                     unwrap!(SignedDirectMessage::new(
                         DirectMessage::MessageSignature(unwrap!(SignedRoutingMessage::new(
                             routing_msg.clone(),
-                            id,
+                            bls_id,
                             pk_set.clone(),
                             proof.clone(),
                         ))),
-                        msg_sender_id,
+                        id,
                     ))
                 })
                 .collect();
@@ -158,30 +160,38 @@ mod tests {
     impl Env {
         fn new() -> Env {
             let mut rng = rng::new();
-            let msg_sender_id = FullId::gen(&mut rng);
+
             let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
             let connection_info = ConnectionInfo::from(socket_addr);
-            let mut pub_ids = vec![P2pNode::new(
-                *msg_sender_id.public_id(),
-                connection_info.clone(),
-            )]
-            .into_iter()
-            .map(|p2p_node| (*p2p_node.public_id().name(), p2p_node))
-            .collect::<BTreeMap<_, _>>();
-            let mut other_ids = vec![];
-            for _ in 0..8 {
-                let full_id = FullId::gen(&mut rng);
-                let pub_id = *full_id.public_id();
-                let _ = pub_ids.insert(
-                    *pub_id.name(),
-                    P2pNode::new(pub_id, connection_info.clone()),
-                );
-                other_ids.push(full_id);
-            }
-            let msgs_and_sigs = (0..5)
+
+            let keys = generate_bls_threshold_secret_key(&mut rng, 9);
+            let full_ids: BTreeMap<_, _> = (0..9)
                 .map(|_| {
-                    MessageAndSignatures::new(&msg_sender_id, other_ids.iter(), pub_ids.clone())
+                    let full_id = FullId::gen(&mut rng);
+                    (*full_id.public_id().name(), full_id)
                 })
+                .collect();
+
+            let pub_ids: BTreeMap<_, _> = full_ids
+                .iter()
+                .map(|(name, full_id)| {
+                    (
+                        *name,
+                        P2pNode::new(*full_id.public_id(), connection_info.clone()),
+                    )
+                })
+                .collect();
+
+            let secret_ids: BTreeMap<_, _> = pub_ids
+                .keys()
+                .enumerate()
+                .map(|(idx, name)| (*name, keys.secret_key_share(idx)))
+                .collect();
+
+            let pk_set = keys.public_keys();
+
+            let msgs_and_sigs = (0..5)
+                .map(|_| MessageAndSignatures::new(&full_ids, &pub_ids, &secret_ids, &pk_set))
                 .collect();
             Env {
                 msgs_and_sigs: msgs_and_sigs,

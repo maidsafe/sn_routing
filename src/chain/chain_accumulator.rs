@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, EventSigPayload, NetworkEvent, Proof, ProofSet};
+use super::{AccumulatingEvent, EldersInfo, EventSigPayload, NetworkEvent, Proof, ProofSet};
 use crate::{id::PublicId, BlsPublicKeySet, BlsSignature};
 use log::LogLevel;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -163,7 +163,7 @@ impl ChainAccumulator {
                 .into_iter()
                 .filter(|&(_, ref proofs)| proofs.parsec_proofs.contains_id(our_id))
                 .map(|(event, proofs)| {
-                    event.into_network_event_with(proofs.into_sig_shares().remove(our_id), None)
+                    event.into_network_event_with(proofs.into_sig_shares().remove(our_id))
                 })
                 .collect(),
             completed_events,
@@ -224,21 +224,24 @@ impl AccumulatingProof {
         &self.parsec_proofs
     }
 
-    #[cfg(feature = "mock_base")]
-    pub fn into_parsec_proof_set(self) -> ProofSet {
-        self.parsec_proofs
-    }
-
     pub fn into_sig_shares(self) -> BTreeMap<PublicId, EventSigPayload> {
         self.sig_shares
     }
 
-    pub fn combine_signatures(self, pk_set: &BlsPublicKeySet) -> Option<BlsSignature> {
-        pk_set.combine_signatures(
-            self.sig_shares
-                .values()
-                .map(|sig_payload| (sig_payload.pub_key_share, &sig_payload.sig_share)),
-        )
+    pub fn combine_signatures(
+        self,
+        elder_info: &EldersInfo,
+        pk_set: &BlsPublicKeySet,
+    ) -> Option<BlsSignature> {
+        let fr_and_shares = elder_info
+            .member_ids()
+            .enumerate()
+            .filter_map(|(index, pub_id)| {
+                self.sig_shares
+                    .get(pub_id)
+                    .map(|sig_payload| (index, &sig_payload.sig_share))
+            });
+        pk_set.combine_signatures(fr_and_shares).ok()
     }
 }
 
@@ -259,13 +262,12 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
-    use super::super::{EldersInfo, RealBlsEventSigPayload, RealSectionKeyInfo};
+    use super::super::{EldersInfo, SectionKeyInfo};
     use super::*;
     use crate::{
         id::FullId,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        BlsPublicKeyShare, RealBlsPublicKeySet,
     };
     use parsec::SecretId;
     use std::iter;
@@ -296,21 +298,14 @@ mod test {
         ))
     }
 
-    fn random_section_info_sig_payload(
-        rng: &mut MainRng,
-    ) -> (EventSigPayload, RealBlsEventSigPayload, RealBlsPublicKeySet) {
+    fn random_section_info_sig_payload(rng: &mut MainRng) -> (EventSigPayload, BlsPublicKeySet) {
         let participants = 2;
         let first_secret_key_index = 0;
         let bls_keys = generate_bls_threshold_secret_key(rng, participants);
         let bls_secret_key_share = bls_keys.secret_key_share(first_secret_key_index);
-        let (id, first_proof) = random_ids_and_proof(rng);
 
         (
             EventSigPayload {
-                pub_key_share: BlsPublicKeyShare(*id.public_id()),
-                sig_share: first_proof.sig,
-            },
-            RealBlsEventSigPayload {
                 pub_key_share: bls_secret_key_share.public_key_share(),
                 sig_share: bls_secret_key_share.sign(&TEST_DATA_FOR_SIGN),
             },
@@ -350,15 +345,14 @@ mod test {
             }
             EventType::WithSignature => {
                 let elders_info = empty_elders_info();
-                let (sig_payload, _real_sig_payload, keys) = random_section_info_sig_payload(rng);
-                let key_info =
-                    RealSectionKeyInfo::from_elders_info(&elders_info, keys.public_key());
+                let (sig_payload, keys) = random_section_info_sig_payload(rng);
+                let key_info = SectionKeyInfo::from_elders_info(&elders_info, keys.public_key());
                 let event = AccumulatingEvent::SectionInfo(elders_info.clone(), key_info);
 
                 TestData {
                     our_id: *id.public_id(),
                     event: event.clone(),
-                    network_event: event.into_network_event_with(Some(sig_payload.clone()), None),
+                    network_event: event.into_network_event_with(Some(sig_payload.clone())),
                     first_proof,
                     proofs: proofs.clone(),
                     acc_proofs: AccumulatingProof {
