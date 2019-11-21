@@ -75,6 +75,9 @@ pub trait Approved: Base {
         neighbour_change: EldersChange,
     ) -> Result<(), RoutingError>;
 
+    /// Checks peers voting status to detect unresponsive nodes.
+    fn check_vote_status(&mut self);
+
     /// Handle an accumulated `TheirKeyInfo` event
     fn handle_their_key_info_event(&mut self, key_info: SectionKeyInfo)
         -> Result<(), RoutingError>;
@@ -279,7 +282,7 @@ pub trait Approved: Base {
             }
         }
 
-        self.check_voting_status();
+        self.check_vote_status();
 
         Ok(Transition::Stay)
     }
@@ -336,18 +339,6 @@ pub trait Approved: Base {
         }
 
         Ok(Transition::Stay)
-    }
-
-    // Checking members vote status and vote to remove those non-resposive nodes.
-    fn check_voting_status(&mut self) {
-        let unresponsive_nodes = self.chain_mut().check_vote_status();
-        let log_indent = self.log_ident();
-        for pub_id in unresponsive_nodes.iter() {
-            self.parsec_map_mut().vote_for(
-                AccumulatingEvent::Offline(*pub_id).into_network_event(),
-                &log_indent,
-            );
-        }
     }
 
     fn send_connection_request(

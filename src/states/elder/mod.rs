@@ -96,6 +96,8 @@ pub struct Elder {
     /// DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     rng: MainRng,
+    #[cfg(not(feature = "mock_parsec"))]
+    unresponsive_nodes: BTreeMap<PublicId, usize>,
 }
 
 impl Elder {
@@ -252,6 +254,8 @@ impl Elder {
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
             rng: details.rng,
+            #[cfg(not(feature = "mock_parsec"))]
+            unresponsive_nodes: Default::default(),
         }
     }
 
@@ -1653,6 +1657,48 @@ impl Approved for Elder {
         self.disconnect(&pub_id);
 
         Ok(())
+    }
+
+    // Checking members vote status and vote to remove those non-resposive nodes.
+    // Mock parsec will fetch all peers' votes in one poll loop, hence doesn't need the logic of
+    // expecting extra accusations. And even may have the risk of not having enough accusations if
+    // switch to the same code as for real parsec.
+    #[cfg(feature = "mock_parsec")]
+    fn check_vote_status(&mut self) {
+        let unresponsive_nodes = self.chain.check_vote_status();
+        for pub_id in unresponsive_nodes {
+            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
+        }
+    }
+
+    #[cfg(not(feature = "mock_parsec"))]
+    fn check_vote_status(&mut self) {
+        let unresponsive_nodes = self.chain.check_vote_status();
+        for (id, count) in mem::replace(&mut self.unresponsive_nodes, Default::default()) {
+            if unresponsive_nodes.contains(&id) {
+                let new_count = count.saturating_add(1);
+                info!(
+                    "{} detected {:?} as unresponsive for {} times when having {} members",
+                    self,
+                    id,
+                    new_count,
+                    self.chain.our_info().len(),
+                );
+                // The average chance that the missing peer will pick us as gossip recipient, so
+                // that we can know its votes (or we know its votes via others) is
+                // `1/number_of_peers`. So requiring `the node to be accused more times than there
+                // is elders in the section` is mainly just to ensure the full knowledge is reached
+                // before making the accuse.
+                if new_count > self.chain.our_info().len() {
+                    self.vote_for_event(AccumulatingEvent::Offline(id));
+                } else {
+                    let _ = self.unresponsive_nodes.insert(id, new_count);
+                }
+            }
+        }
+        for id in unresponsive_nodes {
+            let _ = self.unresponsive_nodes.entry(id).or_insert(1);
+        }
     }
 }
 

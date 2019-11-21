@@ -589,6 +589,10 @@ impl Approved for Adult {
         Ok(())
     }
 
+    fn check_vote_status(&mut self) {
+        debug!("{} - Not Required CheckVotingStatus For Adult", self);
+    }
+
     fn handle_their_key_info_event(
         &mut self,
         _key_info: SectionKeyInfo,
