@@ -8,7 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState},
+    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
     GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
     ProofSet, SectionProofChain,
@@ -961,34 +961,38 @@ impl Chain {
     /// Returns whether the event should be handled by the caller.
     fn add_elders_info(
         &mut self,
-        info: EldersInfo,
+        elders_info: EldersInfo,
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<bool, RoutingError> {
         // Split handling alone. wouldn't cater to merge
-        if info.prefix().is_extension_of(self.our_prefix()) {
+        if elders_info.prefix().is_extension_of(self.our_prefix()) {
             match self.state.split_cache.take() {
                 None => {
-                    self.state.split_cache = Some((info, key_info, proofs));
+                    self.state.split_cache = Some(SplitCache {
+                        elders_info,
+                        key_info,
+                        proofs,
+                    });
                     Ok(false)
                 }
-                Some((cache_info, cache_key_info, cache_proofs)) => {
-                    let cache_pfx = *cache_info.prefix();
+                Some(cache) => {
+                    let cache_pfx = *cache.elders_info.prefix();
 
                     // Add our_info first so when we add sibling info, its a valid neighbour prefix
                     // which does not get immediately purged.
                     if cache_pfx.matches(self.our_id.name()) {
-                        self.do_add_elders_info(cache_info, cache_key_info, cache_proofs)?;
-                        self.add_neighbour_elders_info(info)?;
+                        self.do_add_elders_info(cache.elders_info, cache.key_info, cache.proofs)?;
+                        self.add_neighbour_elders_info(elders_info)?;
                     } else {
-                        self.do_add_elders_info(info, key_info, proofs)?;
-                        self.add_neighbour_elders_info(cache_info)?;
+                        self.do_add_elders_info(elders_info, key_info, proofs)?;
+                        self.add_neighbour_elders_info(cache.elders_info)?;
                     }
                     Ok(true)
                 }
             }
         } else {
-            self.do_add_elders_info(info, key_info, proofs)?;
+            self.do_add_elders_info(elders_info, key_info, proofs)?;
             Ok(true)
         }
     }

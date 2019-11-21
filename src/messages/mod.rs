@@ -173,19 +173,19 @@ impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     pub fn new(
         content: RoutingMessage,
-        full_id: &BlsSecretKeyShare,
+        key_share: &BlsSecretKeyShare,
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
         let mut signatures = BTreeMap::new();
-        let pk_share = full_id.public_key_share();
+        let pk_share = key_share.public_key_share();
         // WIP: Get more efficient.
         let position = (0..100)
             .map(|i| pk_set.public_key_share(i))
             .position(|share| share == pk_share)
             .ok_or(RoutingError::InvalidElderDkgResult)?;
 
-        let sig = full_id.sign(&serialise(&content)?);
+        let sig = key_share.sign(&serialise(&content)?);
         let _ = signatures.insert(position, sig);
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,

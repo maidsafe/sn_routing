@@ -69,12 +69,6 @@ pub struct ProofSet {
 }
 
 impl ProofSet {
-    /// Creates a new empty set.
-    #[cfg(any(test, feature = "mock_base"))]
-    pub fn new() -> ProofSet {
-        ProofSet::default()
-    }
-
     /// Inserts a proof into the set. Returns `true` if it wasn't already there.
     pub fn add_proof(&mut self, Proof { pub_id, sig }: Proof) -> bool {
         self.sigs.insert(pub_id, sig).is_none()

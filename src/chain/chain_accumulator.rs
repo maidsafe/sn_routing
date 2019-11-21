@@ -233,18 +233,14 @@ impl AccumulatingProof {
         elder_info: &EldersInfo,
         pk_set: &BlsPublicKeySet,
     ) -> Option<BlsSignature> {
-        let positions: BTreeMap<_, _> = elder_info
-            .member_names()
-            .copied()
+        let fr_and_shares = elder_info
+            .member_ids()
             .enumerate()
-            .map(|(i, val)| (val, i))
-            .collect();
-        let fr_and_shares = self
-            .sig_shares
-            .iter()
-            .filter_map(|(key, sig)| positions.get(key.name()).map(|pos| (pos, sig)))
-            .map(|(pos, sig)| (pos, &sig.sig_share));
-
+            .filter_map(|(index, pub_id)| {
+                self.sig_shares
+                    .get(pub_id)
+                    .map(|sig_payload| (index, &sig_payload.sig_share))
+            });
         pk_set.combine_signatures(fr_and_shares).ok()
     }
 }

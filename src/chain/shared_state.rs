@@ -52,8 +52,8 @@ pub struct SharedState {
     pub neighbour_infos: BTreeMap<Prefix<XorName>, EldersInfo>,
     /// Is split of the section currently in progress.
     pub split_in_progress: bool,
-    // The accumulated `EldersInfo`(self or sibling) and proofs during a split pfx change.
-    pub split_cache: Option<(EldersInfo, SectionKeyInfo, AccumulatingProof)>,
+    // The accumulated info during a split pfx change.
+    pub split_cache: Option<SplitCache>,
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
@@ -401,6 +401,13 @@ fn update_with_genesis_related_info_check_same<T>(
             to_use_info
         );
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SplitCache {
+    pub elders_info: EldersInfo,
+    pub key_info: SectionKeyInfo,
+    pub proofs: AccumulatingProof,
 }
 
 /// Vec-like container that is guaranteed to contain at least one element.
