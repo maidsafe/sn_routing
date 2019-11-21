@@ -502,7 +502,7 @@ impl Chain {
             .get_member_connection_info(&pub_id)
             .ok_or(RoutingError::PeerNotFound(pub_id))?;
 
-        let mut elder_nodes = self.state.new_info.member_map().clone();
+        let mut elder_nodes = self.state.our_info().member_map().clone();
         let _ = elder_nodes.insert(
             *pub_id.name(),
             P2pNode::new(pub_id, connection_info.clone()),
@@ -515,13 +515,13 @@ impl Chain {
             return Ok(vec![our_info, other_info]);
         }
 
-        self.state.new_info = EldersInfo::new(
+        let new_info = EldersInfo::new(
             elder_nodes,
-            *self.state.new_info.prefix(),
-            Some(&self.state.new_info),
+            *self.state.our_info().prefix(),
+            Some(self.state.our_info()),
         )?;
 
-        Ok(vec![self.state.new_info.clone()])
+        Ok(vec![new_info])
     }
 
     /// Removes an elder from our section, creating a new `our_info` in the process.
@@ -529,28 +529,28 @@ impl Chain {
     pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
         self.assert_no_prefix_change("remove elder");
 
-        let mut elders = self.state.new_info.member_map().clone();
-        let _ = elders.remove(pub_id.name());
+        let mut elder_nodes = self.state.our_info().member_map().clone();
+        let _ = elder_nodes.remove(pub_id.name());
 
         if self.our_id() == &pub_id {
             self.is_elder = false;
         }
 
-        self.state.new_info = EldersInfo::new(
-            elders,
-            *self.state.new_info.prefix(),
-            Some(&self.state.new_info),
+        let new_info = EldersInfo::new(
+            elder_nodes,
+            *self.state.our_info().prefix(),
+            Some(self.state.our_info()),
         )?;
 
-        if self.state.new_info.len() < self.elder_size() {
+        if new_info.len() < self.elder_size() {
             panic!(
                 "Merge not supported: remove_member < min_sec_size {:?}: {:?}",
                 self.our_id(),
-                self.state.new_info
+                new_info
             );
         }
 
-        Ok(self.state.new_info.clone())
+        Ok(new_info)
     }
 
     /// Gets the data needed to initialise a new Parsec instance
@@ -706,7 +706,7 @@ impl Chain {
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.our_info().is_member(pub_id) || self.state.new_info.is_member(pub_id)
+        self.state.our_info().is_member(pub_id)
     }
 
     /// Returns whether the given peer is elder in one of our neighbour sections.
@@ -868,7 +868,7 @@ impl Chain {
 
                 // Do not process yet any version that is not the immediate follower of the one we have.
                 let not_follow = |i: &EldersInfo| {
-                    info.prefix().is_compatible(i.prefix()) && *info.version() != (i.version() + 1)
+                    info.prefix().is_compatible(i.prefix()) && info.version() != (i.version() + 1)
                 };
                 if self
                     .compatible_neighbour_info(info)
@@ -925,7 +925,7 @@ impl Chain {
             AccumulatingEvent::SectionInfo(elders_info, _)
             | AccumulatingEvent::NeighbourInfo(elders_info) => {
                 if elders_info.prefix().is_compatible(self.our_prefix())
-                    && elders_info.version() > self.state.new_info.version()
+                    && elders_info.version() > self.state.our_info().version() + 1
                 {
                     log_or_panic!(
                         LogLevel::Error,
@@ -1024,10 +1024,10 @@ impl Chain {
         let pfx = *elders_info.prefix();
         let ppfx = elders_info.prefix().popped();
         let spfx = elders_info.prefix().sibling();
-        let new_elders_info_version = *elders_info.version();
+        let new_elders_info_version = elders_info.version();
 
         if let Some(old_elders_info) = self.state.neighbour_infos.insert(pfx, elders_info) {
-            if *old_elders_info.version() > new_elders_info_version {
+            if old_elders_info.version() > new_elders_info_version {
                 log_or_panic!(
                     LogLevel::Error,
                     "{} Ejected newer neighbour info {:?}",
@@ -1044,7 +1044,7 @@ impl Chain {
             .neighbour_infos
             .get(&ppfx)
             .filter(|pinfo| {
-                *pinfo.version() < new_elders_info_version
+                pinfo.version() < new_elders_info_version
                     && self.our_prefix().is_neighbour(&spfx)
                     && !self.state.neighbour_infos.contains_key(&spfx)
             })
@@ -1130,10 +1130,9 @@ impl Chain {
             .partition(|node| our_prefix.matches(&node.0));
 
         let our_new_info =
-            EldersInfo::new(our_new_section, our_prefix, Some(&self.state.new_info))?;
-        let other_info = EldersInfo::new(other_section, other_prefix, Some(&self.state.new_info))?;
+            EldersInfo::new(our_new_section, our_prefix, Some(self.state.our_info()))?;
+        let other_info = EldersInfo::new(other_section, other_prefix, Some(self.state.our_info()))?;
 
-        self.state.new_info = our_new_info.clone();
         self.state
             .remove_our_members_not_matching_prefix(&our_prefix);
 
@@ -1463,7 +1462,6 @@ impl Debug for Chain {
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
         writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
-        writeln!(formatter, "\tnew_info: {}", self.state.new_info)?;
         writeln!(
             formatter,
             "\tsplit_in_progress: {}",

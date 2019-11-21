@@ -106,8 +106,8 @@ impl EldersInfo {
         self.members.is_empty()
     }
 
-    pub fn version(&self) -> &u64 {
-        &self.version
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     pub fn prefix(&self) -> &Prefix<XorName> {
