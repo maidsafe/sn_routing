@@ -224,11 +224,6 @@ impl AccumulatingProof {
         &self.parsec_proofs
     }
 
-    #[cfg(feature = "mock_base")]
-    pub fn into_parsec_proof_set(self) -> ProofSet {
-        self.parsec_proofs
-    }
-
     pub fn into_sig_shares(self) -> BTreeMap<PublicId, EventSigPayload> {
         self.sig_shares
     }
@@ -244,21 +239,13 @@ impl AccumulatingProof {
             .enumerate()
             .map(|(i, val)| (val, i))
             .collect();
-        let fr_and_shares: Vec<_> = self
+        let fr_and_shares = self
             .sig_shares
             .iter()
             .filter_map(|(key, sig)| positions.get(key.name()).map(|pos| (pos, sig)))
-            .map(|(pos, sig)| (pos, &sig.sig_share))
-            .collect();
+            .map(|(pos, sig)| (pos, &sig.sig_share));
 
-        trace!(
-            "combine_signatures {:?} -1- {:?} -2- {:?} -3- {:?}",
-            positions,
-            fr_and_shares,
-            pk_set,
-            elder_info
-        );
-        pk_set.combine_signatures(fr_and_shares.into_iter()).ok()
+        pk_set.combine_signatures(fr_and_shares).ok()
     }
 }
 

@@ -290,29 +290,12 @@ impl SharedState {
         self.post_split_sibling_members = post_split_sibling_members;
     }
 
-    pub fn push_our_new_info(
-        &mut self,
-        elders_info: EldersInfo,
-        key_info: SectionKeyInfo,
-        proofs: AccumulatingProof,
-        pk_set: &BlsPublicKeySet,
-    ) -> Result<(), RoutingError> {
-        let proof_block = if let Some(proof_block) = SectionProofBlock::from_elders_info_with_proofs(
-            key_info,
-            proofs,
-            (pk_set, self.our_infos.last()),
-        ) {
-            proof_block
-        } else {
-            return Err(RoutingError::InvalidNewSectionInfo);
-        };
-
+    pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
         self.our_history.push(proof_block);
         self.our_infos.push(elders_info);
 
         let key_info = self.our_history.last_public_key_info().clone();
         self.update_their_keys(&key_info);
-        Ok(())
     }
 
     /// Updates the entry in `their_keys` for `prefix` to the latest known key; if a split
@@ -479,13 +462,8 @@ impl Debug for SectionProofBlock {
 }
 
 impl SectionProofBlock {
-    pub fn from_elders_info_with_proofs(
-        key_info: SectionKeyInfo,
-        proofs: AccumulatingProof,
-        pk_set_and_info: (&BlsPublicKeySet, &EldersInfo),
-    ) -> Option<Self> {
-        let sig = proofs.combine_signatures(pk_set_and_info.1, pk_set_and_info.0)?;
-        Some(Self { key_info, sig })
+    pub fn new(key_info: SectionKeyInfo, sig: BlsSignature) -> Self {
+        Self { key_info, sig }
     }
 
     pub fn key_info(&self) -> &SectionKeyInfo {

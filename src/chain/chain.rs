@@ -8,7 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{SectionKeyInfo, SharedState},
+    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
     GenesisPfxInfo, MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof,
     ProofSet, SectionProofChain,
@@ -20,7 +20,7 @@ use crate::{
     relocation::{self, RelocateDetails},
     routing_table::{Authority, Error},
     utils::LogIdent,
-    BlsPublicKeySet, BlsSecretKeyShare, ConnectionInfo, Prefix, XorName, Xorable,
+    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -289,8 +289,7 @@ impl Chain {
             }
             AccumulatingEvent::Relocate(_) => {
                 self.churn_in_progress = false;
-                let signature =
-                    proofs.combine_signatures(self.our_info(), &self.our_section_bls_keys());
+                let signature = self.combine_signatures(proofs);
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
             AccumulatingEvent::Online(_)
@@ -1001,10 +1000,9 @@ impl Chain {
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
         let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
-        let pk_set = self.our_section_bls_keys().clone();
+        let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
 
-        self.state
-            .push_our_new_info(elders_info, key_info, proofs, &pk_set)?;
+        self.state.push_our_new_info(elders_info, proof_block);
         self.our_section_bls_keys = self
             .new_section_bls_keys
             .take()
@@ -1053,6 +1051,22 @@ impl Chain {
 
         self.check_and_clean_neighbour_infos(Some(&pfx));
         Ok(())
+    }
+
+    pub fn combine_signatures_for_section_proof_block(
+        &self,
+        key_info: SectionKeyInfo,
+        proofs: AccumulatingProof,
+    ) -> Result<SectionProofBlock, RoutingError> {
+        Ok(SectionProofBlock::new(
+            key_info,
+            self.combine_signatures(proofs)
+                .ok_or(RoutingError::InvalidNewSectionInfo)?,
+        ))
+    }
+
+    pub fn combine_signatures(&self, proofs: AccumulatingProof) -> Option<BlsSignature> {
+        proofs.combine_signatures(self.our_info(), self.our_section_bls_keys())
     }
 
     /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
