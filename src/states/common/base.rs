@@ -48,7 +48,11 @@ pub trait Base: Display {
         LogIdent::new(self)
     }
 
-    fn handle_peer_lost(&mut self, _pub_id: PublicId, _outbox: &mut dyn EventBox) -> Transition {
+    fn handle_peer_lost(
+        &mut self,
+        _peer_addr: SocketAddr,
+        _outbox: &mut dyn EventBox,
+    ) -> Transition {
         Transition::Stay
     }
 
@@ -241,19 +245,8 @@ pub trait Base: Display {
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, peer_addr);
 
-        let mut transition = Transition::Stay;
-
-        let pub_ids = self.peer_map_mut().disconnect(peer_addr);
-        for pub_id in pub_ids {
-            trace!("{} - ConnectionFailure from {}", self, pub_id);
-            let other_transition = self.handle_peer_lost(pub_id, outbox);
-
-            if let Transition::Stay = transition {
-                transition = other_transition
-            }
-        }
-
-        transition
+        let _ = self.peer_map_mut().disconnect(peer_addr);
+        self.handle_peer_lost(peer_addr, outbox)
     }
 
     fn handle_new_message(
@@ -285,9 +278,8 @@ pub trait Base: Display {
             Message::Hop(msg) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg) => {
                 let (msg, public_id) = msg.open()?;
-                self.peer_map_mut().identify(public_id, src_addr);
                 let connection_info =
-                    if let Some(connection_info) = self.peer_map().get_connection_info(public_id) {
+                    if let Some(connection_info) = self.peer_map().get_connection_info(&src_addr) {
                         connection_info.clone()
                     } else {
                         trace!(
@@ -434,10 +426,10 @@ pub trait Base: Display {
             })
     }
 
-    fn disconnect(&mut self, pub_id: &PublicId) {
-        if let Some(conn_info) = self.peer_map_mut().remove(pub_id) {
-            info!("{} - Disconnecting from {}", self, pub_id);
-            self.disconnect_from(conn_info.peer_addr);
+    fn disconnect(&mut self, peer_addr: &SocketAddr) {
+        if self.peer_map_mut().disconnect(*peer_addr).is_some() {
+            info!("{} - Disconnecting from {}", self, peer_addr);
+            self.disconnect_from(*peer_addr);
         }
     }
 

@@ -40,6 +40,7 @@ use std::{
     collections::BTreeSet,
     fmt::{self, Display, Formatter},
     mem,
+    net::SocketAddr,
 };
 
 const POKE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -248,7 +249,7 @@ impl Adult {
                 BootstrapResponseError::NotApproved,
             )),
         );
-        self.disconnect(p2p_node.public_id());
+        self.disconnect(p2p_node.peer_addr());
     }
 
     fn add_elder(
@@ -353,8 +354,8 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, pub_id: PublicId, _: &mut dyn EventBox) -> Transition {
-        debug!("{} - Lost peer {}", self, pub_id);
+    fn handle_peer_lost(&mut self, peer_addr: SocketAddr, _: &mut dyn EventBox) -> Transition {
+        debug!("{} - Lost peer {}", self, peer_addr);
         Transition::Stay
     }
 
@@ -530,7 +531,7 @@ impl Approved for Adult {
         let _ = self.chain.poll_relocation();
 
         self.remove_elder(pub_id, outbox)?;
-        self.disconnect(&pub_id);
+        self.disconnect_by_id_lookup(&pub_id);
 
         Ok(())
     }
@@ -589,7 +590,7 @@ impl Approved for Adult {
         info!("{} - handle Relocate: {:?}.", self, details);
         self.chain.remove_member(&details.pub_id);
         self.remove_elder(details.pub_id, outbox)?;
-        self.disconnect(&details.pub_id);
+        self.disconnect_by_id_lookup(&details.pub_id);
 
         Ok(())
     }

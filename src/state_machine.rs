@@ -25,6 +25,8 @@ use crate::{
 #[cfg(feature = "mock_base")]
 use crate::{chain::DevParams, rng::MainRng, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
+#[cfg(feature = "mock_base")]
+use std::net::SocketAddr;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     mem,
@@ -254,10 +256,10 @@ impl State {
         )
     }
 
-    pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
+    pub fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
         state_dispatch!(
             self,
-            state => state.peer_map().has(name),
+            state => state.peer_map().has(socket_addr),
             Terminated => false
         )
     }

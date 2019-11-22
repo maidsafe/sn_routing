@@ -362,13 +362,15 @@ pub trait Approved: Base {
             return Ok(());
         }
 
-        if self.peer_map().has(&their_pub_id) {
-            trace!(
-                "{} - Not sending connection request to {} - already connected.",
-                self,
-                their_pub_id
-            );
-            return Ok(());
+        if let Some(p2p_node) = self.chain().get_p2p_node(their_pub_id.name()) {
+            if self.peer_map().has(p2p_node.peer_addr()) {
+                trace!(
+                    "{} - Not sending connection request to {} - already connected.",
+                    self,
+                    their_pub_id
+                );
+                return Ok(());
+            }
         }
 
         let msg_id = self.rng().gen();
@@ -413,11 +415,24 @@ pub trait Approved: Base {
             self, their_pub_id
         );
 
-        self.peer_map_mut()
-            .insert(their_pub_id, their_conn_info.clone());
+        self.peer_map_mut().connect(their_conn_info.clone());
         self.send_direct_message(&their_conn_info, DirectMessage::ConnectionResponse);
 
         Ok(())
+    }
+
+    fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
+        if let Some(node) = self.chain().get_p2p_node(pub_id.name()) {
+            let peer_addr = *node.peer_addr();
+            self.disconnect(&peer_addr);
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Can't disconnect from node we can't lookup in Chain: {}.",
+                self,
+                pub_id
+            );
+        };
     }
 
     fn invoke_handle_relocate_event(

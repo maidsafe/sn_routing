@@ -399,12 +399,14 @@ impl Node {
             .unwrap_or_default()
     }
 
-    /// Returns a set of elders we should be connected to.
+    /// Returns the elders in our and neighbouring sections.
     pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
-        self.chain()
-            .into_iter()
-            .flat_map(Chain::elders)
-            .map(P2pNode::public_id)
+        self.elder_nodes().map(P2pNode::public_id)
+    }
+
+    /// Returns the elders in our and neighbouring sections.
+    pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.chain().into_iter().flat_map(Chain::elders)
     }
 
     /// Returns whether the given `PublicId` is a member of our section.
@@ -469,8 +471,8 @@ impl Node {
     }
 
     /// Indicates if this node has the connection info to the given peer.
-    pub fn is_connected<N: AsRef<XorName>>(&self, name: N) -> bool {
-        self.machine.current().is_connected(name)
+    pub fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
+        self.machine.current().is_connected(socket_addr)
     }
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given

@@ -250,8 +250,7 @@ impl Base for BootstrappingPeer {
                 return Transition::Stay;
             }
 
-            let _ = self.peer_map_mut().disconnect(peer_addr);
-            self.disconnect_from(peer_addr);
+            self.disconnect(&peer_addr);
             self.request_failed()
         }
 
@@ -300,8 +299,7 @@ impl Base for BootstrappingPeer {
                 "{} - Ignoring direct message from unexpected peer: {}: {:?}",
                 self, p2p_node, msg
             );
-            let _ = self.peer_map_mut().disconnect(*p2p_node.peer_addr());
-            self.disconnect_from(*p2p_node.peer_addr());
+            self.disconnect(p2p_node.peer_addr());
             return Ok(Transition::Stay);
         }
 

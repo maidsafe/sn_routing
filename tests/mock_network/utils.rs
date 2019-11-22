@@ -853,9 +853,10 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
         let our_id = unwrap!(node.inner.id());
         let missing_peers = node
             .inner
-            .elders()
-            .filter(|pub_id| *pub_id != &our_id)
-            .filter(|pub_id| !node.inner.is_connected(pub_id))
+            .elder_nodes()
+            .filter(|p2p_node| p2p_node.public_id() != &our_id)
+            .filter(|p2p_node| !node.inner.is_connected(p2p_node.peer_addr()))
+            .map(|p2p_node| p2p_node.public_id())
             .cloned()
             .collect_vec();
         if !missing_peers.is_empty() {
