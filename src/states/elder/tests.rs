@@ -319,13 +319,6 @@ impl ElderUnderTest {
             .is_peer_our_elder(self.candidate.public_id())
     }
 
-    fn is_candidate_in_our_elders_info(&self) -> bool {
-        self.elder_state()
-            .chain()
-            .our_info()
-            .is_member(self.candidate.public_id())
-    }
-
     fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {
         let _ = self
             .machine
@@ -455,8 +448,7 @@ fn when_accumulate_online_then_node_is_added_to_our_members() {
 
     assert!(!elder_test.has_unpolled_observations());
     assert!(elder_test.is_candidate_member());
-    assert!(elder_test.is_candidate_elder());
-    assert!(!elder_test.is_candidate_in_our_elders_info());
+    assert!(!elder_test.is_candidate_elder());
 }
 
 #[test]
@@ -472,7 +464,6 @@ fn when_accumulate_online_and_accumulate_section_info_then_node_is_added_to_our_
     assert!(!elder_test.has_unpolled_observations());
     assert!(elder_test.is_candidate_member());
     assert!(elder_test.is_candidate_elder());
-    assert!(elder_test.is_candidate_in_our_elders_info());
 }
 
 #[test]
@@ -492,7 +483,6 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     assert!(!elder_test.has_unpolled_observations());
     assert!(!elder_test.is_candidate_member());
     assert!(elder_test.is_candidate_elder());
-    assert!(elder_test.is_candidate_in_our_elders_info());
 }
 
 #[test]
@@ -514,7 +504,6 @@ fn when_accumulate_offline_and_accumulate_section_info_then_node_is_removed_from
     assert!(!elder_test.has_unpolled_observations());
     assert!(!elder_test.is_candidate_member());
     assert!(!elder_test.is_candidate_elder());
-    assert!(!elder_test.is_candidate_in_our_elders_info());
 }
 
 #[test]

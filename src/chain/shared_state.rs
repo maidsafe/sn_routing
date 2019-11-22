@@ -37,8 +37,6 @@ const MAX_THEIR_RECENT_KEYS: usize = 20;
 pub struct SharedState {
     /// Indicate whether nodes are shared state because genesis event was seen
     pub handled_genesis_event: bool,
-    /// The new self elders info, that doesn't necessarily have a full set of signatures yet.
-    pub new_info: EldersInfo,
     /// The latest few fully signed infos of our own sections.
     /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
     pub our_infos: NonEmptyList<EldersInfo>,
@@ -93,7 +91,6 @@ impl SharedState {
 
         Self {
             handled_genesis_event: false,
-            new_info: elders_info.clone(),
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
             our_members,
@@ -235,7 +232,7 @@ impl SharedState {
     }
 
     pub fn our_version(&self) -> u64 {
-        *self.our_info().version()
+        self.our_info().version()
     }
 
     /// Returns our section info with the given hash, if it exists.
@@ -624,7 +621,7 @@ pub struct SectionKeyInfo {
 impl SectionKeyInfo {
     pub fn from_elders_info(info: &EldersInfo, key: BlsPublicKey) -> Self {
         Self {
-            version: *info.version(),
+            version: info.version(),
             prefix: *info.prefix(),
             key,
         }
@@ -638,8 +635,8 @@ impl SectionKeyInfo {
         &self.prefix
     }
 
-    pub fn version(&self) -> &u64 {
-        &self.version
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {

@@ -386,7 +386,7 @@ impl Node {
     pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> u64 {
         self.chain()
             .and_then(|chain| chain.get_section(prefix))
-            .map(|info| *info.version())
+            .map(|info| info.version())
             .unwrap_or_default()
     }
 

@@ -606,7 +606,7 @@ impl Elder {
 
     fn vote_send_section_info_ack(&mut self, ack_payload: SendAckMessagePayload) {
         let has_their_keys = self.chain.get_their_keys_info().any(|(_, info)| {
-            *info.prefix() == ack_payload.ack_prefix && *info.version() == ack_payload.ack_version
+            *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
         });
 
         if has_their_keys {
@@ -869,7 +869,7 @@ impl Elder {
             .chain
             .get_their_keys_info()
             .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
-            .map_or(false, |(_, info)| *info.version() < *key_info.version());
+            .map_or(false, |(_, info)| info.version() < key_info.version());
 
         if new_key_info {
             self.vote_for_event(AccumulatingEvent::TheirKeyInfo(key_info.clone()));
@@ -1070,7 +1070,7 @@ impl Elder {
             debug!("{} - Lost all elder connections.", self);
 
             // Except network startup, restart in other cases.
-            if *self.chain.our_info().version() > 0 {
+            if self.chain.our_info().version() > 0 {
                 outbox.send_event(Event::RestartRequired);
                 false
             } else {
@@ -1615,7 +1615,7 @@ impl Approved for Elder {
         // Vote to update our self messages proof
         self.vote_send_section_info_ack(SendAckMessagePayload {
             ack_prefix: *elders_info.prefix(),
-            ack_version: *elders_info.version(),
+            ack_version: elders_info.version(),
         });
 
         if let Some(relocate_details) = relocate_details {
@@ -1641,7 +1641,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         self.vote_send_section_info_ack(SendAckMessagePayload {
             ack_prefix: *key_info.prefix(),
-            ack_version: *key_info.version(),
+            ack_version: key_info.version(),
         });
         Ok(())
     }
