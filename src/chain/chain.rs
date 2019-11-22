@@ -54,7 +54,7 @@ pub struct Chain {
     /// This node's public ID.
     our_id: PublicId,
     /// Our current Section BLS keys.
-    our_section_bls_keys: DkgResult,
+    our_section_bls_keys: SectionKeys,
     /// The shared state of the section.
     state: SharedState,
     /// If we're an elder of the section yet. This will be toggled once we get a `EldersInfo`
@@ -91,7 +91,7 @@ impl Chain {
         &self.our_section_bls_keys.public_key_set
     }
 
-    pub fn our_section_bls_secret_key_share(&self) -> Result<&BlsSecretKeyShare, RoutingError> {
+    pub fn our_section_bls_secret_key_share(&self) -> Result<&SectionKeyShare, RoutingError> {
         self.our_section_bls_keys
             .secret_key_share
             .as_ref()
@@ -123,11 +123,13 @@ impl Chain {
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.is_member(&our_id);
+        let secret_key_share = secret_key_share
+            .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.first_info));
         Self {
             network_cfg,
             dev_params,
             our_id,
-            our_section_bls_keys: DkgResult {
+            our_section_bls_keys: SectionKeys {
                 public_key_set: gen_info.first_bls_keys.clone(),
                 secret_key_share,
             },
@@ -1013,10 +1015,13 @@ impl Chain {
         let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
 
         self.state.push_our_new_info(elders_info, proof_block);
-        self.our_section_bls_keys = self
-            .new_section_bls_keys
-            .take()
-            .ok_or(RoutingError::InvalidElderDkgResult)?;
+        self.our_section_bls_keys = SectionKeys::new(
+            self.new_section_bls_keys
+                .take()
+                .ok_or(RoutingError::InvalidElderDkgResult)?,
+            self.our_id(),
+            self.our_info(),
+        );
 
         if is_new_elder {
             self.is_elder = true;
@@ -1575,6 +1580,55 @@ fn compute_relocation_destination(
         .next_relocation_dst
         .take()
         .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
+}
+
+/// The secret share of the section key.
+#[derive(Clone)]
+pub struct SectionKeyShare {
+    /// Index used to combine signature share and get PublicKeyShare from PublicKeySet.
+    pub index: usize,
+    /// Secret Key share
+    pub key: BlsSecretKeyShare,
+}
+
+impl SectionKeyShare {
+    /// Create a new share with associated share index.
+    #[cfg(any(test, feature = "mock_base"))]
+    pub fn new_with_position(index: usize, key: BlsSecretKeyShare) -> Self {
+        Self { index, key }
+    }
+
+    /// create a new share finding the position wihtin the elders.
+    pub fn new(
+        key: BlsSecretKeyShare,
+        our_id: &PublicId,
+        new_elders_info: &EldersInfo,
+    ) -> Option<Self> {
+        Some(Self {
+            index: new_elders_info.member_ids().position(|id| id == our_id)?,
+            key,
+        })
+    }
+}
+
+/// All the key material needed to sign or combine signature for our section key.
+#[derive(Clone)]
+pub struct SectionKeys {
+    /// Public key set to verify threshold signatures and combine shares.
+    pub public_key_set: BlsPublicKeySet,
+    /// Secret Key share and index. None if the node was not participating in the DKG.
+    pub secret_key_share: Option<SectionKeyShare>,
+}
+
+impl SectionKeys {
+    pub fn new(dkg_result: DkgResult, our_id: &PublicId, new_elders_info: &EldersInfo) -> Self {
+        Self {
+            public_key_set: dkg_result.public_key_set,
+            secret_key_share: dkg_result
+                .secret_key_share
+                .and_then(|key| SectionKeyShare::new(key, our_id, new_elders_info)),
+        }
+    }
 }
 
 struct NeighbourChangeBuilder {

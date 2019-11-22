@@ -911,7 +911,7 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         let key_info = SectionKeyInfo::from_elders_info(&elders_info, section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
-            self.chain.our_section_bls_secret_key_share()?,
+            &self.chain.our_section_bls_secret_key_share()?.key,
             &key_info,
         )?;
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
@@ -925,8 +925,10 @@ impl Elder {
         &mut self,
         payload: T,
     ) -> Result<(), RoutingError> {
-        let signature_payload =
-            EventSigPayload::new(self.chain.our_section_bls_secret_key_share()?, &payload)?;
+        let signature_payload = EventSigPayload::new(
+            &self.chain.our_section_bls_secret_key_share()?.key,
+            &payload,
+        )?;
 
         let event = payload
             .into_accumulating_event()

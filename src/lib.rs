@@ -173,7 +173,7 @@ use crate::mock::quic_p2p;
 pub use crate::{
     chain::{
         delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
-        NetworkParams, MIN_AGE,
+        NetworkParams, SectionKeyShare, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,

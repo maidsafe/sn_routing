@@ -10,14 +10,16 @@ mod direct;
 
 pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
+    chain::{
+        Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,
+    },
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     routing_table::{Authority, Prefix},
     types::MessageId,
     xor_name::XorName,
-    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, BlsSignatureShare, ConnectionInfo,
+    BlsPublicKeySet, BlsSignature, BlsSignatureShare, ConnectionInfo,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
@@ -184,20 +186,13 @@ impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     pub fn new(
         content: RoutingMessage,
-        key_share: &BlsSecretKeyShare,
+        section_share: &SectionKeyShare,
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
         let mut signatures = BTreeSet::new();
-        let pk_share = key_share.public_key_share();
-        // WIP: Get more efficient.
-        let position = (0..100)
-            .map(|i| pk_set.public_key_share(i))
-            .position(|share| share == pk_share)
-            .ok_or(RoutingError::InvalidElderDkgResult)?;
-
-        let sig = key_share.sign(&serialise(&content)?);
-        let _ = signatures.insert((position, sig));
+        let sig = section_share.key.sign(&serialise(&content)?);
+        let _ = signatures.insert((section_share.index, sig));
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
             pk_set,
@@ -596,7 +591,8 @@ mod tests {
         let full_id = FullId::gen(&mut rng);
         let full_id_2 = FullId::gen(&mut rng);
         let bls_keys = generate_bls_threshold_secret_key(&mut rng, 2);
-        let bls_secret_key_share = bls_keys.secret_key_share(0);
+        let bls_secret_key_share =
+            SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo {
             peer_addr: socket_addr,
@@ -653,7 +649,8 @@ mod tests {
         let full_id_3 = FullId::gen(&mut rng);
 
         let bls_keys = generate_bls_threshold_secret_key(&mut rng, 4);
-        let bls_secret_key_share_0 = bls_keys.secret_key_share(0);
+        let bls_secret_key_share_0 =
+            SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
         let bls_secret_key_share_3 = bls_keys.secret_key_share(3);
 
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());

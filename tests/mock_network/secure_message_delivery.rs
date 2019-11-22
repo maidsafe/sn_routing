@@ -10,7 +10,8 @@ use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Network,
     section_proof_chain_from_elders_info, Authority, ConnectionInfo, FullId, HopMessage, Message,
-    MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SignedRoutingMessage, XorName,
+    MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare,
+    SignedRoutingMessage, XorName,
 };
 use std::collections::BTreeMap;
 use std::iter;
@@ -65,7 +66,7 @@ fn message_with_invalid_security(fail_type: FailType) {
 
     let fake_full = FullId::gen(&mut network.new_rng());
     let bls_keys = generate_bls_threshold_secret_key(&mut network.new_rng(), 1);
-    let bls_secret_key_share = bls_keys.secret_key_share(0);
+    let bls_secret_key_share = SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
 
     let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
     let connection_info = ConnectionInfo::from(socket_addr);

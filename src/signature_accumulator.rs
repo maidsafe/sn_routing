@@ -80,7 +80,7 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        chain::{EldersInfo, SectionKeyInfo, SectionProofChain},
+        chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain},
         id::{FullId, P2pNode},
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
@@ -89,7 +89,7 @@ mod tests {
         parsec::generate_bls_threshold_secret_key,
         rng,
         routing_table::{Authority, Prefix},
-        BlsPublicKeySet, BlsSecretKeyShare, ConnectionInfo, XorName,
+        BlsPublicKeySet, ConnectionInfo, XorName,
     };
     use itertools::Itertools;
     use rand;
@@ -106,7 +106,7 @@ mod tests {
         fn new(
             secret_ids: &BTreeMap<XorName, FullId>,
             all_nodes: &BTreeMap<XorName, P2pNode>,
-            secret_bls_ids: &BTreeMap<XorName, BlsSecretKeyShare>,
+            secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
             pk_set: &BlsPublicKeySet,
         ) -> MessageAndSignatures {
             let routing_msg = RoutingMessage {
@@ -185,7 +185,10 @@ mod tests {
             let secret_ids: BTreeMap<_, _> = pub_ids
                 .keys()
                 .enumerate()
-                .map(|(idx, name)| (*name, keys.secret_key_share(idx)))
+                .map(|(idx, name)| {
+                    let share = SectionKeyShare::new_with_position(idx, keys.secret_key_share(idx));
+                    (*name, share)
+                })
                 .collect();
 
             let pk_set = keys.public_keys();
