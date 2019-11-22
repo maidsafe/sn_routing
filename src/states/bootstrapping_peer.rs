@@ -268,14 +268,6 @@ impl Base for BootstrappingPeer {
         Transition::Terminate
     }
 
-    fn handle_connected_to(
-        &mut self,
-        _conn_info: ConnectionInfo,
-        _outbox: &mut dyn EventBox,
-    ) -> Transition {
-        Transition::Stay
-    }
-
     fn handle_connection_failure(
         &mut self,
         peer_addr: SocketAddr,
