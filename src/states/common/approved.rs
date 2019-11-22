@@ -415,7 +415,6 @@ pub trait Approved: Base {
             self, their_pub_id
         );
 
-        self.peer_map_mut().connect(their_conn_info.clone());
         self.send_direct_message(&their_conn_info, DirectMessage::ConnectionResponse);
 
         Ok(())

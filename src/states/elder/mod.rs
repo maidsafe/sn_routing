@@ -364,7 +364,6 @@ impl Elder {
 
     fn establish_connection(&mut self, node: P2pNode) {
         self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
-        self.peer_map_mut().connect(node.connection_info().clone())
     }
 
     fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
@@ -635,8 +634,6 @@ impl Elder {
                 self,
                 p2p_node
             );
-            self.peer_map_mut()
-                .connect(p2p_node.connection_info().clone());
             self.send_direct_message(
                 p2p_node.connection_info(),
                 DirectMessage::ConnectionResponse,
