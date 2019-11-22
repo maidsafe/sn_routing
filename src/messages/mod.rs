@@ -22,7 +22,7 @@ use crate::{
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use std::{
-    collections::BTreeMap,
+    collections::BTreeSet,
     fmt::{self, Debug, Formatter},
     mem,
 };
@@ -66,17 +66,17 @@ impl HopMessage {
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
     proof: SectionProofChain,
-    shares: BTreeMap<usize, BlsSignatureShare>,
+    shares: BTreeSet<(usize, BlsSignatureShare)>,
     pk_set: BlsPublicKeySet,
 }
 
 impl PartialSecurityMetadata {
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<usize> {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<(usize, BlsSignatureShare)> {
         let key_set = &self.pk_set;
         self.shares
             .iter()
             .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, &signed_bytes))
-            .map(|(idx, _)| *idx)
+            .map(|(idx, sig)| (*idx, sig.clone()))
             .collect()
     }
 }
@@ -188,7 +188,7 @@ impl SignedRoutingMessage {
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
-        let mut signatures = BTreeMap::new();
+        let mut signatures = BTreeSet::new();
         let pk_share = key_share.public_key_share();
         // WIP: Get more efficient.
         let position = (0..100)
@@ -197,7 +197,7 @@ impl SignedRoutingMessage {
             .ok_or(RoutingError::InvalidElderDkgResult)?;
 
         let sig = key_share.sign(&serialise(&content)?);
-        let _ = signatures.insert(position, sig);
+        let _ = signatures.insert((position, sig));
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
             pk_set,
@@ -304,7 +304,7 @@ impl SignedRoutingMessage {
     #[cfg(test)]
     pub fn add_signature_share(&mut self, pk_share: usize, sig_share: BlsSignatureShare) {
         if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
-            let _ = partial.shares.insert(pk_share, sig_share);
+            let _ = partial.shares.insert((pk_share, sig_share));
         }
     }
 
@@ -418,7 +418,7 @@ impl SignedRoutingMessage {
     }
 
     #[cfg(test)]
-    pub fn signatures(&self) -> Option<&BTreeMap<usize, BlsSignatureShare>> {
+    pub fn signatures(&self) -> Option<&BTreeSet<(usize, BlsSignatureShare)>> {
         match &self.security_metadata {
             SecurityMetadata::Partial(partial) => Some(&partial.shares),
             _ => None,
@@ -633,7 +633,8 @@ mod tests {
         assert!(signed_msg
             .signatures()
             .expect("no signatures")
-            .contains_key(&0));
+            .iter()
+            .any(|(idx, _sig)| idx == &0));
 
         assert!(signed_msg.check_integrity().is_err());
 
@@ -693,26 +694,30 @@ mod tests {
             dummy_proof
         ));
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 1);
-
         assert!(!signed_msg.check_fully_signed());
 
+        // Add an invalid signature for IDs 1 added by the 3rd malicious node.
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
+        // Add an invalid signature for ID 3 added by the same 3rd malicious node.
+        let bad_sig = bls_secret_key_share_3.sign(&[1]);
+        signed_msg.add_signature_share(1, bad_sig.clone());
         for key_share_idx in 1..3 {
             let key_share = bls_keys.secret_key_share(key_share_idx);
             let sig = key_share.sign(&unwrap!(serialise(signed_msg.routing_message())));
             signed_msg.add_signature_share(key_share_idx, sig);
         }
-
-        let bad_sig = bls_secret_key_share_3.sign(&[1]);
         signed_msg.add_signature_share(3, bad_sig);
-        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 4);
-        assert!(signed_msg.check_fully_signed());
+        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 5);
+
+        let fully_signed = signed_msg.check_fully_signed();
 
         // Check the bad signature got removed (by check_fully_signed) properly.
+        assert!(fully_signed);
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 3);
         assert!(!signed_msg
             .signatures()
             .expect("no signatures")
-            .contains_key(&3));
+            .iter()
+            .any(|(idx, _sig)| idx == &3));
     }
 }
