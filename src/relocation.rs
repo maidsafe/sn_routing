@@ -163,3 +163,15 @@ fn rehash_name(prefix: &Prefix<XorName>, mut name: XorName) -> XorName {
         }
     }
 }
+
+/// Error indicating the the previous relocate request recipient does not match the once in the
+/// newly accumulated `RelocateRequest` event.
+///
+/// If `unexpected_recipient` is
+///    - `None`, it means we initiated a new relocate request while one was still in progress.
+///    - `Some`, it means we voted to retry a denied request but the deny came from wrong source
+///      (possibly malicious).
+#[derive(Debug)]
+pub struct RelocateRequestRecipientError {
+    pub unexpected_recipient: Option<XorName>,
+}

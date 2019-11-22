@@ -18,7 +18,7 @@ use crate::{
     messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
-    relocation::RelocateDetails,
+    relocation::{RelocateDetails, RelocateRequestRecipientError},
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     xor_name::XorName,
@@ -478,8 +478,22 @@ pub trait Approved: Base {
         &mut self,
         old_dst: Option<XorName>,
     ) -> Result<(), RoutingError> {
-        let new_dst = self.chain_mut().compute_relocate_request_recipient(old_dst);
-        self.handle_relocate_request_event(new_dst)
+        match self.chain_mut().compute_relocate_request_recipient(old_dst) {
+            Ok(dst) => self.handle_relocate_request_event(dst),
+            Err(RelocateRequestRecipientError {
+                unexpected_recipient,
+            }) => {
+                if let Some(dst) = unexpected_recipient {
+                    warn!(
+                        "{} - Unexpected sender of RelocateRequestDenied: {}",
+                        self, dst
+                    )
+                } else {
+                    error!("{} - Relocate request already in progress", self);
+                }
+                Ok(())
+            }
+        }
     }
 }
 

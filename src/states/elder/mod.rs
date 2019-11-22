@@ -874,18 +874,7 @@ impl Elder {
     }
 
     fn handle_relocate_request_denied(&mut self, src: XorName) {
-        if !self.chain.is_current_relocate_request_recipient(&src) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Unexpected sender of RelocateRequestDenied: {}",
-                self,
-                src,
-            );
-            return;
-        }
-
         info!("{} - Relocate request to {} denied", self, src);
-
         // Try again
         self.vote_for_event(AccumulatingEvent::RelocateRequest(Some(src)))
     }

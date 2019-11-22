@@ -17,7 +17,7 @@ use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
-    relocation::{self, RelocateDetails},
+    relocation::{self, RelocateDetails, RelocateRequestRecipientError},
     routing_table::{Authority, Error},
     utils::LogIdent,
     BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
@@ -836,7 +836,7 @@ impl Chain {
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::Relocate(_) 
+            | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::RelocateRequest(_)
             | AccumulatingEvent::RelocateResponse { .. } => {
                 !self.state.split_in_progress && self.our_info().is_quorum(proofs)
@@ -1384,19 +1384,23 @@ impl Chain {
         }
     }
 
-    pub fn compute_relocate_request_recipient(&mut self, old_dst: Option<XorName>) -> XorName {
-        let new_dst = if let Some(old_dst) = old_dst {
-            self.compute_next_relocate_request_recipient(old_dst)
+    pub fn compute_relocate_request_recipient(
+        &mut self,
+        old_dst: Option<XorName>,
+    ) -> Result<XorName, RelocateRequestRecipientError> {
+        if old_dst == self.state.relocate_request_recipient {
+            let new_dst = if let Some(old_dst) = old_dst {
+                self.compute_next_relocate_request_recipient(old_dst)
+            } else {
+                self.compute_first_relocate_request_recipient()
+            };
+            self.state.relocate_request_recipient = Some(new_dst);
+            Ok(new_dst)
         } else {
-            self.compute_first_relocate_request_recipient()
-        };
-
-        self.state.relocate_request_recipient = Some(new_dst);
-        new_dst
-    }
-
-    pub fn is_current_relocate_request_recipient(&self, name: &XorName) -> bool {
-        self.state.relocate_request_recipient.as_ref() == Some(name)
+            Err(RelocateRequestRecipientError {
+                unexpected_recipient: old_dst,
+            })
+        }
     }
 
     pub fn reset_relocate_request(&mut self) {
