@@ -70,6 +70,17 @@ pub struct PartialSecurityMetadata {
     pk_set: BlsPublicKeySet,
 }
 
+impl PartialSecurityMetadata {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<usize> {
+        let key_set = &self.pk_set;
+        self.shares
+            .iter()
+            .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, &signed_bytes))
+            .map(|(idx, _)| *idx)
+            .collect()
+    }
+}
+
 impl Debug for PartialSecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
@@ -362,7 +373,7 @@ impl SignedRoutingMessage {
         // may have been sent from another node, and we cannot trust that that node correctly
         // controlled which signatures were added.
 
-        let invalid_sigs = match self.security_metadata {
+        let invalid_signatures = match self.security_metadata {
             // unfortunately, `match`es had to be split because of the borrow checker;
             // the three cases below can return early as they have nothing left to do
             SecurityMetadata::None | SecurityMetadata::Single(_) => {
@@ -372,7 +383,7 @@ impl SignedRoutingMessage {
                 return true;
             }
             // this is the only case in which we actually have to do further checks
-            SecurityMetadata::Partial(_) => {
+            SecurityMetadata::Partial(ref mut partial) => {
                 let signed_bytes = match serialise(&self.content) {
                     Ok(serialised) => serialised,
                     Err(error) => {
@@ -380,42 +391,20 @@ impl SignedRoutingMessage {
                         return false;
                     }
                 };
-                self.find_invalid_sigs(&signed_bytes)
+
+                let invalid_signatures = partial.find_invalid_sigs(&signed_bytes);
+                for invalid_signature in &invalid_signatures {
+                    let _ = partial.shares.remove(invalid_signature);
+                }
+                invalid_signatures
             }
         };
 
-        if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
-            // the mutable borrow in this case made it impossible to find the invalid sigs and
-            // check for enough sigs in the same match
-            for invalid_signature in invalid_sigs {
-                let _ = partial.shares.remove(&invalid_signature);
-            }
+        if !invalid_signatures.is_empty() {
+            debug!("{:?}: invalid signatures: {:?}", self, invalid_signatures);
         }
 
         self.has_enough_sigs()
-    }
-
-    // Returns a list of all invalid signatures (not from an expected key or not cryptographically
-    // valid).
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<usize> {
-        match self.security_metadata {
-            SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => {
-                vec![]
-            }
-            SecurityMetadata::Partial(ref partial) => {
-                let key_set = &partial.pk_set;
-                let invalid: Vec<_> = partial
-                    .shares
-                    .iter()
-                    .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, signed_bytes))
-                    .map(|(key, _)| *key)
-                    .collect();
-                if !invalid.is_empty() {
-                    debug!("{:?}: invalid signatures: {:?}", self, invalid);
-                }
-                invalid
-            }
-        }
     }
 
     // Returns true if there are enough signatures (note that this method does not verify the
