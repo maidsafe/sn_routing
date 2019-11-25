@@ -742,12 +742,9 @@ impl Elder {
                 p2p_nodes: self.chain.our_elders().cloned().collect(),
             }
         } else {
-            let closest_section = self.chain.closest_section(name).0;
-            let conn_infos: Vec<_> = self
-                .chain
-                .get_section_elders(&closest_section)
-                .iter()
-                .flat_map(|p2p_nodes| p2p_nodes.values().map(P2pNode::connection_info).cloned())
+            let closest_section_elders = self.chain.closest_section_info(*name).1.member_nodes();
+            let conn_infos: Vec<_> = closest_section_elders
+                .map(|p2p_node| p2p_node.connection_info().clone())
                 .collect();
             debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
@@ -844,13 +841,13 @@ impl Elder {
             return Transition::Stay;
         }
 
-        let closest_section = self.chain.closest_section(&details.content().destination).0;
-        let conn_infos: Vec<_> = self
+        let closest_section_elders = self
             .chain
-            .get_section_elders(&closest_section)
-            .iter()
-            .flat_map(|nodes| nodes.values().map(P2pNode::connection_info))
-            .cloned()
+            .closest_section_info(details.content().destination)
+            .1
+            .member_nodes();
+        let conn_infos: Vec<_> = closest_section_elders
+            .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
 
         self.network_service_mut().remove_and_disconnect_all();
