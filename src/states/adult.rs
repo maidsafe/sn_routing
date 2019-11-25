@@ -16,7 +16,7 @@ use crate::{
         Chain, DevParams, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
-    error::{BootstrapResponseError, RoutingError},
+    error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
@@ -244,18 +244,21 @@ impl Adult {
         self.routing_msg_backlog.push(msg)
     }
 
-    // Reject the bootstrap request, because only Elders can handle it.
-    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, _destination: XorName) {
+    // Since we are an adult we will only give info about our section elders and they will further
+    // guide the joining node.
+    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
+        let conn_infos: Vec<_> = self
+            .closest_elders_to(&destination)
+            .map(|p2p_node| p2p_node.connection_info().clone())
+            .collect();
         debug!(
-            "{} - Joining node {:?} rejected: We are not an established node yet.",
-            self, p2p_node,
+            "{} - Sending BootstrapResponse::Rebootstrap to {}",
+            self, p2p_node
         );
-
+        let response = BootstrapResponse::Rebootstrap(conn_infos);
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::BootstrapResponse(BootstrapResponse::Error(
-                BootstrapResponseError::NotApproved,
-            )),
+            DirectMessage::BootstrapResponse(response),
         );
         self.disconnect(p2p_node.peer_addr());
     }

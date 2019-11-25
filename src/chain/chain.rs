@@ -1219,14 +1219,6 @@ impl Chain {
 
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
-    #[cfg(not(feature = "mock_base"))]
-    pub(crate) fn closest_section(&self, name: &XorName) -> (Prefix<XorName>, BTreeSet<XorName>) {
-        let (best_pfx, best_info) = self.closest_section_info(*name);
-        (*best_pfx, best_info.member_names().copied().collect())
-    }
-
-    /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
-    /// belongs in that section or not, and the section itself.
     pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
         let mut best_pfx = self.our_prefix();
         let mut best_info = self.our_info();

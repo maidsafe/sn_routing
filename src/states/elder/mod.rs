@@ -742,8 +742,8 @@ impl Elder {
                 p2p_nodes: self.chain.our_elders().cloned().collect(),
             }
         } else {
-            let closest_section_elders = self.chain.closest_section_info(*name).1.member_nodes();
-            let conn_infos: Vec<_> = closest_section_elders
+            let conn_infos: Vec<_> = self
+                .closest_elders_to(name)
                 .map(|p2p_node| p2p_node.connection_info().clone())
                 .collect();
             debug!(
