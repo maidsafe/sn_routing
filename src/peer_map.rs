@@ -17,10 +17,6 @@ pub struct PeerMap {
 }
 
 impl PeerMap {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     // Marks the connection as established at the network layer.
     pub fn connect(&mut self, conn_info: ConnectionInfo) {
         let _ = self.connections.insert(conn_info.peer_addr, conn_info);

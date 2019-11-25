@@ -115,7 +115,7 @@ impl NetworkBuilder {
             quic_p2p: self.quic_p2p.build()?,
             cache: Default::default(),
             next_msg_token: 0,
-            peer_map: PeerMap::new(),
+            peer_map: Default::default(),
         })
     }
 }
