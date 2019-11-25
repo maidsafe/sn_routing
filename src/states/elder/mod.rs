@@ -207,6 +207,10 @@ impl Elder {
         self.chain.our_elders()
     }
 
+    pub fn our_prefix(&self) -> &Prefix<XorName> {
+        self.chain.our_prefix()
+    }
+
     pub fn relocate(
         self,
         conn_infos: Vec<ConnectionInfo>,
@@ -397,7 +401,7 @@ impl Elder {
             };
             let _ = cached_events.insert(event);
         }
-        let our_pfx = *self.chain.our_prefix();
+        let our_pfx = *self.our_prefix();
 
         cached_events
             .iter()
@@ -451,7 +455,7 @@ impl Elder {
             .chain
             .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
         self.reset_parsec_with_data(reset_data)?;
-        self.send_event(Event::SectionSplit(*self.chain.our_prefix()), outbox);
+        self.send_event(Event::SectionSplit(*self.our_prefix()), outbox);
         Ok(())
     }
 
@@ -730,7 +734,7 @@ impl Elder {
         let response = if self.our_prefix().matches(name) {
             debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
             BootstrapResponse::Join {
-                prefix: *self.chain.our_prefix(),
+                prefix: *self.our_prefix(),
                 p2p_nodes: self.chain.our_elders().cloned().collect(),
             }
         } else {
@@ -765,12 +769,12 @@ impl Elder {
         debug!("{} - Received JoinRequest from {}", self, p2p_node);
 
         let pub_id = *p2p_node.public_id();
-        if !self.chain.our_prefix().matches(pub_id.name()) {
+        if !self.our_prefix().matches(pub_id.name()) {
             debug!(
                 "{} - Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
                 self,
                 pub_id,
-                self.chain.our_prefix()
+                self.our_prefix()
             );
             return;
         }
@@ -795,14 +799,10 @@ impl Elder {
 
             let details = payload.details;
 
-            if !self
-                .chain
-                .our_prefix()
-                .matches(&details.content().destination)
-            {
+            if !self.our_prefix().matches(&details.content().destination) {
                 debug!(
                     "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
-                    self, pub_id, details.content().destination, self.chain.our_prefix()
+                    self, pub_id, details.content().destination, self.our_prefix()
                 );
                 return;
             }
@@ -1111,10 +1111,6 @@ impl Elder {
         }
 
         true
-    }
-
-    fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain.our_prefix()
     }
 
     fn add_elder(

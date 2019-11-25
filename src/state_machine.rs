@@ -9,7 +9,7 @@
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo},
-    error::RoutingError,
+    error::{InterfaceError, RoutingError},
     id::{P2pNode, PublicId},
     network_service::NetworkBuilder,
     outbox::EventBox,
@@ -140,6 +140,16 @@ impl State {
             | State::JoiningPeer(_)
             | State::Adult(_)
             | State::Terminated => None,
+        }
+    }
+
+    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
+        match *self {
+            State::Elder(ref state) => Ok(state.our_prefix().matches(name)),
+            State::Adult(ref state) => Ok(state.our_prefix().matches(name)),
+            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => {
+                Err((InterfaceError::InvalidState).into())
+            }
         }
     }
 

@@ -203,6 +203,11 @@ impl Node {
         self.machine.current().our_elders()
     }
 
+    /// Find out if the given XorName matches our prefix.
+    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
+        self.machine.current().matches_our_prefix(name)
+    }
+
     /// Returns the `PublicId` of this node.
     pub fn id(&self) -> Result<PublicId, RoutingError> {
         self.machine.current().id().ok_or(RoutingError::Terminated)

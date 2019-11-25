@@ -120,8 +120,8 @@ impl Adult {
 
         // Try to join the same section, but using new id, otherwise the section won't accept us
         // due to duplicate votes.
-        let full_id =
-            FullId::within_range(&mut self.rng, &self.chain.our_prefix().range_inclusive());
+        let range_inclusive = self.our_prefix().range_inclusive();
+        let full_id = FullId::within_range(&mut self.rng, &range_inclusive);
 
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             BootstrappingPeerDetails {
@@ -161,6 +161,10 @@ impl Adult {
         Elder::from_adult(details, elders_info, old_pfx, outbox).map(State::Elder)
     }
 
+    pub fn our_prefix(&self) -> &Prefix<XorName> {
+        self.chain.our_prefix()
+    }
+
     fn dispatch_routing_message(
         &mut self,
         msg: SignedRoutingMessage,
@@ -181,7 +185,7 @@ impl Adult {
                 src: Node(_),
                 dst: Node(_),
             } => {
-                if self.chain.our_prefix().matches(&msg.src.name()) {
+                if self.our_prefix().matches(&msg.src.name()) {
                     self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
                 } else {
                     self.add_message_to_backlog(SignedRoutingMessage::from_parts(
@@ -617,11 +621,6 @@ impl Approved for Adult {
 
 impl Display for Adult {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "Adult({}({:b}))",
-            self.name(),
-            self.chain.our_prefix()
-        )
+        write!(formatter, "Adult({}({:b}))", self.name(), self.our_prefix())
     }
 }
