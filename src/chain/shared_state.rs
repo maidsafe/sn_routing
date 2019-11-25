@@ -20,7 +20,7 @@ use maidsafe_utilities::serialisation;
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::{self, Debug, Formatter},
-    hash, iter, mem,
+    iter, mem,
 };
 use unwrap::unwrap;
 
@@ -448,21 +448,10 @@ where
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key_info: SectionKeyInfo,
     sig: BlsSignature,
-}
-
-impl Debug for SectionProofBlock {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SectionProofBlock {{ key_info: {:?}, sig: {:?} }}",
-            self.key_info(),
-            self.sig,
-        )
-    }
 }
 
 impl SectionProofBlock {
@@ -487,26 +476,7 @@ impl SectionProofBlock {
     }
 }
 
-// TODO: with emulated BLS we can't compare signatures, because even if two signatures were
-// constructed from threshold + 1 signature shares from the same signature share set, they might
-// not necessarily have the same internal representation and so would not compare as equal.
-// When we switch to real BLS, this custom impl should be removed and a normal `derive`d one should
-// be used.
-impl PartialEq for SectionProofBlock {
-    fn eq(&self, other: &Self) -> bool {
-        self.key_info.eq(&other.key_info)
-    }
-}
-
-impl hash::Hash for SectionProofBlock {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.key_info.hash(state)
-    }
-}
-
-impl Eq for SectionProofBlock {}
-
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofChain {
     genesis_key_info: SectionKeyInfo,
     blocks: Vec<SectionProofBlock>,
@@ -575,39 +545,8 @@ impl SectionProofChain {
         }
     }
 }
-impl Debug for SectionProofChain {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SectionProofChain {{ genesis_key_info: {:?}, blocks: {:?}, validate: {} }}",
-            self.genesis_key_info,
-            self.blocks,
-            self.validate(),
-        )
-    }
-}
 
-// TODO: remove this impl (replace with a `derive`d one) when we switch to real BLS. For more
-// details see the TODO comment on the `PartialEq` impl of `SectionProofBlock`.
-impl PartialEq for SectionProofChain {
-    fn eq(&self, other: &Self) -> bool {
-        self.genesis_key_info == other.genesis_key_info
-            && self.blocks == other.blocks
-            && self.validate()
-            && other.validate()
-    }
-}
-
-impl Eq for SectionProofChain {}
-
-impl hash::Hash for SectionProofChain {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.genesis_key_info.hash(state);
-        self.blocks.hash(state);
-    }
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionKeyInfo {
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Identical to `ElderInfo`'s.
@@ -641,18 +580,6 @@ impl SectionKeyInfo {
 
     pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
         Ok(serialisation::serialise(&self)?)
-    }
-}
-
-impl Debug for SectionKeyInfo {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SectionKeyInfo {{ prefix: {:?}, version: {:?}, key: {:?} }}",
-            self.prefix(),
-            self.version(),
-            self.key(),
-        )
     }
 }
 

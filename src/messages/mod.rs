@@ -10,19 +10,21 @@ mod direct;
 
 pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionProofChain},
+    chain::{
+        Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,
+    },
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     routing_table::{Authority, Prefix},
     types::MessageId,
     xor_name::XorName,
-    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, BlsSignatureShare, ConnectionInfo,
+    BlsPublicKeySet, BlsSignature, BlsSignatureShare, ConnectionInfo,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use std::{
-    collections::BTreeMap,
+    collections::BTreeSet,
     fmt::{self, Debug, Formatter},
     mem,
 };
@@ -66,8 +68,19 @@ impl HopMessage {
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
     proof: SectionProofChain,
-    shares: BTreeMap<usize, BlsSignatureShare>,
+    shares: BTreeSet<(usize, BlsSignatureShare)>,
     pk_set: BlsPublicKeySet,
+}
+
+impl PartialSecurityMetadata {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<(usize, BlsSignatureShare)> {
+        let key_set = &self.pk_set;
+        self.shares
+            .iter()
+            .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, &signed_bytes))
+            .map(|(idx, sig)| (*idx, sig.clone()))
+            .collect()
+    }
 }
 
 impl Debug for PartialSecurityMetadata {
@@ -173,20 +186,13 @@ impl SignedRoutingMessage {
     /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     pub fn new(
         content: RoutingMessage,
-        key_share: &BlsSecretKeyShare,
+        section_share: &SectionKeyShare,
         pk_set: BlsPublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
-        let mut signatures = BTreeMap::new();
-        let pk_share = key_share.public_key_share();
-        // WIP: Get more efficient.
-        let position = (0..100)
-            .map(|i| pk_set.public_key_share(i))
-            .position(|share| share == pk_share)
-            .ok_or(RoutingError::InvalidElderDkgResult)?;
-
-        let sig = key_share.sign(&serialise(&content)?);
-        let _ = signatures.insert(position, sig);
+        let mut signatures = BTreeSet::new();
+        let sig = section_share.key.sign(&serialise(&content)?);
+        let _ = signatures.insert((section_share.index, sig));
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
             pk_set,
@@ -293,7 +299,7 @@ impl SignedRoutingMessage {
     #[cfg(test)]
     pub fn add_signature_share(&mut self, pk_share: usize, sig_share: BlsSignatureShare) {
         if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
-            let _ = partial.shares.insert(pk_share, sig_share);
+            let _ = partial.shares.insert((pk_share, sig_share));
         }
     }
 
@@ -362,7 +368,7 @@ impl SignedRoutingMessage {
         // may have been sent from another node, and we cannot trust that that node correctly
         // controlled which signatures were added.
 
-        let invalid_sigs = match self.security_metadata {
+        let invalid_signatures = match self.security_metadata {
             // unfortunately, `match`es had to be split because of the borrow checker;
             // the three cases below can return early as they have nothing left to do
             SecurityMetadata::None | SecurityMetadata::Single(_) => {
@@ -372,7 +378,7 @@ impl SignedRoutingMessage {
                 return true;
             }
             // this is the only case in which we actually have to do further checks
-            SecurityMetadata::Partial(_) => {
+            SecurityMetadata::Partial(ref mut partial) => {
                 let signed_bytes = match serialise(&self.content) {
                     Ok(serialised) => serialised,
                     Err(error) => {
@@ -380,42 +386,20 @@ impl SignedRoutingMessage {
                         return false;
                     }
                 };
-                self.find_invalid_sigs(&signed_bytes)
+
+                let invalid_signatures = partial.find_invalid_sigs(&signed_bytes);
+                for invalid_signature in &invalid_signatures {
+                    let _ = partial.shares.remove(invalid_signature);
+                }
+                invalid_signatures
             }
         };
 
-        if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
-            // the mutable borrow in this case made it impossible to find the invalid sigs and
-            // check for enough sigs in the same match
-            for invalid_signature in invalid_sigs {
-                let _ = partial.shares.remove(&invalid_signature);
-            }
+        if !invalid_signatures.is_empty() {
+            debug!("{:?}: invalid signatures: {:?}", self, invalid_signatures);
         }
 
         self.has_enough_sigs()
-    }
-
-    // Returns a list of all invalid signatures (not from an expected key or not cryptographically
-    // valid).
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<usize> {
-        match self.security_metadata {
-            SecurityMetadata::None | SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => {
-                vec![]
-            }
-            SecurityMetadata::Partial(ref partial) => {
-                let key_set = &partial.pk_set;
-                let invalid: Vec<_> = partial
-                    .shares
-                    .iter()
-                    .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, signed_bytes))
-                    .map(|(key, _)| *key)
-                    .collect();
-                if !invalid.is_empty() {
-                    debug!("{:?}: invalid signatures: {:?}", self, invalid);
-                }
-                invalid
-            }
-        }
     }
 
     // Returns true if there are enough signatures (note that this method does not verify the
@@ -429,7 +413,7 @@ impl SignedRoutingMessage {
     }
 
     #[cfg(test)]
-    pub fn signatures(&self) -> Option<&BTreeMap<usize, BlsSignatureShare>> {
+    pub fn signatures(&self) -> Option<&BTreeSet<(usize, BlsSignatureShare)>> {
         match &self.security_metadata {
             SecurityMetadata::Partial(partial) => Some(&partial.shares),
             _ => None,
@@ -607,7 +591,8 @@ mod tests {
         let full_id = FullId::gen(&mut rng);
         let full_id_2 = FullId::gen(&mut rng);
         let bls_keys = generate_bls_threshold_secret_key(&mut rng, 2);
-        let bls_secret_key_share = bls_keys.secret_key_share(0);
+        let bls_secret_key_share =
+            SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo {
             peer_addr: socket_addr,
@@ -644,7 +629,8 @@ mod tests {
         assert!(signed_msg
             .signatures()
             .expect("no signatures")
-            .contains_key(&0));
+            .iter()
+            .any(|(idx, _sig)| idx == &0));
 
         assert!(signed_msg.check_integrity().is_err());
 
@@ -663,7 +649,8 @@ mod tests {
         let full_id_3 = FullId::gen(&mut rng);
 
         let bls_keys = generate_bls_threshold_secret_key(&mut rng, 4);
-        let bls_secret_key_share_0 = bls_keys.secret_key_share(0);
+        let bls_secret_key_share_0 =
+            SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
         let bls_secret_key_share_3 = bls_keys.secret_key_share(3);
 
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
@@ -704,26 +691,30 @@ mod tests {
             dummy_proof
         ));
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 1);
-
         assert!(!signed_msg.check_fully_signed());
 
+        // Add an invalid signature for IDs 1 added by the 3rd malicious node.
         // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
+        // Add an invalid signature for ID 3 added by the same 3rd malicious node.
+        let bad_sig = bls_secret_key_share_3.sign(&[1]);
+        signed_msg.add_signature_share(1, bad_sig.clone());
         for key_share_idx in 1..3 {
             let key_share = bls_keys.secret_key_share(key_share_idx);
             let sig = key_share.sign(&unwrap!(serialise(signed_msg.routing_message())));
             signed_msg.add_signature_share(key_share_idx, sig);
         }
-
-        let bad_sig = bls_secret_key_share_3.sign(&[1]);
         signed_msg.add_signature_share(3, bad_sig);
-        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 4);
-        assert!(signed_msg.check_fully_signed());
+        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 5);
+
+        let fully_signed = signed_msg.check_fully_signed();
 
         // Check the bad signature got removed (by check_fully_signed) properly.
+        assert!(fully_signed);
         assert_eq!(signed_msg.signatures().expect("no signatures").len(), 3);
         assert!(!signed_msg
             .signatures()
             .expect("no signatures")
-            .contains_key(&3));
+            .iter()
+            .any(|(idx, _sig)| idx == &3));
     }
 }
