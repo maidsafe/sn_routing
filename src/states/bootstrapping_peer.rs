@@ -174,10 +174,7 @@ impl BootstrappingPeer {
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
-        let old_conn_infos: Vec<_> = self.peer_map_mut().remove_all().collect();
-        for conn_info in old_conn_infos {
-            self.disconnect_from(conn_info.peer_addr);
-        }
+        self.network_service_mut().remove_and_disconnect_all();
 
         self.pending_requests.clear();
         self.timeout_tokens.clear();
@@ -266,14 +263,6 @@ impl Base for BootstrappingPeer {
         info!("{} Failed to bootstrap. Terminating.", self);
         outbox.send_event(Event::Terminated);
         Transition::Terminate
-    }
-
-    fn handle_connected_to(
-        &mut self,
-        _conn_info: ConnectionInfo,
-        _outbox: &mut dyn EventBox,
-    ) -> Transition {
-        Transition::Stay
     }
 
     fn handle_connection_failure(
