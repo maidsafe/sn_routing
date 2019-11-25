@@ -277,12 +277,12 @@ impl SharedState {
         }
     }
 
-    /// Remove all entries from `out_members` whose name does not match `prefix`.
-    pub fn remove_our_members_not_matching_prefix(&mut self, prefix: &Prefix<XorName>) {
+    /// Remove all entries from `out_members` whose name does not match our prefix.
+    pub fn remove_our_members_not_matching_our_prefix(&mut self) {
         let (our_members, post_split_sibling_members) =
             mem::replace(&mut self.our_members, BTreeMap::new())
                 .into_iter()
-                .partition(|(name, _)| prefix.matches(name));
+                .partition(|(name, _)| self.our_prefix().matches(name));
         self.our_members = our_members;
         self.post_split_sibling_members = post_split_sibling_members;
     }

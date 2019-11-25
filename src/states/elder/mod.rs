@@ -353,11 +353,13 @@ impl Elder {
         let to_connect: Vec<_> = self
             .chain
             .our_elders()
-            .filter(|p2p_node| !self.peer_map().has(p2p_node.peer_addr()))
+            .filter(|p2p_node| {
+                p2p_node.public_id() != self.id() && !self.peer_map().has(p2p_node.peer_addr())
+            })
             .cloned()
             .collect();
 
-        for p2p_node in to_connect.into_iter() {
+        for p2p_node in to_connect {
             self.establish_connection(p2p_node)
         }
     }
@@ -1519,8 +1521,6 @@ impl Approved for Elder {
         }
 
         self.handle_candidate_approval(payload.p2p_node, outbox);
-
-        // TODO: vote for StartDkg and only when that gets consensused, vote for AddElder.
         self.add_elder(pub_id, outbox)
     }
 
