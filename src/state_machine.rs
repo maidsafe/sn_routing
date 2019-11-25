@@ -153,6 +153,17 @@ impl State {
         }
     }
 
+    pub fn closest_elders_to<'a>(
+        &'a self,
+        name: &XorName,
+    ) -> Option<Box<dyn Iterator<Item = &P2pNode> + 'a>> {
+        match *self {
+            State::Elder(ref state) => Some(Box::new(state.closest_elders_to(name))),
+            State::Adult(ref state) => Some(Box::new(state.closest_elders_to(name))),
+            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => None,
+        }
+    }
+
     pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         state_dispatch!(
             self,

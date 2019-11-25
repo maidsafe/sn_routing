@@ -211,6 +211,10 @@ impl Elder {
         self.chain.our_prefix()
     }
 
+    pub fn closest_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
+        self.chain.closest_section_info(*name).1.member_nodes()
+    }
+
     pub fn relocate(
         self,
         conn_infos: Vec<ConnectionInfo>,

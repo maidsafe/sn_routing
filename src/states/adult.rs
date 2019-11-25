@@ -115,6 +115,10 @@ impl Adult {
         Ok(node)
     }
 
+    pub fn closest_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
+        self.chain.closest_section_info(*name).1.member_nodes()
+    }
+
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
         let network_cfg = self.chain.network_cfg();
 
