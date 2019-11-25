@@ -144,14 +144,6 @@ impl JoiningPeer {
                 src: Authority::PrefixSection(_),
                 dst: Authority::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
-            RoutingMessage {
-                content: MessageContent::ConnectionRequest { conn_info, .. },
-                src: Authority::Node(_),
-                dst: Authority::Node(_),
-            } => {
-                self.send_direct_message(&conn_info, DirectMessage::ConnectionResponse);
-                Ok(Transition::Stay)
-            }
             _ => {
                 debug!(
                     "{} - Unhandled routing message, adding to backlog: {:?}",
@@ -245,7 +237,7 @@ impl Base for JoiningPeer {
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::ConnectionResponse | DirectMessage::BootstrapResponse(_) => (),
+            DirectMessage::BootstrapResponse(_) => (),
             _ => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",

@@ -43,9 +43,6 @@ pub enum DirectMessage {
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
     JoinRequest(Option<RelocatePayload>),
-    /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
-    /// a routing message)
-    ConnectionResponse,
     /// Poke a node to send us the first gossip request
     ParsecPoke(u64),
     /// Parsec request message
@@ -87,7 +84,6 @@ impl Debug for DirectMessage {
                     .as_ref()
                     .map(|payload| payload.details.content())
             ),
-            ConnectionResponse => write!(formatter, "ConnectionResponse"),
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(v) => write!(formatter, "ParsecPoke({})", v),
@@ -112,7 +108,6 @@ impl Hash for DirectMessage {
             BootstrapRequest(name) => name.hash(state),
             BootstrapResponse(response) => response.hash(state),
             JoinRequest(payload) => payload.hash(state),
-            ConnectionResponse => (),
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, request) => {
                 version.hash(state);

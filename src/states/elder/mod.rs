@@ -343,27 +343,6 @@ impl Elder {
                 self.disconnect(p2p_node.peer_addr());
             }
         }
-
-        for p2p_node in change.added {
-            if !self.peer_map().has(p2p_node.peer_addr()) {
-                self.establish_connection(p2p_node)
-            }
-        }
-
-        let to_connect: Vec<_> = self
-            .chain
-            .our_elders()
-            .filter(|p2p_node| !self.peer_map().has(p2p_node.peer_addr()))
-            .cloned()
-            .collect();
-
-        for p2p_node in to_connect.into_iter() {
-            self.establish_connection(p2p_node)
-        }
-    }
-
-    fn establish_connection(&mut self, node: P2pNode) {
-        self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
     }
 
     fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
@@ -547,16 +526,6 @@ impl Elder {
         }
 
         match (msg.content, msg.src, msg.dst) {
-            (
-                ConnectionRequest {
-                    conn_info, pub_id, ..
-                },
-                src @ Authority::Node(_),
-                dst @ Authority::Node(_),
-            ) => {
-                self.handle_connection_request(conn_info, pub_id, src, dst, outbox)?;
-                Ok(Transition::Stay)
-            }
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)?;
                 Ok(Transition::Stay)
@@ -626,19 +595,6 @@ impl Elder {
 
         let pub_id = *p2p_node.public_id();
         let dst = Authority::Node(*pub_id.name());
-
-        // Make sure we are connected to the candidate
-        if !self.peer_map().has(p2p_node.peer_addr()) {
-            trace!(
-                "{} - Not yet connected to {} - use p2p_node.",
-                self,
-                p2p_node
-            );
-            self.send_direct_message(
-                p2p_node.connection_info(),
-                DirectMessage::ConnectionResponse,
-            );
-        };
 
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
@@ -751,10 +707,6 @@ impl Elder {
         );
     }
 
-    fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
-        debug!("{} - Received connection response from {}", self, pub_id);
-    }
-
     fn handle_join_request(
         &mut self,
         p2p_node: P2pNode,
@@ -814,10 +766,6 @@ impl Elder {
             MIN_AGE
         };
 
-        self.send_direct_message(
-            p2p_node.connection_info(),
-            DirectMessage::ConnectionResponse,
-        );
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
@@ -1293,21 +1241,6 @@ impl Base for Elder {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
 
-        if self.chain.is_peer_elder(&pub_id) {
-            debug!(
-                "{} - Sending connection request to {} due to lost peer.",
-                self, pub_id
-            );
-
-            let our_name = *self.name();
-            let _ = self.send_connection_request(
-                pub_id,
-                Authority::Node(our_name),
-                Authority::Node(*pub_id.name()),
-                outbox,
-            );
-        }
-
         Transition::Stay
     }
 
@@ -1335,7 +1268,6 @@ impl Base for Elder {
                     );
                 }
             }
-            ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             JoinRequest(payload) => self.handle_join_request(p2p_node, payload),
             ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
             ParsecRequest(version, par_request) => {

@@ -164,45 +164,11 @@ impl Adult {
     fn dispatch_routing_message(
         &mut self,
         msg: SignedRoutingMessage,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        use crate::{messages::MessageContent::*, routing_table::Authority::*};
-
         let (msg, metadata) = msg.into_parts();
-
-        match msg {
-            RoutingMessage {
-                content:
-                    ConnectionRequest {
-                        conn_info,
-                        pub_id,
-                        msg_id,
-                    },
-                src: Node(_),
-                dst: Node(_),
-            } => {
-                if self.chain.our_prefix().matches(&msg.src.name()) {
-                    self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
-                } else {
-                    self.add_message_to_backlog(SignedRoutingMessage::from_parts(
-                        RoutingMessage {
-                            content: ConnectionRequest {
-                                conn_info,
-                                pub_id,
-                                msg_id,
-                            },
-                            ..msg
-                        },
-                        metadata,
-                    ));
-                    Ok(())
-                }
-            }
-            _ => {
-                self.add_message_to_backlog(SignedRoutingMessage::from_parts(msg, metadata));
-                Ok(())
-            }
-        }
+        self.add_message_to_backlog(SignedRoutingMessage::from_parts(msg, metadata));
+        Ok(())
     }
 
     // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
@@ -375,10 +341,6 @@ impl Base for Adult {
             }
             BootstrapRequest(name) => {
                 self.handle_bootstrap_request(p2p_node, name);
-                Ok(Transition::Stay)
-            }
-            ConnectionResponse => {
-                debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
             msg => {
