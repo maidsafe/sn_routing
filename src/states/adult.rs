@@ -115,8 +115,8 @@ impl Adult {
         Ok(node)
     }
 
-    pub fn closest_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
-        self.chain.closest_section_info(*name).1.member_nodes()
+    pub fn closest_known_elders_to(&self, _name: &XorName) -> impl Iterator<Item = &P2pNode> {
+        self.chain.our_info().member_nodes()
     }
 
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
@@ -248,7 +248,7 @@ impl Adult {
     // guide the joining node.
     fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
         let conn_infos: Vec<_> = self
-            .closest_elders_to(&destination)
+            .closest_known_elders_to(&destination)
             .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
         debug!(

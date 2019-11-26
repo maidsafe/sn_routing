@@ -211,7 +211,7 @@ impl Elder {
         self.chain.our_prefix()
     }
 
-    pub fn closest_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
+    pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
         self.chain.closest_section_info(*name).1.member_nodes()
     }
 
@@ -743,7 +743,7 @@ impl Elder {
             }
         } else {
             let conn_infos: Vec<_> = self
-                .closest_elders_to(name)
+                .closest_known_elders_to(name)
                 .map(|p2p_node| p2p_node.connection_info().clone())
                 .collect();
             debug!(
@@ -841,12 +841,8 @@ impl Elder {
             return Transition::Stay;
         }
 
-        let closest_section_elders = self
-            .chain
-            .closest_section_info(details.content().destination)
-            .1
-            .member_nodes();
-        let conn_infos: Vec<_> = closest_section_elders
+        let conn_infos: Vec<_> = self
+            .closest_known_elders_to(&details.content().destination)
             .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
 

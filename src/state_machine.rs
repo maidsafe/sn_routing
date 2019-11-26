@@ -153,14 +153,16 @@ impl State {
         }
     }
 
-    pub fn closest_elders_to<'a>(
+    pub fn closest_known_elders_to<'a>(
         &'a self,
         name: &XorName,
-    ) -> Option<Box<dyn Iterator<Item = &P2pNode> + 'a>> {
+    ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
         match *self {
-            State::Elder(ref state) => Some(Box::new(state.closest_elders_to(name))),
-            State::Adult(ref state) => Some(Box::new(state.closest_elders_to(name))),
-            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => None,
+            State::Elder(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
+            State::Adult(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
+            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => {
+                Err(RoutingError::InvalidStateForOperation)
+            }
         }
     }
 

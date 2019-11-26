@@ -212,8 +212,11 @@ impl Node {
     ///
     /// Note that the Adults of a section only know about their section Elders. Hence they will
     /// always return the section Elders' info.
-    pub fn closest_elders_to(&self, name: &XorName) -> Option<impl Iterator<Item = &P2pNode>> {
-        self.machine.current().closest_elders_to(name)
+    pub fn closest_known_elders_to(
+        &self,
+        name: &XorName,
+    ) -> Result<impl Iterator<Item = &P2pNode>, RoutingError> {
+        self.machine.current().closest_known_elders_to(name)
     }
 
     /// Returns the `PublicId` of this node.
