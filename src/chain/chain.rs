@@ -66,8 +66,11 @@ pub struct Chain {
     event_cache: BTreeSet<NetworkEvent>,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
-    /// The new dkg key to use when SectinInfo completes.
-    new_section_bls_keys: Option<DkgResult>,
+    /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
+    /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
+    /// then members are disjoint. We are working around not having access to the prefix for the
+    /// DkgResult but only the list of participants.
+    new_section_bls_keys: BTreeMap<XorName, DkgResult>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -142,7 +145,7 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             churn_in_progress: false,
-            new_section_bls_keys: None,
+            new_section_bls_keys: Default::default(),
         }
     }
 
@@ -165,9 +168,12 @@ impl Chain {
         participants: &BTreeSet<PublicId>,
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
-        if participants.contains(self.our_id()) {
-            self.new_section_bls_keys = Some(dkg_result.0.clone());
+        if let Some(first) = participants.iter().next() {
+            let _ = self
+                .new_section_bls_keys
+                .insert(*first.name(), dkg_result.0.clone());
         }
+
         Ok(())
     }
 
@@ -941,15 +947,13 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
         let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
+        let our_new_key = key_matching_first_elder_name(
+            &elders_info,
+            mem::replace(&mut self.new_section_bls_keys, Default::default()),
+        )?;
 
         self.state.push_our_new_info(elders_info, proof_block);
-        self.our_section_bls_keys = SectionKeys::new(
-            self.new_section_bls_keys
-                .take()
-                .ok_or(RoutingError::InvalidElderDkgResult)?,
-            self.our_id(),
-            self.our_info(),
-        );
+        self.our_section_bls_keys = SectionKeys::new(our_new_key, self.our_id(), self.our_info());
 
         if is_new_elder {
             self.is_elder = true;
@@ -1482,6 +1486,19 @@ impl Chain {
     pub fn validate_our_history(&self) -> bool {
         self.state.our_history.validate()
     }
+}
+
+fn key_matching_first_elder_name(
+    elders_info: &EldersInfo,
+    mut name_to_key: BTreeMap<XorName, DkgResult>,
+) -> Result<DkgResult, RoutingError> {
+    let first_name = elders_info
+        .member_names()
+        .next()
+        .ok_or(RoutingError::InvalidElderDkgResult)?;
+    name_to_key
+        .remove(first_name)
+        .ok_or(RoutingError::InvalidElderDkgResult)
 }
 
 #[cfg(not(feature = "mock_base"))]
