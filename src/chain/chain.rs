@@ -24,6 +24,7 @@ use crate::{
 };
 use itertools::Itertools;
 use log::LogLevel;
+use maidsafe_utilities::serialisation::serialise;
 use std::cmp::Ordering;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
@@ -290,9 +291,15 @@ impl Chain {
             AccumulatingEvent::AckMessage(ref ack_payload) => {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
-            AccumulatingEvent::Relocate(_) => {
+            AccumulatingEvent::Relocate(ref relocate_details) => {
                 self.churn_in_progress = false;
-                let signature = self.combine_signatures(proofs);
+                let signature = serialise(relocate_details)
+                    .map_err(|err| {
+                        warn!("Failed to serialise {:?}: {:?}", self, err);
+                        err
+                    })
+                    .ok()
+                    .and_then(|signed_bytes| self.combine_signatures(signed_bytes, proofs));
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
             AccumulatingEvent::Online(_)
@@ -1002,15 +1009,24 @@ impl Chain {
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<SectionProofBlock, RoutingError> {
-        Ok(SectionProofBlock::new(
-            key_info,
-            self.combine_signatures(proofs)
-                .ok_or(RoutingError::InvalidNewSectionInfo)?,
-        ))
+        let signature = serialise(&key_info)
+            .map_err(|err| {
+                warn!("Failed to serialise {:?}: {:?}", self, err);
+                err.into()
+            })
+            .and_then(|signed_bytes| {
+                self.combine_signatures(signed_bytes, proofs)
+                    .ok_or(RoutingError::InvalidNewSectionInfo)
+            })?;
+        Ok(SectionProofBlock::new(key_info, signature))
     }
 
-    pub fn combine_signatures(&self, proofs: AccumulatingProof) -> Option<BlsSignature> {
-        proofs.combine_signatures(self.our_info(), self.our_section_bls_keys())
+    pub fn combine_signatures(
+        &self,
+        signed_bytes: Vec<u8>,
+        proofs: AccumulatingProof,
+    ) -> Option<BlsSignature> {
+        proofs.combine_signatures(signed_bytes, self.our_info(), self.our_section_bls_keys())
     }
 
     /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.

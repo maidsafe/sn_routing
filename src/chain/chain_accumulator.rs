@@ -230,18 +230,35 @@ impl AccumulatingProof {
 
     pub fn combine_signatures(
         self,
+        signed_bytes: Vec<u8>,
         elder_info: &EldersInfo,
         pk_set: &BlsPublicKeySet,
     ) -> Option<BlsSignature> {
-        let fr_and_shares = elder_info
+        let fr_and_shares: Vec<_> = elder_info
             .member_ids()
             .enumerate()
             .filter_map(|(index, pub_id)| {
                 self.sig_shares
                     .get(pub_id)
                     .map(|sig_payload| (index, &sig_payload.sig_share))
-            });
-        pk_set.combine_signatures(fr_and_shares).ok()
+            })
+            .filter(|&(index, sig_share)| {
+                pk_set
+                    .public_key_share(index)
+                    .verify(sig_share, &signed_bytes)
+            })
+            .collect();
+        if fr_and_shares.len() <= pk_set.threshold() {
+            return None;
+        }
+
+        pk_set
+            .combine_signatures(fr_and_shares)
+            .map_err(|err| {
+                log_or_panic!(LogLevel::Error, "Combining signatures failed: {}!", err);
+                err
+            })
+            .ok()
     }
 }
 
