@@ -1028,6 +1028,7 @@ impl Chain {
         }
         self.churn_in_progress = false;
         self.check_and_clean_neighbour_infos(None);
+        self.state.remove_our_members_not_matching_our_prefix();
         Ok(())
     }
 
@@ -1143,9 +1144,6 @@ impl Chain {
         let our_new_info =
             EldersInfo::new(our_new_section, our_prefix, Some(self.state.our_info()))?;
         let other_info = EldersInfo::new(other_section, other_prefix, Some(self.state.our_info()))?;
-
-        self.state
-            .remove_our_members_not_matching_prefix(&our_prefix);
 
         Ok((our_new_info, other_info))
     }
