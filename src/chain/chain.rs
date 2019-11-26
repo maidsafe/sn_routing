@@ -411,8 +411,6 @@ impl Chain {
             }
         }
 
-        self.churn_in_progress = true;
-
         Some(details)
     }
 
@@ -493,6 +491,7 @@ impl Chain {
         if self.should_split()? {
             let (our_info, other_info) = self.split_self()?;
             self.state.split_in_progress = true;
+            self.churn_in_progress = true;
             return Ok(vec![our_info, other_info]);
         }
 
@@ -502,6 +501,7 @@ impl Chain {
             Some(self.state.our_info()),
         )?;
 
+        self.churn_in_progress = true;
         Ok(vec![new_info])
     }
 
