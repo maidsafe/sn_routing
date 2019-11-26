@@ -731,22 +731,10 @@ impl Chain {
             && self.is_new(elders_info)
     }
 
-    /// Returns the index of the public key in our_history that will be trusted by the target
-    /// Authority
-    fn proving_index(&self, target: &Authority<XorName>) -> u64 {
-        self.state
-            .their_knowledge
-            .iter()
-            .filter(|(prefix, _)| target.is_compatible(prefix))
-            .map(|(_, index)| *index)
-            .min()
-            .unwrap_or(0)
-    }
-
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
     pub fn prove(&self, target: &Authority<XorName>) -> SectionProofChain {
-        let first_index = self.proving_index(target);
+        let first_index = self.state.proving_index(target);
         self.state.our_history.slice_from(first_index as usize)
     }
 
