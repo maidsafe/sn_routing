@@ -16,7 +16,7 @@ use crate::{
         Chain, DevParams, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
-    error::{BootstrapResponseError, RoutingError},
+    error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
@@ -115,13 +115,17 @@ impl Adult {
         Ok(node)
     }
 
+    pub fn closest_known_elders_to(&self, _name: &XorName) -> impl Iterator<Item = &P2pNode> {
+        self.chain.our_info().member_nodes()
+    }
+
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
         let network_cfg = self.chain.network_cfg();
 
         // Try to join the same section, but using new id, otherwise the section won't accept us
         // due to duplicate votes.
-        let full_id =
-            FullId::within_range(&mut self.rng, &self.chain.our_prefix().range_inclusive());
+        let range_inclusive = self.our_prefix().range_inclusive();
+        let full_id = FullId::within_range(&mut self.rng, &range_inclusive);
 
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
             BootstrappingPeerDetails {
@@ -161,6 +165,10 @@ impl Adult {
         Elder::from_adult(details, elders_info, old_pfx, outbox).map(State::Elder)
     }
 
+    pub fn our_prefix(&self) -> &Prefix<XorName> {
+        self.chain.our_prefix()
+    }
+
     fn dispatch_routing_message(
         &mut self,
         msg: SignedRoutingMessage,
@@ -181,7 +189,7 @@ impl Adult {
                 src: Node(_),
                 dst: Node(_),
             } => {
-                if self.chain.our_prefix().matches(&msg.src.name()) {
+                if self.our_prefix().matches(&msg.src.name()) {
                     self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
                 } else {
                     self.add_message_to_backlog(SignedRoutingMessage::from_parts(
@@ -236,18 +244,21 @@ impl Adult {
         self.routing_msg_backlog.push(msg)
     }
 
-    // Reject the bootstrap request, because only Elders can handle it.
-    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, _destination: XorName) {
+    // Since we are an adult we will only give info about our section elders and they will further
+    // guide the joining node.
+    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
+        let conn_infos: Vec<_> = self
+            .closest_known_elders_to(&destination)
+            .map(|p2p_node| p2p_node.connection_info().clone())
+            .collect();
         debug!(
-            "{} - Joining node {:?} rejected: We are not an established node yet.",
-            self, p2p_node,
+            "{} - Sending BootstrapResponse::Rebootstrap to {}",
+            self, p2p_node
         );
-
+        let response = BootstrapResponse::Rebootstrap(conn_infos);
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::BootstrapResponse(BootstrapResponse::Error(
-                BootstrapResponseError::NotApproved,
-            )),
+            DirectMessage::BootstrapResponse(response),
         );
         self.disconnect(p2p_node.peer_addr());
     }
@@ -617,11 +628,6 @@ impl Approved for Adult {
 
 impl Display for Adult {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "Adult({}({:b}))",
-            self.name(),
-            self.chain.our_prefix()
-        )
+        write!(formatter, "Adult({}({:b}))", self.name(), self.our_prefix())
     }
 }

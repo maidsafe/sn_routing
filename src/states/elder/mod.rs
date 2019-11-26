@@ -207,6 +207,14 @@ impl Elder {
         self.chain.our_elders()
     }
 
+    pub fn our_prefix(&self) -> &Prefix<XorName> {
+        self.chain.our_prefix()
+    }
+
+    pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
+        self.chain.closest_section_info(*name).1.member_nodes()
+    }
+
     pub fn relocate(
         self,
         conn_infos: Vec<ConnectionInfo>,
@@ -397,7 +405,7 @@ impl Elder {
             };
             let _ = cached_events.insert(event);
         }
-        let our_pfx = *self.chain.our_prefix();
+        let our_pfx = *self.our_prefix();
 
         cached_events
             .iter()
@@ -451,7 +459,7 @@ impl Elder {
             .chain
             .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
         self.reset_parsec_with_data(reset_data)?;
-        self.send_event(Event::SectionSplit(*self.chain.our_prefix()), outbox);
+        self.send_event(Event::SectionSplit(*self.our_prefix()), outbox);
         Ok(())
     }
 
@@ -730,16 +738,13 @@ impl Elder {
         let response = if self.our_prefix().matches(name) {
             debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
             BootstrapResponse::Join {
-                prefix: *self.chain.our_prefix(),
+                prefix: *self.our_prefix(),
                 p2p_nodes: self.chain.our_elders().cloned().collect(),
             }
         } else {
-            let closest_section = self.chain.closest_section(name).0;
             let conn_infos: Vec<_> = self
-                .chain
-                .get_section_elders(&closest_section)
-                .iter()
-                .flat_map(|p2p_nodes| p2p_nodes.values().map(P2pNode::connection_info).cloned())
+                .closest_known_elders_to(name)
+                .map(|p2p_node| p2p_node.connection_info().clone())
                 .collect();
             debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
@@ -765,12 +770,12 @@ impl Elder {
         debug!("{} - Received JoinRequest from {}", self, p2p_node);
 
         let pub_id = *p2p_node.public_id();
-        if !self.chain.our_prefix().matches(pub_id.name()) {
+        if !self.our_prefix().matches(pub_id.name()) {
             debug!(
                 "{} - Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
                 self,
                 pub_id,
-                self.chain.our_prefix()
+                self.our_prefix()
             );
             return;
         }
@@ -795,14 +800,10 @@ impl Elder {
 
             let details = payload.details;
 
-            if !self
-                .chain
-                .our_prefix()
-                .matches(&details.content().destination)
-            {
+            if !self.our_prefix().matches(&details.content().destination) {
                 debug!(
                     "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
-                    self, pub_id, details.content().destination, self.chain.our_prefix()
+                    self, pub_id, details.content().destination, self.our_prefix()
                 );
                 return;
             }
@@ -840,13 +841,9 @@ impl Elder {
             return Transition::Stay;
         }
 
-        let closest_section = self.chain.closest_section(&details.content().destination).0;
         let conn_infos: Vec<_> = self
-            .chain
-            .get_section_elders(&closest_section)
-            .iter()
-            .flat_map(|nodes| nodes.values().map(P2pNode::connection_info))
-            .cloned()
+            .closest_known_elders_to(&details.content().destination)
+            .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
 
         self.network_service_mut().remove_and_disconnect_all();
@@ -1111,10 +1108,6 @@ impl Elder {
         }
 
         true
-    }
-
-    fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain.our_prefix()
     }
 
     fn add_elder(
