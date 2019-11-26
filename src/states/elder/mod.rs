@@ -1115,16 +1115,14 @@ impl Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let to_vote_infos = self.chain.add_elder(pub_id)?;
-
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        self.print_rt_size();
-
-        for info in to_vote_infos {
+        for info in self.chain.promote_and_demote_elders()? {
             let participants: BTreeSet<_> = info.member_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
             self.vote_for_event(AccumulatingEvent::StartDkg(participants));
         }
+
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        self.print_rt_size();
 
         Ok(())
     }
@@ -1134,11 +1132,11 @@ impl Elder {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let self_info = self.chain.remove_elder(pub_id)?;
-
-        let participants: BTreeSet<_> = self_info.member_ids().copied().collect();
-        let _ = self.dkg_cache.insert(participants.clone(), self_info);
-        self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+        for info in self.chain.promote_and_demote_elders()? {
+            let participants: BTreeSet<_> = info.member_ids().copied().collect();
+            let _ = self.dkg_cache.insert(participants.clone(), info);
+            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+        }
 
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 

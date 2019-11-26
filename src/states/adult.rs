@@ -268,7 +268,7 @@ impl Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let _ = self.chain.add_elder(pub_id)?;
+        let _ = self.chain.promote_and_demote_elders()?;
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         Ok(())
     }
@@ -278,7 +278,7 @@ impl Adult {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let _ = self.chain.remove_elder(pub_id)?;
+        let _ = self.chain.promote_and_demote_elders()?;
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
         Ok(())
     }
