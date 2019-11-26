@@ -260,8 +260,8 @@ impl PollOptions {
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
+    let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
     for _ in 0..MAX_POLL_CALLS {
-        let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
             FakeClock::advance_time(1001);
@@ -295,7 +295,23 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
         return;
     }
 
-    panic!("poll_and_resend has been called {} times.", MAX_POLL_CALLS);
+    for node in nodes.iter().filter(|node| node_busy(node)) {
+        let unpolled_string = node.inner.unpolled_observations_string();
+        error!("Still busy: {}: {}", node.inner, unpolled_string);
+    }
+
+    if let Some(first_node_busy) = nodes.iter().find(|node| node_busy(node)) {
+        let unpolled_string = first_node_busy.inner.unpolled_observations_string();
+        panic!(
+            "poll_and_resend has been called {} times. first busy: {} : {}",
+            MAX_POLL_CALLS, first_node_busy.inner, unpolled_string
+        );
+    }
+
+    panic!(
+        "poll_and_resend has been called {} times. No busy nodes",
+        MAX_POLL_CALLS
+    );
 }
 
 /// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those

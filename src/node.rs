@@ -486,6 +486,11 @@ impl Node {
         self.machine.current().has_unpolled_observations()
     }
 
+    /// Indicates if there are any pending observations in the parsec object
+    pub fn unpolled_observations_string(&self) -> String {
+        self.machine.current().unpolled_observations_string()
+    }
+
     /// Indicates if this node has the connection info to the given peer.
     pub fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
         self.machine.current().is_connected(socket_addr)

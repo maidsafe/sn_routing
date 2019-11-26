@@ -89,10 +89,13 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
         Some((block, holder))
     }
 
-    pub fn has_unconsensused_observations(&self, peer_list: &BTreeSet<P>) -> bool {
+    pub fn unconsensused_observations_for_peers<'a>(
+        &'a self,
+        peer_list: &'a BTreeSet<P>,
+    ) -> impl Iterator<Item = &'a ObservationHolder<T, P>> + 'a {
         self.unconsensused_observations
             .iter()
-            .any(|holder| match holder {
+            .filter(move |holder| match holder {
                 // Ignore orphaned votes.
                 ObservationHolder::Single { creator, .. } => peer_list.contains(creator),
                 ObservationHolder::Supermajority(..) => true,

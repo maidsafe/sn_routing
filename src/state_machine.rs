@@ -271,6 +271,16 @@ impl State {
         }
     }
 
+    pub fn unpolled_observations_string(&self) -> String {
+        match *self {
+            State::Terminated | State::BootstrappingPeer(_) | State::JoiningPeer(_) => {
+                String::new()
+            }
+            State::Adult(ref state) => state.unpolled_observations_string(),
+            State::Elder(ref state) => state.unpolled_observations_string(),
+        }
+    }
+
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         state_dispatch!(
             *self,
