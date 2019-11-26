@@ -1110,35 +1110,12 @@ impl Elder {
         true
     }
 
-    fn add_elder(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
+    fn promote_and_demote_elders(&mut self) -> Result<(), RoutingError> {
         for info in self.chain.promote_and_demote_elders()? {
             let participants: BTreeSet<_> = info.member_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
             self.vote_for_event(AccumulatingEvent::StartDkg(participants));
         }
-
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        self.print_rt_size();
-
-        Ok(())
-    }
-
-    fn remove_elder(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        for info in self.chain.promote_and_demote_elders()? {
-            let participants: BTreeSet<_> = info.member_ids().copied().collect();
-            let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-        }
-
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }
@@ -1505,6 +1482,7 @@ impl Approved for Elder {
 
         let pub_id = *payload.p2p_node.public_id();
         self.chain.add_member(payload.p2p_node.clone(), payload.age);
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         self.chain.increment_age_counters(&pub_id);
 
         if let Some(relocate_details) = self.chain.poll_relocation() {
@@ -1512,7 +1490,10 @@ impl Approved for Elder {
         }
 
         self.handle_candidate_approval(payload.p2p_node, outbox);
-        self.add_elder(pub_id, outbox)
+        self.promote_and_demote_elders()?;
+        self.print_rt_size();
+
+        Ok(())
     }
 
     fn handle_offline_event(
@@ -1528,12 +1509,13 @@ impl Approved for Elder {
         info!("{} - handle Offline: {}.", self, pub_id);
         self.chain.increment_age_counters(&pub_id);
         self.chain.remove_member(&pub_id);
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;
         }
 
-        self.remove_elder(pub_id, outbox)?;
+        self.promote_and_demote_elders()?;
         self.disconnect_by_id_lookup(&pub_id);
 
         Ok(())
@@ -1697,7 +1679,8 @@ impl Approved for Elder {
         }
 
         self.chain.remove_member(&pub_id);
-        self.remove_elder(pub_id, outbox)?;
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        self.promote_and_demote_elders()?;
         self.disconnect_by_id_lookup(&pub_id);
 
         Ok(())
