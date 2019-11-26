@@ -262,26 +262,6 @@ impl Adult {
         );
         self.disconnect(p2p_node.peer_addr());
     }
-
-    fn add_elder(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        let _ = self.chain.add_elder(pub_id)?;
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        Ok(())
-    }
-
-    fn remove_elder(
-        &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        let _ = self.chain.remove_elder(pub_id)?;
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        Ok(())
-    }
 }
 
 #[cfg(feature = "mock_base")]
@@ -520,10 +500,12 @@ impl Approved for Adult {
 
         let pub_id = *payload.p2p_node.public_id();
         self.chain.add_member(payload.p2p_node, payload.age);
+        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         self.chain.increment_age_counters(&pub_id);
         let _ = self.chain.poll_relocation();
+        let _ = self.chain.promote_and_demote_elders()?;
 
-        self.add_elder(pub_id, outbox)
+        Ok(())
     }
 
     fn handle_offline_event(
@@ -539,9 +521,9 @@ impl Approved for Adult {
         info!("{} - handle Offline: {}.", self, pub_id);
         self.chain.increment_age_counters(&pub_id);
         self.chain.remove_member(&pub_id);
+        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
         let _ = self.chain.poll_relocation();
-
-        self.remove_elder(pub_id, outbox)?;
+        let _ = self.chain.promote_and_demote_elders()?;
         self.disconnect_by_id_lookup(&pub_id);
 
         Ok(())
@@ -600,7 +582,8 @@ impl Approved for Adult {
 
         info!("{} - handle Relocate: {:?}.", self, details);
         self.chain.remove_member(&details.pub_id);
-        self.remove_elder(details.pub_id, outbox)?;
+        self.send_event(Event::NodeLost(*details.pub_id.name()), outbox);
+        let _ = self.chain.promote_and_demote_elders()?;
         self.disconnect_by_id_lookup(&details.pub_id);
 
         Ok(())

@@ -484,76 +484,25 @@ impl Chain {
         }
     }
 
-    /// Adds an elder to our section, creating a new `EldersInfo` in the process.
-    /// If we need to split also returns an additional sibling `EldersInfo`.
-    /// Should not be called while a pfx change is in progress.
-    pub fn add_elder(&mut self, pub_id: PublicId) -> Result<Vec<EldersInfo>, RoutingError> {
-        self.assert_no_prefix_change("add elder");
-
-        if !self.our_prefix().matches(&pub_id.name()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Adding elder {} whose name does not match our prefix {:?}.",
-                self,
-                pub_id,
-                self.our_prefix()
-            );
-        }
-
-        // We already have the connection info from when it was added online.
-        let connection_info = self
-            .get_member_connection_info(&pub_id)
-            .ok_or(RoutingError::PeerNotFound(pub_id))?;
-
-        let mut elder_nodes = self.state.our_info().member_map().clone();
-        let _ = elder_nodes.insert(
-            *pub_id.name(),
-            P2pNode::new(pub_id, connection_info.clone()),
-        );
+    /// Generate a new section info based on the current set of members.
+    /// Returns a set of EldersInfos to vote for.
+    pub fn promote_and_demote_elders(&mut self) -> Result<Vec<EldersInfo>, RoutingError> {
+        self.assert_no_prefix_change("promote and demote");
 
         // TODO: the split decision should be based on the number of all members, not just elders.
-        if self.should_split(&elder_nodes)? {
-            let (our_info, other_info) = self.split_self(elder_nodes.clone())?;
+        if self.should_split()? {
+            let (our_info, other_info) = self.split_self()?;
             self.state.split_in_progress = true;
             return Ok(vec![our_info, other_info]);
         }
 
         let new_info = EldersInfo::new(
-            elder_nodes,
+            self.our_expected_elders(),
             *self.state.our_info().prefix(),
             Some(self.state.our_info()),
         )?;
 
         Ok(vec![new_info])
-    }
-
-    /// Removes an elder from our section, creating a new `our_info` in the process.
-    /// Should not be called while a pfx change is in progress.
-    pub fn remove_elder(&mut self, pub_id: PublicId) -> Result<EldersInfo, RoutingError> {
-        self.assert_no_prefix_change("remove elder");
-
-        let mut elder_nodes = self.state.our_info().member_map().clone();
-        let _ = elder_nodes.remove(pub_id.name());
-
-        if self.our_id() == &pub_id {
-            self.is_elder = false;
-        }
-
-        let new_info = EldersInfo::new(
-            elder_nodes,
-            *self.state.our_info().prefix(),
-            Some(self.state.our_info()),
-        )?;
-
-        if new_info.len() < self.elder_size() {
-            panic!(
-                "Merge not supported: remove_member < min_sec_size {:?}: {:?}",
-                self.our_id(),
-                new_info
-            );
-        }
-
-        Ok(new_info)
     }
 
     /// Gets the data needed to initialise a new Parsec instance
@@ -725,6 +674,13 @@ impl Chain {
     /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
         self.state.our_info().member_nodes()
+    }
+
+    fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
+        self.state
+            .our_joined_members()
+            .map(|(name, info)| (*name, info.p2p_node.clone()))
+            .collect()
     }
 
     /// Returns all neighbour elders.
@@ -1092,37 +1048,41 @@ impl Chain {
     }
 
     /// Returns whether we should split into two sections.
-    fn should_split(&self, members: &BTreeMap<XorName, P2pNode>) -> Result<bool, RoutingError> {
+    fn should_split(&self) -> Result<bool, RoutingError> {
         if self.state.split_in_progress {
             return Ok(false);
         }
 
-        let new_size = members
-            .values()
-            .filter(|p2p_node| {
-                self.our_id
-                    .name()
-                    .common_prefix(p2p_node.public_id().name())
-                    > self.our_prefix().bit_count()
-            })
-            .count();
-        let min_split_size = self.min_split_size();
+        let our_name = self.our_id.name();
+        let our_prefix_bit_count = self.our_prefix().bit_count();
+        let (our_new_size, sibling_new_size) = self
+            .state
+            .our_joined_members()
+            .map(|(name, _)| our_name.common_prefix(name) > our_prefix_bit_count)
+            .fold((0, 0), |(ours, siblings), is_our_prefix| {
+                if is_our_prefix {
+                    (ours + 1, siblings)
+                } else {
+                    (ours, siblings + 1)
+                }
+            });
+
         // If either of the two new sections will not contain enough entries, return `false`.
-        Ok(new_size >= min_split_size && members.len() >= min_split_size + new_size)
+        let min_split_size = self.min_split_size();
+        Ok(our_new_size >= min_split_size && sibling_new_size >= min_split_size)
     }
 
     /// Splits our section and generates new section infos for the child sections.
-    fn split_self(
-        &mut self,
-        members: BTreeMap<XorName, P2pNode>,
-    ) -> Result<(EldersInfo, EldersInfo), RoutingError> {
+    fn split_self(&mut self) -> Result<(EldersInfo, EldersInfo), RoutingError> {
         let next_bit = self.our_id.name().bit(self.our_prefix().bit_count());
 
         let our_prefix = self.our_prefix().pushed(next_bit);
         let other_prefix = self.our_prefix().pushed(!next_bit);
 
-        let (our_new_section, other_section) = members
-            .into_iter()
+        let (our_new_section, other_section) = self
+            .state
+            .our_joined_members()
+            .map(|(key, value)| (*key, value.p2p_node.clone()))
             .partition(|node| our_prefix.matches(&node.0));
 
         let our_new_info =
