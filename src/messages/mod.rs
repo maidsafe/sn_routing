@@ -331,8 +331,11 @@ impl SignedRoutingMessage {
                 } else {
                     log_or_panic!(
                         LogLevel::Error,
-                        "Combining signatures failed on {:?}!",
-                        self
+                        "Combining signatures failed on {:?}! Part Shares: {:?}, Part Set: {:?}, Partial: {:?}",
+                        self,
+                        partial.shares,
+                        partial.pk_set,
+                        partial,
                     );
                 }
             }

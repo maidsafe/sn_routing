@@ -244,6 +244,22 @@ impl ParsecMap {
             .flatten()
     }
 
+    #[cfg(feature = "mock_parsec")]
+    pub fn unpolled_observations_string(&self) -> String {
+        let parsec = if let Some(parsec) = self.map.values().last() {
+            parsec
+        } else {
+            return String::new();
+        };
+
+        parsec.unpolled_observations_string()
+    }
+
+    #[cfg(all(not(feature = "mock_parsec"), feature = "mock_base"))]
+    pub fn unpolled_observations_string(&self) -> String {
+        String::new()
+    }
+
     pub fn needs_pruning(&self) -> bool {
         self.size_counter.needs_pruning()
     }

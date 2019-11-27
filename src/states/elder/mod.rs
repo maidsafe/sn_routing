@@ -1421,6 +1421,10 @@ impl Elder {
         self.parsec_map.has_unpolled_observations()
     }
 
+    pub fn unpolled_observations_string(&self) -> String {
+        self.parsec_map.unpolled_observations_string()
+    }
+
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.chain.is_peer_our_elder(pub_id)
     }
