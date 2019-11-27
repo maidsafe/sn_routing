@@ -83,7 +83,7 @@ impl Adult {
         let public_id = *details.full_id.public_id();
         let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
 
-        let parsec_map = ParsecMap::new(
+        let parsec_map = ParsecMap::default().with_init(
             &mut details.rng,
             details.full_id.clone(),
             &details.gen_pfx_info,

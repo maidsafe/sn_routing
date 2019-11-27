@@ -122,7 +122,7 @@ impl Elder {
             latest_info: EldersInfo::default(),
             parsec_version: 0,
         };
-        let parsec_map = ParsecMap::new(&mut rng, full_id.clone(), &gen_pfx_info);
+        let parsec_map = ParsecMap::default().with_init(&mut rng, full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(
             network_cfg,
             DevParams::default(),

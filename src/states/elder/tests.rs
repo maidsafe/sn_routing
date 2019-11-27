@@ -361,7 +361,7 @@ fn new_elder_state(
 ) -> State {
     let public_id = *full_id.public_id();
 
-    let parsec_map = ParsecMap::new(rng, full_id.clone(), gen_pfx_info);
+    let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), gen_pfx_info);
     let chain = Chain::new(
         Default::default(),
         Default::default(),
