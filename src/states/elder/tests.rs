@@ -514,6 +514,7 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
     // Add new section member to reach elder_size.
     let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_start_dkg(&new_info);
     elder_test.accumulate_section_info_if_vote(&new_info);
 
     // Re-bootstrap now succeeds.
