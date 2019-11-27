@@ -11,8 +11,8 @@ use super::{
     MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
-    error::RoutingError, id::PublicId, relocation::RelocateDetails, utils::LogIdent, BlsPublicKey,
-    BlsPublicKeySet, BlsSignature, Prefix, XorName,
+    error::RoutingError, id::PublicId, relocation::RelocateDetails, routing_table::Authority,
+    utils::LogIdent, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -378,6 +378,30 @@ impl SharedState {
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         &self.their_knowledge
     }
+
+    /// Returns the index of the public key in our_history that will be trusted by the target
+    /// Authority
+    pub fn proving_index(&self, target: &Authority<XorName>) -> u64 {
+        let (prefix, &index) = if let Some(pair) = self
+            .their_knowledge
+            .iter()
+            .filter(|(prefix, _)| target.is_compatible(prefix))
+            .min_by_key(|(_, index)| *index)
+        {
+            pair
+        } else {
+            return 0;
+        };
+
+        if let Some(sibling_index) = self.their_knowledge.get(&prefix.sibling()) {
+            // The sibling section might not have processed the split yet, so it might still be in
+            // `target`'s authority. Because of that, we need to return index that would be trusted
+            // by them too.
+            index.min(*sibling_index)
+        } else {
+            index
+        }
+    }
 }
 
 fn update_with_genesis_related_info_check_same<T>(
@@ -593,8 +617,8 @@ mod test {
         rng::{self, MainRng},
         ConnectionInfo, FullId, Prefix, XorName,
     };
-    use std::collections::BTreeMap;
-    use std::str::FromStr;
+    use rand::Rng;
+    use std::{collections::BTreeMap, str::FromStr};
     use unwrap::unwrap;
 
     fn gen_elders_info(rng: &mut MainRng, pfx: Prefix<XorName>, version: u64) -> EldersInfo {
@@ -751,5 +775,56 @@ mod test {
                 ("1", 1),
             ],
         );
+    }
+
+    // Perform a series of updates to `their_knowledge`, then verify that the proving indices for
+    // the given dst authorities are as expected.
+    //
+    // - `updates` - pairs of (prefix, version) to pass to `update_their_knowledge`
+    // - `expected_proving_indices` - pairs of (prefix, index) where the dst authority name is
+    //   generated such that it matches `prefix` and `index` is the expected proving index.
+    fn update_their_knowledge_and_check_proving_index(
+        rng: &mut MainRng,
+        updates: Vec<(&str, u64)>,
+        expected_proving_indices: Vec<(&str, u64)>,
+    ) {
+        let mut state = SharedState::new(
+            gen_elders_info(rng, Default::default(), 0),
+            generate_bls_threshold_secret_key(rng, 1).public_keys(),
+            Default::default(),
+        );
+
+        for (prefix_str, version) in updates {
+            let prefix = unwrap!(prefix_str.parse());
+            state.update_their_knowledge(prefix, version);
+        }
+
+        for (dst_name_prefix_str, expected_index) in expected_proving_indices {
+            let dst_name_prefix: Prefix<_> = unwrap!(dst_name_prefix_str.parse());
+            let dst_name = dst_name_prefix.substituted_in(rng.gen());
+            let dst = Authority::Section(dst_name);
+
+            assert_eq!(state.proving_index(&dst), expected_index);
+        }
+    }
+
+    #[test]
+    fn update_their_knowledge_after_split_from_one_sibling() {
+        let mut rng = rng::new();
+        update_their_knowledge_and_check_proving_index(
+            &mut rng,
+            vec![("1", 1), ("10", 2)],
+            vec![("10", 1), ("11", 1)],
+        )
+    }
+
+    #[test]
+    fn update_their_knowledge_after_split_from_both_siblings() {
+        let mut rng = rng::new();
+        update_their_knowledge_and_check_proving_index(
+            &mut rng,
+            vec![("1", 1), ("10", 2), ("11", 2)],
+            vec![("10", 2), ("11", 2)],
+        )
     }
 }
