@@ -706,14 +706,6 @@ impl Elder {
             return Err(RoutingError::PeerNotFound(pub_id));
         };
 
-        if self.chain.is_peer_our_member(&pub_id) {
-            debug!(
-                "{} - Ignoring BootstrapRequest from {} - already member of our section",
-                self, pub_id
-            );
-            return Ok(());
-        }
-
         // Check min section size.
         if !self.is_first_node && self.chain.len() < self.chain.elder_size() - 1 {
             debug!(
