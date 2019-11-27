@@ -362,14 +362,38 @@ fn simultaneous_joining_nodes(
 
     //
     // Assert
-    // Verify that the all nodes are now elders and other invariants.
+    // Verify that the sections all have enough elders and other invariants
     //
-    let non_elders = nodes
+    let non_approved = nodes
         .iter()
-        .filter(|node| !node.inner.is_elder())
+        .filter(|node| !node.inner.is_approved())
         .map(TestNode::name)
         .collect_vec();
-    assert!(non_elders.is_empty(), "Should be elders: {:?}", non_elders);
+    assert!(
+        non_approved.is_empty(),
+        "Should be approved: {:?}",
+        non_approved
+    );
+
+    let mut elders_count_by_prefix = BTreeMap::new();
+    for node in nodes.iter() {
+        if let Some(prefix) = node.inner.our_prefix() {
+            let entry = elders_count_by_prefix.entry(*prefix).or_insert(0);
+            if node.inner.is_elder() {
+                *entry += 1;
+            }
+        }
+    }
+    let prefixes_not_enough_elders = elders_count_by_prefix
+        .into_iter()
+        .filter(|(_, num_elders)| *num_elders < network.elder_size())
+        .map(|(prefix, _)| prefix)
+        .collect::<Vec<_>>();
+    assert!(
+        prefixes_not_enough_elders.is_empty(),
+        "Prefixes with too few elders: {:?}",
+        prefixes_not_enough_elders
+    );
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
