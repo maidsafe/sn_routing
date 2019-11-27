@@ -62,7 +62,6 @@ pub trait Approved: Base {
     /// Handles an accumulated `SectionInfo` event.
     fn handle_section_info_event(
         &mut self,
-        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
@@ -302,13 +301,10 @@ pub trait Approved: Base {
                 AccumulatingEvent::Offline(pub_id) => {
                     self.handle_offline_event(pub_id, outbox)?;
                 }
-                AccumulatingEvent::SectionInfo(elders_info, _) => {
-                    match self.handle_section_info_event(
-                        elders_info,
-                        our_pfx,
-                        event.neighbour_change,
-                        outbox,
-                    )? {
+                AccumulatingEvent::SectionInfo(_, _) => {
+                    // Use chain our_info for the already processed ElderInfo.
+                    // During split the AccumulatingEvent is only one side and so is misleading.
+                    match self.handle_section_info_event(our_pfx, event.neighbour_change, outbox)? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }

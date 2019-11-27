@@ -385,9 +385,8 @@ fn new_elder_state(
         rng: rng::new_from(rng),
     };
 
-    let section_info = gen_pfx_info.first_info.clone();
-    let prefix = *section_info.prefix();
-    Elder::from_adult(details, section_info, prefix, outbox)
+    let prefix = *gen_pfx_info.first_info.prefix();
+    Elder::from_adult(details, prefix, outbox)
         .map(State::Elder)
         .unwrap_or(State::Terminated)
 }
@@ -515,6 +514,7 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
     // Add new section member to reach elder_size.
     let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
+    elder_test.accumulate_start_dkg(&new_info);
     elder_test.accumulate_section_info_if_vote(&new_info);
 
     // Re-bootstrap now succeeds.

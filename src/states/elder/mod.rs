@@ -158,13 +158,12 @@ impl Elder {
 
     pub fn from_adult(
         mut details: ElderDetails,
-        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
         let mut elder = Self::new(details, false, Default::default());
-        elder.init(elders_info, old_pfx, event_backlog, outbox)?;
+        elder.init(old_pfx, event_backlog, outbox)?;
         Ok(elder)
     }
 
@@ -288,7 +287,6 @@ impl Elder {
     // Initialise regular node
     fn init(
         &mut self,
-        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         event_backlog: Vec<Event>,
         outbox: &mut dyn EventBox,
@@ -310,7 +308,7 @@ impl Elder {
             added: self.chain.neighbour_elder_nodes().cloned().collect(),
             removed: Default::default(),
         };
-        let _ = self.handle_section_info_event(elders_info, old_pfx, change, outbox)?;
+        let _ = self.handle_section_info_event(old_pfx, change, outbox)?;
 
         Ok(())
     }
@@ -1566,11 +1564,14 @@ impl Approved for Elder {
 
     fn handle_section_info_event(
         &mut self,
-        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        let elders_info = self.chain.our_info();
+        let info_prefix = *elders_info.prefix();
+        let info_version = elders_info.version();
+
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 
         // Poll the relocate queue before the parsec reset, so it is not blocked waiting for the
@@ -1578,14 +1579,12 @@ impl Approved for Elder {
         // go to the new instance.
         let relocate_details = self.chain.poll_relocation();
 
-        if elders_info.prefix().is_extension_of(&old_pfx) {
+        if info_prefix.is_extension_of(&old_pfx) {
             self.finalise_split(outbox)?;
-        } else if old_pfx.is_extension_of(elders_info.prefix()) {
+        } else if old_pfx.is_extension_of(&info_prefix) {
             panic!(
                 "{} - Merge not supported: {:?} -> {:?}",
-                self,
-                old_pfx,
-                elders_info.prefix()
+                self, old_pfx, info_prefix,
             );
         } else {
             self.reset_parsec()?;
@@ -1596,8 +1595,8 @@ impl Approved for Elder {
 
         // Vote to update our self messages proof
         self.vote_send_section_info_ack(SendAckMessagePayload {
-            ack_prefix: *elders_info.prefix(),
-            ack_version: elders_info.version(),
+            ack_prefix: info_prefix,
+            ack_version: info_version,
         });
 
         if let Some(relocate_details) = relocate_details {
