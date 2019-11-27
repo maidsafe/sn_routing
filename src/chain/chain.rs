@@ -694,6 +694,13 @@ impl Chain {
         self.neighbour_infos().flat_map(EldersInfo::member_nodes)
     }
 
+    /// Returns all members of our section that have state == `Joined`.
+    pub fn our_joined_members(&self) -> impl Iterator<Item = &P2pNode> {
+        self.state
+            .our_joined_members()
+            .map(|(_, info)| &info.p2p_node)
+    }
+
     /// Return the keys we know
     pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.state.get_their_keys_info()

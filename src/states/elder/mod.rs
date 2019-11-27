@@ -48,7 +48,7 @@ use log::LogLevel;
 use serde::Serialize;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::SocketAddr,
@@ -339,10 +339,16 @@ impl Elder {
     // to and disconnect from peers that are no longer elders of neighbour sections.
     fn update_peer_connections(&mut self, change: EldersChange) {
         if !self.chain.split_in_progress() {
+            let our_member_connections: HashSet<_> = self
+                .chain
+                .our_joined_members()
+                .map(|node| *node.peer_addr())
+                .collect();
+
             for p2p_node in change.removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
-                if self.chain.is_peer_our_member(p2p_node.public_id()) {
+                if our_member_connections.contains(p2p_node.peer_addr()) {
                     continue;
                 }
 
