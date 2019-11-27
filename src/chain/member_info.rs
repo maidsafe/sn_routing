@@ -94,6 +94,10 @@ pub enum MemberPersona {
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum MemberState {
     Joined,
+    Relocating {
+        // Node knowledge of us
+        node_knowledge: u64,
+    },
     // TODO: we should track how long the node has been away. If longer than some limit, remove it
     // from the list. Otherwise we allow it to return.
     Left,

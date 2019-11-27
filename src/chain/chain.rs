@@ -297,7 +297,6 @@ impl Chain {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
             AccumulatingEvent::Relocate(_) => {
-                self.churn_in_progress = false;
                 let signature = self.combine_signatures(proofs);
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
@@ -342,6 +341,7 @@ impl Chain {
         }
 
         let our_prefix = *self.state.our_prefix();
+        let relocating_state = self.state.create_relocating_state();
         let mut details_to_add = Vec::new();
 
         for (name, member_info) in self.state.our_joined_members_mut() {
@@ -360,6 +360,7 @@ impl Chain {
                 continue;
             }
 
+            member_info.state = relocating_state;
             details_to_add.push(RelocateDetails {
                 pub_id: *member_info.p2p_node.public_id(),
                 destination,
@@ -368,6 +369,7 @@ impl Chain {
         }
 
         for details in details_to_add {
+            trace!("{} - Change state to Relocating {}", self, details.pub_id);
             self.state.relocate_queue.push_front(details)
         }
     }
@@ -400,21 +402,14 @@ impl Chain {
         };
 
         if self.is_peer_our_elder(&details.pub_id) {
-            let min_elders = self.elder_size() + 1;
-            let num_elders = self.our_elders().len();
+            warn!(
+                "{} - Not relocating {} - The peer is still our elder.",
+                self, details.pub_id,
+            );
 
-            if num_elders < min_elders {
-                warn!(
-                    "{} - Not relocating {} - not enough elders in the section ({}/{}).",
-                    self, details.pub_id, num_elders, min_elders,
-                );
-
-                // Keep the details in the queue so when we gain more elders we can try to relocate
-                // the node again.
-                self.state.relocate_queue.push_back(details);
-
-                return None;
-            }
+            // Keep the details in the queue so when the node is demoted we can relocate it.
+            self.state.relocate_queue.push_back(details);
+            return None;
         }
 
         Some(details)
@@ -450,7 +445,6 @@ impl Chain {
                         self,
                         p2p_node,
                     );
-                    return;
                 }
             }
             Entry::Vacant(entry) => {
@@ -458,10 +452,6 @@ impl Chain {
                 let _ = entry.insert(MemberInfo::new(age, p2p_node.clone()));
             }
         }
-
-        // TODO: switch this to true only when the new member is going to be immediately promoted
-        // to elder.
-        self.churn_in_progress = true;
     }
 
     /// Remove a member from our section.
@@ -472,12 +462,13 @@ impl Chain {
             .state
             .our_members
             .get_mut(pub_id.name())
-            .filter(|info| info.state == MemberState::Joined)
+            // TODO: Probably should actually remove them
+            .filter(|info| info.state != MemberState::Left)
         {
             info.state = MemberState::Left;
-
-            // TODO: switch this to true only if the member is elder.
-            self.churn_in_progress = true;
+            self.state
+                .relocate_queue
+                .retain(|details| &details.pub_id != pub_id);
         } else {
             log_or_panic!(
                 LogLevel::Error,
@@ -597,7 +588,7 @@ impl Chain {
         self.state
             .our_members
             .get(pub_id.name())
-            .map(|info| info.state == MemberState::Joined)
+            .map(|info| info.state != MemberState::Left)
             .unwrap_or(false)
     }
 
@@ -683,10 +674,31 @@ impl Chain {
     }
 
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
-        self.state
+        let mut elders: BTreeMap<_, _> = self
+            .state
             .our_joined_members()
             .map(|(name, info)| (*name, info.p2p_node.clone()))
-            .collect()
+            .collect();
+
+        // Ensure that we can still handle one node lost when relocating.
+        // Currently re-promoting relocating adult to elder is not supported.
+        // Ensure that the node we eject are the we want to relocate first.
+        let min_elders = self.elder_size() + 1;
+        let num_elders = elders.len();
+        let our_info_map = self.our_info().member_map();
+        elders.extend(
+            self.state
+                .relocate_queue
+                .iter()
+                .map(|details| details.pub_id.name())
+                .filter(|name| our_info_map.get(name).is_some())
+                .filter_map(|name| self.state.our_members.get(name))
+                .filter(|info| info.state != MemberState::Left)
+                .take(min_elders.saturating_sub(num_elders))
+                .map(|info| (*info.p2p_node.name(), info.p2p_node.clone())),
+        );
+
+        elders
     }
 
     /// Returns all neighbour elders.

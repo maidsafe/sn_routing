@@ -331,6 +331,10 @@ pub enum Transition {
     IntoElder {
         old_pfx: Prefix<XorName>,
     },
+    // `Elder` state transition to `Adult` as a result of demotion
+    Demote {
+        gen_pfx_info: GenesisPfxInfo,
+    },
     Terminate,
 }
 
@@ -343,6 +347,7 @@ impl Debug for Transition {
             Self::Relocate { .. } => write!(f, "Relocate"),
             Self::IntoAdult { .. } => write!(f, "IntoAdult"),
             Self::IntoElder { .. } => write!(f, "IntoElder"),
+            Self::Demote { .. } => write!(f, "Demote"),
             Self::Terminate => write!(f, "Terminate"),
         }
     }
@@ -457,7 +462,7 @@ impl StateMachine {
                 details,
                 conn_infos,
             } => self.state.replace_with(|state| match state {
-                State::Elder(src) => src.relocate(conn_infos, details),
+                State::Adult(src) => src.relocate(conn_infos, details),
                 _ => unreachable!(),
             }),
             IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {
@@ -466,6 +471,10 @@ impl StateMachine {
             }),
             IntoElder { old_pfx } => self.state.replace_with(|state| match state {
                 State::Adult(src) => src.into_elder(old_pfx, outbox),
+                _ => unreachable!(),
+            }),
+            Demote { gen_pfx_info } => self.state.replace_with(|state| match state {
+                State::Elder(src) => src.demote(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
         }

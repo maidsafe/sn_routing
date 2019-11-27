@@ -25,7 +25,7 @@ use crate::{
     outbox::EventBox,
     parsec::{DkgResultWrapper, ParsecMap},
     peer_map::PeerMap,
-    relocation::RelocateDetails,
+    relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
@@ -33,7 +33,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_name::XorName,
-    BlsSignature, NetworkService,
+    BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use std::{
@@ -76,14 +76,15 @@ pub struct Adult {
 }
 
 impl Adult {
-    pub fn from_joining_peer(
+    pub fn new(
         mut details: AdultDetails,
+        parsec_map: ParsecMap,
         _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
 
-        let parsec_map = ParsecMap::default().with_init(
+        let parsec_map = parsec_map.with_init(
             &mut details.rng,
             details.full_id.clone(),
             &details.gen_pfx_info,
@@ -136,6 +137,25 @@ impl Adult {
                 rng: self.rng,
                 dev_params: self.chain.dev_params().clone(),
             },
+        )))
+    }
+
+    pub fn relocate(
+        self,
+        conn_infos: Vec<ConnectionInfo>,
+        details: SignedRelocateDetails,
+    ) -> Result<State, RoutingError> {
+        Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id: self.full_id,
+                network_cfg: self.chain.network_cfg(),
+                timer: self.timer,
+                rng: self.rng,
+                dev_params: self.chain.dev_params().clone(),
+            },
+            conn_infos,
+            details,
         )))
     }
 
@@ -241,6 +261,36 @@ impl Adult {
             msg
         );
         self.routing_msg_backlog.push(msg)
+    }
+
+    fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Transition {
+        if details.content().pub_id != *self.id() {
+            // This `Relocate` message is not for us - it's most likely a duplicate of a previous
+            // message that we already handled.
+            return Transition::Stay;
+        }
+
+        debug!(
+            "{} - Received Relocate message to join the section at {}.",
+            self,
+            details.content().destination
+        );
+
+        if !self.check_signed_relocation_details(&details) {
+            return Transition::Stay;
+        }
+
+        let conn_infos: Vec<_> = self
+            .closest_known_elders_to(&details.content().destination)
+            .map(|p2p_node| p2p_node.connection_info().clone())
+            .collect();
+
+        self.network_service_mut().remove_and_disconnect_all();
+
+        Transition::Relocate {
+            details,
+            conn_infos,
+        }
     }
 
     // Since we are an adult we will only give info about our section elders and they will further
@@ -375,7 +425,11 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            msg => {
+            Relocate(details) => Ok(self.handle_relocate(details)),
+            msg @ MessageSignature(_)
+            | msg @ BootstrapResponse(_)
+            | msg @ JoinRequest(_)
+            | msg @ ParsecPoke(_) => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
                     self,
@@ -505,8 +559,8 @@ impl Approved for Adult {
         self.chain.add_member(payload.p2p_node, payload.age);
         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         self.chain.increment_age_counters(&pub_id);
-        let _ = self.chain.poll_relocation();
         let _ = self.chain.promote_and_demote_elders()?;
+        let _ = self.chain.poll_relocation();
 
         Ok(())
     }
@@ -525,9 +579,9 @@ impl Approved for Adult {
         self.chain.increment_age_counters(&pub_id);
         self.chain.remove_member(&pub_id);
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        let _ = self.chain.poll_relocation();
         let _ = self.chain.promote_and_demote_elders()?;
         self.disconnect_by_id_lookup(&pub_id);
+        let _ = self.chain.poll_relocation();
 
         Ok(())
     }

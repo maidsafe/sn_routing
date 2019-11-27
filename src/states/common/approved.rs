@@ -18,7 +18,7 @@ use crate::{
     messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
-    relocation::RelocateDetails,
+    relocation::{RelocateDetails, SignedRelocateDetails},
     routing_table::{Authority, Prefix},
     state_machine::Transition,
     xor_name::XorName,
@@ -447,6 +447,33 @@ pub trait Approved: Base {
             );
             Err(RoutingError::FailedSignature)
         }
+    }
+
+    fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
+        use itertools::Itertools;
+        if !self.chain().check_trust(&details.proof()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Untrusted {:?} Proof: {:?} --- [{:?}]",
+                self,
+                details,
+                details.proof(),
+                self.chain().get_their_keys_info().format(", ")
+            );
+            return false;
+        }
+
+        if !details.verify() {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Invalid signature of {:?}",
+                self,
+                details
+            );
+            return false;
+        }
+
+        true
     }
 }
 

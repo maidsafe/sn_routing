@@ -103,7 +103,7 @@ impl JoiningPeer {
             network_cfg: self.network_cfg,
             dev_params: self.dev_params,
         };
-        Adult::from_joining_peer(details, outbox).map(State::Adult)
+        Adult::new(details, Default::default(), outbox).map(State::Adult)
     }
 
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
