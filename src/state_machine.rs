@@ -8,7 +8,7 @@
 
 use crate::{
     action::Action,
-    chain::{EldersInfo, GenesisPfxInfo},
+    chain::GenesisPfxInfo,
     error::{InterfaceError, RoutingError},
     id::{P2pNode, PublicId},
     network_service::NetworkBuilder,
@@ -329,7 +329,6 @@ pub enum Transition {
     },
     // `Adult` state transition to `Elder`.
     IntoElder {
-        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
     },
     Terminate,
@@ -465,11 +464,8 @@ impl StateMachine {
                 State::JoiningPeer(src) => src.into_adult(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
-            IntoElder {
-                elders_info,
-                old_pfx,
-            } => self.state.replace_with(|state| match state {
-                State::Adult(src) => src.into_elder(elders_info, old_pfx, outbox),
+            IntoElder { old_pfx } => self.state.replace_with(|state| match state {
+                State::Adult(src) => src.into_elder(old_pfx, outbox),
                 _ => unreachable!(),
             }),
         }

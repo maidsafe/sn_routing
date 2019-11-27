@@ -385,9 +385,8 @@ fn new_elder_state(
         rng: rng::new_from(rng),
     };
 
-    let section_info = gen_pfx_info.first_info.clone();
-    let prefix = *section_info.prefix();
-    Elder::from_adult(details, section_info, prefix, outbox)
+    let prefix = *gen_pfx_info.first_info.prefix();
+    Elder::from_adult(details, prefix, outbox)
         .map(State::Elder)
         .unwrap_or(State::Terminated)
 }

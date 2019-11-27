@@ -141,7 +141,6 @@ impl Adult {
 
     pub fn into_elder(
         self,
-        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
@@ -162,7 +161,7 @@ impl Adult {
             rng: self.rng,
         };
 
-        Elder::from_adult(details, elders_info, old_pfx, outbox).map(State::Elder)
+        Elder::from_adult(details, old_pfx, outbox).map(State::Elder)
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
@@ -544,16 +543,12 @@ impl Approved for Adult {
 
     fn handle_section_info_event(
         &mut self,
-        elders_info: EldersInfo,
         old_pfx: Prefix<XorName>,
         _neighbour_change: EldersChange,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if self.chain.is_self_elder() {
-            Ok(Transition::IntoElder {
-                elders_info,
-                old_pfx,
-            })
+            Ok(Transition::IntoElder { old_pfx })
         } else {
             debug!("{} - Unhandled SectionInfo event", self);
 
