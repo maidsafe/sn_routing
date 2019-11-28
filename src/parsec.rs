@@ -84,21 +84,22 @@ impl fmt::Display for ParsecSizeCounter {
     }
 }
 
+#[derive(Default)]
 pub struct ParsecMap {
     map: BTreeMap<u64, Parsec>,
     size_counter: ParsecSizeCounter,
 }
 
 impl ParsecMap {
-    pub fn new(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Self {
-        let mut map = BTreeMap::new();
-        let _ = map.insert(
-            gen_pfx_info.parsec_version,
-            create(rng, full_id, gen_pfx_info),
-        );
-        let size_counter = ParsecSizeCounter::default();
-
-        Self { map, size_counter }
+    pub fn with_init(
+        mut self,
+        rng: &mut MainRng,
+        full_id: FullId,
+        gen_pfx_info: &GenesisPfxInfo,
+    ) -> Self {
+        let log_ident = LogIdent::new(full_id.public_id());
+        self.init(rng, full_id, gen_pfx_info, &log_ident);
+        self
     }
 
     pub fn init(
@@ -452,10 +453,8 @@ mod tests {
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
 
-        let gen_pfx_info = create_gen_pfx_info(rng, full_ids.clone(), 0);
-        let mut parsec_map = ParsecMap::new(rng, full_id.clone(), &gen_pfx_info);
-
-        for parsec_no in 1..=size {
+        let mut parsec_map = ParsecMap::default();
+        for parsec_no in 0..=size {
             let gen_pfx_info = create_gen_pfx_info(rng, full_ids.clone(), parsec_no);
             parsec_map.init(rng, full_id.clone(), &gen_pfx_info, &log_ident);
         }

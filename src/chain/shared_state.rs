@@ -366,6 +366,17 @@ impl SharedState {
         let _ = self.their_knowledge.insert(prefix, version);
     }
 
+    /// Return a relocating state of a node relocating now.
+    /// Ensure that node knows enough to trust node_knowledge proving index.
+    pub fn create_relocating_state(&self) -> MemberState {
+        let node_knowledge = self
+            .their_knowledge
+            .get(self.our_prefix())
+            .copied()
+            .unwrap_or(0);
+        MemberState::Relocating { node_knowledge }
+    }
+
     /// Returns the reference to their_keys and any recent keys we still hold.
     pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.their_keys
@@ -382,6 +393,16 @@ impl SharedState {
     /// Returns the index of the public key in our_history that will be trusted by the target
     /// Authority
     pub fn proving_index(&self, target: &Authority<XorName>) -> u64 {
+        if let Authority::Node(name) = target {
+            if let Some(info) = self.our_members.get(name) {
+                if let MemberState::Relocating { node_knowledge } = info.state {
+                    // Relocating node, or adult nodes need to be special cased:
+                    // Use the proving index we last know for them.
+                    return node_knowledge;
+                }
+            }
+        }
+
         let (prefix, &index) = if let Some(pair) = self
             .their_knowledge
             .iter()
