@@ -258,7 +258,20 @@ impl ParsecMap {
 
     #[cfg(all(not(feature = "mock_parsec"), feature = "mock_base"))]
     pub fn unpolled_observations_string(&self) -> String {
-        String::new()
+        use itertools::Itertools;
+
+        let parsec = if let Some(parsec) = self.map.values().last() {
+            parsec
+        } else {
+            return String::new();
+        };
+
+        // This doesn't contain as much info as the `mock_parsec` version but it's better than
+        // nothing.
+        format!(
+            "our_unpolled_observations: {:?}",
+            parsec.our_unpolled_observations().format(", ")
+        )
     }
 
     pub fn needs_pruning(&self) -> bool {

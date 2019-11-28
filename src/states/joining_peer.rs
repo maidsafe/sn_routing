@@ -33,7 +33,7 @@ use std::{
 };
 
 /// Time after which bootstrap is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(180);
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub struct JoiningPeerDetails {
     pub network_service: NetworkService,
@@ -55,16 +55,21 @@ pub struct JoiningPeer {
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
-    join_token: u64,
     p2p_nodes: Vec<P2pNode>,
-    relocate_payload: Option<RelocatePayload>,
+    join_type: JoinType,
     network_cfg: NetworkParams,
     dev_params: DevParams,
 }
 
 impl JoiningPeer {
     pub fn new(details: JoiningPeerDetails) -> Self {
-        let join_token = details.timer.schedule(JOIN_TIMEOUT);
+        let join_type = match details.relocate_payload {
+            Some(payload) => JoinType::Relocate(payload),
+            None => {
+                let timeout_token = details.timer.schedule(JOIN_TIMEOUT);
+                JoinType::First { timeout_token }
+            }
+        };
 
         let mut joining_peer = Self {
             network_service: details.network_service,
@@ -74,9 +79,8 @@ impl JoiningPeer {
             full_id: details.full_id,
             timer: details.timer,
             rng: details.rng,
-            join_token,
             p2p_nodes: details.p2p_nodes,
-            relocate_payload: details.relocate_payload,
+            join_type,
             network_cfg: details.network_cfg,
             dev_params: details.dev_params,
         };
@@ -124,9 +128,15 @@ impl JoiningPeer {
     fn send_join_requests(&mut self) {
         for dst in self.p2p_nodes.clone() {
             info!("{} - Sending JoinRequest to {}", self, dst.public_id());
+
+            let relocate_payload = match &self.join_type {
+                JoinType::First { .. } => None,
+                JoinType::Relocate(payload) => Some(payload.clone()),
+            };
+
             self.send_direct_message(
                 dst.connection_info(),
-                DirectMessage::JoinRequest(self.relocate_payload.clone()),
+                DirectMessage::JoinRequest(relocate_payload),
             );
         }
     }
@@ -224,18 +234,18 @@ impl Base for JoiningPeer {
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if self.join_token == token {
+        let join_token = match self.join_type {
+            JoinType::First { timeout_token } => timeout_token,
+            JoinType::Relocate(_) => return Transition::Stay,
+        };
+
+        if join_token == token {
             debug!("{} - Timeout when trying to join a section.", self);
-
-            // TODO: if we are relocating, preserve the relocation details to rebootstrap to the
-            // same target section.
-
             self.network_service_mut().remove_and_disconnect_all();
-
-            return Transition::Rebootstrap;
+            Transition::Rebootstrap
+        } else {
+            Transition::Stay
         }
-
-        Transition::Stay
     }
 
     fn handle_direct_message(
@@ -309,4 +319,12 @@ impl Display for JoiningPeer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "JoiningPeer({})", self.name())
     }
+}
+
+#[allow(clippy::large_enum_variant)]
+enum JoinType {
+    // Node joining the network for the first time.
+    First { timeout_token: u64 },
+    // Node being relocated.
+    Relocate(RelocatePayload),
 }
