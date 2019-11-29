@@ -276,7 +276,7 @@ impl Chain {
         match event {
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = EldersChangeBuilder::new(self);
-                if self.add_elders_info(info.clone(), key_info.clone(), proofs)? {
+                if self.add_elders_info(info.clone(), key_info.clone(), proofs.clone())? {
                     let change = change.build(self);
                     return Ok(Some(
                         AccumulatedEvent::new(event).with_elders_change(change),
@@ -649,6 +649,15 @@ impl Chain {
             .map(|member_info| &member_info.p2p_node)
     }
 
+    /// Returns the connection infos for all non-Elders in the section
+    pub fn adults_and_infants_conn_infos(&self) -> Vec<ConnectionInfo> {
+        self.state
+            .our_joined_members()
+            .filter(|(_, info)| !self.state.our_info().is_member(info.p2p_node.public_id()))
+            .map(|(_, info)| info.p2p_node.connection_info().clone())
+            .collect()
+    }
+
     pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state.our_info().member_map().get(name)
     }
@@ -977,7 +986,7 @@ impl Chain {
 
     /// Handles our own section info, or the section info of our sibling directly after a split.
     /// Returns whether the event should be handled by the caller.
-    fn add_elders_info(
+    pub fn add_elders_info(
         &mut self,
         elders_info: EldersInfo,
         key_info: SectionKeyInfo,

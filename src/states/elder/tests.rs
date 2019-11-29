@@ -15,6 +15,7 @@
 
 use super::*;
 use crate::{
+    chain::SectionKeyInfo,
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
     mock::Network,

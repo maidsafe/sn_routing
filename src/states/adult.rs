@@ -32,6 +32,7 @@ use crate::{
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
+    utils::LogIdent,
     xor_name::XorName,
     BlsSignature, ConnectionInfo, NetworkService,
 };
@@ -319,6 +320,32 @@ impl Adult {
         );
         self.disconnect(p2p_node.peer_addr());
     }
+
+    fn handle_genesis_update(
+        &mut self,
+        gen_pfx_info: GenesisPfxInfo,
+    ) -> Result<Transition, RoutingError> {
+        // An Adult can receive the same message from multiple Elders - bail early if we are
+        // already up to date
+        if gen_pfx_info == self.gen_pfx_info {
+            return Ok(Transition::Stay);
+        }
+        self.gen_pfx_info = gen_pfx_info.clone();
+        self.parsec_map.init(
+            &mut self.rng,
+            self.full_id.clone(),
+            &self.gen_pfx_info,
+            &LogIdent::new(self.full_id.public_id()),
+        );
+        self.chain = Chain::new(
+            self.chain.network_cfg(),
+            self.chain.dev_params().clone(),
+            *self.id(),
+            gen_pfx_info,
+            None,
+        );
+        Ok(Transition::Stay)
+    }
 }
 
 #[cfg(feature = "mock_base")]
@@ -433,6 +460,7 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
+            GenesisUpdate(gen_pfx_info) => self.handle_genesis_update(gen_pfx_info),
             Relocate(details) => Ok(self.handle_relocate(details)),
             msg @ MessageSignature(_)
             | msg @ BootstrapResponse(_)
