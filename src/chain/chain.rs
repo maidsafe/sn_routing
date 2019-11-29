@@ -701,6 +701,13 @@ impl Chain {
         self.state.our_info().member_nodes()
     }
 
+    fn elders_and_adults(&self) -> impl Iterator<Item = &PublicId> {
+        self.state
+            .our_joined_members()
+            .filter(|(_, info)| info.is_mature())
+            .map(|(_, info)| info.p2p_node.public_id())
+    }
+
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
         let mut elders: BTreeMap<_, _> = self
             .state
@@ -730,6 +737,20 @@ impl Chain {
         );
 
         elders
+    }
+
+    fn eldest_members_matching_prefix(
+        &self,
+        prefix: &Prefix<XorName>,
+    ) -> BTreeMap<XorName, P2pNode> {
+        self.state
+            .our_joined_members()
+            .filter(|(name, _)| prefix.matches(name))
+            .sorted_by(|&(_, info1), &(_, info2)| Ord::cmp(&info2.age_counter, &info1.age_counter))
+            .into_iter()
+            .map(|(name, info)| (*name, info.p2p_node.clone()))
+            .take(self.elder_size())
+            .collect()
     }
 
     /// Returns all neighbour elders.
@@ -1098,9 +1119,8 @@ impl Chain {
         let our_name = self.our_id.name();
         let our_prefix_bit_count = self.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
-            .state
-            .our_joined_members()
-            .map(|(name, _)| our_name.common_prefix(name) > our_prefix_bit_count)
+            .elders_and_adults()
+            .map(|id| our_name.common_prefix(id.name()) > our_prefix_bit_count)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
                     (ours + 1, siblings)
@@ -1114,18 +1134,15 @@ impl Chain {
         Ok(our_new_size >= min_split_size && sibling_new_size >= min_split_size)
     }
 
-    /// Splits our section and generates new section infos for the child sections.
+    /// Splits our section and generates new elders infos for the child sections.
     fn split_self(&mut self) -> Result<(EldersInfo, EldersInfo), RoutingError> {
         let next_bit = self.our_id.name().bit(self.our_prefix().bit_count());
 
         let our_prefix = self.our_prefix().pushed(next_bit);
         let other_prefix = self.our_prefix().pushed(!next_bit);
 
-        let (our_new_section, other_section) = self
-            .state
-            .our_joined_members()
-            .map(|(key, value)| (*key, value.p2p_node.clone()))
-            .partition(|node| our_prefix.matches(&node.0));
+        let our_new_section = self.eldest_members_matching_prefix(&our_prefix);
+        let other_section = self.eldest_members_matching_prefix(&other_prefix);
 
         let our_new_info =
             EldersInfo::new(our_new_section, our_prefix, Some(self.state.our_info()))?;
