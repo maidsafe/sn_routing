@@ -19,10 +19,7 @@ use routing::{
     Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, QUORUM_DENOMINATOR,
     QUORUM_NUMERATOR,
 };
-use std::{
-    cmp,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Randomly removes some nodes, but <1/3 from each section and never node 0.
 /// Never trigger merge: never remove enough nodes to drop to `elder_size`.
@@ -306,23 +303,28 @@ impl Expectations {
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &mut [TestNode]) {
+    fn verify(mut self, nodes: &mut [TestNode], new_to_old_map: &BTreeMap<XorName, XorName>) {
         // The minimum of the section lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
-        // recipients thus only needs to reach a quorum for the smaller of the section sizes.
-        let section_sizes: HashMap<_, _> = self
+        // recipients thus only needs to reach a quorum for the minimum number of node at one point.
+        let section_size_added_removed: HashMap<_, _> = self
             .sections
             .iter_mut()
             .map(|(dst, section)| {
                 let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.is_recipient(dst);
-                let new_section = nodes
+                let old_section = section.clone();
+                let new_section: HashSet<_> = nodes
                     .iter()
                     .filter(is_recipient)
                     .map(TestNode::name)
-                    .collect_vec();
-                let count = cmp::min(section.len(), new_section.len());
-                section.extend(new_section);
-                (*dst, count)
+                    .collect();
+                section.extend(new_section.clone());
+
+                let added: BTreeSet<_> = new_section.difference(&old_section).copied().collect();
+                let removed: BTreeSet<_> = old_section.difference(&new_section).copied().collect();
+                let count = old_section.len() - removed.len();
+
+                (*dst, (count, added, removed))
             })
             .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
@@ -353,7 +355,17 @@ impl Expectations {
                             *section_msgs_received.entry(key).or_insert(0usize) += 1;
                         }
                     } else {
-                        assert_eq!(node.name(), dst.name());
+                        let node_name = node.name();
+                        let original_node_name =
+                            new_to_old_map.get(&node_name).copied().unwrap_or(node_name);
+                        assert_eq!(
+                            original_node_name,
+                            dst.name(),
+                            "Receiver does not match destination {}: {:?}, {:?}",
+                            node.inner,
+                            original_node_name,
+                            dst.name()
+                        );
                         assert!(
                             self.messages.remove(&key),
                             "Unexpected request for node {}: {:?}",
@@ -368,13 +380,17 @@ impl Expectations {
         for key in self.messages {
             // All received messages for single nodes were removed: if any are left, they failed.
             assert!(key.dst.is_multiple(), "Failed to receive request {:?}", key);
-            let section_size = section_sizes[&key.dst];
+
+            let (section_size, added, removed) = &section_size_added_removed[&key.dst];
+
             let count = section_msgs_received.remove(&key).unwrap_or(0);
             assert!(
                 count * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
-                "Only received {} out of {} messages {:?}.",
+                "Only received {} out of {} (added: {:?}, removed: {:?}) messages {:?}.",
                 count,
                 section_size,
+                added,
+                removed,
                 key
             );
         }
@@ -415,7 +431,7 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], elder_size: usi
 
     poll_and_resend(nodes);
 
-    expectations.verify(nodes);
+    expectations.verify(nodes, &Default::default());
 }
 
 #[test]
@@ -544,6 +560,7 @@ fn messages_during_churn() {
         let auth_s1 = Authority::Section(!section_name);
 
         let mut expectations = Expectations::default();
+        let initial_names = nodes.iter().map(|node| node.name()).collect_vec();
 
         // Test messages from a node to itself, another node, a group and a section...
         expectations.send_and_expect(&content, auth_n0, auth_n0, &mut nodes, elder_size);
@@ -562,6 +579,13 @@ fn messages_during_churn() {
         expectations.send_and_expect(&content, auth_s0, auth_n0, &mut nodes, elder_size);
 
         poll_and_resend(&mut nodes);
+        let new_to_old_map: BTreeMap<XorName, XorName> = nodes
+            .iter()
+            .zip(initial_names.iter())
+            .map(|(node, old_name)| (node.name(), *old_name))
+            .filter(|(new_name, old_name)| old_name != new_name)
+            .collect();
+
         let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);
         assert!(
             failed_indices.is_empty(),
@@ -577,7 +601,7 @@ fn messages_during_churn() {
         if !added_names.is_empty() {
             warn!("Added nodes: {:?}", added_names);
         }
-        expectations.verify(&mut nodes);
+        expectations.verify(&mut nodes, &new_to_old_map);
         verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 }
