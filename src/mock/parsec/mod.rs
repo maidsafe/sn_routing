@@ -230,7 +230,21 @@ where
         unimplemented!()
     }
 
+    fn is_valid_gossip_recipient(&self) -> bool {
+        if self.peer_list.contains(self.our_id.public_id()) {
+            return true;
+        }
+
+        state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
+            state.dkg_participant(self.our_id.public_id())
+        })
+    }
+
     pub fn has_unpolled_observations(&self) -> bool {
+        if !self.is_valid_gossip_recipient() {
+            return false;
+        }
+
         state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
             state
                 .unconsensused_observations_for_peers(&self.peer_list)
