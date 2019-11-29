@@ -374,6 +374,14 @@ impl Node {
         self.elder_state().is_some()
     }
 
+    /// Returns whether the current state is `Elder` or `Adult`.
+    pub fn is_approved(&self) -> bool {
+        match self.machine.current() {
+            State::Elder(_) | State::Adult(_) => true,
+            _ => false,
+        }
+    }
+
     /// Our `Prefix` once we are a part of the section.
     pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
         self.chain().map(Chain::our_prefix)
