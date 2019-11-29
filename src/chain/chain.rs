@@ -333,8 +333,8 @@ impl Chain {
 
     // Increment the age counters of the members.
     pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
-        let our_section_size = self.state.our_joined_members().count();
-        let safe_section_size = self.safe_section_size();
+        let _our_section_size = self.state.our_joined_members().count();
+        let _safe_section_size = self.safe_section_size();
 
         // FIXME: This breaks tests for now, as once a section reaches a safe size, nodes stop
         // ageing at all, because all churn in tests is Infant churn. Temporarily commented out
@@ -360,18 +360,22 @@ impl Chain {
                 continue;
             }
 
-            if our_section_size >= safe_section_size {
-                if !member_info.increment_age_counter() {
-                    continue;
-                }
-            } else {
-                member_info.increment_age();
+            //if our_section_size >= safe_section_size {
+            if !member_info.increment_age_counter() {
+                continue;
             }
+            // } else {
+            //     member_info.increment_age();
+            // }
 
             let destination =
                 compute_relocation_destination(name, trigger_node.name(), &mut self.dev_params);
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
+                trace!(
+                    "increment_age_counters: Ignoring relocation for {:?}",
+                    member_info.p2p_node.public_id()
+                );
                 continue;
             }
 
@@ -382,6 +386,8 @@ impl Chain {
                 age: member_info.age() + 1,
             })
         }
+
+        trace!("increment_age_counters: {:?}", self.state.our_members);
 
         for details in details_to_add {
             trace!("{} - Change state to Relocating {}", self, details.pub_id);
@@ -687,6 +693,7 @@ impl Chain {
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
         self.elders()
+            .chain(self.our_joined_members())
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 

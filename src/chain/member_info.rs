@@ -80,6 +80,7 @@ impl MemberInfo {
     }
 
     // Increment the age.
+    #[allow(unused)]
     pub fn increment_age(&mut self) {
         self.age_counter = AgeCounter::from_age(self.age().saturating_add(1));
     }
