@@ -275,23 +275,23 @@ impl Chain {
 
         match event {
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
-                let change = NeighbourChangeBuilder::new(self);
+                let change = EldersChangeBuilder::new(self);
                 if self.add_elders_info(info.clone(), key_info.clone(), proofs)? {
                     let change = change.build(self);
                     return Ok(Some(
-                        AccumulatedEvent::new(event).with_neighbour_change(change),
+                        AccumulatedEvent::new(event).with_elders_change(change),
                     ));
                 } else {
                     return Ok(None);
                 }
             }
             AccumulatingEvent::NeighbourInfo(ref info) => {
-                let change = NeighbourChangeBuilder::new(self);
+                let change = EldersChangeBuilder::new(self);
                 self.add_neighbour_elders_info(info.clone())?;
                 let change = change.build(self);
 
                 return Ok(Some(
-                    AccumulatedEvent::new(event).with_neighbour_change(change),
+                    AccumulatedEvent::new(event).with_elders_change(change),
                 ));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
@@ -333,7 +333,10 @@ impl Chain {
 
     // Increment the age counters of the members.
     pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
-        if self.state.our_joined_members().count() >= self.safe_section_size()
+        let our_section_size = self.state.our_joined_members().count();
+        let safe_section_size = self.safe_section_size();
+
+        if our_section_size >= safe_section_size
             && self
                 .state
                 .get_persona(trigger_node)
@@ -353,8 +356,12 @@ impl Chain {
                 continue;
             }
 
-            if !member_info.increment_age_counter() {
-                continue;
+            if our_section_size >= safe_section_size {
+                if !member_info.increment_age_counter() {
+                    continue;
+                }
+            } else {
+                member_info.increment_age();
             }
 
             let destination =
@@ -496,14 +503,31 @@ impl Chain {
             return Ok(vec![our_info, other_info]);
         }
 
-        let new_info = EldersInfo::new(
-            self.our_expected_elders(),
-            *self.state.our_info().prefix(),
-            Some(self.state.our_info()),
-        )?;
+        let expected_elders_map = self.our_expected_elders();
+        let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
+        let current_elders: BTreeSet<_> = self.state.our_info().member_nodes().cloned().collect();
 
-        self.churn_in_progress = true;
-        Ok(vec![new_info])
+        if expected_elders != current_elders {
+            let old_size = self.state.our_info().len();
+
+            let new_info = EldersInfo::new(
+                expected_elders_map,
+                *self.state.our_info().prefix(),
+                Some(self.state.our_info()),
+            )?;
+
+            if self.state.our_info().len() < self.elder_size() && old_size >= self.elder_size() {
+                panic!(
+                    "Merging situation encountered! Not supported: {:?}: {:?}",
+                    self.our_id(),
+                    self.state.our_info()
+                );
+            }
+
+            Ok(vec![new_info])
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// Gets the data needed to initialise a new Parsec instance
@@ -681,13 +705,16 @@ impl Chain {
         let mut elders: BTreeMap<_, _> = self
             .state
             .our_joined_members()
+            .sorted_by(|&(_, info1), &(_, info2)| Ord::cmp(&info2.age_counter, &info1.age_counter))
+            .into_iter()
             .map(|(name, info)| (*name, info.p2p_node.clone()))
+            .take(self.elder_size())
             .collect();
 
         // Ensure that we can still handle one node lost when relocating.
         // Currently re-promoting relocating adult to elder is not supported.
         // Ensure that the node we eject are the we want to relocate first.
-        let min_elders = self.elder_size() + 1;
+        let min_elders = self.elder_size();
         let num_elders = elders.len();
         let our_info_map = self.our_info().member_map();
         elders.extend(
@@ -1594,22 +1621,34 @@ impl SectionKeys {
     }
 }
 
-struct NeighbourChangeBuilder {
-    old: BTreeSet<P2pNode>,
+struct EldersChangeBuilder {
+    old_own: BTreeSet<P2pNode>,
+    old_neighbour: BTreeSet<P2pNode>,
 }
 
-impl NeighbourChangeBuilder {
+impl EldersChangeBuilder {
     fn new(chain: &Chain) -> Self {
         Self {
-            old: chain.neighbour_elder_nodes().cloned().collect(),
+            old_own: chain.our_info().member_nodes().cloned().collect(),
+            old_neighbour: chain.neighbour_elder_nodes().cloned().collect(),
         }
     }
 
     fn build(self, chain: &Chain) -> EldersChange {
-        let new: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+        let new_neighbour: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+        let new_own: BTreeSet<_> = chain.our_info().member_nodes().cloned().collect();
         EldersChange {
-            added: new.difference(&self.old).cloned().collect(),
-            removed: self.old.difference(&new).cloned().collect(),
+            neighbour_added: new_neighbour
+                .difference(&self.old_neighbour)
+                .cloned()
+                .collect(),
+            neighbour_removed: self
+                .old_neighbour
+                .difference(&new_neighbour)
+                .cloned()
+                .collect(),
+            own_added: new_own.difference(&self.old_own).cloned().collect(),
+            own_removed: self.old_own.difference(&new_own).cloned().collect(),
         }
     }
 }
