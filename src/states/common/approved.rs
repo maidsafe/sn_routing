@@ -357,11 +357,12 @@ pub trait Approved: Base {
     // Checking members vote status and vote to remove those non-resposive nodes.
     fn check_voting_status(&mut self) {
         let unresponsive_nodes = self.chain_mut().check_vote_status();
-        let log_indent = self.log_ident();
+        let log_ident = self.log_ident();
         for pub_id in unresponsive_nodes.iter() {
+            info!("{} Voting for unresponsive node {:?}", log_ident, pub_id);
             self.parsec_map_mut().vote_for(
                 AccumulatingEvent::Offline(*pub_id).into_network_event(),
-                &log_indent,
+                &log_ident,
             );
         }
     }
