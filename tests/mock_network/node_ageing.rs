@@ -56,8 +56,8 @@ fn relocate_without_split() {
 
     // Keep the section size such that relocations can happen but splits can't.
     info!(
-        "Start section_churn oldest: {}, num churn: {}, prefix {:?}",
-        oldest_age_counter, num_churns, source_prefix
+        "Start section_churn {}, oldest: {}, num churn: {}, prefix {:?}",
+        nodes[0].inner, oldest_age_counter, num_churns, source_prefix
     );
     section_churn(
         num_churns,
@@ -198,8 +198,8 @@ fn relocate_during_split() {
 // added.
 fn oldest_age_counter_after_only_adds(nodes: &[TestNode]) -> usize {
     // 2^MIN_AGE is the starting value of the age counter.
-    // There is at most `safe_section_size - 2` churn events that cause age counter bumps.
-    2usize.pow(u32::from(MIN_AGE)) + (nodes.len() - 1).min(NETWORK_PARAMS.safe_section_size - 2)
+
+    2usize.pow(u32::from(MIN_AGE)) + nodes.len() - 1
 }
 
 fn find_matching_prefix<'a>(
