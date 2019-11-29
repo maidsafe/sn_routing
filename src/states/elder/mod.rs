@@ -300,8 +300,7 @@ impl Elder {
             self.chain.prefixes()
         );
 
-        // Send `Event::Connected` first and then any backlogged events from previous states.
-        for event in iter::once(Event::Connected).chain(event_backlog) {
+        for event in event_backlog {
             self.send_event(event, outbox);
         }
 
