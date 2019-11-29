@@ -604,7 +604,14 @@ fn check_consensus(peers: &BTreeMap<PeerId, Peer>, expected_votes: usize) -> boo
 }
 
 fn exchange_gossip(src: &mut Parsec<Payload, PeerId>, dst: &mut Parsec<Payload, PeerId>) {
-    let request = unwrap!(src.create_gossip(dst.our_pub_id()));
+    let request = match src.create_gossip(dst.our_pub_id()) {
+        Ok(req) => req,
+        Err(_) => {
+            // we might sometimes try to create gossip to a removed node in tests - the test
+            // shouldn't fail then, the gossip should just not be sent
+            return;
+        }
+    };
     let response = unwrap!(dst.handle_request(src.our_pub_id(), request));
     unwrap!(src.handle_response(dst.our_pub_id(), response));
 }

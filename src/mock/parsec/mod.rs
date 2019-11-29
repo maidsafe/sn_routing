@@ -155,8 +155,12 @@ where
         iter.into_iter().flatten()
     }
 
-    pub fn create_gossip(&self, _peer_id: &S::PublicId) -> Result<Request<T, S::PublicId>, Error> {
-        Ok(Request::new())
+    pub fn create_gossip(&self, peer_id: &S::PublicId) -> Result<Request<T, S::PublicId>, Error> {
+        if self.peer_list.contains(peer_id) {
+            Ok(Request::new())
+        } else {
+            Err(Error)
+        }
     }
 
     pub fn handle_request(
