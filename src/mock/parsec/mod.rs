@@ -39,6 +39,7 @@ pub struct Parsec<T: NetworkEvent, S: SecretId> {
     section_hash: Digest256,
     our_id: S,
     peer_list: BTreeSet<S::PublicId>,
+    dkg_participants: BTreeSet<S::PublicId>,
     consensus_mode: ConsensusMode,
     first_unconsensused: usize,
     first_unpolled: usize,
@@ -64,6 +65,7 @@ where
             section_hash,
             our_id,
             peer_list: genesis_group.iter().cloned().collect(),
+            dkg_participants: Default::default(),
             consensus_mode,
             first_unconsensused: 0,
             first_unpolled: 0,
@@ -92,6 +94,7 @@ where
             section_hash,
             our_id,
             peer_list: genesis_group.iter().cloned().collect(),
+            dkg_participants: Default::default(),
             consensus_mode,
             first_unconsensused: 0,
             first_unpolled: 0,
@@ -145,7 +148,7 @@ where
         let iter = if self.peer_list.contains(self.our_id.public_id()) {
             Some(
                 self.peer_list
-                    .iter()
+                    .union(&self.dkg_participants)
                     .filter(move |peer_id| *peer_id != self.our_id.public_id()),
             )
         } else {
@@ -156,11 +159,10 @@ where
     }
 
     pub fn create_gossip(&self, peer_id: &S::PublicId) -> Result<Request<T, S::PublicId>, Error> {
-        if self.peer_list.contains(peer_id) {
-            Ok(Request::new())
-        } else {
-            Err(Error)
-        }
+        self.gossip_recipients()
+            .find(|id| id == &peer_id)
+            .map(|_| Request::new())
+            .ok_or(Error::InvalidSelfState)
     }
 
     pub fn handle_request(
@@ -295,8 +297,18 @@ where
     fn handle_consensus(&mut self, observation: &Observation<T, S::PublicId>) -> bool {
         match *observation {
             Observation::Add { ref peer_id, .. } => self.peer_list.insert(peer_id.clone()),
-            Observation::Remove { ref peer_id, .. } => self.peer_list.remove(peer_id),
-            Observation::Accusation { ref offender, .. } => self.peer_list.remove(offender),
+            Observation::Remove { ref peer_id, .. } => {
+                let _ = self.dkg_participants.remove(peer_id);
+                self.peer_list.remove(peer_id)
+            }
+            Observation::Accusation { ref offender, .. } => {
+                let _ = self.dkg_participants.remove(offender);
+                self.peer_list.remove(offender)
+            }
+            Observation::StartDkg(ref participants) => {
+                self.dkg_participants.extend(participants.iter().cloned());
+                false
+            }
             _ => false,
         }
     }
@@ -323,7 +335,9 @@ impl<T: NetworkEvent, P: PublicId> Response<T, P> {
 }
 
 #[derive(Debug)]
-pub struct Error;
+pub enum Error {
+    InvalidSelfState,
+}
 
 #[derive(Clone, Copy)]
 struct ObservationInfo {
