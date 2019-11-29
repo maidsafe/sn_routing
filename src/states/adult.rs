@@ -250,6 +250,11 @@ impl Adult {
             .cloned()
             .collect_vec();
 
+        debug!(
+            "{} Sending Parsec Poke for version {} to {:?}",
+            self, version, recipients
+        );
+
         for recipient in recipients {
             self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
         }

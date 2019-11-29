@@ -253,7 +253,14 @@ impl PollOptions {
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
-    let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
+    let node_busy = |node: &TestNode| {
+        if node.inner.has_unpolled_observations() {
+            trace!("{} busy!", node.inner);
+            true
+        } else {
+            false
+        }
+    };
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
