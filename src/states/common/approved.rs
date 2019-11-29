@@ -128,6 +128,7 @@ pub trait Approved: Base {
         );
 
         if let Some(response) = response {
+            trace!("{} seng gossip response to {:?}", self, p2p_node);
             self.send_direct_message(p2p_node.connection_info(), response);
         }
 
@@ -170,6 +171,7 @@ pub trait Approved: Base {
                 let version = self.parsec_map().last_version();
                 let recipients = self.parsec_map().gossip_recipients();
                 if recipients.is_empty() {
+                    trace!("{} Not sending gossip", self);
                     // Parsec hasn't caught up with the event of us joining yet.
                     return;
                 }
@@ -194,6 +196,7 @@ pub trait Approved: Base {
             }
         };
 
+        trace!("{} try to send gossip to {:?}", self, gossip_target);
         if let Some(msg) = self
             .parsec_map_mut()
             .create_gossip(version, gossip_target.public_id())
