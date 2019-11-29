@@ -718,7 +718,9 @@ impl Chain {
     fn elders_and_adults(&self) -> impl Iterator<Item = &PublicId> {
         self.state
             .our_joined_members()
-            .filter(|(_, info)| info.is_mature())
+            // FIXME: we temporarily treat all section
+            // members as Adults
+            //.filter(|(_, info)| info.is_mature())
             .map(|(_, info)| info.p2p_node.public_id())
     }
 
