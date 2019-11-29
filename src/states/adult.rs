@@ -246,6 +246,7 @@ impl Adult {
             .gen_pfx_info
             .latest_info
             .member_nodes()
+            .filter(|node| node.public_id() != self.id())
             .map(P2pNode::connection_info)
             .cloned()
             .collect_vec();
