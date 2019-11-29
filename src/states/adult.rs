@@ -302,23 +302,31 @@ impl Adult {
         }
     }
 
-    // Since we are an adult we will only give info about our section elders and they will further
-    // guide the joining node.
-    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
-        let conn_infos: Vec<_> = self
-            .closest_known_elders_to(&destination)
-            .map(|p2p_node| p2p_node.connection_info().clone())
-            .collect();
-        debug!(
-            "{} - Sending BootstrapResponse::Rebootstrap to {}",
-            self, p2p_node
-        );
-        let response = BootstrapResponse::Rebootstrap(conn_infos);
+    // Reject the bootstrap request, because only Elders can handle it.
+    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, name: XorName) {
+        let nodes = self.chain.our_elders().cloned().collect();
+        let response = if self.chain.our_prefix().matches(&name) {
+            debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
+            BootstrapResponse::Join {
+                prefix: *self.chain.our_prefix(),
+                p2p_nodes: nodes,
+            }
+        } else {
+            let conn_infos: Vec<_> = nodes
+                .iter()
+                .map(P2pNode::connection_info)
+                .cloned()
+                .collect();
+            debug!(
+                "{} - Sending BootstrapResponse::Rebootstrap to {}",
+                self, p2p_node
+            );
+            BootstrapResponse::Rebootstrap(conn_infos)
+        };
         self.send_direct_message(
             p2p_node.connection_info(),
             DirectMessage::BootstrapResponse(response),
         );
-        self.disconnect(p2p_node.peer_addr());
     }
 
     fn handle_genesis_update(
