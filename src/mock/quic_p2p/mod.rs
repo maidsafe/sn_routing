@@ -23,7 +23,9 @@ use std::{
     iter,
     net::{IpAddr, SocketAddr},
     rc::Rc,
+    str::FromStr,
 };
+use structopt::StructOpt;
 
 /// Builder for `QuickP2p`.
 pub struct Builder {
@@ -132,11 +134,18 @@ impl QuicP2p {
 }
 
 /// Configuration for `QuicP2p`.
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize, StructOpt)]
 pub struct Config {
     /// Hard-coded contacts.
+    #[structopt(
+        short,
+        long,
+        default_value = "[]",
+        parse(try_from_str = "serde_json::from_str")
+    )]
     pub hard_coded_contacts: HashSet<NodeInfo>,
     /// Type of our `QuicP2p` instance: node or client.
+    #[structopt(short = "t", long, default_value = "node")]
     pub our_type: OurType,
     /// Port to listen to.
     pub ip: Option<IpAddr>,
@@ -192,7 +201,7 @@ impl Config {
 }
 
 /// The type of our `QuicP2p` instance: client or node.
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub enum OurType {
     /// We are a client
     Client,
@@ -203,6 +212,18 @@ pub enum OurType {
 impl Default for OurType {
     fn default() -> Self {
         OurType::Node
+    }
+}
+
+impl FromStr for OurType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "client" => Ok(OurType::Client),
+            "node" => Ok(OurType::Node),
+            x => Err(format!("Unknown client type: {}", x)),
+        }
     }
 }
 
@@ -294,6 +315,7 @@ impl Peer {
         }
     }
 
+    /// Return the peer address.
     pub fn peer_addr(&self) -> SocketAddr {
         match *self {
             Peer::Node { ref node_info } => node_info.peer_addr,
@@ -303,7 +325,7 @@ impl Peer {
 }
 
 /// Information about a peer of type node.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, StructOpt)]
 pub struct NodeInfo {
     /// Endpoint of the node
     pub peer_addr: SocketAddr,

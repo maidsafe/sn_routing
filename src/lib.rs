@@ -168,7 +168,7 @@ pub const SAFE_SECTION_SIZE: usize = 100;
 pub const ELDER_SIZE: usize = 7;
 
 #[cfg(feature = "mock_base")]
-use crate::mock::quic_p2p;
+pub use crate::mock::quic_p2p;
 #[cfg(feature = "mock_base")]
 pub use crate::{
     chain::{

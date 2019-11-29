@@ -11,7 +11,7 @@
 pub(crate) mod parsec;
 
 /// Mock version of Quic-P2P
-pub(crate) mod quic_p2p;
+pub mod quic_p2p;
 
 /// Mock cryptography
 #[cfg(feature = "mock_crypto")]
