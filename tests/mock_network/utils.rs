@@ -701,7 +701,10 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
 
     let neighbour_prefixes = node.inner.neighbour_prefixes();
     if !node.inner.is_elder() {
-        assert!(neighbour_prefixes.is_empty(), "No neighbour info for Adults");
+        assert!(
+            neighbour_prefixes.is_empty(),
+            "No neighbour info for Adults"
+        );
         return;
     }
 

@@ -556,8 +556,12 @@ fn check_section_info_ack() {
     //
     // Assert
     //
-    let expected_all: Vec<_> = nodes.iter().map(|node| node.id()).collect();
-    assert_eq!(node_with_sibling_knowledge, expected_all);
+    let expected_all_elder: Vec<_> = nodes
+        .iter()
+        .filter(|node| node.inner.is_elder())
+        .map(|node| node.id())
+        .collect();
+    assert_eq!(node_with_sibling_knowledge, expected_all_elder);
 }
 
 #[test]
