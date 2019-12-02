@@ -57,6 +57,15 @@ pub enum ClientEvent {
     },
 }
 
+/// An Event raised as node complete joining
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum ConnectEvent {
+    /// Node first joining the network
+    First,
+    /// Node relocating from one section to another
+    Relocate,
+}
+
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
 /// These are sent by routing to the library's user. It allows the user to handle requests and
@@ -86,7 +95,7 @@ pub enum Event {
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
-    Connected,
+    Connected(ConnectEvent),
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
@@ -128,7 +137,9 @@ impl Debug for Event {
             Event::SectionSplit(ref prefix) => {
                 write!(formatter, "Event::SectionSplit({:?})", prefix)
             }
-            Event::Connected => write!(formatter, "Event::Connected"),
+            Event::Connected(ref connect_type) => {
+                write!(formatter, "Event::Connected({:?})", connect_type)
+            }
             Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
             Event::Terminated => write!(formatter, "Event::Terminated"),
             Event::TimerTicked => write!(formatter, "Event::TimerTicked"),
