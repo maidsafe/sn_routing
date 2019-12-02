@@ -117,7 +117,7 @@ impl Adult {
     }
 
     pub fn closest_known_elders_to(&self, _name: &XorName) -> impl Iterator<Item = &P2pNode> {
-        self.chain.our_info().member_nodes()
+        self.chain.our_elders()
     }
 
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
@@ -246,7 +246,8 @@ impl Adult {
         }
 
         let conn_infos: Vec<_> = self
-            .closest_known_elders_to(&details.content().destination)
+            .chain
+            .our_elders()
             .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
 
@@ -275,6 +276,54 @@ impl Adult {
             DirectMessage::BootstrapResponse(response),
         );
         self.disconnect(p2p_node.peer_addr());
+    }
+
+    // Send signed_msg to our elders so they can route it properly.
+    fn send_signed_message_to_elders(
+        &mut self,
+        signed_msg: &mut SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        trace!(
+            "{}: Forwarding message {:?} via elder targets {:?}",
+            self,
+            signed_msg,
+            self.chain.our_elders().format(", ")
+        );
+
+        let routing_msg_filter = &mut self.routing_msg_filter;
+        let targets: Vec<_> = self
+            .chain
+            .our_elders()
+            .filter(|p2p_node| {
+                routing_msg_filter
+                    .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
+                    .is_new()
+            })
+            .map(|node| node.connection_info().clone())
+            .collect();
+
+        let message = self.to_hop_message(signed_msg.clone())?;
+        self.send_message_to_targets(&targets, targets.len(), message);
+
+        // we've seen this message - don't handle it again if someone else sends it to us
+        let _ = self
+            .routing_msg_filter
+            .filter_incoming(signed_msg.routing_message());
+
+        Ok(())
+    }
+
+    fn handle_filtered_signed_message(
+        &mut self,
+        mut signed_msg: SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        if self.in_authority(&signed_msg.routing_message().dst) {
+            self.check_signed_message_integrity(&signed_msg)?;
+            self.routing_msg_backlog.push(signed_msg.clone());
+        }
+
+        self.send_signed_message_to_elders(&mut signed_msg)?;
+        Ok(())
     }
 }
 
@@ -410,7 +459,7 @@ impl Base for Adult {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
 
@@ -427,12 +476,7 @@ impl Base for Adult {
             return Ok(Transition::Stay);
         }
 
-        if self.in_authority(&msg.routing_message().dst) {
-            self.check_signed_message_integrity(&msg)?;
-            self.dispatch_routing_message(msg, outbox)?;
-        } else {
-            self.routing_msg_backlog.push(msg);
-        }
+        self.handle_filtered_signed_message(msg)?;
         Ok(Transition::Stay)
     }
 
@@ -441,32 +485,8 @@ impl Base for Adult {
             return Ok(()); // Message is for us.
         }
 
-        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
-
-        // We should only be connected to our own Elders - send to all of them
-        // Need to collect IDs first so that self is not borrowed via the iterator
-        //
-        // WIP: this is probably out of date? How else do we know which our section members are?
-        // WIP: once ConnectionRequest/ConnectionResponse is removed this whole function can
-        // probably be removed.
-        let target_nodes = self
-            .gen_pfx_info
-            .latest_info
-            .member_nodes()
-            .cloned()
-            .collect_vec();
-
-        for p2p_node in &target_nodes {
-            if self
-                .routing_msg_filter
-                .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
-                .is_new()
-            {
-                let message = self.to_hop_message(signed_msg.clone())?;
-                self.send_message(p2p_node.connection_info(), message);
-            }
-        }
-
+        let mut signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
+        self.send_signed_message_to_elders(&mut signed_msg)?;
         Ok(())
     }
 
