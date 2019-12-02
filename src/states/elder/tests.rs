@@ -195,7 +195,8 @@ impl ElderUnderTest {
         let connection_info = ConnectionInfo::from(addr);
         let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
         let parsec_version = parsec.last_version();
-        let message = unwrap!(parsec.create_gossip(parsec_version, self.full_id.0.public_id()));
+        let request = parsec::Request::new();
+        let message = DirectMessage::ParsecRequest(parsec_version, request);
         self.handle_direct_message((message, P2pNode::new(other_pub_id, connection_info)))
     }
 

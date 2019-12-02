@@ -672,7 +672,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
 
     assert!(
         our_prefix.matches(&our_name),
-        "Our prefix doesn't match our name: {:?}, {:?}",
+        "{} Our prefix doesn't match our name: {:?}, {:?}",
+        node.inner,
         our_prefix,
         our_name,
     );
@@ -680,7 +681,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     if !our_prefix.is_empty() {
         assert!(
             our_section_elders.len() >= elder_size,
-            "Our section {:?} is below the minimum size!",
+            "{} Our section {:?} is below the minimum size!",
+            node.inner,
             our_prefix,
         );
     }
@@ -690,8 +692,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .find(|name| !our_prefix.matches(name))
     {
         panic!(
-            "A name in our section doesn't match its prefix! {:?}, {:?}",
-            name, our_prefix,
+            "{} A name in our section doesn't match its prefix! {:?}, {:?}",
+            node.inner, name, our_prefix,
         );
     }
 
@@ -702,9 +704,9 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .find(|prefix| prefix.is_compatible(our_prefix))
     {
         panic!(
-            "Our prefix is compatible with one of the neighbour prefixes:\
+            "{} Our prefix is compatible with one of the neighbour prefixes:\
              us: {:?} / neighbour: {:?}, neighbour_prefixes: {:?}",
-            our_prefix, compatible_prefix, neighbour_prefixes,
+            node.inner, our_prefix, compatible_prefix, neighbour_prefixes,
         );
     }
 
@@ -713,7 +715,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .find(|prefix| node.inner.section_elders(prefix).len() < elder_size)
     {
         panic!(
-            "A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), neighbour_prefixes: {:?}",
+            "{} A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), neighbour_prefixes: {:?}",
+            node.inner,
             prefix,
             node.inner.section_elders(prefix).len(),
             our_name,
@@ -730,8 +733,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
             .find(|name| !prefix.matches(name))
         {
             panic!(
-                "A name in a section doesn't match its prefix! {:?}, {:?}",
-                name, prefix,
+                "{} A name in a section doesn't match its prefix! {:?}, {:?}",
+                node.inner, name, prefix,
             );
         }
     }
@@ -750,7 +753,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     };
     if !all_are_neighbours {
         panic!(
-            "Some sections in the chain aren't neighbours of our section: {:?}",
+            "{} Some sections in the chain aren't neighbours of our section: {:?}",
+            node.inner,
             iter::once(*our_prefix)
                 .chain(neighbour_prefixes)
                 .collect::<Vec<_>>()
@@ -758,7 +762,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     }
     if !all_neighbours_covered {
         panic!(
-            "Some neighbours aren't fully covered by the chain: {:?}",
+            "{} Some neighbours aren't fully covered by the chain: {:?}",
+            node.inner,
             iter::once(*our_prefix)
                 .chain(neighbour_prefixes)
                 .collect::<Vec<_>>()

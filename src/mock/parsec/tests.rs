@@ -32,29 +32,23 @@ fn smoke() {
     let genesis_group: BTreeSet<_> = vec![alice_id, bob_id].into_iter().collect();
 
     let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Supermajority);
-    alice
-        .vote_for(Observation::OpaquePayload(Payload(1)))
-        .unwrap();
+    unwrap!(alice.vote_for(Observation::OpaquePayload(Payload(1))));
 
     let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Supermajority);
-    bob.vote_for(Observation::OpaquePayload(Payload(1)))
-        .unwrap();
+    unwrap!(bob.vote_for(Observation::OpaquePayload(Payload(1))));
 
-    let request = bob.create_gossip(&alice_id).unwrap();
-    let response_0 = alice.handle_request(&bob_id, request).unwrap();
+    let request = unwrap!(bob.create_gossip(&alice_id));
+    let response_0 = unwrap!(alice.handle_request(&bob_id, request));
 
-    alice
-        .vote_for(Observation::OpaquePayload(Payload(0)))
-        .unwrap();
-    bob.vote_for(Observation::OpaquePayload(Payload(0)))
-        .unwrap();
+    unwrap!(alice.vote_for(Observation::OpaquePayload(Payload(0))));
+    unwrap!(bob.vote_for(Observation::OpaquePayload(Payload(0))));
 
-    let request = bob.create_gossip(&alice_id).unwrap();
-    let response_1 = alice.handle_request(&bob_id, request).unwrap();
+    let request = unwrap!(bob.create_gossip(&alice_id));
+    let response_1 = unwrap!(alice.handle_request(&bob_id, request));
 
     // Deliver the responses in reverse order.
-    bob.handle_response(&bob_id, response_1).unwrap();
-    bob.handle_response(&bob_id, response_0).unwrap();
+    unwrap!(bob.handle_response(&bob_id, response_1));
+    unwrap!(bob.handle_response(&bob_id, response_0));
 
     let alice_blocks: Vec<_> = poll_all(&mut alice).collect();
     let alice_blocks_payloads: Vec<_> = alice_blocks.iter().map(|x| x.payload()).cloned().collect();
@@ -105,8 +99,8 @@ fn add_peer() {
 
     let payload0 = Observation::OpaquePayload(Payload(0));
 
-    bob.vote_for(add_alice.clone()).unwrap();
-    carol.vote_for(add_alice.clone()).unwrap();
+    unwrap!(bob.vote_for(add_alice.clone()));
+    unwrap!(carol.vote_for(add_alice.clone()));
 
     exchange_gossip(&mut bob, &mut carol);
 
@@ -116,12 +110,12 @@ fn add_peer() {
     assert!(is_gossip_recipient(&bob, alice_id));
     assert!(is_gossip_recipient(&carol, alice_id));
 
-    bob.vote_for(payload0.clone()).unwrap();
-    carol.vote_for(payload0.clone()).unwrap();
+    unwrap!(bob.vote_for(payload0.clone()));
+    unwrap!(carol.vote_for(payload0.clone()));
 
     exchange_gossip(&mut bob, &mut alice);
 
-    alice.vote_for(payload0.clone()).unwrap();
+    unwrap!(alice.vote_for(payload0.clone()));
 
     exchange_gossip(&mut carol, &mut alice);
     exchange_gossip(&mut carol, &mut bob);
@@ -151,13 +145,10 @@ fn consensus_mode_single() {
     // First start parsec and cast votes with different payloads.
     // They should all get consensused after Genesis block.
     let mut alice = from_genesis(alice_id, &genesis_group, ConsensusMode::Single);
-    alice
-        .vote_for(Observation::OpaquePayload(Payload(0)))
-        .unwrap();
+    unwrap!(alice.vote_for(Observation::OpaquePayload(Payload(0))));
 
     let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Single);
-    bob.vote_for(Observation::OpaquePayload(Payload(1)))
-        .unwrap();
+    unwrap!(bob.vote_for(Observation::OpaquePayload(Payload(1))));
 
     exchange_gossip(&mut bob, &mut alice);
 
@@ -175,11 +166,8 @@ fn consensus_mode_single() {
     assert_eq!(alice_blocks, bob_blocks);
 
     // Now cast votes with the same payload. They should get consensused separately.
-    alice
-        .vote_for(Observation::OpaquePayload(Payload(2)))
-        .unwrap();
-    bob.vote_for(Observation::OpaquePayload(Payload(2)))
-        .unwrap();
+    unwrap!(alice.vote_for(Observation::OpaquePayload(Payload(2))));
+    unwrap!(bob.vote_for(Observation::OpaquePayload(Payload(2))));
 
     exchange_gossip(&mut bob, &mut alice);
 
@@ -391,7 +379,7 @@ fn randomized_static_network() {
     for peer in peers.values_mut() {
         rng.shuffle(&mut votes);
         for vote in votes.iter().cloned() {
-            peer.vote_for(vote).unwrap();
+            unwrap!(peer.vote_for(vote));
         }
     }
 
@@ -407,7 +395,7 @@ fn randomized_static_network() {
                     continue;
                 };
 
-                let request = peer.create_gossip(&dst).unwrap();
+                let request = unwrap!(peer.create_gossip(&dst));
 
                 messages.push(Message {
                     src: *peer_id,
@@ -422,11 +410,11 @@ fn randomized_static_network() {
         messages = messages
             .drain(..)
             .filter_map(|message| {
-                let recipient = peers.get_mut(&message.dst).unwrap();
+                let recipient = unwrap!(peers.get_mut(&message.dst));
 
                 match message.content {
                     MessageContent::Request(request) => {
-                        let response = recipient.handle_request(&message.src, request).unwrap();
+                        let response = unwrap!(recipient.handle_request(&message.src, request));
 
                         Some(Message {
                             src: message.dst,
@@ -435,7 +423,7 @@ fn randomized_static_network() {
                         })
                     }
                     MessageContent::Response(response) => {
-                        recipient.handle_response(&message.src, response).unwrap();
+                        unwrap!(recipient.handle_response(&message.src, response));
                         None
                     }
                 }
@@ -560,7 +548,7 @@ fn from_genesis(
         genesis_group,
         vec![],
         consensus_mode,
-        Box::new(rand::os::OsRng::new().unwrap()),
+        Box::new(unwrap!(rand::os::OsRng::new())),
     )
 }
 
@@ -576,7 +564,7 @@ fn from_existing(
         genesis_group,
         section,
         consensus_mode,
-        Box::new(rand::os::OsRng::new().unwrap()),
+        Box::new(unwrap!(rand::os::OsRng::new())),
     )
 }
 
@@ -616,9 +604,16 @@ fn check_consensus(peers: &BTreeMap<PeerId, Peer>, expected_votes: usize) -> boo
 }
 
 fn exchange_gossip(src: &mut Parsec<Payload, PeerId>, dst: &mut Parsec<Payload, PeerId>) {
-    let request = src.create_gossip(dst.our_pub_id()).unwrap();
-    let response = dst.handle_request(src.our_pub_id(), request).unwrap();
-    src.handle_response(dst.our_pub_id(), response).unwrap();
+    let request = match src.create_gossip(dst.our_pub_id()) {
+        Ok(req) => req,
+        Err(_) => {
+            // we might sometimes try to create gossip to a removed node in tests - the test
+            // shouldn't fail then, the gossip should just not be sent
+            return;
+        }
+    };
+    let response = unwrap!(dst.handle_request(src.our_pub_id(), request));
+    unwrap!(src.handle_response(dst.our_pub_id(), response));
 }
 
 fn gossip_all(nodes: &mut [Parsec<Payload, PeerId>]) {
