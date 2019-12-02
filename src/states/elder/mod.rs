@@ -345,6 +345,7 @@ impl Elder {
             let our_member_connections: HashSet<_> = self
                 .chain
                 .our_joined_members()
+                .chain(self.chain.neighbour_elder_nodes())
                 .map(|node| *node.peer_addr())
                 .collect();
 
