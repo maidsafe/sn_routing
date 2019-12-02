@@ -29,6 +29,7 @@ use crate::{
     rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
+    signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
@@ -53,6 +54,7 @@ pub struct AdultDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub sig_accumulator: SignatureAccumulator,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
@@ -69,6 +71,7 @@ pub struct Adult {
     /// Routing messages addressed to us that we cannot handle until we are established.
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
@@ -107,6 +110,7 @@ impl Adult {
             gen_pfx_info: details.gen_pfx_info,
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
+            sig_accumulator: details.sig_accumulator,
             parsec_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
@@ -174,6 +178,7 @@ impl Adult {
             msg_queue: Default::default(),
             routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
+            sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult

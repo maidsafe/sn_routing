@@ -381,6 +381,7 @@ fn new_elder_state(
         msg_queue: Default::default(),
         routing_msg_backlog: Default::default(),
         direct_msg_backlog: Default::default(),
+        sig_accumulator: Default::default(),
         parsec_map,
         routing_msg_filter: RoutingMessageFilter::new(),
         timer,

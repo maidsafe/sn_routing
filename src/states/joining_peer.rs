@@ -103,6 +103,7 @@ impl JoiningPeer {
             routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
             routing_msg_filter: self.routing_msg_filter,
+            sig_accumulator: Default::default(),
             timer: self.timer,
             rng: self.rng,
             network_cfg: self.network_cfg,

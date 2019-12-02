@@ -71,6 +71,7 @@ pub struct ElderDetails {
     pub msg_queue: VecDeque<SignedRoutingMessage>,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -141,13 +142,14 @@ impl Elder {
             msg_queue: Default::default(),
             routing_msg_backlog: Default::default(),
             direct_msg_backlog: Default::default(),
+            sig_accumulator: Default::default(),
             parsec_map,
             routing_msg_filter: RoutingMessageFilter::new(),
             timer,
             rng,
         };
 
-        let node = Self::new(details, true, Default::default());
+        let node = Self::new(details, true);
 
         debug!("{} - State changed to Node.", node);
         info!("{} - Started a new network as a seed node.", node);
@@ -163,7 +165,7 @@ impl Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
-        let mut elder = Self::new(details, false, Default::default());
+        let mut elder = Self::new(details, false);
         elder.init(old_pfx, event_backlog, outbox)?;
         Ok(elder)
     }
@@ -180,6 +182,7 @@ impl Elder {
             routing_msg_backlog: self.routing_msg_backlog,
             full_id: self.full_id,
             gen_pfx_info,
+            sig_accumulator: self.sig_accumulator,
             routing_msg_filter: self.routing_msg_filter,
             timer: self.timer,
             network_cfg: self.chain.network_cfg(),
@@ -198,8 +201,8 @@ impl Elder {
             msg_queue: self.msg_queue,
             network_service: self.network_service,
             network_rx: None,
-            parsec_map: self.parsec_map,
             sig_accumulator: self.sig_accumulator,
+            parsec_map: self.parsec_map,
         })
     }
 
@@ -214,13 +217,13 @@ impl Elder {
                 msg_queue: state.msg_queue,
                 routing_msg_backlog: Default::default(),
                 direct_msg_backlog: Default::default(),
+                sig_accumulator: state.sig_accumulator,
                 parsec_map: state.parsec_map,
                 routing_msg_filter: state.msg_filter,
                 timer,
                 rng: rng::new(),
             },
             false,
-            state.sig_accumulator,
         )
     }
 
@@ -236,11 +239,7 @@ impl Elder {
         self.chain.closest_section_info(*name).1.member_nodes()
     }
 
-    fn new(
-        details: ElderDetails,
-        is_first_node: bool,
-        sig_accumulator: SignatureAccumulator,
-    ) -> Self {
+    fn new(details: ElderDetails, is_first_node: bool) -> Self {
         let timer = details.timer;
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
@@ -253,7 +252,7 @@ impl Elder {
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
             routing_msg_filter: details.routing_msg_filter,
-            sig_accumulator,
+            sig_accumulator: details.sig_accumulator,
             tick_timer_token,
             timer,
             parsec_map: details.parsec_map,
