@@ -80,7 +80,7 @@ impl Adult {
     pub fn new(
         mut details: AdultDetails,
         parsec_map: ParsecMap,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
         let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
@@ -98,8 +98,6 @@ impl Adult {
             details.gen_pfx_info.clone(),
             None,
         );
-
-        outbox.send_event(Event::Connected);
 
         let node = Self {
             chain,
