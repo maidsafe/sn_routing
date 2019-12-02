@@ -420,7 +420,7 @@ pub fn add_connected_nodes_until_split(
     let prefixes = prefixes(&prefix_lengths, &mut rng);
 
     // Cleanup the previous event queue
-    clear_all_event_queues(nodes, |_| {});
+    clear_all_event_queues(nodes, |_, _| {});
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
     let min_split_size = unwrap!(nodes[0].inner.min_split_size());
@@ -481,13 +481,13 @@ pub fn add_connected_nodes_until_split(
         prefixes.iter().map(Prefix::bit_count).collect::<Vec<_>>()
     );
 
-    clear_all_event_queues(nodes, |event| match event {
+    clear_all_event_queues(nodes, |node, event| match event {
         Event::NodeAdded(..)
         | Event::NodeLost(..)
         | Event::TimerTicked
         | Event::ClientEvent(..)
         | Event::SectionSplit(..) => (),
-        event => panic!("Got unexpected event: {:?}", event),
+        event => panic!("Got unexpected event for {}: {:?}", node.inner, event),
     });
 
     trace!("Created testnet comprising {:?}", prefixes);
@@ -513,9 +513,9 @@ fn add_connected_nodes_until_sized(
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
 ) {
-    clear_all_event_queues(nodes, |_| {});
+    clear_all_event_queues(nodes, |_, _| {});
     add_nodes_to_prefixes(network, nodes, prefixes_new_count);
-    clear_all_event_queues(nodes, |_| {});
+    clear_all_event_queues(nodes, |_, _| {});
 
     trace!(
         "Filled prefixes until ready to split {:?}",
@@ -552,10 +552,10 @@ fn add_nodes_to_prefixes(
 }
 
 // Clear all event queues applying check_event to them.
-fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(Event)) {
+fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(&TestNode, Event)) {
     for node in nodes.iter_mut() {
         while let Ok(event) = node.try_next_ev() {
-            check_event(event)
+            check_event(node, event)
         }
     }
 }
