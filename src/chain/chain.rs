@@ -169,9 +169,13 @@ impl Chain {
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
         if let Some(first) = participants.iter().next() {
-            let _ = self
+            if self
                 .new_section_bls_keys
-                .insert(*first.name(), dkg_result.0.clone());
+                .insert(*first.name(), dkg_result.0.clone())
+                .is_some()
+            {
+                log_or_panic!(LogLevel::Error, "{} - Ejected previous DKG result", self);
+            }
         }
 
         Ok(())

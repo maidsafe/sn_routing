@@ -112,6 +112,13 @@ pub trait Approved: Base {
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        trace!(
+            "{} - handle parsec request v{} from {}",
+            self,
+            msg_version,
+            p2p_node.public_id()
+        );
+
         let log_ident = self.log_ident();
         let (response, poll) = self.parsec_map_mut().handle_request(
             msg_version,
@@ -138,6 +145,13 @@ pub trait Approved: Base {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        trace!(
+            "{} - handle parsec response v{} from {}",
+            self,
+            msg_version,
+            pub_id
+        );
+
         let log_ident = self.log_ident();
         if self
             .parsec_map_mut()
@@ -184,6 +198,12 @@ pub trait Approved: Base {
             .parsec_map_mut()
             .create_gossip(version, gossip_target.public_id())
         {
+            trace!(
+                "{} - send parsec request v{} to {}",
+                self,
+                version,
+                gossip_target.public_id(),
+            );
             self.send_direct_message(gossip_target.connection_info(), msg);
         }
     }

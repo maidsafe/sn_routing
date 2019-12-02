@@ -77,6 +77,11 @@ fn drop_random_nodes<R: Rng>(
         let dropped = nodes.remove(i);
         assert!(dropped_nodes.insert(dropped.name()));
     }
+
+    if !dropped_nodes.is_empty() {
+        warn!("    dropping {:?}", dropped_nodes);
+    }
+
     dropped_nodes
 }
 
@@ -114,6 +119,13 @@ fn add_nodes<R: Rng>(
             }
             added_nodes.push(node);
         }
+    }
+
+    if !added_nodes.is_empty() {
+        warn!(
+            "    adding {{{}}}",
+            added_nodes.iter().map(|node| node.name()).format(", ")
+        );
     }
 
     for added_node in added_nodes {

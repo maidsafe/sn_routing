@@ -24,7 +24,7 @@ use std::{
 
 // Maximum number of times to try and poll in a loop.  This is several orders higher than the
 // anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
-const MAX_POLL_CALLS: usize = 1000;
+const MAX_POLL_CALLS: usize = 2000;
 
 // ----- Typs -----
 type PrefixAndSize = (Prefix<XorName>, usize);
