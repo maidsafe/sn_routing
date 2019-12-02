@@ -164,7 +164,7 @@ fn check_added_indices(
                     failed.push(index);
                     break;
                 }
-                Ok(Event::Connected) => {
+                Ok(Event::Connected(_)) => {
                     assert!(added.insert(node.name()));
                     break;
                 }

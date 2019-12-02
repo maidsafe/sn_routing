@@ -22,7 +22,7 @@ use crate::{
         MIN_AGE_COUNTER,
     },
     error::{BootstrapResponseError, InterfaceError, RoutingError},
-    event::Event,
+    event::{ConnectEvent, Event},
     id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
@@ -153,7 +153,7 @@ impl Elder {
         debug!("{} - State changed to Node.", node);
         info!("{} - Started a new network as a seed node.", node);
 
-        outbox.send_event(Event::Connected);
+        outbox.send_event(Event::Connected(ConnectEvent::First));
 
         Ok(node)
     }

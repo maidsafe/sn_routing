@@ -14,7 +14,7 @@ use super::{
 use crate::{
     chain::{GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
-    event::Event,
+    event::{ConnectEvent, Event},
     id::{FullId, P2pNode},
     messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
     outbox::EventBox,
@@ -106,7 +106,12 @@ impl JoiningPeer {
             network_cfg: self.network_cfg,
         };
         let adult = Adult::new(details, Default::default(), outbox).map(State::Adult);
-        outbox.send_event(Event::Connected);
+
+        let connect_type = match self.join_type {
+            JoinType::First { .. } => ConnectEvent::First,
+            JoinType::Relocate(_) => ConnectEvent::Relocate,
+        };
+        outbox.send_event(Event::Connected(connect_type));
         adult
     }
 
