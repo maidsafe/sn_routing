@@ -318,6 +318,48 @@ impl Adult {
         Ok(())
     }
 
+    /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
+    /// message, handles it.
+    fn handle_message_signature(
+        &mut self,
+        msg: SignedRoutingMessage,
+        pub_id: PublicId,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_peer_elder(&pub_id) {
+            debug!(
+                "{} - Received message signature from not known elder (still use it) {}, {:?}",
+                self, pub_id, msg
+            );
+        }
+
+        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
+            self.handle_signed_message(signed_msg)?;
+        }
+        Ok(())
+    }
+
+    // If the message is for us, verify it then, handle the enclosed routing message and swarm it
+    // to the rest of our section when destination is targeting multiple; if not, forward it.
+    fn handle_signed_message(
+        &mut self,
+        signed_msg: SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        if !self
+            .routing_msg_filter
+            .filter_incoming(signed_msg.routing_message())
+            .is_new()
+        {
+            trace!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                signed_msg.routing_message()
+            );
+            return Ok(());
+        }
+
+        self.handle_filtered_signed_message(signed_msg)
+    }
+
     fn handle_filtered_signed_message(
         &mut self,
         mut signed_msg: SignedRoutingMessage,
@@ -430,6 +472,10 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::DirectMessage::*;
         match msg {
+            MessageSignature(msg) => {
+                self.handle_message_signature(msg, *p2p_node.public_id())?;
+                Ok(Transition::Stay)
+            }
             ParsecRequest(version, par_request) => {
                 self.handle_parsec_request(version, par_request, p2p_node, outbox)
             }
@@ -445,10 +491,16 @@ impl Base for Adult {
                 Ok(Transition::Stay)
             }
             Relocate(details) => Ok(self.handle_relocate(details)),
-            msg @ MessageSignature(_)
-            | msg @ BootstrapResponse(_)
-            | msg @ JoinRequest(_)
-            | msg @ ParsecPoke(_) => {
+            msg @ BootstrapResponse(_) => {
+                debug!(
+                    "{} Unhandled direct message from {}, discard: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
+                );
+                Ok(Transition::Stay)
+            }
+            msg @ JoinRequest(_) | msg @ ParsecPoke(_) => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
                     self,
@@ -467,21 +519,7 @@ impl Base for Adult {
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
-
-        if !self
-            .routing_msg_filter
-            .filter_incoming(msg.routing_message())
-            .is_new()
-        {
-            trace!(
-                "{} Known message: {:?} - not handling further",
-                self,
-                msg.routing_message()
-            );
-            return Ok(Transition::Stay);
-        }
-
-        self.handle_filtered_signed_message(msg)?;
+        self.handle_signed_message(msg)?;
         Ok(Transition::Stay)
     }
 
