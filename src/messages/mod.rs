@@ -17,9 +17,8 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     routing_table::{Authority, Prefix},
-    types::MessageId,
     xor_name::XorName,
-    BlsPublicKeySet, BlsSignature, BlsSignatureShare, ConnectionInfo,
+    BlsPublicKeySet, BlsSignature, BlsSignatureShare,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
@@ -505,15 +504,6 @@ impl RoutingMessage {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum MessageContent {
-    /// Send a request containing our connection info to a member of a section to connect to us.
-    ConnectionRequest {
-        /// The sender's public ID.
-        pub_id: PublicId,
-        /// Sender's connection info.
-        conn_info: ConnectionInfo,
-        /// The message's unique identifier.
-        msg_id: MessageId,
-    },
     /// Inform neighbours about our new section.
     NeighbourInfo(EldersInfo),
     /// User-facing message
@@ -555,11 +545,6 @@ impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::MessageContent::*;
         match self {
-            ConnectionRequest { pub_id, msg_id, .. } => write!(
-                formatter,
-                "ConnectionRequest({:?}, {:?}, ..)",
-                pub_id, msg_id
-            ),
             NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
             UserMessage(content) => write!(formatter, "UserMessage({:?})", content,),
             NodeApproval(gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
@@ -581,6 +566,7 @@ mod tests {
         rng,
         routing_table::{Authority, Prefix},
         xor_name::XorName,
+        ConnectionInfo,
     };
     use rand;
     use std::collections::BTreeMap;

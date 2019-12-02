@@ -191,45 +191,10 @@ impl Adult {
     fn dispatch_routing_message(
         &mut self,
         msg: SignedRoutingMessage,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        use crate::{messages::MessageContent::*, routing_table::Authority::*};
-
-        let (msg, metadata) = msg.into_parts();
-
-        match msg {
-            RoutingMessage {
-                content:
-                    ConnectionRequest {
-                        conn_info,
-                        pub_id,
-                        msg_id,
-                    },
-                src: Node(_),
-                dst: Node(_),
-            } => {
-                if self.our_prefix().matches(&msg.src.name()) {
-                    self.handle_connection_request(conn_info, pub_id, msg.src, msg.dst, outbox)
-                } else {
-                    self.add_message_to_backlog(SignedRoutingMessage::from_parts(
-                        RoutingMessage {
-                            content: ConnectionRequest {
-                                conn_info,
-                                pub_id,
-                                msg_id,
-                            },
-                            ..msg
-                        },
-                        metadata,
-                    ));
-                    Ok(())
-                }
-            }
-            _ => {
-                self.add_message_to_backlog(SignedRoutingMessage::from_parts(msg, metadata));
-                Ok(())
-            }
-        }
+        self.add_message_to_backlog(msg);
+        Ok(())
     }
 
     // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
