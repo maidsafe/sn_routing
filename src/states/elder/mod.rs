@@ -578,16 +578,6 @@ impl Elder {
         }
 
         match (msg.content, msg.src, msg.dst) {
-            (
-                ConnectionRequest {
-                    conn_info, pub_id, ..
-                },
-                src @ Authority::Node(_),
-                dst @ Authority::Node(_),
-            ) => {
-                self.handle_connection_request(conn_info, pub_id, src, dst, outbox)?;
-                Ok(Transition::Stay)
-            }
             (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
                 self.handle_neighbour_info(elders_info)?;
                 Ok(Transition::Stay)
@@ -1227,21 +1217,6 @@ impl Base for Elder {
         let pub_id = *p2p_node.public_id();
         if self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
-        }
-
-        if self.chain.is_peer_elder(&pub_id) {
-            debug!(
-                "{} - Sending connection request to {} due to lost peer.",
-                self, pub_id
-            );
-
-            let our_name = *self.name();
-            let _ = self.send_connection_request(
-                pub_id,
-                Authority::Node(our_name),
-                Authority::Node(*pub_id.name()),
-                outbox,
-            );
         }
 
         Transition::Stay

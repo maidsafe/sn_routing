@@ -15,14 +15,13 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MessageContent, RoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
-    routing_table::{Authority, Prefix},
+    routing_table::Prefix,
     state_machine::Transition,
     xor_name::XorName,
-    BlsSignature, ConnectionInfo,
+    BlsSignature,
 };
 use log::LogLevel;
 use rand::Rng;
@@ -368,76 +367,6 @@ pub trait Approved: Base {
                 &log_ident,
             );
         }
-    }
-
-    fn send_connection_request(
-        &mut self,
-        their_pub_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        _: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if their_pub_id == *self.id() {
-            trace!("{} - Not sending connection request to ourselves.", self);
-            return Ok(());
-        }
-
-        if let Some(p2p_node) = self.chain().get_p2p_node(their_pub_id.name()) {
-            if self.peer_map().has(p2p_node.peer_addr()) {
-                trace!(
-                    "{} - Not sending connection request to {} - already connected.",
-                    self,
-                    their_pub_id
-                );
-                return Ok(());
-            }
-        }
-
-        let msg_id = self.rng().gen();
-        let content = MessageContent::ConnectionRequest {
-            conn_info: self.our_connection_info()?,
-            pub_id: *self.full_id().public_id(),
-            msg_id,
-        };
-
-        trace!("{} - Sending connection request to {}.", self, their_pub_id);
-
-        self.send_routing_message(RoutingMessage { src, dst, content })
-            .map_err(|err| {
-                debug!(
-                    "{} - Failed to send connection request to {}: {:?}.",
-                    self, their_pub_id, err
-                );
-                err
-            })
-    }
-
-    fn handle_connection_request(
-        &mut self,
-        their_conn_info: ConnectionInfo,
-        their_pub_id: PublicId,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
-        _: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if src.single_signing_name() != Some(their_pub_id.name()) {
-            // Connection request not from the source node.
-            return Err(RoutingError::InvalidSource);
-        }
-
-        if dst.single_signing_name() != Some(self.name()) {
-            // Connection request not for us.
-            return Err(RoutingError::InvalidDestination);
-        }
-
-        debug!(
-            "{} - Received connection request from {:?}.",
-            self, their_pub_id
-        );
-
-        self.send_direct_message(&their_conn_info, DirectMessage::ConnectionResponse);
-
-        Ok(())
     }
 
     fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
