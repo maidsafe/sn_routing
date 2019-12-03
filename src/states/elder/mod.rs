@@ -16,10 +16,10 @@ use super::{
 };
 use crate::{
     chain::{
-        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, DevParams, EldersChange,
-        EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
-        NetworkParams, OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload,
-        MIN_AGE, MIN_AGE_COUNTER,
+        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
+        EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
+        OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
+        MIN_AGE_COUNTER,
     },
     error::{BootstrapResponseError, InterfaceError, RoutingError},
     event::Event,
@@ -127,7 +127,6 @@ impl Elder {
         let parsec_map = ParsecMap::default().with_init(&mut rng, full_id.clone(), &gen_pfx_info);
         let chain = Chain::new(
             network_cfg,
-            DevParams::default(),
             public_id,
             gen_pfx_info.clone(),
             first_dkg_result.secret_key_share,
@@ -187,7 +186,6 @@ impl Elder {
             timer: self.timer,
             network_cfg: self.chain.network_cfg(),
             rng: self.rng,
-            dev_params: self.chain.dev_params().clone(),
         };
         Adult::new(details, self.parsec_map, outbox).map(State::Adult)
     }
@@ -1089,14 +1087,6 @@ impl Base for Elder {
         conn_peers.sort_unstable();
         conn_peers.dedup();
         self.chain.closest_names(&name, count, &conn_peers)
-    }
-
-    fn dev_params(&self) -> &DevParams {
-        self.chain.dev_params()
-    }
-
-    fn dev_params_mut(&mut self) -> &mut DevParams {
-        self.chain.dev_params_mut()
     }
 
     fn peer_map(&self) -> &PeerMap {

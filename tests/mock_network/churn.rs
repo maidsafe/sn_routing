@@ -7,9 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    clear_relocation_overrides, count_sections, create_connected_nodes,
-    create_connected_nodes_until_split, current_sections, gen_range, gen_range_except,
-    poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+    count_sections, create_connected_nodes, create_connected_nodes_until_split, current_sections,
+    gen_range, gen_range_except, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use itertools::Itertools;
 use rand::Rng;
@@ -574,7 +573,6 @@ fn messages_during_churn() {
                 .map(|idx| nodes[idx].name())
                 .collect::<Vec<_>>()
         );
-        clear_relocation_overrides(&mut nodes);
         shuffle_nodes(&mut rng, &mut nodes);
 
         if !added_names.is_empty() {

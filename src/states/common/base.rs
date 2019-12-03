@@ -8,7 +8,6 @@
 
 use crate::{
     action::Action,
-    chain::DevParams,
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode, PublicId},
     messages::{
@@ -41,8 +40,6 @@ pub trait Base: Display {
     fn timer(&mut self) -> &mut Timer;
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
     fn rng(&mut self) -> &mut MainRng;
-    fn dev_params(&self) -> &DevParams;
-    fn dev_params_mut(&mut self) -> &mut DevParams;
 
     fn log_ident(&self) -> LogIdent {
         LogIdent::new(self)

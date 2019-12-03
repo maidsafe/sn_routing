@@ -18,8 +18,8 @@ pub use self::utils::*;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
-    XorTargetInterval,
+    mock::Network, Event, EventStream, NetworkConfig, NetworkParams, Prefix, RelocationOverrides,
+    XorName,
 };
 use std::collections::BTreeMap;
 
@@ -292,9 +292,6 @@ struct SimultaneousJoiningNode {
     dst_section_prefix: Prefix<XorName>,
     // Section prefix that will match the initial id of the node to add.
     src_section_prefix: Prefix<XorName>,
-    // The relocation_interval to set for nodes in the section with dst_section_prefix:
-    // Must be within dst_section_prefix. If none let production code decide.
-    dst_relocation_interval_prefix: Option<Prefix<XorName>>,
     // The prefix to find the proxy within.
     proxy_prefix: Prefix<XorName>,
 }
@@ -312,21 +309,13 @@ fn simultaneous_joining_nodes(
     let mut rng = network.new_rng();
     rng.shuffle(&mut nodes);
 
+    let overrides = RelocationOverrides::new();
+
     let mut nodes_to_add = Vec::new();
     for setup in nodes_to_add_setup {
         // Set the specified relocation destination on the nodes of the given prefixes
         let relocation_dst = setup.dst_section_prefix.substituted_in(rng.gen());
-        nodes_with_prefix_mut(&mut nodes, &setup.src_section_prefix)
-            .for_each(|node| node.inner.set_next_relocation_dst(Some(relocation_dst)));
-
-        // Set the specified relocation interval on the nodes of the given prefixes
-        let relocation_interval = setup
-            .dst_relocation_interval_prefix
-            .map(|prefix| XorTargetInterval::new(prefix.range_inclusive()));
-        nodes_with_prefix_mut(&mut nodes, &setup.dst_section_prefix).for_each(|node| {
-            node.inner
-                .set_next_relocation_interval(relocation_interval.clone())
-        });
+        overrides.set(setup.src_section_prefix, relocation_dst);
 
         // Create nodes and find proxies from the given prefixes
         let node_to_add = {
@@ -388,13 +377,11 @@ fn simultaneous_joining_nodes_two_sections() {
         SimultaneousJoiningNode {
             dst_section_prefix: prefix_0,
             src_section_prefix: prefix_0,
-            dst_relocation_interval_prefix: None,
             proxy_prefix: prefix_0,
         },
         SimultaneousJoiningNode {
             dst_section_prefix: prefix_1,
             src_section_prefix: prefix_1,
-            dst_relocation_interval_prefix: None,
             proxy_prefix: prefix_0,
         },
     ];
@@ -418,13 +405,11 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
         SimultaneousJoiningNode {
             dst_section_prefix: prefix_0,
             src_section_prefix: prefix_1,
-            dst_relocation_interval_prefix: None,
             proxy_prefix: prefix_0,
         },
         SimultaneousJoiningNode {
             dst_section_prefix: prefix_1,
             src_section_prefix: prefix_0,
-            dst_relocation_interval_prefix: None,
             proxy_prefix: prefix_0,
         },
     ];
@@ -452,11 +437,10 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let long_prefix_1 = long_prefix_0.sibling();
 
     // Setup the network so the small_prefix will split with one more node in small_prefix_to_add.
-    let small_prefix_to_add = *unwrap!(add_connected_nodes_until_one_away_from_split(
+    let _ = *unwrap!(add_connected_nodes_until_one_away_from_split(
         &network,
         &mut nodes,
         &[small_prefix],
-        ChurnOptions::default(),
     )
     .first());
 
@@ -467,19 +451,16 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
         SimultaneousJoiningNode {
             dst_section_prefix: small_prefix,
             src_section_prefix: small_prefix,
-            dst_relocation_interval_prefix: Some(small_prefix_to_add),
             proxy_prefix: small_prefix,
         },
         SimultaneousJoiningNode {
             dst_section_prefix: long_prefix_0,
             src_section_prefix: small_prefix,
-            dst_relocation_interval_prefix: Some(long_prefix_0),
             proxy_prefix: long_prefix_0.with_flipped_bit(0).with_flipped_bit(1),
         },
         SimultaneousJoiningNode {
             dst_section_prefix: long_prefix_1,
             src_section_prefix: long_prefix_0,
-            dst_relocation_interval_prefix: Some(long_prefix_1),
             proxy_prefix: long_prefix_1.with_flipped_bit(0).with_flipped_bit(1),
         },
     ];

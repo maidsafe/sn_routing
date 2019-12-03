@@ -12,7 +12,7 @@ use super::{
     common::Base,
 };
 use crate::{
-    chain::{DevParams, GenesisPfxInfo, NetworkParams},
+    chain::{GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode},
     messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
@@ -43,7 +43,6 @@ pub struct JoiningPeerDetails {
     pub rng: MainRng,
     pub p2p_nodes: Vec<P2pNode>,
     pub relocate_payload: Option<RelocatePayload>,
-    pub dev_params: DevParams,
 }
 
 // State of a node after bootstrapping, while joining a section
@@ -58,7 +57,6 @@ pub struct JoiningPeer {
     p2p_nodes: Vec<P2pNode>,
     join_type: JoinType,
     network_cfg: NetworkParams,
-    dev_params: DevParams,
 }
 
 impl JoiningPeer {
@@ -82,7 +80,6 @@ impl JoiningPeer {
             p2p_nodes: details.p2p_nodes,
             join_type,
             network_cfg: details.network_cfg,
-            dev_params: details.dev_params,
         };
 
         joining_peer.send_join_requests();
@@ -106,7 +103,6 @@ impl JoiningPeer {
             timer: self.timer,
             rng: self.rng,
             network_cfg: self.network_cfg,
-            dev_params: self.dev_params,
         };
         Adult::new(details, Default::default(), outbox).map(State::Adult)
     }
@@ -121,7 +117,6 @@ impl JoiningPeer {
                 network_cfg: self.network_cfg,
                 timer: self.timer,
                 rng: self.rng,
-                dev_params: self.dev_params,
             },
         )))
     }
@@ -297,14 +292,6 @@ impl Base for JoiningPeer {
             self, routing_msg
         );
         Ok(())
-    }
-
-    fn dev_params(&self) -> &DevParams {
-        &self.dev_params
-    }
-
-    fn dev_params_mut(&mut self) -> &mut DevParams {
-        &mut self.dev_params
     }
 }
 

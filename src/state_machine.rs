@@ -23,7 +23,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{chain::DevParams, rng::MainRng, routing_table::Authority, Chain};
+use crate::{rng::MainRng, routing_table::Authority, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
@@ -222,22 +222,6 @@ impl Debug for State {
 
 #[cfg(feature = "mock_base")]
 impl State {
-    pub fn dev_params(&self) -> &DevParams {
-        state_dispatch!(
-            *self,
-            ref state => state.dev_params(),
-            Terminated => unreachable!()
-        )
-    }
-
-    pub fn dev_params_mut(&mut self) -> &mut DevParams {
-        state_dispatch!(
-            *self,
-            ref mut state => state.dev_params_mut(),
-            Terminated => unreachable!()
-        )
-    }
-
     pub fn chain(&self) -> Option<&Chain> {
         match *self {
             State::Adult(ref state) => Some(state.chain()),
