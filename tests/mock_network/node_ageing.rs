@@ -7,13 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split_with_options,
-    current_sections, nodes_with_prefix, nodes_with_prefix_mut, poll_and_resend_with_options,
-    ChurnOptions, PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
+    current_sections, nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
+    PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{Rand, Rng};
 use routing::{
-    mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, PublicId, XorName, MIN_AGE,
+    mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, PublicId, RelocationOverrides,
+    XorName,
 };
 use std::{iter, slice};
 
@@ -27,14 +28,10 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 #[test]
 fn relocate_without_split() {
     let network = Network::new(NETWORK_PARAMS);
+    let overrides = RelocationOverrides::new();
+
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split_with_options(
-        &network,
-        vec![1, 1],
-        ChurnOptions {
-            suppress_relocation: true,
-        },
-    );
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
 
@@ -44,13 +41,11 @@ fn relocate_without_split() {
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
     let destination = target_prefix.substituted_in(rng.gen());
-    for node in nodes_with_prefix_mut(&mut nodes, &source_prefix) {
-        node.inner.set_next_relocation_dst(Some(destination));
-    }
+    overrides.set(source_prefix, destination);
 
     // Create enough churn events so that the age of the oldest node increases which causes it to
     // be relocated.
-    let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
+    let oldest_age_counter = node_age_counter(&nodes, 0);
     let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter;
 
     // Keep the section size such that relocations can happen but splits can't.
@@ -63,45 +58,45 @@ fn relocate_without_split() {
         NETWORK_PARAMS.elder_size + 2,
     );
 
-    poll_and_resend_with_options(
-        &mut nodes,
-        PollOptions::default()
-            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix))
-            .fire_join_timeout(false),
-    )
+    poll_and_resend(&mut nodes);
+
+    // Verify the node got relocated.
+    assert!(target_prefix.matches(&nodes[0].name()));
 }
 
 #[test]
 fn relocate_causing_split() {
+    // Note: this test doesn't always trigger split in the target section. This is because when the
+    // target section receives the bootstrap request from the relocating node, it still has its
+    // pre-split prefix which it gives to the node. So the node then generates random name matching
+    // that prefix which will fall into the split-triggering subsection only ~50% of the time.
+    //
+    // We might consider trying to figure a way to force the relocation into the correct
+    // sub-interval, but the test is still useful as is for soak testing.
+
     // Relocate node into a section which is one node shy of splitting.
     let network = Network::new(NETWORK_PARAMS);
+    let overrides = RelocationOverrides::new();
+
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split_with_options(
-        &network,
-        vec![1, 1],
-        ChurnOptions {
-            suppress_relocation: true,
-        },
-    );
-    let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+
+    let oldest_age_counter = node_age_counter(&nodes, 0);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let source_prefix = *find_matching_prefix(&prefixes, &nodes[0].name());
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
-    let _ = add_connected_nodes_until_one_away_from_split(
+    overrides.suppress(target_prefix);
+
+    let trigger_prefixes = add_connected_nodes_until_one_away_from_split(
         &network,
         &mut nodes,
         slice::from_ref(&target_prefix),
-        ChurnOptions {
-            suppress_relocation: true,
-        },
     );
 
-    let destination = target_prefix.substituted_in(rng.gen());
-    for node in nodes_with_prefix_mut(&mut nodes, &source_prefix) {
-        node.inner.set_next_relocation_dst(Some(destination));
-    }
+    let destination = trigger_prefixes[0].substituted_in(rng.gen());
+    overrides.set(source_prefix, destination);
 
     // Trigger relocation.
     let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter;
@@ -114,12 +109,19 @@ fn relocate_causing_split() {
         NETWORK_PARAMS.elder_size + 2,
     );
 
-    poll_and_resend_with_options(
-        &mut nodes,
-        PollOptions::default()
-            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix))
-            .fire_join_timeout(false),
-    )
+    poll_and_resend(&mut nodes);
+
+    // Verify the node got relocated.
+    assert!(target_prefix.matches(&nodes[0].name()));
+
+    // Check whether the destination section split.
+    let split = nodes_with_prefix(&nodes, &target_prefix)
+        .all(|node| node.our_prefix().is_extension_of(&target_prefix));
+    debug!(
+        "The target section {:?} {} split",
+        target_prefix,
+        if split { "did" } else { "did not" },
+    );
 }
 
 // This test is ignored because it currently fails in the following case:
@@ -134,15 +136,11 @@ fn relocate_causing_split() {
 fn relocate_during_split() {
     // Relocate node into a section which is undergoing split.
     let network = Network::new(NETWORK_PARAMS);
+    let overrides = RelocationOverrides::new();
+
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split_with_options(
-        &network,
-        vec![1, 1],
-        ChurnOptions {
-            suppress_relocation: true,
-        },
-    );
-    let oldest_age_counter = oldest_age_counter_after_only_adds(&nodes);
+    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let oldest_age_counter = node_age_counter(&nodes, 0);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let source_prefix = *unwrap!(rng.choose(&prefixes));
@@ -152,15 +150,10 @@ fn relocate_during_split() {
         &network,
         &mut nodes,
         slice::from_ref(&target_prefix),
-        ChurnOptions {
-            suppress_relocation: true,
-        },
     );
 
     let destination = target_prefix.substituted_in(rng.gen());
-    for node in nodes_with_prefix_mut(&mut nodes, &source_prefix) {
-        node.inner.set_next_relocation_dst(Some(destination));
-    }
+    overrides.set(source_prefix, destination);
 
     // Create churn so we are one churn away from relocation.
     let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter - 1;
@@ -188,12 +181,21 @@ fn relocate_during_split() {
     )
 }
 
-// Age counter of the oldest node in the network assuming no nodes were removed or relocated - only
-// added.
-fn oldest_age_counter_after_only_adds(nodes: &[TestNode]) -> usize {
-    // 2^MIN_AGE is the starting value of the age counter.
-    // There is at most `safe_section_size - 2` churn events that cause age counter bumps.
-    2usize.pow(u32::from(MIN_AGE)) + (nodes.len() - 1).min(NETWORK_PARAMS.safe_section_size - 2)
+// Age counter of the node at the given index.
+fn node_age_counter(nodes: &[TestNode], index: usize) -> usize {
+    let name = nodes[index].name();
+    let mut values: Vec<_> = nodes
+        .iter()
+        .filter_map(|node| node.inner.member_age_counter(&name))
+        .collect();
+    values.sort();
+    values.dedup();
+
+    match values.len() {
+        1 => values[0] as usize,
+        0 => panic!("{} is not a member known to any node.", name),
+        _ => panic!("Not all nodes agree on the age counter value of {}.", name),
+    }
 }
 
 fn find_matching_prefix<'a>(
@@ -256,9 +258,6 @@ fn section_churn(
     assert!(min_section_size < max_section_size);
 
     let mut rng = network.new_rng();
-    let next_relocation_dst = unwrap!(nodes_with_prefix(nodes, prefix).next())
-        .inner
-        .next_relocation_dst();
 
     for _ in 0..count {
         let section_size = nodes_with_prefix(nodes, prefix).count();
@@ -273,10 +272,6 @@ fn section_churn(
         match churn {
             Churn::Add => {
                 add_node_to_prefix(network, nodes, prefix);
-                unwrap!(nodes.last_mut())
-                    .inner
-                    .set_next_relocation_dst(next_relocation_dst);
-
                 poll_and_resend_with_options(
                     nodes,
                     PollOptions::default()

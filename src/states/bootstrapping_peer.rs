@@ -8,7 +8,7 @@
 
 use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
-    chain::{DevParams, NetworkParams},
+    chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode},
@@ -41,7 +41,6 @@ pub struct BootstrappingPeerDetails {
     pub network_cfg: NetworkParams,
     pub timer: Timer,
     pub rng: MainRng,
-    pub dev_params: DevParams,
 }
 
 // State of Client or Node while bootstrapping.
@@ -54,7 +53,6 @@ pub struct BootstrappingPeer {
     rng: MainRng,
     relocate_details: Option<SignedRelocateDetails>,
     network_cfg: NetworkParams,
-    dev_params: DevParams,
 }
 
 impl BootstrappingPeer {
@@ -69,7 +67,6 @@ impl BootstrappingPeer {
             rng: details.rng,
             relocate_details: None,
             network_cfg: details.network_cfg,
-            dev_params: details.dev_params,
         }
     }
 
@@ -88,7 +85,6 @@ impl BootstrappingPeer {
             rng: details.rng,
             relocate_details: Some(relocate_details),
             network_cfg: details.network_cfg,
-            dev_params: details.dev_params,
         };
 
         for conn_info in conn_infos {
@@ -112,7 +108,6 @@ impl BootstrappingPeer {
             rng: self.rng,
             p2p_nodes,
             relocate_payload,
-            dev_params: self.dev_params,
         };
 
         Ok(State::JoiningPeer(JoiningPeer::new(details)))
@@ -335,14 +330,6 @@ impl Base for BootstrappingPeer {
         );
         Ok(())
     }
-
-    fn dev_params(&self) -> &DevParams {
-        &self.dev_params
-    }
-
-    fn dev_params_mut(&mut self) -> &mut DevParams {
-        &mut self.dev_params
-    }
 }
 
 impl Display for BootstrappingPeer {
@@ -405,7 +392,6 @@ mod tests {
                     network_cfg,
                     timer,
                     rng,
-                    dev_params: Default::default(),
                 }))
             },
             config,

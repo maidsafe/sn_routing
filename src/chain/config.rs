@@ -8,9 +8,6 @@
 
 use crate::{ELDER_SIZE, SAFE_SECTION_SIZE};
 
-#[cfg(feature = "mock_base")]
-use crate::{utils::XorTargetInterval, xor_name::XorName};
-
 /// Network parameters: number of elders, safe section size
 #[derive(Clone, Copy, Debug)]
 pub struct NetworkParams {
@@ -28,19 +25,3 @@ impl Default for NetworkParams {
         }
     }
 }
-
-/// Development-only node data (used mainly for the mock-network tests).
-#[cfg(feature = "mock_base")]
-#[derive(Default, Clone)]
-pub struct DevParams {
-    // Value which can be set in mock-network tests to be used as the next relocation
-    // destination.
-    pub next_relocation_dst: Option<XorName>,
-    // Interval used for relocation in mock network tests.
-    // Note: this is currently unused.
-    pub next_relocation_interval: Option<XorTargetInterval>,
-}
-
-#[cfg(not(feature = "mock_base"))]
-#[derive(Default, Clone)]
-pub struct DevParams;

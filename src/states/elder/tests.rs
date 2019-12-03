@@ -365,7 +365,6 @@ fn new_elder_state(
     let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), gen_pfx_info);
     let chain = Chain::new(
         Default::default(),
-        Default::default(),
         public_id,
         gen_pfx_info.clone(),
         Some(secret_key_share.clone()),

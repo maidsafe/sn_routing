@@ -13,11 +13,15 @@ use crate::{
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
+    routing_table::Prefix,
     xor_name::{XorName, XOR_NAME_LEN},
     BlsSignature,
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt;
+
+#[cfg(feature = "mock_base")]
+pub use self::overrides::Overrides;
 
 /// Details of a relocation: which node to relocate, where to relocate it to and what age it should
 /// get once relocated.
@@ -122,10 +126,131 @@ impl RelocatePayload {
     }
 }
 
-pub fn compute_destination(relocated_name: &XorName, trigger_name: &XorName) -> XorName {
+#[cfg(not(feature = "mock_base"))]
+pub fn compute_destination(
+    _src_prefix: &Prefix<XorName>,
+    relocated_name: &XorName,
+    trigger_name: &XorName,
+) -> XorName {
+    compute_destination_without_override(relocated_name, trigger_name)
+}
+
+#[cfg(feature = "mock_base")]
+pub fn compute_destination(
+    src_prefix: &Prefix<XorName>,
+    relocated_name: &XorName,
+    trigger_name: &XorName,
+) -> XorName {
+    self::overrides::get(
+        src_prefix,
+        compute_destination_without_override(relocated_name, trigger_name),
+    )
+}
+
+fn compute_destination_without_override(
+    relocated_name: &XorName,
+    trigger_name: &XorName,
+) -> XorName {
     let mut buffer = [0; 2 * XOR_NAME_LEN];
     buffer[..XOR_NAME_LEN].copy_from_slice(&relocated_name.0);
     buffer[XOR_NAME_LEN..].copy_from_slice(&trigger_name.0);
 
     XorName(crypto::sha3_256(&buffer))
+}
+
+#[cfg(feature = "mock_base")]
+mod overrides {
+    use crate::{Prefix, XorName};
+    use std::{
+        cell::{Cell, RefCell},
+        collections::HashMap,
+    };
+
+    /// Mechanism for overriding relocation destinations. Useful for tests.
+    pub struct Overrides;
+
+    impl Overrides {
+        /// Create new instance of relocation overrides. There can be only one per thread.
+        /// The overrides are automatically `clear`ed when this instance goes out of scope.
+        pub fn new() -> Self {
+            GUARD.with(|guard| {
+                if guard.get() {
+                    panic!("There can be only one instance of RelocationOverrides per thread.");
+                } else {
+                    guard.set(true)
+                }
+            });
+
+            Self
+        }
+
+        /// Override relocation destination for the given source prefix - that is, any node to be
+        /// relocated from that prefix will be relocated to the given destination.
+        /// The override applies only to the exact prefix, not to its parents / children.
+        pub fn set(&self, src_prefix: Prefix<XorName>, dst: XorName) {
+            OVERRIDES.with(|map| {
+                let _ = map
+                    .borrow_mut()
+                    .entry(src_prefix)
+                    .and_modify(|info| info.next = dst)
+                    .or_insert_with(|| OverrideInfo {
+                        next: dst,
+                        used: HashMap::new(),
+                    });
+            })
+        }
+
+        /// Suppress relocations from the given source prefix.
+        pub fn suppress(&self, src_prefix: Prefix<XorName>) {
+            self.set(src_prefix, src_prefix.name())
+        }
+
+        /// Clear all relocation overrides.
+        pub fn clear(&self) {
+            OVERRIDES.with(|map| map.borrow_mut().clear());
+        }
+    }
+
+    impl Default for Overrides {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl Drop for Overrides {
+        fn drop(&mut self) {
+            self.clear();
+            GUARD.with(|guard| guard.set(false));
+        }
+    }
+
+    struct OverrideInfo {
+        // Name that will be used as the next relocation destination.
+        next: XorName,
+        // Map of original relocation destinations to the overridden ones. As this map is shared
+        // among all nodes in the network, this assures that every node will pick the same
+        // destination name for a given relocated node no matter when the calculation is performed.
+        used: HashMap<XorName, XorName>,
+    }
+
+    impl OverrideInfo {
+        fn get(&mut self, original_dst: XorName) -> XorName {
+            *self.used.entry(original_dst).or_insert(self.next)
+        }
+    }
+
+    pub(super) fn get(src_prefix: &Prefix<XorName>, original_dst: XorName) -> XorName {
+        OVERRIDES.with(|map| {
+            if let Some(info) = map.borrow_mut().get_mut(src_prefix) {
+                info.get(original_dst)
+            } else {
+                original_dst
+            }
+        })
+    }
+
+    thread_local! {
+        static GUARD: Cell<bool> = Cell::new(false);
+        static OVERRIDES: RefCell<HashMap<Prefix<XorName>, OverrideInfo>> = RefCell::new(HashMap::new());
+    }
 }

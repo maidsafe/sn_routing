@@ -27,7 +27,7 @@ use std::{net::SocketAddr, sync::mpsc};
 
 #[cfg(feature = "mock_base")]
 use {
-    crate::{chain::SectionProofChain, utils::XorTargetInterval, Chain, Prefix},
+    crate::{chain::SectionProofChain, Chain, Prefix},
     std::{
         collections::{BTreeMap, BTreeSet},
         fmt::{self, Display, Formatter},
@@ -133,7 +133,6 @@ impl NodeBuilder {
                         network_cfg,
                         timer,
                         rng,
-                        dev_params: Default::default(),
                     }))
                 }
             },
@@ -460,27 +459,6 @@ impl Node {
         self.chain().map(|chain| chain.min_split_size())
     }
 
-    /// Sets a name to be used when the next node relocation request is received by this node.
-    pub fn set_next_relocation_dst(&mut self, dst: Option<XorName>) {
-        self.machine
-            .current_mut()
-            .dev_params_mut()
-            .next_relocation_dst = dst;
-    }
-
-    /// Gets the next relocation distance that was previosly set with `set_next_relocation_dst`.
-    pub fn next_relocation_dst(&self) -> Option<XorName> {
-        self.machine.current().dev_params().next_relocation_dst
-    }
-
-    /// Sets an interval to be used when a node is required to generate a new name.
-    pub fn set_next_relocation_interval(&mut self, interval: Option<XorTargetInterval>) {
-        self.machine
-            .current_mut()
-            .dev_params_mut()
-            .next_relocation_interval = interval;
-    }
-
     /// Indicates if there are any pending observations in the parsec object
     pub fn has_unpolled_observations(&self) -> bool {
         self.machine.current().has_unpolled_observations()
@@ -505,6 +483,13 @@ impl Node {
     /// Checks whether the given authority represents self.
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
+    }
+
+    /// Returns the age counter of the given node if it is member of the same section as this node,
+    /// `None` otherwise.
+    pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
+        self.chain()
+            .and_then(|chain| chain.member_age_counter(name))
     }
 }
 

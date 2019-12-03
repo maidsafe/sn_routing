@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     chain::{
-        Chain, DevParams, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
+        Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
@@ -57,7 +57,6 @@ pub struct AdultDetails {
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
-    pub dev_params: DevParams,
     pub rng: MainRng,
 }
 
@@ -95,7 +94,6 @@ impl Adult {
 
         let chain = Chain::new(
             details.network_cfg,
-            details.dev_params,
             public_id,
             details.gen_pfx_info.clone(),
             None,
@@ -139,7 +137,6 @@ impl Adult {
                 network_cfg,
                 timer: self.timer,
                 rng: self.rng,
-                dev_params: self.chain.dev_params().clone(),
             },
         )))
     }
@@ -156,7 +153,6 @@ impl Adult {
                 network_cfg: self.chain.network_cfg(),
                 timer: self.timer,
                 rng: self.rng,
-                dev_params: self.chain.dev_params().clone(),
             },
             conn_infos,
             details,
@@ -531,14 +527,6 @@ impl Base for Adult {
         let mut signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
         self.send_signed_message_to_elders(&mut signed_msg)?;
         Ok(())
-    }
-
-    fn dev_params(&self) -> &DevParams {
-        self.chain.dev_params()
-    }
-
-    fn dev_params_mut(&mut self) -> &mut DevParams {
-        self.chain.dev_params_mut()
     }
 }
 
