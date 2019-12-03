@@ -35,6 +35,6 @@ pub struct PausedState {
     // TODO: instead of storing both network_service and network_rx, store only the network config.
     pub(super) network_service: NetworkService,
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,
-    pub(super) parsec_map: ParsecMap,
     pub(super) sig_accumulator: SignatureAccumulator,
+    pub(super) parsec_map: ParsecMap,
 }

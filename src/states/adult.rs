@@ -29,6 +29,7 @@ use crate::{
     rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
+    signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
@@ -52,6 +53,7 @@ pub struct AdultDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub sig_accumulator: SignatureAccumulator,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
@@ -68,6 +70,7 @@ pub struct Adult {
     /// Routing messages addressed to us that we cannot handle until we are established.
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     parsec_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
@@ -106,6 +109,7 @@ impl Adult {
             gen_pfx_info: details.gen_pfx_info,
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
+            sig_accumulator: details.sig_accumulator,
             parsec_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
@@ -117,7 +121,7 @@ impl Adult {
     }
 
     pub fn closest_known_elders_to(&self, _name: &XorName) -> impl Iterator<Item = &P2pNode> {
-        self.chain.our_info().member_nodes()
+        self.chain.our_elders()
     }
 
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
@@ -173,6 +177,7 @@ impl Adult {
             msg_queue: Default::default(),
             routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
+            sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
@@ -246,7 +251,8 @@ impl Adult {
         }
 
         let conn_infos: Vec<_> = self
-            .closest_known_elders_to(&details.content().destination)
+            .chain
+            .our_elders()
             .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
 
@@ -275,6 +281,96 @@ impl Adult {
             DirectMessage::BootstrapResponse(response),
         );
         self.disconnect(p2p_node.peer_addr());
+    }
+
+    // Send signed_msg to our elders so they can route it properly.
+    fn send_signed_message_to_elders(
+        &mut self,
+        signed_msg: &mut SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        trace!(
+            "{}: Forwarding message {:?} via elder targets {:?}",
+            self,
+            signed_msg,
+            self.chain.our_elders().format(", ")
+        );
+
+        let routing_msg_filter = &mut self.routing_msg_filter;
+        let targets: Vec<_> = self
+            .chain
+            .our_elders()
+            .filter(|p2p_node| {
+                routing_msg_filter
+                    .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
+                    .is_new()
+            })
+            .map(|node| node.connection_info().clone())
+            .collect();
+
+        let message = self.to_hop_message(signed_msg.clone())?;
+        self.send_message_to_targets(&targets, targets.len(), message);
+
+        // we've seen this message - don't handle it again if someone else sends it to us
+        let _ = self
+            .routing_msg_filter
+            .filter_incoming(signed_msg.routing_message());
+
+        Ok(())
+    }
+
+    /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
+    /// message, handles it.
+    fn handle_message_signature(
+        &mut self,
+        msg: SignedRoutingMessage,
+        pub_id: PublicId,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_peer_elder(&pub_id) {
+            debug!(
+                "{} - Received message signature from not known elder (still use it) {}, {:?}",
+                self, pub_id, msg
+            );
+        }
+
+        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
+            self.handle_signed_message(signed_msg)?;
+        }
+        Ok(())
+    }
+
+    // If the message is for us, verify it then, handle the enclosed routing message and swarm it
+    // to the rest of our section when destination is targeting multiple; if not, forward it.
+    fn handle_signed_message(
+        &mut self,
+        signed_msg: SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        if !self
+            .routing_msg_filter
+            .filter_incoming(signed_msg.routing_message())
+            .is_new()
+        {
+            trace!(
+                "{} Known message: {:?} - not handling further",
+                self,
+                signed_msg.routing_message()
+            );
+            return Ok(());
+        }
+
+        self.handle_filtered_signed_message(signed_msg)
+    }
+
+    fn handle_filtered_signed_message(
+        &mut self,
+        mut signed_msg: SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        if self.in_authority(&signed_msg.routing_message().dst) {
+            self.check_signed_message_integrity(&signed_msg)?;
+            self.routing_msg_backlog.push(signed_msg.clone());
+        }
+
+        self.send_signed_message_to_elders(&mut signed_msg)?;
+        Ok(())
     }
 }
 
@@ -376,6 +472,10 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::DirectMessage::*;
         match msg {
+            MessageSignature(msg) => {
+                self.handle_message_signature(msg, *p2p_node.public_id())?;
+                Ok(Transition::Stay)
+            }
             ParsecRequest(version, par_request) => {
                 self.handle_parsec_request(version, par_request, p2p_node, outbox)
             }
@@ -391,10 +491,16 @@ impl Base for Adult {
                 Ok(Transition::Stay)
             }
             Relocate(details) => Ok(self.handle_relocate(details)),
-            msg @ MessageSignature(_)
-            | msg @ BootstrapResponse(_)
-            | msg @ JoinRequest(_)
-            | msg @ ParsecPoke(_) => {
+            msg @ BootstrapResponse(_) => {
+                debug!(
+                    "{} Unhandled direct message from {}, discard: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
+                );
+                Ok(Transition::Stay)
+            }
+            msg @ JoinRequest(_) | msg @ ParsecPoke(_) => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
                     self,
@@ -410,29 +516,10 @@ impl Base for Adult {
     fn handle_hop_message(
         &mut self,
         msg: HopMessage,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
-
-        if !self
-            .routing_msg_filter
-            .filter_incoming(msg.routing_message())
-            .is_new()
-        {
-            trace!(
-                "{} Known message: {:?} - not handling further",
-                self,
-                msg.routing_message()
-            );
-            return Ok(Transition::Stay);
-        }
-
-        if self.in_authority(&msg.routing_message().dst) {
-            self.check_signed_message_integrity(&msg)?;
-            self.dispatch_routing_message(msg, outbox)?;
-        } else {
-            self.routing_msg_backlog.push(msg);
-        }
+        self.handle_signed_message(msg)?;
         Ok(Transition::Stay)
     }
 
@@ -441,32 +528,8 @@ impl Base for Adult {
             return Ok(()); // Message is for us.
         }
 
-        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
-
-        // We should only be connected to our own Elders - send to all of them
-        // Need to collect IDs first so that self is not borrowed via the iterator
-        //
-        // WIP: this is probably out of date? How else do we know which our section members are?
-        // WIP: once ConnectionRequest/ConnectionResponse is removed this whole function can
-        // probably be removed.
-        let target_nodes = self
-            .gen_pfx_info
-            .latest_info
-            .member_nodes()
-            .cloned()
-            .collect_vec();
-
-        for p2p_node in &target_nodes {
-            if self
-                .routing_msg_filter
-                .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
-                .is_new()
-            {
-                let message = self.to_hop_message(signed_msg.clone())?;
-                self.send_message(p2p_node.connection_info(), message);
-            }
-        }
-
+        let mut signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
+        self.send_signed_message_to_elders(&mut signed_msg)?;
         Ok(())
     }
 
