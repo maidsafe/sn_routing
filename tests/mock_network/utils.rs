@@ -340,14 +340,6 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
     failed_to_join.len()
 }
 
-/// Options that control adding and removing nodes to the mock network.
-#[derive(Default, Copy, Clone)]
-pub struct ChurnOptions {
-    /// Suppress any relocations that would be caused by adding/removing a node by setting the next
-    /// relocation destination of the existing nodes to lie within their current sections.
-    pub suppress_relocation: bool,
-}
-
 pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     let mut nodes = Vec::new();
 
@@ -398,24 +390,12 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
 }
 
 pub fn create_connected_nodes_until_split(network: &Network, prefix_lengths: Vec<usize>) -> Nodes {
-    create_connected_nodes_until_split_with_options(
-        network,
-        prefix_lengths,
-        ChurnOptions::default(),
-    )
-}
-
-pub fn create_connected_nodes_until_split_with_options(
-    network: &Network,
-    prefix_lengths: Vec<usize>,
-    options: ChurnOptions,
-) -> Nodes {
     // Start first node.
     let mut nodes = vec![TestNode::builder(network).first().create()];
     let _ = nodes[0].poll();
     expect_next_event!(nodes[0], Event::Connected(_));
 
-    add_connected_nodes_until_split(network, &mut nodes, prefix_lengths, options);
+    add_connected_nodes_until_split(network, &mut nodes, prefix_lengths);
     Nodes(nodes)
 }
 
@@ -433,7 +413,6 @@ pub fn add_connected_nodes_until_split(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     mut prefix_lengths: Vec<usize>,
-    options: ChurnOptions,
 ) {
     // Get sorted list of prefixes to suit requested lengths.
     sanity_check(&prefix_lengths);
@@ -450,7 +429,7 @@ pub fn add_connected_nodes_until_split(
         .iter()
         .map(|prefix| (*prefix, min_split_size))
         .collect_vec();
-    add_nodes_to_prefixes(network, nodes, &prefixes_new_count, options);
+    add_nodes_to_prefixes(network, nodes, &prefixes_new_count);
 
     // If recursive splits are added to Routing (https://maidsafe.atlassian.net/browse/MAID-1861)
     // this next step can be removed.
@@ -483,7 +462,7 @@ pub fn add_connected_nodes_until_split(
             }
         }
         if let Some(prefix_to_split) = found_prefix {
-            add_node_to_section(network, nodes, &prefix_to_split, options);
+            add_node_to_section(network, nodes, &prefix_to_split);
         } else {
             break;
         }
@@ -512,7 +491,6 @@ pub fn add_connected_nodes_until_split(
         | Event::Connected(ConnectEvent::Relocate) => (),
         event => panic!("Got unexpected event for {}: {:?}", node.inner, event),
     });
-    clear_relocation_overrides(nodes);
 
     trace!("Created testnet comprising {:?}", prefixes);
 }
@@ -523,12 +501,11 @@ pub fn add_connected_nodes_until_one_away_from_split(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_to_nearly_split: &[Prefix<XorName>],
-    options: ChurnOptions,
 ) -> Vec<Prefix<XorName>> {
     let (prefixes_and_counts, prefixes_to_add_to_split) =
         prefixes_and_count_to_split_with_only_one_extra_node(nodes, prefixes_to_nearly_split);
 
-    add_connected_nodes_until_sized(network, nodes, &prefixes_and_counts, options);
+    add_connected_nodes_until_sized(network, nodes, &prefixes_and_counts);
     prefixes_to_add_to_split
 }
 
@@ -537,14 +514,10 @@ fn add_connected_nodes_until_sized(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
-    options: ChurnOptions,
 ) {
     clear_all_event_queues(nodes, |_, _| {});
-
-    add_nodes_to_prefixes(network, nodes, prefixes_new_count, options);
-
+    add_nodes_to_prefixes(network, nodes, prefixes_new_count);
     clear_all_event_queues(nodes, |_, _| {});
-    clear_relocation_overrides(nodes);
 
     trace!(
         "Filled prefixes until ready to split {:?}",
@@ -557,7 +530,6 @@ fn add_nodes_to_prefixes(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
-    options: ChurnOptions,
 ) {
     for (prefix, target_count) in prefixes_new_count {
         let num_in_section = nodes
@@ -576,7 +548,7 @@ fn add_nodes_to_prefixes(
         );
         let to_add_count = target_count - num_in_section;
         for _ in 0..to_add_count {
-            add_node_to_section(network, nodes, prefix, options);
+            add_node_to_section(network, nodes, prefix);
         }
     }
 }
@@ -588,14 +560,6 @@ fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(&TestN
         while let Ok(event) = node.try_next_ev() {
             check_event(node, event)
         }
-    }
-}
-
-// Clear all `next_relocation_dst` / `next_relocation_interval` values.
-pub fn clear_relocation_overrides(nodes: &mut Vec<TestNode>) {
-    for node in nodes.iter_mut() {
-        node.inner.set_next_relocation_dst(None);
-        node.inner.set_next_relocation_interval(None);
     }
 }
 
@@ -965,12 +929,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
     prefixes
 }
 
-fn add_node_to_section(
-    network: &Network,
-    nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
-    options: ChurnOptions,
-) {
+fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     let mut rng = network.new_rng();
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
@@ -980,14 +939,6 @@ fn add_node_to_section(
             .full_id(full_id)
             .create(),
     );
-
-    if options.suppress_relocation {
-        // Send all relocations to the same section, effectively disabling them.
-        let dst = prefix.name();
-        for node in nodes_with_prefix_mut(nodes, prefix) {
-            node.inner.set_next_relocation_dst(Some(dst));
-        }
-    }
 
     // Poll until the new node transitions to the `Elder` state.
     let elder_size = network.elder_size();

@@ -177,6 +177,7 @@ pub use crate::{
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,
+    relocation::Overrides as RelocationOverrides,
 };
 pub use crate::{
     error::{InterfaceError, RoutingError},

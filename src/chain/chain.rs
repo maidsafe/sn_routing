@@ -9,9 +9,8 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
-    AccumulatedEvent, AccumulatingEvent, AgeCounter, DevParams, EldersChange, EldersInfo,
-    GenesisPfxInfo, MemberInfo, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
-    SectionProofChain,
+    AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
+    MemberInfo, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet, SectionProofChain,
 };
 use crate::{
     error::RoutingError,
@@ -49,8 +48,6 @@ pub fn delivery_group_size(n: usize) -> usize {
 pub struct Chain {
     /// Network parameters
     network_cfg: NetworkParams,
-    /// Development/testing configuration.
-    dev_params: DevParams,
     /// This node's public ID.
     our_id: PublicId,
     /// Our current Section BLS keys.
@@ -119,7 +116,6 @@ impl Chain {
     /// Create a new chain given genesis information
     pub fn new(
         network_cfg: NetworkParams,
-        dev_params: DevParams,
         our_id: PublicId,
         gen_info: GenesisPfxInfo,
         secret_key_share: Option<BlsSecretKeyShare>,
@@ -130,7 +126,6 @@ impl Chain {
             .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.first_info));
         Self {
             network_cfg,
-            dev_params,
             our_id,
             our_section_bls_keys: SectionKeys {
                 public_key_set: gen_info.first_bls_keys.clone(),
@@ -369,7 +364,7 @@ impl Chain {
             // }
 
             let destination =
-                compute_relocation_destination(name, trigger_node.name(), &mut self.dev_params);
+                relocation::compute_destination(&our_prefix, name, trigger_node.name());
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
                 trace!(
@@ -575,13 +570,6 @@ impl Chain {
         &mut self,
         parsec_version: u64,
     ) -> Result<ParsecResetData, RoutingError> {
-        // Clear any relocation overrides
-        #[cfg(feature = "mock_base")]
-        {
-            self.dev_params.next_relocation_dst = None;
-            self.dev_params.next_relocation_interval = None;
-        }
-
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
         self.state.split_in_progress = false;
@@ -1464,14 +1452,6 @@ impl Chain {
             );
         }
     }
-
-    pub fn dev_params(&self) -> &DevParams {
-        &self.dev_params
-    }
-
-    pub fn dev_params_mut(&mut self) -> &mut DevParams {
-        &mut self.dev_params
-    }
 }
 
 /// The outcome of a prefix change.
@@ -1589,27 +1569,6 @@ fn key_matching_first_elder_name(
     name_to_key
         .remove(first_name)
         .ok_or(RoutingError::InvalidElderDkgResult)
-}
-
-#[cfg(not(feature = "mock_base"))]
-fn compute_relocation_destination(
-    relocated_name: &XorName,
-    trigger_name: &XorName,
-    _dev_params: &mut DevParams,
-) -> XorName {
-    relocation::compute_destination(relocated_name, trigger_name)
-}
-
-#[cfg(feature = "mock_base")]
-fn compute_relocation_destination(
-    relocated_name: &XorName,
-    trigger_name: &XorName,
-    dev_params: &mut DevParams,
-) -> XorName {
-    dev_params
-        .next_relocation_dst
-        .take()
-        .unwrap_or_else(|| relocation::compute_destination(relocated_name, trigger_name))
 }
 
 /// The secret share of the section key.
@@ -1809,7 +1768,6 @@ mod tests {
         };
 
         let mut chain = Chain::new(
-            Default::default(),
             Default::default(),
             *our_id.public_id(),
             genesis_info,
