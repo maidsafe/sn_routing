@@ -18,8 +18,8 @@ pub use self::utils::*;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, Event, EventStream, NetworkConfig, NetworkParams, Prefix, RelocationOverrides,
-    XorName,
+    mock::Network, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix,
+    RelocationOverrides, XorName,
 };
 use std::collections::BTreeMap;
 
@@ -572,13 +572,37 @@ fn carry_out_parsec_pruning() {
 }
 
 #[test]
-fn node_pause_and_resume() {
+fn node_pause_and_resume_simple() {
     let network = Network::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes(&network, 8);
+    let nodes = create_connected_nodes(&network, 2 * network.safe_section_size() - 2);
+    let new_node_id = FullId::gen(&mut network.new_rng());
+    node_pause_and_resume(network, nodes, new_node_id)
+}
 
+#[test]
+fn node_pause_and_resume_during_split() {
+    let network = Network::new(NetworkParams {
+        // The paused node does not participate until resumed, so we need enough elders to reach
+        // consensus even without it.
+        elder_size: 4,
+        safe_section_size: 4,
+    });
+
+    let mut nodes = create_connected_nodes(&network, network.safe_section_size());
+    let prefix =
+        add_connected_nodes_until_one_away_from_split(&network, &mut nodes, &[Prefix::default()])
+            [0];
+
+    let new_node_id = FullId::within_range(&mut network.new_rng(), &prefix.range_inclusive());
+    node_pause_and_resume(network, nodes, new_node_id)
+}
+
+// Pause a random node, then add new node with the given id, then resume the paused node and verify
+// everything still works as expected.
+fn node_pause_and_resume(network: Network, mut nodes: Nodes, new_node_id: FullId) {
     let index = network.new_rng().gen_range(0, nodes.len());
     let state = unwrap!(nodes.remove(index).inner.pause());
 
@@ -590,7 +614,16 @@ fn node_pause_and_resume() {
 
     // Do some work while the node is paused.
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-    nodes.push(TestNode::builder(&network).network_config(config).create());
+    let node = TestNode::builder(&network)
+        .network_config(config)
+        .full_id(new_node_id)
+        .create();
+    nodes.push(node);
+    info!(
+        "node_pause_and_resume: adding node {}",
+        nodes.last().unwrap().name()
+    );
+
     poll_and_resend_with_options(&mut nodes, PollOptions::default().fire_join_timeout(false));
 
     // Resume the node and verify it caugh up to the changes in the network.

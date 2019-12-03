@@ -379,6 +379,8 @@ impl StateMachine {
     }
 
     pub fn pause(self) -> Result<PausedState, RoutingError> {
+        info!("{} - Pause", self.current());
+
         let mut paused_state = match self.state {
             State::Elder(state) => state.pause()?,
             State::Adult(state) => state.pause()?,
@@ -410,6 +412,8 @@ impl StateMachine {
             #[cfg(feature = "mock_base")]
             events: Vec::new(),
         };
+
+        info!("{} - Resume", machine.current());
 
         (action_tx, machine)
     }
