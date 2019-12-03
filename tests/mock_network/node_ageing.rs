@@ -66,6 +66,14 @@ fn relocate_without_split() {
 
 #[test]
 fn relocate_causing_split() {
+    // Note: this test doesn't always trigger split in the target section. This is because when the
+    // target section receives the bootstrap request from the relocating node, it still has its
+    // pre-split prefix which it gives to the node. So the node then generates random name matching
+    // that prefix which will fall into the split-triggering subsection only ~50% of the time.
+    //
+    // We might consider trying to figure a way to force the relocation into the correct
+    // sub-interval, but the test is still useful as is for soak testing.
+
     // Relocate node into a section which is one node shy of splitting.
     let network = Network::new(NETWORK_PARAMS);
     let overrides = RelocationOverrides::new();
@@ -106,19 +114,14 @@ fn relocate_causing_split() {
     // Verify the node got relocated.
     assert!(target_prefix.matches(&nodes[0].name()));
 
-    // Verify the destination section split.
-    // TODO: this does not always pass, because the `add_connected_nodes_until_one_away_from_split`
-    // function does not always work correctly. It needs to be modified to take into account the
-    // fact that infants don't count towards splits.
-    // for node in nodes_with_prefix(&nodes, &target_prefix) {
-    //     assert!(
-    //         node.our_prefix().is_extension_of(&target_prefix),
-    //         "{}: {:?} is not extension of {:?}",
-    //         node.name(),
-    //         node.our_prefix(),
-    //         target_prefix,
-    //     );
-    // }
+    // Check whether the destination section split.
+    let split = nodes_with_prefix(&nodes, &target_prefix)
+        .all(|node| node.our_prefix().is_extension_of(&target_prefix));
+    debug!(
+        "The target section {:?} {} split",
+        target_prefix,
+        if split { "did" } else { "did not" },
+    );
 }
 
 // This test is ignored because it currently fails in the following case:
