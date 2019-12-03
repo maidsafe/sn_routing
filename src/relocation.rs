@@ -225,7 +225,11 @@ mod overrides {
     }
 
     struct OverrideInfo {
+        // Name that will be used as the next relocation destination.
         next: XorName,
+        // Map of original relocation destinations to the overridden ones. As this map is shared
+        // among all nodes in the network, this assures that every node will pick the same
+        // destination name for a given relocated node no matter when the calculation is performed.
         used: HashMap<XorName, XorName>,
     }
 
