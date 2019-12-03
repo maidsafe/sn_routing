@@ -379,15 +379,14 @@ impl StateMachine {
     }
 
     pub fn pause(self) -> Result<PausedState, RoutingError> {
-        // TODO: should we allow pausing from other states too?
-        match self.state {
-            State::Elder(state) => {
-                let mut state = state.pause()?;
-                state.network_rx = Some(self.network_rx);
-                Ok(state)
-            }
-            _ => Err(RoutingError::InvalidStateForOperation),
-        }
+        let mut paused_state = match self.state {
+            State::Elder(state) => state.pause()?,
+            State::Adult(state) => state.pause()?,
+            _ => return Err(RoutingError::InvalidStateForOperation),
+        };
+
+        paused_state.network_rx = Some(self.network_rx);
+        Ok(paused_state)
     }
 
     pub fn resume(mut state: PausedState) -> (mpmc::Sender<Action>, Self) {
@@ -395,7 +394,12 @@ impl StateMachine {
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
 
         let timer = Timer::new(action_tx.clone());
-        let state = State::Elder(Elder::resume(state, timer));
+        let state = if state.is_elder() {
+            State::Elder(Elder::resume(state, timer))
+        } else {
+            State::Adult(Adult::resume(state, timer))
+        };
+
         let machine = StateMachine {
             state,
             network_rx,

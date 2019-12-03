@@ -68,7 +68,7 @@ pub struct ElderDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_queue: VecDeque<SignedRoutingMessage>,
+    pub routing_msg_queue: VecDeque<SignedRoutingMessage>,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
     pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     pub sig_accumulator: SignatureAccumulator,
@@ -84,7 +84,7 @@ pub struct Elder {
     is_first_node: bool,
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
     // although they may wrap a message which needs forwarding.
-    msg_queue: VecDeque<SignedRoutingMessage>,
+    routing_msg_queue: VecDeque<SignedRoutingMessage>,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     routing_msg_filter: RoutingMessageFilter,
@@ -138,7 +138,7 @@ impl Elder {
             event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
-            msg_queue: Default::default(),
+            routing_msg_queue: Default::default(),
             routing_msg_backlog: Default::default(),
             direct_msg_backlog: Default::default(),
             sig_accumulator: Default::default(),
@@ -195,8 +195,10 @@ impl Elder {
             chain: self.chain,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            msg_filter: self.routing_msg_filter,
-            msg_queue: self.msg_queue,
+            routing_msg_filter: self.routing_msg_filter,
+            routing_msg_queue: self.routing_msg_queue,
+            routing_msg_backlog: self.routing_msg_backlog,
+            direct_msg_backlog: self.direct_msg_backlog,
             network_service: self.network_service,
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
@@ -212,12 +214,12 @@ impl Elder {
                 event_backlog: Vec::new(),
                 full_id: state.full_id,
                 gen_pfx_info: state.gen_pfx_info,
-                msg_queue: state.msg_queue,
-                routing_msg_backlog: Default::default(),
-                direct_msg_backlog: Default::default(),
+                routing_msg_queue: state.routing_msg_queue,
+                routing_msg_backlog: state.routing_msg_backlog,
+                direct_msg_backlog: state.direct_msg_backlog,
                 sig_accumulator: state.sig_accumulator,
                 parsec_map: state.parsec_map,
-                routing_msg_filter: state.msg_filter,
+                routing_msg_filter: state.routing_msg_filter,
                 timer,
                 rng: rng::new(),
             },
@@ -246,7 +248,7 @@ impl Elder {
             network_service: details.network_service,
             full_id: details.full_id.clone(),
             is_first_node,
-            msg_queue: details.msg_queue,
+            routing_msg_queue: details.routing_msg_queue,
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
             routing_msg_filter: details.routing_msg_filter,
@@ -314,7 +316,7 @@ impl Elder {
     }
 
     fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        while let Some(msg) = self.msg_queue.pop_front() {
+        while let Some(msg) = self.routing_msg_queue.pop_front() {
             if self.in_authority(&msg.routing_message().dst) {
                 match self.dispatch_routing_message(msg, outbox) {
                     Ok(Transition::Stay) => (),
@@ -545,7 +547,7 @@ impl Elder {
                 }
             }
             // if addressed to us, then we just queue it and return
-            self.msg_queue.push_back(signed_msg);
+            self.routing_msg_queue.push_back(signed_msg);
         } else if let Err(error) = self.send_signed_message(&mut signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }

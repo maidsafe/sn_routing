@@ -376,7 +376,7 @@ fn new_elder_state(
         event_backlog: Default::default(),
         full_id: full_id.clone(),
         gen_pfx_info: gen_pfx_info.clone(),
-        msg_queue: Default::default(),
+        routing_msg_queue: Default::default(),
         routing_msg_backlog: Default::default(),
         direct_msg_backlog: Default::default(),
         sig_accumulator: Default::default(),
