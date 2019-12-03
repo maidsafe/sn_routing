@@ -497,6 +497,13 @@ impl Node {
     pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
     }
+
+    /// Returns the age counter of the given node if it is member of the same section as this node,
+    /// `None` otherwise.
+    pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
+        self.chain()
+            .and_then(|chain| chain.member_age_counter(name))
+    }
 }
 
 #[cfg(feature = "mock_base")]

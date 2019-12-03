@@ -1549,6 +1549,14 @@ impl Chain {
             .min_by_key(|prefix| prefix.bit_count())
             .unwrap_or(&self.our_prefix())
     }
+
+    /// Returns the age counter of the given member or `None` if not a member.
+    pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
+        self.state
+            .our_members
+            .get(name)
+            .map(|member| member.age_counter_value())
+    }
 }
 
 #[cfg(test)]
