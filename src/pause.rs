@@ -8,8 +8,8 @@
 
 use crate::{
     chain::{Chain, GenesisPfxInfo},
-    id::FullId,
-    messages::SignedRoutingMessage,
+    id::{FullId, P2pNode},
+    messages::{DirectMessage, SignedRoutingMessage},
     parsec::ParsecMap,
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
@@ -30,11 +30,19 @@ pub struct PausedState {
     pub(super) chain: Chain,
     pub(super) full_id: FullId,
     pub(super) gen_pfx_info: GenesisPfxInfo,
-    pub(super) msg_filter: RoutingMessageFilter,
-    pub(super) msg_queue: VecDeque<SignedRoutingMessage>,
+    pub(super) routing_msg_filter: RoutingMessageFilter,
+    pub(super) routing_msg_queue: VecDeque<SignedRoutingMessage>,
+    pub(super) routing_msg_backlog: Vec<SignedRoutingMessage>,
+    pub(super) direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     // TODO: instead of storing both network_service and network_rx, store only the network config.
     pub(super) network_service: NetworkService,
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,
     pub(super) sig_accumulator: SignatureAccumulator,
     pub(super) parsec_map: ParsecMap,
+}
+
+impl PausedState {
+    pub(super) fn is_elder(&self) -> bool {
+        self.chain.is_self_elder()
+    }
 }

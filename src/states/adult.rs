@@ -24,9 +24,10 @@ use crate::{
     },
     outbox::EventBox,
     parsec::{DkgResultWrapper, ParsecMap},
+    pause::PausedState,
     peer_map::PeerMap,
     relocation::{RelocateDetails, SignedRelocateDetails},
-    rng::MainRng,
+    rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix},
     signature_accumulator::SignatureAccumulator,
@@ -38,7 +39,7 @@ use crate::{
 };
 use itertools::Itertools;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
     mem,
     net::SocketAddr,
@@ -170,7 +171,7 @@ impl Adult {
             event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            msg_queue: Default::default(),
+            routing_msg_queue: Default::default(),
             routing_msg_backlog: self.routing_msg_backlog,
             direct_msg_backlog: self.direct_msg_backlog,
             sig_accumulator: self.sig_accumulator,
@@ -183,6 +184,42 @@ impl Adult {
         };
 
         Elder::from_adult(details, old_pfx, outbox).map(State::Elder)
+    }
+
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
+        Ok(PausedState {
+            chain: self.chain,
+            full_id: self.full_id,
+            gen_pfx_info: self.gen_pfx_info,
+            routing_msg_filter: self.routing_msg_filter,
+            routing_msg_queue: VecDeque::new(),
+            routing_msg_backlog: self.routing_msg_backlog,
+            direct_msg_backlog: self.direct_msg_backlog,
+            network_service: self.network_service,
+            network_rx: None,
+            sig_accumulator: self.sig_accumulator,
+            parsec_map: self.parsec_map,
+        })
+    }
+
+    pub fn resume(state: PausedState, timer: Timer) -> Self {
+        let parsec_timer_token = timer.schedule(POKE_TIMEOUT);
+
+        Self {
+            chain: state.chain,
+            network_service: state.network_service,
+            event_backlog: Vec::new(),
+            full_id: state.full_id,
+            gen_pfx_info: state.gen_pfx_info,
+            routing_msg_backlog: state.routing_msg_backlog,
+            direct_msg_backlog: state.direct_msg_backlog,
+            sig_accumulator: state.sig_accumulator,
+            parsec_map: state.parsec_map,
+            parsec_timer_token,
+            routing_msg_filter: state.routing_msg_filter,
+            timer,
+            rng: rng::new(),
+        }
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
