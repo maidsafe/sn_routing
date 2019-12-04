@@ -361,7 +361,7 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     let n = cmp::min(nodes.len(), network.elder_size()) - 1;
 
     for node in &mut nodes {
-        expect_next_event!(node, Event::Connected(_));
+        expect_next_event!(node, Event::Connected(ConnectEvent::First));
 
         let mut node_added_count = 0;
 
@@ -372,7 +372,8 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
                 | Event::SectionSplit(..)
                 | Event::RestartRequired
                 | Event::ClientEvent(..)
-                | Event::TimerTicked => (),
+                | Event::TimerTicked
+                | Event::Connected(ConnectEvent::Relocate) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
