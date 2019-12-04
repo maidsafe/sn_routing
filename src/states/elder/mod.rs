@@ -22,7 +22,7 @@ use crate::{
         MIN_AGE_COUNTER,
     },
     error::{BootstrapResponseError, InterfaceError, RoutingError},
-    event::Event,
+    event::{ConnectEvent, Event},
     id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
@@ -153,7 +153,7 @@ impl Elder {
         debug!("{} - State changed to Node.", node);
         info!("{} - Started a new network as a seed node.", node);
 
-        outbox.send_event(Event::Connected);
+        outbox.send_event(Event::Connected(ConnectEvent::First));
 
         Ok(node)
     }
@@ -300,8 +300,7 @@ impl Elder {
             self.chain.prefixes()
         );
 
-        // Send `Event::Connected` first and then any backlogged events from previous states.
-        for event in iter::once(Event::Connected).chain(event_backlog) {
+        for event in event_backlog {
             self.send_event(event, outbox);
         }
 

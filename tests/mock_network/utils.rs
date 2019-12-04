@@ -11,8 +11,8 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::Rng;
 use routing::{
-    mock::Network, test_consts, Authority, Event, EventStream, FullId, NetworkConfig, Node,
-    NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
+    mock::Network, test_consts, Authority, ConnectEvent, Event, EventStream, FullId, NetworkConfig,
+    Node, NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -324,7 +324,7 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
         .take(count)
         .filter_map(|(index, ref mut node)| {
             while let Ok(event) = node.try_next_ev() {
-                if let Event::Connected = event {
+                if let Event::Connected(_) = event {
                     return None;
                 }
             }
@@ -361,7 +361,7 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
     let n = cmp::min(nodes.len(), network.elder_size()) - 1;
 
     for node in &mut nodes {
-        expect_next_event!(node, Event::Connected);
+        expect_next_event!(node, Event::Connected(ConnectEvent::First));
 
         let mut node_added_count = 0;
 
@@ -372,7 +372,8 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
                 | Event::SectionSplit(..)
                 | Event::RestartRequired
                 | Event::ClientEvent(..)
-                | Event::TimerTicked => (),
+                | Event::TimerTicked
+                | Event::Connected(ConnectEvent::Relocate) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -392,7 +393,7 @@ pub fn create_connected_nodes_until_split(network: &Network, prefix_lengths: Vec
     // Start first node.
     let mut nodes = vec![TestNode::builder(network).first().create()];
     let _ = nodes[0].poll();
-    expect_next_event!(nodes[0], Event::Connected);
+    expect_next_event!(nodes[0], Event::Connected(_));
 
     add_connected_nodes_until_split(network, &mut nodes, prefix_lengths);
     Nodes(nodes)
@@ -420,7 +421,7 @@ pub fn add_connected_nodes_until_split(
     let prefixes = prefixes(&prefix_lengths, &mut rng);
 
     // Cleanup the previous event queue
-    clear_all_event_queues(nodes, |_| {});
+    clear_all_event_queues(nodes, |_, _| {});
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
     let min_split_size = unwrap!(nodes[0].inner.min_split_size());
@@ -481,13 +482,14 @@ pub fn add_connected_nodes_until_split(
         prefixes.iter().map(Prefix::bit_count).collect::<Vec<_>>()
     );
 
-    clear_all_event_queues(nodes, |event| match event {
+    clear_all_event_queues(nodes, |node, event| match event {
         Event::NodeAdded(..)
         | Event::NodeLost(..)
         | Event::TimerTicked
         | Event::ClientEvent(..)
-        | Event::SectionSplit(..) => (),
-        event => panic!("Got unexpected event: {:?}", event),
+        | Event::SectionSplit(..)
+        | Event::Connected(ConnectEvent::Relocate) => (),
+        event => panic!("Got unexpected event for {}: {:?}", node.inner, event),
     });
 
     trace!("Created testnet comprising {:?}", prefixes);
@@ -513,9 +515,9 @@ fn add_connected_nodes_until_sized(
     nodes: &mut Vec<TestNode>,
     prefixes_new_count: &[PrefixAndSize],
 ) {
-    clear_all_event_queues(nodes, |_| {});
+    clear_all_event_queues(nodes, |_, _| {});
     add_nodes_to_prefixes(network, nodes, prefixes_new_count);
-    clear_all_event_queues(nodes, |_| {});
+    clear_all_event_queues(nodes, |_, _| {});
 
     trace!(
         "Filled prefixes until ready to split {:?}",
@@ -552,10 +554,11 @@ fn add_nodes_to_prefixes(
 }
 
 // Clear all event queues applying check_event to them.
-fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(Event)) {
+fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(&TestNode, Event)) {
     for node in nodes.iter_mut() {
+        trace!("Start Check with {}", node.inner);
         while let Ok(event) = node.try_next_ev() {
-            check_event(event)
+            check_event(node, event)
         }
     }
 }
@@ -936,7 +939,7 @@ fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pr
             })
             .fire_join_timeout(false),
     );
-    expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected);
+    expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected(_));
     assert!(
         prefix.matches(&nodes[nodes.len() - 1].name()),
         "Prefix {:?} doesn't match the name {}!",

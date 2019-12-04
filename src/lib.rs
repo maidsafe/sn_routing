@@ -181,7 +181,7 @@ pub use crate::{
 };
 pub use crate::{
     error::{InterfaceError, RoutingError},
-    event::{ClientEvent, Event},
+    event::{ClientEvent, ConnectEvent, Event},
     event_stream::EventStream,
     id::{FullId, P2pNode, PublicId},
     node::{Node, NodeBuilder},
