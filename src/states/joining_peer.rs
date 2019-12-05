@@ -12,11 +12,14 @@ use super::{
     common::Base,
 };
 use crate::{
-    chain::{GenesisPfxInfo, NetworkParams},
+    chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::{ConnectEvent, Event},
     id::{FullId, P2pNode},
-    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
+    messages::{
+        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
+        SignedRoutingMessage,
+    },
     outbox::EventBox,
     peer_map::PeerMap,
     relocation::RelocatePayload,
@@ -42,7 +45,7 @@ pub struct JoiningPeerDetails {
     pub network_cfg: NetworkParams,
     pub timer: Timer,
     pub rng: MainRng,
-    pub p2p_nodes: Vec<P2pNode>,
+    pub elders_info: EldersInfo,
     pub relocate_payload: Option<RelocatePayload>,
 }
 
@@ -55,7 +58,7 @@ pub struct JoiningPeer {
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
-    p2p_nodes: Vec<P2pNode>,
+    elders_info: EldersInfo,
     join_type: JoinType,
     network_cfg: NetworkParams,
 }
@@ -78,7 +81,7 @@ impl JoiningPeer {
             full_id: details.full_id,
             timer: details.timer,
             rng: details.rng,
-            p2p_nodes: details.p2p_nodes,
+            elders_info: details.elders_info,
             join_type,
             network_cfg: details.network_cfg,
         };
@@ -130,17 +133,22 @@ impl JoiningPeer {
     }
 
     fn send_join_requests(&mut self) {
-        for dst in self.p2p_nodes.clone() {
+        let elders_version = self.elders_info.version();
+        for dst in self.elders_info.clone().member_nodes() {
             info!("{} - Sending JoinRequest to {}", self, dst.public_id());
 
             let relocate_payload = match &self.join_type {
                 JoinType::First { .. } => None,
                 JoinType::Relocate(payload) => Some(payload.clone()),
             };
+            let join_request = JoinRequest {
+                elders_version,
+                relocate_payload,
+            };
 
             self.send_direct_message(
                 dst.connection_info(),
-                DirectMessage::JoinRequest(relocate_payload),
+                DirectMessage::JoinRequest(join_request),
             );
         }
     }
@@ -251,6 +259,20 @@ impl Base for JoiningPeer {
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+                if info.version() > self.elders_info.version() {
+                    if info.prefix().matches(self.name()) {
+                        info!("{} - Newer Join response for our prefix {:?}", self, info);
+                        self.elders_info = info;
+                        self.send_join_requests();
+                    } else {
+                        info!(
+                            "{} - Newer Join response not for our prefix {:?}",
+                            self, info
+                        );
+                    }
+                }
+            }
             DirectMessage::ConnectionResponse | DirectMessage::BootstrapResponse(_) => (),
             _ => {
                 debug!(

@@ -8,7 +8,7 @@
 
 use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
-    chain::NetworkParams,
+    chain::{EldersInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode},
@@ -96,7 +96,7 @@ impl BootstrappingPeer {
 
     pub fn into_joining(
         self,
-        p2p_nodes: Vec<P2pNode>,
+        elders_info: EldersInfo,
         relocate_payload: Option<RelocatePayload>,
         _outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
@@ -106,7 +106,7 @@ impl BootstrappingPeer {
             network_cfg: self.network_cfg,
             timer: self.timer,
             rng: self.rng,
-            p2p_nodes,
+            elders_info,
             relocate_payload,
         };
 
@@ -123,27 +123,31 @@ impl BootstrappingPeer {
         let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
         let _ = self.timeout_tokens.insert(token, dst.peer_addr);
 
-        // If we are relocating, request bootstrap to the section matching the name given to us
-        // by our section. Otherwise request bootstrap to the section matching our current name.
-        let destination = if let Some(details) = self.relocate_details.as_ref() {
-            details.content().destination
-        } else {
-            *self.name()
-        };
-
+        let destination = self.get_destination();
         self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
         self.peer_map_mut().connect(dst);
     }
 
-    fn join_section(
-        &mut self,
-        prefix: Prefix<XorName>,
-        p2p_nodes: Vec<P2pNode>,
-    ) -> Result<Transition, RoutingError> {
-        let old_full_id = self.full_id.clone();
+    // If we are relocating, request bootstrap to the section matching the name given to us
+    // by our section. Otherwise request bootstrap to the section matching our current name.
+    fn get_destination(&self) -> XorName {
+        if let Some(details) = self.relocate_details.as_ref() {
+            details.content().destination
+        } else {
+            *self.name()
+        }
+    }
 
-        if !prefix.matches(self.name()) {
-            let new_full_id = FullId::within_range(&mut self.rng, &prefix.range_inclusive());
+    fn join_section(&mut self, info: EldersInfo) -> Result<Transition, RoutingError> {
+        let old_full_id = self.full_id.clone();
+        let destination = self.get_destination();
+
+        // Use a name that will match the destination even after multiple splits
+        let extra_split_count = 3;
+        let name_prefix = Prefix::new(info.prefix().bit_count() + extra_split_count, destination);
+
+        if !name_prefix.matches(self.name()) {
+            let new_full_id = FullId::within_range(&mut self.rng, &name_prefix.range_inclusive());
             info!(
                 "{} - Changing name to {}.",
                 self,
@@ -163,7 +167,7 @@ impl BootstrappingPeer {
         };
 
         Ok(Transition::IntoJoining {
-            p2p_nodes,
+            info,
             relocate_payload,
         })
     }
@@ -288,9 +292,9 @@ impl Base for BootstrappingPeer {
         }
 
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, p2p_nodes }) => {
-                info!("{} - Joining a section {:?}: {:?}", self, prefix, p2p_nodes);
-                self.join_section(prefix, p2p_nodes)
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+                info!("{} - Joining a section {:?}", self, info);
+                self.join_section(info)
             }
             DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(

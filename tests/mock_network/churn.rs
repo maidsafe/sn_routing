@@ -39,7 +39,7 @@ fn drop_random_nodes<R: Rng>(
     let elder_size = |node: &TestNode| unwrap!(node.inner.elder_size());
     let node_section_size = |node: &TestNode| {
         node.inner
-            .section_elders(unwrap!(node.inner.our_prefix()))
+            .section_elders(unwrap!(node.inner.our_prefix(), "{}", node.inner))
             .len()
     };
     let sections: BTreeMap<_, _> = nodes

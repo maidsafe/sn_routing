@@ -25,14 +25,14 @@ use crate::{
     event::{ConnectEvent, Event},
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
         SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
@@ -61,6 +61,19 @@ use crate::messages::Message;
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+
+struct CompleteParsecReset {
+    /// The new genesis prefix info.
+    pub gen_pfx_info: GenesisPfxInfo,
+    /// The cached events that should be revoted. Not shared state: only the ones we voted for.
+    /// Also contains our votes that never reached consensus.
+    pub to_vote_again: BTreeSet<NetworkEvent>,
+    /// The events to process. Not shared state: only the ones we voted for.
+    /// Also contains our votes that never reached consensus.
+    pub to_process: BTreeSet<NetworkEvent>,
+    /// Event to send on completion.
+    pub event_to_send: Option<Event>,
+}
 
 pub struct ElderDetails {
     pub chain: Chain,
@@ -381,98 +394,176 @@ impl Elder {
         self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
     }
 
-    fn reset_parsec_with_data(&mut self, reset_data: ParsecResetData) -> Result<(), RoutingError> {
-        let drained_obs: Vec<_> = self
-            .parsec_map
-            .our_unpolled_observations()
-            .cloned()
-            .collect();
-
+    fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
         let ParsecResetData {
             gen_pfx_info,
             mut cached_events,
             completed_events,
         } = reset_data;
+
+        cached_events.extend(
+            self.parsec_map
+                .our_unpolled_observations()
+                .filter_map(|obs| match obs {
+                    parsec::Observation::OpaquePayload(event) => Some(event),
+
+                    parsec::Observation::Genesis { .. }
+                    | parsec::Observation::Add { .. }
+                    | parsec::Observation::Remove { .. }
+                    | parsec::Observation::Accusation { .. }
+                    | parsec::Observation::StartDkg(_)
+                    | parsec::Observation::DkgResult { .. }
+                    | parsec::Observation::DkgMessage(_) => None,
+                })
+                .cloned(),
+        );
+
+        let our_pfx = *self.our_prefix();
+
+        let to_process = cached_events
+            .iter()
+            .filter(|event| match &event.payload {
+                // Events to re-process
+                AccumulatingEvent::Online(_) => !completed_events.contains(&event.payload),
+                // Events to re-insert
+                AccumulatingEvent::Offline(_)
+                | AccumulatingEvent::AckMessage(_)
+                | AccumulatingEvent::StartDkg(_)
+                | AccumulatingEvent::ParsecPrune
+                | AccumulatingEvent::Relocate(_)
+                | AccumulatingEvent::SectionInfo(_, _)
+                | AccumulatingEvent::NeighbourInfo(_)
+                | AccumulatingEvent::TheirKeyInfo(_)
+                | AccumulatingEvent::SendAckMessage(_)
+                | AccumulatingEvent::User(_) => false,
+            })
+            .cloned()
+            .collect();
+
+        let to_vote_again = cached_events
+            .into_iter()
+            .filter(|event| {
+                match event.payload {
+                    // Only re-vote not yet accumulated events and still relevant to our new prefix.
+                    AccumulatingEvent::Online(ref payload) => {
+                        our_pfx.matches(payload.p2p_node.name())
+                            && !completed_events.contains(&event.payload)
+                    }
+                    AccumulatingEvent::Offline(pub_id) => {
+                        our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
+                    }
+                    AccumulatingEvent::AckMessage(ref payload) => {
+                        our_pfx.matches(&payload.dst_name)
+                            && !completed_events.contains(&event.payload)
+                    }
+
+                    // Drop: no longer relevant after prefix change.
+                    // TODO: verify this is really the case. Some/all of these might still make sense
+                    // to carry over. In case it does not, add a comment explaining why.
+                    AccumulatingEvent::StartDkg(_)
+                    | AccumulatingEvent::ParsecPrune
+                    | AccumulatingEvent::Relocate(_) => false,
+
+                    // Keep: Additional signatures for neighbours for sec-msg-relay.
+                    AccumulatingEvent::SectionInfo(ref elders_info, _)
+                    | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
+                        our_pfx.is_neighbour(elders_info.prefix())
+                    }
+
+                    // Keep: Still relevant after prefix change.
+                    AccumulatingEvent::TheirKeyInfo(_)
+                    | AccumulatingEvent::SendAckMessage(_)
+                    | AccumulatingEvent::User(_) => true,
+                }
+            })
+            .collect();
+
+        CompleteParsecReset {
+            gen_pfx_info,
+            to_vote_again,
+            to_process,
+            event_to_send: None,
+        }
+    }
+
+    fn process_post_reset_events(
+        &mut self,
+        _old_pfx: Prefix<XorName>,
+        to_process: BTreeSet<NetworkEvent>,
+    ) {
+        to_process.iter().for_each(|event| match &event.payload {
+            evt @ AccumulatingEvent::Offline(_)
+            | evt @ AccumulatingEvent::AckMessage(_)
+            | evt @ AccumulatingEvent::StartDkg(_)
+            | evt @ AccumulatingEvent::ParsecPrune
+            | evt @ AccumulatingEvent::Relocate(_)
+            | evt @ AccumulatingEvent::SectionInfo(_, _)
+            | evt @ AccumulatingEvent::NeighbourInfo(_)
+            | evt @ AccumulatingEvent::TheirKeyInfo(_)
+            | evt @ AccumulatingEvent::SendAckMessage(_)
+            | evt @ AccumulatingEvent::User(_) => {
+                log_or_panic!(LogLevel::Error, "unexpected event {:?}", evt);
+            }
+            AccumulatingEvent::Online(payload) => {
+                self.resend_bootstrap_response_join(&payload.p2p_node);
+            }
+        });
+    }
+
+    // Resend the response with ours or our sibling's info in case of split.
+    fn resend_bootstrap_response_join(&mut self, p2p_node: &P2pNode) {
+        let our_info = self.chain.our_info();
+
+        let response_section = Some(our_info)
+            .filter(|info| info.prefix().matches(p2p_node.name()))
+            .or_else(|| self.chain.get_neighbour_info(&our_info.prefix().sibling()))
+            .filter(|info| info.prefix().matches(p2p_node.name()))
+            .cloned();
+
+        if let Some(response_section) = response_section {
+            trace!(
+                "{} - Resend Join to {} with version {}",
+                self,
+                p2p_node,
+                response_section.version()
+            );
+            self.send_direct_message(
+                p2p_node.connection_info(),
+                DirectMessage::BootstrapResponse(BootstrapResponse::Join(response_section)),
+            );
+        }
+    }
+
+    fn reset_parsec_with_data(
+        &mut self,
+        gen_pfx_info: GenesisPfxInfo,
+        to_vote_again: BTreeSet<NetworkEvent>,
+    ) -> Result<(), RoutingError> {
         self.gen_pfx_info = gen_pfx_info;
         self.init_parsec(); // We don't reset the chain on prefix change.
 
-        for obs in drained_obs {
-            let event = match obs {
-                parsec::Observation::OpaquePayload(event) => event,
-
-                parsec::Observation::Genesis { .. }
-                | parsec::Observation::Add { .. }
-                | parsec::Observation::Remove { .. }
-                | parsec::Observation::Accusation { .. }
-                | parsec::Observation::StartDkg(_)
-                | parsec::Observation::DkgResult { .. }
-                | parsec::Observation::DkgMessage(_) => continue,
-            };
-            let _ = cached_events.insert(event);
-        }
-        let our_pfx = *self.our_prefix();
-
-        cached_events
-            .iter()
-            .filter(|event| match event.payload {
-                // Only re-vote not yet accumulated events and still relevant to our new prefix.
-                AccumulatingEvent::Online(ref payload) => {
-                    our_pfx.matches(payload.p2p_node.name())
-                        && !completed_events.contains(&event.payload)
-                }
-                AccumulatingEvent::Offline(pub_id) => {
-                    our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
-                }
-                AccumulatingEvent::AckMessage(ref payload) => {
-                    our_pfx.matches(&payload.dst_name) && !completed_events.contains(&event.payload)
-                }
-
-                // Drop: no longer relevant after prefix change.
-                // TODO: verify this is really the case. Some/all of these might still make sense
-                // to carry over. In case it does not, add a comment explaining why.
-                AccumulatingEvent::StartDkg(_)
-                | AccumulatingEvent::ParsecPrune
-                | AccumulatingEvent::Relocate(_) => false,
-
-                // Keep: Additional signatures for neighbours for sec-msg-relay.
-                AccumulatingEvent::SectionInfo(ref elders_info, _)
-                | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
-                    our_pfx.is_neighbour(elders_info.prefix())
-                }
-
-                // Keep: Still relevant after prefix change.
-                AccumulatingEvent::TheirKeyInfo(_)
-                | AccumulatingEvent::SendAckMessage(_)
-                | AccumulatingEvent::User(_) => true,
-            })
-            .for_each(|event| {
-                self.vote_for_network_event(event.clone());
-            });
+        to_vote_again.iter().for_each(|event| {
+            self.vote_for_network_event(event.clone());
+        });
 
         Ok(())
     }
 
-    fn reset_parsec(&mut self) -> Result<(), RoutingError> {
+    fn prepare_reset_parsec(&mut self) -> Result<CompleteParsecReset, RoutingError> {
         let reset_data = self
             .chain
             .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
-        self.reset_parsec_with_data(reset_data)
+        let complete_data = self.complete_parsec_reset_data(reset_data);
+        Ok(complete_data)
     }
 
-    fn finalise_split(&mut self, outbox: &mut dyn EventBox) -> Result<(), RoutingError> {
+    fn prepare_finalise_split(&mut self) -> Result<CompleteParsecReset, RoutingError> {
         let reset_data = self
             .chain
             .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
-        self.reset_parsec_with_data(reset_data)?;
-        self.send_event(Event::SectionSplit(*self.our_prefix()), outbox);
-        Ok(())
-    }
-
-    fn reset_parsec_for_demote(&mut self) -> Result<GenesisPfxInfo, RoutingError> {
-        let reset_data = self
-            .chain
-            .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
-        Ok(reset_data.gen_pfx_info)
+        let mut complete_data = self.complete_parsec_reset_data(reset_data);
+        complete_data.event_to_send = Some(Event::SectionSplit(*self.our_prefix()));
+        Ok(complete_data)
     }
 
     fn send_neighbour_infos(&mut self) {
@@ -731,10 +822,7 @@ impl Elder {
     fn respond_to_bootstrap_request(&mut self, p2p_node: &P2pNode, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
             debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
-            BootstrapResponse::Join {
-                prefix: *self.our_prefix(),
-                p2p_nodes: self.chain.our_elders().cloned().collect(),
-            }
+            BootstrapResponse::Join(self.chain.our_info().clone())
         } else {
             let conn_infos: Vec<_> = self
                 .closest_known_elders_to(name)
@@ -756,12 +844,15 @@ impl Elder {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(
-        &mut self,
-        p2p_node: P2pNode,
-        relocate_payload: Option<RelocatePayload>,
-    ) {
-        debug!("{} - Received JoinRequest from {}", self, p2p_node);
+    fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
+        debug!(
+            "{} - Received JoinRequest from {} for v{}",
+            self, p2p_node, join_request.elders_version
+        );
+
+        if join_request.elders_version < self.chain.our_info().version() {
+            self.resend_bootstrap_response_join(&p2p_node);
+        }
 
         let pub_id = *p2p_node.public_id();
         if !self.our_prefix().matches(pub_id.name()) {
@@ -783,7 +874,7 @@ impl Elder {
         }
 
         // This joining node is being relocated to us.
-        let age = if let Some(payload) = relocate_payload {
+        let age = if let Some(payload) = join_request.relocate_payload {
             if !payload.verify_identity(&pub_id) {
                 debug!(
                     "{} - Ignoring relocation JoinRequest from {} - invalid signature.",
@@ -1230,7 +1321,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest(payload) => self.handle_join_request(p2p_node, payload),
+            JoinRequest(join_request) => self.handle_join_request(p2p_node, join_request),
             ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, p2p_node, outbox);
@@ -1488,7 +1579,9 @@ impl Approved for Elder {
             return Ok(());
         }
         info!("{} - handle parsec prune.", self);
-        self.reset_parsec()
+        let complete_data = self.prepare_reset_parsec()?;
+        self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
+        Ok(())
     }
 
     fn handle_section_info_event(
@@ -1509,24 +1602,28 @@ impl Approved for Elder {
         // go to the new instance.
         let relocate_details = self.chain.poll_relocation();
 
-        if !is_member {
-            // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
-            // i.e the one that would be received with NodeApproval.
-            let gen_pfx_info = self.reset_parsec_for_demote()?;
-            return Ok(Transition::Demote { gen_pfx_info });
-        }
-
-        if info_prefix.is_extension_of(&old_pfx) {
-            self.finalise_split(outbox)?;
+        let complete_data = if info_prefix.is_extension_of(&old_pfx) {
+            self.prepare_finalise_split()?
         } else if old_pfx.is_extension_of(&info_prefix) {
             panic!(
                 "{} - Merge not supported: {:?} -> {:?}",
                 self, old_pfx, info_prefix,
             );
         } else {
-            self.reset_parsec()?;
+            self.prepare_reset_parsec()?
+        };
+
+        if !is_member {
+            // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
+            // i.e the one that would be received with NodeApproval.
+            self.process_post_reset_events(old_pfx, complete_data.to_process);
+            return Ok(Transition::Demote {
+                gen_pfx_info: complete_data.gen_pfx_info,
+            });
         }
 
+        self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
+        self.process_post_reset_events(old_pfx, complete_data.to_process);
         self.update_peer_connections(neighbour_change);
         self.send_neighbour_infos();
 
@@ -1538,6 +1635,10 @@ impl Approved for Elder {
 
         if let Some(relocate_details) = relocate_details {
             self.vote_for_relocate(relocate_details)?;
+        }
+
+        if let Some(to_send) = complete_data.event_to_send {
+            self.send_event(to_send, outbox);
         }
 
         Ok(Transition::Stay)
