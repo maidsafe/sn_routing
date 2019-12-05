@@ -357,6 +357,10 @@ impl Chain {
                 relocation::compute_destination(&our_prefix, name, trigger_node.name());
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
+                trace!(
+                    "increment_age_counters: Ignoring relocation for {:?}",
+                    member_info.p2p_node.public_id()
+                );
                 continue;
             }
 
@@ -367,6 +371,8 @@ impl Chain {
                 age: member_info.age() + 1,
             })
         }
+
+        trace!("increment_age_counters: {:?}", self.state.our_members);
 
         for details in details_to_add {
             trace!("{} - Change state to Relocating {}", self, details.pub_id);
