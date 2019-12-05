@@ -16,7 +16,10 @@ use crate::{
     error::{InterfaceError, RoutingError},
     event::{ConnectEvent, Event},
     id::{FullId, P2pNode},
-    messages::{DirectMessage, HopMessage, MessageContent, RoutingMessage, SignedRoutingMessage},
+    messages::{
+        DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
+        SignedRoutingMessage,
+    },
     outbox::EventBox,
     peer_map::PeerMap,
     relocation::RelocatePayload,
@@ -130,6 +133,7 @@ impl JoiningPeer {
     }
 
     fn send_join_requests(&mut self) {
+        let elders_version = self.elders_info.version();
         for dst in self.elders_info.clone().member_nodes() {
             info!("{} - Sending JoinRequest to {}", self, dst.public_id());
 
@@ -137,10 +141,14 @@ impl JoiningPeer {
                 JoinType::First { .. } => None,
                 JoinType::Relocate(payload) => Some(payload.clone()),
             };
+            let join_request = JoinRequest {
+                elders_version,
+                relocate_payload,
+            };
 
             self.send_direct_message(
                 dst.connection_info(),
-                DirectMessage::JoinRequest(relocate_payload),
+                DirectMessage::JoinRequest(join_request),
             );
         }
     }

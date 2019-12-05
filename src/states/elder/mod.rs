@@ -25,14 +25,14 @@ use crate::{
     event::{ConnectEvent, Event},
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
         SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    relocation::{RelocateDetails, RelocatePayload, SignedRelocateDetails},
+    relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     routing_table::{Authority, Prefix, Xorable},
@@ -772,12 +772,11 @@ impl Elder {
         debug!("{} - Received connection response from {}", self, pub_id);
     }
 
-    fn handle_join_request(
-        &mut self,
-        p2p_node: P2pNode,
-        relocate_payload: Option<RelocatePayload>,
-    ) {
-        debug!("{} - Received JoinRequest from {}", self, p2p_node);
+    fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
+        debug!(
+            "{} - Received JoinRequest from {} for v{}",
+            self, p2p_node, join_request.elders_version
+        );
 
         let pub_id = *p2p_node.public_id();
         if !self.our_prefix().matches(pub_id.name()) {
@@ -799,7 +798,7 @@ impl Elder {
         }
 
         // This joining node is being relocated to us.
-        let age = if let Some(payload) = relocate_payload {
+        let age = if let Some(payload) = join_request.relocate_payload {
             if !payload.verify_identity(&pub_id) {
                 debug!(
                     "{} - Ignoring relocation JoinRequest from {} - invalid signature.",
@@ -1246,7 +1245,7 @@ impl Base for Elder {
                 }
             }
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest(payload) => self.handle_join_request(p2p_node, payload),
+            JoinRequest(join_request) => self.handle_join_request(p2p_node, join_request),
             ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, p2p_node, outbox);

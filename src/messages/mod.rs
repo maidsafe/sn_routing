@@ -8,7 +8,7 @@
 
 mod direct;
 
-pub use self::direct::{BootstrapResponse, DirectMessage, SignedDirectMessage};
+pub use self::direct::{BootstrapResponse, DirectMessage, JoinRequest, SignedDirectMessage};
 use crate::{
     chain::{
         Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,

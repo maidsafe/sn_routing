@@ -41,8 +41,7 @@ pub enum DirectMessage {
     BootstrapResponse(BootstrapResponse),
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
-    /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
-    JoinRequest(Option<RelocatePayload>),
+    JoinRequest(JoinRequest),
     /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
     ConnectionResponse,
@@ -70,6 +69,16 @@ pub enum BootstrapResponse {
     Error(BootstrapResponseError),
 }
 
+/// Request to join a section
+#[cfg_attr(feature = "mock_serialise", derive(Clone))]
+#[derive(Eq, PartialEq, Serialize, Deserialize, Hash)]
+pub struct JoinRequest {
+    /// The section version to join
+    pub elders_version: u64,
+    /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
+    pub relocate_payload: Option<RelocatePayload>,
+}
+
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
@@ -77,10 +86,12 @@ impl Debug for DirectMessage {
             MessageSignature(msg) => write!(formatter, "MessageSignature ({:?})", msg),
             BootstrapRequest(name) => write!(formatter, "BootstrapRequest({})", name),
             BootstrapResponse(response) => write!(formatter, "BootstrapResponse({:?})", response),
-            JoinRequest(relocate_details) => write!(
+            JoinRequest(join_request) => write!(
                 formatter,
-                "JoinRequest({:?})",
-                relocate_details
+                "JoinRequest({}, {:?})",
+                join_request.elders_version,
+                join_request
+                    .relocate_payload
                     .as_ref()
                     .map(|payload| payload.details.content())
             ),
@@ -108,7 +119,7 @@ impl Hash for DirectMessage {
             MessageSignature(msg) => msg.hash(state),
             BootstrapRequest(name) => name.hash(state),
             BootstrapResponse(response) => response.hash(state),
-            JoinRequest(payload) => payload.hash(state),
+            JoinRequest(join_request) => join_request.hash(state),
             ConnectionResponse => (),
             ParsecPoke(version) => version.hash(state),
             ParsecRequest(version, request) => {
