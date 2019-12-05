@@ -576,6 +576,11 @@ impl Chain {
         self.state.neighbour_infos.keys().cloned().collect()
     }
 
+    /// Neighbour infos signed by our section
+    pub fn get_neighbour_info(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
+        self.state.neighbour_infos.get(prefix)
+    }
+
     /// Check if the given `PublicId` is a member of our section.
     pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
         self.state

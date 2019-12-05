@@ -17,7 +17,7 @@ use crate::{
     event::{ConnectEvent, Event},
     id::{FullId, P2pNode},
     messages::{
-        DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
         SignedRoutingMessage,
     },
     outbox::EventBox,
@@ -259,6 +259,20 @@ impl Base for JoiningPeer {
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+                if info.version() > self.elders_info.version() {
+                    if info.prefix().matches(self.name()) {
+                        info!("{} - Newer Join response for our prefix {:?}", self, info);
+                        self.elders_info = info;
+                        self.send_join_requests();
+                    } else {
+                        info!(
+                            "{} - Newer Join response not for our prefix {:?}",
+                            self, info
+                        );
+                    }
+                }
+            }
             DirectMessage::ConnectionResponse | DirectMessage::BootstrapResponse(_) => (),
             _ => {
                 debug!(

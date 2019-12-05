@@ -68,7 +68,10 @@ struct CompleteParsecReset {
     /// The cached events that should be revoted. Not shared state: only the ones we voted for.
     /// Also contains our votes that never reached consensus.
     pub to_vote_again: BTreeSet<NetworkEvent>,
-    /// The events to process and not re-insert.
+    /// The events to process. Not shared state: only the ones we voted for.
+    /// Also contains our votes that never reached consensus.
+    pub to_process: BTreeSet<NetworkEvent>,
+    /// Event to send on completion.
     pub event_to_send: Option<Event>,
 }
 
@@ -417,6 +420,26 @@ impl Elder {
 
         let our_pfx = *self.our_prefix();
 
+        let to_process = cached_events
+            .iter()
+            .filter(|event| match &event.payload {
+                // Events to re-process
+                AccumulatingEvent::Online(_) => !completed_events.contains(&event.payload),
+                // Events to re-insert
+                AccumulatingEvent::Offline(_)
+                | AccumulatingEvent::AckMessage(_)
+                | AccumulatingEvent::StartDkg(_)
+                | AccumulatingEvent::ParsecPrune
+                | AccumulatingEvent::Relocate(_)
+                | AccumulatingEvent::SectionInfo(_, _)
+                | AccumulatingEvent::NeighbourInfo(_)
+                | AccumulatingEvent::TheirKeyInfo(_)
+                | AccumulatingEvent::SendAckMessage(_)
+                | AccumulatingEvent::User(_) => false,
+            })
+            .cloned()
+            .collect();
+
         let to_vote_again = cached_events
             .into_iter()
             .filter(|event| {
@@ -458,7 +481,56 @@ impl Elder {
         CompleteParsecReset {
             gen_pfx_info,
             to_vote_again,
+            to_process,
             event_to_send: None,
+        }
+    }
+
+    fn process_post_reset_events(
+        &mut self,
+        _old_pfx: Prefix<XorName>,
+        to_process: BTreeSet<NetworkEvent>,
+    ) {
+        to_process.iter().for_each(|event| match &event.payload {
+            evt @ AccumulatingEvent::Offline(_)
+            | evt @ AccumulatingEvent::AckMessage(_)
+            | evt @ AccumulatingEvent::StartDkg(_)
+            | evt @ AccumulatingEvent::ParsecPrune
+            | evt @ AccumulatingEvent::Relocate(_)
+            | evt @ AccumulatingEvent::SectionInfo(_, _)
+            | evt @ AccumulatingEvent::NeighbourInfo(_)
+            | evt @ AccumulatingEvent::TheirKeyInfo(_)
+            | evt @ AccumulatingEvent::SendAckMessage(_)
+            | evt @ AccumulatingEvent::User(_) => {
+                log_or_panic!(LogLevel::Error, "unexpected event {:?}", evt);
+            }
+            AccumulatingEvent::Online(payload) => {
+                self.resend_bootstrap_response_join(&payload.p2p_node);
+            }
+        });
+    }
+
+    // Resend the response with ours or our sibling's info in case of split.
+    fn resend_bootstrap_response_join(&mut self, p2p_node: &P2pNode) {
+        let our_info = self.chain.our_info();
+
+        let response_section = Some(our_info)
+            .filter(|info| info.prefix().matches(p2p_node.name()))
+            .or_else(|| self.chain.get_neighbour_info(&our_info.prefix().sibling()))
+            .filter(|info| info.prefix().matches(p2p_node.name()))
+            .cloned();
+
+        if let Some(response_section) = response_section {
+            trace!(
+                "{} - Resend Join to {} with version {}",
+                self,
+                p2p_node,
+                response_section.version()
+            );
+            self.send_direct_message(
+                p2p_node.connection_info(),
+                DirectMessage::BootstrapResponse(BootstrapResponse::Join(response_section)),
+            );
         }
     }
 
@@ -777,6 +849,10 @@ impl Elder {
             "{} - Received JoinRequest from {} for v{}",
             self, p2p_node, join_request.elders_version
         );
+
+        if join_request.elders_version < self.chain.our_info().version() {
+            self.resend_bootstrap_response_join(&p2p_node);
+        }
 
         let pub_id = *p2p_node.public_id();
         if !self.our_prefix().matches(pub_id.name()) {
@@ -1540,12 +1616,14 @@ impl Approved for Elder {
         if !is_member {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
             // i.e the one that would be received with NodeApproval.
+            self.process_post_reset_events(old_pfx, complete_data.to_process);
             return Ok(Transition::Demote {
                 gen_pfx_info: complete_data.gen_pfx_info,
             });
         }
 
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
+        self.process_post_reset_events(old_pfx, complete_data.to_process);
         self.update_peer_connections(neighbour_change);
         self.send_neighbour_infos();
 
