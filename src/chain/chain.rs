@@ -336,8 +336,16 @@ impl Chain {
                 .map(|persona| persona == MemberPersona::Infant)
                 .unwrap_or(true)
         {
-            // Do nothing for infants and unknown nodes
-            return;
+            // FIXME: skipping infants churn for ageing breaks tests for node ageing, as once a
+            // section reaches a safe size, nodes stop ageing at all, because all churn in tests
+            // is Infant churn.
+            // Temporarily ignore until we either find a better way of preventing churn spam,
+            // or we change the tests to provide some Adult churn at all times.
+            trace!(
+                "{} FIXME: should do nothing for infants and unknown nodes {:?}",
+                self,
+                trigger_node
+            );
         }
 
         let our_prefix = *self.state.our_prefix();
