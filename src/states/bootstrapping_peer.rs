@@ -17,7 +17,7 @@ use crate::{
     peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
     rng::MainRng,
-    routing_table::Authority,
+    routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
@@ -123,24 +123,31 @@ impl BootstrappingPeer {
         let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
         let _ = self.timeout_tokens.insert(token, dst.peer_addr);
 
-        // If we are relocating, request bootstrap to the section matching the name given to us
-        // by our section. Otherwise request bootstrap to the section matching our current name.
-        let destination = if let Some(details) = self.relocate_details.as_ref() {
-            details.content().destination
-        } else {
-            *self.name()
-        };
-
+        let destination = self.get_destination();
         self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
         self.peer_map_mut().connect(dst);
     }
 
+    // If we are relocating, request bootstrap to the section matching the name given to us
+    // by our section. Otherwise request bootstrap to the section matching our current name.
+    fn get_destination(&self) -> XorName {
+        if let Some(details) = self.relocate_details.as_ref() {
+            details.content().destination
+        } else {
+            *self.name()
+        }
+    }
+
     fn join_section(&mut self, info: EldersInfo) -> Result<Transition, RoutingError> {
         let old_full_id = self.full_id.clone();
-        let prefix = info.prefix();
+        let destination = self.get_destination();
 
-        if !prefix.matches(self.name()) {
-            let new_full_id = FullId::within_range(&mut self.rng, &prefix.range_inclusive());
+        // Use a name that will match the destination even after multiple splits
+        let extra_split_count = 3;
+        let name_prefix = Prefix::new(info.prefix().bit_count() + extra_split_count, destination);
+
+        if !name_prefix.matches(self.name()) {
+            let new_full_id = FullId::within_range(&mut self.rng, &name_prefix.range_inclusive());
             info!(
                 "{} - Changing name to {}.",
                 self,
