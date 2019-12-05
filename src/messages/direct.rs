@@ -7,13 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    chain::EldersInfo,
     crypto::signing::Signature,
     error::{BootstrapResponseError, RoutingError},
-    id::{FullId, P2pNode, PublicId},
+    id::{FullId, PublicId},
     messages::SignedRoutingMessage,
     parsec,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    routing_table::Prefix,
     xor_name::XorName,
     ConnectionInfo,
 };
@@ -62,10 +62,7 @@ pub enum DirectMessage {
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
     /// the section elders and the section prefix are provided.
-    Join {
-        prefix: Prefix<XorName>,
-        p2p_nodes: Vec<P2pNode>,
-    },
+    Join(EldersInfo),
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
     Rebootstrap(Vec<ConnectionInfo>),

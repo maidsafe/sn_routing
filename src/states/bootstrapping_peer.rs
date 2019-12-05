@@ -8,7 +8,7 @@
 
 use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
-    chain::NetworkParams,
+    chain::{EldersInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode},
@@ -17,7 +17,7 @@ use crate::{
     peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
     rng::MainRng,
-    routing_table::{Authority, Prefix},
+    routing_table::Authority,
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
@@ -96,7 +96,7 @@ impl BootstrappingPeer {
 
     pub fn into_joining(
         self,
-        p2p_nodes: Vec<P2pNode>,
+        elders_info: EldersInfo,
         relocate_payload: Option<RelocatePayload>,
         _outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
@@ -106,7 +106,7 @@ impl BootstrappingPeer {
             network_cfg: self.network_cfg,
             timer: self.timer,
             rng: self.rng,
-            p2p_nodes,
+            elders_info,
             relocate_payload,
         };
 
@@ -135,12 +135,9 @@ impl BootstrappingPeer {
         self.peer_map_mut().connect(dst);
     }
 
-    fn join_section(
-        &mut self,
-        prefix: Prefix<XorName>,
-        p2p_nodes: Vec<P2pNode>,
-    ) -> Result<Transition, RoutingError> {
+    fn join_section(&mut self, info: EldersInfo) -> Result<Transition, RoutingError> {
         let old_full_id = self.full_id.clone();
+        let prefix = info.prefix();
 
         if !prefix.matches(self.name()) {
             let new_full_id = FullId::within_range(&mut self.rng, &prefix.range_inclusive());
@@ -163,7 +160,7 @@ impl BootstrappingPeer {
         };
 
         Ok(Transition::IntoJoining {
-            p2p_nodes,
+            info,
             relocate_payload,
         })
     }
@@ -288,9 +285,9 @@ impl Base for BootstrappingPeer {
         }
 
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join { prefix, p2p_nodes }) => {
-                info!("{} - Joining a section {:?}: {:?}", self, prefix, p2p_nodes);
-                self.join_section(prefix, p2p_nodes)
+            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+                info!("{} - Joining a section {:?}", self, info);
+                self.join_section(info)
             }
             DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(

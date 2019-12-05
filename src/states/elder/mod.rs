@@ -731,10 +731,7 @@ impl Elder {
     fn respond_to_bootstrap_request(&mut self, p2p_node: &P2pNode, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
             debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
-            BootstrapResponse::Join {
-                prefix: *self.our_prefix(),
-                p2p_nodes: self.chain.our_elders().cloned().collect(),
-            }
+            BootstrapResponse::Join(self.chain.our_info().clone())
         } else {
             let conn_infos: Vec<_> = self
                 .closest_known_elders_to(name)

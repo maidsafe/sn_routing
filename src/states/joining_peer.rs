@@ -12,7 +12,7 @@ use super::{
     common::Base,
 };
 use crate::{
-    chain::{GenesisPfxInfo, NetworkParams},
+    chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::{ConnectEvent, Event},
     id::{FullId, P2pNode},
@@ -42,7 +42,7 @@ pub struct JoiningPeerDetails {
     pub network_cfg: NetworkParams,
     pub timer: Timer,
     pub rng: MainRng,
-    pub p2p_nodes: Vec<P2pNode>,
+    pub elders_info: EldersInfo,
     pub relocate_payload: Option<RelocatePayload>,
 }
 
@@ -55,7 +55,7 @@ pub struct JoiningPeer {
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
-    p2p_nodes: Vec<P2pNode>,
+    elders_info: EldersInfo,
     join_type: JoinType,
     network_cfg: NetworkParams,
 }
@@ -78,7 +78,7 @@ impl JoiningPeer {
             full_id: details.full_id,
             timer: details.timer,
             rng: details.rng,
-            p2p_nodes: details.p2p_nodes,
+            elders_info: details.elders_info,
             join_type,
             network_cfg: details.network_cfg,
         };
@@ -130,7 +130,7 @@ impl JoiningPeer {
     }
 
     fn send_join_requests(&mut self) {
-        for dst in self.p2p_nodes.clone() {
+        for dst in self.elders_info.clone().member_nodes() {
             info!("{} - Sending JoinRequest to {}", self, dst.public_id());
 
             let relocate_payload = match &self.join_type {
