@@ -231,6 +231,7 @@ fn multiple_joining_nodes() {
     let mut nodes = create_connected_nodes(&network, LOWERED_ELDER_SIZE);
 
     while nodes.len() < 25 {
+        let initial_size = nodes.len();
         info!("Size {}", nodes.len());
 
         let mut count_if_split_node = count_sections_members_if_split(&nodes);
@@ -259,6 +260,7 @@ fn multiple_joining_nodes() {
                 }
             }
         }
+        let count = nodes.len() - initial_size;
 
         poll_and_resend(&mut nodes);
         let removed_count = remove_nodes_which_failed_to_connect(&mut nodes, count);
