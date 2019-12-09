@@ -665,6 +665,10 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     }
 
     let neighbour_prefixes = node.inner.neighbour_prefixes();
+    if !node.inner.is_elder() {
+        assert!(neighbour_prefixes.is_empty(), "No neighbour info for Adults");
+        return;
+    }
 
     if let Some(compatible_prefix) = neighbour_prefixes
         .iter()
@@ -711,13 +715,6 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .neighbour_prefixes()
         .iter()
         .all(|prefix| our_prefix.is_neighbour(prefix));
-    let all_neighbours_covered = {
-        (0..our_prefix.bit_count()).all(|i| {
-            our_prefix
-                .with_flipped_bit(i)
-                .is_covered_by(&neighbour_prefixes)
-        })
-    };
     if !all_are_neighbours {
         panic!(
             "{} Some sections in the chain aren't neighbours of our section: {:?}",
@@ -727,6 +724,14 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
                 .collect::<Vec<_>>()
         );
     }
+
+    let all_neighbours_covered = {
+        (0..our_prefix.bit_count()).all(|i| {
+            our_prefix
+                .with_flipped_bit(i)
+                .is_covered_by(&neighbour_prefixes)
+        })
+    };
     if !all_neighbours_covered {
         panic!(
             "{} Some neighbours aren't fully covered by the chain: {:?}",
