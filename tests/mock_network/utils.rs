@@ -858,7 +858,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
         if !missing_peers.is_empty() {
             error!(
                 "verify_invariant_for_all_nodes: node {}: missing: {:?}",
-                our_id, &missing_peers
+                node.inner, &missing_peers
             );
             all_missing_peers.extend(missing_peers);
         }

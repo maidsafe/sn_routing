@@ -718,13 +718,6 @@ impl Chain {
         self.neighbour_infos().flat_map(EldersInfo::member_nodes)
     }
 
-    /// Returns all members of our section that have state == `Joined`.
-    pub fn our_joined_members(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state
-            .our_joined_members()
-            .map(|(_, info)| &info.p2p_node)
-    }
-
     /// Returns an iterator over the members that have not state == `Left`.
     pub fn our_active_members(&self) -> impl Iterator<Item = &P2pNode> {
         self.state
