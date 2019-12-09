@@ -873,6 +873,14 @@ impl Elder {
             return;
         }
 
+        if self.chain.is_in_online_backlog(&pub_id) {
+            debug!(
+                "{} - Ignoring JoinRequest from {} - already in backlog.",
+                self, pub_id
+            );
+            return;
+        }
+
         // This joining node is being relocated to us.
         let age = if let Some(payload) = join_request.relocate_payload {
             if !payload.verify_identity(&pub_id) {

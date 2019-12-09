@@ -1425,6 +1425,17 @@ impl Chain {
             );
         }
     }
+
+    /// Check if we know this node but have not yet processed it.
+    pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
+        self.state.churn_event_backlog.iter().any(|evt| {
+            if let AccumulatingEvent::Online(payload) = evt {
+                payload.p2p_node.public_id() == pub_id
+            } else {
+                false
+            }
+        })
+    }
 }
 
 /// The outcome of a prefix change.
