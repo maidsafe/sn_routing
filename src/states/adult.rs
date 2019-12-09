@@ -313,7 +313,6 @@ impl Adult {
             p2p_node.connection_info(),
             DirectMessage::BootstrapResponse(response),
         );
-        self.disconnect(p2p_node.peer_addr());
     }
 
     // Send signed_msg to our elders so they can route it properly.
