@@ -64,6 +64,8 @@ pub struct Chain {
     event_cache: BTreeSet<NetworkEvent>,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
+    /// Marker indicating we are processing a relocation.
+    relocation_in_progress: bool,
     /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
     /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
     /// then members are disjoint. We are working around not having access to the prefix for the
@@ -141,6 +143,7 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             churn_in_progress: false,
+            relocation_in_progress: false,
             new_section_bls_keys: Default::default(),
         }
     }
@@ -238,6 +241,7 @@ impl Chain {
     pub fn poll(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
         if self.state.handled_genesis_event
             && !self.churn_in_progress
+            && !self.relocation_in_progress
             && !self.state.split_in_progress
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
@@ -297,6 +301,7 @@ impl Chain {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
             AccumulatingEvent::Relocate(_) => {
+                self.relocation_in_progress = false;
                 let signature = self.combine_signatures(proofs);
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
@@ -313,7 +318,7 @@ impl Chain {
             _ => false,
         };
 
-        if start_churn_event && self.churn_in_progress {
+        if start_churn_event && (self.churn_in_progress || self.relocation_in_progress) {
             trace!(
                 "{} churn backlog {:?}, Other: {:?}",
                 self,
@@ -390,6 +395,12 @@ impl Chain {
 
     /// Returns the details of the next scheduled relocation to be voted for, if any.
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
+        assert!(
+            !self.relocation_in_progress,
+            "Only one relocation at a time {}",
+            self
+        );
+
         // Delay relocation until all backlogged churn events have been handled and no
         // additional churn is in progress.
         if self.churn_in_progress
@@ -427,6 +438,7 @@ impl Chain {
         }
 
         trace!("{} - relocating member {}", self, details.pub_id);
+        self.relocation_in_progress = true;
 
         Some(details)
     }
