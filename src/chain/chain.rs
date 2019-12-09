@@ -656,7 +656,7 @@ impl Chain {
     }
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
-        self.elders()
+        self.known_nodes()
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
@@ -723,6 +723,19 @@ impl Chain {
         self.state
             .our_joined_members()
             .map(|(_, info)| &info.p2p_node)
+    }
+
+    /// Returns an iterator over the members that have not state == `Left`.
+    pub fn our_active_members(&self) -> impl Iterator<Item = &P2pNode> {
+        self.state
+            .our_active_members()
+            .map(|(_, info)| &info.p2p_node)
+    }
+
+    /// Returns the members in our section and elders we know.
+    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_active_members()
+            .chain(self.neighbour_elder_nodes())
     }
 
     /// Return the keys we know

@@ -9,7 +9,7 @@
 use super::{
     add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
     current_sections, nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
-    PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    verify_invariant_for_all_nodes, PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{Rand, Rng};
 use routing::{
@@ -32,6 +32,7 @@ fn relocate_without_split() {
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
 
@@ -307,6 +308,7 @@ fn node_joined(nodes: &[TestNode], node_index: usize) -> bool {
 
     nodes
         .iter()
+        .filter(|node| node.inner.is_elder())
         .filter(|node| {
             node.inner
                 .our_prefix()
@@ -318,7 +320,10 @@ fn node_joined(nodes: &[TestNode], node_index: usize) -> bool {
 
 // Returns whether all nodes recognize the node with the given id as left.
 fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
-    nodes.iter().all(|node| !node.inner.is_peer_our_member(id))
+    nodes
+        .iter()
+        .filter(|node| node.inner.is_elder())
+        .all(|node| !node.inner.is_peer_our_member(id))
 }
 
 // Returns whether the relocation of node at `node_index` from `source_prefix` to `target_prefix`

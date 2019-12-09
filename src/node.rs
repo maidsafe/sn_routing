@@ -424,6 +424,11 @@ impl Node {
         self.chain().into_iter().flat_map(Chain::elders)
     }
 
+    /// Returns the members in our section and elders we know.
+    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.chain().into_iter().flat_map(Chain::known_nodes)
+    }
+
     /// Returns whether the given `PublicId` is a member of our section.
     pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
         self.chain()
