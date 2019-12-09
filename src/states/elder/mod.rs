@@ -1498,18 +1498,17 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         if !self.chain.can_add_member(payload.p2p_node.public_id()) {
             info!("{} - ignore Online: {:?}.", self, payload);
-            return Ok(());
+        } else {
+            info!("{} - handle Online: {:?}.", self, payload);
+
+            let pub_id = *payload.p2p_node.public_id();
+            self.chain.add_member(payload.p2p_node.clone(), payload.age);
+            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+            self.chain.increment_age_counters(&pub_id);
+            self.handle_candidate_approval(payload.p2p_node, outbox);
+            self.promote_and_demote_elders()?;
+            self.print_rt_size();
         }
-
-        info!("{} - handle Online: {:?}.", self, payload);
-
-        let pub_id = *payload.p2p_node.public_id();
-        self.chain.add_member(payload.p2p_node.clone(), payload.age);
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        self.chain.increment_age_counters(&pub_id);
-        self.handle_candidate_approval(payload.p2p_node, outbox);
-        self.promote_and_demote_elders()?;
-        self.print_rt_size();
 
         if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;
@@ -1525,16 +1524,16 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&pub_id) {
             info!("{} - ignore Offline: {}.", self, pub_id);
-            return Ok(());
+        } else {
+            info!("{} - handle Offline: {}.", self, pub_id);
+
+            self.chain.increment_age_counters(&pub_id);
+            self.chain.remove_member(&pub_id);
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
+            self.promote_and_demote_elders()?;
+            self.disconnect_by_id_lookup(&pub_id);
         }
-
-        info!("{} - handle Offline: {}.", self, pub_id);
-        self.chain.increment_age_counters(&pub_id);
-        self.chain.remove_member(&pub_id);
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-        self.promote_and_demote_elders()?;
-        self.disconnect_by_id_lookup(&pub_id);
 
         if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;

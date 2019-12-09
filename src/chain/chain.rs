@@ -426,6 +426,8 @@ impl Chain {
             return None;
         }
 
+        trace!("{} - relocating member {}", self, details.pub_id);
+
         Some(details)
     }
 
