@@ -42,4 +42,10 @@ impl<P: PublicId> KeyGen<P> {
         let secret_key_share = index.map(|index| secret_key_set.secret_key_share(index));
         DkgResult::new(secret_key_set.public_keys(), secret_key_share)
     }
+
+    pub fn contains_participant(&self, our_id: &P) -> bool {
+        self.instances
+            .keys()
+            .any(|participants| participants.contains(our_id))
+    }
 }
