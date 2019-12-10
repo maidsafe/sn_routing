@@ -311,7 +311,7 @@ fn simultaneous_joining_nodes(
     let mut rng = network.new_rng();
     rng.shuffle(&mut nodes);
 
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut nodes_to_add = Vec::new();
     for setup in nodes_to_add_setup {

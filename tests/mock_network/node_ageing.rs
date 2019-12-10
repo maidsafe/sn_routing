@@ -28,7 +28,7 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 #[test]
 fn relocate_without_split() {
     let network = Network::new(NETWORK_PARAMS);
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
@@ -71,7 +71,7 @@ fn relocate_causing_split() {
 
     // Relocate node into a section which is one node shy of splitting.
     let network = Network::new(NETWORK_PARAMS);
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
@@ -127,7 +127,7 @@ fn relocate_causing_split() {
 fn relocate_during_split() {
     // Relocate node into a section which is undergoing split.
     let network = Network::new(NETWORK_PARAMS);
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);

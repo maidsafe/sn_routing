@@ -12,7 +12,7 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts, Authority, ConnectEvent, Event, EventStream, FullId, NetworkConfig,
-    Node, NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
+    Node, NodeBuilder, PausedState, Prefix, PublicId, RelocationOverrides, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -399,8 +399,7 @@ pub fn create_connected_nodes_until_split(network: &Network, prefix_lengths: Vec
     Nodes(nodes)
 }
 
-// This adds new nodes (all with `use_cache` set to `true`) until the specified disjoint sections
-// have formed.
+// This adds new nodes until the specified disjoint sections have formed.
 //
 // `prefix_lengths` is an array representing the required `bit_count`s of the section prefixes.  For
 // example passing [1, 2, 3, 3] could yield a network comprising sections [0, 100, 101, 11], or
@@ -925,6 +924,10 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 }
 
 fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+    // Suppress relocations to prevent unwanted splits of other sections.
+    let mut overrides = RelocationOverrides::new();
+    overrides.suppress(*prefix);
+
     let mut rng = network.new_rng();
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());

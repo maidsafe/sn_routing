@@ -180,8 +180,9 @@ impl JoiningPeer {
 
     fn handle_node_approval(&mut self, gen_pfx_info: GenesisPfxInfo) -> Transition {
         info!(
-            "{} - This node has been approved to join the network!",
-            self
+            "{} - This node has been approved to join the network at {:?}!",
+            self,
+            gen_pfx_info.latest_info.prefix(),
         );
         Transition::IntoAdult { gen_pfx_info }
     }
