@@ -353,16 +353,16 @@ impl Elder {
     // to and disconnect from peers that are no longer elders of neighbour sections.
     fn update_peer_connections(&mut self, change: EldersChange) {
         if !self.chain.split_in_progress() {
-            let our_member_connections: HashSet<_> = self
+            let our_needed_connections: HashSet<_> = self
                 .chain
-                .our_joined_members()
+                .known_nodes()
                 .map(|node| *node.peer_addr())
                 .collect();
 
             for p2p_node in change.removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
-                if our_member_connections.contains(p2p_node.peer_addr()) {
+                if our_needed_connections.contains(p2p_node.peer_addr()) {
                     continue;
                 }
 
@@ -868,6 +868,14 @@ impl Elder {
         if self.chain.is_peer_our_member(&pub_id) {
             debug!(
                 "{} - Ignoring JoinRequest from {} - already member of our section.",
+                self, pub_id
+            );
+            return;
+        }
+
+        if self.chain.is_in_online_backlog(&pub_id) {
+            debug!(
+                "{} - Ignoring JoinRequest from {} - already in backlog.",
                 self, pub_id
             );
             return;
@@ -1498,18 +1506,17 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         if !self.chain.can_add_member(payload.p2p_node.public_id()) {
             info!("{} - ignore Online: {:?}.", self, payload);
-            return Ok(());
+        } else {
+            info!("{} - handle Online: {:?}.", self, payload);
+
+            let pub_id = *payload.p2p_node.public_id();
+            self.chain.add_member(payload.p2p_node.clone(), payload.age);
+            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+            self.chain.increment_age_counters(&pub_id);
+            self.handle_candidate_approval(payload.p2p_node, outbox);
+            self.promote_and_demote_elders()?;
+            self.print_rt_size();
         }
-
-        info!("{} - handle Online: {:?}.", self, payload);
-
-        let pub_id = *payload.p2p_node.public_id();
-        self.chain.add_member(payload.p2p_node.clone(), payload.age);
-        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        self.chain.increment_age_counters(&pub_id);
-        self.handle_candidate_approval(payload.p2p_node, outbox);
-        self.promote_and_demote_elders()?;
-        self.print_rt_size();
 
         if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;
@@ -1525,16 +1532,16 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&pub_id) {
             info!("{} - ignore Offline: {}.", self, pub_id);
-            return Ok(());
+        } else {
+            info!("{} - handle Offline: {}.", self, pub_id);
+
+            self.chain.increment_age_counters(&pub_id);
+            self.chain.remove_member(&pub_id);
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+
+            self.promote_and_demote_elders()?;
+            self.disconnect_by_id_lookup(&pub_id);
         }
-
-        info!("{} - handle Offline: {}.", self, pub_id);
-        self.chain.increment_age_counters(&pub_id);
-        self.chain.remove_member(&pub_id);
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-        self.promote_and_demote_elders()?;
-        self.disconnect_by_id_lookup(&pub_id);
 
         if let Some(relocate_details) = self.chain.poll_relocation() {
             self.vote_for_relocate(relocate_details)?;

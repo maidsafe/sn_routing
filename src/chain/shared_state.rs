@@ -241,6 +241,13 @@ impl SharedState {
         self.our_infos.iter().find(|info| info.hash() == hash)
     }
 
+    /// Returns an iterator over the members that have not state == `Left`.
+    pub fn our_active_members(&self) -> impl Iterator<Item = (&XorName, &MemberInfo)> {
+        self.our_members
+            .iter()
+            .filter(|(_, member)| member.state != MemberState::Left)
+    }
+
     /// Returns an iterator over the members that have state == `Joined`.
     pub fn our_joined_members(&self) -> impl Iterator<Item = (&XorName, &MemberInfo)> {
         self.our_members

@@ -64,6 +64,8 @@ pub struct Chain {
     event_cache: BTreeSet<NetworkEvent>,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
+    /// Marker indicating we are processing a relocation.
+    relocation_in_progress: bool,
     /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
     /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
     /// then members are disjoint. We are working around not having access to the prefix for the
@@ -141,6 +143,7 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             churn_in_progress: false,
+            relocation_in_progress: false,
             new_section_bls_keys: Default::default(),
         }
     }
@@ -238,6 +241,7 @@ impl Chain {
     pub fn poll(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
         if self.state.handled_genesis_event
             && !self.churn_in_progress
+            && !self.relocation_in_progress
             && !self.state.split_in_progress
         {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
@@ -297,6 +301,7 @@ impl Chain {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
             AccumulatingEvent::Relocate(_) => {
+                self.relocation_in_progress = false;
                 let signature = self.combine_signatures(proofs);
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
@@ -313,7 +318,7 @@ impl Chain {
             _ => false,
         };
 
-        if start_churn_event && self.churn_in_progress {
+        if start_churn_event && (self.churn_in_progress || self.relocation_in_progress) {
             trace!(
                 "{} churn backlog {:?}, Other: {:?}",
                 self,
@@ -336,8 +341,16 @@ impl Chain {
                 .map(|persona| persona == MemberPersona::Infant)
                 .unwrap_or(true)
         {
-            // Do nothing for infants and unknown nodes
-            return;
+            // FIXME: skipping infants churn for ageing breaks tests for node ageing, as once a
+            // section reaches a safe size, nodes stop ageing at all, because all churn in tests
+            // is Infant churn.
+            // Temporarily ignore until we either find a better way of preventing churn spam,
+            // or we change the tests to provide some Adult churn at all times.
+            trace!(
+                "{} FIXME: should do nothing for infants and unknown nodes {:?}",
+                self,
+                trigger_node
+            );
         }
 
         let our_prefix = *self.state.our_prefix();
@@ -357,6 +370,10 @@ impl Chain {
                 relocation::compute_destination(&our_prefix, name, trigger_node.name());
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
+                trace!(
+                    "increment_age_counters: Ignoring relocation for {:?}",
+                    member_info.p2p_node.public_id()
+                );
                 continue;
             }
 
@@ -368,6 +385,8 @@ impl Chain {
             })
         }
 
+        trace!("increment_age_counters: {:?}", self.state.our_members);
+
         for details in details_to_add {
             trace!("{} - Change state to Relocating {}", self, details.pub_id);
             self.state.relocate_queue.push_front(details)
@@ -376,6 +395,12 @@ impl Chain {
 
     /// Returns the details of the next scheduled relocation to be voted for, if any.
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
+        assert!(
+            !self.relocation_in_progress,
+            "Only one relocation at a time {}",
+            self
+        );
+
         // Delay relocation until all backlogged churn events have been handled and no
         // additional churn is in progress.
         if self.churn_in_progress
@@ -411,6 +436,9 @@ impl Chain {
             self.state.relocate_queue.push_back(details);
             return None;
         }
+
+        trace!("{} - relocating member {}", self, details.pub_id);
+        self.relocation_in_progress = true;
 
         Some(details)
     }
@@ -642,7 +670,7 @@ impl Chain {
     }
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
-        self.elders()
+        self.known_nodes()
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
@@ -704,11 +732,17 @@ impl Chain {
         self.neighbour_infos().flat_map(EldersInfo::member_nodes)
     }
 
-    /// Returns all members of our section that have state == `Joined`.
-    pub fn our_joined_members(&self) -> impl Iterator<Item = &P2pNode> {
+    /// Returns an iterator over the members that have not state == `Left`.
+    pub fn our_active_members(&self) -> impl Iterator<Item = &P2pNode> {
         self.state
-            .our_joined_members()
+            .our_active_members()
             .map(|(_, info)| &info.p2p_node)
+    }
+
+    /// Returns the members in our section and elders we know.
+    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_active_members()
+            .chain(self.neighbour_elder_nodes())
     }
 
     /// Return the keys we know
@@ -1390,6 +1424,17 @@ impl Chain {
                 label,
             );
         }
+    }
+
+    /// Check if we know this node but have not yet processed it.
+    pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
+        self.state.churn_event_backlog.iter().any(|evt| {
+            if let AccumulatingEvent::Online(payload) = evt {
+                payload.p2p_node.public_id() == pub_id
+            } else {
+                false
+            }
+        })
     }
 }
 

@@ -12,7 +12,7 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network, test_consts, Authority, ConnectEvent, Event, EventStream, FullId, NetworkConfig,
-    Node, NodeBuilder, PausedState, Prefix, PublicId, XorName, Xorable,
+    Node, NodeBuilder, PausedState, Prefix, PublicId, RelocationOverrides, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -399,8 +399,7 @@ pub fn create_connected_nodes_until_split(network: &Network, prefix_lengths: Vec
     Nodes(nodes)
 }
 
-// This adds new nodes (all with `use_cache` set to `true`) until the specified disjoint sections
-// have formed.
+// This adds new nodes until the specified disjoint sections have formed.
 //
 // `prefix_lengths` is an array representing the required `bit_count`s of the section prefixes.  For
 // example passing [1, 2, 3, 3] could yield a network comprising sections [0, 100, 101, 11], or
@@ -665,6 +664,13 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     }
 
     let neighbour_prefixes = node.inner.neighbour_prefixes();
+    if !node.inner.is_elder() {
+        assert!(
+            neighbour_prefixes.is_empty(),
+            "No neighbour info for Adults"
+        );
+        return;
+    }
 
     if let Some(compatible_prefix) = neighbour_prefixes
         .iter()
@@ -711,13 +717,6 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .neighbour_prefixes()
         .iter()
         .all(|prefix| our_prefix.is_neighbour(prefix));
-    let all_neighbours_covered = {
-        (0..our_prefix.bit_count()).all(|i| {
-            our_prefix
-                .with_flipped_bit(i)
-                .is_covered_by(&neighbour_prefixes)
-        })
-    };
     if !all_are_neighbours {
         panic!(
             "{} Some sections in the chain aren't neighbours of our section: {:?}",
@@ -727,6 +726,14 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
                 .collect::<Vec<_>>()
         );
     }
+
+    let all_neighbours_covered = {
+        (0..our_prefix.bit_count()).all(|i| {
+            our_prefix
+                .with_flipped_bit(i)
+                .is_covered_by(&neighbour_prefixes)
+        })
+    };
     if !all_neighbours_covered {
         panic!(
             "{} Some neighbours aren't fully covered by the chain: {:?}",
@@ -841,7 +848,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
         let our_id = unwrap!(node.inner.id());
         let missing_peers = node
             .inner
-            .elder_nodes()
+            .known_nodes()
             .filter(|p2p_node| p2p_node.public_id() != &our_id)
             .filter(|p2p_node| !node.inner.is_connected(p2p_node.peer_addr()))
             .map(|p2p_node| p2p_node.public_id())
@@ -850,7 +857,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
         if !missing_peers.is_empty() {
             error!(
                 "verify_invariant_for_all_nodes: node {}: missing: {:?}",
-                our_id, &missing_peers
+                node.inner, &missing_peers
             );
             all_missing_peers.extend(missing_peers);
         }
@@ -917,6 +924,10 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 }
 
 fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+    // Suppress relocations to prevent unwanted splits of other sections.
+    let mut overrides = RelocationOverrides::new();
+    overrides.suppress(*prefix);
+
     let mut rng = network.new_rng();
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());

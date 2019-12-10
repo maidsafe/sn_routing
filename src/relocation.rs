@@ -162,52 +162,74 @@ fn compute_destination_without_override(
 mod overrides {
     use crate::{Prefix, XorName};
     use std::{
-        cell::{Cell, RefCell},
-        collections::HashMap,
+        cell::RefCell,
+        collections::{hash_map::Entry, HashMap, HashSet},
     };
 
     /// Mechanism for overriding relocation destinations. Useful for tests.
-    pub struct Overrides;
+    pub struct Overrides {
+        prefixes: HashSet<Prefix<XorName>>,
+    }
 
     impl Overrides {
-        /// Create new instance of relocation overrides. There can be only one per thread.
-        /// The overrides are automatically `clear`ed when this instance goes out of scope.
+        /// Create new instance of relocation overrides.
+        /// The overrides set by this instance are automatically `clear`ed when this instance goes
+        /// out of scope.
         pub fn new() -> Self {
-            GUARD.with(|guard| {
-                if guard.get() {
-                    panic!("There can be only one instance of RelocationOverrides per thread.");
-                } else {
-                    guard.set(true)
-                }
-            });
-
-            Self
+            Self {
+                prefixes: HashSet::new(),
+            }
         }
 
         /// Override relocation destination for the given source prefix - that is, any node to be
         /// relocated from that prefix will be relocated to the given destination.
         /// The override applies only to the exact prefix, not to its parents / children.
-        pub fn set(&self, src_prefix: Prefix<XorName>, dst: XorName) {
+        pub fn set(&mut self, src_prefix: Prefix<XorName>, dst: XorName) {
+            let rc = if self.prefixes.insert(src_prefix) {
+                1
+            } else {
+                0
+            };
+
             OVERRIDES.with(|map| {
                 let _ = map
                     .borrow_mut()
                     .entry(src_prefix)
-                    .and_modify(|info| info.next = dst)
+                    .and_modify(|info| {
+                        info.next = dst;
+                        info.rc += rc;
+                    })
                     .or_insert_with(|| OverrideInfo {
                         next: dst,
                         used: HashMap::new(),
+                        rc,
                     });
             })
         }
 
         /// Suppress relocations from the given source prefix.
-        pub fn suppress(&self, src_prefix: Prefix<XorName>) {
+        pub fn suppress(&mut self, src_prefix: Prefix<XorName>) {
             self.set(src_prefix, src_prefix.name())
         }
 
-        /// Clear all relocation overrides.
-        pub fn clear(&self) {
-            OVERRIDES.with(|map| map.borrow_mut().clear());
+        /// Clear all relocation overrides set by this instance.
+        pub fn clear(&mut self) {
+            OVERRIDES.with(|map| {
+                let mut map = map.borrow_mut();
+
+                for prefix in self.prefixes.drain() {
+                    match map.entry(prefix) {
+                        Entry::Occupied(mut entry) => {
+                            if entry.get().rc <= 1 {
+                                let _ = entry.remove();
+                            } else {
+                                entry.get_mut().rc -= 1;
+                            }
+                        }
+                        Entry::Vacant(_) => panic!("Unexpected missing overrides for {:?}", prefix),
+                    }
+                }
+            });
         }
     }
 
@@ -220,7 +242,6 @@ mod overrides {
     impl Drop for Overrides {
         fn drop(&mut self) {
             self.clear();
-            GUARD.with(|guard| guard.set(false));
         }
     }
 
@@ -231,6 +252,8 @@ mod overrides {
         // among all nodes in the network, this assures that every node will pick the same
         // destination name for a given relocated node no matter when the calculation is performed.
         used: HashMap<XorName, XorName>,
+        // Reference counter (number of `Overrides` instances that share this entry).
+        rc: usize,
     }
 
     impl OverrideInfo {
@@ -250,7 +273,48 @@ mod overrides {
     }
 
     thread_local! {
-        static GUARD: Cell<bool> = Cell::new(false);
         static OVERRIDES: RefCell<HashMap<Prefix<XorName>, OverrideInfo>> = RefCell::new(HashMap::new());
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::rng;
+        use rand::Rng;
+
+        #[test]
+        fn multiple_instances() {
+            let mut rng = rng::new();
+
+            let p0 = Prefix::default().pushed(false);
+            let p1 = Prefix::default().pushed(true);
+
+            let original: XorName = rng.gen();
+            let overriden0: XorName = rng.gen();
+            let overriden1: XorName = rng.gen();
+
+            assert_eq!(get(&p0, original), original);
+            assert_eq!(get(&p1, original), original);
+
+            {
+                let mut overrides = Overrides::new();
+                overrides.set(p0, overriden0);
+                assert_eq!(get(&p0, original), overriden0);
+                assert_eq!(get(&p1, original), original);
+
+                {
+                    let mut overrides = Overrides::new();
+                    overrides.set(p1, overriden1);
+                    assert_eq!(get(&p0, original), overriden0);
+                    assert_eq!(get(&p1, original), overriden1);
+                }
+
+                assert_eq!(get(&p0, original), overriden0);
+                assert_eq!(get(&p1, original), original);
+            }
+
+            assert_eq!(get(&p0, original), original);
+            assert_eq!(get(&p1, original), original);
+        }
     }
 }

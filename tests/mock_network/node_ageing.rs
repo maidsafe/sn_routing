@@ -9,7 +9,7 @@
 use super::{
     add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
     current_sections, nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
-    PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    verify_invariant_for_all_nodes, PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{Rand, Rng};
 use routing::{
@@ -19,19 +19,20 @@ use routing::{
 use std::{iter, slice};
 
 // These params are selected such that there can be a section size which allows relocation and at the same time
-// allows churn to happen which doesn't trigger split.
+// allows churn to happen which doesn't trigger split or allow churn to not increase age.
 const NETWORK_PARAMS: NetworkParams = NetworkParams {
     elder_size: LOWERED_ELDER_SIZE,
-    safe_section_size: LOWERED_ELDER_SIZE + 3,
+    safe_section_size: LOWERED_ELDER_SIZE + 4,
 };
 
 #[test]
 fn relocate_without_split() {
     let network = Network::new(NETWORK_PARAMS);
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    verify_invariant_for_all_nodes(&network, &mut nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
 
@@ -47,21 +48,15 @@ fn relocate_without_split() {
     // be relocated.
     let oldest_age_counter = node_age_counter(&nodes, 0);
     let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter;
-
-    // Keep the section size such that relocations can happen but splits can't.
-    section_churn(
-        num_churns,
-        &network,
-        &mut nodes,
-        &source_prefix,
-        NETWORK_PARAMS.elder_size + 1,
-        NETWORK_PARAMS.elder_size + 2,
-    );
-
+    section_churn_allowing_relocate(num_churns, &network, &mut nodes, &source_prefix);
     poll_and_resend(&mut nodes);
 
-    // Verify the node got relocated.
-    assert!(target_prefix.matches(&nodes[0].name()));
+    assert!(
+        target_prefix.matches(&nodes[0].name()),
+        "Verify the Node {}, got relocated to prefix {:?}",
+        nodes[0].inner,
+        target_prefix
+    );
 }
 
 #[test]
@@ -76,7 +71,7 @@ fn relocate_causing_split() {
 
     // Relocate node into a section which is one node shy of splitting.
     let network = Network::new(NETWORK_PARAMS);
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
@@ -100,19 +95,15 @@ fn relocate_causing_split() {
 
     // Trigger relocation.
     let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter;
-    section_churn(
-        num_churns,
-        &network,
-        &mut nodes,
-        &source_prefix,
-        NETWORK_PARAMS.elder_size + 1,
-        NETWORK_PARAMS.elder_size + 2,
-    );
-
+    section_churn_allowing_relocate(num_churns, &network, &mut nodes, &source_prefix);
     poll_and_resend(&mut nodes);
 
-    // Verify the node got relocated.
-    assert!(target_prefix.matches(&nodes[0].name()));
+    assert!(
+        target_prefix.matches(&nodes[0].name()),
+        "Verify the Node {}, got relocated to prefix {:?}",
+        nodes[0].inner,
+        target_prefix
+    );
 
     // Check whether the destination section split.
     let split = nodes_with_prefix(&nodes, &target_prefix)
@@ -136,7 +127,7 @@ fn relocate_causing_split() {
 fn relocate_during_split() {
     // Relocate node into a section which is undergoing split.
     let network = Network::new(NETWORK_PARAMS);
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
@@ -157,20 +148,13 @@ fn relocate_during_split() {
 
     // Create churn so we are one churn away from relocation.
     let num_churns = oldest_age_counter.next_power_of_two() - oldest_age_counter - 1;
-    section_churn(
-        num_churns,
-        &network,
-        &mut nodes,
-        &source_prefix,
-        NETWORK_PARAMS.elder_size + 1,
-        NETWORK_PARAMS.elder_size + 2,
-    );
+    section_churn_allowing_relocate(num_churns, &network, &mut nodes, &source_prefix);
 
     // Add new node, but do not poll yet.
     add_node_to_prefix(&network, &mut nodes, &target_prefix);
 
     // One more churn to trigger the relocation.
-    section_churn(1, &network, &mut nodes, &source_prefix, 6, 7);
+    section_churn_allowing_relocate(1, &network, &mut nodes, &source_prefix);
 
     // Poll now, so the add and the relocation happen simultaneously.
     poll_and_resend_with_options(
@@ -246,6 +230,24 @@ fn remove_node_from_prefix(nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) 
 }
 
 // Make the given section churn the given number of times, while maintaining the section size in
+// the interval that allow demoting/relocating a node at each step.
+fn section_churn_allowing_relocate(
+    count: usize,
+    network: &Network,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+) {
+    // Keep the section size such that relocations can happen but splits can't.
+    // We need NETWORK_PARAMS.elder_size + 1 excluding relocating node for it to be demoted.
+    let min_size = (NETWORK_PARAMS.elder_size + 1) + 1;
+
+    // Ensure we are increasing age at each churn event.
+    let max_size = NETWORK_PARAMS.safe_section_size - 1;
+
+    section_churn(count, &network, nodes, &prefix, min_size, max_size)
+}
+
+// Make the given section churn the given number of times, while maintaining the section size in
 // the given interval.
 fn section_churn(
     count: usize,
@@ -255,6 +257,11 @@ fn section_churn(
     min_section_size: usize,
     max_section_size: usize,
 ) {
+    info!(
+        "Start section_churn for num churn: {}, prefix {:?}",
+        count, prefix
+    );
+
     assert!(min_section_size < max_section_size);
 
     let mut rng = network.new_rng();
@@ -269,6 +276,7 @@ fn section_churn(
             rng.gen()
         };
 
+        info!("section_churn churn: {:?}", churn);
         match churn {
             Churn::Add => {
                 add_node_to_prefix(network, nodes, prefix);
@@ -290,6 +298,8 @@ fn section_churn(
             }
         }
     }
+
+    info!("section_churn complete");
 }
 
 // Returns whether all nodes from its section recognize the node at the given index as joined.
@@ -298,6 +308,7 @@ fn node_joined(nodes: &[TestNode], node_index: usize) -> bool {
 
     nodes
         .iter()
+        .filter(|node| node.inner.is_elder())
         .filter(|node| {
             node.inner
                 .our_prefix()
@@ -309,7 +320,10 @@ fn node_joined(nodes: &[TestNode], node_index: usize) -> bool {
 
 // Returns whether all nodes recognize the node with the given id as left.
 fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
-    nodes.iter().all(|node| !node.inner.is_peer_our_member(id))
+    nodes
+        .iter()
+        .filter(|node| node.inner.is_elder())
+        .all(|node| !node.inner.is_peer_our_member(id))
 }
 
 // Returns whether the relocation of node at `node_index` from `source_prefix` to `target_prefix`
@@ -350,7 +364,7 @@ fn node_relocated(
     true
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 enum Churn {
     Add,
     Remove,

@@ -293,7 +293,10 @@ impl Base for BootstrappingPeer {
 
         match msg {
             DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
-                info!("{} - Joining a section {:?}", self, info);
+                info!(
+                    "{} - Joining a section {:?} (given by {:?})",
+                    self, info, p2p_node
+                );
                 self.join_section(info)
             }
             DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {

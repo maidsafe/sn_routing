@@ -231,6 +231,7 @@ fn multiple_joining_nodes() {
     let mut nodes = create_connected_nodes(&network, LOWERED_ELDER_SIZE);
 
     while nodes.len() < 25 {
+        let initial_size = nodes.len();
         info!("Size {}", nodes.len());
 
         let mut count_if_split_node = count_sections_members_if_split(&nodes);
@@ -259,6 +260,7 @@ fn multiple_joining_nodes() {
                 }
             }
         }
+        let count = nodes.len() - initial_size;
 
         poll_and_resend(&mut nodes);
         let removed_count = remove_nodes_which_failed_to_connect(&mut nodes, count);
@@ -309,7 +311,7 @@ fn simultaneous_joining_nodes(
     let mut rng = network.new_rng();
     rng.shuffle(&mut nodes);
 
-    let overrides = RelocationOverrides::new();
+    let mut overrides = RelocationOverrides::new();
 
     let mut nodes_to_add = Vec::new();
     for setup in nodes_to_add_setup {
@@ -511,8 +513,12 @@ fn check_section_info_ack() {
     //
     // Assert
     //
-    let expected_all: Vec<_> = nodes.iter().map(|node| node.id()).collect();
-    assert_eq!(node_with_sibling_knowledge, expected_all);
+    let expected_all_elder: Vec<_> = nodes
+        .iter()
+        .filter(|node| node.inner.is_elder())
+        .map(|node| node.id())
+        .collect();
+    assert_eq!(node_with_sibling_knowledge, expected_all_elder);
 }
 
 #[test]
