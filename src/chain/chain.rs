@@ -251,28 +251,57 @@ impl Chain {
                     event,
                     self.state.churn_event_backlog
                 );
-                return Ok(Some(AccumulatedEvent::new(event)));
+                return Ok(Some(event));
             }
         }
 
-        let (event, proofs) = {
-            let opt_event = self
-                .chain_accumulator
-                .incomplete_events()
-                .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
-                .map(|(event, _)| event.clone());
-
-            let opt_event_proofs = opt_event.and_then(|event| {
-                self.chain_accumulator
-                    .poll_event(event, self.our_info().member_ids().cloned().collect())
-            });
-
-            match opt_event_proofs {
-                None => return Ok(None),
-                Some((event, proofs)) => (event, proofs),
-            }
+        let (event, proofs) = match self.poll_chain_accumulator() {
+            None => return Ok(None),
+            Some((event, proofs)) => (event, proofs),
         };
 
+        let event = match self.process_accumulating(event, proofs)? {
+            None => return Ok(None),
+            Some(event) => event,
+        };
+
+        let start_churn_event = match &event.content {
+            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
+            _ => false,
+        };
+
+        if start_churn_event && (self.churn_in_progress || self.relocation_in_progress) {
+            trace!(
+                "{} churn backlog {:?}, Other: {:?}",
+                self,
+                event,
+                self.state.churn_event_backlog
+            );
+            self.state.churn_event_backlog.push_front(event);
+            return Ok(None);
+        }
+
+        Ok(Some(event))
+    }
+
+    fn poll_chain_accumulator(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+        let opt_event = self
+            .chain_accumulator
+            .incomplete_events()
+            .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
+            .map(|(event, _)| event.clone());
+
+        opt_event.and_then(|event| {
+            self.chain_accumulator
+                .poll_event(event, self.our_info().member_ids().cloned().collect())
+        })
+    }
+
+    fn process_accumulating(
+        &mut self,
+        event: AccumulatingEvent,
+        proofs: AccumulatingProof,
+    ) -> Result<Option<AccumulatedEvent>, RoutingError> {
         match event {
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = NeighbourChangeBuilder::new(self);
@@ -311,22 +340,6 @@ impl Chain {
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::SendAckMessage(_) => (),
-        }
-
-        let start_churn_event = match event {
-            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
-            _ => false,
-        };
-
-        if start_churn_event && (self.churn_in_progress || self.relocation_in_progress) {
-            trace!(
-                "{} churn backlog {:?}, Other: {:?}",
-                self,
-                event,
-                self.state.churn_event_backlog
-            );
-            self.state.churn_event_backlog.push_front(event);
-            return Ok(None);
         }
 
         Ok(Some(AccumulatedEvent::new(event)))
@@ -1429,7 +1442,7 @@ impl Chain {
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
         self.state.churn_event_backlog.iter().any(|evt| {
-            if let AccumulatingEvent::Online(payload) = evt {
+            if let AccumulatingEvent::Online(payload) = &evt.content {
                 payload.p2p_node.public_id() == pub_id
             } else {
                 false
