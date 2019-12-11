@@ -1499,6 +1499,11 @@ impl Approved for Elder {
         self.pfx_is_successfully_polled
     }
 
+    fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+        self.vote_for_relocate(details)?;
+        Ok(())
+    }
+
     fn handle_online_event(
         &mut self,
         payload: OnlinePayload,
@@ -1516,10 +1521,6 @@ impl Approved for Elder {
             self.handle_candidate_approval(payload.p2p_node, outbox);
             self.promote_and_demote_elders()?;
             self.print_rt_size();
-        }
-
-        if let Some(relocate_details) = self.chain.poll_relocation() {
-            self.vote_for_relocate(relocate_details)?;
         }
 
         Ok(())
@@ -1541,10 +1542,6 @@ impl Approved for Elder {
 
             self.promote_and_demote_elders()?;
             self.disconnect_by_id_lookup(&pub_id);
-        }
-
-        if let Some(relocate_details) = self.chain.poll_relocation() {
-            self.vote_for_relocate(relocate_details)?;
         }
 
         Ok(())
@@ -1604,11 +1601,6 @@ impl Approved for Elder {
 
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 
-        // Poll the relocate queue before the parsec reset, so it is not blocked waiting for the
-        // genesis event. Cast the actual votes only after the parsec reset however, so they already
-        // go to the new instance.
-        let relocate_details = self.chain.poll_relocation();
-
         let complete_data = if info_prefix.is_extension_of(&old_pfx) {
             self.prepare_finalise_split()?
         } else if old_pfx.is_extension_of(&info_prefix) {
@@ -1639,10 +1631,6 @@ impl Approved for Elder {
             ack_prefix: info_prefix,
             ack_version: info_version,
         });
-
-        if let Some(relocate_details) = relocate_details {
-            self.vote_for_relocate(relocate_details)?;
-        }
 
         if let Some(to_send) = complete_data.event_to_send {
             self.send_event(to_send, outbox);

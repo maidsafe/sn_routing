@@ -238,41 +238,50 @@ impl Chain {
     ///
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
-        if self.state.handled_genesis_event
-            && !self.churn_in_progress
-            && !self.relocation_in_progress
-            && !self.state.split_in_progress
-        {
-            if let Some(event) = self.state.churn_event_backlog.pop_back() {
-                trace!(
-                    "{} churn backlog poll {:?}, Others: {:?}",
-                    self,
-                    event,
-                    self.state.churn_event_backlog
-                );
-                return Ok(Some(AccumulatedEvent::new(event)));
-            }
+    pub fn poll_accumulated(&mut self) -> Result<Option<PollAccumulated>, RoutingError> {
+        if let Some(event) = self.poll_churn_event_backlog() {
+            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
         }
 
-        let (event, proofs) = {
-            let opt_event = self
-                .chain_accumulator
-                .incomplete_events()
-                .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
-                .map(|(event, _)| event.clone());
+        if let Some(details) = self.poll_relocation() {
+            return Ok(Some(PollAccumulated::RelocateDetails(details)));
+        }
 
-            let opt_event_proofs = opt_event.and_then(|event| {
-                self.chain_accumulator
-                    .poll_event(event, self.our_info().member_ids().cloned().collect())
-            });
-
-            match opt_event_proofs {
-                None => return Ok(None),
-                Some((event, proofs)) => (event, proofs),
-            }
+        let (event, proofs) = match self.poll_chain_accumulator() {
+            None => return Ok(None),
+            Some((event, proofs)) => (event, proofs),
         };
 
+        let event = match self.process_accumulating(event, proofs)? {
+            None => return Ok(None),
+            Some(event) => event,
+        };
+
+        if let Some(event) = self.check_ready_or_backlog_churn_event(event)? {
+            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
+        }
+
+        Ok(None)
+    }
+
+    fn poll_chain_accumulator(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+        let opt_event = self
+            .chain_accumulator
+            .incomplete_events()
+            .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
+            .map(|(event, _)| event.clone());
+
+        opt_event.and_then(|event| {
+            self.chain_accumulator
+                .poll_event(event, self.our_info().member_ids().cloned().collect())
+        })
+    }
+
+    fn process_accumulating(
+        &mut self,
+        event: AccumulatingEvent,
+        proofs: AccumulatingProof,
+    ) -> Result<Option<AccumulatedEvent>, RoutingError> {
         match event {
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = NeighbourChangeBuilder::new(self);
@@ -313,7 +322,34 @@ impl Chain {
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
-        let start_churn_event = match event {
+        Ok(Some(AccumulatedEvent::new(event)))
+    }
+
+    pub fn poll_churn_event_backlog(&mut self) -> Option<AccumulatedEvent> {
+        if self.state.handled_genesis_event
+            && !self.churn_in_progress
+            && !self.relocation_in_progress
+            && !self.state.split_in_progress
+        {
+            if let Some(event) = self.state.churn_event_backlog.pop_back() {
+                trace!(
+                    "{} churn backlog poll {:?}, Others: {:?}",
+                    self,
+                    event,
+                    self.state.churn_event_backlog
+                );
+                return Some(event);
+            }
+        }
+
+        None
+    }
+
+    pub fn check_ready_or_backlog_churn_event(
+        &mut self,
+        event: AccumulatedEvent,
+    ) -> Result<Option<AccumulatedEvent>, RoutingError> {
+        let start_churn_event = match &event.content {
             AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
             _ => false,
         };
@@ -329,7 +365,7 @@ impl Chain {
             return Ok(None);
         }
 
-        Ok(Some(AccumulatedEvent::new(event)))
+        Ok(Some(event))
     }
 
     // Increment the age counters of the members.
@@ -394,16 +430,11 @@ impl Chain {
     }
 
     /// Returns the details of the next scheduled relocation to be voted for, if any.
-    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
-        assert!(
-            !self.relocation_in_progress,
-            "Only one relocation at a time {}",
-            self
-        );
-
+    fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until all backlogged churn events have been handled and no
-        // additional churn is in progress.
-        if self.churn_in_progress
+        // additional churn is in progress. Only allow one relocation at a time.
+        if self.relocation_in_progress
+            || self.churn_in_progress
             || !self.state.churn_event_backlog.is_empty()
             || !self.state.handled_genesis_event
         {
@@ -1429,23 +1460,13 @@ impl Chain {
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
         self.state.churn_event_backlog.iter().any(|evt| {
-            if let AccumulatingEvent::Online(payload) = evt {
+            if let AccumulatingEvent::Online(payload) = &evt.content {
                 payload.p2p_node.public_id() == pub_id
             } else {
                 false
             }
         })
     }
-}
-
-/// The outcome of a prefix change.
-pub struct ParsecResetData {
-    /// The new genesis prefix info.
-    pub gen_pfx_info: GenesisPfxInfo,
-    /// The cached events that should be revoted.
-    pub cached_events: BTreeSet<NetworkEvent>,
-    /// The completed events.
-    pub completed_events: BTreeSet<AccumulatingEvent>,
 }
 
 impl Debug for Chain {
@@ -1561,6 +1582,23 @@ fn key_matching_first_elder_name(
     name_to_key
         .remove(first_name)
         .ok_or(RoutingError::InvalidElderDkgResult)
+}
+
+/// The outcome of sucessful accumulated poll
+#[allow(clippy::large_enum_variant)]
+pub enum PollAccumulated {
+    AccumulatedEvent(AccumulatedEvent),
+    RelocateDetails(RelocateDetails),
+}
+
+/// The outcome of a prefix change.
+pub struct ParsecResetData {
+    /// The new genesis prefix info.
+    pub gen_pfx_info: GenesisPfxInfo,
+    /// The cached events that should be revoted.
+    pub cached_events: BTreeSet<NetworkEvent>,
+    /// The completed events.
+    pub completed_events: BTreeSet<AccumulatingEvent>,
 }
 
 /// The secret share of the section key.

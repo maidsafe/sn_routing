@@ -595,6 +595,10 @@ impl Approved for Adult {
         false
     }
 
+    fn handle_relocate_polled(&mut self, _details: RelocateDetails) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
     fn handle_online_event(
         &mut self,
         payload: OnlinePayload,
@@ -611,8 +615,6 @@ impl Approved for Adult {
             self.chain.increment_age_counters(&pub_id);
             let _ = self.chain.promote_and_demote_elders()?;
         }
-
-        let _ = self.chain.poll_relocation();
 
         Ok(())
     }
@@ -633,7 +635,6 @@ impl Approved for Adult {
             let _ = self.chain.promote_and_demote_elders()?;
             self.disconnect_by_id_lookup(&pub_id);
         }
-        let _ = self.chain.poll_relocation();
 
         Ok(())
     }
@@ -657,11 +658,6 @@ impl Approved for Adult {
             Ok(Transition::IntoElder { old_pfx })
         } else {
             debug!("{} - Unhandled SectionInfo event", self);
-
-            // Need to pop the relocate queue even though we are not going to vote. Otherwise it
-            // could get out of sync with the rest of the section when we transition to elder.
-            let _ = self.chain.poll_relocation();
-
             Ok(Transition::Stay)
         }
     }

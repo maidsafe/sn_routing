@@ -9,8 +9,8 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload, Proof, ProofSet,
-        SectionKeyInfo, SendAckMessagePayload,
+        AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload,
+        PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -36,6 +36,9 @@ pub trait Approved: Base {
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
+
+    /// Handles an accumulated relocation trigger
+    fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `Online` event.
     fn handle_online_event(
@@ -303,51 +306,67 @@ pub trait Approved: Base {
     }
 
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
-        let mut our_pfx = *self.chain_mut().our_prefix();
-        while let Some(event) = self.chain_mut().poll()? {
-            trace!("{} Handle accumulated event: {:?}", self, event);
-
-            match event.content {
-                AccumulatingEvent::StartDkg(_) => {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "StartDkg came out of Parsec - this shouldn't happen"
-                    );
-                }
-                AccumulatingEvent::Online(payload) => {
-                    self.handle_online_event(payload, outbox)?;
-                }
-                AccumulatingEvent::Offline(pub_id) => {
-                    self.handle_offline_event(pub_id, outbox)?;
-                }
-                AccumulatingEvent::SectionInfo(_, _) => {
-                    // Use chain our_info for the already processed ElderInfo.
-                    // During split the AccumulatingEvent is only one side and so is misleading.
-                    match self.handle_section_info_event(our_pfx, event.neighbour_change, outbox)? {
+        let mut old_pfx = *self.chain_mut().our_prefix();
+        while let Some(event) = self.chain_mut().poll_accumulated()? {
+            match event {
+                PollAccumulated::AccumulatedEvent(event) => {
+                    match self.handle_accumulated_event(event, old_pfx, outbox)? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
                 }
-                AccumulatingEvent::NeighbourInfo(elders_info) => {
-                    self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
+                PollAccumulated::RelocateDetails(details) => {
+                    self.handle_relocate_polled(details)?;
                 }
-                AccumulatingEvent::TheirKeyInfo(key_info) => {
-                    self.handle_their_key_info_event(key_info)?
-                }
-                AccumulatingEvent::AckMessage(_payload) => {
-                    // Update their_knowledge is handled within the chain.
-                }
-                AccumulatingEvent::SendAckMessage(payload) => {
-                    self.handle_send_ack_message_event(payload)?
-                }
-                AccumulatingEvent::ParsecPrune => self.handle_prune()?,
-                AccumulatingEvent::Relocate(payload) => {
-                    self.invoke_handle_relocate_event(payload, event.signature, outbox)?
-                }
-                AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
             }
 
-            our_pfx = *self.chain_mut().our_prefix();
+            old_pfx = *self.chain_mut().our_prefix();
+        }
+
+        Ok(Transition::Stay)
+    }
+
+    fn handle_accumulated_event(
+        &mut self,
+        event: AccumulatedEvent,
+        old_pfx: Prefix<XorName>,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition, RoutingError> {
+        trace!("{} Handle accumulated event: {:?}", self, event);
+
+        match event.content {
+            AccumulatingEvent::StartDkg(_) => {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "StartDkg came out of Parsec - this shouldn't happen"
+                );
+            }
+            AccumulatingEvent::Online(payload) => {
+                self.handle_online_event(payload, outbox)?;
+            }
+            AccumulatingEvent::Offline(pub_id) => {
+                self.handle_offline_event(pub_id, outbox)?;
+            }
+            AccumulatingEvent::SectionInfo(_, _) => {
+                return self.handle_section_info_event(old_pfx, event.neighbour_change, outbox);
+            }
+            AccumulatingEvent::NeighbourInfo(elders_info) => {
+                self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
+            }
+            AccumulatingEvent::TheirKeyInfo(key_info) => {
+                self.handle_their_key_info_event(key_info)?
+            }
+            AccumulatingEvent::AckMessage(_payload) => {
+                // Update their_knowledge is handled within the chain.
+            }
+            AccumulatingEvent::SendAckMessage(payload) => {
+                self.handle_send_ack_message_event(payload)?
+            }
+            AccumulatingEvent::ParsecPrune => self.handle_prune()?,
+            AccumulatingEvent::Relocate(payload) => {
+                self.invoke_handle_relocate_event(payload, event.signature, outbox)?
+            }
+            AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
         }
 
         Ok(Transition::Stay)
