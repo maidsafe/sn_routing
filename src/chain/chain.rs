@@ -238,7 +238,7 @@ impl Chain {
     ///
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
+    pub fn poll_accumulated(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
         if self.state.handled_genesis_event
             && !self.churn_in_progress
             && !self.relocation_in_progress

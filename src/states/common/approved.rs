@@ -304,7 +304,7 @@ pub trait Approved: Base {
 
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut old_pfx = *self.chain_mut().our_prefix();
-        while let Some(event) = self.chain_mut().poll()? {
+        while let Some(event) = self.chain_mut().poll_accumulated()? {
             match self.handle_accumulated_event(event, old_pfx, outbox)? {
                 Transition::Stay => (),
                 transition => return Ok(transition),
