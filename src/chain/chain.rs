@@ -239,20 +239,8 @@ impl Chain {
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
     pub fn poll_accumulated(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
-        if self.state.handled_genesis_event
-            && !self.churn_in_progress
-            && !self.relocation_in_progress
-            && !self.state.split_in_progress
-        {
-            if let Some(event) = self.state.churn_event_backlog.pop_back() {
-                trace!(
-                    "{} churn backlog poll {:?}, Others: {:?}",
-                    self,
-                    event,
-                    self.state.churn_event_backlog
-                );
-                return Ok(Some(event));
-            }
+        if let Some(event) = self.poll_churn_event_backlog() {
+            return Ok(Some(event));
         }
 
         let (event, proofs) = match self.poll_chain_accumulator() {
@@ -265,23 +253,7 @@ impl Chain {
             Some(event) => event,
         };
 
-        let start_churn_event = match &event.content {
-            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
-            _ => false,
-        };
-
-        if start_churn_event && (self.churn_in_progress || self.relocation_in_progress) {
-            trace!(
-                "{} churn backlog {:?}, Other: {:?}",
-                self,
-                event,
-                self.state.churn_event_backlog
-            );
-            self.state.churn_event_backlog.push_front(event);
-            return Ok(None);
-        }
-
-        Ok(Some(event))
+        self.check_ready_or_backlog_churn_event(event)
     }
 
     fn poll_chain_accumulator(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
@@ -343,6 +315,49 @@ impl Chain {
         }
 
         Ok(Some(AccumulatedEvent::new(event)))
+    }
+
+    pub fn poll_churn_event_backlog(&mut self) -> Option<AccumulatedEvent> {
+        if self.state.handled_genesis_event
+            && !self.churn_in_progress
+            && !self.relocation_in_progress
+            && !self.state.split_in_progress
+        {
+            if let Some(event) = self.state.churn_event_backlog.pop_back() {
+                trace!(
+                    "{} churn backlog poll {:?}, Others: {:?}",
+                    self,
+                    event,
+                    self.state.churn_event_backlog
+                );
+                return Some(event);
+            }
+        }
+
+        None
+    }
+
+    pub fn check_ready_or_backlog_churn_event(
+        &mut self,
+        event: AccumulatedEvent,
+    ) -> Result<Option<AccumulatedEvent>, RoutingError> {
+        let start_churn_event = match &event.content {
+            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
+            _ => false,
+        };
+
+        if start_churn_event && (self.churn_in_progress || self.relocation_in_progress) {
+            trace!(
+                "{} churn backlog {:?}, Other: {:?}",
+                self,
+                event,
+                self.state.churn_event_backlog
+            );
+            self.state.churn_event_backlog.push_front(event);
+            return Ok(None);
+        }
+
+        Ok(Some(event))
     }
 
     // Increment the age counters of the members.
