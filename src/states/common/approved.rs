@@ -9,8 +9,8 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload, Proof,
-        ProofSet, SectionKeyInfo, SendAckMessagePayload,
+        AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload,
+        PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -36,6 +36,9 @@ pub trait Approved: Base {
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
+
+    /// Handles an accumulated relocation trigger
+    fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `Online` event.
     fn handle_online_event(
@@ -305,9 +308,16 @@ pub trait Approved: Base {
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut old_pfx = *self.chain_mut().our_prefix();
         while let Some(event) = self.chain_mut().poll_accumulated()? {
-            match self.handle_accumulated_event(event, old_pfx, outbox)? {
-                Transition::Stay => (),
-                transition => return Ok(transition),
+            match event {
+                PollAccumulated::AccumulatedEvent(event) => {
+                    match self.handle_accumulated_event(event, old_pfx, outbox)? {
+                        Transition::Stay => (),
+                        transition => return Ok(transition),
+                    }
+                }
+                PollAccumulated::RelocateDetails(details) => {
+                    self.handle_relocate_polled(details)?;
+                }
             }
 
             old_pfx = *self.chain_mut().our_prefix();

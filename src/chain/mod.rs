@@ -21,7 +21,7 @@ mod shared_state;
 #[cfg(feature = "mock_base")]
 pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
 pub use self::{
-    chain::{delivery_group_size, Chain, ParsecResetData, SectionKeyShare},
+    chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
     chain_accumulator::AccumulatingProof,
     config::NetworkParams,
     elders_info::EldersInfo,

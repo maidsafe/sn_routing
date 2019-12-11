@@ -238,9 +238,13 @@ impl Chain {
     ///
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll_accumulated(&mut self) -> Result<Option<AccumulatedEvent>, RoutingError> {
+    pub fn poll_accumulated(&mut self) -> Result<Option<PollAccumulated>, RoutingError> {
         if let Some(event) = self.poll_churn_event_backlog() {
-            return Ok(Some(event));
+            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
+        }
+
+        if let Some(details) = self.poll_relocation() {
+            return Ok(Some(PollAccumulated::RelocateDetails(details)));
         }
 
         let (event, proofs) = match self.poll_chain_accumulator() {
@@ -253,7 +257,11 @@ impl Chain {
             Some(event) => event,
         };
 
-        self.check_ready_or_backlog_churn_event(event)
+        if let Some(event) = self.check_ready_or_backlog_churn_event(event)? {
+            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
+        }
+
+        Ok(None)
     }
 
     fn poll_chain_accumulator(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
@@ -422,16 +430,11 @@ impl Chain {
     }
 
     /// Returns the details of the next scheduled relocation to be voted for, if any.
-    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
-        assert!(
-            !self.relocation_in_progress,
-            "Only one relocation at a time {}",
-            self
-        );
-
+    fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until all backlogged churn events have been handled and no
-        // additional churn is in progress.
-        if self.churn_in_progress
+        // additional churn is in progress. Only allow one relocation at a time.
+        if self.relocation_in_progress
+            || self.churn_in_progress
             || !self.state.churn_event_backlog.is_empty()
             || !self.state.handled_genesis_event
         {
@@ -1466,16 +1469,6 @@ impl Chain {
     }
 }
 
-/// The outcome of a prefix change.
-pub struct ParsecResetData {
-    /// The new genesis prefix info.
-    pub gen_pfx_info: GenesisPfxInfo,
-    /// The cached events that should be revoted.
-    pub cached_events: BTreeSet<NetworkEvent>,
-    /// The completed events.
-    pub completed_events: BTreeSet<AccumulatingEvent>,
-}
-
 impl Debug for Chain {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         writeln!(formatter, "Chain {{")?;
@@ -1589,6 +1582,22 @@ fn key_matching_first_elder_name(
     name_to_key
         .remove(first_name)
         .ok_or(RoutingError::InvalidElderDkgResult)
+}
+
+/// The outcome of sucessful accumulated poll
+pub enum PollAccumulated {
+    AccumulatedEvent(AccumulatedEvent),
+    RelocateDetails(RelocateDetails),
+}
+
+/// The outcome of a prefix change.
+pub struct ParsecResetData {
+    /// The new genesis prefix info.
+    pub gen_pfx_info: GenesisPfxInfo,
+    /// The cached events that should be revoted.
+    pub cached_events: BTreeSet<NetworkEvent>,
+    /// The completed events.
+    pub completed_events: BTreeSet<AccumulatingEvent>,
 }
 
 /// The secret share of the section key.
