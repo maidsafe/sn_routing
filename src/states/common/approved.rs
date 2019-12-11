@@ -40,6 +40,12 @@ pub trait Approved: Base {
     /// Handles an accumulated relocation trigger
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError>;
 
+    /// Handles an accumulated change to our elders
+    fn handle_promote_and_demote_elders(
+        &mut self,
+        new_infos: Vec<EldersInfo>,
+    ) -> Result<(), RoutingError>;
+
     /// Handles an accumulated `Online` event.
     fn handle_online_event(
         &mut self,
@@ -317,6 +323,9 @@ pub trait Approved: Base {
                 }
                 PollAccumulated::RelocateDetails(details) => {
                     self.handle_relocate_polled(details)?;
+                }
+                PollAccumulated::PromoteDemoteElders(new_infos) => {
+                    self.handle_promote_and_demote_elders(new_infos)?;
                 }
             }
 

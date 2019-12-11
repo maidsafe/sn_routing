@@ -66,6 +66,8 @@ pub struct Chain {
     churn_in_progress: bool,
     /// Marker indicating we are processing a relocation.
     relocation_in_progress: bool,
+    /// Marker indicating that elders may need to change,
+    members_changed: bool,
     /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
     /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
     /// then members are disjoint. We are working around not having access to the prefix for the
@@ -144,6 +146,7 @@ impl Chain {
             event_cache: Default::default(),
             churn_in_progress: false,
             relocation_in_progress: false,
+            members_changed: false,
             new_section_bls_keys: Default::default(),
         }
     }
@@ -247,6 +250,10 @@ impl Chain {
             return Ok(Some(PollAccumulated::RelocateDetails(details)));
         }
 
+        if let Some(new_infos) = self.promote_and_demote_elders()? {
+            return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
+        }
+
         let (event, proofs) = match self.poll_chain_accumulator() {
             None => return Ok(None),
             Some((event, proofs)) => (event, proofs),
@@ -326,11 +333,7 @@ impl Chain {
     }
 
     pub fn poll_churn_event_backlog(&mut self) -> Option<AccumulatedEvent> {
-        if self.state.handled_genesis_event
-            && !self.churn_in_progress
-            && !self.relocation_in_progress
-            && !self.state.split_in_progress
-        {
+        if self.can_poll_churn() {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
                 trace!(
                     "{} churn backlog poll {:?}, Others: {:?}",
@@ -354,7 +357,7 @@ impl Chain {
             _ => false,
         };
 
-        if start_churn_event && (self.churn_in_progress || self.relocation_in_progress) {
+        if start_churn_event && !self.can_poll_churn() {
             trace!(
                 "{} churn backlog {:?}, Other: {:?}",
                 self,
@@ -433,11 +436,7 @@ impl Chain {
     fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until all backlogged churn events have been handled and no
         // additional churn is in progress. Only allow one relocation at a time.
-        if self.relocation_in_progress
-            || self.churn_in_progress
-            || !self.state.churn_event_backlog.is_empty()
-            || !self.state.handled_genesis_event
-        {
+        if !self.can_poll_churn() || !self.state.churn_event_backlog.is_empty() {
             return None;
         }
 
@@ -474,6 +473,13 @@ impl Chain {
         Some(details)
     }
 
+    fn can_poll_churn(&self) -> bool {
+        self.state.handled_genesis_event
+            && !self.churn_in_progress
+            && !self.relocation_in_progress
+            && !self.state.split_in_progress
+    }
+
     /// Validate if can call add_member on this node.
     pub fn can_add_member(&mut self, pub_id: &PublicId) -> bool {
         self.our_prefix().matches(pub_id.name()) && !self.is_peer_our_member(pub_id)
@@ -487,6 +493,7 @@ impl Chain {
     /// Adds a member to our section.
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
         self.assert_no_prefix_change("add member");
+        self.members_changed = true;
 
         match self.state.our_members.entry(*p2p_node.name()) {
             Entry::Occupied(mut entry) => {
@@ -516,6 +523,7 @@ impl Chain {
     /// Remove a member from our section.
     pub fn remove_member(&mut self, pub_id: &PublicId) {
         self.assert_no_prefix_change("remove member");
+        self.members_changed = true;
 
         if let Some(info) = self
             .state
@@ -540,15 +548,19 @@ impl Chain {
 
     /// Generate a new section info based on the current set of members.
     /// Returns a set of EldersInfos to vote for.
-    pub fn promote_and_demote_elders(&mut self) -> Result<Vec<EldersInfo>, RoutingError> {
-        self.assert_no_prefix_change("promote and demote");
+    fn promote_and_demote_elders(&mut self) -> Result<Option<Vec<EldersInfo>>, RoutingError> {
+        if !self.members_changed || !self.can_poll_churn() {
+            // Nothing changed that could impact elder set, or we cannot process it yet.
+            return Ok(None);
+        }
 
         // TODO: the split decision should be based on the number of all members, not just elders.
         if self.should_split()? {
             let (our_info, other_info) = self.split_self()?;
             self.state.split_in_progress = true;
+            self.members_changed = false;
             self.churn_in_progress = true;
-            return Ok(vec![our_info, other_info]);
+            return Ok(Some(vec![our_info, other_info]));
         }
 
         let new_info = EldersInfo::new(
@@ -557,8 +569,9 @@ impl Chain {
             Some(self.state.our_info()),
         )?;
 
+        self.members_changed = false;
         self.churn_in_progress = true;
-        Ok(vec![new_info])
+        Ok(Some(vec![new_info]))
     }
 
     /// Gets the data needed to initialise a new Parsec instance
@@ -1589,6 +1602,7 @@ fn key_matching_first_elder_name(
 pub enum PollAccumulated {
     AccumulatedEvent(AccumulatedEvent),
     RelocateDetails(RelocateDetails),
+    PromoteDemoteElders(Vec<EldersInfo>),
 }
 
 /// The outcome of a prefix change.
