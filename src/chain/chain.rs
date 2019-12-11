@@ -1585,6 +1585,7 @@ fn key_matching_first_elder_name(
 }
 
 /// The outcome of sucessful accumulated poll
+#[allow(clippy::large_enum_variant)]
 pub enum PollAccumulated {
     AccumulatedEvent(AccumulatedEvent),
     RelocateDetails(RelocateDetails),
