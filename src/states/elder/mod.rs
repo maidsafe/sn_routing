@@ -625,6 +625,12 @@ impl Elder {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
+        trace!(
+            "{} - Handle signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.check_signed_message_trust(&signed_msg)?;
             self.check_signed_message_integrity(&signed_msg)?;

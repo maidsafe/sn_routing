@@ -396,6 +396,12 @@ impl Adult {
         &mut self,
         mut signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
+        trace!(
+            "{} - Handle signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.check_signed_message_integrity(&signed_msg)?;
             self.routing_msg_backlog.push(signed_msg.clone());
