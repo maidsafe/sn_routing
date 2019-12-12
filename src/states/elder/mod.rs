@@ -26,7 +26,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
-        SignedRoutingMessage,
+        SecurityMetadata, SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
@@ -49,7 +49,7 @@ use log::LogLevel;
 use serde::Serialize;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
+    collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::SocketAddr,
@@ -109,8 +109,10 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
-    /// DKG cache
+    // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    // `NeighbourInfo` messages we received but not accumulated yet.
+    pending_neighbour_info_msgs: HashMap<Prefix<XorName>, PendingNeighbourInfoMessage>,
     rng: MainRng,
 }
 
@@ -274,6 +276,7 @@ impl Elder {
             chain: details.chain,
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
+            pending_neighbour_info_msgs: Default::default(),
             rng: details.rng,
         }
     }
@@ -394,7 +397,11 @@ impl Elder {
         self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
     }
 
-    fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
+    fn complete_parsec_reset_data(
+        &mut self,
+        reset_data: ParsecResetData,
+        reason: ParsecResetReason,
+    ) -> CompleteParsecReset {
         let ParsecResetData {
             gen_pfx_info,
             mut cached_events,
@@ -425,6 +432,12 @@ impl Elder {
             .filter(|event| match &event.payload {
                 // Events to re-process
                 AccumulatingEvent::Online(_) => !completed_events.contains(&event.payload),
+                AccumulatingEvent::NeighbourInfo(elders_info) => {
+                    // Resend the `NeighbourInfo` to our sibling if they need it.
+                    !completed_events.contains(&event.payload)
+                        && reason == ParsecResetReason::Split
+                        && our_pfx.sibling().is_neighbour(elders_info.prefix())
+                }
                 // Events to re-insert
                 AccumulatingEvent::Offline(_)
                 | AccumulatingEvent::AckMessage(_)
@@ -432,7 +445,6 @@ impl Elder {
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_)
                 | AccumulatingEvent::SectionInfo(_, _)
-                | AccumulatingEvent::NeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo(_)
                 | AccumulatingEvent::SendAckMessage(_)
                 | AccumulatingEvent::User(_) => false,
@@ -498,11 +510,13 @@ impl Elder {
             | evt @ AccumulatingEvent::ParsecPrune
             | evt @ AccumulatingEvent::Relocate(_)
             | evt @ AccumulatingEvent::SectionInfo(_, _)
-            | evt @ AccumulatingEvent::NeighbourInfo(_)
             | evt @ AccumulatingEvent::TheirKeyInfo(_)
             | evt @ AccumulatingEvent::SendAckMessage(_)
             | evt @ AccumulatingEvent::User(_) => {
                 log_or_panic!(LogLevel::Error, "unexpected event {:?}", evt);
+            }
+            AccumulatingEvent::NeighbourInfo(elders_info) => {
+                self.resend_neighbour_info(elders_info.prefix())
             }
             AccumulatingEvent::Online(payload) => {
                 self.resend_bootstrap_response_join(&payload.p2p_node);
@@ -534,6 +548,25 @@ impl Elder {
         }
     }
 
+    fn resend_neighbour_info(&mut self, neighbour_prefix: &Prefix<XorName>) {
+        if let Some(msg) = self.pending_neighbour_info_msgs.remove(neighbour_prefix) {
+            let msg = msg.into();
+            match self.send_signed_message(&msg) {
+                Ok(()) => {
+                    trace!("{} - Resend {:?}", self, msg.routing_message());
+                }
+                Err(error) => {
+                    debug!(
+                        "{} - Failed to resend {:?}: {:?}",
+                        self,
+                        msg.routing_message(),
+                        error
+                    );
+                }
+            }
+        }
+    }
+
     fn reset_parsec_with_data(
         &mut self,
         gen_pfx_info: GenesisPfxInfo,
@@ -553,7 +586,8 @@ impl Elder {
         let reset_data = self
             .chain
             .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
-        let complete_data = self.complete_parsec_reset_data(reset_data);
+        let complete_data =
+            self.complete_parsec_reset_data(reset_data, ParsecResetReason::ChurnOrPrune);
         Ok(complete_data)
     }
 
@@ -561,7 +595,8 @@ impl Elder {
         let reset_data = self
             .chain
             .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
-        let mut complete_data = self.complete_parsec_reset_data(reset_data);
+        let mut complete_data =
+            self.complete_parsec_reset_data(reset_data, ParsecResetReason::Split);
         complete_data.event_to_send = Some(Event::SectionSplit(*self.our_prefix()));
         Ok(complete_data)
     }
@@ -658,7 +693,7 @@ impl Elder {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
 
-        let (msg, _) = signed_msg.into_parts();
+        let (msg, security_metadata) = signed_msg.into_parts();
 
         match msg.content {
             UserMessage { .. } => (),
@@ -666,8 +701,12 @@ impl Elder {
         }
 
         match (msg.content, msg.src, msg.dst) {
-            (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
-                self.handle_neighbour_info(elders_info)?;
+            (
+                NeighbourInfo(elders_info),
+                src @ Authority::Section(_),
+                dst @ Authority::PrefixSection(_),
+            ) => {
+                self.handle_neighbour_info(elders_info, src, dst, security_metadata)?;
                 Ok(Transition::Stay)
             }
             (UserMessage(content), src, dst) => {
@@ -941,8 +980,38 @@ impl Elder {
         }
     }
 
-    fn handle_neighbour_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
+    fn handle_neighbour_info(
+        &mut self,
+        elders_info: EldersInfo,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        security_metadata: SecurityMetadata,
+    ) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
+            match self
+                .pending_neighbour_info_msgs
+                .entry(*elders_info.prefix())
+            {
+                Entry::Occupied(mut entry) => {
+                    if entry.get().elders_info.version() < elders_info.version() {
+                        let _ = entry.insert(PendingNeighbourInfoMessage {
+                            src,
+                            dst,
+                            elders_info: elders_info.clone(),
+                            security_metadata,
+                        });
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    let _ = entry.insert(PendingNeighbourInfoMessage {
+                        src,
+                        dst,
+                        elders_info: elders_info.clone(),
+                        security_metadata,
+                    });
+                }
+            }
+
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
         } else {
             trace!(
@@ -1651,6 +1720,9 @@ impl Approved for Elder {
         neighbour_change: EldersChange,
     ) -> Result<(), RoutingError> {
         info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
+        let _ = self
+            .pending_neighbour_info_msgs
+            .remove(elders_info.prefix());
         self.update_peer_connections(neighbour_change);
         Ok(())
     }
@@ -1744,4 +1816,31 @@ fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingErro
         );
         err
     })
+}
+
+struct PendingNeighbourInfoMessage {
+    elders_info: EldersInfo,
+    src: Authority<XorName>,
+    dst: Authority<XorName>,
+    security_metadata: SecurityMetadata,
+}
+
+impl From<PendingNeighbourInfoMessage> for SignedRoutingMessage {
+    fn from(pending_msg: PendingNeighbourInfoMessage) -> Self {
+        SignedRoutingMessage::from_parts(
+            RoutingMessage {
+                src: pending_msg.src,
+                dst: pending_msg.dst,
+                content: MessageContent::NeighbourInfo(pending_msg.elders_info),
+            },
+            pending_msg.security_metadata,
+        )
+    }
+}
+
+// Reason why parsec is being reset.
+#[derive(Eq, PartialEq)]
+enum ParsecResetReason {
+    Split,
+    ChurnOrPrune,
 }
