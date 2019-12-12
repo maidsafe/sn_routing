@@ -397,11 +397,7 @@ impl Elder {
         self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
     }
 
-    fn complete_parsec_reset_data(
-        &mut self,
-        reset_data: ParsecResetData,
-        reason: ParsecResetReason,
-    ) -> CompleteParsecReset {
+    fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
         let ParsecResetData {
             gen_pfx_info,
             mut cached_events,
@@ -432,12 +428,6 @@ impl Elder {
             .filter(|event| match &event.payload {
                 // Events to re-process
                 AccumulatingEvent::Online(_) => !completed_events.contains(&event.payload),
-                AccumulatingEvent::NeighbourInfo(elders_info) => {
-                    // Resend the `NeighbourInfo` to our sibling if they need it.
-                    !completed_events.contains(&event.payload)
-                        && reason == ParsecResetReason::Split
-                        && our_pfx.sibling().is_neighbour(elders_info.prefix())
-                }
                 // Events to re-insert
                 AccumulatingEvent::Offline(_)
                 | AccumulatingEvent::AckMessage(_)
@@ -445,6 +435,7 @@ impl Elder {
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_)
                 | AccumulatingEvent::SectionInfo(_, _)
+                | AccumulatingEvent::NeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo(_)
                 | AccumulatingEvent::SendAckMessage(_)
                 | AccumulatingEvent::User(_) => false,
@@ -500,7 +491,7 @@ impl Elder {
 
     fn process_post_reset_events(
         &mut self,
-        _old_pfx: Prefix<XorName>,
+        old_pfx: Prefix<XorName>,
         to_process: BTreeSet<NetworkEvent>,
     ) {
         to_process.iter().for_each(|event| match &event.payload {
@@ -510,18 +501,18 @@ impl Elder {
             | evt @ AccumulatingEvent::ParsecPrune
             | evt @ AccumulatingEvent::Relocate(_)
             | evt @ AccumulatingEvent::SectionInfo(_, _)
+            | evt @ AccumulatingEvent::NeighbourInfo(_)
             | evt @ AccumulatingEvent::TheirKeyInfo(_)
             | evt @ AccumulatingEvent::SendAckMessage(_)
             | evt @ AccumulatingEvent::User(_) => {
                 log_or_panic!(LogLevel::Error, "unexpected event {:?}", evt);
             }
-            AccumulatingEvent::NeighbourInfo(elders_info) => {
-                self.resend_neighbour_info(elders_info.prefix())
-            }
             AccumulatingEvent::Online(payload) => {
                 self.resend_bootstrap_response_join(&payload.p2p_node);
             }
         });
+
+        self.resend_neighbour_infos(old_pfx);
     }
 
     // Resend the response with ours or our sibling's info in case of split.
@@ -548,20 +539,35 @@ impl Elder {
         }
     }
 
-    fn resend_neighbour_info(&mut self, neighbour_prefix: &Prefix<XorName>) {
-        if let Some(msg) = self.pending_neighbour_info_msgs.remove(neighbour_prefix) {
-            let msg = msg.into();
-            match self.send_signed_message(&msg) {
-                Ok(()) => {
-                    trace!("{} - Resend {:?}", self, msg.routing_message());
-                }
-                Err(error) => {
-                    debug!(
+    // After parsec reset, resend any unaccumulated `NeighbourInfo` messages to everyone that needs
+    // them but possibly did not receive them already. That is, resend to all newly promoted elders
+    // in our section and in case of split also to elders of the sibling section.
+    fn resend_neighbour_infos(&mut self, old_pfx: Prefix<XorName>) {
+        let sibling = if self.our_prefix().is_extension_of(&old_pfx) {
+            Some(self.our_prefix().sibling())
+        } else {
+            None
+        };
+
+        let sibling_is_neighbour = |src_prefix: &Prefix<_>| {
+            sibling
+                .map(|sibling| sibling.is_neighbour(src_prefix))
+                .unwrap_or(false)
+        };
+
+        for (_, msg) in mem::replace(&mut self.pending_neighbour_info_msgs, HashMap::new()) {
+            let src_prefix = msg.elders_info.prefix();
+
+            if self.our_prefix().is_neighbour(src_prefix) || sibling_is_neighbour(src_prefix) {
+                let msg = msg.into();
+                match self.send_signed_message(&msg) {
+                    Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
+                    Err(error) => debug!(
                         "{} - Failed to resend {:?}: {:?}",
                         self,
                         msg.routing_message(),
                         error
-                    );
+                    ),
                 }
             }
         }
@@ -586,8 +592,7 @@ impl Elder {
         let reset_data = self
             .chain
             .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
-        let complete_data =
-            self.complete_parsec_reset_data(reset_data, ParsecResetReason::ChurnOrPrune);
+        let complete_data = self.complete_parsec_reset_data(reset_data);
         Ok(complete_data)
     }
 
@@ -595,8 +600,7 @@ impl Elder {
         let reset_data = self
             .chain
             .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
-        let mut complete_data =
-            self.complete_parsec_reset_data(reset_data, ParsecResetReason::Split);
+        let mut complete_data = self.complete_parsec_reset_data(reset_data);
         complete_data.event_to_send = Some(Event::SectionSplit(*self.our_prefix()));
         Ok(complete_data)
     }
@@ -1836,11 +1840,4 @@ impl From<PendingNeighbourInfoMessage> for SignedRoutingMessage {
             pending_msg.security_metadata,
         )
     }
-}
-
-// Reason why parsec is being reset.
-#[derive(Eq, PartialEq)]
-enum ParsecResetReason {
-    Split,
-    ChurnOrPrune,
 }
