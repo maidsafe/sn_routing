@@ -599,6 +599,13 @@ impl Approved for Adult {
         Ok(())
     }
 
+    fn handle_promote_and_demote_elders(
+        &mut self,
+        _new_infos: Vec<EldersInfo>,
+    ) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
     fn handle_online_event(
         &mut self,
         payload: OnlinePayload,
@@ -613,7 +620,6 @@ impl Approved for Adult {
             self.chain.add_member(payload.p2p_node, payload.age);
             self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
             self.chain.increment_age_counters(&pub_id);
-            let _ = self.chain.promote_and_demote_elders()?;
         }
 
         Ok(())
@@ -632,7 +638,6 @@ impl Approved for Adult {
             self.chain.increment_age_counters(&pub_id);
             self.chain.remove_member(&pub_id);
             self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-            let _ = self.chain.promote_and_demote_elders()?;
             self.disconnect_by_id_lookup(&pub_id);
         }
 
@@ -684,7 +689,6 @@ impl Approved for Adult {
         info!("{} - handle Relocate: {:?}.", self, details);
         self.chain.remove_member(&details.pub_id);
         self.send_event(Event::NodeLost(*details.pub_id.name()), outbox);
-        let _ = self.chain.promote_and_demote_elders()?;
         self.disconnect_by_id_lookup(&details.pub_id);
 
         Ok(())

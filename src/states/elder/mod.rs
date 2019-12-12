@@ -1153,16 +1153,6 @@ impl Elder {
             Err(RoutingError::UntrustedMessage)
         }
     }
-
-    fn promote_and_demote_elders(&mut self) -> Result<(), RoutingError> {
-        for info in self.chain.promote_and_demote_elders()? {
-            let participants: BTreeSet<_> = info.member_ids().copied().collect();
-            let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-        }
-
-        Ok(())
-    }
 }
 
 impl Base for Elder {
@@ -1504,6 +1494,19 @@ impl Approved for Elder {
         Ok(())
     }
 
+    fn handle_promote_and_demote_elders(
+        &mut self,
+        new_infos: Vec<EldersInfo>,
+    ) -> Result<(), RoutingError> {
+        for info in new_infos {
+            let participants: BTreeSet<_> = info.member_ids().copied().collect();
+            let _ = self.dkg_cache.insert(participants.clone(), info);
+            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+        }
+
+        Ok(())
+    }
+
     fn handle_online_event(
         &mut self,
         payload: OnlinePayload,
@@ -1519,7 +1522,6 @@ impl Approved for Elder {
             self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
             self.chain.increment_age_counters(&pub_id);
             self.handle_candidate_approval(payload.p2p_node, outbox);
-            self.promote_and_demote_elders()?;
             self.print_rt_size();
         }
 
@@ -1539,8 +1541,6 @@ impl Approved for Elder {
             self.chain.increment_age_counters(&pub_id);
             self.chain.remove_member(&pub_id);
             self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-
-            self.promote_and_demote_elders()?;
             self.disconnect_by_id_lookup(&pub_id);
         }
 
@@ -1716,7 +1716,6 @@ impl Approved for Elder {
 
         self.chain.remove_member(&pub_id);
         self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        self.promote_and_demote_elders()?;
 
         Ok(())
     }
