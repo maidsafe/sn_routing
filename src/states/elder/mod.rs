@@ -623,7 +623,7 @@ impl Elder {
 
     fn handle_filtered_signed_message(
         &mut self,
-        mut signed_msg: SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
@@ -638,13 +638,13 @@ impl Elder {
 
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
-                if let Err(error) = self.send_signed_message(&mut signed_msg) {
+                if let Err(error) = self.send_signed_message(&signed_msg) {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
             // if addressed to us, then we just queue it and return
             self.routing_msg_queue.push_back(signed_msg);
-        } else if let Err(error) = self.send_signed_message(&mut signed_msg) {
+        } else if let Err(error) = self.send_signed_message(&signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -1025,7 +1025,7 @@ impl Elder {
     // we are the first sender or the proxy for a client or joining node.
     fn send_signed_message(
         &mut self,
-        signed_msg: &mut SignedRoutingMessage,
+        signed_msg: &SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         let dst = signed_msg.routing_message().dst;
 
@@ -1375,11 +1375,11 @@ impl Base for Elder {
 
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
-            let mut msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
+            let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg)?;
             } else {
-                self.send_signed_message(&mut msg)?;
+                self.send_signed_message(&msg)?;
             }
             return Ok(());
         }
@@ -1394,11 +1394,11 @@ impl Base for Elder {
                 .into_iter(),
         ) {
             if target == *self.name() {
-                if let Some(mut msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
+                if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
-                        self.send_signed_message(&mut msg)?;
+                        self.send_signed_message(&msg)?;
                     }
                 }
             } else if let Some(p2p_node) = self.chain.get_p2p_node(&target) {
