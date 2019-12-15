@@ -8,9 +8,11 @@
 
 use super::routing_table::Error as RoutingTableError;
 use crate::{action::Action, event::Event, id::PublicId, quic_p2p};
+use bincode::ErrorKind;
 use crossbeam_channel as mpmc;
 use maidsafe_utilities::serialisation;
 use quick_error::quick_error;
+use std::boxed::Box;
 use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
@@ -84,6 +86,8 @@ pub enum RoutingError {
     InvalidStateForOperation,
     /// Serialisation Error
     SerialisationError(serialisation::SerialisationError),
+    /// bincode
+    Bincode(ErrorKind),
     /// Peer not found
     PeerNotFound(PublicId),
     /// Invalid Destination
@@ -132,6 +136,18 @@ impl From<serialisation::SerialisationError> for RoutingError {
     }
 }
 
+impl From<ErrorKind> for RoutingError {
+    fn from(error: ErrorKind) -> RoutingError {
+        RoutingError::Bincode(error)
+    }
+}
+// TODO dirvine, we need to complete the error story in our code. Here I am unboxing and that will
+// work, but is not the best.
+impl From<Box<ErrorKind>> for RoutingError {
+    fn from(error: Box<ErrorKind>) -> RoutingError {
+        RoutingError::Bincode(*error)
+    }
+}
 quick_error! {
     #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     pub enum BootstrapResponseError {

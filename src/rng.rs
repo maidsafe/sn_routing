@@ -91,7 +91,6 @@ mod test {
         fmt::{self, Display, Formatter},
         str::FromStr,
     };
-    use unwrap::unwrap;
 
     pub const SEED_ENV_NAME: &str = "SEED";
 
@@ -168,7 +167,7 @@ mod test {
         /// Panics if the env variable is not empty but invalid.
         pub fn from_env() -> Option<Self> {
             if let Ok(value) = env::var(SEED_ENV_NAME) {
-                Some(unwrap!(value.parse()))
+                Some(value.parse().expect("could not read seed form ENV"))
             } else {
                 None
             }

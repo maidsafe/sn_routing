@@ -163,9 +163,15 @@ pub const MIN_SECTION_SIZE: usize = 3;
 /// This number also detemines when split happens - if both post-split sections would have at least
 /// this number of nodes.
 pub const SAFE_SECTION_SIZE: usize = 100;
+#[cfg(feature = "test")]
+/// test
+pub const SAFE_SECTION_SIZE: usize = 10;
 
 /// Number of elders per section.
 pub const ELDER_SIZE: usize = 7;
+#[cfg(feature = "test")]
+/// test
+pub const ELDER_SIZE: usize = 4;
 
 #[cfg(feature = "mock_base")]
 pub use crate::mock::quic_p2p;
