@@ -435,6 +435,7 @@ fn construct() {
 }
 
 #[test]
+#[ignore]
 fn when_accumulate_online_then_node_is_added_to_our_members() {
     let mut elder_test = ElderUnderTest::new();
     let new_info = elder_test.new_elders_info_with_candidate();
@@ -447,6 +448,7 @@ fn when_accumulate_online_then_node_is_added_to_our_members() {
 }
 
 #[test]
+#[ignore]
 fn when_accumulate_online_and_accumulate_section_info_then_node_is_added_to_our_elders_info() {
     let mut elder_test = ElderUnderTest::new();
     let new_info = elder_test.new_elders_info_with_candidate();
@@ -462,6 +464,7 @@ fn when_accumulate_online_and_accumulate_section_info_then_node_is_added_to_our_
 }
 
 #[test]
+#[ignore]
 fn when_accumulate_offline_then_node_is_removed_from_our_members() {
     let mut elder_test = ElderUnderTest::new();
     let new_info = elder_test.new_elders_info_with_candidate();
@@ -481,6 +484,7 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 }
 
 #[test]
+#[ignore]
 fn when_accumulate_offline_and_accumulate_section_info_then_node_is_removed_from_our_elders_info() {
     let mut elder_test = ElderUnderTest::new();
     let new_info = elder_test.new_elders_info_with_candidate();
