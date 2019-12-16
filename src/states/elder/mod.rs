@@ -49,7 +49,7 @@ use log::LogLevel;
 use serde::Serialize;
 use std::{
     cmp,
-    collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::SocketAddr,
@@ -73,6 +73,14 @@ struct CompleteParsecReset {
     pub to_process: BTreeSet<NetworkEvent>,
     /// Event to send on completion.
     pub event_to_send: Option<Event>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+enum PendingMessageKey {
+    NeighbourInfo {
+        version: u64,
+        prefix: Prefix<XorName>,
+    },
 }
 
 pub struct ElderDetails {
@@ -111,8 +119,8 @@ pub struct Elder {
     pfx_is_successfully_polled: bool,
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
-    // `NeighbourInfo` messages we received but not accumulated yet.
-    pending_neighbour_info_msgs: HashMap<Prefix<XorName>, PendingNeighbourInfoMessage>,
+    // Messages we received but not accumulated yet, so may need to re-swarm.
+    pending_voted_msgs: HashMap<PendingMessageKey, SignedRoutingMessage>,
     rng: MainRng,
 }
 
@@ -276,7 +284,7 @@ impl Elder {
             chain: details.chain,
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
-            pending_neighbour_info_msgs: Default::default(),
+            pending_voted_msgs: Default::default(),
             rng: details.rng,
         }
     }
@@ -512,7 +520,7 @@ impl Elder {
             }
         });
 
-        self.resend_neighbour_infos(old_pfx);
+        self.resend_pending_voted_messages(old_pfx);
     }
 
     // Resend the response with ours or our sibling's info in case of split.
@@ -539,36 +547,18 @@ impl Elder {
         }
     }
 
-    // After parsec reset, resend any unaccumulated `NeighbourInfo` messages to everyone that needs
-    // them but possibly did not receive them already. That is, resend to all newly promoted elders
-    // in our section and in case of split also to elders of the sibling section.
-    fn resend_neighbour_infos(&mut self, old_pfx: Prefix<XorName>) {
-        let sibling = if self.our_prefix().is_extension_of(&old_pfx) {
-            Some(self.our_prefix().sibling())
-        } else {
-            None
-        };
-
-        let sibling_is_neighbour = |src_prefix: &Prefix<_>| {
-            sibling
-                .map(|sibling| sibling.is_neighbour(src_prefix))
-                .unwrap_or(false)
-        };
-
-        for (_, msg) in mem::replace(&mut self.pending_neighbour_info_msgs, HashMap::new()) {
-            let src_prefix = msg.elders_info.prefix();
-
-            if self.our_prefix().is_neighbour(src_prefix) || sibling_is_neighbour(src_prefix) {
-                let msg = msg.into();
-                match self.send_signed_message(&msg) {
-                    Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
-                    Err(error) => debug!(
-                        "{} - Failed to resend {:?}: {:?}",
-                        self,
-                        msg.routing_message(),
-                        error
-                    ),
-                }
+    // After parsec reset, resend any unaccumulated voted messages to everyone that needs
+    // them but possibly did not receive them already.
+    fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
+        for (_, msg) in mem::replace(&mut self.pending_voted_msgs, HashMap::new()) {
+            match self.send_signed_message(&msg) {
+                Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
+                Err(error) => debug!(
+                    "{} - Failed to resend {:?}: {:?}",
+                    self,
+                    msg.routing_message(),
+                    error
+                ),
             }
         }
     }
@@ -992,29 +982,22 @@ impl Elder {
         security_metadata: SecurityMetadata,
     ) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
-            match self
-                .pending_neighbour_info_msgs
-                .entry(*elders_info.prefix())
-            {
-                Entry::Occupied(mut entry) => {
-                    if entry.get().elders_info.version() < elders_info.version() {
-                        let _ = entry.insert(PendingNeighbourInfoMessage {
+            let _ = self
+                .pending_voted_msgs
+                .entry(PendingMessageKey::NeighbourInfo {
+                    version: elders_info.version(),
+                    prefix: *elders_info.prefix(),
+                })
+                .or_insert_with(|| {
+                    SignedRoutingMessage::from_parts(
+                        RoutingMessage {
                             src,
                             dst,
-                            elders_info: elders_info.clone(),
-                            security_metadata,
-                        });
-                    }
-                }
-                Entry::Vacant(entry) => {
-                    let _ = entry.insert(PendingNeighbourInfoMessage {
-                        src,
-                        dst,
-                        elders_info: elders_info.clone(),
+                            content: MessageContent::NeighbourInfo(elders_info.clone()),
+                        },
                         security_metadata,
-                    });
-                }
-            }
+                    )
+                });
 
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
         } else {
@@ -1725,8 +1708,11 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
         let _ = self
-            .pending_neighbour_info_msgs
-            .remove(elders_info.prefix());
+            .pending_voted_msgs
+            .remove(&PendingMessageKey::NeighbourInfo {
+                version: elders_info.version(),
+                prefix: *elders_info.prefix(),
+            });
         self.update_peer_connections(neighbour_change);
         Ok(())
     }
@@ -1820,24 +1806,4 @@ fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingErro
         );
         err
     })
-}
-
-struct PendingNeighbourInfoMessage {
-    elders_info: EldersInfo,
-    src: Authority<XorName>,
-    dst: Authority<XorName>,
-    security_metadata: SecurityMetadata,
-}
-
-impl From<PendingNeighbourInfoMessage> for SignedRoutingMessage {
-    fn from(pending_msg: PendingNeighbourInfoMessage) -> Self {
-        SignedRoutingMessage::from_parts(
-            RoutingMessage {
-                src: pending_msg.src,
-                dst: pending_msg.dst,
-                content: MessageContent::NeighbourInfo(pending_msg.elders_info),
-            },
-            pending_msg.security_metadata,
-        )
-    }
 }
