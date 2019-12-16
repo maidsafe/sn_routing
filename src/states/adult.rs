@@ -741,6 +741,15 @@ impl Approved for Adult {
         Ok(())
     }
 
+    fn handle_relocate_prepare_event(
+        &mut self,
+        _payload: RelocateDetails,
+        _count_down: i32,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
     fn handle_their_key_info_event(
         &mut self,
         _key_info: SectionKeyInfo,

@@ -326,6 +326,7 @@ impl Chain {
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::ParsecPrune
+            | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
@@ -985,7 +986,8 @@ impl Chain {
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::Relocate(_) => {
+            | AccumulatingEvent::Relocate(_)
+            | AccumulatingEvent::RelocatePrepare(_, _) => {
                 !self.state.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {

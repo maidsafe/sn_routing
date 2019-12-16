@@ -122,6 +122,9 @@ pub enum AccumulatingEvent {
     // Voted for node to be relocated out of our section.
     Relocate(RelocateDetails),
 
+    // Voted to initiate the relocation if value <= 0, otherwise re-vote with value - 1.
+    RelocatePrepare(RelocateDetails, i32),
+
     // Opaque user-defined event.
     User(Vec<u8>),
 }
@@ -169,6 +172,9 @@ impl Debug for AccumulatingEvent {
             }
             AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
             AccumulatingEvent::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
+            AccumulatingEvent::RelocatePrepare(payload, count_down) => {
+                write!(formatter, "RelocatePrepare({:?}, {})", payload, count_down)
+            }
             AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }
