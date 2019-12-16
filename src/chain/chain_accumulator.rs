@@ -195,7 +195,7 @@ impl ChainAccumulator {
     }
 }
 
-#[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub struct AccumulatingProof {
     parsec_proofs: ProofSet,
     sig_shares: BTreeMap<PublicId, EventSigPayload>,

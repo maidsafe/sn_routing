@@ -609,6 +609,13 @@ impl Elder {
         });
     }
 
+    fn send_genesis_updates(&mut self) {
+        for conn_info in self.chain.adults_and_infants_conn_infos() {
+            let message = DirectMessage::GenesisUpdate(self.gen_pfx_info.clone());
+            self.send_direct_message(&conn_info, message);
+        }
+    }
+
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
     /// message, handles it.
     fn handle_message_signature(
@@ -1403,6 +1410,9 @@ impl Base for Elder {
                 );
                 self.direct_msg_backlog.push((p2p_node, msg));
             }
+            GenesisUpdate(_) => {
+                debug!("{} Unhandled direct message: {:?}", self, msg);
+            }
         }
         Ok(Transition::Stay)
     }
@@ -1647,6 +1657,7 @@ impl Approved for Elder {
         info!("{} - handle parsec prune.", self);
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
+        self.send_genesis_updates();
         Ok(())
     }
 
@@ -1696,6 +1707,7 @@ impl Approved for Elder {
 
         self.update_peer_connections(elders_change);
         self.send_neighbour_infos();
+        self.send_genesis_updates();
 
         // Vote to update our self messages proof
         self.vote_send_section_info_ack(SendAckMessagePayload {
