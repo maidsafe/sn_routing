@@ -394,6 +394,7 @@ fn packet_is_parsec_gossip() {
     };
 
     use maidsafe_utilities::serialisation;
+    use rand::Rng;
     use serde::Serialize;
 
     let mut rng = rng::new();
@@ -422,6 +423,7 @@ fn packet_is_parsec_gossip() {
     };
 
     let msgs = [
+        make_message(DirectMessage::ParsecPoke(23)),
         make_message(DirectMessage::ParsecRequest(42, req)),
         make_message(DirectMessage::ParsecResponse(1337, rsp)),
     ];
@@ -431,7 +433,7 @@ fn packet_is_parsec_gossip() {
 
     // No other direct message types contain a Parsec request or response.
     let msgs = [
-        make_message(DirectMessage::ParsecPoke(5)),
+        make_message(DirectMessage::BootstrapRequest(rng.gen())),
         make_message(DirectMessage::ConnectionResponse),
     ];
     for msg in &msgs {
