@@ -352,6 +352,13 @@ impl Adult {
             &LogIdent::new(self.full_id.public_id()),
         );
         self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
+
+        // We were not promoted during the last section change, so we are not going to need these
+        // messages anymore. This also prevents the messages from becoming stale (fail the trust
+        // check) when they are eventually taken from the backlog and swarmed to other nodes.
+        self.routing_msg_backlog.clear();
+        self.direct_msg_backlog.clear();
+
         Ok(Transition::Stay)
     }
 
