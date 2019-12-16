@@ -61,6 +61,7 @@ use crate::messages::Message;
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 
 struct CompleteParsecReset {
     /// The new genesis prefix info.
@@ -444,6 +445,7 @@ impl Elder {
                 | AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_)
+                | AccumulatingEvent::RelocatePrepare(_, _)
                 | AccumulatingEvent::SectionInfo(_, _)
                 | AccumulatingEvent::NeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo(_)
@@ -475,7 +477,8 @@ impl Elder {
                     // to carry over. In case it does not, add a comment explaining why.
                     AccumulatingEvent::StartDkg(_)
                     | AccumulatingEvent::ParsecPrune
-                    | AccumulatingEvent::Relocate(_) => false,
+                    | AccumulatingEvent::Relocate(_)
+                    | AccumulatingEvent::RelocatePrepare(_, _) => false,
 
                     // Keep: Additional signatures for neighbours for sec-msg-relay.
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
@@ -510,6 +513,7 @@ impl Elder {
             | evt @ AccumulatingEvent::StartDkg(_)
             | evt @ AccumulatingEvent::ParsecPrune
             | evt @ AccumulatingEvent::Relocate(_)
+            | evt @ AccumulatingEvent::RelocatePrepare(_, _)
             | evt @ AccumulatingEvent::SectionInfo(_, _)
             | evt @ AccumulatingEvent::NeighbourInfo(_)
             | evt @ AccumulatingEvent::TheirKeyInfo(_)
@@ -1048,6 +1052,12 @@ impl Elder {
         self.vote_for_signed_event(details)
     }
 
+    fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
+        self.vote_for_network_event(
+            AccumulatingEvent::RelocatePrepare(details, count_down).into_network_event(),
+        );
+    }
+
     fn vote_for_section_info(
         &mut self,
         elders_info: EldersInfo,
@@ -1579,7 +1589,7 @@ impl Approved for Elder {
     }
 
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        self.vote_for_relocate(details)?;
+        self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
         Ok(())
     }
 
@@ -1821,6 +1831,20 @@ impl Approved for Elder {
 
         self.chain.remove_member(&pub_id);
 
+        Ok(())
+    }
+
+    fn handle_relocate_prepare_event(
+        &mut self,
+        payload: RelocateDetails,
+        count_down: i32,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if count_down > 0 {
+            self.vote_for_relocate_prepare(payload, count_down - 1);
+        } else {
+            self.vote_for_relocate(payload)?;
+        }
         Ok(())
     }
 }

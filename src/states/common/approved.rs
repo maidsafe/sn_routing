@@ -100,6 +100,14 @@ pub trait Approved: Base {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
+    /// Handles an accumulated `Offline` event.
+    fn handle_relocate_prepare_event(
+        &mut self,
+        payload: RelocateDetails,
+        count_down: i32,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
+
     /// Handle an accumulated `User` event
     fn handle_user_event(
         &mut self,
@@ -387,6 +395,9 @@ pub trait Approved: Base {
             AccumulatingEvent::ParsecPrune => self.handle_prune()?,
             AccumulatingEvent::Relocate(payload) => {
                 self.invoke_handle_relocate_event(payload, event.signature, outbox)?
+            }
+            AccumulatingEvent::RelocatePrepare(pub_id, count) => {
+                self.handle_relocate_prepare_event(pub_id, count, outbox)?
             }
             AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
         }
