@@ -145,6 +145,11 @@ where
     }
 
     pub fn gossip_recipients(&self) -> impl Iterator<Item = &S::PublicId> {
+        trace!(
+            "gossip_recipients: {:?} -- {:?}",
+            self.peer_list,
+            self.dkg_participants
+        );
         let iter = if self.peer_list.contains(self.our_id.public_id()) {
             Some(
                 self.peer_list
