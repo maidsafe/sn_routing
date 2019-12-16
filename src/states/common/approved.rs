@@ -144,7 +144,12 @@ pub trait Approved: Base {
         );
 
         if let Some(response) = response {
-            trace!("{} seng gossip response to {:?}", self, p2p_node);
+            trace!(
+                "{} - send parsec response v{} to {:?}",
+                self,
+                msg_version,
+                p2p_node,
+            );
             self.send_direct_message(p2p_node.connection_info(), response);
         }
 

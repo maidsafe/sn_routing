@@ -337,6 +337,8 @@ impl Adult {
         &mut self,
         gen_pfx_info: GenesisPfxInfo,
     ) -> Result<Transition, RoutingError> {
+        info!("{} - Received GenesisUpdate: {:?}", self, gen_pfx_info);
+
         // An Adult can receive the same message from multiple Elders - bail early if we are
         // already up to date
         if gen_pfx_info == self.gen_pfx_info {
