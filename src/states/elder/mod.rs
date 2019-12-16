@@ -697,6 +697,12 @@ impl Elder {
         &mut self,
         signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
+        trace!(
+            "{} - Handle backlogged signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
         if self.in_authority(&signed_msg.routing_message().dst)
             && signed_msg.check_trust(&self.chain)
         {
