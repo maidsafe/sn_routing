@@ -27,10 +27,10 @@ use crate::{
 use std::{iter, net::SocketAddr};
 use unwrap::unwrap;
 
-// Accumulate even if 1 old node and an additional new node do not vote.
-const NO_SINGLE_VETO_VOTE_COUNT: usize = 7;
-const ACCUMULATE_VOTE_COUNT: usize = 6;
-const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 5;
+// Minimal number of votes to reach accumulation.
+const ACCUMULATE_VOTE_COUNT: usize = 5;
+// Only one vote missing to reach accumulation.
+const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 4;
 
 struct JoiningNodeInfo {
     full_id: FullId,
@@ -70,11 +70,7 @@ struct ElderUnderTest {
 }
 
 impl ElderUnderTest {
-    fn new() -> Self {
-        Self::with_section_size(NO_SINGLE_VETO_VOTE_COUNT)
-    }
-
-    fn with_section_size(sec_size: usize) -> Self {
+    fn new(sec_size: usize) -> Self {
         let mut rng = rng::new();
         let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
         let connection_info = ConnectionInfo::from(socket_addr);
@@ -282,6 +278,11 @@ impl ElderUnderTest {
     }
 
     fn new_elders_info_with_candidate(&mut self) -> DkgToSectionInfo {
+        assert!(
+            self.elders_info.len() < ELDER_SIZE,
+            "There is already ELDER_SIZE elders - the candidate won't be promoted"
+        );
+
         let new_elder_info = unwrap!(EldersInfo::new(
             self.elders_info
                 .member_nodes()
@@ -429,16 +430,15 @@ impl StateMachineExt for StateMachine {
 
 #[test]
 fn construct() {
-    let elder_test = ElderUnderTest::new();
+    let elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
 
     assert!(!elder_test.has_unpolled_observations());
     assert!(!elder_test.is_candidate_elder());
 }
 
 #[test]
-#[ignore]
 fn when_accumulate_online_then_node_is_added_to_our_members() {
-    let mut elder_test = ElderUnderTest::new();
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
     let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
     elder_test.accumulate_start_dkg(&new_info);
@@ -449,9 +449,8 @@ fn when_accumulate_online_then_node_is_added_to_our_members() {
 }
 
 #[test]
-#[ignore]
-fn when_accumulate_online_and_accumulate_section_info_then_node_is_added_to_our_elders_info() {
-    let mut elder_test = ElderUnderTest::new();
+fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_our_elders() {
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
     let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
     elder_test.accumulate_start_dkg(&new_info);
@@ -465,9 +464,8 @@ fn when_accumulate_online_and_accumulate_section_info_then_node_is_added_to_our_
 }
 
 #[test]
-#[ignore]
 fn when_accumulate_offline_then_node_is_removed_from_our_members() {
-    let mut elder_test = ElderUnderTest::new();
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
     let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
     elder_test.accumulate_start_dkg(&new_info);
@@ -485,9 +483,8 @@ fn when_accumulate_offline_then_node_is_removed_from_our_members() {
 }
 
 #[test]
-#[ignore]
-fn when_accumulate_offline_and_accumulate_section_info_then_node_is_removed_from_our_elders_info() {
-    let mut elder_test = ElderUnderTest::new();
+fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_from_our_elders() {
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
     let new_info = elder_test.new_elders_info_with_candidate();
     elder_test.accumulate_online(elder_test.candidate.clone());
     elder_test.accumulate_start_dkg(&new_info);
@@ -510,7 +507,7 @@ fn when_accumulate_offline_and_accumulate_section_info_then_node_is_removed_from
 fn accept_previously_rejected_node_after_reaching_elder_size() {
     // Set section size to one less than the desired number of the elders in a section. This makes
     // us reject any bootstrapping nodes.
-    let mut elder_test = ElderUnderTest::with_section_size(ELDER_SIZE - 1);
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
     let node = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.0:5000");
 
     // Bootstrap fails for insufficient section size.
