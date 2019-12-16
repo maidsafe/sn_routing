@@ -35,20 +35,13 @@ pub fn gen_range<T: Rng>(rng: &mut T, low: usize, high: usize) -> usize {
     rng.gen_range(low as u32, high as u32) as usize
 }
 
-/// Generate a random value in the range, excluding the `exclude` value, if not `None`.
-pub fn gen_range_except<T: Rng>(
-    rng: &mut T,
-    low: usize,
-    high: usize,
-    exclude: &BTreeSet<usize>,
-) -> usize {
-    let mut x = gen_range(rng, low, high - exclude.len());
-    for e in exclude {
-        if x >= *e {
-            x += 1;
+pub fn gen_elder_index<R: Rng>(rng: &mut R, nodes: &[TestNode]) -> usize {
+    loop {
+        let index = gen_range(rng, 0, nodes.len());
+        if nodes[index].inner.is_elder() {
+            break index;
         }
     }
-    x
 }
 
 /// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
@@ -379,7 +372,7 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
         }
 
         assert!(
-            node_added_count >= n,
+            node_added_count >= n || !node.inner.is_elder(),
             "{} - Got only {} NodeAdded events, expected at least {}.",
             node.inner,
             node_added_count,
@@ -629,11 +622,12 @@ pub fn nodes_with_prefix_mut<'a>(
 }
 
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
-    let our_prefix = unwrap!(
-        node.inner.our_prefix(),
-        "{} does not have prefix",
-        node.inner
-    );
+    let our_prefix = match node.inner.our_prefix() {
+        Some(pfx) => pfx,
+        None => {
+            return;
+        }
+    };
     let our_name = node.name();
     let our_section_elders = node.inner.section_elders(our_prefix);
 
@@ -762,8 +756,11 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
     };
     let mut sections: BTreeMap<Prefix<XorName>, NodeSectionInfo> = BTreeMap::new();
 
-    for node in nodes.iter() {
-        let our_prefix = unwrap!(node.inner.our_prefix());
+    for node in nodes.iter().filter(|node| node.inner.is_elder()) {
+        let our_prefix = match node.inner.our_prefix() {
+            Some(pfx) => pfx,
+            None => continue,
+        };
         let our_name = node.name();
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
@@ -844,7 +841,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
     verify_section_invariants_between_nodes(nodes);
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
-    for node in nodes.iter_mut() {
+    for node in nodes.iter_mut().filter(|node| node.inner.is_elder()) {
         // Confirm elders from chain are connected according to PeerMap
         let our_id = unwrap!(node.inner.id());
         let missing_peers = node
