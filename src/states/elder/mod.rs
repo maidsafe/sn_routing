@@ -697,8 +697,10 @@ impl Elder {
         &mut self,
         signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
-        if self.in_authority(&signed_msg.routing_message().dst) {
-            self.check_signed_message_trust(&signed_msg)?;
+        if self.in_authority(&signed_msg.routing_message().dst)
+            && signed_msg.check_trust(&self.chain)
+        {
+            // If message still for us and we still trust it, then it must not be stale.
             self.check_signed_message_integrity(&signed_msg)?;
             self.update_our_knowledge(&signed_msg);
             self.routing_msg_queue.push_back(signed_msg);
