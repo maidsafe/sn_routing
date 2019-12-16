@@ -615,7 +615,7 @@ impl Approved for Adult {
     fn handle_online_event(
         &mut self,
         payload: OnlinePayload,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_add_member(payload.p2p_node.public_id()) {
             info!("{} - ignore Online: {:?}.", self, payload);
@@ -624,8 +624,10 @@ impl Approved for Adult {
 
             let pub_id = *payload.p2p_node.public_id();
             self.chain.add_member(payload.p2p_node, payload.age);
-            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
             self.chain.increment_age_counters(&pub_id);
+
+            // FIXME: send appropriate events
+            // self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
         }
 
         Ok(())
@@ -634,7 +636,7 @@ impl Approved for Adult {
     fn handle_offline_event(
         &mut self,
         pub_id: PublicId,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&pub_id) {
             info!("{} - ignore Offline: {}.", self, pub_id);
@@ -643,8 +645,10 @@ impl Approved for Adult {
 
             self.chain.increment_age_counters(&pub_id);
             self.chain.remove_member(&pub_id);
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
             self.disconnect_by_id_lookup(&pub_id);
+
+            // FIXME: send appropriate events
+            // self.send_event(Event::NodeLost(*pub_id.name()), outbox);
         }
 
         Ok(())
@@ -685,7 +689,7 @@ impl Approved for Adult {
         &mut self,
         details: RelocateDetails,
         _signature: BlsSignature,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&details.pub_id) {
             info!("{} - ignore Relocate: {:?} - not a member", self, details);
@@ -694,7 +698,6 @@ impl Approved for Adult {
 
         info!("{} - handle Relocate: {:?}.", self, details);
         self.chain.remove_member(&details.pub_id);
-        self.send_event(Event::NodeLost(*details.pub_id.name()), outbox);
         self.disconnect_by_id_lookup(&details.pub_id);
 
         Ok(())

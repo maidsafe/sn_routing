@@ -330,8 +330,10 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let change = EldersChange {
-            added: self.chain.neighbour_elder_nodes().cloned().collect(),
-            removed: Default::default(),
+            own_added: Default::default(),
+            own_removed: Default::default(),
+            neighbour_added: self.chain.neighbour_elder_nodes().cloned().collect(),
+            neighbour_removed: Default::default(),
         };
         let _ = self.handle_section_info_event(old_pfx, change, outbox)?;
 
@@ -370,7 +372,7 @@ impl Elder {
                 .map(|node| *node.peer_addr())
                 .collect();
 
-            for p2p_node in change.removed {
+            for p2p_node in change.neighbour_removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
                 if our_needed_connections.contains(p2p_node.peer_addr()) {
@@ -381,7 +383,7 @@ impl Elder {
             }
         }
 
-        for p2p_node in change.added {
+        for p2p_node in change.neighbour_added {
             if !self.peer_map().has(p2p_node.peer_addr()) {
                 self.establish_connection(p2p_node)
             }
@@ -1581,7 +1583,6 @@ impl Approved for Elder {
 
             let pub_id = *payload.p2p_node.public_id();
             self.chain.add_member(payload.p2p_node.clone(), payload.age);
-            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
             self.chain.increment_age_counters(&pub_id);
             self.handle_candidate_approval(payload.p2p_node, outbox);
             self.print_rt_size();
@@ -1593,7 +1594,7 @@ impl Approved for Elder {
     fn handle_offline_event(
         &mut self,
         pub_id: PublicId,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&pub_id) {
             info!("{} - ignore Offline: {}.", self, pub_id);
@@ -1602,7 +1603,6 @@ impl Approved for Elder {
 
             self.chain.increment_age_counters(&pub_id);
             self.chain.remove_member(&pub_id);
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
             self.disconnect_by_id_lookup(&pub_id);
         }
 
@@ -1653,7 +1653,7 @@ impl Approved for Elder {
     fn handle_section_info_event(
         &mut self,
         old_pfx: Prefix<XorName>,
-        neighbour_change: EldersChange,
+        elders_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let elders_info = self.chain.our_info();
@@ -1685,7 +1685,16 @@ impl Approved for Elder {
 
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.process_post_reset_events(old_pfx, complete_data.to_process);
-        self.update_peer_connections(neighbour_change);
+
+        for pub_id in &elders_change.own_added {
+            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        }
+
+        for pub_id in &elders_change.own_removed {
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        }
+
+        self.update_peer_connections(elders_change);
         self.send_neighbour_infos();
 
         // Vote to update our self messages proof
@@ -1694,6 +1703,7 @@ impl Approved for Elder {
             ack_version: info_version,
         });
 
+        self.print_rt_size();
         if let Some(to_send) = complete_data.event_to_send {
             self.send_event(to_send, outbox);
         }
@@ -1746,7 +1756,7 @@ impl Approved for Elder {
         &mut self,
         details: RelocateDetails,
         signature: BlsSignature,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&details.pub_id) {
             info!("{} - ignore Relocate: {:?} - not a member", self, details);
@@ -1783,7 +1793,6 @@ impl Approved for Elder {
         }
 
         self.chain.remove_member(&pub_id);
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
         Ok(())
     }

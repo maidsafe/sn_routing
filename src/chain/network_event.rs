@@ -214,7 +214,7 @@ impl Debug for NetworkEvent {
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
 pub struct AccumulatedEvent {
     pub content: AccumulatingEvent,
-    pub neighbour_change: EldersChange,
+    pub elders_change: EldersChange,
     pub signature: Option<BlsSignature>,
 }
 
@@ -222,7 +222,7 @@ impl AccumulatedEvent {
     pub fn new(content: AccumulatingEvent) -> Self {
         Self {
             content,
-            neighbour_change: EldersChange::default(),
+            elders_change: EldersChange::default(),
             signature: None,
         }
     }
@@ -231,9 +231,9 @@ impl AccumulatedEvent {
         Self { signature, ..self }
     }
 
-    pub fn with_neighbour_change(self, neighbour_change: EldersChange) -> Self {
+    pub fn with_elders_change(self, elders_change: EldersChange) -> Self {
         Self {
-            neighbour_change,
+            elders_change,
             ..self
         }
     }
@@ -249,7 +249,11 @@ impl Debug for AccumulatedEvent {
 #[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EldersChange {
     // Peers that became elders.
-    pub added: BTreeSet<P2pNode>,
+    pub neighbour_added: BTreeSet<P2pNode>,
     // Peers that ceased to be elders.
-    pub removed: BTreeSet<P2pNode>,
+    pub neighbour_removed: BTreeSet<P2pNode>,
+    // Peers that became elders.
+    pub own_added: BTreeSet<P2pNode>,
+    // Peers that ceased to be elders.
+    pub own_removed: BTreeSet<P2pNode>,
 }

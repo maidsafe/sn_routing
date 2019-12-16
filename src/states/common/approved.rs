@@ -368,10 +368,10 @@ pub trait Approved: Base {
                 self.handle_offline_event(pub_id, outbox)?;
             }
             AccumulatingEvent::SectionInfo(_, _) => {
-                return self.handle_section_info_event(old_pfx, event.neighbour_change, outbox);
+                return self.handle_section_info_event(old_pfx, event.elders_change, outbox);
             }
             AccumulatingEvent::NeighbourInfo(elders_info) => {
-                self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
+                self.handle_neighbour_info_event(elders_info, event.elders_change)?;
             }
             AccumulatingEvent::TheirKeyInfo(key_info) => {
                 self.handle_their_key_info_event(key_info)?
