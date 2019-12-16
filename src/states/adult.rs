@@ -318,7 +318,7 @@ impl Adult {
     // Send signed_msg to our elders so they can route it properly.
     fn send_signed_message_to_elders(
         &mut self,
-        signed_msg: &mut SignedRoutingMessage,
+        signed_msg: &SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
@@ -394,14 +394,20 @@ impl Adult {
 
     fn handle_filtered_signed_message(
         &mut self,
-        mut signed_msg: SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
+        trace!(
+            "{} - Handle signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.check_signed_message_integrity(&signed_msg)?;
             self.routing_msg_backlog.push(signed_msg.clone());
         }
 
-        self.send_signed_message_to_elders(&mut signed_msg)?;
+        self.send_signed_message_to_elders(&signed_msg)?;
         Ok(())
     }
 }
@@ -560,8 +566,8 @@ impl Base for Adult {
             return Ok(()); // Message is for us.
         }
 
-        let mut signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
-        self.send_signed_message_to_elders(&mut signed_msg)?;
+        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
+        self.send_signed_message_to_elders(&signed_msg)?;
         Ok(())
     }
 }

@@ -162,7 +162,7 @@ where
         self.gossip_recipients()
             .find(|id| id == &peer_id)
             .map(|_| Request::new())
-            .ok_or(Error::InvalidSelfState)
+            .ok_or(Error::InvalidPeerState)
     }
 
     pub fn handle_request(
@@ -350,7 +350,7 @@ impl<T: NetworkEvent, P: PublicId> Response<T, P> {
 
 #[derive(Debug)]
 pub enum Error {
-    InvalidSelfState,
+    InvalidPeerState,
 }
 
 #[derive(Clone, Copy)]

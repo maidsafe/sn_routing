@@ -202,17 +202,28 @@ pub trait Approved: Base {
             }
         };
 
-        if let Some(msg) = self
+        match self
             .parsec_map_mut()
             .create_gossip(version, gossip_target.public_id())
         {
-            trace!(
-                "{} - send parsec request v{} to {}",
-                self,
-                version,
-                gossip_target.public_id(),
-            );
-            self.send_direct_message(gossip_target.connection_info(), msg);
+            Ok(msg) => {
+                trace!(
+                    "{} - send parsec request v{} to {:?}",
+                    self,
+                    version,
+                    gossip_target,
+                );
+                self.send_direct_message(gossip_target.connection_info(), msg);
+            }
+            Err(error) => {
+                trace!(
+                    "{} - failed to send parsec request v{} to {:?}: {:?}",
+                    self,
+                    version,
+                    gossip_target,
+                    error
+                );
+            }
         }
     }
 

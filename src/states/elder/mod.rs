@@ -26,7 +26,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
-        SignedRoutingMessage,
+        SecurityMetadata, SignedRoutingMessage,
     },
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
@@ -49,7 +49,7 @@ use log::LogLevel;
 use serde::Serialize;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::SocketAddr,
@@ -73,6 +73,14 @@ struct CompleteParsecReset {
     pub to_process: BTreeSet<NetworkEvent>,
     /// Event to send on completion.
     pub event_to_send: Option<Event>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+enum PendingMessageKey {
+    NeighbourInfo {
+        version: u64,
+        prefix: Prefix<XorName>,
+    },
 }
 
 pub struct ElderDetails {
@@ -109,8 +117,10 @@ pub struct Elder {
     gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
-    /// DKG cache
+    // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    // Messages we received but not accumulated yet, so may need to re-swarm.
+    pending_voted_msgs: HashMap<PendingMessageKey, SignedRoutingMessage>,
     rng: MainRng,
 }
 
@@ -274,6 +284,7 @@ impl Elder {
             chain: details.chain,
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
+            pending_voted_msgs: Default::default(),
             rng: details.rng,
         }
     }
@@ -488,7 +499,7 @@ impl Elder {
 
     fn process_post_reset_events(
         &mut self,
-        _old_pfx: Prefix<XorName>,
+        old_pfx: Prefix<XorName>,
         to_process: BTreeSet<NetworkEvent>,
     ) {
         to_process.iter().for_each(|event| match &event.payload {
@@ -508,6 +519,8 @@ impl Elder {
                 self.resend_bootstrap_response_join(&payload.p2p_node);
             }
         });
+
+        self.resend_pending_voted_messages(old_pfx);
     }
 
     // Resend the response with ours or our sibling's info in case of split.
@@ -531,6 +544,22 @@ impl Elder {
                 p2p_node.connection_info(),
                 DirectMessage::BootstrapResponse(BootstrapResponse::Join(response_section)),
             );
+        }
+    }
+
+    // After parsec reset, resend any unaccumulated voted messages to everyone that needs
+    // them but possibly did not receive them already.
+    fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
+        for (_, msg) in mem::replace(&mut self.pending_voted_msgs, HashMap::new()) {
+            match self.send_signed_message(&msg) {
+                Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
+                Err(error) => debug!(
+                    "{} - Failed to resend {:?}: {:?}",
+                    self,
+                    msg.routing_message(),
+                    error
+                ),
+            }
         }
     }
 
@@ -623,8 +652,14 @@ impl Elder {
 
     fn handle_filtered_signed_message(
         &mut self,
-        mut signed_msg: SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
+        trace!(
+            "{} - Handle signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.check_signed_message_trust(&signed_msg)?;
             self.check_signed_message_integrity(&signed_msg)?;
@@ -632,13 +667,13 @@ impl Elder {
 
             if signed_msg.routing_message().dst.is_multiple() {
                 // Broadcast to the rest of the section.
-                if let Err(error) = self.send_signed_message(&mut signed_msg) {
+                if let Err(error) = self.send_signed_message(&signed_msg) {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
             }
             // if addressed to us, then we just queue it and return
             self.routing_msg_queue.push_back(signed_msg);
-        } else if let Err(error) = self.send_signed_message(&mut signed_msg) {
+        } else if let Err(error) = self.send_signed_message(&signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -652,7 +687,7 @@ impl Elder {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
 
-        let (msg, _) = signed_msg.into_parts();
+        let (msg, security_metadata) = signed_msg.into_parts();
 
         match msg.content {
             UserMessage { .. } => (),
@@ -660,8 +695,12 @@ impl Elder {
         }
 
         match (msg.content, msg.src, msg.dst) {
-            (NeighbourInfo(elders_info), Authority::Section(_), Authority::PrefixSection(_)) => {
-                self.handle_neighbour_info(elders_info)?;
+            (
+                NeighbourInfo(elders_info),
+                src @ Authority::Section(_),
+                dst @ Authority::PrefixSection(_),
+            ) => {
+                self.handle_neighbour_info(elders_info, src, dst, security_metadata)?;
                 Ok(Transition::Stay)
             }
             (UserMessage(content), src, dst) => {
@@ -935,8 +974,31 @@ impl Elder {
         }
     }
 
-    fn handle_neighbour_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
+    fn handle_neighbour_info(
+        &mut self,
+        elders_info: EldersInfo,
+        src: Authority<XorName>,
+        dst: Authority<XorName>,
+        security_metadata: SecurityMetadata,
+    ) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
+            let _ = self
+                .pending_voted_msgs
+                .entry(PendingMessageKey::NeighbourInfo {
+                    version: elders_info.version(),
+                    prefix: *elders_info.prefix(),
+                })
+                .or_insert_with(|| {
+                    SignedRoutingMessage::from_parts(
+                        RoutingMessage {
+                            src,
+                            dst,
+                            content: MessageContent::NeighbourInfo(elders_info.clone()),
+                        },
+                        security_metadata,
+                    )
+                });
+
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
         } else {
             trace!(
@@ -1019,7 +1081,7 @@ impl Elder {
     // we are the first sender or the proxy for a client or joining node.
     fn send_signed_message(
         &mut self,
-        signed_msg: &mut SignedRoutingMessage,
+        signed_msg: &SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         let dst = signed_msg.routing_message().dst;
 
@@ -1369,11 +1431,11 @@ impl Base for Elder {
 
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
-            let mut msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
+            let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
             if self.in_authority(&msg.routing_message().dst) {
                 self.handle_signed_message(msg)?;
             } else {
-                self.send_signed_message(&mut msg)?;
+                self.send_signed_message(&msg)?;
             }
             return Ok(());
         }
@@ -1388,11 +1450,11 @@ impl Base for Elder {
                 .into_iter(),
         ) {
             if target == *self.name() {
-                if let Some(mut msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
+                if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
                     if self.in_authority(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
-                        self.send_signed_message(&mut msg)?;
+                        self.send_signed_message(&msg)?;
                     }
                 }
             } else if let Some(p2p_node) = self.chain.get_p2p_node(&target) {
@@ -1645,6 +1707,12 @@ impl Approved for Elder {
         neighbour_change: EldersChange,
     ) -> Result<(), RoutingError> {
         info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
+        let _ = self
+            .pending_voted_msgs
+            .remove(&PendingMessageKey::NeighbourInfo {
+                version: elders_info.version(),
+                prefix: *elders_info.prefix(),
+            });
         self.update_peer_connections(neighbour_change);
         Ok(())
     }
