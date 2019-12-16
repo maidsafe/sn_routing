@@ -259,6 +259,7 @@ impl Adult {
         );
 
         for recipient in recipients {
+            trace!("{} send poke to {:?}", self, recipient);
             self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
         }
     }
