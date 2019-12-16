@@ -848,7 +848,7 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
     verify_section_invariants_between_nodes(nodes);
 
     let mut all_missing_peers = BTreeSet::<PublicId>::new();
-    for node in nodes.iter_mut().filter(|node| node.inner.is_elder()) {
+    for node in nodes.iter_mut() {
         // Confirm elders from chain are connected according to PeerMap
         let our_id = unwrap!(node.inner.id());
         let missing_peers = node
