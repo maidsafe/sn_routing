@@ -1663,6 +1663,14 @@ impl Approved for Elder {
 
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 
+        for pub_id in &elders_change.own_added {
+            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        }
+
+        for pub_id in &elders_change.own_removed {
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        }
+
         let complete_data = if info_prefix.is_extension_of(&old_pfx) {
             self.prepare_finalise_split()?
         } else if old_pfx.is_extension_of(&info_prefix) {
@@ -1685,14 +1693,6 @@ impl Approved for Elder {
 
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.process_post_reset_events(old_pfx, complete_data.to_process);
-
-        for pub_id in &elders_change.own_added {
-            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        }
-
-        for pub_id in &elders_change.own_removed {
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        }
 
         self.update_peer_connections(elders_change);
         self.send_neighbour_infos();
