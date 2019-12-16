@@ -341,7 +341,7 @@ impl Adult {
 
         // An Adult can receive the same message from multiple Elders - bail early if we are
         // already up to date
-        if gen_pfx_info == self.gen_pfx_info {
+        if gen_pfx_info.parsec_version <= self.gen_pfx_info.parsec_version {
             return Ok(Transition::Stay);
         }
         self.gen_pfx_info = gen_pfx_info.clone();
