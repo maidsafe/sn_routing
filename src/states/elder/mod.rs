@@ -1293,9 +1293,6 @@ impl Base for Elder {
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State change to Elder finished.", self);
 
-        // Complete the polling that was interupted by the transition.
-        let _ = self.parsec_poll(outbox);
-
         let mut transition = Transition::Stay;
         for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
