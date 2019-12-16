@@ -46,7 +46,8 @@ use std::{
     net::SocketAddr,
 };
 
-const POKE_TIMEOUT: Duration = Duration::from_secs(60);
+// Poke in a similar speed as GOSSIP_TIMEOUT
+const POKE_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
