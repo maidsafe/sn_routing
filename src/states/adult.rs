@@ -348,12 +348,7 @@ impl Adult {
             &self.gen_pfx_info,
             &LogIdent::new(self.full_id.public_id()),
         );
-        self.chain = Chain::new(
-            self.chain.network_cfg(),
-            *self.id(),
-            gen_pfx_info,
-            None,
-        );
+        self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
         Ok(Transition::Stay)
     }
 

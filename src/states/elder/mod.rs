@@ -689,6 +689,20 @@ impl Elder {
         Ok(())
     }
 
+    fn handle_backloged_filtered_signed_message(
+        &mut self,
+        signed_msg: SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        if self.in_authority(&signed_msg.routing_message().dst) {
+            self.check_signed_message_trust(&signed_msg)?;
+            self.check_signed_message_integrity(&signed_msg)?;
+            self.update_our_knowledge(&signed_msg);
+            self.routing_msg_queue.push_back(signed_msg);
+        }
+
+        Ok(())
+    }
+
     fn dispatch_routing_message(
         &mut self,
         signed_msg: SignedRoutingMessage,
@@ -1286,7 +1300,7 @@ impl Base for Elder {
 
         if let Transition::Stay = &transition {
             for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
-                if let Err(err) = self.handle_filtered_signed_message(msg) {
+                if let Err(err) = self.handle_backloged_filtered_signed_message(msg) {
                     debug!("{} - {:?}", self, err);
                 }
             }
