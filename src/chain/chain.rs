@@ -1426,7 +1426,7 @@ impl Chain {
             }
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section_info(*target_name);
-                if prefix == self.our_prefix() {
+                if prefix == self.our_prefix() || prefix.is_neighbour(self.our_prefix()) {
                     // Exclude our name since we don't need to send to ourself
                     let our_name = self.our_id().name();
 
@@ -1442,11 +1442,14 @@ impl Chain {
                 candidates(target_name)?
             }
             Authority::PrefixSection(ref prefix) => {
-                if prefix.is_compatible(&self.our_prefix()) {
+                if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
+                {
                     // only route the message when we have all the targets in our routing table -
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
-                    if !prefix.is_covered_by(self.prefixes().iter()) {
+                    if prefix.is_compatible(self.our_prefix())
+                        && !prefix.is_covered_by(self.prefixes().iter())
+                    {
                         return Err(Error::CannotRoute);
                     }
 
