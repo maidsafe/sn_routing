@@ -236,7 +236,7 @@ where
         }
 
         state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
-            state.dkg_participant(self.our_id.public_id())
+            state.contains_dkg_participant(self.our_id.public_id())
         })
     }
 

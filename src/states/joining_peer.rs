@@ -31,6 +31,7 @@ use crate::{
     xor_name::XorName,
     NetworkService,
 };
+use log::LogLevel;
 use std::{
     fmt::{self, Display, Formatter},
     time::Duration,
@@ -267,9 +268,11 @@ impl Base for JoiningPeer {
                         self.elders_info = info;
                         self.send_join_requests();
                     } else {
-                        info!(
+                        log_or_panic!(
+                            LogLevel::Error,
                             "{} - Newer Join response not for our prefix {:?}",
-                            self, info
+                            self,
+                            info
                         );
                     }
                 }
