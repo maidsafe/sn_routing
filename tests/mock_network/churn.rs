@@ -328,41 +328,39 @@ impl Expectations {
             .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
         for node in nodes {
+            let curr_name = node.name();
+            let orig_name = new_to_old_map.get(&curr_name).copied().unwrap_or(curr_name);
+
             while let Ok(event) = node.try_next_ev() {
                 if let Event::MessageReceived { content, src, dst } = event {
                     let key = MessageKey { content, src, dst };
 
                     if dst.is_multiple() {
-                        let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
+                        let checker = |entry: &HashSet<XorName>| entry.contains(&orig_name);
                         if !self.sections.get(&key.dst).map_or(false, checker) {
                             if let Authority::Section(_) = dst {
                                 trace!(
                                     "Unexpected request for node {}: {:?} / {:?}",
-                                    node.name(),
+                                    orig_name,
                                     key,
                                     self.sections
                                 );
                             } else {
                                 panic!(
                                     "Unexpected request for node {}: {:?} / {:?}",
-                                    node.name(),
-                                    key,
-                                    self.sections
+                                    orig_name, key, self.sections
                                 );
                             }
                         } else {
                             *section_msgs_received.entry(key).or_insert(0usize) += 1;
                         }
                     } else {
-                        let node_name = node.name();
-                        let original_node_name =
-                            new_to_old_map.get(&node_name).copied().unwrap_or(node_name);
                         assert_eq!(
-                            original_node_name,
+                            orig_name,
                             dst.name(),
                             "Receiver does not match destination {}: {:?}, {:?}",
                             node.inner,
-                            original_node_name,
+                            orig_name,
                             dst.name()
                         );
                         assert!(
