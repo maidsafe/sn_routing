@@ -80,7 +80,7 @@ impl MemberInfo {
     }
 
     pub fn is_mature(&self) -> bool {
-        self.age_counter > AgeCounter(2u32.pow(MAX_INFANT_AGE))
+        self.age_counter >= AgeCounter(2u32.pow(MAX_INFANT_AGE + 1))
     }
 
     #[cfg(feature = "mock_base")]

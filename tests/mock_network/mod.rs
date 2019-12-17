@@ -351,14 +351,38 @@ fn simultaneous_joining_nodes(
 
     //
     // Assert
-    // Verify that the all nodes are now elders and other invariants.
+    // Verify that the sections all have enough elders and other invariants
     //
-    let non_elders = nodes
+    let non_approved = nodes
         .iter()
-        .filter(|node| !node.inner.is_elder())
+        .filter(|node| !node.inner.is_approved())
         .map(TestNode::name)
         .collect_vec();
-    assert!(non_elders.is_empty(), "Should be elders: {:?}", non_elders);
+    assert!(
+        non_approved.is_empty(),
+        "Should be approved: {:?}",
+        non_approved
+    );
+
+    let mut elders_count_by_prefix = BTreeMap::new();
+    for node in nodes.iter() {
+        if let Some(prefix) = node.inner.our_prefix() {
+            let entry = elders_count_by_prefix.entry(*prefix).or_insert(0);
+            if node.inner.is_elder() {
+                *entry += 1;
+            }
+        }
+    }
+    let prefixes_not_enough_elders = elders_count_by_prefix
+        .into_iter()
+        .filter(|(_, num_elders)| *num_elders < network.elder_size())
+        .map(|(prefix, _)| prefix)
+        .collect::<Vec<_>>();
+    assert!(
+        prefixes_not_enough_elders.is_empty(),
+        "Prefixes with too few elders: {:?}",
+        prefixes_not_enough_elders
+    );
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
@@ -577,12 +601,16 @@ fn carry_out_parsec_pruning() {
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
+// The paused node does not participate until resumed, so we need enough elders to reach
+// consensus even without it.
+const NODE_PAUSE_AND_RESUME_PARAMS: NetworkParams = NetworkParams {
+    elder_size: 4,
+    safe_section_size: 4,
+};
+
 #[test]
 fn node_pause_and_resume_simple() {
-    let network = Network::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        safe_section_size: LOWERED_ELDER_SIZE,
-    });
+    let network = Network::new(NODE_PAUSE_AND_RESUME_PARAMS);
     let nodes = create_connected_nodes(&network, 2 * network.safe_section_size() - 2);
     let new_node_id = FullId::gen(&mut network.new_rng());
     node_pause_and_resume(network, nodes, new_node_id)
@@ -590,12 +618,7 @@ fn node_pause_and_resume_simple() {
 
 #[test]
 fn node_pause_and_resume_during_split() {
-    let network = Network::new(NetworkParams {
-        // The paused node does not participate until resumed, so we need enough elders to reach
-        // consensus even without it.
-        elder_size: 4,
-        safe_section_size: 4,
-    });
+    let network = Network::new(NODE_PAUSE_AND_RESUME_PARAMS);
 
     let mut nodes = create_connected_nodes(&network, network.safe_section_size());
     let prefix =

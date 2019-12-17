@@ -145,6 +145,11 @@ where
     }
 
     pub fn gossip_recipients(&self) -> impl Iterator<Item = &S::PublicId> {
+        trace!(
+            "gossip_recipients: {:?} -- {:?}",
+            self.peer_list,
+            self.dkg_participants
+        );
         let iter = if self.peer_list.contains(self.our_id.public_id()) {
             Some(
                 self.peer_list
@@ -162,7 +167,7 @@ where
         self.gossip_recipients()
             .find(|id| id == &peer_id)
             .map(|_| Request::new())
-            .ok_or(Error::InvalidSelfState)
+            .ok_or(Error::InvalidPeerState)
     }
 
     pub fn handle_request(
@@ -231,7 +236,7 @@ where
         }
 
         state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
-            state.dkg_participant(self.our_id.public_id())
+            state.contains_dkg_participant(self.our_id.public_id())
         })
     }
 
@@ -350,7 +355,7 @@ impl<T: NetworkEvent, P: PublicId> Response<T, P> {
 
 #[derive(Debug)]
 pub enum Error {
-    InvalidSelfState,
+    InvalidPeerState,
 }
 
 #[derive(Clone, Copy)]

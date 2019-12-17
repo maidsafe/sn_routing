@@ -274,14 +274,16 @@ impl Inner {
     }
 }
 
-// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecRequest`.
-// A serialised Parsec request message starts with these bytes.
+// Serialised parsec gossip messages start with these bytes.
 #[cfg(not(feature = "mock_serialise"))]
-static PARSEC_REQ_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 6, 0, 0, 0];
-// The 4-byte tags of `Message::Direct` and `DirectMessage::ParsecResponse`.
-// A serialised Parsec response message starts with these bytes.
-#[cfg(not(feature = "mock_serialise"))]
-static PARSEC_RSP_MSG_TAGS: &[u8] = &[0, 0, 0, 0, 7, 0, 0, 0];
+const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
+    // ParsecPoke
+    &[0, 0, 0, 0, 5, 0, 0, 0],
+    // ParsecRequest
+    &[0, 0, 0, 0, 6, 0, 0, 0],
+    // ParsecResponse
+    &[0, 0, 0, 0, 7, 0, 0, 0],
+];
 
 #[derive(Debug)]
 pub(super) enum Packet {
@@ -303,7 +305,7 @@ impl Packet {
     pub fn is_parsec_gossip(&self) -> bool {
         match self {
             Packet::Message(bytes, _) if bytes.len() >= 8 => {
-                &bytes[..8] == PARSEC_REQ_MSG_TAGS || &bytes[..8] == PARSEC_RSP_MSG_TAGS
+                PARSEC_GOSSIP_MSG_TAGS.contains(&&bytes[..8])
             }
             _ => false,
         }
@@ -316,7 +318,9 @@ impl Packet {
         match self {
             Packet::Message(ref message, _) => match **message {
                 Message::Direct(ref message) => match message.content() {
-                    DirectMessage::ParsecRequest(..) | DirectMessage::ParsecResponse(..) => true,
+                    DirectMessage::ParsecRequest(..)
+                    | DirectMessage::ParsecResponse(..)
+                    | DirectMessage::ParsecPoke(..) => true,
                     _ => false,
                 },
                 _ => false,

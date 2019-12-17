@@ -46,17 +46,25 @@ pub trait Approved: Base {
         new_infos: Vec<EldersInfo>,
     ) -> Result<(), RoutingError>;
 
-    /// Handles an accumulated `Online` event.
-    fn handle_online_event(
+    /// Handles a member added.
+    fn handle_member_added(
         &mut self,
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
-    /// Handles an accumulated `Offline` event.
-    fn handle_offline_event(
+    /// Handles a member removed.
+    fn handle_member_removed(
         &mut self,
         pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
+
+    /// Handle a member relocated.
+    fn handle_member_relocated(
+        &mut self,
+        payload: RelocateDetails,
+        signature: BlsSignature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -92,11 +100,11 @@ pub trait Approved: Base {
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError>;
 
-    /// Handle an accumulated `Relocate` event
-    fn handle_relocate_event(
+    /// Handles an accumulated `Offline` event.
+    fn handle_relocate_prepare_event(
         &mut self,
         payload: RelocateDetails,
-        signature: BlsSignature,
+        count_down: i32,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -111,7 +119,7 @@ pub trait Approved: Base {
     }
 
     /// Handles an accumulated `ParsecPrune` event.
-    fn handle_prune(&mut self) -> Result<(), RoutingError>;
+    fn handle_prune_event(&mut self) -> Result<(), RoutingError>;
 
     fn handle_parsec_request(
         &mut self,
@@ -136,6 +144,12 @@ pub trait Approved: Base {
         );
 
         if let Some(response) = response {
+            trace!(
+                "{} - send parsec response v{} to {:?}",
+                self,
+                msg_version,
+                p2p_node,
+            );
             self.send_direct_message(p2p_node.connection_info(), response);
         }
 
@@ -178,6 +192,7 @@ pub trait Approved: Base {
                 let version = self.parsec_map().last_version();
                 let recipients = self.parsec_map().gossip_recipients();
                 if recipients.is_empty() {
+                    trace!("{} Not sending gossip", self);
                     // Parsec hasn't caught up with the event of us joining yet.
                     return;
                 }
@@ -202,17 +217,28 @@ pub trait Approved: Base {
             }
         };
 
-        if let Some(msg) = self
+        match self
             .parsec_map_mut()
             .create_gossip(version, gossip_target.public_id())
         {
-            trace!(
-                "{} - send parsec request v{} to {}",
-                self,
-                version,
-                gossip_target.public_id(),
-            );
-            self.send_direct_message(gossip_target.connection_info(), msg);
+            Ok(msg) => {
+                trace!(
+                    "{} - send parsec request v{} to {:?}",
+                    self,
+                    version,
+                    gossip_target,
+                );
+                self.send_direct_message(gossip_target.connection_info(), msg);
+            }
+            Err(error) => {
+                trace!(
+                    "{} - failed to send parsec request v{} to {:?}: {:?}",
+                    self,
+                    version,
+                    gossip_target,
+                    error
+                );
+            }
         }
     }
 
@@ -357,10 +383,10 @@ pub trait Approved: Base {
                 self.handle_offline_event(pub_id, outbox)?;
             }
             AccumulatingEvent::SectionInfo(_, _) => {
-                return self.handle_section_info_event(old_pfx, event.neighbour_change, outbox);
+                return self.handle_section_info_event(old_pfx, event.elders_change, outbox);
             }
             AccumulatingEvent::NeighbourInfo(elders_info) => {
-                self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
+                self.handle_neighbour_info_event(elders_info, event.elders_change)?;
             }
             AccumulatingEvent::TheirKeyInfo(key_info) => {
                 self.handle_their_key_info_event(key_info)?
@@ -371,9 +397,12 @@ pub trait Approved: Base {
             AccumulatingEvent::SendAckMessage(payload) => {
                 self.handle_send_ack_message_event(payload)?
             }
-            AccumulatingEvent::ParsecPrune => self.handle_prune()?,
+            AccumulatingEvent::ParsecPrune => self.handle_prune_event()?,
             AccumulatingEvent::Relocate(payload) => {
                 self.invoke_handle_relocate_event(payload, event.signature, outbox)?
+            }
+            AccumulatingEvent::RelocatePrepare(pub_id, count) => {
+                self.handle_relocate_prepare_event(pub_id, count, outbox)?
             }
             AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
         }
@@ -384,11 +413,12 @@ pub trait Approved: Base {
     // Checking members vote status and vote to remove those non-resposive nodes.
     fn check_voting_status(&mut self) {
         let unresponsive_nodes = self.chain_mut().check_vote_status();
-        let log_indent = self.log_ident();
+        let log_ident = self.log_ident();
         for pub_id in unresponsive_nodes.iter() {
+            info!("{} Voting for unresponsive node {:?}", log_ident, pub_id);
             self.parsec_map_mut().vote_for(
                 AccumulatingEvent::Offline(*pub_id).into_network_event(),
-                &log_indent,
+                &log_ident,
             );
         }
     }
@@ -405,6 +435,45 @@ pub trait Approved: Base {
                 pub_id
             );
         };
+    }
+
+    fn handle_online_event(
+        &mut self,
+        payload: OnlinePayload,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain().can_add_member(payload.p2p_node.public_id()) {
+            info!("{} - ignore Online: {:?}.", self, payload);
+        } else {
+            info!("{} - handle Online: {:?}.", self, payload);
+
+            let pub_id = *payload.p2p_node.public_id();
+            self.chain_mut()
+                .add_member(payload.p2p_node.clone(), payload.age);
+            self.chain_mut().increment_age_counters(&pub_id);
+            self.handle_member_added(payload, outbox)?;
+        }
+
+        Ok(())
+    }
+
+    fn handle_offline_event(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain().can_remove_member(&pub_id) {
+            info!("{} - ignore Offline: {}.", self, pub_id);
+        } else {
+            info!("{} - handle Offline: {}.", self, pub_id);
+
+            self.chain_mut().increment_age_counters(&pub_id);
+            self.chain_mut().remove_member(&pub_id);
+            self.disconnect_by_id_lookup(&pub_id);
+            self.handle_member_removed(pub_id, outbox)?;
+        }
+
+        Ok(())
     }
 
     fn invoke_handle_relocate_event(
@@ -424,6 +493,23 @@ pub trait Approved: Base {
             );
             Err(RoutingError::FailedSignature)
         }
+    }
+
+    fn handle_relocate_event(
+        &mut self,
+        details: RelocateDetails,
+        signature: BlsSignature,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain().can_remove_member(&details.pub_id) {
+            info!("{} - ignore Relocate: {:?} - not a member", self, details);
+        } else {
+            info!("{} - handle Relocate: {:?}.", self, details);
+            self.chain_mut().remove_member(&details.pub_id);
+            self.handle_member_relocated(details, signature, outbox)?;
+        }
+
+        Ok(())
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {

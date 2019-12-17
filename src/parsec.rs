@@ -120,6 +120,7 @@ impl ParsecMap {
         pub_id: id::PublicId,
         log_ident: &LogIdent,
     ) -> (Option<DirectMessage>, bool) {
+        trace!("{} handle_request from {:?}", log_ident, pub_id);
         // Increase the size before fetching the parsec to satisfy the borrow checker
         self.count_size(
             serialisation::serialised_size(&request),
@@ -173,9 +174,17 @@ impl ParsecMap {
         self.last_version() == msg_version
     }
 
-    pub fn create_gossip(&mut self, version: u64, target: &id::PublicId) -> Option<DirectMessage> {
-        let request = self.map.get_mut(&version)?.create_gossip(target).ok()?;
-        Some(DirectMessage::ParsecRequest(version, request))
+    pub fn create_gossip(
+        &mut self,
+        version: u64,
+        target: &id::PublicId,
+    ) -> Result<DirectMessage, CreateGossipError> {
+        let request = self
+            .map
+            .get_mut(&version)
+            .ok_or(CreateGossipError::MissingVersion)?
+            .create_gossip(target)?;
+        Ok(DirectMessage::ParsecRequest(version, request))
     }
 
     pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &LogIdent) {
@@ -390,6 +399,18 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
             ConsensusMode::Single,
             Box::new(rng::new_from(rng)),
         )
+    }
+}
+
+#[derive(Debug)]
+pub enum CreateGossipError {
+    MissingVersion,
+    Other(Error),
+}
+
+impl From<Error> for CreateGossipError {
+    fn from(src: Error) -> Self {
+        Self::Other(src)
     }
 }
 

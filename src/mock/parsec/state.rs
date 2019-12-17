@@ -113,7 +113,7 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
         self.key_gen.get_or_generate(rng, our_id, participants)
     }
 
-    pub fn dkg_participant(&self, our_id: &P) -> bool {
+    pub fn contains_dkg_participant(&self, our_id: &P) -> bool {
         self.key_gen.contains_participant(our_id)
     }
 }

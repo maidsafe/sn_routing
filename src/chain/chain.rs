@@ -281,23 +281,23 @@ impl Chain {
     ) -> Result<Option<AccumulatedEvent>, RoutingError> {
         match event {
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
-                let change = NeighbourChangeBuilder::new(self);
-                if self.add_elders_info(info.clone(), key_info.clone(), proofs)? {
+                let change = EldersChangeBuilder::new(self);
+                if self.add_elders_info(info.clone(), key_info.clone(), proofs.clone())? {
                     let change = change.build(self);
                     return Ok(Some(
-                        AccumulatedEvent::new(event).with_neighbour_change(change),
+                        AccumulatedEvent::new(event).with_elders_change(change),
                     ));
                 } else {
                     return Ok(None);
                 }
             }
             AccumulatingEvent::NeighbourInfo(ref info) => {
-                let change = NeighbourChangeBuilder::new(self);
+                let change = EldersChangeBuilder::new(self);
                 self.add_neighbour_elders_info(info.clone())?;
                 let change = change.build(self);
 
                 return Ok(Some(
-                    AccumulatedEvent::new(event).with_neighbour_change(change),
+                    AccumulatedEvent::new(event).with_elders_change(change),
                 ));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
@@ -316,6 +316,7 @@ impl Chain {
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::ParsecPrune
+            | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
 
@@ -363,7 +364,10 @@ impl Chain {
 
     // Increment the age counters of the members.
     pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
-        if self.state.our_joined_members().count() >= self.safe_section_size()
+        let our_section_size = self.state.our_joined_members().count();
+        let safe_section_size = self.safe_section_size();
+
+        if our_section_size >= safe_section_size
             && self
                 .state
                 .get_persona(trigger_node)
@@ -471,12 +475,12 @@ impl Chain {
     }
 
     /// Validate if can call add_member on this node.
-    pub fn can_add_member(&mut self, pub_id: &PublicId) -> bool {
+    pub fn can_add_member(&self, pub_id: &PublicId) -> bool {
         self.our_prefix().matches(pub_id.name()) && !self.is_peer_our_member(pub_id)
     }
 
     /// Validate if can call remove_member on this node.
-    pub fn can_remove_member(&mut self, pub_id: &PublicId) -> bool {
+    pub fn can_remove_member(&self, pub_id: &PublicId) -> bool {
         self.is_peer_our_member(pub_id)
     }
 
@@ -553,15 +557,34 @@ impl Chain {
             return Ok(Some(vec![our_info, other_info]));
         }
 
-        let new_info = EldersInfo::new(
-            self.our_expected_elders(),
-            *self.state.our_info().prefix(),
-            Some(self.state.our_info()),
-        )?;
+        let expected_elders_map = self.our_expected_elders();
+        let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
+        let current_elders: BTreeSet<_> = self.state.our_info().member_nodes().cloned().collect();
 
-        self.members_changed = false;
-        self.churn_in_progress = true;
-        Ok(Some(vec![new_info]))
+        if expected_elders != current_elders {
+            let old_size = self.state.our_info().len();
+
+            let new_info = EldersInfo::new(
+                expected_elders_map,
+                *self.state.our_info().prefix(),
+                Some(self.state.our_info()),
+            )?;
+
+            if self.state.our_info().len() < self.elder_size() && old_size >= self.elder_size() {
+                panic!(
+                    "Merging situation encountered! Not supported: {:?}: {:?}",
+                    self.our_id(),
+                    self.state.our_info()
+                );
+            }
+
+            self.members_changed = false;
+            self.churn_in_progress = true;
+            Ok(Some(vec![new_info]))
+        } else {
+            self.members_changed = false;
+            Ok(None)
+        }
     }
 
     /// Gets the data needed to initialise a new Parsec instance
@@ -580,7 +603,7 @@ impl Chain {
                 first_bls_keys: self.our_section_bls_keys().clone(),
                 first_state_serialized: self.get_genesis_related_info()?,
                 first_ages: self.get_age_counters(),
-                latest_info: Default::default(),
+                latest_info: self.our_info().clone(),
                 parsec_version,
             },
             cached_events: remaining
@@ -676,6 +699,15 @@ impl Chain {
             .map(|member_info| &member_info.p2p_node)
     }
 
+    /// Returns the connection infos for all non-Elders in the section
+    pub fn adults_and_infants_conn_infos(&self) -> Vec<ConnectionInfo> {
+        self.state
+            .our_joined_members()
+            .filter(|(_, info)| !self.state.our_info().is_member(info.p2p_node.public_id()))
+            .map(|(_, info)| info.p2p_node.connection_info().clone())
+            .collect()
+    }
+
     pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state.our_info().member_map().get(name)
     }
@@ -733,17 +765,29 @@ impl Chain {
         self.state.our_info().member_nodes()
     }
 
+    fn elders_and_adults(&self) -> impl Iterator<Item = &PublicId> {
+        self.state
+            .our_joined_members()
+            // FIXME: we temporarily treat all section
+            // members as Adults
+            //.filter(|(_, info)| info.is_mature())
+            .map(|(_, info)| info.p2p_node.public_id())
+    }
+
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
         let mut elders: BTreeMap<_, _> = self
             .state
             .our_joined_members()
+            .sorted_by(|&(_, info1), &(_, info2)| Ord::cmp(&info2.age_counter, &info1.age_counter))
+            .into_iter()
             .map(|(name, info)| (*name, info.p2p_node.clone()))
+            .take(self.elder_size())
             .collect();
 
         // Ensure that we can still handle one node lost when relocating.
         // Currently re-promoting relocating adult to elder is not supported.
         // Ensure that the node we eject are the we want to relocate first.
-        let min_elders = self.elder_size() + 1;
+        let min_elders = self.elder_size();
         let num_elders = elders.len();
         let our_info_map = self.our_info().member_map();
         elders.extend(
@@ -759,6 +803,20 @@ impl Chain {
         );
 
         elders
+    }
+
+    fn eldest_members_matching_prefix(
+        &self,
+        prefix: &Prefix<XorName>,
+    ) -> BTreeMap<XorName, P2pNode> {
+        self.state
+            .our_joined_members()
+            .filter(|(name, _)| prefix.matches(name))
+            .sorted_by(|&(_, info1), &(_, info2)| Ord::cmp(&info2.age_counter, &info1.age_counter))
+            .into_iter()
+            .map(|(name, info)| (*name, info.p2p_node.clone()))
+            .take(self.elder_size())
+            .collect()
     }
 
     /// Returns all neighbour elders.
@@ -914,7 +972,8 @@ impl Chain {
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::Relocate(_) => {
+            | AccumulatingEvent::Relocate(_)
+            | AccumulatingEvent::RelocatePrepare(_, _) => {
                 !self.state.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {
@@ -986,7 +1045,7 @@ impl Chain {
 
     /// Handles our own section info, or the section info of our sibling directly after a split.
     /// Returns whether the event should be handled by the caller.
-    fn add_elders_info(
+    pub fn add_elders_info(
         &mut self,
         elders_info: EldersInfo,
         key_info: SectionKeyInfo,
@@ -1133,9 +1192,8 @@ impl Chain {
         let our_name = self.our_id.name();
         let our_prefix_bit_count = self.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
-            .state
-            .our_joined_members()
-            .map(|(name, _)| our_name.common_prefix(name) > our_prefix_bit_count)
+            .elders_and_adults()
+            .map(|id| our_name.common_prefix(id.name()) > our_prefix_bit_count)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
                     (ours + 1, siblings)
@@ -1149,18 +1207,15 @@ impl Chain {
         Ok(our_new_size >= min_split_size && sibling_new_size >= min_split_size)
     }
 
-    /// Splits our section and generates new section infos for the child sections.
+    /// Splits our section and generates new elders infos for the child sections.
     fn split_self(&mut self) -> Result<(EldersInfo, EldersInfo), RoutingError> {
         let next_bit = self.our_id.name().bit(self.our_prefix().bit_count());
 
         let our_prefix = self.our_prefix().pushed(next_bit);
         let other_prefix = self.our_prefix().pushed(!next_bit);
 
-        let (our_new_section, other_section) = self
-            .state
-            .our_joined_members()
-            .map(|(key, value)| (*key, value.p2p_node.clone()))
-            .partition(|node| our_prefix.matches(&node.0));
+        let our_new_section = self.eldest_members_matching_prefix(&our_prefix);
+        let other_section = self.eldest_members_matching_prefix(&other_prefix);
 
         let our_new_info =
             EldersInfo::new(our_new_section, our_prefix, Some(self.state.our_info()))?;
@@ -1357,7 +1412,7 @@ impl Chain {
             }
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section_info(*target_name);
-                if prefix == self.our_prefix() {
+                if prefix == self.our_prefix() || prefix.is_neighbour(self.our_prefix()) {
                     // Exclude our name since we don't need to send to ourself
                     let our_name = self.our_id().name();
 
@@ -1373,11 +1428,14 @@ impl Chain {
                 candidates(target_name)?
             }
             Authority::PrefixSection(ref prefix) => {
-                if prefix.is_compatible(&self.our_prefix()) {
+                if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
+                {
                     // only route the message when we have all the targets in our routing table -
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
-                    if !prefix.is_covered_by(self.prefixes().iter()) {
+                    if prefix.is_compatible(self.our_prefix())
+                        && !prefix.is_covered_by(self.prefixes().iter())
+                    {
                         return Err(Error::CannotRoute);
                     }
 
@@ -1654,22 +1712,34 @@ impl SectionKeys {
     }
 }
 
-struct NeighbourChangeBuilder {
-    old: BTreeSet<P2pNode>,
+struct EldersChangeBuilder {
+    old_own: BTreeSet<P2pNode>,
+    old_neighbour: BTreeSet<P2pNode>,
 }
 
-impl NeighbourChangeBuilder {
+impl EldersChangeBuilder {
     fn new(chain: &Chain) -> Self {
         Self {
-            old: chain.neighbour_elder_nodes().cloned().collect(),
+            old_own: chain.our_info().member_nodes().cloned().collect(),
+            old_neighbour: chain.neighbour_elder_nodes().cloned().collect(),
         }
     }
 
     fn build(self, chain: &Chain) -> EldersChange {
-        let new: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+        let new_neighbour: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+        let new_own: BTreeSet<_> = chain.our_info().member_nodes().cloned().collect();
         EldersChange {
-            added: new.difference(&self.old).cloned().collect(),
-            removed: self.old.difference(&new).cloned().collect(),
+            neighbour_added: new_neighbour
+                .difference(&self.old_neighbour)
+                .cloned()
+                .collect(),
+            neighbour_removed: self
+                .old_neighbour
+                .difference(&new_neighbour)
+                .cloned()
+                .collect(),
+            own_added: new_own.difference(&self.old_own).cloned().collect(),
+            own_removed: self.old_own.difference(&new_own).cloned().collect(),
         }
     }
 }

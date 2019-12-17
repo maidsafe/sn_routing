@@ -34,6 +34,7 @@ use crate::{
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
+    utils::LogIdent,
     xor_name::XorName,
     BlsSignature, ConnectionInfo, NetworkService,
 };
@@ -45,7 +46,8 @@ use std::{
     net::SocketAddr,
 };
 
-const POKE_TIMEOUT: Duration = Duration::from_secs(60);
+// Poke in a similar speed as GOSSIP_TIMEOUT
+const POKE_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -247,11 +249,18 @@ impl Adult {
             .gen_pfx_info
             .latest_info
             .member_nodes()
+            .filter(|node| node.public_id() != self.id())
             .map(P2pNode::connection_info)
             .cloned()
             .collect_vec();
 
+        debug!(
+            "{} Sending Parsec Poke for version {} to {:?}",
+            self, version, recipients
+        );
+
         for recipient in recipients {
+            trace!("{} send poke to {:?}", self, recipient);
             self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
         }
     }
@@ -300,25 +309,63 @@ impl Adult {
     // Since we are an adult we will only give info about our section elders and they will further
     // guide the joining node.
     fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
-        let conn_infos: Vec<_> = self
-            .closest_known_elders_to(&destination)
-            .map(|p2p_node| p2p_node.connection_info().clone())
-            .collect();
-        debug!(
-            "{} - Sending BootstrapResponse::Rebootstrap to {}",
-            self, p2p_node
-        );
-        let response = BootstrapResponse::Rebootstrap(conn_infos);
+        self.respond_to_bootstrap_request(&p2p_node, &destination);
+    }
+
+    fn respond_to_bootstrap_request(&mut self, p2p_node: &P2pNode, name: &XorName) {
+        let response = if self.our_prefix().matches(name) {
+            debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
+            BootstrapResponse::Join(self.chain.our_info().clone())
+        } else {
+            let conn_infos: Vec<_> = self
+                .closest_known_elders_to(name)
+                .map(|p2p_node| p2p_node.connection_info().clone())
+                .collect();
+            debug!(
+                "{} - Sending BootstrapResponse::Rebootstrap to {}",
+                self, p2p_node
+            );
+            BootstrapResponse::Rebootstrap(conn_infos)
+        };
         self.send_direct_message(
             p2p_node.connection_info(),
             DirectMessage::BootstrapResponse(response),
         );
     }
 
+    fn handle_genesis_update(
+        &mut self,
+        gen_pfx_info: GenesisPfxInfo,
+    ) -> Result<Transition, RoutingError> {
+        info!("{} - Received GenesisUpdate: {:?}", self, gen_pfx_info);
+
+        // An Adult can receive the same message from multiple Elders - bail early if we are
+        // already up to date
+        if gen_pfx_info.parsec_version <= self.gen_pfx_info.parsec_version {
+            return Ok(Transition::Stay);
+        }
+        self.gen_pfx_info = gen_pfx_info.clone();
+        self.parsec_map.init(
+            &mut self.rng,
+            self.full_id.clone(),
+            &self.gen_pfx_info,
+            &LogIdent::new(self.full_id.public_id()),
+        );
+        self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
+
+        // We were not promoted during the last section change, so we are not going to need these
+        // messages anymore. This also prevents the messages from becoming stale (fail the trust
+        // check) when they are eventually taken from the backlog and swarmed to other nodes.
+        self.routing_msg_backlog.clear();
+        self.direct_msg_backlog.clear();
+
+        Ok(Transition::Stay)
+    }
+
     // Send signed_msg to our elders so they can route it properly.
     fn send_signed_message_to_elders(
         &mut self,
-        signed_msg: &mut SignedRoutingMessage,
+        signed_msg: &SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
@@ -394,14 +441,20 @@ impl Adult {
 
     fn handle_filtered_signed_message(
         &mut self,
-        mut signed_msg: SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
+        trace!(
+            "{} - Handle signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.check_signed_message_integrity(&signed_msg)?;
             self.routing_msg_backlog.push(signed_msg.clone());
         }
 
-        self.send_signed_message_to_elders(&mut signed_msg)?;
+        self.send_signed_message_to_elders(&signed_msg)?;
         Ok(())
     }
 }
@@ -522,6 +575,7 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
+            GenesisUpdate(gen_pfx_info) => self.handle_genesis_update(gen_pfx_info),
             Relocate(details) => Ok(self.handle_relocate(details)),
             msg @ BootstrapResponse(_) => {
                 debug!(
@@ -560,8 +614,8 @@ impl Base for Adult {
             return Ok(()); // Message is for us.
         }
 
-        let mut signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
-        self.send_signed_message_to_elders(&mut signed_msg)?;
+        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
+        self.send_signed_message_to_elders(&signed_msg)?;
         Ok(())
     }
 }
@@ -606,41 +660,28 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_online_event(
+    fn handle_member_added(
         &mut self,
-        payload: OnlinePayload,
-        outbox: &mut dyn EventBox,
+        _payload: OnlinePayload,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_add_member(payload.p2p_node.public_id()) {
-            info!("{} - ignore Online: {:?}.", self, payload);
-        } else {
-            info!("{} - handle Online: {:?}.", self, payload);
-
-            let pub_id = *payload.p2p_node.public_id();
-            self.chain.add_member(payload.p2p_node, payload.age);
-            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-            self.chain.increment_age_counters(&pub_id);
-        }
-
         Ok(())
     }
 
-    fn handle_offline_event(
+    fn handle_member_removed(
         &mut self,
-        pub_id: PublicId,
-        outbox: &mut dyn EventBox,
+        _pub_id: PublicId,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&pub_id) {
-            info!("{} - ignore Offline: {}.", self, pub_id);
-        } else {
-            info!("{} - handle Offline: {}.", self, pub_id);
+        Ok(())
+    }
 
-            self.chain.increment_age_counters(&pub_id);
-            self.chain.remove_member(&pub_id);
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-            self.disconnect_by_id_lookup(&pub_id);
-        }
-
+    fn handle_member_relocated(
+        &mut self,
+        _details: RelocateDetails,
+        _signature: BlsSignature,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         Ok(())
     }
 
@@ -675,22 +716,12 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_relocate_event(
+    fn handle_relocate_prepare_event(
         &mut self,
-        details: RelocateDetails,
-        _signature: BlsSignature,
-        outbox: &mut dyn EventBox,
+        _payload: RelocateDetails,
+        _count_down: i32,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&details.pub_id) {
-            info!("{} - ignore Relocate: {:?} - not a member", self, details);
-            return Ok(());
-        }
-
-        info!("{} - handle Relocate: {:?}.", self, details);
-        self.chain.remove_member(&details.pub_id);
-        self.send_event(Event::NodeLost(*details.pub_id.name()), outbox);
-        self.disconnect_by_id_lookup(&details.pub_id);
-
         Ok(())
     }
 
@@ -708,7 +739,7 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_prune(&mut self) -> Result<(), RoutingError> {
+    fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled ParsecPrune event", self);
         Ok(())
     }
