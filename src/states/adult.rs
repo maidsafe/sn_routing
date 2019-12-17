@@ -660,45 +660,28 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_online_event(
+    fn handle_member_added(
         &mut self,
-        payload: OnlinePayload,
+        _payload: OnlinePayload,
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_add_member(payload.p2p_node.public_id()) {
-            info!("{} - ignore Online: {:?}.", self, payload);
-        } else {
-            info!("{} - handle Online: {:?}.", self, payload);
-
-            let pub_id = *payload.p2p_node.public_id();
-            self.chain.add_member(payload.p2p_node, payload.age);
-            self.chain.increment_age_counters(&pub_id);
-
-            // FIXME: send appropriate events
-            // self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        }
-
         Ok(())
     }
 
-    fn handle_offline_event(
+    fn handle_member_removed(
         &mut self,
-        pub_id: PublicId,
+        _pub_id: PublicId,
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&pub_id) {
-            info!("{} - ignore Offline: {}.", self, pub_id);
-        } else {
-            info!("{} - handle Offline: {}.", self, pub_id);
+        Ok(())
+    }
 
-            self.chain.increment_age_counters(&pub_id);
-            self.chain.remove_member(&pub_id);
-            self.disconnect_by_id_lookup(&pub_id);
-
-            // FIXME: send appropriate events
-            // self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        }
-
+    fn handle_member_relocated(
+        &mut self,
+        _details: RelocateDetails,
+        _signature: BlsSignature,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
         Ok(())
     }
 
@@ -733,23 +716,6 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_relocate_event(
-        &mut self,
-        details: RelocateDetails,
-        _signature: BlsSignature,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&details.pub_id) {
-            info!("{} - ignore Relocate: {:?} - not a member", self, details);
-            return Ok(());
-        }
-
-        info!("{} - handle Relocate: {:?}.", self, details);
-        self.chain.remove_member(&details.pub_id);
-
-        Ok(())
-    }
-
     fn handle_relocate_prepare_event(
         &mut self,
         _payload: RelocateDetails,
@@ -773,7 +739,7 @@ impl Approved for Adult {
         Ok(())
     }
 
-    fn handle_prune(&mut self) -> Result<(), RoutingError> {
+    fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
         debug!("{} - Unhandled ParsecPrune event", self);
         Ok(())
     }

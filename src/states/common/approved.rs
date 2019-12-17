@@ -46,17 +46,25 @@ pub trait Approved: Base {
         new_infos: Vec<EldersInfo>,
     ) -> Result<(), RoutingError>;
 
-    /// Handles an accumulated `Online` event.
-    fn handle_online_event(
+    /// Handles a member added.
+    fn handle_member_added(
         &mut self,
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
-    /// Handles an accumulated `Offline` event.
-    fn handle_offline_event(
+    /// Handles a member removed.
+    fn handle_member_removed(
         &mut self,
         pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
+
+    /// Handle a member relocated.
+    fn handle_member_relocated(
+        &mut self,
+        payload: RelocateDetails,
+        signature: BlsSignature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
@@ -92,14 +100,6 @@ pub trait Approved: Base {
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError>;
 
-    /// Handle an accumulated `Relocate` event
-    fn handle_relocate_event(
-        &mut self,
-        payload: RelocateDetails,
-        signature: BlsSignature,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError>;
-
     /// Handles an accumulated `Offline` event.
     fn handle_relocate_prepare_event(
         &mut self,
@@ -119,7 +119,7 @@ pub trait Approved: Base {
     }
 
     /// Handles an accumulated `ParsecPrune` event.
-    fn handle_prune(&mut self) -> Result<(), RoutingError>;
+    fn handle_prune_event(&mut self) -> Result<(), RoutingError>;
 
     fn handle_parsec_request(
         &mut self,
@@ -397,7 +397,7 @@ pub trait Approved: Base {
             AccumulatingEvent::SendAckMessage(payload) => {
                 self.handle_send_ack_message_event(payload)?
             }
-            AccumulatingEvent::ParsecPrune => self.handle_prune()?,
+            AccumulatingEvent::ParsecPrune => self.handle_prune_event()?,
             AccumulatingEvent::Relocate(payload) => {
                 self.invoke_handle_relocate_event(payload, event.signature, outbox)?
             }
@@ -437,6 +437,45 @@ pub trait Approved: Base {
         };
     }
 
+    fn handle_online_event(
+        &mut self,
+        payload: OnlinePayload,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain().can_add_member(payload.p2p_node.public_id()) {
+            info!("{} - ignore Online: {:?}.", self, payload);
+        } else {
+            info!("{} - handle Online: {:?}.", self, payload);
+
+            let pub_id = *payload.p2p_node.public_id();
+            self.chain_mut()
+                .add_member(payload.p2p_node.clone(), payload.age);
+            self.chain_mut().increment_age_counters(&pub_id);
+            self.handle_member_added(payload, outbox)?;
+        }
+
+        Ok(())
+    }
+
+    fn handle_offline_event(
+        &mut self,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain().can_remove_member(&pub_id) {
+            info!("{} - ignore Offline: {}.", self, pub_id);
+        } else {
+            info!("{} - handle Offline: {}.", self, pub_id);
+
+            self.chain_mut().increment_age_counters(&pub_id);
+            self.chain_mut().remove_member(&pub_id);
+            self.disconnect_by_id_lookup(&pub_id);
+            self.handle_member_removed(pub_id, outbox)?;
+        }
+
+        Ok(())
+    }
+
     fn invoke_handle_relocate_event(
         &mut self,
         details: RelocateDetails,
@@ -454,6 +493,23 @@ pub trait Approved: Base {
             );
             Err(RoutingError::FailedSignature)
         }
+    }
+
+    fn handle_relocate_event(
+        &mut self,
+        details: RelocateDetails,
+        signature: BlsSignature,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain().can_remove_member(&details.pub_id) {
+            info!("{} - ignore Relocate: {:?} - not a member", self, details);
+        } else {
+            info!("{} - handle Relocate: {:?}.", self, details);
+            self.chain_mut().remove_member(&details.pub_id);
+            self.handle_member_relocated(details, signature, outbox)?;
+        }
+
+        Ok(())
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {

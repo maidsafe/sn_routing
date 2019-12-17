@@ -1611,39 +1611,59 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_online_event(
+    fn handle_member_added(
         &mut self,
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_add_member(payload.p2p_node.public_id()) {
-            info!("{} - ignore Online: {:?}.", self, payload);
-        } else {
-            info!("{} - handle Online: {:?}.", self, payload);
-
-            let pub_id = *payload.p2p_node.public_id();
-            self.chain.add_member(payload.p2p_node.clone(), payload.age);
-            self.chain.increment_age_counters(&pub_id);
-            self.handle_candidate_approval(payload.p2p_node, outbox);
-            self.print_rt_size();
-        }
-
+        self.handle_candidate_approval(payload.p2p_node, outbox);
+        self.print_rt_size();
         Ok(())
     }
 
-    fn handle_offline_event(
+    fn handle_member_removed(
         &mut self,
-        pub_id: PublicId,
+        _pub_id: PublicId,
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&pub_id) {
-            info!("{} - ignore Offline: {}.", self, pub_id);
-        } else {
-            info!("{} - handle Offline: {}.", self, pub_id);
+        Ok(())
+    }
 
-            self.chain.increment_age_counters(&pub_id);
-            self.chain.remove_member(&pub_id);
-            self.disconnect_by_id_lookup(&pub_id);
+    fn handle_member_relocated(
+        &mut self,
+        details: RelocateDetails,
+        signature: BlsSignature,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if &details.pub_id == self.id() {
+            // Do not send the message to ourselves.
+            return Ok(());
+        }
+
+        // We need proof that is valid for both the relocating node and the target section. To
+        // construct such proof, we create one proof for the relocating node and one for the target
+        // section and then take the longer of the two. This works because the longer proof is a
+        // superset of the shorter one. We need to do this because in rare cases, the relocating
+        // node might be lagging behind the target section in the knowledge of the source section.
+        let proof = {
+            let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
+            let proof_for_target = self.chain.prove(&Authority::Section(details.destination));
+
+            if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
+                proof_for_source
+            } else {
+                proof_for_target
+            }
+        };
+
+        if let Some(conn_info) = self
+            .chain
+            .get_member_connection_info(&details.pub_id)
+            .cloned()
+        {
+            let message =
+                DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
+            self.send_direct_message(&conn_info, message);
         }
 
         Ok(())
@@ -1668,7 +1688,7 @@ impl Approved for Elder {
         Ok(())
     }
 
-    fn handle_prune(&mut self) -> Result<(), RoutingError> {
+    fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
         if self.chain.split_in_progress() {
             log_or_panic!(
                 LogLevel::Warn,
@@ -1792,51 +1812,6 @@ impl Approved for Elder {
         };
 
         self.send_routing_message(RoutingMessage { src, dst, content })
-    }
-
-    fn handle_relocate_event(
-        &mut self,
-        details: RelocateDetails,
-        signature: BlsSignature,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&details.pub_id) {
-            info!("{} - ignore Relocate: {:?} - not a member", self, details);
-            return Ok(());
-        }
-
-        info!("{} - handle Relocate: {:?}.", self, details);
-
-        let pub_id = details.pub_id;
-
-        // Do not send the message to ourselves.
-        if pub_id != *self.id() {
-            // We need proof that is valid for both the relocating node and the target section. To
-            // construct such proof, we create one proof for the relocating node and one for the target
-            // section and then take the longer of the two. This works because the longer proof is a
-            // superset of the shorter one. We need to do this because in rare cases, the relocating
-            // node might be lagging behind the target section in the knowledge of the source section.
-            let proof = {
-                let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
-                let proof_for_target = self.chain.prove(&Authority::Section(details.destination));
-
-                if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
-                    proof_for_source
-                } else {
-                    proof_for_target
-                }
-            };
-
-            if let Some(conn_info) = self.chain.get_member_connection_info(&pub_id).cloned() {
-                let message =
-                    DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
-                self.send_direct_message(&conn_info, message);
-            }
-        }
-
-        self.chain.remove_member(&pub_id);
-
-        Ok(())
     }
 
     fn handle_relocate_prepare_event(
