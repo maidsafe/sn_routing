@@ -1629,6 +1629,46 @@ impl Approved for Elder {
         Ok(())
     }
 
+    fn handle_member_relocated(
+        &mut self,
+        details: RelocateDetails,
+        signature: BlsSignature,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if &details.pub_id == self.id() {
+            // Do not send the message to ourselves.
+            return Ok(());
+        }
+
+        // We need proof that is valid for both the relocating node and the target section. To
+        // construct such proof, we create one proof for the relocating node and one for the target
+        // section and then take the longer of the two. This works because the longer proof is a
+        // superset of the shorter one. We need to do this because in rare cases, the relocating
+        // node might be lagging behind the target section in the knowledge of the source section.
+        let proof = {
+            let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
+            let proof_for_target = self.chain.prove(&Authority::Section(details.destination));
+
+            if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
+                proof_for_source
+            } else {
+                proof_for_target
+            }
+        };
+
+        if let Some(conn_info) = self
+            .chain
+            .get_member_connection_info(&details.pub_id)
+            .cloned()
+        {
+            let message =
+                DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
+            self.send_direct_message(&conn_info, message);
+        }
+
+        Ok(())
+    }
+
     fn handle_dkg_result_event(
         &mut self,
         participants: &BTreeSet<PublicId>,
@@ -1772,46 +1812,6 @@ impl Approved for Elder {
         };
 
         self.send_routing_message(RoutingMessage { src, dst, content })
-    }
-
-    fn handle_member_relocated(
-        &mut self,
-        details: RelocateDetails,
-        signature: BlsSignature,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if &details.pub_id == self.id() {
-            // Do not send the message to ourselves.
-            return Ok(());
-        }
-
-        // We need proof that is valid for both the relocating node and the target section. To
-        // construct such proof, we create one proof for the relocating node and one for the target
-        // section and then take the longer of the two. This works because the longer proof is a
-        // superset of the shorter one. We need to do this because in rare cases, the relocating
-        // node might be lagging behind the target section in the knowledge of the source section.
-        let proof = {
-            let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
-            let proof_for_target = self.chain.prove(&Authority::Section(details.destination));
-
-            if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
-                proof_for_source
-            } else {
-                proof_for_target
-            }
-        };
-
-        if let Some(conn_info) = self
-            .chain
-            .get_member_connection_info(&details.pub_id)
-            .cloned()
-        {
-            let message =
-                DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
-            self.send_direct_message(&conn_info, message);
-        }
-
-        Ok(())
     }
 
     fn handle_relocate_prepare_event(

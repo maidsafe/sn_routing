@@ -60,6 +60,14 @@ pub trait Approved: Base {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
+    /// Handle a member relocated.
+    fn handle_member_relocated(
+        &mut self,
+        payload: RelocateDetails,
+        signature: BlsSignature,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
+
     /// Handles a completed DKG.
     fn handle_dkg_result_event(
         &mut self,
@@ -90,14 +98,6 @@ pub trait Approved: Base {
     fn handle_send_ack_message_event(
         &mut self,
         ack_payload: SendAckMessagePayload,
-    ) -> Result<(), RoutingError>;
-
-    /// Handle a member relocated.
-    fn handle_member_relocated(
-        &mut self,
-        payload: RelocateDetails,
-        signature: BlsSignature,
-        outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
     /// Handles an accumulated `Offline` event.

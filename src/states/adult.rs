@@ -676,6 +676,15 @@ impl Approved for Adult {
         Ok(())
     }
 
+    fn handle_member_relocated(
+        &mut self,
+        _details: RelocateDetails,
+        _signature: BlsSignature,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        Ok(())
+    }
+
     fn handle_dkg_result_event(
         &mut self,
         _participants: &BTreeSet<PublicId>,
@@ -703,15 +712,6 @@ impl Approved for Adult {
         &mut self,
         _elders_info: EldersInfo,
         _neighbour_change: EldersChange,
-    ) -> Result<(), RoutingError> {
-        Ok(())
-    }
-
-    fn handle_member_relocated(
-        &mut self,
-        _details: RelocateDetails,
-        _signature: BlsSignature,
-        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         Ok(())
     }
