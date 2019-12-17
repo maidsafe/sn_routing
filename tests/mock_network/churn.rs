@@ -491,35 +491,33 @@ fn progress_and_verify<R: Rng>(
         warn!("Dropping {:?}", dropped_names);
     }
 
-    let (expectations, relocation_map) = match message_schedule {
+    let expectations = match message_schedule {
         MessageSchedule::AfterChurn => {
-            poll_and_resend(nodes);
-            let added_names = check_added_indices(nodes, added_indices);
-            log_churn_outcome(&added_names, &dropped_names);
-
+            poll_after_churn(nodes, added_indices, dropped_names);
             let expectations = setup_expectations(rng, nodes, network.elder_size());
             poll_and_resend(nodes);
-
-            (expectations, BTreeMap::default())
+            expectations
         }
         MessageSchedule::DuringChurn => {
             let expectations = setup_expectations(rng, nodes, network.elder_size());
-            let relocation_map = RelocationMapBuilder::new(&nodes);
-
-            poll_and_resend(nodes);
-            let added_names = check_added_indices(nodes, added_indices);
-            log_churn_outcome(&added_names, &dropped_names);
-
-            (expectations, relocation_map.build(&nodes))
+            poll_after_churn(nodes, added_indices, dropped_names);
+            expectations
         }
     };
 
-    expectations.verify(nodes, &relocation_map);
+    expectations.verify(nodes);
     verify_invariant_for_all_nodes(network, nodes);
     shuffle_nodes(rng, nodes);
 }
 
-fn log_churn_outcome(added_names: &BTreeSet<XorName>, dropped_names: &BTreeSet<XorName>) {
+fn poll_after_churn(
+    nodes: &mut [TestNode],
+    added_indices: BTreeSet<usize>,
+    dropped_names: BTreeSet<XorName>,
+) {
+    poll_and_resend(nodes);
+    let added_names = check_added_indices(nodes, added_indices);
+
     if !added_names.is_empty() {
         if !dropped_names.is_empty() {
             warn!(
@@ -542,15 +540,23 @@ struct MessageKey {
 }
 
 /// A set of expectations: Which nodes, groups and sections are supposed to receive a request.
-#[derive(Default)]
 struct Expectations {
     /// The Put requests expected to be received.
     messages: HashSet<MessageKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
     sections: HashMap<Authority<XorName>, HashSet<XorName>>,
+    relocation_map_builder: RelocationMapBuilder,
 }
 
 impl Expectations {
+    fn new(nodes: &[TestNode]) -> Self {
+        Self {
+            messages: HashSet::new(),
+            sections: HashMap::new(),
+            relocation_map_builder: RelocationMapBuilder::new(nodes),
+        }
+    }
+
     /// Sends a request using the nodes specified by `src`, and adds the expectation. Panics if not
     /// enough nodes sent a section message, or if an individual sending node could not be found.
     fn send_and_expect(
@@ -605,7 +611,9 @@ impl Expectations {
     }
 
     /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &mut [TestNode], new_to_old_map: &BTreeMap<XorName, XorName>) {
+    fn verify(mut self, nodes: &mut [TestNode]) {
+        let new_to_old_map = self.relocation_map_builder.build(nodes);
+
         // The minimum of the section lengths when sending and now. If a churn event happened, both
         // cases are valid: that the message was received before or after that. The number of
         // recipients thus only needs to reach a quorum for the minimum number of node at one point.
@@ -715,7 +723,7 @@ fn setup_expectations<R: Rng>(
     // this makes sure we have two different sections if there exists more than one
     let auth_s1 = Authority::Section(!section_name);
 
-    let mut expectations = Expectations::default();
+    let mut expectations = Expectations::new(nodes);
 
     // Test messages from a node to itself, another node, a group and a section...
     expectations.send_and_expect(&content, auth_n0, auth_n0, nodes, elder_size);
