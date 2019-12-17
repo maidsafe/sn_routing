@@ -61,6 +61,7 @@ use crate::messages::Message;
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 
 struct CompleteParsecReset {
     /// The new genesis prefix info.
@@ -330,8 +331,10 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let change = EldersChange {
-            added: self.chain.neighbour_elder_nodes().cloned().collect(),
-            removed: Default::default(),
+            own_added: Default::default(),
+            own_removed: Default::default(),
+            neighbour_added: self.chain.neighbour_elder_nodes().cloned().collect(),
+            neighbour_removed: Default::default(),
         };
         let _ = self.handle_section_info_event(old_pfx, change, outbox)?;
 
@@ -370,7 +373,7 @@ impl Elder {
                 .map(|node| *node.peer_addr())
                 .collect();
 
-            for p2p_node in change.removed {
+            for p2p_node in change.neighbour_removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
                 if our_needed_connections.contains(p2p_node.peer_addr()) {
@@ -381,7 +384,7 @@ impl Elder {
             }
         }
 
-        for p2p_node in change.added {
+        for p2p_node in change.neighbour_added {
             if !self.peer_map().has(p2p_node.peer_addr()) {
                 self.establish_connection(p2p_node)
             }
@@ -442,6 +445,7 @@ impl Elder {
                 | AccumulatingEvent::StartDkg(_)
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_)
+                | AccumulatingEvent::RelocatePrepare(_, _)
                 | AccumulatingEvent::SectionInfo(_, _)
                 | AccumulatingEvent::NeighbourInfo(_)
                 | AccumulatingEvent::TheirKeyInfo(_)
@@ -473,7 +477,8 @@ impl Elder {
                     // to carry over. In case it does not, add a comment explaining why.
                     AccumulatingEvent::StartDkg(_)
                     | AccumulatingEvent::ParsecPrune
-                    | AccumulatingEvent::Relocate(_) => false,
+                    | AccumulatingEvent::Relocate(_)
+                    | AccumulatingEvent::RelocatePrepare(_, _) => false,
 
                     // Keep: Additional signatures for neighbours for sec-msg-relay.
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
@@ -508,6 +513,7 @@ impl Elder {
             | evt @ AccumulatingEvent::StartDkg(_)
             | evt @ AccumulatingEvent::ParsecPrune
             | evt @ AccumulatingEvent::Relocate(_)
+            | evt @ AccumulatingEvent::RelocatePrepare(_, _)
             | evt @ AccumulatingEvent::SectionInfo(_, _)
             | evt @ AccumulatingEvent::NeighbourInfo(_)
             | evt @ AccumulatingEvent::TheirKeyInfo(_)
@@ -607,6 +613,13 @@ impl Elder {
         });
     }
 
+    fn send_genesis_updates(&mut self) {
+        for conn_info in self.chain.adults_and_infants_conn_infos() {
+            let message = DirectMessage::GenesisUpdate(self.gen_pfx_info.clone());
+            self.send_direct_message(&conn_info, message);
+        }
+    }
+
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
     /// message, handles it.
     fn handle_message_signature(
@@ -675,6 +688,28 @@ impl Elder {
             self.routing_msg_queue.push_back(signed_msg);
         } else if let Err(error) = self.send_signed_message(&signed_msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
+        }
+
+        Ok(())
+    }
+
+    fn handle_backloged_filtered_signed_message(
+        &mut self,
+        signed_msg: SignedRoutingMessage,
+    ) -> Result<(), RoutingError> {
+        trace!(
+            "{} - Handle backlogged signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
+        if self.in_authority(&signed_msg.routing_message().dst)
+            && signed_msg.check_trust(&self.chain)
+        {
+            // If message still for us and we still trust it, then it must not be stale.
+            self.check_signed_message_integrity(&signed_msg)?;
+            self.update_our_knowledge(&signed_msg);
+            self.routing_msg_queue.push_back(signed_msg);
         }
 
         Ok(())
@@ -1025,6 +1060,12 @@ impl Elder {
         self.vote_for_signed_event(details)
     }
 
+    fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
+        self.vote_for_network_event(
+            AccumulatingEvent::RelocatePrepare(details, count_down).into_network_event(),
+        );
+    }
+
     fn vote_for_section_info(
         &mut self,
         elders_info: EldersInfo,
@@ -1260,9 +1301,6 @@ impl Base for Elder {
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State change to Elder finished.", self);
 
-        // Complete the polling that was interupted by the transition.
-        let _ = self.parsec_poll(outbox);
-
         let mut transition = Transition::Stay;
         for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
@@ -1277,7 +1315,7 @@ impl Base for Elder {
 
         if let Transition::Stay = &transition {
             for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
-                if let Err(err) = self.handle_filtered_signed_message(msg) {
+                if let Err(err) = self.handle_backloged_filtered_signed_message(msg) {
                     debug!("{} - {:?}", self, err);
                 }
             }
@@ -1401,6 +1439,9 @@ impl Base for Elder {
                     msg
                 );
                 self.direct_msg_backlog.push((p2p_node, msg));
+            }
+            GenesisUpdate(_) => {
+                debug!("{} Unhandled direct message: {:?}", self, msg);
             }
         }
         Ok(Transition::Stay)
@@ -1553,7 +1594,7 @@ impl Approved for Elder {
     }
 
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        self.vote_for_relocate(details)?;
+        self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
         Ok(())
     }
 
@@ -1582,7 +1623,6 @@ impl Approved for Elder {
 
             let pub_id = *payload.p2p_node.public_id();
             self.chain.add_member(payload.p2p_node.clone(), payload.age);
-            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
             self.chain.increment_age_counters(&pub_id);
             self.handle_candidate_approval(payload.p2p_node, outbox);
             self.print_rt_size();
@@ -1594,7 +1634,7 @@ impl Approved for Elder {
     fn handle_offline_event(
         &mut self,
         pub_id: PublicId,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&pub_id) {
             info!("{} - ignore Offline: {}.", self, pub_id);
@@ -1603,7 +1643,6 @@ impl Approved for Elder {
 
             self.chain.increment_age_counters(&pub_id);
             self.chain.remove_member(&pub_id);
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
             self.disconnect_by_id_lookup(&pub_id);
         }
 
@@ -1648,13 +1687,14 @@ impl Approved for Elder {
         info!("{} - handle parsec prune.", self);
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
+        self.send_genesis_updates();
         Ok(())
     }
 
     fn handle_section_info_event(
         &mut self,
         old_pfx: Prefix<XorName>,
-        neighbour_change: EldersChange,
+        elders_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let elders_info = self.chain.our_info();
@@ -1663,6 +1703,14 @@ impl Approved for Elder {
         let is_member = elders_info.is_member(&self.full_id.public_id());
 
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
+
+        for pub_id in &elders_change.own_added {
+            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
+        }
+
+        for pub_id in &elders_change.own_removed {
+            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
+        }
 
         let complete_data = if info_prefix.is_extension_of(&old_pfx) {
             self.prepare_finalise_split()?
@@ -1686,8 +1734,10 @@ impl Approved for Elder {
 
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.process_post_reset_events(old_pfx, complete_data.to_process);
-        self.update_peer_connections(neighbour_change);
+
+        self.update_peer_connections(elders_change);
         self.send_neighbour_infos();
+        self.send_genesis_updates();
 
         // Vote to update our self messages proof
         self.vote_send_section_info_ack(SendAckMessagePayload {
@@ -1695,6 +1745,7 @@ impl Approved for Elder {
             ack_version: info_version,
         });
 
+        self.print_rt_size();
         if let Some(to_send) = complete_data.event_to_send {
             self.send_event(to_send, outbox);
         }
@@ -1747,7 +1798,7 @@ impl Approved for Elder {
         &mut self,
         details: RelocateDetails,
         signature: BlsSignature,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&details.pub_id) {
             info!("{} - ignore Relocate: {:?} - not a member", self, details);
@@ -1784,8 +1835,21 @@ impl Approved for Elder {
         }
 
         self.chain.remove_member(&pub_id);
-        self.send_event(Event::NodeLost(*pub_id.name()), outbox);
 
+        Ok(())
+    }
+
+    fn handle_relocate_prepare_event(
+        &mut self,
+        payload: RelocateDetails,
+        count_down: i32,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if count_down > 0 {
+            self.vote_for_relocate_prepare(payload, count_down - 1);
+        } else {
+            self.vote_for_relocate(payload)?;
+        }
         Ok(())
     }
 }

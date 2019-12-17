@@ -8,7 +8,7 @@
 
 use super::{
     count_sections, create_connected_nodes, create_connected_nodes_until_split, current_sections,
-    gen_range, gen_range_except, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+    gen_elder_index, gen_range, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use itertools::Itertools;
 use rand::Rng;
@@ -99,7 +99,7 @@ fn add_nodes<R: Rng>(
     let mut added_nodes = Vec::new();
     while !prefixes.is_empty() {
         let proxy_index = if nodes.len() > unwrap!(nodes[0].inner.elder_size()) {
-            gen_range(rng, 0, nodes.len())
+            gen_elder_index(rng, nodes)
         } else {
             0
         };
@@ -124,22 +124,16 @@ fn add_nodes<R: Rng>(
         );
     }
 
+    let mut min_index = 1;
+    let mut added_indices = BTreeSet::new();
     for added_node in added_nodes {
-        let index = gen_range(rng, 1, nodes.len() + 1);
+        let index = gen_range(rng, min_index, nodes.len() + 1);
         nodes.insert(index, added_node);
+        min_index = index + 1;
+        let _ = added_indices.insert(index);
     }
 
-    nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
-            if !node.inner.is_elder() {
-                Some(index)
-            } else {
-                None
-            }
-        })
-        .collect()
+    added_indices
 }
 
 /// Checks if the given indices have been accepted to the network.
@@ -265,7 +259,10 @@ impl Expectations {
         elder_size: usize,
     ) {
         let mut sent_count = 0;
-        for node in nodes.iter_mut().filter(|node| node.is_recipient(&src)) {
+        for node in nodes
+            .iter_mut()
+            .filter(|node| node.inner.is_elder() && node.is_recipient(&src))
+        {
             unwrap!(node.inner.send_message(src, dst, content.to_vec()));
             sent_count += 1;
         }
@@ -293,7 +290,7 @@ impl Expectations {
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
     fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: MessageKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
-            let is_recipient = |n: &&TestNode| n.is_recipient(&dst);
+            let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.is_recipient(&dst);
             let section = nodes
                 .iter()
                 .filter(is_recipient)
@@ -313,7 +310,7 @@ impl Expectations {
             .sections
             .iter_mut()
             .map(|(dst, section)| {
-                let is_recipient = |n: &&TestNode| n.is_recipient(dst);
+                let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.is_recipient(dst);
                 let old_section = section.clone();
                 let new_section: HashSet<_> = nodes
                     .iter()
@@ -331,41 +328,39 @@ impl Expectations {
             .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
         for node in nodes {
+            let curr_name = node.name();
+            let orig_name = new_to_old_map.get(&curr_name).copied().unwrap_or(curr_name);
+
             while let Ok(event) = node.try_next_ev() {
                 if let Event::MessageReceived { content, src, dst } = event {
                     let key = MessageKey { content, src, dst };
 
                     if dst.is_multiple() {
-                        let checker = |entry: &HashSet<XorName>| entry.contains(&node.name());
+                        let checker = |entry: &HashSet<XorName>| entry.contains(&orig_name);
                         if !self.sections.get(&key.dst).map_or(false, checker) {
                             if let Authority::Section(_) = dst {
                                 trace!(
                                     "Unexpected request for node {}: {:?} / {:?}",
-                                    node.name(),
+                                    orig_name,
                                     key,
                                     self.sections
                                 );
                             } else {
                                 panic!(
                                     "Unexpected request for node {}: {:?} / {:?}",
-                                    node.name(),
-                                    key,
-                                    self.sections
+                                    orig_name, key, self.sections
                                 );
                             }
                         } else {
                             *section_msgs_received.entry(key).or_insert(0usize) += 1;
                         }
                     } else {
-                        let node_name = node.name();
-                        let original_node_name =
-                            new_to_old_map.get(&node_name).copied().unwrap_or(node_name);
                         assert_eq!(
-                            original_node_name,
+                            orig_name,
                             dst.name(),
                             "Receiver does not match destination {}: {:?}, {:?}",
                             node.inner,
-                            original_node_name,
+                            orig_name,
                             dst.name()
                         );
                         assert!(
@@ -402,8 +397,8 @@ impl Expectations {
 fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], elder_size: usize) {
     // Create random content and pick random sending and receiving nodes.
     let content: Vec<_> = rng.gen_iter().take(100).collect();
-    let index0 = gen_range(rng, 0, nodes.len());
-    let index1 = gen_range(rng, 0, nodes.len());
+    let index0 = gen_elder_index(rng, nodes);
+    let index1 = gen_elder_index(rng, nodes);
     let auth_n0 = Authority::Node(nodes[index0].name());
     let auth_n1 = Authority::Node(nodes[index1].name());
     let auth_g0 = Authority::Section(rng.gen());
@@ -550,8 +545,8 @@ fn messages_during_churn() {
 
         // Create random data and pick random sending and receiving nodes.
         let content: Vec<_> = rng.gen_iter().take(100).collect();
-        let index0 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
-        let index1 = gen_range_except(&mut rng, 0, nodes.len(), &new_indices);
+        let index0 = gen_elder_index(&mut rng, &nodes);
+        let index1 = gen_elder_index(&mut rng, &nodes);
         let auth_n0 = Authority::Node(nodes[index0].name());
         let auth_n1 = Authority::Node(nodes[index1].name());
         let auth_g0 = Authority::Section(rng.gen());
@@ -609,7 +604,7 @@ fn messages_during_churn() {
 
 #[test]
 fn remove_unresponsive_node() {
-    let elder_size = 4;
+    let elder_size = 8;
     let safe_section_size = 8;
     let network = Network::new(NetworkParams {
         elder_size,
@@ -620,8 +615,12 @@ fn remove_unresponsive_node() {
     poll_and_resend(&mut nodes);
     // Pause a node to act as non-responsive.
     let mut rng = network.new_rng();
-    let non_responsive_index = rng.gen_range(1, nodes.len());
+    let non_responsive_index = gen_elder_index(&mut rng, &nodes);
     let non_responsive_name = nodes[non_responsive_index].name();
+    info!(
+        "{:?} chosen as non-responsive.",
+        nodes[non_responsive_index].name()
+    );
     let mut _non_responsive_node = None;
 
     // Sending some user events to create a sequence of observations.
@@ -657,7 +656,7 @@ fn remove_unresponsive_node() {
     }
 
     // Verify the other nodes saw the paused node and removed it.
-    for node in nodes.iter_mut() {
+    for node in nodes.iter_mut().filter(|n| n.inner.is_elder()) {
         expect_any_event!(node, Event::NodeLost(_));
     }
 }

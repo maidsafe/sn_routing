@@ -35,20 +35,13 @@ pub fn gen_range<T: Rng>(rng: &mut T, low: usize, high: usize) -> usize {
     rng.gen_range(low as u32, high as u32) as usize
 }
 
-/// Generate a random value in the range, excluding the `exclude` value, if not `None`.
-pub fn gen_range_except<T: Rng>(
-    rng: &mut T,
-    low: usize,
-    high: usize,
-    exclude: &BTreeSet<usize>,
-) -> usize {
-    let mut x = gen_range(rng, low, high - exclude.len());
-    for e in exclude {
-        if x >= *e {
-            x += 1;
+pub fn gen_elder_index<R: Rng>(rng: &mut R, nodes: &[TestNode]) -> usize {
+    loop {
+        let index = gen_range(rng, 0, nodes.len());
+        if nodes[index].inner.is_elder() {
+            break index;
         }
     }
-    x
 }
 
 /// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
@@ -260,7 +253,14 @@ impl PollOptions {
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
-    let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
+    let node_busy = |node: &TestNode| {
+        if node.inner.has_unpolled_observations() {
+            trace!("{} busy!", node.inner);
+            true
+        } else {
+            false
+        }
+    };
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
@@ -379,10 +379,11 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
         }
 
         assert!(
-            node_added_count >= n,
-            "{} - Got only {} NodeAdded events.",
+            node_added_count >= n || !node.inner.is_elder(),
+            "{} - Got only {} NodeAdded events, expected at least {}.",
             node.inner,
-            node_added_count
+            node_added_count,
+            n
         );
     }
 
@@ -628,11 +629,12 @@ pub fn nodes_with_prefix_mut<'a>(
 }
 
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
-    let our_prefix = unwrap!(
-        node.inner.our_prefix(),
-        "{} does not have prefix",
-        node.inner
-    );
+    let our_prefix = match node.inner.our_prefix() {
+        Some(pfx) => pfx,
+        None => {
+            return;
+        }
+    };
     let our_name = node.name();
     let our_section_elders = node.inner.section_elders(our_prefix);
 
@@ -761,8 +763,11 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
     };
     let mut sections: BTreeMap<Prefix<XorName>, NodeSectionInfo> = BTreeMap::new();
 
-    for node in nodes.iter() {
-        let our_prefix = unwrap!(node.inner.our_prefix());
+    for node in nodes.iter().filter(|node| node.inner.is_elder()) {
+        let our_prefix = match node.inner.our_prefix() {
+            Some(pfx) => pfx,
+            None => continue,
+        };
         let our_name = node.name();
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
@@ -939,14 +944,13 @@ fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Pr
     );
 
     // Poll until the new node transitions to the `Elder` state.
+    let elder_size = network.elder_size();
     poll_and_resend_with_options(
         nodes,
         PollOptions::default()
-            .continue_if(|nodes| {
-                !nodes
-                    .last()
-                    .map(|node| node.inner.is_elder())
-                    .unwrap_or(false)
+            .continue_if(move |nodes| {
+                nodes.len() >= elder_size
+                    && nodes.iter().filter(|node| node.inner.is_elder()).count() < elder_size
             })
             .fire_join_timeout(false),
     );

@@ -100,6 +100,14 @@ pub trait Approved: Base {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError>;
 
+    /// Handles an accumulated `Offline` event.
+    fn handle_relocate_prepare_event(
+        &mut self,
+        payload: RelocateDetails,
+        count_down: i32,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError>;
+
     /// Handle an accumulated `User` event
     fn handle_user_event(
         &mut self,
@@ -136,6 +144,12 @@ pub trait Approved: Base {
         );
 
         if let Some(response) = response {
+            trace!(
+                "{} - send parsec response v{} to {:?}",
+                self,
+                msg_version,
+                p2p_node,
+            );
             self.send_direct_message(p2p_node.connection_info(), response);
         }
 
@@ -178,6 +192,7 @@ pub trait Approved: Base {
                 let version = self.parsec_map().last_version();
                 let recipients = self.parsec_map().gossip_recipients();
                 if recipients.is_empty() {
+                    trace!("{} Not sending gossip", self);
                     // Parsec hasn't caught up with the event of us joining yet.
                     return;
                 }
@@ -368,10 +383,10 @@ pub trait Approved: Base {
                 self.handle_offline_event(pub_id, outbox)?;
             }
             AccumulatingEvent::SectionInfo(_, _) => {
-                return self.handle_section_info_event(old_pfx, event.neighbour_change, outbox);
+                return self.handle_section_info_event(old_pfx, event.elders_change, outbox);
             }
             AccumulatingEvent::NeighbourInfo(elders_info) => {
-                self.handle_neighbour_info_event(elders_info, event.neighbour_change)?;
+                self.handle_neighbour_info_event(elders_info, event.elders_change)?;
             }
             AccumulatingEvent::TheirKeyInfo(key_info) => {
                 self.handle_their_key_info_event(key_info)?
@@ -386,6 +401,9 @@ pub trait Approved: Base {
             AccumulatingEvent::Relocate(payload) => {
                 self.invoke_handle_relocate_event(payload, event.signature, outbox)?
             }
+            AccumulatingEvent::RelocatePrepare(pub_id, count) => {
+                self.handle_relocate_prepare_event(pub_id, count, outbox)?
+            }
             AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
         }
 
@@ -395,11 +413,12 @@ pub trait Approved: Base {
     // Checking members vote status and vote to remove those non-resposive nodes.
     fn check_voting_status(&mut self) {
         let unresponsive_nodes = self.chain_mut().check_vote_status();
-        let log_indent = self.log_ident();
+        let log_ident = self.log_ident();
         for pub_id in unresponsive_nodes.iter() {
+            info!("{} Voting for unresponsive node {:?}", log_ident, pub_id);
             self.parsec_map_mut().vote_for(
                 AccumulatingEvent::Offline(*pub_id).into_network_event(),
-                &log_indent,
+                &log_ident,
             );
         }
     }

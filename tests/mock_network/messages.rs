@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes, poll_all};
+use super::{create_connected_nodes, gen_elder_index, poll_all};
 use rand::Rng;
 use routing::{
     mock::Network, Authority, Event, EventStream, NetworkParams, QUORUM_DENOMINATOR,
@@ -25,7 +25,7 @@ fn send() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, elder_size + 1);
 
-    let sender_index = rng.gen_range(0, nodes.len());
+    let sender_index = gen_elder_index(&mut rng, &nodes);
     let src = Authority::Node(nodes[sender_index].name());
     let dst = Authority::Section(rng.gen());
     let content: Vec<_> = rng.gen_iter().take(1024).collect();
@@ -37,7 +37,10 @@ fn send() {
     let _ = poll_all(&mut nodes);
 
     let mut message_received_count = 0;
-    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
+    for node in nodes
+        .iter_mut()
+        .filter(|n| n.inner.is_elder() && n.is_recipient(&dst))
+    {
         loop {
             match node.try_next_ev() {
                 Ok(Event::MessageReceived {
@@ -70,7 +73,7 @@ fn send_and_receive() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, elder_size + 1);
 
-    let sender_index = rng.gen_range(0, nodes.len());
+    let sender_index = gen_elder_index(&mut rng, &nodes);
     let src = Authority::Node(nodes[sender_index].name());
     let dst = Authority::Section(rng.gen());
 
@@ -86,7 +89,10 @@ fn send_and_receive() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter_mut().filter(|n| n.is_recipient(&dst)) {
+    for node in nodes
+        .iter_mut()
+        .filter(|n| n.inner.is_elder() && n.is_recipient(&dst))
+    {
         loop {
             match node.try_next_ev() {
                 Ok(Event::MessageReceived { content, src, dst }) => {

@@ -145,6 +145,11 @@ where
     }
 
     pub fn gossip_recipients(&self) -> impl Iterator<Item = &S::PublicId> {
+        trace!(
+            "gossip_recipients: {:?} -- {:?}",
+            self.peer_list,
+            self.dkg_participants
+        );
         let iter = if self.peer_list.contains(self.our_id.public_id()) {
             Some(
                 self.peer_list
@@ -231,7 +236,7 @@ where
         }
 
         state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
-            state.dkg_participant(self.our_id.public_id())
+            state.contains_dkg_participant(self.our_id.public_id())
         })
     }
 

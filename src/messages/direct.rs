@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::EldersInfo,
+    chain::{EldersInfo, GenesisPfxInfo},
     crypto::signing::Signature,
     error::{BootstrapResponseError, RoutingError},
     id::{FullId, PublicId},
@@ -53,6 +53,8 @@ pub enum DirectMessage {
     ParsecResponse(u64, parsec::Response),
     /// Send from a section to the node being relocated.
     Relocate(SignedRelocateDetails),
+    /// Update sent to Adults by Elders
+    GenesisUpdate(GenesisPfxInfo),
 }
 
 /// Response to a BootstrapRequest
@@ -100,6 +102,7 @@ impl Debug for DirectMessage {
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             ParsecPoke(v) => write!(formatter, "ParsecPoke({})", v),
             Relocate(payload) => write!(formatter, "Relocate({:?})", payload.content()),
+            GenesisUpdate(gen_pfx_info) => write!(formatter, "GenesisUpdate({:?})", gen_pfx_info),
         }
     }
 }
@@ -131,6 +134,9 @@ impl Hash for DirectMessage {
                 version.hash(state);
                 // Fake hash via serialisation
                 serialise(&response).ok().hash(state)
+            }
+            GenesisUpdate(gen_pfx_info) => {
+                gen_pfx_info.hash(state);
             }
             Relocate(details) => details.hash(state),
         }

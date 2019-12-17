@@ -13,9 +13,10 @@ use routing::{mock::Network, Authority, Event, EventStream, NetworkParams, XorNa
 #[test]
 fn messages_accumulate_with_quorum() {
     let section_size = 15;
+    let elder_size = 8;
     let network = Network::new(NetworkParams {
-        elder_size: 8,
-        safe_section_size: 8,
+        elder_size,
+        safe_section_size: elder_size,
     });
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, section_size);
@@ -27,48 +28,95 @@ fn messages_accumulate_with_quorum() {
         assert!(node.inner.send_message(src, *dst, content).is_ok());
     };
 
-    let dst = Authority::Node(nodes[0].name()); // The closest node.
+    // Fine to unwrap - we should have at least one elder, if not, it's a bug
+    let closest_elder_index = nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.inner.is_elder())
+        .map(|(i, _)| i)
+        .next()
+        .unwrap();
+
+    let dst = Authority::Node(nodes[closest_elder_index].name()); // The closest node.
     let content = gen_bytes(&mut rng, 8);
 
     // The BLS scheme will require more than `participants / 3`
     // shares in order to construct a full key or signature.
     // The smallest number such that `quorum > threshold`:
-    let threshold = section_size.saturating_sub(1) / 3;
+    let threshold = elder_size.saturating_sub(1) / 3;
     let quorum = 1 + threshold;
 
     // Send a message from the section `src` to the node `dst`.
     // Only the `quorum`-th sender should cause accumulation and a
     // `MessageReceived` event. The event should only occur once.
-    for node in nodes.iter_mut().take(quorum - 1) {
+    for node in nodes
+        .iter_mut()
+        .filter(|node| node.inner.is_elder())
+        .take(quorum - 1)
+    {
         send(node, &dst, content.clone());
     }
     let _ = poll_all(&mut nodes);
-    expect_no_event!(nodes[0]);
-    send(&mut nodes[quorum - 1], &dst, content.clone());
+    expect_no_event!(nodes[closest_elder_index]);
+    for node in nodes
+        .iter_mut()
+        .rev()
+        .filter(|node| node.inner.is_elder())
+        .take(1)
+    {
+        send(node, &dst, content.clone());
+    }
     let _ = poll_all(&mut nodes);
-    expect_next_event!(nodes[0], Event::MessageReceived { .. });
-    send(&mut nodes[quorum], &dst, content);
+    expect_next_event!(nodes[closest_elder_index], Event::MessageReceived { .. });
+    for node in nodes
+        .iter_mut()
+        .rev()
+        .filter(|node| node.inner.is_elder())
+        .skip(1)
+        .take(1)
+    {
+        send(node, &dst, content.clone());
+    }
     let _ = poll_all(&mut nodes);
-    expect_no_event!(nodes[0]);
+    expect_no_event!(nodes[closest_elder_index]);
 
     let dst_grp = Authority::Section(src.name()); // The whole section.
     let content = gen_bytes(&mut rng, 9);
 
     // Send a message from the section `src` to the section `dst_grp`. Only the `quorum`-th sender
     // should cause accumulation and a `MessageReceived` event. The event should only occur once.
-    for node in nodes.iter_mut().take(quorum - 1) {
+    for node in nodes
+        .iter_mut()
+        .filter(|node| node.inner.is_elder())
+        .take(quorum - 1)
+    {
         send(node, &dst_grp, content.clone());
     }
     let _ = poll_all(&mut nodes);
     for node in &mut *nodes {
         expect_no_event!(node);
     }
-    send(&mut nodes[quorum - 1], &dst_grp, content.clone());
+    for node in nodes
+        .iter_mut()
+        .rev()
+        .filter(|node| node.inner.is_elder())
+        .take(1)
+    {
+        send(node, &dst_grp, content.clone());
+    }
     let _ = poll_all(&mut nodes);
-    for node in &mut *nodes {
+    for node in nodes.iter_mut().filter(|node| node.inner.is_elder()) {
         expect_next_event!(node, Event::MessageReceived { .. });
     }
-    send(&mut nodes[quorum], &dst_grp, content);
+    for node in nodes
+        .iter_mut()
+        .rev()
+        .filter(|node| node.inner.is_elder())
+        .skip(1)
+        .take(1)
+    {
+        send(node, &dst_grp, content.clone());
+    }
     let _ = poll_all(&mut nodes);
     for node in &mut *nodes {
         expect_no_event!(node);
