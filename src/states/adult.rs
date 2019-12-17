@@ -746,7 +746,6 @@ impl Approved for Adult {
 
         info!("{} - handle Relocate: {:?}.", self, details);
         self.chain.remove_member(&details.pub_id);
-        self.disconnect_by_id_lookup(&details.pub_id);
 
         Ok(())
     }
