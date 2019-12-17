@@ -232,20 +232,29 @@ fn random_churn<R: Rng>(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     churn_probability: f64,
+    min_section_num: usize,
     max_section_num: usize,
 ) -> BTreeSet<usize> {
+    assert!(min_section_num <= max_section_num);
+
     if rng.gen_range(0.0, 1.0) > churn_probability {
         return BTreeSet::new();
     }
 
-    let section_count = count_sections(nodes);
-    if section_count < max_section_num {
-        return add_nodes(rng, &network, nodes);
+    let section_num = count_sections(nodes);
+
+    if section_num > min_section_num {
+        let dropped_nodes = drop_random_nodes(rng, nodes);
+        warn!("Dropping nodes: {:?}", dropped_nodes);
     }
 
-    let dropped_nodes = drop_random_nodes(rng, nodes);
-    warn!("Dropping nodes: {:?}", dropped_nodes);
-    BTreeSet::new()
+    let added_indices = if section_num < max_section_num {
+        add_nodes(rng, &network, nodes)
+    } else {
+        BTreeSet::new()
+    };
+
+    added_indices
 }
 
 #[derive(Eq, PartialEq, Hash, Debug)]
@@ -593,7 +602,9 @@ fn messages_during_churn() {
     let initial_prefix_lens = vec![2, 2, 2, 3, 3];
     // Probability of churn in each iteration.
     let churn_probability = 0.8;
-    // If the number of section in the network reaches this number, no new nodes will be added.
+    // While the number of section is less than this number, no nodes are dropped.
+    let min_section_num = initial_prefix_lens.len();
+    // If the number of section in the network reaches this number, no new nodes are added.
     let max_section_num = initial_prefix_lens.len() * 2;
     // How many iterations will the test run for.
     let max_iterations = 50;
@@ -617,6 +628,7 @@ fn messages_during_churn() {
             &network,
             &mut nodes,
             churn_probability,
+            min_section_num,
             max_section_num,
         );
         let relocation_map = RelocationMapBuilder::new(&nodes);
