@@ -18,7 +18,10 @@ use routing::{
     Authority, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
     QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    usize,
+};
 
 /// Randomly removes some nodes.
 ///
@@ -205,27 +208,8 @@ fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) {
     rng.shuffle(&mut nodes[1..]);
 }
 
-/// Adds node per existing prefix. Returns new node names if successfully added.
-/// allow_add_failure: Allows nodes to fail getting accepted. It would also
-/// skip adding to prefixes randomly to allowing sections to merge when this is executed
-/// in the same iteration as `drop_random_nodes`.
-///
-/// Note: This fn will call `poll_and_resend` itself
-fn add_nodes_and_poll<R: Rng>(
-    rng: &mut R,
-    network: &Network,
-    nodes: &mut Vec<TestNode>,
-) -> BTreeSet<XorName> {
-    let new_indices = add_nodes(rng, &network, nodes);
-    poll_and_resend(nodes);
-    let added_names = check_added_indices(nodes, new_indices);
-    poll_and_resend(nodes);
-    shuffle_nodes(rng, nodes);
-
-    added_names
-}
-
-// Churns the given network randomly. Returns any newly added indices.
+// Churns the given network randomly. Returns any newly added indices and the
+// dropped node names.
 // If introducing churn, would either drop/add nodes in each prefix.
 fn random_churn<R: Rng>(
     rng: &mut R,
@@ -234,19 +218,20 @@ fn random_churn<R: Rng>(
     churn_probability: f64,
     min_section_num: usize,
     max_section_num: usize,
-) -> BTreeSet<usize> {
+) -> (BTreeSet<usize>, BTreeSet<XorName>) {
     assert!(min_section_num <= max_section_num);
 
     if rng.gen_range(0.0, 1.0) > churn_probability {
-        return BTreeSet::new();
+        return (BTreeSet::new(), BTreeSet::new());
     }
 
     let section_num = count_sections(nodes);
 
-    if section_num > min_section_num {
-        let dropped_nodes = drop_random_nodes(rng, nodes);
-        warn!("Dropping nodes: {:?}", dropped_nodes);
-    }
+    let dropped_names = if section_num > min_section_num {
+        drop_random_nodes(rng, nodes)
+    } else {
+        BTreeSet::new()
+    };
 
     let added_indices = if section_num < max_section_num {
         add_nodes(rng, &network, nodes)
@@ -254,7 +239,7 @@ fn random_churn<R: Rng>(
         BTreeSet::new()
     };
 
-    added_indices
+    (added_indices, dropped_names)
 }
 
 #[derive(Eq, PartialEq, Hash, Debug)]
@@ -506,6 +491,7 @@ fn aggressive_churn() {
     // of the number of iterations exceeds `churn_max_iterations`, the churn phase ends.
     let churn_min_network_size = grow_target_network_size / 2;
     let churn_max_iterations = 15;
+    let churn_probability = 1.0;
 
     // There are no parameters for the shrink phase - it ends when no more nodes can be dropped.
 
@@ -528,15 +514,19 @@ fn aggressive_churn() {
     // Add nodes to trigger splits.
     while count_sections(&nodes) < grow_target_section_num || nodes.len() < grow_target_network_size
     {
-        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes);
-        if !added.is_empty() {
-            warn!("Added {:?}. Total: {}", added, nodes.len());
+        let added_indices = add_nodes(&mut rng, &network, &mut nodes);
+        poll_and_resend(&mut nodes);
+        let added_names = check_added_indices(&mut nodes, added_indices);
+
+        if !added_names.is_empty() {
+            warn!("Added {:?}. Total: {}", added_names, nodes.len());
         } else {
             warn!("Unable to add new node.");
         }
 
         verify_invariant_for_all_nodes(&network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, elder_size);
+        shuffle_nodes(&mut rng, &mut nodes);
     }
 
     // Simultaneous Add/Drop nodes in the same iteration.
@@ -549,13 +539,27 @@ fn aggressive_churn() {
     while nodes.len() > churn_min_network_size && iteration < churn_max_iterations {
         iteration += 1;
 
-        let dropped = drop_random_nodes(&mut rng, &mut nodes);
-        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes);
-        warn!("Simultaneously added {:?} and dropped {:?}", added, dropped);
+        let (added_indices, dropped_names) = random_churn(
+            &mut rng,
+            &network,
+            &mut nodes,
+            churn_probability,
+            0,
+            usize::MAX,
+        );
+
+        poll_and_resend(&mut nodes);
+        let added_names = check_added_indices(&mut nodes, added_indices);
+
+        warn!(
+            "Simultaneously added {:?} and dropped {:?}",
+            added_names, dropped_names
+        );
 
         verify_invariant_for_all_nodes(&network, &mut nodes);
-
         send_and_receive(&mut rng, &mut nodes, elder_size);
+        shuffle_nodes(&mut rng, &mut nodes);
+
         warn!(
             "Remaining Prefixes: {{{:?}}}",
             current_sections(&nodes).format(", ")
@@ -576,9 +580,11 @@ fn aggressive_churn() {
 
         warn!("Dropping random nodes. Dropped: {:?}", dropped_nodes);
         poll_and_resend(&mut nodes);
+
         verify_invariant_for_all_nodes(&network, &mut nodes);
         send_and_receive(&mut rng, &mut nodes, elder_size);
         shuffle_nodes(&mut rng, &mut nodes);
+
         warn!(
             "Remaining Prefixes: {{{:?}}}",
             current_sections(&nodes).format(", ")
@@ -623,7 +629,7 @@ fn messages_during_churn() {
             max_iterations,
             current_sections(&nodes).format(", ")
         );
-        let new_indices = random_churn(
+        let (added_indices, dropped_names) = random_churn(
             &mut rng,
             &network,
             &mut nodes,
@@ -631,6 +637,11 @@ fn messages_during_churn() {
             min_section_num,
             max_section_num,
         );
+
+        if !dropped_names.is_empty() {
+            warn!("Dropping nodes: {:?}", dropped_names);
+        }
+
         let relocation_map = RelocationMapBuilder::new(&nodes);
         let expectations = setup_expectations(&mut rng, &mut nodes, elder_size);
 
@@ -638,15 +649,14 @@ fn messages_during_churn() {
 
         let relocation_map = relocation_map.build(&nodes);
 
-        let added_names = check_added_indices(&mut nodes, new_indices);
+        let added_names = check_added_indices(&mut nodes, added_indices);
         if !added_names.is_empty() {
             warn!("Added nodes: {:?}", added_names);
         }
 
-        shuffle_nodes(&mut rng, &mut nodes);
-
         expectations.verify(&mut nodes, &relocation_map);
         verify_invariant_for_all_nodes(&network, &mut nodes);
+        shuffle_nodes(&mut rng, &mut nodes);
     }
 }
 
