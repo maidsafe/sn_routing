@@ -489,12 +489,12 @@ impl Chain {
     }
 
     /// Validate if can call add_member on this node.
-    pub fn can_add_member(&mut self, pub_id: &PublicId) -> bool {
+    pub fn can_add_member(&self, pub_id: &PublicId) -> bool {
         self.our_prefix().matches(pub_id.name()) && !self.is_peer_our_member(pub_id)
     }
 
     /// Validate if can call remove_member on this node.
-    pub fn can_remove_member(&mut self, pub_id: &PublicId) -> bool {
+    pub fn can_remove_member(&self, pub_id: &PublicId) -> bool {
         self.is_peer_our_member(pub_id)
     }
 
