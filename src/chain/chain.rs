@@ -405,13 +405,9 @@ impl Chain {
                 continue;
             }
 
-            //if our_section_size >= safe_section_size {
             if !member_info.increment_age_counter() {
                 continue;
             }
-            // } else {
-            //     member_info.increment_age();
-            // }
 
             let destination =
                 relocation::compute_destination(&our_prefix, name, trigger_node.name());
