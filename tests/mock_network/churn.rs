@@ -23,6 +23,88 @@ use std::{
     usize,
 };
 
+#[test]
+fn aggressive_churn() {
+    churn(Params {
+        message_schedule: MessageSchedule::AfterChurn,
+        grow_target_section_num: 5,
+        churn_max_iterations: 15,
+        ..Default::default()
+    });
+}
+
+#[test]
+fn messages_during_churn() {
+    churn(Params {
+        initial_prefix_lens: vec![2, 2, 2, 3, 3],
+        message_schedule: MessageSchedule::DuringChurn,
+        grow_target_section_num: 5,
+        churn_probability: 0.8,
+        churn_max_section_num: 10,
+        churn_max_iterations: 50,
+        ..Default::default()
+    });
+}
+
+#[test]
+fn remove_unresponsive_node() {
+    let elder_size = 8;
+    let safe_section_size = 8;
+    let network = Network::new(NetworkParams {
+        elder_size,
+        safe_section_size,
+    });
+
+    let mut nodes = create_connected_nodes(&network, safe_section_size);
+    poll_and_resend(&mut nodes);
+    // Pause a node to act as non-responsive.
+    let mut rng = network.new_rng();
+    let non_responsive_index = gen_elder_index(&mut rng, &nodes);
+    let non_responsive_name = nodes[non_responsive_index].name();
+    info!(
+        "{:?} chosen as non-responsive.",
+        nodes[non_responsive_index].name()
+    );
+    let mut _non_responsive_node = None;
+
+    // Sending some user events to create a sequence of observations.
+    let mut responded = 0;
+    for i in 0..UNRESPONSIVE_WINDOW {
+        let event: Vec<_> = rng.gen_iter().take(100).collect();
+        nodes.iter_mut().for_each(|node| {
+            if node.name() == non_responsive_name {
+                // `chain_accumulator` gets reset during parsec pruning, which will reset the
+                // tracking of unresponsiveness as well. So this test has to assume there is no
+                // parsec pruning being carried out.
+                if responded < UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 1
+                    && rng.gen_weighted_bool(3)
+                {
+                    responded += 1;
+                } else {
+                    return;
+                }
+            }
+            let _ = node
+                .inner
+                .elder_state_mut()
+                .map(|state| state.vote_for_user_event(event.clone()));
+        });
+
+        // Required to avoid the case that the non-responsive node doesn't realize its removal,
+        // which blocks the polling infinitely.
+        if i == UNRESPONSIVE_THRESHOLD - 1 {
+            _non_responsive_node = Some(nodes.remove(non_responsive_index));
+        }
+
+        poll_and_resend(&mut nodes);
+    }
+
+    // Verify the other nodes saw the paused node and removed it.
+    for node in nodes.iter_mut().filter(|n| n.inner.is_elder()) {
+        expect_any_event!(node, Event::NodeLost(_));
+    }
+}
+
 // Parameters for the churn tests.
 //
 // The test run in three phases:
@@ -74,6 +156,111 @@ impl Default for Params {
 enum MessageSchedule {
     AfterChurn,
     DuringChurn,
+}
+
+fn churn(params: Params) {
+    let network = Network::new(params.network);
+    let mut rng = network.new_rng();
+    let mut nodes = if params.initial_prefix_lens.is_empty() {
+        create_connected_nodes(&network, network.elder_size())
+    } else {
+        create_connected_nodes_until_split(&network, params.initial_prefix_lens)
+    };
+
+    //
+    // Grow phase - adding nodes
+    //
+    warn!(
+        "Churn [{} nodes, {} sections]: adding nodes",
+        nodes.len(),
+        count_sections(&nodes)
+    );
+    loop {
+        if count_sections(&nodes) >= params.grow_target_section_num {
+            break;
+        }
+
+        let added_indices = add_nodes(&mut rng, &network, &mut nodes);
+        progress_and_verify(
+            &mut rng,
+            &network,
+            &mut nodes,
+            params.message_schedule,
+            added_indices,
+            BTreeSet::new(),
+        )
+    }
+
+    //
+    // Churn phase - simultaneously adding and dropping nodes
+    //
+    warn!(
+        "Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
+        nodes.len(),
+        count_sections(&nodes)
+    );
+    for i in 0..params.churn_max_iterations {
+        warn!("Iteration {}/{}", i, params.churn_max_iterations);
+
+        let (added_indices, dropped_names) = random_churn(
+            &mut rng,
+            &network,
+            &mut nodes,
+            params.churn_probability,
+            params.grow_target_section_num,
+            params.churn_max_section_num,
+        );
+        progress_and_verify(
+            &mut rng,
+            &network,
+            &mut nodes,
+            params.message_schedule,
+            added_indices,
+            dropped_names,
+        );
+
+        warn!(
+            "Remaining Prefixes: {{{:?}}}",
+            current_sections(&nodes).format(", ")
+        );
+    }
+
+    //
+    // Shrink phase - dropping nodes
+    //
+    if params.shrink {
+        warn!(
+            "Churn [{} nodes, {} sections]: dropping nodes",
+            nodes.len(),
+            count_sections(&nodes)
+        );
+        loop {
+            let dropped_names = drop_random_nodes(&mut rng, &mut nodes);
+            if dropped_names.is_empty() {
+                break;
+            }
+
+            progress_and_verify(
+                &mut rng,
+                &network,
+                &mut nodes,
+                params.message_schedule,
+                BTreeSet::new(),
+                dropped_names,
+            );
+
+            warn!(
+                "Remaining Prefixes: {{{:?}}}",
+                current_sections(&nodes).format(", ")
+            );
+        }
+    }
+
+    warn!(
+        "Churn [{} nodes, {} sections]: done",
+        nodes.len(),
+        count_sections(&nodes)
+    );
 }
 
 /// Randomly removes some nodes.
@@ -290,6 +477,61 @@ fn random_churn<R: Rng>(
     };
 
     (added_indices, dropped_names)
+}
+
+fn progress_and_verify<R: Rng>(
+    rng: &mut R,
+    network: &Network,
+    nodes: &mut [TestNode],
+    message_schedule: MessageSchedule,
+    added_indices: BTreeSet<usize>,
+    dropped_names: BTreeSet<XorName>,
+) {
+    if !dropped_names.is_empty() {
+        warn!("Dropping {:?}", dropped_names);
+    }
+
+    let (expectations, relocation_map) = match message_schedule {
+        MessageSchedule::AfterChurn => {
+            poll_and_resend(nodes);
+            let added_names = check_added_indices(nodes, added_indices);
+            log_churn_outcome(&added_names, &dropped_names);
+
+            let expectations = setup_expectations(rng, nodes, network.elder_size());
+            poll_and_resend(nodes);
+
+            (expectations, BTreeMap::default())
+        }
+        MessageSchedule::DuringChurn => {
+            let expectations = setup_expectations(rng, nodes, network.elder_size());
+            let relocation_map = RelocationMapBuilder::new(&nodes);
+
+            poll_and_resend(nodes);
+            let added_names = check_added_indices(nodes, added_indices);
+            log_churn_outcome(&added_names, &dropped_names);
+
+            (expectations, relocation_map.build(&nodes))
+        }
+    };
+
+    expectations.verify(nodes, &relocation_map);
+    verify_invariant_for_all_nodes(network, nodes);
+    shuffle_nodes(rng, nodes);
+}
+
+fn log_churn_outcome(added_names: &BTreeSet<XorName>, dropped_names: &BTreeSet<XorName>) {
+    if !added_names.is_empty() {
+        if !dropped_names.is_empty() {
+            warn!(
+                "Simultaneously added {:?} and dropped {:?}",
+                added_names, dropped_names
+            );
+        } else {
+            warn!("Added {:?}, dropped none", added_names);
+        }
+    } else if !dropped_names.is_empty() {
+        warn!("Added none, dropped {:?}", dropped_names);
+    }
 }
 
 #[derive(Eq, PartialEq, Hash, Debug)]
@@ -512,247 +754,5 @@ impl RelocationMapBuilder {
             .map(|(node, old_name)| (node.name(), old_name))
             .filter(|(new_name, old_name)| old_name != new_name)
             .collect()
-    }
-}
-
-fn progress_and_verify<R: Rng>(
-    rng: &mut R,
-    network: &Network,
-    nodes: &mut [TestNode],
-    message_schedule: MessageSchedule,
-    added_indices: BTreeSet<usize>,
-    dropped_names: BTreeSet<XorName>,
-) {
-    if !dropped_names.is_empty() {
-        warn!("Dropping {:?}", dropped_names);
-    }
-
-    let (expectations, relocation_map) = match message_schedule {
-        MessageSchedule::AfterChurn => {
-            poll_and_resend(nodes);
-            let added_names = check_added_indices(nodes, added_indices);
-            log_churn_outcome(&added_names, &dropped_names);
-
-            let expectations = setup_expectations(rng, nodes, network.elder_size());
-            poll_and_resend(nodes);
-
-            (expectations, BTreeMap::default())
-        }
-        MessageSchedule::DuringChurn => {
-            let expectations = setup_expectations(rng, nodes, network.elder_size());
-            let relocation_map = RelocationMapBuilder::new(&nodes);
-
-            poll_and_resend(nodes);
-            let added_names = check_added_indices(nodes, added_indices);
-            log_churn_outcome(&added_names, &dropped_names);
-
-            (expectations, relocation_map.build(&nodes))
-        }
-    };
-
-    expectations.verify(nodes, &relocation_map);
-    verify_invariant_for_all_nodes(network, nodes);
-    shuffle_nodes(rng, nodes);
-}
-
-fn log_churn_outcome(added_names: &BTreeSet<XorName>, dropped_names: &BTreeSet<XorName>) {
-    if !added_names.is_empty() {
-        if !dropped_names.is_empty() {
-            warn!(
-                "Simultaneously added {:?} and dropped {:?}",
-                added_names, dropped_names
-            );
-        } else {
-            warn!("Added {:?}, dropped none", added_names);
-        }
-    } else if !dropped_names.is_empty() {
-        warn!("Added none, dropped {:?}", dropped_names);
-    }
-}
-
-fn churn(params: Params) {
-    let network = Network::new(params.network);
-    let mut rng = network.new_rng();
-    let mut nodes = if params.initial_prefix_lens.is_empty() {
-        create_connected_nodes(&network, network.elder_size())
-    } else {
-        create_connected_nodes_until_split(&network, params.initial_prefix_lens)
-    };
-
-    //
-    // Grow phase - adding nodes
-    //
-    warn!(
-        "Churn [{} nodes, {} sections]: adding nodes",
-        nodes.len(),
-        count_sections(&nodes)
-    );
-    loop {
-        if count_sections(&nodes) >= params.grow_target_section_num {
-            break;
-        }
-
-        let added_indices = add_nodes(&mut rng, &network, &mut nodes);
-        progress_and_verify(
-            &mut rng,
-            &network,
-            &mut nodes,
-            params.message_schedule,
-            added_indices,
-            BTreeSet::new(),
-        )
-    }
-
-    //
-    // Churn phase - simultaneously adding and dropping nodes
-    //
-    warn!(
-        "Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
-        nodes.len(),
-        count_sections(&nodes)
-    );
-    for i in 0..params.churn_max_iterations {
-        warn!("Iteration {}/{}", i, params.churn_max_iterations);
-
-        let (added_indices, dropped_names) = random_churn(
-            &mut rng,
-            &network,
-            &mut nodes,
-            params.churn_probability,
-            params.grow_target_section_num,
-            params.churn_max_section_num,
-        );
-        progress_and_verify(
-            &mut rng,
-            &network,
-            &mut nodes,
-            params.message_schedule,
-            added_indices,
-            dropped_names,
-        );
-
-        warn!(
-            "Remaining Prefixes: {{{:?}}}",
-            current_sections(&nodes).format(", ")
-        );
-    }
-
-    //
-    // Shrink phase - dropping nodes
-    //
-    if params.shrink {
-        warn!(
-            "Churn [{} nodes, {} sections]: dropping nodes",
-            nodes.len(),
-            count_sections(&nodes)
-        );
-        loop {
-            let dropped_names = drop_random_nodes(&mut rng, &mut nodes);
-            if dropped_names.is_empty() {
-                break;
-            }
-
-            progress_and_verify(
-                &mut rng,
-                &network,
-                &mut nodes,
-                params.message_schedule,
-                BTreeSet::new(),
-                dropped_names,
-            );
-
-            warn!(
-                "Remaining Prefixes: {{{:?}}}",
-                current_sections(&nodes).format(", ")
-            );
-        }
-    }
-
-    warn!(
-        "Churn [{} nodes, {} sections]: done",
-        nodes.len(),
-        count_sections(&nodes)
-    );
-}
-
-#[test]
-fn aggressive_churn() {
-    churn(Params {
-        message_schedule: MessageSchedule::AfterChurn,
-        grow_target_section_num: 5,
-        churn_max_iterations: 15,
-        ..Default::default()
-    });
-}
-
-#[test]
-fn messages_during_churn() {
-    churn(Params {
-        initial_prefix_lens: vec![2, 2, 2, 3, 3],
-        message_schedule: MessageSchedule::DuringChurn,
-        grow_target_section_num: 5,
-        churn_probability: 0.8,
-        churn_max_section_num: 10,
-        churn_max_iterations: 50,
-        ..Default::default()
-    });
-}
-
-#[test]
-fn remove_unresponsive_node() {
-    let elder_size = 8;
-    let safe_section_size = 8;
-    let network = Network::new(NetworkParams {
-        elder_size,
-        safe_section_size,
-    });
-
-    let mut nodes = create_connected_nodes(&network, safe_section_size);
-    poll_and_resend(&mut nodes);
-    // Pause a node to act as non-responsive.
-    let mut rng = network.new_rng();
-    let non_responsive_index = gen_elder_index(&mut rng, &nodes);
-    let non_responsive_name = nodes[non_responsive_index].name();
-    info!(
-        "{:?} chosen as non-responsive.",
-        nodes[non_responsive_index].name()
-    );
-    let mut _non_responsive_node = None;
-
-    // Sending some user events to create a sequence of observations.
-    let mut responded = 0;
-    for i in 0..UNRESPONSIVE_WINDOW {
-        let event: Vec<_> = rng.gen_iter().take(100).collect();
-        nodes.iter_mut().for_each(|node| {
-            if node.name() == non_responsive_name {
-                // `chain_accumulator` gets reset during parsec pruning, which will reset the
-                // tracking of unresponsiveness as well. So this test has to assume there is no
-                // parsec pruning being carried out.
-                if responded < UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 1
-                    && rng.gen_weighted_bool(3)
-                {
-                    responded += 1;
-                } else {
-                    return;
-                }
-            }
-            let _ = node
-                .inner
-                .elder_state_mut()
-                .map(|state| state.vote_for_user_event(event.clone()));
-        });
-
-        // Required to avoid the case that the non-responsive node doesn't realize its removal,
-        // which blocks the polling infinitely.
-        if i == UNRESPONSIVE_THRESHOLD - 1 {
-            _non_responsive_node = Some(nodes.remove(non_responsive_index));
-        }
-
-        poll_and_resend(&mut nodes);
-    }
-
-    // Verify the other nodes saw the paused node and removed it.
-    for node in nodes.iter_mut().filter(|n| n.inner.is_elder()) {
-        expect_any_event!(node, Event::NodeLost(_));
     }
 }
