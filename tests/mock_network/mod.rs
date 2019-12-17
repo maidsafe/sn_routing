@@ -601,12 +601,16 @@ fn carry_out_parsec_pruning() {
     verify_invariant_for_all_nodes(&network, &mut nodes);
 }
 
+// The paused node does not participate until resumed, so we need enough elders to reach
+// consensus even without it.
+const NODE_PAUSE_AND_RESUME_PARAMS: NetworkParams = NetworkParams {
+    elder_size: 4,
+    safe_section_size: 4,
+};
+
 #[test]
 fn node_pause_and_resume_simple() {
-    let network = Network::new(NetworkParams {
-        elder_size: LOWERED_ELDER_SIZE,
-        safe_section_size: LOWERED_ELDER_SIZE,
-    });
+    let network = Network::new(NODE_PAUSE_AND_RESUME_PARAMS);
     let nodes = create_connected_nodes(&network, 2 * network.safe_section_size() - 2);
     let new_node_id = FullId::gen(&mut network.new_rng());
     node_pause_and_resume(network, nodes, new_node_id)
@@ -614,12 +618,7 @@ fn node_pause_and_resume_simple() {
 
 #[test]
 fn node_pause_and_resume_during_split() {
-    let network = Network::new(NetworkParams {
-        // The paused node does not participate until resumed, so we need enough elders to reach
-        // consensus even without it.
-        elder_size: 4,
-        safe_section_size: 4,
-    });
+    let network = Network::new(NODE_PAUSE_AND_RESUME_PARAMS);
 
     let mut nodes = create_connected_nodes(&network, network.safe_section_size());
     let prefix =
