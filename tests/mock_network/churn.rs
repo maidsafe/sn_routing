@@ -35,6 +35,8 @@ struct Params {
     // The network starts with sections whose prefixes have these lengths. If empty, the network
     // starts with just the root section with `elder_size` nodes.
     initial_prefix_lens: Vec<usize>,
+    // When are messages sent during each iteration.
+    message_schedule: MessageSchedule,
 
     // The churn phase lasts until the number of sections and/or number of nodes reaches these
     // values. If both are set, then both section number and node number must reach them. If none
@@ -54,8 +56,8 @@ struct Params {
     // During the churn phase, if the number of sections is more than this number, nodes are not
     // added, only dropped.
     churn_max_section_num: usize,
-    // // If true, the shrink phase is performed, otherwise it is skipped.
-    // shrink: bool,
+    // If true, the shrink phase is performed, otherwise it is skipped.
+    shrink: bool,
 }
 
 impl Default for Params {
@@ -66,6 +68,7 @@ impl Default for Params {
                 safe_section_size: 4,
             },
             initial_prefix_lens: vec![],
+            message_schedule: MessageSchedule::AfterChurn,
             grow_target_section_num: None,
             grow_target_network_size: None,
             churn_min_network_size: 0,
@@ -73,9 +76,16 @@ impl Default for Params {
             churn_probability: 1.0,
             churn_min_section_num: 0,
             churn_max_section_num: usize::MAX,
-            // shrink: false,
+            shrink: false,
         }
     }
+}
+
+// When do we send messages.
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum MessageSchedule {
+    AfterChurn,
+    DuringChurn,
 }
 
 /// Randomly removes some nodes.
@@ -517,13 +527,6 @@ impl RelocationMapBuilder {
     }
 }
 
-// When do we send messages.
-#[derive(PartialEq, Eq)]
-enum MessageSchedule {
-    AfterChurn,
-    DuringChurn,
-}
-
 fn progress_and_verify<R: Rng>(
     rng: &mut R,
     network: &Network,
@@ -579,32 +582,26 @@ fn log_churn_outcome(added_names: &BTreeSet<XorName>, dropped_names: &BTreeSet<X
     }
 }
 
-#[test]
-fn aggressive_churn() {
-    let params = Params {
-        grow_target_section_num: Some(5),
-        grow_target_network_size: Some(35),
-        churn_min_network_size: 17,
-        churn_max_iterations: 15,
-        ..Default::default()
-    };
-
-    // There are no parameters for the shrink phase - it ends when no more nodes can be dropped.
-
+fn churn(params: Params) {
     let network = Network::new(params.network);
     let mut rng = network.new_rng();
+    let mut nodes = if params.initial_prefix_lens.is_empty() {
+        create_connected_nodes(&network, network.elder_size())
+    } else {
+        create_connected_nodes_until_split(&network, params.initial_prefix_lens)
+    };
 
-    // Create an initial network, increase until we have several sections, then
-    // decrease back to elder_size, then increase to again.
-    let mut nodes = create_connected_nodes(&network, network.elder_size());
+    //
+    // Grow phase - adding nodes
+    //
+    if params.grow_target_network_size.is_some() || params.grow_target_section_num.is_some() {
+        warn!(
+            "Churn [{} nodes, {} sections]: adding nodes",
+            nodes.len(),
+            count_sections(&nodes)
+        );
+    }
 
-    warn!(
-        "Churn [{} nodes, {} sections]: adding nodes",
-        nodes.len(),
-        count_sections(&nodes)
-    );
-
-    // Add nodes to trigger splits.
     loop {
         let section_num_limit = params
             .grow_target_section_num
@@ -624,101 +621,27 @@ fn aggressive_churn() {
             &mut rng,
             &network,
             &mut nodes,
-            MessageSchedule::AfterChurn,
+            params.message_schedule,
             added_indices,
             BTreeSet::new(),
         )
     }
 
-    // Simultaneous Add/Drop nodes in the same iteration.
+    //
+    // Churn phase - simultaneously adding and dropping nodes
+    //
     warn!(
         "Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
         nodes.len(),
         count_sections(&nodes)
     );
-    let mut iteration = 0;
-    while nodes.len() > params.churn_min_network_size && iteration < params.churn_max_iterations {
-        iteration += 1;
-
-        let (added_indices, dropped_names) = random_churn(
-            &mut rng,
-            &network,
-            &mut nodes,
-            params.churn_probability,
-            0,
-            usize::MAX,
-        );
-        progress_and_verify(
-            &mut rng,
-            &network,
-            &mut nodes,
-            MessageSchedule::AfterChurn,
-            added_indices,
-            dropped_names,
-        );
-
-        warn!(
-            "Remaining Prefixes: {{{:?}}}",
-            current_sections(&nodes).format(", ")
-        );
-    }
-
-    // Drop nodes to trigger merges.
-    warn!(
-        "Churn [{} nodes, {} sections]: dropping nodes",
-        nodes.len(),
-        count_sections(&nodes)
-    );
-    loop {
-        let dropped_names = drop_random_nodes(&mut rng, &mut nodes);
-        if dropped_names.is_empty() {
+    for i in 0..params.churn_max_iterations {
+        if nodes.len() <= params.churn_min_network_size {
             break;
         }
 
-        progress_and_verify(
-            &mut rng,
-            &network,
-            &mut nodes,
-            MessageSchedule::AfterChurn,
-            BTreeSet::new(),
-            dropped_names,
-        );
+        warn!("Iteration {}/{}", i, params.churn_max_iterations);
 
-        warn!(
-            "Remaining Prefixes: {{{:?}}}",
-            current_sections(&nodes).format(", ")
-        );
-    }
-
-    warn!(
-        "Churn [{} nodes, {} sections]: done",
-        nodes.len(),
-        count_sections(&nodes)
-    );
-}
-
-#[test]
-fn messages_during_churn() {
-    let params = Params {
-        initial_prefix_lens: vec![2, 2, 2, 3, 3],
-        churn_probability: 0.8,
-        churn_min_section_num: 5,
-        churn_max_section_num: 10,
-        churn_max_iterations: 50,
-        ..Default::default()
-    };
-
-    let network = Network::new(params.network);
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, params.initial_prefix_lens);
-
-    for i in 0..params.churn_max_iterations {
-        warn!(
-            "Iteration {}/{}. Prefixes: {{{:?}}}",
-            i,
-            params.churn_max_iterations,
-            current_sections(&nodes).format(", ")
-        );
         let (added_indices, dropped_names) = random_churn(
             &mut rng,
             &network,
@@ -731,11 +654,78 @@ fn messages_during_churn() {
             &mut rng,
             &network,
             &mut nodes,
-            MessageSchedule::DuringChurn,
+            params.message_schedule,
             added_indices,
             dropped_names,
         );
+
+        warn!(
+            "Remaining Prefixes: {{{:?}}}",
+            current_sections(&nodes).format(", ")
+        );
     }
+
+    //
+    // Shrink phase - dropping nodes
+    //
+    if params.shrink {
+        warn!(
+            "Churn [{} nodes, {} sections]: dropping nodes",
+            nodes.len(),
+            count_sections(&nodes)
+        );
+        loop {
+            let dropped_names = drop_random_nodes(&mut rng, &mut nodes);
+            if dropped_names.is_empty() {
+                break;
+            }
+
+            progress_and_verify(
+                &mut rng,
+                &network,
+                &mut nodes,
+                params.message_schedule,
+                BTreeSet::new(),
+                dropped_names,
+            );
+
+            warn!(
+                "Remaining Prefixes: {{{:?}}}",
+                current_sections(&nodes).format(", ")
+            );
+        }
+    }
+
+    warn!(
+        "Churn [{} nodes, {} sections]: done",
+        nodes.len(),
+        count_sections(&nodes)
+    );
+}
+
+#[test]
+fn aggressive_churn() {
+    churn(Params {
+        message_schedule: MessageSchedule::AfterChurn,
+        grow_target_section_num: Some(5),
+        grow_target_network_size: Some(35),
+        churn_min_network_size: 17,
+        churn_max_iterations: 15,
+        ..Default::default()
+    });
+}
+
+#[test]
+fn messages_during_churn() {
+    churn(Params {
+        initial_prefix_lens: vec![2, 2, 2, 3, 3],
+        message_schedule: MessageSchedule::DuringChurn,
+        churn_probability: 0.8,
+        churn_min_section_num: 5,
+        churn_max_section_num: 10,
+        churn_max_iterations: 50,
+        ..Default::default()
+    });
 }
 
 #[test]
