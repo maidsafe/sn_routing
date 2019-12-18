@@ -66,7 +66,7 @@ pub trait Approved: Base {
         payload: RelocateDetails,
         signature: BlsSignature,
         outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError>;
+    );
 
     /// Handles a completed DKG.
     fn handle_dkg_result_event(
@@ -505,8 +505,13 @@ pub trait Approved: Base {
             info!("{} - ignore Relocate: {:?} - not a member", self, details);
         } else {
             info!("{} - handle Relocate: {:?}.", self, details);
-            self.chain_mut().remove_member(&details.pub_id);
-            self.handle_member_relocated(details, signature, outbox)?;
+
+            // Note: it is important that `handle_member_relocated` is called before the member is
+            // actually removed. This is because the member info of the relocated node might still
+            // be needed by `handle_member_relocated`.
+            let pub_id = details.pub_id;
+            self.handle_member_relocated(details, signature, outbox);
+            self.chain_mut().remove_member(&pub_id);
         }
 
         Ok(())

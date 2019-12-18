@@ -682,8 +682,7 @@ impl Approved for Adult {
         _details: RelocateDetails,
         _signature: BlsSignature,
         _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        Ok(())
+    ) {
     }
 
     fn handle_dkg_result_event(

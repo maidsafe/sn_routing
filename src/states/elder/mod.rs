@@ -1637,10 +1637,10 @@ impl Approved for Elder {
         details: RelocateDetails,
         signature: BlsSignature,
         _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
+    ) {
         if &details.pub_id == self.id() {
             // Do not send the message to ourselves.
-            return Ok(());
+            return;
         }
 
         // We need proof that is valid for both the relocating node and the target section. To
@@ -1668,8 +1668,6 @@ impl Approved for Elder {
                 DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
             self.send_direct_message(&conn_info, message);
         }
-
-        Ok(())
     }
 
     fn handle_dkg_result_event(
