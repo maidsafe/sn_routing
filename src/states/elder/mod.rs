@@ -60,7 +60,10 @@ use crate::messages::Message;
 
 /// Time after which a `Ticked` event is sent.
 const TICK_TIMEOUT: Duration = Duration::from_secs(15);
+/// Time after which an Elder should send a new Gossip.
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
+/// Number of RelocatePrepare to consensus before actually relocating a node.
+/// This helps avoid relocated node receiving message they need to process from previous section.
 const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 
 struct CompleteParsecReset {
