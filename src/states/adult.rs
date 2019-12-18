@@ -306,19 +306,20 @@ impl Adult {
         }
     }
 
-    // Since we are an adult we will only give info about our section elders and they will further
-    // guide the joining node.
+    // Since we are an adult we should only give info about our section elders and they would
+    // further guide the joining node.
+    // However this lead to a loop if the Adult is the new Elder so we use the same code as
+    // in Elder and return Join in some cases.
     fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
-        self.respond_to_bootstrap_request(&p2p_node, &destination);
-    }
-
-    fn respond_to_bootstrap_request(&mut self, p2p_node: &P2pNode, name: &XorName) {
-        let response = if self.our_prefix().matches(name) {
+        // Use same code as from Elder::respond_to_bootstrap_request.
+        // This is problematic since Elders do additional checks before doing this.
+        // This was necessary to merge the initial work for promotion demotion.
+        let response = if self.our_prefix().matches(&destination) {
             debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
             BootstrapResponse::Join(self.chain.our_info().clone())
         } else {
             let conn_infos: Vec<_> = self
-                .closest_known_elders_to(name)
+                .closest_known_elders_to(&destination)
                 .map(|p2p_node| p2p_node.connection_info().clone())
                 .collect();
             debug!(
