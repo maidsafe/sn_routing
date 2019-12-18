@@ -49,7 +49,7 @@ use log::LogLevel;
 use serde::Serialize;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::SocketAddr,
@@ -121,7 +121,7 @@ pub struct Elder {
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     // Messages we received but not accumulated yet, so may need to re-swarm.
-    pending_voted_msgs: HashMap<PendingMessageKey, SignedRoutingMessage>,
+    pending_voted_msgs: BTreeMap<PendingMessageKey, SignedRoutingMessage>,
     rng: MainRng,
 }
 
@@ -556,7 +556,7 @@ impl Elder {
     // After parsec reset, resend any unaccumulated voted messages to everyone that needs
     // them but possibly did not receive them already.
     fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
-        for (_, msg) in mem::replace(&mut self.pending_voted_msgs, HashMap::new()) {
+        for (_, msg) in mem::replace(&mut self.pending_voted_msgs, Default::default()) {
             match self.send_signed_message(&msg) {
                 Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
                 Err(error) => debug!(
