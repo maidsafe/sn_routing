@@ -101,11 +101,11 @@ impl TestNode {
     }
 
     pub fn endpoint(&mut self) -> SocketAddr {
-        unwrap!(self.inner.our_connection_info()).peer_addr
+        unwrap!(self.inner.our_connection_info(), "{}", self.inner).peer_addr
     }
 
     pub fn id(&self) -> PublicId {
-        unwrap!(self.inner.id())
+        unwrap!(self.inner.id(), "{}", self.inner)
     }
 
     pub fn name(&self) -> XorName {
@@ -113,11 +113,11 @@ impl TestNode {
     }
 
     pub fn close_names(&self) -> Vec<XorName> {
-        unwrap!(self.inner.close_names(&self.name()))
+        unwrap!(self.inner.close_names(&self.name()), "{}", self.inner)
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        unwrap!(self.inner.our_prefix())
+        unwrap!(self.inner.our_prefix(), "{}", self.inner)
     }
 
     pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
@@ -629,12 +629,7 @@ pub fn nodes_with_prefix_mut<'a>(
 }
 
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
-    let our_prefix = match node.inner.our_prefix() {
-        Some(pfx) => pfx,
-        None => {
-            return;
-        }
-    };
+    let our_prefix = node.our_prefix();
     let our_name = node.name();
     let our_section_elders = node.inner.section_elders(our_prefix);
 
@@ -764,10 +759,7 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
     let mut sections: BTreeMap<Prefix<XorName>, NodeSectionInfo> = BTreeMap::new();
 
     for node in nodes.iter().filter(|node| node.inner.is_elder()) {
-        let our_prefix = match node.inner.our_prefix() {
-            Some(pfx) => pfx,
-            None => continue,
-        };
+        let our_prefix = node.our_prefix();
         let our_name = node.name();
         // NOTE: using neighbour_prefixes() here and not neighbour_infos().prefix().
         // Is this a problem?
