@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::routing_table::Error as RoutingTableError;
+use super::routing_table::RoutingTableError;
 use crate::{action::Action, event::Event, id::PublicId, quic_p2p};
 use bincode::ErrorKind;
 use crossbeam_channel as mpmc;

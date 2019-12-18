@@ -104,7 +104,7 @@ mod prefix;
 mod xorable;
 
 pub use self::authority::Authority;
-pub use self::error::Error;
+pub use self::error::RoutingTableError;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::network_tests::verify_network_invariant;
 pub use self::prefix::{Prefix, VersionedPrefix};
@@ -218,9 +218,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// Called once a node has been approved by its own section and is given its peers' tables.
     /// Expects the current sections to be empty and have version 0.
-    pub fn add_prefixes(&mut self, ver_pfxs: Vec<VersionedPrefix<T>>) -> Result<(), Error> {
+    pub fn add_prefixes(
+        &mut self,
+        ver_pfxs: Vec<VersionedPrefix<T>>,
+    ) -> Result<(), RoutingTableError> {
         if self.our_version != 0 || !self.sections.is_empty() {
-            return Err(Error::InvariantViolation);
+            return Err(RoutingTableError::InvariantViolation);
         }
         for ver_pfx in ver_pfxs {
             let (prefix, version) = ver_pfx.into();
@@ -232,7 +235,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 .insert(prefix, (version, BTreeSet::new()))
                 .is_some()
             {
-                return Err(Error::InvariantViolation);
+                return Err(RoutingTableError::InvariantViolation);
             };
         }
         // In case our section has split while we've been going through the approval process, we
@@ -241,7 +244,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         for name in our_section {
             let sec_insert = |section: &mut BTreeSet<T>| !section.insert(name);
             if self.get_section_mut(&name).map_or(true, sec_insert) {
-                return Err(Error::InvariantViolation);
+                return Err(RoutingTableError::InvariantViolation);
             }
         }
         self.check_invariant(true, true)
@@ -251,7 +254,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     pub fn check_node_approval_msg(
         &self,
         sections: BTreeMap<Prefix<T>, BTreeSet<T>>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), RoutingTableError> {
         let mut temp_rt = RoutingTable::new(self.our_name, self.min_section_size);
         temp_rt.add_prefixes(sections.keys().map(|pfx| pfx.with_version(0)).collect())?;
         for peer in sections.values().flat_map(BTreeSet::iter) {
@@ -445,28 +448,28 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// Returns `Err` if `name` already exists in the routing table, or it doesn't fall within any
     /// of our sections, or it's our own name.
-    pub fn need_to_add(&self, name: &T) -> Result<(), Error> {
+    pub fn need_to_add(&self, name: &T) -> Result<(), RoutingTableError> {
         if *name == self.our_name {
-            return Err(Error::OwnNameDisallowed);
+            return Err(RoutingTableError::OwnNameDisallowed);
         }
         if let Some(section) = self.get_section(name) {
             if section.contains(name) {
-                Err(Error::AlreadyExists)
+                Err(RoutingTableError::AlreadyExists)
             } else {
                 Ok(())
             }
         } else {
-            Err(Error::PeerNameUnsuitable)
+            Err(RoutingTableError::PeerNameUnsuitable)
         }
     }
 
     /// Validates a joining node's name.
-    pub fn validate_joining_node(&self, name: &T) -> Result<(), Error> {
+    pub fn validate_joining_node(&self, name: &T) -> Result<(), RoutingTableError> {
         if !self.our_prefix.matches(name) {
-            return Err(Error::PeerNameUnsuitable);
+            return Err(RoutingTableError::PeerNameUnsuitable);
         }
         if self.our_section.contains(name) {
-            return Err(Error::AlreadyExists);
+            return Err(RoutingTableError::AlreadyExists);
         }
         Ok(())
     }
@@ -475,17 +478,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///
     /// Returns `Err` if `name` already existed in the routing table, or it doesn't fall within any
     /// of our sections, or it's our own name.
-    pub fn add(&mut self, name: T) -> Result<(), Error> {
+    pub fn add(&mut self, name: T) -> Result<(), RoutingTableError> {
         if name == self.our_name {
-            return Err(Error::OwnNameDisallowed);
+            return Err(RoutingTableError::OwnNameDisallowed);
         }
 
         if let Some(section) = self.get_section_mut(&name) {
             if !section.insert(name) {
-                return Err(Error::AlreadyExists);
+                return Err(RoutingTableError::AlreadyExists);
             }
         } else {
-            return Err(Error::PeerNameUnsuitable);
+            return Err(RoutingTableError::PeerNameUnsuitable);
         }
         Ok(())
     }
@@ -631,7 +634,8 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                 iter::once(self.our_name).collect(),
             ))
             .filter(|name| {
-                *name != self.our_name && self.add(*name) == Err(Error::PeerNameUnsuitable)
+                *name != self.our_name
+                    && self.add(*name) == Err(RoutingTableError::PeerNameUnsuitable)
             })
             .collect()
     }
@@ -641,26 +645,26 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     /// If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned. Otherwise, the
     /// entry is removed from the routing table and `RemovalDetails` is returned. See that struct's
     /// docs for further info.
-    pub fn remove(&mut self, name: &T) -> Result<RemovalDetails<T>, Error> {
+    pub fn remove(&mut self, name: &T) -> Result<RemovalDetails<T>, RoutingTableError> {
         let removal_details = RemovalDetails {
             name: *name,
             was_in_our_section: self.our_prefix.matches(name),
         };
         if removal_details.was_in_our_section {
             if self.our_name == *name {
-                return Err(Error::OwnNameDisallowed);
+                return Err(RoutingTableError::OwnNameDisallowed);
             }
             if !self.our_section.remove(name) {
-                return Err(Error::NoSuchPeer);
+                return Err(RoutingTableError::NoSuchPeer);
             }
         } else if let Some(prefix) = self.find_section_prefix(name) {
             if let Some(&mut (_, ref mut section)) = self.sections.get_mut(&prefix) {
                 if !section.remove(name) {
-                    return Err(Error::NoSuchPeer);
+                    return Err(RoutingTableError::NoSuchPeer);
                 }
             }
         } else {
-            return Err(Error::NoSuchPeer);
+            return Err(RoutingTableError::NoSuchPeer);
         }
         Ok(removal_details)
     }
@@ -796,7 +800,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(&self, dst: &Authority<T>, exclude: T) -> Result<BTreeSet<T>, Error> {
+    pub fn targets(
+        &self,
+        dst: &Authority<T>,
+        exclude: T,
+    ) -> Result<BTreeSet<T>, RoutingTableError> {
         let candidates = |target_name: &T| {
             self.closest_section(target_name)
                 .1
@@ -851,7 +859,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
                             .cloned()
                             .collect());
                     } else {
-                        return Err(Error::CannotRoute);
+                        return Err(RoutingTableError::CannotRoute);
                     }
                 }
                 candidates(&prefix.lower_bound())
@@ -1038,12 +1046,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         &self,
         allow_small_sections: bool,
         show_warnings: bool,
-    ) -> Result<(), Error> {
-        let warn = |log_msg: String| -> Result<(), Error> {
+    ) -> Result<(), RoutingTableError> {
+        let warn = |log_msg: String| -> Result<(), RoutingTableError> {
             if show_warnings {
                 warn!("{}", log_msg);
             }
-            Err(Error::InvariantViolation)
+            Err(RoutingTableError::InvariantViolation)
         };
         if !self.our_prefix.matches(&self.our_name) {
             return warn(format!("Our prefix does not match our name: {:?}", self));
@@ -1343,17 +1351,26 @@ mod tests {
         assert_eq!(table.our_section().len(), table.min_split_size());
 
         // Try to add a name which is already in the RT.
-        assert_eq!(table.add(section_001_name), Err(Error::AlreadyExists));
+        assert_eq!(
+            table.add(section_001_name),
+            Err(RoutingTableError::AlreadyExists)
+        );
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add our own name.
-        assert_eq!(table.add(our_name), Err(Error::OwnNameDisallowed));
+        assert_eq!(
+            table.add(our_name),
+            Err(RoutingTableError::OwnNameDisallowed)
+        );
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add a name which doesn't fit any section.
-        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::PeerNameUnsuitable));
+        assert_eq!(
+            table.add(nodes_to_drop[0]),
+            Err(RoutingTableError::PeerNameUnsuitable)
+        );
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
@@ -1390,12 +1407,15 @@ mod tests {
         // Check `need_to_add()`.
         assert_eq!(
             table.need_to_add(&section_001_name),
-            Err(Error::AlreadyExists)
+            Err(RoutingTableError::AlreadyExists)
         );
-        assert_eq!(table.need_to_add(&our_name), Err(Error::OwnNameDisallowed));
+        assert_eq!(
+            table.need_to_add(&our_name),
+            Err(RoutingTableError::OwnNameDisallowed)
+        );
         assert_eq!(
             table.need_to_add(&nodes_to_drop[0]),
-            Err(Error::PeerNameUnsuitable)
+            Err(RoutingTableError::PeerNameUnsuitable)
         );
         assert_eq!(table.need_to_add(&(section_001_name + 1)), Ok(()));
     }
