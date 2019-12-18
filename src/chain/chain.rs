@@ -246,12 +246,14 @@ impl Chain {
             return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
         }
 
-        if let Some(details) = self.poll_relocation() {
-            return Ok(Some(PollAccumulated::RelocateDetails(details)));
-        }
-
+        // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
+        // otherwise we might relocate a node that we still need.
         if let Some(new_infos) = self.promote_and_demote_elders()? {
             return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
+        }
+
+        if let Some(details) = self.poll_relocation() {
+            return Ok(Some(PollAccumulated::RelocateDetails(details)));
         }
 
         let (event, proofs) = match self.poll_chain_accumulator() {
@@ -558,7 +560,6 @@ impl Chain {
             return Ok(None);
         }
 
-        // TODO: the split decision should be based on the number of all members, not just elders.
         if self.should_split()? {
             let (our_info, other_info) = self.split_self()?;
             self.state.split_in_progress = true;
@@ -801,17 +802,14 @@ impl Chain {
             .collect();
 
         // Ensure that we can still handle one node lost when relocating.
-        // Currently re-promoting relocating adult to elder is not supported.
-        // Ensure that the node we eject are the we want to relocate first.
+        // Ensure that the node we eject are the one we want to relocate first.
         let min_elders = self.elder_size();
         let num_elders = elders.len();
-        let our_info_map = self.our_info().member_map();
         elders.extend(
             self.state
                 .relocate_queue
                 .iter()
                 .map(|details| details.pub_id.name())
-                .filter(|name| our_info_map.get(name).is_some())
                 .filter_map(|name| self.state.our_members.get(name))
                 .filter(|info| info.state != MemberState::Left)
                 .take(min_elders.saturating_sub(num_elders))
