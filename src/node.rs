@@ -469,7 +469,7 @@ impl Node {
     ///
     /// Only if we have a chain (meaning we are elders) we will process this API
     pub fn min_split_size(&self) -> Option<usize> {
-        self.chain().map(|chain| chain.min_split_size())
+        self.chain().map(|chain| chain.safe_section_size())
     }
 
     /// Indicates if there are any pending observations in the parsec object

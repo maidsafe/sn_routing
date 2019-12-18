@@ -54,8 +54,7 @@
     exceeding_bitshifts,
     mutable_transmutes,
     no_mangle_const_items,
-    unknown_crate_types,
-    warnings
+    unknown_crate_types
 )]
 #![deny(
     bad_style,
@@ -80,6 +79,7 @@
     clippy::option_unwrap_used
 )]
 #![warn(
+    deprecated,
     trivial_casts,
     trivial_numeric_casts,
     unused_extern_crates,
@@ -90,7 +90,6 @@
 // FIXME: move `deprecated` to `deny` section above
 #![allow(
     box_pointers,
-    deprecated,
     missing_copy_implementations,
     missing_debug_implementations,
     variant_size_differences,

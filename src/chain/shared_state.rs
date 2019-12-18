@@ -14,9 +14,9 @@ use crate::{
     error::RoutingError, id::PublicId, relocation::RelocateDetails, routing_table::Authority,
     utils::LogIdent, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
 };
+use bincode::{deserialize, serialize};
 use itertools::Itertools;
 use log::LogLevel;
-use maidsafe_utilities::serialisation;
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::{self, Debug, Formatter},
@@ -133,7 +133,7 @@ impl SharedState {
             their_recent_keys,
             churn_event_backlog,
             relocate_queue,
-        ) = serialisation::deserialise(related_info)?;
+        ) = deserialize(related_info)?;
         if self.our_infos.len() != 1 {
             // Check nodes with a history before genesis match the genesis block:
             update_with_genesis_related_info_check_same(
@@ -205,7 +205,7 @@ impl SharedState {
     }
 
     pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
-        Ok(serialisation::serialise(&(
+        Ok(serialize(&(
             &self.our_infos,
             &self.our_history,
             &self.our_members,
@@ -625,7 +625,7 @@ impl SectionKeyInfo {
     }
 
     pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
-        Ok(serialisation::serialise(&self)?)
+        Ok(serialize(&self)?)
     }
 }
 

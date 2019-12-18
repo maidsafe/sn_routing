@@ -26,7 +26,6 @@ use crate::{
     ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use log::LogLevel;
-use maidsafe_utilities::serialisation;
 use std::{fmt::Display, net::SocketAddr, slice};
 
 // Trait for all states.
@@ -460,23 +459,22 @@ pub trait Base: Display {
     }
 }
 
-pub fn to_network_bytes(
-    message: &Message,
-) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
+pub fn to_network_bytes(message: &Message) -> Result<NetworkBytes, (RoutingError, &Message)> {
     #[cfg(not(feature = "mock_serialise"))]
-    let result = Ok(NetworkBytes::from(
-        serialisation::serialise(message).map_err(|err| (err, message))?,
-    ));
+    let result = match bincode::serialize(message) {
+        Ok(data) => Ok(NetworkBytes::from(data)),
+        Err(err) => Err((RoutingError::Bincode(*err), message)),
+    };
 
     #[cfg(feature = "mock_serialise")]
-    let result = Ok(NetworkBytes::new(message.clone()));
+    let result = Ok(NetworkBytes::from(message.clone()));
 
     result
 }
 
 pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
     #[cfg(not(feature = "mock_serialise"))]
-    let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
+    let result = bincode::deserialize(&data[..]).map_err(|err| RoutingError::Bincode(*err));
 
     #[cfg(feature = "mock_serialise")]
     let result = Ok((*data).clone());

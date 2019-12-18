@@ -10,154 +10,80 @@ use super::routing_table::Error as RoutingTableError;
 use crate::{action::Action, event::Event, id::PublicId, quic_p2p};
 use bincode::ErrorKind;
 use crossbeam_channel as mpmc;
-use maidsafe_utilities::serialisation;
-use quick_error::quick_error;
-use std::boxed::Box;
+use err_derive::Error;
 use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
 pub type Result<T> = ::std::result::Result<T, RoutingError>;
 
 /// The type of errors that can occur if routing is unable to handle a send request.
-#[derive(Debug)]
+#[derive(Debug, Error, derive_more::From)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant, missing_docs)]
 pub enum InterfaceError {
-    /// We are not connected to the network.
+    #[error(display = "We are not connected to the network.")]
     NotConnected,
-    /// We are not in a state to handle the action.
+    #[error(display = "We are not in a state to handle the action.")]
     InvalidState,
-    /// Error while trying to receive a message from a multiple-producer-single-consumer channel
+    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
     MpscRecvError(mpsc::RecvError),
-    /// Error while trying to receive a message from a multiple-producer-multiple-consumer channel
-    MpmcRecvError(mpmc::RecvError),
-    /// Error while trying to send an event to a multiple-producer-multiple-consumer channel
-    MpmcSendEventError(mpmc::SendError<Event>),
-    /// Error while trying to send an action to a multiple-producer-multiple-consumer channel
+    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
     MpmcSendActionError(mpmc::SendError<Action>),
 }
 
-impl From<mpsc::RecvError> for InterfaceError {
-    fn from(error: mpsc::RecvError) -> InterfaceError {
-        InterfaceError::MpscRecvError(error)
-    }
-}
-
-impl From<mpmc::RecvError> for InterfaceError {
-    fn from(error: mpmc::RecvError) -> InterfaceError {
-        InterfaceError::MpmcRecvError(error)
-    }
-}
-
-impl From<mpmc::SendError<Event>> for InterfaceError {
-    fn from(error: mpmc::SendError<Event>) -> InterfaceError {
-        InterfaceError::MpmcSendEventError(error)
-    }
-}
-
-impl From<mpmc::SendError<Action>> for InterfaceError {
-    fn from(error: mpmc::SendError<Action>) -> InterfaceError {
-        InterfaceError::MpmcSendActionError(error)
-    }
-}
-
 /// The type of errors that can occur during handling of routing events.
-#[derive(Debug)]
+#[derive(Debug, Error, derive_more::From)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
+#[allow(clippy::large_enum_variant, missing_docs)]
 pub enum RoutingError {
-    /// Invalid State
+    #[error(display = "Invalid State.")]
     Terminated,
-    /// Invalid requester or handler authorities
+    #[error(display = "Invalid requester or handler authorities.")]
     BadAuthority,
-    /// Failed signature check
+    #[error(display = "Failed signature check.")]
     FailedSignature,
-    /// Duplicate request received
+    #[error(display = "Duplicate request received.")]
     FilterCheckFailed,
-    /// Routing Table error
+    #[error(display = "Routing Table error.")]
     RoutingTable(RoutingTableError),
-    /// Interface error
+    #[error(display = "Interface error.")]
     Interface(InterfaceError),
-    /// Network layer error
+    #[error(display = "Network layer error.")]
     Network(quic_p2p::Error),
-    /// Channel sending error
+    #[error(display = " Channel sending error.")]
     MpscSendEventError(mpsc::SendError<Event>),
-    /// Current state is invalid for the operation
+    #[error(display = "Current state is invalid for the operation.")]
     InvalidStateForOperation,
     /// Serialisation Error
-    SerialisationError(serialisation::SerialisationError),
-    /// bincode
+    // SerialisationError(serialisation::SerialisationError),
+    #[error(display = "bincode.")]
     Bincode(ErrorKind),
-    /// Peer not found
+    #[error(display = "Peer not found.")]
     PeerNotFound(PublicId),
-    /// Invalid Destination
+    #[error(display = "Invalid Destination.")]
     InvalidDestination,
-    /// Invalid Source
+    #[error(display = "Invalid Source.")]
     InvalidSource,
-    /// Content of a received message is inconsistent.
+    #[error(display = "Content of a received message is inconsistent.")]
     InvalidMessage,
-    /// A signed message's chain of proving sections is invalid.
+    #[error(display = "A signed message's chain of proving sections is invalid.")]
     InvalidProvingSection,
-    /// A signed message could not be trusted
+    #[error(display = "A signed message could not be trusted.")]
     UntrustedMessage,
-    /// A new SectionInfo is invalid.
+    #[error(display = "A new SectionInfo is invalid.")]
     InvalidNewSectionInfo,
-    /// An Elder DKG result is invalid.
+    #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
 }
 
-impl From<RoutingTableError> for RoutingError {
-    fn from(error: RoutingTableError) -> RoutingError {
-        RoutingError::RoutingTable(error)
-    }
-}
-
-impl From<InterfaceError> for RoutingError {
-    fn from(error: InterfaceError) -> RoutingError {
-        RoutingError::Interface(error)
-    }
-}
-
-impl From<quic_p2p::Error> for RoutingError {
-    fn from(error: quic_p2p::Error) -> RoutingError {
-        RoutingError::Network(error)
-    }
-}
-
-impl From<mpsc::SendError<Event>> for RoutingError {
-    fn from(error: mpsc::SendError<Event>) -> RoutingError {
-        RoutingError::MpscSendEventError(error)
-    }
-}
-
-impl From<serialisation::SerialisationError> for RoutingError {
-    fn from(error: serialisation::SerialisationError) -> RoutingError {
-        RoutingError::SerialisationError(error)
-    }
-}
-
-impl From<ErrorKind> for RoutingError {
-    fn from(error: ErrorKind) -> RoutingError {
-        RoutingError::Bincode(error)
-    }
-}
-// TODO dirvine, we need to complete the error story in our code. Here I am unboxing and that will
-// work, but is not the best.
 impl From<Box<ErrorKind>> for RoutingError {
     fn from(error: Box<ErrorKind>) -> RoutingError {
         RoutingError::Bincode(*error)
     }
 }
-quick_error! {
-    #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-    pub enum BootstrapResponseError {
-        NotApproved {
-            description("Bootstrap node not approved yet")
-            display("The chosen bootstrap node has not yet been approved by the network.")
-        }
-        TooFewPeers {
-            description("Bootstrap node has too few peers")
-            display("The chosen bootstrap node has too few connections to peers.")
-        }
-    }
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum BootstrapResponseError {
+    NotApproved,
+    TooFewPeers,
 }

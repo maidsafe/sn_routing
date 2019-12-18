@@ -17,7 +17,7 @@ use crate::{
     xor_name::{XorName, XOR_NAME_LEN},
     BlsSignature,
 };
-use maidsafe_utilities::serialisation::serialise;
+use bincode::serialize;
 use std::fmt;
 
 #[cfg(feature = "mock_base")]
@@ -75,7 +75,7 @@ impl SignedRelocateDetails {
     // TODO: remove this `allow(unused)` when the Relocate signature issue is solved.
     #[allow(unused)]
     pub fn verify(&self) -> bool {
-        serialise(&self.content)
+        serialize(&self.content)
             .map(|bytes| self.proof.last_public_key().verify(&self.signature, bytes))
             .unwrap_or(false)
     }
@@ -104,7 +104,7 @@ impl RelocatePayload {
         new_pub_id: &PublicId,
         old_full_id: &FullId,
     ) -> Result<Self, RoutingError> {
-        let new_id_serialised = serialise(new_pub_id)?;
+        let new_id_serialised = serialize(new_pub_id)?;
         let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
 
         Ok(Self {
@@ -114,7 +114,7 @@ impl RelocatePayload {
     }
 
     pub fn verify_identity(&self, new_pub_id: &PublicId) -> bool {
-        let new_id_serialised = match serialise(new_pub_id) {
+        let new_id_serialised = match serialize(new_pub_id) {
             Ok(buf) => buf,
             Err(_) => return false,
         };

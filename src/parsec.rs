@@ -8,6 +8,7 @@
 
 #[cfg(feature = "mock_parsec")]
 use crate::crypto;
+use crate::error::RoutingError;
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec as inner;
 use crate::{
@@ -19,7 +20,6 @@ use crate::{
     BlsSecretKeySet,
 };
 use log::LogLevel;
-use maidsafe_utilities::serialisation;
 #[cfg(not(feature = "mock_parsec"))]
 use parsec as inner;
 #[cfg(feature = "mock_parsec")]
@@ -122,11 +122,12 @@ impl ParsecMap {
     ) -> (Option<DirectMessage>, bool) {
         trace!("{} handle_request from {:?}", log_ident, pub_id);
         // Increase the size before fetching the parsec to satisfy the borrow checker
-        self.count_size(
-            serialisation::serialised_size(&request),
-            msg_version,
-            log_ident,
-        );
+        let ser_size;
+        match bincode::serialized_size(&request) {
+            Ok(size) => ser_size = size,
+            Err(_) => return (None, false),
+        };
+        self.count_size(ser_size, msg_version, log_ident);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
@@ -153,10 +154,10 @@ impl ParsecMap {
         response: Response,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> bool {
+    ) -> Result<(), RoutingError> {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         self.count_size(
-            serialisation::serialised_size(&response),
+            bincode::serialized_size::<Response>(&response)?,
             msg_version,
             log_ident,
         );
@@ -164,14 +165,18 @@ impl ParsecMap {
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
-            return false;
+            return Err(RoutingError::InvalidMessage);
         };
 
         if let Err(err) = parsec.handle_response(&pub_id, response) {
             debug!("{} - Error handling parsec response: {:?}", log_ident, err);
         }
 
-        self.last_version() == msg_version
+        if self.last_version() == msg_version {
+            Ok(())
+        } else {
+            Err(RoutingError::InvalidMessage)
+        }
     }
 
     pub fn create_gossip(
@@ -376,7 +381,7 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
     #[cfg(feature = "mock_parsec")]
     let hash = {
         let fields = (gen_pfx_info.first_info.hash(), gen_pfx_info.parsec_version);
-        crypto::sha3_256(&unwrap!(serialisation::serialise(&fields)))
+        crypto::sha3_256(&unwrap!(bincode::serialize(&fields)))
     };
 
     if gen_pfx_info.first_info.is_member(full_id.public_id()) {
@@ -545,8 +550,8 @@ mod tests {
         msg: &T,
         pub_id: &id::PublicId,
         log_ident: &LogIdent,
-    ) {
-        let msg_size = serialisation::serialised_size(&msg);
+    ) -> Result<(), RoutingError> {
+        let msg_size = bincode::serialized_size(&msg)?;
         let msg_size_limit = PARSEC_SIZE_LIMIT / msg_size;
 
         // Handle msg_size_limit msgs which should trigger pruning needed on the next
@@ -557,6 +562,7 @@ mod tests {
 
         // Make sure we don't cross the prune limit
         assert_eq!(parsec_map.needs_pruning(), false);
+        Ok(())
     }
 
     fn check_prune_needed_after_msg<T: HandleRequestResponse + Serialize>(
@@ -575,7 +581,13 @@ mod tests {
         // Sometimes send to an old parsec
         let msg_version = number_of_parsecs - parsec_age;
 
-        handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, &pub_id, &log_ident);
+        let _ = handle_msgs_just_below_prune_limit(
+            &mut parsec_map,
+            msg_version,
+            &msg,
+            &pub_id,
+            &log_ident,
+        );
 
         msg.handle(&mut parsec_map, msg_version, pub_id, &log_ident);
         assert_eq!(parsec_map.needs_pruning(), prune_needed);

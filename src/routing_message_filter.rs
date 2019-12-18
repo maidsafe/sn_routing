@@ -8,7 +8,7 @@
 
 use crate::{crypto, id::PublicId, message_filter::MessageFilter, messages::RoutingMessage};
 use lru_time_cache::LruCache;
-use maidsafe_utilities::serialisation::serialise;
+use bincode::serialize;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::time::Duration;
@@ -88,7 +88,7 @@ impl Default for RoutingMessageFilter {
 }
 
 fn hash<T: Serialize + Debug>(msg: &T) -> Option<Digest> {
-    if let Ok(msg_bytes) = serialise(msg) {
+    if let Ok(msg_bytes) = serialize(msg) {
         Some(crypto::sha3_256(&msg_bytes))
     } else {
         trace!("Tried to filter oversized routing message: {:?}", msg);

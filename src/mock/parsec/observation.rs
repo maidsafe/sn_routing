@@ -9,8 +9,7 @@
 pub use parsec::{ConsensusMode, Observation};
 
 use super::{Block, NetworkEvent, Proof, PublicId, SecretId};
-use maidsafe_utilities::serialisation;
-use serde::Serialize;
+use bincode::serialize;
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Deref,
@@ -79,7 +78,7 @@ impl<P: PublicId> ObservationState<P> {
         our_secret_id: &S,
         observation: &Rc<Observation<T, P>>,
     ) {
-        let proof = our_secret_id.create_proof(&serialise(&**observation));
+        let proof = our_secret_id.create_proof(&unwrap!(serialize(&**observation)));
         let _ = self.votes.insert(proof);
     }
 
@@ -117,8 +116,4 @@ impl<P: PublicId> ObservationState<P> {
 // Returns whether `small` is more than two thirds of `large`.
 fn is_more_than_two_thirds(small: usize, large: usize) -> bool {
     3 * small > 2 * large
-}
-
-fn serialise<T: Serialize>(data: &T) -> Vec<u8> {
-    unwrap!(serialisation::serialise(data))
 }

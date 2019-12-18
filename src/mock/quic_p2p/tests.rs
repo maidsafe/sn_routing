@@ -393,7 +393,7 @@ fn packet_is_parsec_gossip() {
         routing_table::Authority,
     };
 
-    use maidsafe_utilities::serialisation;
+    use bincode::serialize;
     use rand::Rng;
     use serde::Serialize;
 
@@ -401,7 +401,7 @@ fn packet_is_parsec_gossip() {
     let full_id = FullId::gen(&mut rng);
 
     fn serialise<T: Serialize>(msg: &T) -> Vec<u8> {
-        unwrap!(serialisation::serialise(&msg))
+        unwrap!(serialize(&msg))
     }
 
     let make_message =
@@ -417,8 +417,8 @@ fn packet_is_parsec_gossip() {
         let repr = Vec::<u64>::new();
 
         (
-            unwrap!(serialisation::deserialise(&serialise(&repr))),
-            unwrap!(serialisation::deserialise(&serialise(&repr))),
+            unwrap!(bincode::deserialize(&serialise(&repr))),
+            unwrap!(bincode::deserialize(&serialise(&repr))),
         )
     };
 
