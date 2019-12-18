@@ -20,8 +20,8 @@ use crate::{
     xor_name::XorName,
     BlsPublicKeySet, BlsSignature, BlsSignatureShare,
 };
-use log::LogLevel;
 use bincode::serialize;
+use log::LogLevel;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},

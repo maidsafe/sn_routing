@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{crypto, id::PublicId, message_filter::MessageFilter, messages::RoutingMessage};
-use lru_time_cache::LruCache;
 use bincode::serialize;
+use lru_time_cache::LruCache;
 use serde::Serialize;
 use std::fmt::Debug;
 use std::time::Duration;
