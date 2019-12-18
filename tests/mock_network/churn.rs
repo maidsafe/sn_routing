@@ -109,8 +109,6 @@ fn drop_random_nodes<R: Rng>(
             section.dropped_other_count += 1;
         }
 
-        info!("Dropping {}: {}/{}", node.inner, remaining, elder_size);
-
         dropped_indices.push(index);
     }
 

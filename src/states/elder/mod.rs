@@ -1700,14 +1700,15 @@ impl Approved for Elder {
             );
             return Ok(());
         }
-        if self.chain.is_churn_in_progress() {
-            debug!(
-                "{} - Trying to carry out parsec pruning during churning.",
+        if self.chain.membership_change_in_progress() {
+            trace!(
+                "{} - ignore ParsecPrune - membership change in progress.",
                 self
             );
             return Ok(());
         }
-        info!("{} - handle parsec prune.", self);
+
+        info!("{} - handle ParsecPrune", self);
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.send_genesis_updates();

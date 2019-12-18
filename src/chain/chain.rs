@@ -661,6 +661,12 @@ impl Chain {
         self.state.split_in_progress
     }
 
+    /// Returns whether a membership change is in progress (a node leaving, joining or being
+    /// relocated).
+    pub fn membership_change_in_progress(&self) -> bool {
+        self.churn_in_progress || self.relocation_in_progress
+    }
+
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &EldersInfo> {
         self.state.neighbour_infos.values()
@@ -901,11 +907,6 @@ impl Chain {
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
         let members = self.our_info().member_ids();
         self.chain_accumulator.check_vote_status(members)
-    }
-
-    /// Returns whether a churning is in progress.
-    pub fn is_churn_in_progress(&self) -> bool {
-        self.churn_in_progress
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
