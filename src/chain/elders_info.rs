@@ -126,8 +126,7 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.is_member(id)).count() * QUORUM_DENOMINATOR
-            > self.len() * QUORUM_NUMERATOR
+        proofs.ids().filter(|id| self.is_member(id)).count() >= quorum_count(self.len())
     }
 
     /// Returns `true` if the proofs are from all members of this section.
@@ -200,4 +199,10 @@ impl Display for EldersInfo {
         )?;
         writeln!(formatter, "\t}}")
     }
+}
+
+/// Returns the number of vote for a quorum of this section such that:
+/// quorum_count * QUORUM_DENOMINATOR > elder_size * QUORUM_NUMERATOR
+pub fn quorum_count(elder_size: usize) -> usize {
+    1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR
 }

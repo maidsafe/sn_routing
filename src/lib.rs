@@ -169,17 +169,8 @@ pub const ELDER_SIZE: usize = 7;
 
 #[cfg(feature = "mock_base")]
 pub use crate::mock::quic_p2p;
-#[cfg(feature = "mock_base")]
 pub use crate::{
-    chain::{
-        delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
-        NetworkParams, SectionKeyShare, MIN_AGE,
-    },
-    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    parsec::generate_bls_threshold_secret_key,
-    relocation::Overrides as RelocationOverrides,
-};
-pub use crate::{
+    chain::quorum_count,
     error::{InterfaceError, RoutingError},
     event::{ClientEvent, ConnectEvent, Event},
     event_stream::EventStream,
@@ -191,6 +182,16 @@ pub use crate::{
     types::MessageId,
     utils::XorTargetInterval,
     xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN},
+};
+#[cfg(feature = "mock_base")]
+pub use crate::{
+    chain::{
+        delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
+        NetworkParams, SectionKeyShare, MIN_AGE,
+    },
+    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    parsec::generate_bls_threshold_secret_key,
+    relocation::Overrides as RelocationOverrides,
 };
 #[cfg(feature = "mock_base")]
 pub(crate) use chain::Chain;
