@@ -1485,7 +1485,7 @@ impl Base for Elder {
             return Ok(());
         }
 
-        let proof = self.chain.prove(&routing_msg.dst);
+        let proof = self.chain.prove(&routing_msg.dst, None);
         let pk_set = self.our_section_bls_keys().clone();
         let secret_key = self.chain.our_section_bls_secret_key_share()?;
         let signed_msg = SignedRoutingMessage::new(routing_msg, secret_key, pk_set, proof)?;
@@ -1636,6 +1636,7 @@ impl Approved for Elder {
         &mut self,
         details: RelocateDetails,
         signature: BlsSignature,
+        node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {
         if &details.pub_id == self.id() {
@@ -1649,8 +1650,13 @@ impl Approved for Elder {
         // superset of the shorter one. We need to do this because in rare cases, the relocating
         // node might be lagging behind the target section in the knowledge of the source section.
         let proof = {
-            let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
-            let proof_for_target = self.chain.prove(&Authority::Section(details.destination));
+            let proof_for_source = self.chain.prove(
+                &Authority::Node(*details.pub_id.name()),
+                Some(node_knowledge),
+            );
+            let proof_for_target = self
+                .chain
+                .prove(&Authority::Section(details.destination), None);
 
             if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
                 proof_for_source

@@ -526,8 +526,8 @@ impl Chain {
         }
     }
 
-    /// Remove a member from our section.
-    pub fn remove_member(&mut self, pub_id: &PublicId) {
+    /// Remove a member from our section. Returns the state of the member before the removal.
+    pub fn remove_member(&mut self, pub_id: &PublicId) -> MemberState {
         self.assert_no_prefix_change("remove member");
         self.members_changed = true;
 
@@ -538,10 +538,12 @@ impl Chain {
             // TODO: Probably should actually remove them
             .filter(|info| info.state != MemberState::Left)
         {
+            let member_state = info.state;
             info.state = MemberState::Left;
             self.state
                 .relocate_queue
                 .retain(|details| &details.pub_id != pub_id);
+            member_state
         } else {
             log_or_panic!(
                 LogLevel::Error,
@@ -549,6 +551,8 @@ impl Chain {
                 self,
                 pub_id
             );
+
+            MemberState::Left
         }
     }
 
@@ -894,10 +898,20 @@ impl Chain {
             && self.is_new(elders_info)
     }
 
-    /// Provide a SectionProofChain that proves the given signature to the section with a given
-    /// prefix
-    pub fn prove(&self, target: &Authority<XorName>) -> SectionProofChain {
-        let first_index = self.state.proving_index(target);
+    /// Provide a SectionProofChain that proves the given signature to the given destination
+    /// authority.
+    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
+    /// `Authority::Node` instead of the stored knowledge. Has no effect for other authority types.
+    pub fn prove(
+        &self,
+        target: &Authority<XorName>,
+        node_knowledge_override: Option<u64>,
+    ) -> SectionProofChain {
+        let first_index = match (target, node_knowledge_override) {
+            (Authority::Node(_), Some(knowledge)) => knowledge,
+            _ => self.state.proving_index(target),
+        };
+
         self.state.our_history.slice_from(first_index as usize)
     }
 

@@ -490,7 +490,7 @@ impl Node {
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
     pub fn prove(&self, target: &Authority<XorName>) -> Option<SectionProofChain> {
-        self.chain().map(|chain| chain.prove(target))
+        self.chain().map(|chain| chain.prove(target, None))
     }
 
     /// Checks whether the given authority represents self.

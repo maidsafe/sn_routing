@@ -394,16 +394,6 @@ impl SharedState {
     /// Returns the index of the public key in our_history that will be trusted by the target
     /// Authority
     pub fn proving_index(&self, target: &Authority<XorName>) -> u64 {
-        if let Authority::Node(name) = target {
-            if let Some(info) = self.our_members.get(name) {
-                if let MemberState::Relocating { node_knowledge } = info.state {
-                    // Relocating node, or adult nodes need to be special cased:
-                    // Use the proving index we last know for them.
-                    return node_knowledge;
-                }
-            }
-        }
-
         let (prefix, &index) = if let Some(pair) = self
             .their_knowledge
             .iter()

@@ -681,6 +681,7 @@ impl Approved for Adult {
         &mut self,
         _details: RelocateDetails,
         _signature: BlsSignature,
+        _node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {
     }

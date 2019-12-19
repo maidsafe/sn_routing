@@ -9,8 +9,8 @@
 use super::Base;
 use crate::{
     chain::{
-        AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, OnlinePayload,
-        PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
+        AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
+        OnlinePayload, PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
@@ -65,6 +65,7 @@ pub trait Approved: Base {
         &mut self,
         payload: RelocateDetails,
         signature: BlsSignature,
+        node_knowledge: u64,
         outbox: &mut dyn EventBox,
     );
 
@@ -468,7 +469,7 @@ pub trait Approved: Base {
             info!("{} - handle Offline: {}.", self, pub_id);
 
             self.chain_mut().increment_age_counters(&pub_id);
-            self.chain_mut().remove_member(&pub_id);
+            let _ = self.chain_mut().remove_member(&pub_id);
             self.disconnect_by_id_lookup(&pub_id);
             self.handle_member_removed(pub_id, outbox)?;
         }
@@ -506,12 +507,20 @@ pub trait Approved: Base {
         } else {
             info!("{} - handle Relocate: {:?}.", self, details);
 
-            // Note: it is important that `handle_member_relocated` is called before the member is
-            // actually removed. This is because the member info of the relocated node might still
-            // be needed by `handle_member_relocated`.
-            let pub_id = details.pub_id;
-            self.handle_member_relocated(details, signature, outbox);
-            self.chain_mut().remove_member(&pub_id);
+            match self.chain_mut().remove_member(&details.pub_id) {
+                MemberState::Relocating { node_knowledge } => {
+                    self.handle_member_relocated(details, signature, node_knowledge, outbox);
+                }
+                state => {
+                    log_or_panic!(
+                        LogLevel::Error,
+                        "{} - Expected the state of {} to be Relocating, but was {:?}",
+                        self,
+                        details.pub_id,
+                        state,
+                    );
+                }
+            }
         }
 
         Ok(())
