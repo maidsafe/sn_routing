@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::error::InterfaceError;
-use crate::id::PublicId;
 use crate::routing_table::Authority;
 use crate::xor_name::XorName;
 use crate::NetworkBytes;
@@ -32,9 +31,6 @@ pub enum Action {
         content: Vec<u8>,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    GetId {
-        result_tx: Sender<PublicId>,
-    },
     HandleTimeout(u64),
     DisconnectClient {
         peer_addr: SocketAddr,
@@ -46,7 +42,6 @@ pub enum Action {
         token: Token,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    Terminate,
 }
 
 impl Debug for Action {
@@ -57,7 +52,6 @@ impl Debug for Action {
                 "Action::SendMessage {{ \"{:<8}\", result_tx }}",
                 HexFmt(content)
             ),
-            Action::GetId { .. } => write!(formatter, "Action::GetId"),
             Action::HandleTimeout(token) => write!(formatter, "Action::HandleTimeout({})", token),
             Action::DisconnectClient { peer_addr, .. } => {
                 write!(formatter, "Action::DisconnectClient: {}", peer_addr)
@@ -69,7 +63,6 @@ impl Debug for Action {
                 "Action::SendMessageToClient: {}, token: {}",
                 peer_addr, token
             ),
-            Action::Terminate => write!(formatter, "Action::Terminate"),
         }
     }
 }

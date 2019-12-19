@@ -13,7 +13,7 @@
 
 use super::authority::Authority;
 use super::prefix::Prefix;
-use super::{Error, RoutingTable};
+use super::{RoutingTable, RoutingTableError};
 use crate::{
     rng::{MainRng, Seed},
     routing_table::{xorable::Xorable, OwnMergeState, Sections},
@@ -134,7 +134,7 @@ impl Network {
                 }
             } else {
                 match node.remove(&name) {
-                    Err(Error::NoSuchPeer) => {}
+                    Err(RoutingTableError::NoSuchPeer) => {}
                     Err(error) => panic!("Expected NoSuchPeer, but got {:?}", error),
                     Ok(details) => panic!("Expected NoSuchPeer, but got {:?}", details),
                 }

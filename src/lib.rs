@@ -186,7 +186,7 @@ pub use crate::{
     id::{FullId, P2pNode, PublicId},
     node::{Node, NodeBuilder},
     pause::PausedState,
-    routing_table::Error as RoutingTableError,
+    routing_table::RoutingTableError,
     routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable},
     types::MessageId,
     utils::XorTargetInterval,

@@ -18,7 +18,7 @@ use crate::{
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    routing_table::{Authority, Error},
+    routing_table::{Authority, RoutingTableError},
     utils::LogIdent,
     BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
 };
@@ -1383,7 +1383,10 @@ impl Chain {
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(&self, dst: &Authority<XorName>) -> Result<(Vec<&P2pNode>, usize), Error> {
+    pub fn targets(
+        &self,
+        dst: &Authority<XorName>,
+    ) -> Result<(Vec<&P2pNode>, usize), RoutingTableError> {
         let candidates = |target_name: &XorName| {
             let filtered_sections =
                 self.closest_sections_info(*target_name)
@@ -1419,7 +1422,7 @@ impl Chain {
             if dg_size > 0 && nodes_to_send.len() >= dg_size {
                 Ok((dg_size, nodes_to_send))
             } else {
-                Err(Error::CannotRoute)
+                Err(RoutingTableError::CannotRoute)
             }
         };
 
@@ -1459,7 +1462,7 @@ impl Chain {
                     if prefix.is_compatible(self.our_prefix())
                         && !prefix.is_covered_by(self.prefixes().iter())
                     {
-                        return Err(Error::CannotRoute);
+                        return Err(RoutingTableError::CannotRoute);
                     }
 
                     let is_compatible = |(pfx, section)| {
