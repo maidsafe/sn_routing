@@ -61,6 +61,8 @@ pub enum RoutingError {
     UntrustedMessage,
     #[error(display = "A new SectionInfo is invalid.")]
     InvalidNewSectionInfo,
+    #[error(display = "A Relocation is invalid.")]
+    InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
 }
