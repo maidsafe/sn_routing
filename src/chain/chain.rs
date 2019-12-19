@@ -246,12 +246,14 @@ impl Chain {
             return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
         }
 
-        if let Some(details) = self.poll_relocation() {
-            return Ok(Some(PollAccumulated::RelocateDetails(details)));
-        }
-
+        // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
+        // otherwise we might relocate a node that we still need.
         if let Some(new_infos) = self.promote_and_demote_elders()? {
             return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
+        }
+
+        if let Some(details) = self.poll_relocation() {
+            return Ok(Some(PollAccumulated::RelocateDetails(details)));
         }
 
         let (event, proofs) = match self.poll_chain_accumulator() {
@@ -524,8 +526,8 @@ impl Chain {
         }
     }
 
-    /// Remove a member from our section.
-    pub fn remove_member(&mut self, pub_id: &PublicId) {
+    /// Remove a member from our section. Returns the state of the member before the removal.
+    pub fn remove_member(&mut self, pub_id: &PublicId) -> MemberState {
         self.assert_no_prefix_change("remove member");
         self.members_changed = true;
 
@@ -536,10 +538,12 @@ impl Chain {
             // TODO: Probably should actually remove them
             .filter(|info| info.state != MemberState::Left)
         {
+            let member_state = info.state;
             info.state = MemberState::Left;
             self.state
                 .relocate_queue
                 .retain(|details| &details.pub_id != pub_id);
+            member_state
         } else {
             log_or_panic!(
                 LogLevel::Error,
@@ -547,6 +551,8 @@ impl Chain {
                 self,
                 pub_id
             );
+
+            MemberState::Left
         }
     }
 
@@ -558,7 +564,6 @@ impl Chain {
             return Ok(None);
         }
 
-        // TODO: the split decision should be based on the number of all members, not just elders.
         if self.should_split()? {
             let (our_info, other_info) = self.split_self()?;
             self.state.split_in_progress = true;
@@ -659,6 +664,12 @@ impl Chain {
     /// Returns whether our section is in the process of splitting.
     pub fn split_in_progress(&self) -> bool {
         self.state.split_in_progress
+    }
+
+    /// Returns whether a membership change is in progress (a node leaving, joining or being
+    /// relocated).
+    pub fn membership_change_in_progress(&self) -> bool {
+        self.churn_in_progress || self.relocation_in_progress
     }
 
     /// Neighbour infos signed by our section
@@ -795,17 +806,14 @@ impl Chain {
             .collect();
 
         // Ensure that we can still handle one node lost when relocating.
-        // Currently re-promoting relocating adult to elder is not supported.
-        // Ensure that the node we eject are the we want to relocate first.
+        // Ensure that the node we eject are the one we want to relocate first.
         let min_elders = self.elder_size();
         let num_elders = elders.len();
-        let our_info_map = self.our_info().member_map();
         elders.extend(
             self.state
                 .relocate_queue
                 .iter()
                 .map(|details| details.pub_id.name())
-                .filter(|name| our_info_map.get(name).is_some())
                 .filter_map(|name| self.state.our_members.get(name))
                 .filter(|info| info.state != MemberState::Left)
                 .take(min_elders.saturating_sub(num_elders))
@@ -890,10 +898,20 @@ impl Chain {
             && self.is_new(elders_info)
     }
 
-    /// Provide a SectionProofChain that proves the given signature to the section with a given
-    /// prefix
-    pub fn prove(&self, target: &Authority<XorName>) -> SectionProofChain {
-        let first_index = self.state.proving_index(target);
+    /// Provide a SectionProofChain that proves the given signature to the given destination
+    /// authority.
+    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
+    /// `Authority::Node` instead of the stored knowledge. Has no effect for other authority types.
+    pub fn prove(
+        &self,
+        target: &Authority<XorName>,
+        node_knowledge_override: Option<u64>,
+    ) -> SectionProofChain {
+        let first_index = match (target, node_knowledge_override) {
+            (Authority::Node(_), Some(knowledge)) => knowledge,
+            _ => self.state.proving_index(target),
+        };
+
         self.state.our_history.slice_from(first_index as usize)
     }
 
@@ -901,11 +919,6 @@ impl Chain {
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
         let members = self.our_info().member_ids();
         self.chain_accumulator.check_vote_status(members)
-    }
-
-    /// Returns whether a churning is in progress.
-    pub fn is_churn_in_progress(&self) -> bool {
-        self.churn_in_progress
     }
 
     /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.

@@ -178,9 +178,9 @@ impl Debug for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "EldersInfo(prefix: {:?}, members: {:?}, prev_hash_len: {}, version: {})",
+            "EldersInfo(prefix: {:?}, members: {{{:?}}}, prev_hash_len: {}, version: {})",
             self.prefix,
-            self.members,
+            self.member_nodes().format(", "),
             self.prev_hash.len(),
             self.version
         )

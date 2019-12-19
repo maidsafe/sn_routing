@@ -15,70 +15,125 @@ use rand::Rng;
 use routing::{
     mock::Network,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, QUORUM_DENOMINATOR,
-    QUORUM_NUMERATOR,
+    Authority, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-/// Randomly removes some nodes, but <1/3 from each section and never node 0.
-/// Never trigger merge: never remove enough nodes to drop to `elder_size`.
-/// max_per_pfx: limits dropping to the specified count per pfx. It would also
-/// skip prefixes randomly allowing sections to split if this is executed in the same
-/// iteration as `add_nodes_and_poll`.
+/// Randomly removes some nodes.
+///
+/// Limits the number of nodes simultaneously dropped from a section such that the section still
+/// remains functional (capable of reaching consensus), also accounting for the fact that any
+/// dropped node might trigger relocation of other nodes. This limit is currently possibly too
+/// conservative and might change in the future, but it still allows removing at least one node per
+/// section.
+///
+/// If `max_drops_per_section` is set, never drops more than that number of nodes per section.
 ///
 /// Note: it's necessary to call `poll_all` afterwards, as this function doesn't call it itself.
 fn drop_random_nodes<R: Rng>(
     rng: &mut R,
     nodes: &mut Vec<TestNode>,
-    max_per_pfx: Option<usize>,
+    max_drops_per_section: Option<usize>,
 ) -> BTreeSet<XorName> {
-    let mut dropped_nodes = BTreeSet::new();
-    let elder_size = |node: &TestNode| unwrap!(node.inner.elder_size());
-    let node_section_size = |node: &TestNode| {
-        node.inner
-            .section_elders(unwrap!(node.inner.our_prefix(), "{}", node.inner))
-            .len()
-    };
-    let sections: BTreeMap<_, _> = nodes
-        .iter()
-        .map(|node| {
-            let initial_size = node_section_size(node);
-            let min_size = elder_size(node);
-            let max_drop = initial_size.saturating_sub(min_size);
-            (*node.our_prefix(), (initial_size, max_drop))
-        })
-        .collect();
-    let mut drop_count: BTreeMap<_, _> = sections.keys().map(|pfx| (*pfx, 0)).collect();
-    loop {
-        let i = gen_range(rng, 1, nodes.len());
-        let pfx = nodes[i].our_prefix();
-        let (initial_size, max_drop) = sections[&pfx];
-        if drop_count.is_empty() {
-            break;
-        } else if drop_count.get(&pfx).is_none() {
+    // 10% probability that a node will be dropped.
+    let drop_probability = 0.1;
+
+    let mut sections = count_nodes_by_section(nodes);
+    let mut dropped_indices = Vec::new();
+    let mut dropped_names = BTreeSet::new();
+
+    for (index, node) in nodes.iter().enumerate() {
+        if rng.gen_range(0.0, 1.0) >= drop_probability {
             continue;
         }
 
-        let early_terminate = max_per_pfx.map_or(false, |n| {
-            drop_count[&pfx] >= n || rng.gen_weighted_bool(drop_count.keys().len() as u32)
-        });
-        let normal_terminate =
-            ((drop_count[&pfx] + 1) * 3 >= initial_size) || (drop_count[&pfx] >= max_drop);
-        if early_terminate || normal_terminate {
-            let _ = drop_count.remove(&pfx);
+        let elder_size = unwrap!(node.inner.elder_size());
+        let section = unwrap!(sections.get_mut(node.our_prefix()));
+
+        // Check the optional additional drop limit.
+        if let Some(max_drops) = max_drops_per_section {
+            if section.all_dropped() >= max_drops {
+                continue;
+            }
+        }
+
+        // Don't drop any other node if an elder is already scheduled for drop.
+        if section.dropped_elder_count > 0 {
             continue;
         }
 
-        *unwrap!(drop_count.get_mut(&pfx)) += 1;
-        let dropped = nodes.remove(i);
-        assert!(dropped_nodes.insert(dropped.name()));
+        // Don't drop below elder_size nodes.
+        if section.all_remaining() <= elder_size {
+            continue;
+        }
+
+        // If there already are other drops scheduled, make sure we remain with at least one
+        // more node above elder_size. This is because one of those other drops might trigger
+        // relocation of one of the existing elders and we wouldn't have anyone to replace it with
+        // otherwise.
+        if section.all_dropped() > 0 && section.all_remaining() <= elder_size + 1 {
+            continue;
+        }
+
+        if node.inner.is_elder() {
+            // Don't drop elder if a non-elder is already scheduled for drop.
+            if section.dropped_other_count > 0 {
+                continue;
+            }
+
+            section.dropped_elder_count += 1;
+        } else {
+            section.dropped_other_count += 1;
+        }
+
+        dropped_indices.push(index);
     }
 
-    if !dropped_nodes.is_empty() {
-        warn!("    dropping {:?}", dropped_nodes);
+    // Must drop from the end, so the indices are not invalidated.
+    dropped_indices.sort();
+    for index in dropped_indices.into_iter().rev() {
+        assert!(dropped_names.insert(nodes.remove(index).name()));
     }
 
-    dropped_nodes
+    dropped_names
+}
+
+#[derive(Default)]
+struct SectionCounts {
+    initial_elder_count: usize,
+    initial_other_count: usize,
+    dropped_elder_count: usize,
+    dropped_other_count: usize,
+}
+
+impl SectionCounts {
+    fn all_remaining(&self) -> usize {
+        self.initial_elder_count + self.initial_other_count
+            - self.dropped_other_count
+            - self.dropped_elder_count
+    }
+
+    fn all_dropped(&self) -> usize {
+        self.dropped_elder_count + self.dropped_other_count
+    }
+}
+
+// Count the number of elders and the number of non-elders for each section in the network.
+fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, SectionCounts> {
+    let mut output: HashMap<_, SectionCounts> = HashMap::new();
+
+    for node in nodes {
+        let prefix = *node.our_prefix();
+        let counts = output.entry(prefix).or_default();
+        if node.inner.is_elder() {
+            counts.initial_elder_count += 1;
+        } else {
+            counts.initial_other_count += 1;
+        }
+    }
+
+    output
 }
 
 /// Adds node per existing prefix using a random proxy. Returns new node indices.

@@ -1485,7 +1485,7 @@ impl Base for Elder {
             return Ok(());
         }
 
-        let proof = self.chain.prove(&routing_msg.dst);
+        let proof = self.chain.prove(&routing_msg.dst, None);
         let pk_set = self.our_section_bls_keys().clone();
         let secret_key = self.chain.our_section_bls_secret_key_share()?;
         let signed_msg = SignedRoutingMessage::new(routing_msg, secret_key, pk_set, proof)?;
@@ -1636,11 +1636,12 @@ impl Approved for Elder {
         &mut self,
         details: RelocateDetails,
         signature: BlsSignature,
+        node_knowledge: u64,
         _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
+    ) {
         if &details.pub_id == self.id() {
             // Do not send the message to ourselves.
-            return Ok(());
+            return;
         }
 
         // We need proof that is valid for both the relocating node and the target section. To
@@ -1649,8 +1650,13 @@ impl Approved for Elder {
         // superset of the shorter one. We need to do this because in rare cases, the relocating
         // node might be lagging behind the target section in the knowledge of the source section.
         let proof = {
-            let proof_for_source = self.chain.prove(&Authority::Node(*details.pub_id.name()));
-            let proof_for_target = self.chain.prove(&Authority::Section(details.destination));
+            let proof_for_source = self.chain.prove(
+                &Authority::Node(*details.pub_id.name()),
+                Some(node_knowledge),
+            );
+            let proof_for_target = self
+                .chain
+                .prove(&Authority::Section(details.destination), None);
 
             if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
                 proof_for_source
@@ -1668,8 +1674,6 @@ impl Approved for Elder {
                 DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
             self.send_direct_message(&conn_info, message);
         }
-
-        Ok(())
     }
 
     fn handle_dkg_result_event(
@@ -1700,14 +1704,15 @@ impl Approved for Elder {
             );
             return Ok(());
         }
-        if self.chain.is_churn_in_progress() {
-            debug!(
-                "{} - Trying to carry out parsec pruning during churning.",
+        if self.chain.membership_change_in_progress() {
+            trace!(
+                "{} - ignore ParsecPrune - membership change in progress.",
                 self
             );
             return Ok(());
         }
-        info!("{} - handle parsec prune.", self);
+
+        info!("{} - handle ParsecPrune", self);
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.send_genesis_updates();
