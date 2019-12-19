@@ -128,7 +128,6 @@ mod pause;
 mod peer_map;
 mod relocation;
 mod routing_message_filter;
-mod routing_table;
 mod signature_accumulator;
 mod state_machine;
 mod states;
@@ -178,7 +177,6 @@ pub use crate::{
     id::{FullId, P2pNode, PublicId},
     node::{Node, NodeBuilder},
     pause::PausedState,
-    routing_table::RoutingTableError,
     types::MessageId,
     utils::XorTargetInterval,
     xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
