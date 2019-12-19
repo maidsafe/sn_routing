@@ -119,7 +119,9 @@ struct Params {
     initial_prefix_lens: Vec<usize>,
     // When are messages sent during each iteration.
     message_schedule: MessageSchedule,
-
+    // Probability that a node is dropped during a single iteration of the churn and shrink phases
+    // (evaluated per each node).
+    drop_probability: f64,
     // The grow phase lasts until the number of sections reaches this number.
     grow_target_section_num: usize,
     // Maximum number of iterations for the churn phase.
@@ -142,6 +144,7 @@ impl Default for Params {
             },
             initial_prefix_lens: vec![],
             message_schedule: MessageSchedule::AfterChurn,
+            drop_probability: 0.1,
             grow_target_section_num: 5,
             churn_max_iterations: 20,
             churn_probability: 1.0,
@@ -207,6 +210,7 @@ fn churn(params: Params) {
             &network,
             &mut nodes,
             params.churn_probability,
+            params.drop_probability,
             params.grow_target_section_num,
             params.churn_max_section_num,
         );
@@ -235,7 +239,7 @@ fn churn(params: Params) {
             count_sections(&nodes)
         );
         loop {
-            let dropped_names = drop_random_nodes(&mut rng, &mut nodes);
+            let dropped_names = drop_random_nodes(&mut rng, &mut nodes, params.drop_probability);
             if dropped_names.is_empty() {
                 break;
             }
@@ -272,10 +276,11 @@ fn churn(params: Params) {
 /// section.
 ///
 /// Note: it's necessary to call `poll_all` afterwards, as this function doesn't call it itself.
-fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) -> BTreeSet<XorName> {
-    // 10% probability that a node will be dropped.
-    let drop_probability = 0.1;
-
+fn drop_random_nodes<R: Rng>(
+    rng: &mut R,
+    nodes: &mut Vec<TestNode>,
+    drop_probability: f64,
+) -> BTreeSet<XorName> {
     let mut sections = count_nodes_by_section(nodes);
     let mut dropped_indices = Vec::new();
     let mut dropped_names = BTreeSet::new();
@@ -453,6 +458,7 @@ fn random_churn<R: Rng>(
     network: &Network,
     nodes: &mut Vec<TestNode>,
     churn_probability: f64,
+    drop_probability: f64,
     min_section_num: usize,
     max_section_num: usize,
 ) -> (BTreeSet<usize>, BTreeSet<XorName>) {
@@ -465,7 +471,7 @@ fn random_churn<R: Rng>(
     let section_num = count_sections(nodes);
 
     let dropped_names = if section_num > min_section_num {
-        drop_random_nodes(rng, nodes)
+        drop_random_nodes(rng, nodes, drop_probability)
     } else {
         BTreeSet::new()
     };
