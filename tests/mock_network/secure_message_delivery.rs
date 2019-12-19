@@ -95,7 +95,7 @@ fn message_with_invalid_security(fail_type: FailType) {
         let pk_set = bls_keys.public_keys();
 
         let mut signed_msg = unwrap!(SignedRoutingMessage::new(
-            routing_msg.clone(),
+            routing_msg,
             &bls_secret_key_share,
             pk_set,
             proof
