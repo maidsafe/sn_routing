@@ -14,9 +14,9 @@ use itertools::Itertools;
 use rand::Rng;
 use routing::{
     mock::Network,
+    quorum_count,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
     Authority, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
-    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -277,9 +277,8 @@ fn random_churn<R: Rng>(
     }
 
     // Use elder_size rather than section size to prevent collapsing any groups.
-    let max_drop = (unwrap!(nodes[0].inner.elder_size()) - 1)
-        * (QUORUM_DENOMINATOR - QUORUM_NUMERATOR)
-        / QUORUM_DENOMINATOR;
+    let elder_size = unwrap!(nodes[0].inner.elder_size());
+    let max_drop = elder_size - quorum_count(elder_size);
     assert!(max_drop > 0);
     let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
     warn!("Dropping nodes: {:?}", dropped_nodes);
@@ -323,7 +322,7 @@ impl Expectations {
         }
         if src.is_multiple() {
             assert!(
-                sent_count * QUORUM_DENOMINATOR > elder_size * QUORUM_NUMERATOR,
+                sent_count >= quorum_count(elder_size),
                 "sent_count: {}. elder_size: {}",
                 sent_count,
                 elder_size
@@ -437,7 +436,7 @@ impl Expectations {
 
             let count = section_msgs_received.remove(&key).unwrap_or(0);
             assert!(
-                count * QUORUM_DENOMINATOR > section_size * QUORUM_NUMERATOR,
+                count >= quorum_count(*section_size),
                 "Only received {} out of {} (added: {:?}, removed: {:?}) messages {:?}.",
                 count,
                 section_size,

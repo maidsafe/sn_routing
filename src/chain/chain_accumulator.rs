@@ -228,10 +228,11 @@ impl AccumulatingProof {
         self.sig_shares
     }
 
-    pub fn combine_signatures(
+    pub fn check_and_combine_signatures(
         self,
         elder_info: &EldersInfo,
         pk_set: &BlsPublicKeySet,
+        signed_bytes: &[u8],
     ) -> Option<BlsSignature> {
         let fr_and_shares = elder_info
             .member_ids()
@@ -240,6 +241,11 @@ impl AccumulatingProof {
                 self.sig_shares
                     .get(pub_id)
                     .map(|sig_payload| (index, &sig_payload.sig_share))
+            })
+            .filter(|&(index, sig_share)| {
+                pk_set
+                    .public_key_share(index)
+                    .verify(sig_share, signed_bytes)
             });
         pk_set.combine_signatures(fr_and_shares).ok()
     }

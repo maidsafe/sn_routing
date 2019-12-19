@@ -24,6 +24,8 @@ use crate::{
 };
 use itertools::Itertools;
 use log::LogLevel;
+use maidsafe_utilities::serialisation::serialise;
+use serde::Serialize;
 use std::cmp::Ordering;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
@@ -318,9 +320,12 @@ impl Chain {
             AccumulatingEvent::AckMessage(ref ack_payload) => {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
-            AccumulatingEvent::Relocate(_) => {
+            AccumulatingEvent::Relocate(ref relocate_details) => {
                 self.relocation_in_progress = false;
-                let signature = self.combine_signatures(proofs);
+                let signature = Some(
+                    self.check_and_combine_signatures(relocate_details, proofs)
+                        .ok_or(RoutingError::InvalidRelocation)?,
+                );
                 return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
             AccumulatingEvent::Online(_)
@@ -1173,15 +1178,45 @@ impl Chain {
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<SectionProofBlock, RoutingError> {
-        Ok(SectionProofBlock::new(
-            key_info,
-            self.combine_signatures(proofs)
-                .ok_or(RoutingError::InvalidNewSectionInfo)?,
-        ))
+        let signature = self
+            .check_and_combine_signatures(&key_info, proofs)
+            .ok_or(RoutingError::InvalidNewSectionInfo)?;
+        Ok(SectionProofBlock::new(key_info, signature))
     }
 
-    pub fn combine_signatures(&self, proofs: AccumulatingProof) -> Option<BlsSignature> {
-        proofs.combine_signatures(self.our_info(), self.our_section_bls_keys())
+    pub fn check_and_combine_signatures<S: Serialize + Debug>(
+        &self,
+        signed_payload: &S,
+        proofs: AccumulatingProof,
+    ) -> Option<BlsSignature> {
+        let signed_bytes = serialise(signed_payload)
+            .map_err(|err| {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} Failed to serialise accumulated event: {:?} for {:?}",
+                    self,
+                    err,
+                    signed_payload
+                );
+                err
+            })
+            .ok()?;
+
+        proofs
+            .check_and_combine_signatures(
+                self.our_info(),
+                self.our_section_bls_keys(),
+                &signed_bytes,
+            )
+            .or_else(|| {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} Failed to combine signatures for accumulated event: {:?}",
+                    self,
+                    signed_payload
+                );
+                None
+            })
     }
 
     /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
@@ -1673,6 +1708,7 @@ fn key_matching_first_elder_name(
 
 /// The outcome of sucessful accumulated poll
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
 pub enum PollAccumulated {
     AccumulatedEvent(AccumulatedEvent),
     RelocateDetails(RelocateDetails),
@@ -1772,14 +1808,14 @@ impl EldersChangeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER};
+    use super::super::{EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER};
     use super::*;
     use crate::{
         id::{FullId, P2pNode, PublicId},
-        parsec::generate_first_dkg_result,
-        rng,
+        parsec::generate_bls_threshold_secret_key,
+        quorum_count, rng,
         rng::MainRng,
-        ConnectionInfo, {Prefix, XorName},
+        BlsSecretKeySet, ConnectionInfo, {Prefix, XorName},
     };
     use rand::Rng;
     use std::{
@@ -1851,7 +1887,10 @@ mod tests {
         chain.add_neighbour_elders_info(neighbour_info)
     }
 
-    fn gen_chain<T>(rng: &mut MainRng, sections: T) -> (Chain, HashMap<PublicId, FullId>)
+    fn gen_chain<T>(
+        rng: &mut MainRng,
+        sections: T,
+    ) -> (Chain, HashMap<PublicId, FullId>, BlsSecretKeySet)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -1875,10 +1914,16 @@ mod tests {
             .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
-        let dkg_result = generate_first_dkg_result(rng);
+
+        let participants = first_info.len();
+        let our_id_index = 0;
+        let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
+        let secret_key_share = secret_key_set.secret_key_share(our_id_index);
+        let public_key_set = secret_key_set.public_keys();
+
         let genesis_info = GenesisPfxInfo {
             first_info,
-            first_bls_keys: dkg_result.public_key_set,
+            first_bls_keys: public_key_set,
             first_state_serialized: Vec::new(),
             first_ages,
             latest_info: Default::default(),
@@ -1889,32 +1934,26 @@ mod tests {
             Default::default(),
             *our_id.public_id(),
             genesis_info,
-            dkg_result.secret_key_share,
+            Some(secret_key_share),
         );
 
         for neighbour_info in sections_iter {
             unwrap!(add_neighbour_elders_info(&mut chain, neighbour_info));
         }
 
-        (chain, full_ids)
+        (chain, full_ids, secret_key_set)
     }
 
-    #[test]
-    fn generate_chain() {
-        let mut rng = rng::new();
-        let (chain, _ids) = gen_chain(
-            &mut rng,
+    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, BlsSecretKeySet) {
+        let elder_size: usize = 7;
+        gen_chain(
+            rng,
             vec![
-                (Prefix::from_str("00").unwrap(), 8),
-                (Prefix::from_str("01").unwrap(), 8),
-                (Prefix::from_str("10").unwrap(), 8),
+                (Prefix::from_str("00").unwrap(), elder_size),
+                (Prefix::from_str("01").unwrap(), elder_size),
+                (Prefix::from_str("10").unwrap(), elder_size),
             ],
-        );
-        assert!(!chain
-            .get_section(&Prefix::from_str("00").unwrap())
-            .expect("No section 00 found!")
-            .is_empty());
-        assert!(chain.get_section(&Prefix::from_str("").unwrap()).is_none());
+        )
     }
 
     fn check_infos_for_duplication(chain: &Chain) {
@@ -1932,12 +1971,27 @@ mod tests {
     }
 
     #[test]
+    fn generate_chain() {
+        let mut rng = rng::new();
+
+        let (chain, _, _) = gen_00_chain(&mut rng);
+        let chain_id = *chain.our_id();
+
+        assert_eq!(
+            chain
+                .get_section(&Prefix::from_str("00").unwrap())
+                .map(|info| info.is_member(&chain_id)),
+            Some(true)
+        );
+        assert_eq!(chain.get_section(&Prefix::from_str("").unwrap()), None);
+        assert!(chain.validate_our_history());
+        check_infos_for_duplication(&chain);
+    }
+
+    #[test]
     fn neighbour_info_cleaning() {
         let mut rng = rng::new();
-        let p_00 = Prefix::from_str("00").unwrap();
-        let p_01 = Prefix::from_str("01").unwrap();
-        let p_10 = Prefix::from_str("10").unwrap();
-        let (mut chain, _) = gen_chain(&mut rng, vec![(p_00, 8), (p_01, 8), (p_10, 8)]);
+        let (mut chain, _, _) = gen_00_chain(&mut rng);
         for _ in 0..1000 {
             let (new_info, _new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();
@@ -1953,5 +2007,83 @@ mod tests {
             assert!(chain.validate_our_history());
             check_infos_for_duplication(&chain);
         }
+    }
+
+    #[test]
+    fn filter_invalid_relocation_signatures_succeed() {
+        let elder_size: usize = 7;
+        let acceptable_malicious_bls_count = (elder_size - 1) / 3;
+        filter_invalid_relocation_signatures(acceptable_malicious_bls_count);
+    }
+
+    #[test]
+    #[should_panic]
+    fn filter_invalid_relocation_signatures_fail() {
+        let elder_size: usize = 7;
+        let acceptable_malicious_bls_count = (elder_size - 1) / 3;
+        filter_invalid_relocation_signatures(acceptable_malicious_bls_count + 1);
+    }
+
+    fn filter_invalid_relocation_signatures(malicious_bls_count: usize) {
+        //
+        // Arrange
+        //
+        let mut rng = rng::new();
+        let (mut chain, full_ids, bls_secrets) = gen_00_chain(&mut rng);
+        let relocate_details = RelocateDetails {
+            pub_id: *chain.our_id(),
+            destination: *chain.our_id().name(),
+            age: 0,
+        };
+        let elder_size = chain.our_info().len();
+        let quorum_count = quorum_count(elder_size);
+        let fake_signed_bytes: Vec<u8> = Vec::new();
+        let opaque_infos = chain
+            .our_info()
+            .member_ids()
+            .take(quorum_count)
+            .map(|id| unwrap!(full_ids.get(id)))
+            .map(|full_id| unwrap!(Proof::new(full_id, &fake_signed_bytes)))
+            .enumerate()
+            .map(|(idx, proof)| {
+                let key_idx = if idx < malicious_bls_count {
+                    // Use last key that won't match the given index to create
+                    // invalid BLS signatures for malicious nodes.
+                    elder_size - 1
+                } else {
+                    idx
+                };
+                let secret_key = bls_secrets.secret_key_share(key_idx);
+                let signature = unwrap!(EventSigPayload::new(&secret_key, &relocate_details));
+                (signature, proof)
+            })
+            .collect_vec();
+
+        //
+        // Act
+        //
+        for (signature, proof) in opaque_infos {
+            let acc_event = AccumulatingEvent::Relocate(relocate_details.clone());
+            let event = acc_event.into_network_event_with(Some(signature));
+            unwrap!(chain.handle_opaque_event(&event, proof));
+        }
+        let chain_accumulated = chain.poll_accumulated();
+
+        //
+        // Assert
+        //
+        let accumulated_event = match chain_accumulated {
+            Ok(Some(PollAccumulated::AccumulatedEvent(event))) => event,
+            evt => panic!("unexpected {:?}", evt),
+        };
+        let public_key = bls_secrets.public_keys().public_key();
+        let signed_bytes = unwrap!(serialise(&relocate_details));
+        assert_eq!(
+            accumulated_event
+                .signature
+                .as_ref()
+                .map(|sig| public_key.verify(sig, &signed_bytes)),
+            Some(true)
+        );
     }
 }

@@ -8,16 +8,13 @@
 
 use super::{create_connected_nodes, gen_elder_index, poll_all};
 use rand::Rng;
-use routing::{
-    mock::Network, Authority, Event, EventStream, NetworkParams, QUORUM_DENOMINATOR,
-    QUORUM_NUMERATOR,
-};
+use routing::{mock::Network, quorum_count, Authority, Event, EventStream, NetworkParams};
 
 #[test]
 fn send() {
     let elder_size = 8;
     let safe_section_size = 8;
-    let quorum = 1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
+    let quorum = quorum_count(elder_size);
     let network = Network::new(NetworkParams {
         elder_size,
         safe_section_size,
@@ -65,7 +62,7 @@ fn send() {
 fn send_and_receive() {
     let elder_size = 8;
     let safe_section_size = 8;
-    let quorum = 1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR;
+    let quorum = quorum_count(elder_size);
     let network = Network::new(NetworkParams {
         elder_size,
         safe_section_size,

@@ -24,7 +24,7 @@ pub use self::{
     chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
     chain_accumulator::AccumulatingProof,
     config::NetworkParams,
-    elders_info::EldersInfo,
+    elders_info::{quorum_count, EldersInfo},
     member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_event::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
