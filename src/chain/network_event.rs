@@ -12,11 +12,11 @@ use crate::{
     parsec,
     //parsec::DkgResult,
     relocation::RelocateDetails,
-    routing_table::Prefix,
     BlsPublicKeyShare,
     BlsSecretKeyShare,
     BlsSignature,
     BlsSignatureShare,
+    Prefix,
     RoutingError,
     XorName,
 };

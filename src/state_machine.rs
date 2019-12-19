@@ -15,11 +15,10 @@ use crate::{
     outbox::EventBox,
     pause::PausedState,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
-    xor_name::XorName,
+    xor_name::{Prefix, XorName},
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]

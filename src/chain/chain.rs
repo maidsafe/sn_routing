@@ -1779,7 +1779,8 @@ mod tests {
         parsec::generate_first_dkg_result,
         rng,
         rng::MainRng,
-        ConnectionInfo, {Prefix, XorName},
+        xor_name::{Prefix, XorName},
+        ConnectionInfo,
     };
     use rand::Rng;
     use std::{

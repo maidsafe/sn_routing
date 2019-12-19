@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_name::Xorable;
+use super::Xorable;
 use std::{
     cmp::{self, Ordering},
     fmt::Result as FmtResult,
@@ -15,7 +15,7 @@ use std::{
     ops::RangeInclusive,
 };
 #[cfg(test)]
-use {crate::XorName, std::str::FromStr};
+use {super::XorName, std::str::FromStr};
 
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.

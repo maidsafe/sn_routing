@@ -88,8 +88,8 @@ mod tests {
         },
         parsec::generate_bls_threshold_secret_key,
         rng,
-        routing_table::{Authority, Prefix},
-        BlsPublicKeySet, ConnectionInfo, XorName,
+        routing_table::Authority,
+        BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;

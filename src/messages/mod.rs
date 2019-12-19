@@ -16,9 +16,9 @@ use crate::{
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
-    routing_table::{Authority, Prefix},
+    routing_table::Authority,
     xor_name::XorName,
-    BlsPublicKeySet, BlsSignature, BlsSignatureShare,
+    BlsPublicKeySet, BlsSignature, BlsSignatureShare, Prefix,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
@@ -564,9 +564,8 @@ mod tests {
         id::{FullId, P2pNode},
         parsec::generate_bls_threshold_secret_key,
         rng,
-        routing_table::{Authority, Prefix},
-        xor_name::XorName,
-        ConnectionInfo,
+        routing_table::Authority,
+        ConnectionInfo, Prefix, XorName,
     };
     use rand;
     use std::collections::BTreeMap;
