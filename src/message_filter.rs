@@ -159,7 +159,8 @@ mod tests {
             fn default() -> Temp {
                 let mut rng = rand::thread_rng();
                 Temp {
-                    id: rand::sample(&mut rng, 0u8..255, 64),
+                    id: rand::seq::sample_iter(&mut rng, 0u8..255, 64)
+                        .expect("Cannot get rand data"),
                 }
             }
         }

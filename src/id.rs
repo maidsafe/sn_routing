@@ -13,7 +13,7 @@ use crate::{
     xor_name::XorName,
     ConnectionInfo,
 };
-use maidsafe_utilities::serialisation::{deserialise, serialise};
+use bincode::{deserialize, serialize};
 use rand_crypto::Rng as _;
 use serde::de::Deserialize;
 use serde::{Deserializer, Serialize, Serializer};
@@ -118,11 +118,11 @@ impl parsec::SecretId for FullId {
         let ciphertext = to
             .public_encryption_key
             .encrypt_with_rng(&mut rng, plaintext);
-        serialise(&ciphertext).ok()
+        serialize(&ciphertext).ok()
     }
 
     fn decrypt(&self, _from: &Self::PublicId, ciphertext: &[u8]) -> Option<Vec<u8>> {
-        let ciphertext: encryption::Ciphertext = deserialise(ciphertext).ok()?;
+        let ciphertext: encryption::Ciphertext = deserialize(ciphertext).ok()?;
         self.secret_keys.encryption.decrypt(&ciphertext)
     }
 }
@@ -337,8 +337,8 @@ mod tests {
     #[test]
     fn serialisation() {
         let full_id = FullId::gen(&mut rng::new());
-        let serialised = unwrap!(serialise(full_id.public_id()));
-        let parsed = unwrap!(deserialise(&serialised));
+        let serialised = unwrap!(serialize(full_id.public_id()));
+        let parsed = unwrap!(deserialize(&serialised));
         assert_eq!(*full_id.public_id(), parsed);
     }
 }

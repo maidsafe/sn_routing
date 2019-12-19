@@ -20,8 +20,8 @@ use crate::{
     xor_name::XorName,
     BlsPublicKeySet, BlsSignature, BlsSignatureShare,
 };
+use bincode::serialize;
 use log::LogLevel;
-use maidsafe_utilities::serialisation::serialise;
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -190,7 +190,7 @@ impl SignedRoutingMessage {
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
         let mut signatures = BTreeSet::new();
-        let sig = section_share.key.sign(&serialise(&content)?);
+        let sig = section_share.key.sign(&serialize(&content)?);
         let _ = signatures.insert((section_share.index, sig));
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
@@ -210,7 +210,7 @@ impl SignedRoutingMessage {
     ) -> Result<SignedRoutingMessage> {
         let single_metadata = SingleSrcSecurityMetadata {
             public_id: *full_id.public_id(),
-            signature: full_id.sign(&serialise(&content)?),
+            signature: full_id.sign(&serialize(&content)?),
         };
 
         Ok(Self {
@@ -252,14 +252,14 @@ impl SignedRoutingMessage {
                     return Err(RoutingError::InvalidMessage);
                 }
 
-                let signed_bytes = serialise(&self.content)?;
+                let signed_bytes = serialize(&self.content)?;
                 if !security_metadata.verify_sig(&signed_bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
                 Ok(())
             }
             SecurityMetadata::Full(ref security_metadata) => {
-                let signed_bytes = serialise(&self.content)?;
+                let signed_bytes = serialize(&self.content)?;
                 if !security_metadata.verify_sig(&signed_bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
@@ -381,7 +381,7 @@ impl SignedRoutingMessage {
             }
             // this is the only case in which we actually have to do further checks
             SecurityMetadata::Partial(ref mut partial) => {
-                let signed_bytes = match serialise(&self.content) {
+                let signed_bytes = match serialize(&self.content) {
                     Ok(serialised) => serialised,
                     Err(error) => {
                         warn!("Failed to serialise {:?}: {:?}", self, error);
@@ -437,7 +437,7 @@ pub struct RoutingMessage {
 impl RoutingMessage {
     /// Returns the message hash
     pub fn hash(&self) -> Result<Digest256> {
-        let serialised_msg = serialise(self)?;
+        let serialised_msg = serialize(self)?;
         Ok(crypto::sha3_256(&serialised_msg))
     }
 }
@@ -689,7 +689,7 @@ mod tests {
         signed_msg.add_signature_share(1, bad_sig.clone());
         for key_share_idx in 1..3 {
             let key_share = bls_keys.secret_key_share(key_share_idx);
-            let sig = key_share.sign(&unwrap!(serialise(signed_msg.routing_message())));
+            let sig = key_share.sign(&unwrap!(serialize(signed_msg.routing_message())));
             signed_msg.add_signature_share(key_share_idx, sig);
         }
         signed_msg.add_signature_share(3, bad_sig);

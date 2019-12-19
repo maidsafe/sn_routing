@@ -10,8 +10,6 @@ use super::routing_table::RoutingTableError;
 use crate::{id::PublicId, quic_p2p};
 use bincode::ErrorKind;
 use err_derive::Error;
-use maidsafe_utilities::serialisation;
-use std::boxed::Box;
 use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
@@ -49,8 +47,8 @@ pub enum RoutingError {
     Network(quic_p2p::Error),
     #[error(display = "Current state is invalid for the operation.")]
     InvalidStateForOperation,
-    #[error(display = "Serialisation Error.")]
-    SerialisationError(serialisation::SerialisationError),
+    // #[error(display = "Serialisation Error.")]
+    // SerialisationError(serialisation::SerialisationError),
     #[error(display = "Bincode error.")]
     Bincode(ErrorKind),
     #[error(display = "Peer not found.")]

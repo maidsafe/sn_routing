@@ -20,8 +20,8 @@ use crate::{
     RoutingError,
     XorName,
 };
+use bincode::serialize;
 use hex_fmt::HexFmt;
-use maidsafe_utilities::serialisation;
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
@@ -61,7 +61,7 @@ impl EventSigPayload {
         key_share: &BlsSecretKeyShare,
         payload: &T,
     ) -> Result<Self, RoutingError> {
-        let sig_share = key_share.sign(&serialisation::serialise(&payload)?[..]);
+        let sig_share = key_share.sign(&serialize(&payload)?[..]);
         let pub_key_share = key_share.public_key_share();
 
         Ok(Self {
