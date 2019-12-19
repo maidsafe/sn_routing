@@ -8,6 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
+    router::{Router, RouterError},
     shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
     MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
@@ -18,14 +19,12 @@ use crate::{
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    routing_table::RoutingTableError,
     utils::LogIdent,
     Authority, BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName,
     Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
-use std::cmp::Ordering;
 use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
@@ -112,11 +111,7 @@ impl Chain {
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
     pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.other_prefixes()
-            .iter()
-            .chain(iter::once(self.state.our_info().prefix()))
-            .cloned()
-            .collect()
+        self.router().all_prefixes().cloned().collect()
     }
 
     /// Create a new chain given genesis information
@@ -680,7 +675,7 @@ impl Chain {
 
     /// Return prefixes of all our neighbours
     pub fn other_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.state.neighbour_infos.keys().cloned().collect()
+        self.router().other_prefixes().cloned().collect()
     }
 
     /// Neighbour infos signed by our section
@@ -706,19 +701,8 @@ impl Chain {
     }
 
     /// Returns a section member `P2pNode`
-    pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state
-            .our_members
-            .get(name)
-            .map(|member_info| &member_info.p2p_node)
-    }
-
-    /// Returns an old section member `P2pNode`
-    fn get_post_split_sibling_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state
-            .post_split_sibling_members
-            .get(name)
-            .map(|member_info| &member_info.p2p_node)
+    pub fn get_member_p2p_node<'a>(&'a self, name: &XorName) -> Option<&'a P2pNode> {
+        self.router().get_member_node(name)
     }
 
     /// Returns the connection infos for all non-Elders in the section
@@ -730,24 +714,8 @@ impl Chain {
             .collect()
     }
 
-    pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state.our_info().member_map().get(name)
-    }
-
-    /// Returns a neighbour `P2pNode`
-    pub fn get_neighbour_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state
-            .neighbour_infos
-            .iter()
-            .find(|(pfx, _)| pfx.matches(name))
-            .and_then(|(_, elders_info)| elders_info.member_map().get(name))
-    }
-
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.get_member_p2p_node(name)
-            .or_else(|| self.get_our_info_p2p_node(name))
-            .or_else(|| self.get_neighbour_p2p_node(name))
-            .or_else(|| self.get_post_split_sibling_member_p2p_node(name))
+        self.router().get_node(name)
     }
 
     /// Returns a set of elders we should be connected to.
@@ -1285,16 +1253,10 @@ impl Chain {
         }
     }
 
-    // Set of methods ported over from routing_table mostly as-is. The idea is to refactor and
-    // restructure them after they've all been ported over.
-
     /// Returns an iterator over all neighbouring sections and our own, together with their prefix
     /// in the map.
     pub fn all_sections(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
-        self.state.neighbour_infos.iter().chain(iter::once((
-            self.state.our_info().prefix(),
-            self.state.our_info(),
-        )))
+        self.router().all_sections()
     }
 
     /// Finds the `count` names closest to `name` in the whole routing table.
@@ -1335,162 +1297,16 @@ impl Chain {
 
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
-    pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        let mut best_pfx = self.our_prefix();
-        let mut best_info = self.our_info();
-        for (ref pfx, ref info) in &self.state.neighbour_infos {
-            // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
-                best_pfx = pfx;
-                best_info = info;
-            }
-        }
-        (best_pfx, best_info)
-    }
-
-    /// Returns the known sections sorted by the distance from a given XorName.
-    fn closest_sections_info(&self, name: XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
-        let mut result: Vec<_> = iter::once((self.our_prefix(), self.our_info()))
-            .chain(self.state.neighbour_infos.iter())
-            .collect();
-        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, &name));
-        result
+    pub(crate) fn closest_section_info(&self, name: &XorName) -> (&Prefix<XorName>, &EldersInfo) {
+        self.router().closest_section_info(name)
     }
 
     /// Returns a set of nodes to which a message for the given `Authority` could be sent
     /// onwards, sorted by priority, along with the number of targets the message should be sent to.
-    /// If the total number of targets returned is larger than this number, the spare targets can
-    /// be used if the message can't be delivered to some of the initial ones.
     ///
-    /// * If the destination is an `Authority::Section`:
-    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
-    ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `N/3` closest members of the RT to the target
-    ///
-    /// * If the destination is an `Authority::PrefixSection`:
-    ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
-    ///       RT, returns all members in these prefixes except ourself; otherwise
-    ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
-    ///       our RT, returns `Err(Error::CannotRoute)`; otherwise
-    ///     - returns the `N/3` closest members of the RT to the lower bound of the target
-    ///       prefix
-    ///
-    /// * If the destination is a group (`ClientManager`, `NaeManager` or `NodeManager`):
-    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
-    ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `N/3` closest members of the RT to the target
-    ///
-    /// * If the destination is an individual node (`ManagedNode` or `Client`):
-    ///     - if our name *is* the destination, returns an empty set; otherwise
-    ///     - if the destination name is an entry in the routing table, returns it; otherwise
-    ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(
-        &self,
-        dst: &Authority<XorName>,
-    ) -> Result<(Vec<&P2pNode>, usize), RoutingTableError> {
-        let candidates = |target_name: &XorName| {
-            let filtered_sections =
-                self.closest_sections_info(*target_name)
-                    .into_iter()
-                    .map(|(prefix, members)| {
-                        (
-                            prefix,
-                            members.len(),
-                            members.member_nodes().collect::<Vec<_>>(),
-                        )
-                    });
-
-            let mut dg_size = 0;
-            let mut nodes_to_send = Vec::new();
-            for (idx, (prefix, len, connected)) in filtered_sections.enumerate() {
-                nodes_to_send.extend(connected.into_iter());
-                dg_size = delivery_group_size(len);
-
-                if prefix == self.our_prefix() {
-                    // Send to all connected targets so they can forward the message
-                    let our_name = self.our_id().name();
-                    nodes_to_send.retain(|&node| node.name() != our_name);
-                    dg_size = nodes_to_send.len();
-                    break;
-                }
-                if idx == 0 && nodes_to_send.len() >= dg_size {
-                    // can deliver to enough of the closest section
-                    break;
-                }
-            }
-            nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
-
-            if dg_size > 0 && nodes_to_send.len() >= dg_size {
-                Ok((dg_size, nodes_to_send))
-            } else {
-                Err(RoutingTableError::CannotRoute)
-            }
-        };
-
-        let (dg_size, best_section) = match *dst {
-            Authority::Node(ref target_name) => {
-                if target_name == self.our_id().name() {
-                    return Ok((Vec::new(), 0));
-                }
-                if let Some(node) = self.get_p2p_node(target_name) {
-                    return Ok((vec![node], 1));
-                }
-                candidates(target_name)?
-            }
-            Authority::Section(ref target_name) => {
-                let (prefix, section) = self.closest_section_info(*target_name);
-                if prefix == self.our_prefix() || prefix.is_neighbour(self.our_prefix()) {
-                    // Exclude our name since we don't need to send to ourself
-                    let our_name = self.our_id().name();
-
-                    // FIXME: only doing this for now to match RT.
-                    // should confirm if needed esp after msg_relay changes.
-                    let section: Vec<_> = section
-                        .member_nodes()
-                        .filter(|node| node.name() != our_name)
-                        .collect();
-                    let dg_size = section.len();
-                    return Ok((section, dg_size));
-                }
-                candidates(target_name)?
-            }
-            Authority::PrefixSection(ref prefix) => {
-                if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
-                {
-                    // only route the message when we have all the targets in our routing table -
-                    // this is to prevent spamming the network by sending messages with
-                    // intentionally short prefixes
-                    if prefix.is_compatible(self.our_prefix())
-                        && !prefix.is_covered_by(self.prefixes().iter())
-                    {
-                        return Err(RoutingTableError::CannotRoute);
-                    }
-
-                    let is_compatible = |(pfx, section)| {
-                        if prefix.is_compatible(pfx) {
-                            Some(section)
-                        } else {
-                            None
-                        }
-                    };
-
-                    // Exclude our name since we don't need to send to ourself
-                    let our_name = self.our_id().name();
-
-                    let targets = self
-                        .all_sections()
-                        .filter_map(is_compatible)
-                        .flat_map(EldersInfo::member_nodes)
-                        .filter(|node| node.name() != our_name)
-                        .collect::<Vec<_>>();
-                    let dg_size = targets.len();
-                    return Ok((targets, dg_size));
-                }
-                candidates(&prefix.lower_bound())?
-            }
-        };
-
-        Ok((best_section, dg_size))
+    /// For more details see `Router::targets`.
+    pub fn targets(&self, dst: &Authority<XorName>) -> Result<(Vec<P2pNode>, usize), RouterError> {
+        self.router().targets(dst)
     }
 
     /// Returns whether we are a part of the given authority.
@@ -1554,6 +1370,10 @@ impl Chain {
                 false
             }
         })
+    }
+
+    fn router(&self) -> Router {
+        Router::new(self.our_id().name(), &self.state)
     }
 }
 

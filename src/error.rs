@@ -6,8 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::routing_table::RoutingTableError;
-use crate::{id::PublicId, quic_p2p};
+use crate::{chain::RouterError, id::PublicId, quic_p2p};
 use err_derive::Error;
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc;
@@ -39,8 +38,8 @@ pub enum RoutingError {
     FailedSignature,
     #[error(display = "Duplicate request received.")]
     FilterCheckFailed,
-    #[error(display = "Routing Table error.")]
-    RoutingTable(RoutingTableError),
+    #[error(display = "Router error.")]
+    Router(RouterError),
     #[error(display = "Interface error.")]
     Interface(InterfaceError),
     #[error(display = "Network layer error.")]

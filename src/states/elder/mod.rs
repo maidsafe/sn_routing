@@ -262,7 +262,7 @@ impl Elder {
     }
 
     pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
-        self.chain.closest_section_info(*name).1.member_nodes()
+        self.chain.closest_section_info(name).1.member_nodes()
     }
 
     fn new(details: ElderDetails, is_first_node: bool) -> Self {
@@ -1213,13 +1213,11 @@ impl Elder {
     }
 
     /// Returns a list of target IDs for a message sent via route.
-    /// Name in exclude will be excluded from the result.
     fn get_targets(
         &self,
         routing_msg: &RoutingMessage,
     ) -> Result<(Vec<P2pNode>, usize), RoutingError> {
-        let (targets, dg_size) = self.chain.targets(&routing_msg.dst)?;
-        Ok((targets.into_iter().cloned().collect(), dg_size))
+        Ok(self.chain.targets(&routing_msg.dst)?)
     }
 
     // Check whether we are connected to any elders. If this node loses all elder connections,

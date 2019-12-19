@@ -16,6 +16,7 @@ mod elders_info;
 mod member_info;
 mod network_event;
 mod proof;
+mod router;
 mod shared_state;
 
 #[cfg(feature = "mock_base")]
@@ -31,6 +32,7 @@ pub use self::{
         IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
+    router::RouterError,
     shared_state::{SectionKeyInfo, SectionProofChain},
 };
 #[cfg(feature = "mock_base")]
