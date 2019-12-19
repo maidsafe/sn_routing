@@ -353,7 +353,7 @@ mod test {
                 let elders_info = empty_elders_info();
                 let (sig_payload, keys) = random_section_info_sig_payload(rng);
                 let key_info = SectionKeyInfo::from_elders_info(&elders_info, keys.public_key());
-                let event = AccumulatingEvent::SectionInfo(elders_info.clone(), key_info);
+                let event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
                 TestData {
                     our_id: *id.public_id(),
@@ -365,7 +365,7 @@ mod test {
                         parsec_proofs: proofs,
                         sig_shares: iter::once((first_proof.pub_id, sig_payload.clone())).collect(),
                     },
-                    signature: Some(sig_payload.clone()),
+                    signature: Some(sig_payload),
                 }
             }
         }
@@ -452,7 +452,7 @@ mod test {
         let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
         let _ = acc.poll_event(data.event.clone(), Default::default());
 
-        let result = acc.insert_with_proof_set(data.event.clone(), data2.proofs.clone());
+        let result = acc.insert_with_proof_set(data.event, data2.proofs);
 
         assert_eq!(result, Err(InsertError::AlreadyComplete));
         assert_eq!(incomplete_events(&acc), vec![]);
@@ -554,7 +554,7 @@ mod test {
             result,
             RemainingEvents {
                 cached_events: BTreeSet::new(),
-                completed_events: vec![data.event.clone()].into_iter().collect()
+                completed_events: vec![data.event].into_iter().collect()
             }
         );
         assert_eq!(incomplete_events(&acc), vec![]);
@@ -607,7 +607,7 @@ mod test {
     fn reset_none_completed_none_our_id(rng: &mut MainRng, data: TestData) {
         let our_id = *FullId::gen(rng).public_id();
         let mut acc = ChainAccumulator::default();
-        let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
+        let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature);
 
         let result = acc.reset_accumulator(&our_id);
 

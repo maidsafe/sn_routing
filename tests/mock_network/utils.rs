@@ -885,16 +885,21 @@ fn sanity_check(prefix_lengths: &[usize]) {
         );
         accumulated + (1 << (8 - bit_count))
     });
-    if sum < 256 {
-        panic!(
-            "The specified prefix lengths {:?} would not cover the entire address space",
-            prefix_lengths
-        );
-    } else if sum > 256 {
-        panic!(
-            "The specified prefix lengths {:?} would require overlapping sections",
-            prefix_lengths
-        );
+
+    match sum.cmp(&256) {
+        cmp::Ordering::Less => {
+            panic!(
+                "The specified prefix lengths {:?} would not cover the entire address space",
+                prefix_lengths
+            );
+        }
+        cmp::Ordering::Greater => {
+            panic!(
+                "The specified prefix lengths {:?} would require overlapping sections",
+                prefix_lengths
+            );
+        }
+        cmp::Ordering::Equal => (),
     }
 }
 

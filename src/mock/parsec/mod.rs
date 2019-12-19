@@ -196,7 +196,7 @@ where
             {
                 self.first_unpolled += 1;
                 self.observations
-                    .entry(holder.clone())
+                    .entry(holder)
                     .or_insert_with(ObservationInfo::new)
                     .state = ConsensusState::Polled;
 

@@ -590,7 +590,7 @@ mod tests {
         let prefix = Prefix::new(0, *full_id.public_id().name());
         let pub_ids: BTreeMap<_, _> = vec![
             P2pNode::new(*full_id.public_id(), connection_info.clone()),
-            P2pNode::new(*full_id_2.public_id(), connection_info.clone()),
+            P2pNode::new(*full_id_2.public_id(), connection_info),
         ]
         .into_iter()
         .map(|p2p_node| (*p2p_node.public_id().name(), p2p_node))
@@ -660,7 +660,7 @@ mod tests {
             P2pNode::new(*full_id_0.public_id(), connection_info.clone()),
             P2pNode::new(*full_id_1.public_id(), connection_info.clone()),
             P2pNode::new(*full_id_2.public_id(), connection_info.clone()),
-            P2pNode::new(*full_id_3.public_id(), connection_info.clone()),
+            P2pNode::new(*full_id_3.public_id(), connection_info),
         ];
         let src_section = unwrap!(EldersInfo::new(
             src_section_nodes

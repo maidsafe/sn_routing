@@ -412,7 +412,7 @@ impl Adult {
             );
         }
 
-        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg.clone()) {
+        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
             self.handle_signed_message(signed_msg)?;
         }
         Ok(())

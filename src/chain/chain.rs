@@ -296,7 +296,7 @@ impl Chain {
         match event {
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = EldersChangeBuilder::new(self);
-                if self.add_elders_info(info.clone(), key_info.clone(), proofs.clone())? {
+                if self.add_elders_info(info.clone(), key_info.clone(), proofs)? {
                     let change = change.build(self);
                     return Ok(Some(
                         AccumulatedEvent::new(event).with_elders_change(change),
