@@ -8,8 +8,10 @@
 
 use super::routing_table::RoutingTableError;
 use crate::{id::PublicId, quic_p2p};
+use bincode::ErrorKind;
 use err_derive::Error;
 use maidsafe_utilities::serialisation;
+use std::boxed::Box;
 use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
@@ -49,6 +51,8 @@ pub enum RoutingError {
     InvalidStateForOperation,
     #[error(display = "Serialisation Error.")]
     SerialisationError(serialisation::SerialisationError),
+    #[error(display = "Bincode error.")]
+    Bincode(ErrorKind),
     #[error(display = "Peer not found.")]
     PeerNotFound(PublicId),
     #[error(display = "Invalid Source.")]
@@ -63,6 +67,14 @@ pub enum RoutingError {
     InvalidNewSectionInfo,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
+}
+
+// TODO dirvine, we need to complete the error story in our code. Here I am unboxing and that will
+// work, but is not the best.
+impl From<Box<ErrorKind>> for RoutingError {
+    fn from(error: Box<ErrorKind>) -> RoutingError {
+        RoutingError::Bincode(*error)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]

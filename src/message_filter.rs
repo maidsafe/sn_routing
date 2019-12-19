@@ -11,7 +11,6 @@ use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use unwrap::unwrap;
 
 fn hash<T: Hash>(t: &T) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -88,7 +87,10 @@ impl<Message: Hash> MessageFilter<Message> {
             .front()
             .map_or(false, |&(_, ref t)| *t <= now)
         {
-            let (hash_code, _) = unwrap!(self.timeout_queue.pop_front());
+            let (hash_code, _) = self
+                .timeout_queue
+                .pop_front()
+                .expect("failed to read expired message");
             if let Entry::Occupied(entry) = self.count.entry(hash_code) {
                 if entry.get().1 <= now {
                     let _removed_pair = entry.remove_entry();
