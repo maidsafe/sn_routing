@@ -15,8 +15,8 @@ use rand::Rng;
 use routing::{
     mock::Network,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, NetworkConfig, NetworkParams, XorName, QUORUM_DENOMINATOR,
-    QUORUM_NUMERATOR,
+    Authority, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
+    QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -28,36 +28,18 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 /// conservative and might change in the future, but it still allows removing at least one node per
 /// section.
 ///
-/// If `max_per_pfx` is set, never drops more than that number of nodes per section.
+/// If `max_drops_per_section` is set, never drops more than that number of nodes per section.
 ///
 /// Note: it's necessary to call `poll_all` afterwards, as this function doesn't call it itself.
 fn drop_random_nodes<R: Rng>(
     rng: &mut R,
     nodes: &mut Vec<TestNode>,
-    max_per_pfx: Option<usize>,
+    max_drops_per_section: Option<usize>,
 ) -> BTreeSet<XorName> {
-    #[derive(Default)]
-    struct SectionInfo {
-        initial_elder_count: usize,
-        initial_other_count: usize,
-        dropped_elder_count: usize,
-        dropped_other_count: usize,
-    };
-
     // 10% probability that a node will be dropped.
     let drop_probability = 0.1;
 
-    let mut sections = HashMap::<_, SectionInfo>::new();
-    for node in nodes.iter() {
-        let prefix = *node.our_prefix();
-        let info = sections.entry(prefix).or_default();
-        if node.inner.is_elder() {
-            info.initial_elder_count += 1;
-        } else {
-            info.initial_other_count += 1;
-        }
-    }
-
+    let mut sections = count_nodes_by_section(nodes);
     let mut dropped_indices = Vec::new();
     let mut dropped_names = BTreeSet::new();
 
@@ -66,16 +48,12 @@ fn drop_random_nodes<R: Rng>(
             continue;
         }
 
-        let section = unwrap!(sections.get_mut(node.our_prefix()));
         let elder_size = unwrap!(node.inner.elder_size());
-        let remaining = section.initial_elder_count + section.initial_other_count
-            - section.dropped_other_count
-            - section.dropped_elder_count;
-        let dropped = section.dropped_elder_count + section.dropped_other_count;
+        let section = unwrap!(sections.get_mut(node.our_prefix()));
 
         // Check the optional additional drop limit.
-        if let Some(max_per_pfx) = max_per_pfx {
-            if dropped + 1 > max_per_pfx {
+        if let Some(max_drops) = max_drops_per_section {
+            if section.all_dropped() >= max_drops {
                 continue;
             }
         }
@@ -86,7 +64,7 @@ fn drop_random_nodes<R: Rng>(
         }
 
         // Don't drop below elder_size nodes.
-        if remaining <= elder_size {
+        if section.all_remaining() <= elder_size {
             continue;
         }
 
@@ -94,7 +72,7 @@ fn drop_random_nodes<R: Rng>(
         // more node above elder_size. This is because one of those other drops might trigger
         // relocation of one of the existing elders and we wouldn't have anyone to replace it with
         // otherwise.
-        if dropped > 0 && remaining <= elder_size + 1 {
+        if section.all_dropped() > 0 && section.all_remaining() <= elder_size + 1 {
             continue;
         }
 
@@ -119,6 +97,43 @@ fn drop_random_nodes<R: Rng>(
     }
 
     dropped_names
+}
+
+#[derive(Default)]
+struct SectionCounts {
+    initial_elder_count: usize,
+    initial_other_count: usize,
+    dropped_elder_count: usize,
+    dropped_other_count: usize,
+}
+
+impl SectionCounts {
+    fn all_remaining(&self) -> usize {
+        self.initial_elder_count + self.initial_other_count
+            - self.dropped_other_count
+            - self.dropped_elder_count
+    }
+
+    fn all_dropped(&self) -> usize {
+        self.dropped_elder_count + self.dropped_other_count
+    }
+}
+
+// Count the number of elders and the number of non-elders for each section in the network.
+fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, SectionCounts> {
+    let mut output: HashMap<_, SectionCounts> = HashMap::new();
+
+    for node in nodes {
+        let prefix = *node.our_prefix();
+        let counts = output.entry(prefix).or_default();
+        if node.inner.is_elder() {
+            counts.initial_elder_count += 1;
+        } else {
+            counts.initial_other_count += 1;
+        }
+    }
+
+    output
 }
 
 /// Adds node per existing prefix using a random proxy. Returns new node indices.
