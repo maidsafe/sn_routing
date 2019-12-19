@@ -35,13 +35,13 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
-    routing_table::{Authority, Prefix, Xorable},
+    routing_table::{Authority, Prefix},
     signature_accumulator::SignatureAccumulator,
     state_machine::State,
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    xor_name::XorName,
+    xor_name::{XorName, Xorable},
     BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;

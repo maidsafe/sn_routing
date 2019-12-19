@@ -9,12 +9,10 @@
 mod authority;
 mod error;
 mod prefix;
-mod xorable;
 
 pub use self::authority::Authority;
 pub use self::error::RoutingTableError;
 pub use self::prefix::Prefix;
-pub use self::xorable::Xorable;
 
 /*
 
