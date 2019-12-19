@@ -7,8 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::routing_table::RoutingTableError;
-use crate::{action::Action, event::Event, id::PublicId, quic_p2p};
-use crossbeam_channel as mpmc;
+use crate::{id::PublicId, quic_p2p};
 use err_derive::Error;
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc;
@@ -21,26 +20,10 @@ pub type Result<T> = ::std::result::Result<T, RoutingError>;
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant, missing_docs)]
 pub enum InterfaceError {
-    #[error(display = "We are not connected to the network.")]
-    NotConnected,
     #[error(display = "We are not in a state to handle the action.")]
     InvalidState,
-    #[error(
-        display = "Error while trying to receive a message from a multiple-producer-single-consumer channel."
-    )]
+    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
     MpscRecvError(mpsc::RecvError),
-    #[error(
-        display = "Error while trying to receive a message from a multiple-producer-multiple-consumer channel."
-    )]
-    MpmcRecvError(mpmc::RecvError),
-    #[error(
-        display = "Error while trying to send an event to a multiple-producer-multiple-consumer channel."
-    )]
-    MpmcSendEventError(mpmc::SendError<Event>),
-    #[error(
-        display = "Error while trying to send an action to a multiple-producer-multiple-consumer channel."
-    )]
-    MpmcSendActionError(mpmc::SendError<Action>),
 }
 
 /// The type of errors that can occur during handling of routing events.
@@ -62,16 +45,12 @@ pub enum RoutingError {
     Interface(InterfaceError),
     #[error(display = "Network layer error.")]
     Network(quic_p2p::Error),
-    #[error(display = " Channel sending error.")]
-    MpscSendEventError(mpsc::SendError<Event>),
     #[error(display = "Current state is invalid for the operation.")]
     InvalidStateForOperation,
     #[error(display = "Serialisation Error.")]
     SerialisationError(serialisation::SerialisationError),
     #[error(display = "Peer not found.")]
     PeerNotFound(PublicId),
-    #[error(display = "Invalid Destination.")]
-    InvalidDestination,
     #[error(display = "Invalid Source.")]
     InvalidSource,
     #[error(display = "Content of a received message is inconsistent.")]

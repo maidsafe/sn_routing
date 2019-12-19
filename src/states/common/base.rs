@@ -77,9 +77,6 @@ pub trait Base: Display {
                 let result = self.handle_send_message(src, dst, content);
                 let _ = result_tx.send(result);
             }
-            Action::GetId { result_tx } => {
-                let _ = result_tx.send(*self.id());
-            }
             Action::HandleTimeout(token) => match self.handle_timeout(token, outbox) {
                 Transition::Stay => (),
                 transition => {
@@ -102,9 +99,6 @@ pub trait Base: Display {
             } => {
                 self.send_msg_to_client(peer_addr, msg, token);
                 let _ = result_tx.send(Ok(()));
-            }
-            Action::Terminate => {
-                return Transition::Terminate;
             }
         }
 
