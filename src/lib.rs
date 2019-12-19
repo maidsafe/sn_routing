@@ -187,7 +187,7 @@ pub use crate::{
     node::{Node, NodeBuilder},
     pause::PausedState,
     routing_table::RoutingTableError,
-    routing_table::{Authority, Prefix, VersionedPrefix, Xorable},
+    routing_table::{Authority, Prefix, Xorable},
     types::MessageId,
     utils::XorTargetInterval,
     xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN},
