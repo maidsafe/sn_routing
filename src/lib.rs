@@ -111,6 +111,7 @@ extern crate serde_derive;
 mod macros;
 
 mod action;
+mod authority;
 mod chain;
 #[cfg(not(feature = "mock_crypto"))]
 mod crypto;
@@ -169,6 +170,19 @@ pub const ELDER_SIZE: usize = 7;
 
 #[cfg(feature = "mock_base")]
 pub use crate::mock::quic_p2p;
+pub use crate::{
+    authority::Authority,
+    error::{InterfaceError, RoutingError},
+    event::{ClientEvent, ConnectEvent, Event},
+    event_stream::EventStream,
+    id::{FullId, P2pNode, PublicId},
+    node::{Node, NodeBuilder},
+    pause::PausedState,
+    routing_table::RoutingTableError,
+    types::MessageId,
+    utils::XorTargetInterval,
+    xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
+};
 #[cfg(feature = "mock_base")]
 pub use crate::{
     chain::{
@@ -178,18 +192,6 @@ pub use crate::{
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
-};
-pub use crate::{
-    error::{InterfaceError, RoutingError},
-    event::{ClientEvent, ConnectEvent, Event},
-    event_stream::EventStream,
-    id::{FullId, P2pNode, PublicId},
-    node::{Node, NodeBuilder},
-    pause::PausedState,
-    routing_table::{Authority, RoutingTableError},
-    types::MessageId,
-    utils::XorTargetInterval,
-    xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
 };
 #[cfg(feature = "mock_base")]
 pub(crate) use chain::Chain;

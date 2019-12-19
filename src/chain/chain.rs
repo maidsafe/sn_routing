@@ -18,9 +18,10 @@ use crate::{
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    routing_table::{Authority, RoutingTableError},
+    routing_table::RoutingTableError,
     utils::LogIdent,
-    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
+    Authority, BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName,
+    Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;

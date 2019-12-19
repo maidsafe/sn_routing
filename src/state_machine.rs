@@ -22,7 +22,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{rng::MainRng, routing_table::Authority, Chain};
+use crate::{rng::MainRng, Authority, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
