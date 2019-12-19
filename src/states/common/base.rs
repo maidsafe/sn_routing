@@ -22,7 +22,7 @@ use crate::{
     state_machine::Transition,
     timer::Timer,
     utils::LogIdent,
-    xor_name::XorName,
+    xor_space::XorName,
     ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use log::LogLevel;

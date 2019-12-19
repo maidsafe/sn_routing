@@ -13,7 +13,7 @@ use crate::{
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
-    xor_name::{Prefix, XorName, XOR_NAME_LEN},
+    xor_space::{Prefix, XorName, XOR_NAME_LEN},
     BlsSignature,
 };
 use maidsafe_utilities::serialisation::serialise;

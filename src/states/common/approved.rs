@@ -19,7 +19,7 @@ use crate::{
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
     state_machine::Transition,
-    xor_name::{Prefix, XorName},
+    xor_space::{Prefix, XorName},
     BlsSignature,
 };
 use log::LogLevel;

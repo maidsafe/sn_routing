@@ -421,7 +421,7 @@ mod tests {
         chain::{EldersInfo, MIN_AGE_COUNTER},
         id::P2pNode,
         rng::MainRng,
-        xor_name::{Prefix, XorName},
+        xor_space::{Prefix, XorName},
         ConnectionInfo,
     };
     use serde::Serialize;

@@ -8,7 +8,7 @@
 
 use crate::{
     routing_table::Authority,
-    xor_name::{Prefix, XorName},
+    xor_space::{Prefix, XorName},
     NetworkBytes,
 };
 use hex_fmt::HexFmt;

@@ -41,7 +41,7 @@ use crate::{
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    xor_name::{Prefix, XorName, Xorable},
+    xor_space::{Prefix, XorName, Xorable},
     BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;

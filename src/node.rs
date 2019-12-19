@@ -19,7 +19,7 @@ use crate::{
     routing_table::Authority,
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, BootstrappingPeerDetails},
-    xor_name::XorName,
+    xor_space::XorName,
     ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
 use crossbeam_channel as mpmc;

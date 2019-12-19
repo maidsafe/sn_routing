@@ -135,7 +135,7 @@ mod time;
 mod timer;
 mod types;
 mod utils;
-mod xor_name;
+mod xor_space;
 
 /// Random number generation utilities.
 #[cfg(feature = "mock_base")]
@@ -189,7 +189,7 @@ pub use crate::{
     routing_table::{Authority, RoutingTableError},
     types::MessageId,
     utils::XorTargetInterval,
-    xor_name::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
+    xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
 };
 #[cfg(feature = "mock_base")]
 pub(crate) use chain::Chain;

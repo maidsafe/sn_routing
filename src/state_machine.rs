@@ -18,7 +18,7 @@ use crate::{
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
-    xor_name::{Prefix, XorName},
+    xor_space::{Prefix, XorName},
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
