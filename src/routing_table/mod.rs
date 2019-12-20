@@ -124,10 +124,6 @@ use unwrap::unwrap;
 pub type Sections<T> = BTreeMap<Prefix<T>, (u64, BTreeSet<T>)>;
 type SectionItem<'a, T> = (Prefix<T>, (u64, &'a BTreeSet<T>));
 
-// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
-// protect against rapid splitting and merging in the face of moderate churn.
-const SPLIT_BUFFER: usize = 1;
-
 // Immutable iterator over the entries of a `RoutingTable`.
 pub struct Iter<'a, T: 'a + Binary + Clone + Copy + Default + Hash + Xorable> {
     inner: Box<dyn Iterator<Item = &'a T> + 'a>,
@@ -336,12 +332,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         self.min_section_size
     }
 
-    /// Returns the number of nodes which need to exist in each subsection of a given section to
-    /// allow it to be split.
-    pub fn min_split_size(&self) -> usize {
-        self.min_section_size + SPLIT_BUFFER
-    }
-
     /// Returns whether the table contains the given `name`.
     pub fn has(&self, name: &T) -> bool {
         self.get_section(name)
@@ -525,7 +515,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     /// Return true if any neighbouring section might soon need to merge with our section.
     fn neighbour_might_need_merge(&self) -> bool {
-        self.neighbour_size_is_below(self.min_split_size())
+        self.neighbour_size_is_below(self.min_section_size())
     }
 
     /// Return true if any neighbouring section is below the given size threshold.
@@ -543,7 +533,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
 
         // Count the number of names which will end up in each new section if our section is split.
-        let split_size = self.min_split_size();
+        let split_size = self.min_section_size();
         let new_size = self
             .our_section
             .iter()
@@ -1196,7 +1186,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
 
 #[cfg(test)]
 mod tests {
-    use super::SPLIT_BUFFER;
     use super::*;
     use itertools::Itertools;
     use std::collections::BTreeSet;
@@ -1216,7 +1205,7 @@ mod tests {
     // Adds `min_split_size() - 1` entries to `table`, starting at `name` and incrementing it by 1
     // each time.
     fn add_sequential_entries(table: &mut RoutingTable<u16>, name: &mut u16) {
-        for _ in 1..table.min_split_size() {
+        for _ in 1..table.min_section_size() {
             assert_eq!(table.add(*name), Ok(()));
             assert!(!table.should_split());
             table.verify_invariant();
@@ -1230,11 +1219,6 @@ mod tests {
     #[ignore]
     #[allow(clippy::cognitive_complexity, clippy::assertions_on_constants)]
     fn test_routing_sections() {
-        assert!(
-            SPLIT_BUFFER < 3818,
-            "Given the chosen values for 'our_name' and RT type (u16), this requires the \
-             SPLIT_BUFFER to be less than 3818."
-        );
         let our_name = 0b_0001_0001_0001_0001u16;
         let mut table = RoutingTable::new(our_name, 5);
         table.verify_invariant();
@@ -1246,7 +1230,7 @@ mod tests {
         let mut section_10_name = our_name.with_flipped_bit(0);
         add_sequential_entries(&mut table, &mut section_00_name);
         add_sequential_entries(&mut table, &mut section_10_name);
-        expected_rt_len += 2 * (table.min_split_size() - 1);
+        expected_rt_len += 2 * (table.min_section_size() - 1);
 
         // Add one name to the other half to trigger the split to sections 0 and 1.
         assert_eq!(table.add(section_10_name), Ok(()));
@@ -1262,7 +1246,7 @@ mod tests {
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
         assert_eq!(table.all_sections().len(), 2);
-        assert_eq!(table.our_section().len(), table.min_split_size());
+        assert_eq!(table.our_section().len(), table.min_section_size());
 
         // Add `min_split_size - 1` with names 01... and names 11... to get both sections ready to
         // split again.
@@ -1270,7 +1254,7 @@ mod tests {
         let mut section_11_name = section_10_name.with_flipped_bit(1);
         add_sequential_entries(&mut table, &mut section_01_name);
         add_sequential_entries(&mut table, &mut section_11_name);
-        expected_rt_len += 2 * (table.min_split_size() - 1);
+        expected_rt_len += 2 * (table.min_section_size() - 1);
 
         // Trigger split in our own section first to yield sections 00, 01 and 1.
         assert_eq!(table.add(section_01_name), Ok(()));
@@ -1285,7 +1269,7 @@ mod tests {
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
         assert_eq!(table.all_sections().len(), 3);
-        assert_eq!(table.our_section().len(), table.min_split_size());
+        assert_eq!(table.our_section().len(), table.min_section_size());
 
         // Now trigger split in section 1, which should cause section 11 to get ejected, leaving
         // sections 00, 01 and 10.
@@ -1297,14 +1281,14 @@ mod tests {
             table.split(Prefix::new(1, section_11_name).with_version(1));
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         assert!(our_new_prefix.is_none());
-        assert_eq!(nodes_to_drop.len(), table.min_split_size());
+        assert_eq!(nodes_to_drop.len(), table.min_section_size());
         let mut drop_prefix = Prefix::new(2, section_11_name);
         assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
         assert_eq!(table.all_sections().len(), 3);
-        assert_eq!(table.our_section().len(), table.min_split_size());
+        assert_eq!(table.our_section().len(), table.min_section_size());
 
         // Add `min_split_size - 1` with names 001... and names 011... to get sections 00 and 01
         // ready to split.
@@ -1312,7 +1296,7 @@ mod tests {
         let mut section_011_name = section_001_name.with_flipped_bit(1);
         add_sequential_entries(&mut table, &mut section_001_name);
         add_sequential_entries(&mut table, &mut section_011_name);
-        expected_rt_len += 2 * (table.min_split_size() - 1);
+        expected_rt_len += 2 * (table.min_section_size() - 1);
 
         // Trigger split in other section (i.e. section 01) first this time to yield sections 00,
         // 010, 011 and 10.
@@ -1328,7 +1312,7 @@ mod tests {
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
         assert_eq!(table.all_sections().len(), 4);
-        assert_eq!(table.our_section().len(), 2 * table.min_split_size() - 1);
+        assert_eq!(table.our_section().len(), 2 * table.min_section_size() - 1);
 
         // Now trigger split in own section (i.e. section 00), which should cause section 011 to get
         // ejected, leaving sections 000, 001, 010 and 10.
@@ -1341,14 +1325,14 @@ mod tests {
         expected_own_prefix = Prefix::new(3, our_name);
         assert_eq!(*table.our_prefix(), expected_own_prefix);
         assert_eq!(unwrap!(our_new_prefix), expected_own_prefix);
-        assert_eq!(nodes_to_drop.len(), table.min_split_size());
+        assert_eq!(nodes_to_drop.len(), table.min_section_size());
         drop_prefix = Prefix::new(3, section_011_name);
         assert!(nodes_to_drop.iter().all(|name| drop_prefix.matches(name)));
         expected_rt_len -= nodes_to_drop.len();
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
         assert_eq!(table.all_sections().len(), 4);
-        assert_eq!(table.our_section().len(), table.min_split_size());
+        assert_eq!(table.our_section().len(), table.min_section_size());
 
         // Try to add a name which is already in the RT.
         assert_eq!(
