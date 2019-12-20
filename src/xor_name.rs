@@ -261,19 +261,20 @@ impl AsRef<XorName> for XorName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::RoutingError;
     use crate::routing_table::Xorable;
-    use maidsafe_utilities::serialisation::{deserialise, serialise};
+    use bincode::{deserialize, serialize};
     use rand;
     use std::cmp::Ordering;
-    use unwrap::unwrap;
 
     #[test]
-    fn serialisation_xor_name() {
+    fn serialisation_xor_name() -> Result<(), RoutingError> {
         let obj_before: XorName = rand::random();
-        let data = unwrap!(serialise(&obj_before));
+        let data = serialize(&obj_before)?;
         assert_eq!(data.len(), XOR_NAME_LEN);
-        let obj_after: XorName = unwrap!(deserialise(&data));
+        let obj_after: XorName = deserialize(&data)?;
         assert_eq!(obj_before, obj_after);
+        Ok(())
     }
 
     #[test]

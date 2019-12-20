@@ -37,14 +37,10 @@ use std::{
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
 
-/// Amount added to `min_section_size` when deciding whether a bucket split can happen. This helps
-/// protect against rapid splitting and merging in the face of moderate churn.
-const SPLIT_BUFFER: usize = 1;
-
 /// Returns the delivery group size based on the section size `n`
 pub fn delivery_group_size(n: usize) -> usize {
     // this is an integer that is ≥ n/3
-    (n + 2) / 3
+    1 + n / 3
 }
 
 /// Data chain.
@@ -103,12 +99,6 @@ impl Chain {
             .secret_key_share
             .as_ref()
             .ok_or(RoutingError::InvalidElderDkgResult)
-    }
-
-    /// Returns the number of nodes which need to exist in each subsection of a given section to
-    /// allow it to be split.
-    pub fn min_split_size(&self) -> usize {
-        self.safe_section_size() + SPLIT_BUFFER
     }
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
@@ -1261,7 +1251,7 @@ impl Chain {
             });
 
         // If either of the two new sections will not contain enough entries, return `false`.
-        let min_split_size = self.min_split_size();
+        let min_split_size = self.safe_section_size();
         Ok(our_new_size >= min_split_size && sibling_new_size >= min_split_size)
     }
 

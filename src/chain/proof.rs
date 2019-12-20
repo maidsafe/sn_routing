@@ -9,9 +9,9 @@
 use crate::{crypto::signing::Signature, id::PublicId};
 #[cfg(test)]
 use crate::{error::Result, id::FullId};
-use itertools::Itertools;
 #[cfg(any(test, feature = "mock_base"))]
-use maidsafe_utilities::serialisation;
+use bincode::serialize;
+use itertools::Itertools;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
@@ -38,7 +38,7 @@ impl Proof {
     #[cfg(test)]
     #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Serialize>(full_id: &FullId, payload: &S) -> Result<Self> {
-        let sig = full_id.sign(&serialisation::serialise(&payload)?[..]);
+        let sig = full_id.sign(&serialize(&payload)?[..]);
         Ok(Proof {
             pub_id: *full_id.public_id(),
             sig,
@@ -48,7 +48,7 @@ impl Proof {
     /// Validates `payload` against this `Proof`'s `key` and `sig`.
     #[cfg(any(test, feature = "mock_base"))]
     pub fn validate_signature<S: Serialize>(&self, payload: &S) -> bool {
-        match serialisation::serialise(payload) {
+        match serialize(payload) {
             Ok(data) => self.pub_id.verify(&data[..], &self.sig),
             _ => false,
         }
@@ -82,8 +82,8 @@ impl ProofSet {
     /// Validates `payload` against all signatures.
     #[cfg(feature = "mock_base")]
     pub fn validate_signatures<S: Serialize>(&self, payload: &S) -> bool {
-        match serialisation::serialise(payload) {
-            Ok(data) => self.validate_signatures_for_bytes(&data),
+        match serialize(payload) {
+            Ok(data) => self.validate_signatures_for_bytes(data.as_slice()),
             _ => false,
         }
     }

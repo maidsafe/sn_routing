@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-//! Client and node implementations for a resilient decentralised network.
+//! Node implementations for a resilient decentralised network.
 //!
 //! The network is based on the [`kademlia_routing_table`][1] and uses the XOR metric to define the
 //! "distance" between two [`XorName`][2]s. `XorName`s are used as addresses of nodes, clients as
@@ -15,14 +15,8 @@
 //! [1]: ../kademlia_routing_table/index.html
 //! [2]: ../xor_name/struct.XorName.html
 //!
-//! Messages are exchanged between _authorities_, where an `Authority` can be an individual client
-//! or node, or a collection of nodes called a "section", or a subset of a section called a "group".
-//! In all cases, messages are cryptographically signed by the sender, and in the case of sections
-//! and groups, it is verified that a sufficient number of members agree on the message: only if
-//! that quorum is reached, the message is delivered. In addition, each message has a unique ID, and
-//! is delivered only once.
 //!
-//! Section and group authorities are also addressed using a single `XorName`. The members are the
+//! Sections are addressed using a single `XorName`. The members are the
 //! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
 //! value specified as a network-wide constant. Groups are of fixed size, defined as the above
 //! minimum section size. Since nodes are assigned their name by the network, this provides
@@ -30,18 +24,9 @@
 //! be a member of, and without a majority in the section or group it cannot forge a message from
 //! there.
 //!
-//! The library also provides different types for the messages' data.
-//!
-//!
-//! # Usage
-//!
 //! `Node` is used to handle and send requests within that network, and to implement its
 //! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
 //!
-//! # Sequence diagrams
-//!
-//! - [Bootstrapping](bootstrap.png)
-//! - [Churn (`NewNode`)](new-node.png)
 
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
@@ -54,8 +39,7 @@
     exceeding_bitshifts,
     mutable_transmutes,
     no_mangle_const_items,
-    unknown_crate_types,
-    warnings
+    unknown_crate_types
 )]
 #![deny(
     bad_style,
@@ -80,6 +64,7 @@
     clippy::option_unwrap_used
 )]
 #![warn(
+    deprecated,
     trivial_casts,
     trivial_numeric_casts,
     unused_extern_crates,
@@ -90,7 +75,6 @@
 // FIXME: move `deprecated` to `deny` section above
 #![allow(
     box_pointers,
-    deprecated,
     missing_copy_implementations,
     missing_debug_implementations,
     variant_size_differences,
@@ -163,9 +147,15 @@ pub const MIN_SECTION_SIZE: usize = 3;
 /// This number also detemines when split happens - if both post-split sections would have at least
 /// this number of nodes.
 pub const SAFE_SECTION_SIZE: usize = 100;
+#[cfg(feature = "test")]
+/// test
+pub const SAFE_SECTION_SIZE: usize = 10;
 
 /// Number of elders per section.
 pub const ELDER_SIZE: usize = 7;
+#[cfg(feature = "test")]
+/// test
+pub const ELDER_SIZE: usize = 4;
 
 #[cfg(feature = "mock_base")]
 pub use crate::mock::quic_p2p;
