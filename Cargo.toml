@@ -28,7 +28,6 @@ num-bigint = "~0.1.40"
 parsec = { git = "https://github.com/maidsafe/parsec", rev = "818676c" }
 # quic-p2p = "~0.2.0"
 quic-p2p = { git = "https://github.com/maidsafe/quic-p2p" }
-rand = "~0.3.16"
 # rand in the version used by threshold_crypto and ed25519_dalek crates, for compatibility
 rand_crypto = { package = "rand", version = "~0.6.5" }
 resource_proof = "~0.8.0"
@@ -43,6 +42,9 @@ threshold_crypto = "~0.3.2"
 unwrap = "~1.2.1"
 derive_more = "0.99.2"
 err-derive = "0.2.1"
+rand = "0.7.2"
+rand_core = "0.5.1"
+rand_xorshift = "0.2.0"
 
 [dev-dependencies]
 docopt = "~0.8.1"

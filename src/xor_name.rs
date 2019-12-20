@@ -9,7 +9,8 @@
 use crate::routing_table::Xorable;
 use hex::{FromHex, FromHexError, ToHex};
 use num_bigint::BigUint;
-use rand;
+use rand::distributions::{Distribution, Standard};
+use rand::Rng;
 use std::cmp::Ordering;
 use std::{fmt, ops};
 
@@ -173,11 +174,11 @@ impl fmt::Binary for XorName {
     }
 }
 
-impl rand::Rand for XorName {
-    fn rand<R: rand::Rng>(rng: &mut R) -> XorName {
+impl Distribution<XorName> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> XorName {
         let mut ret = [0u8; XOR_NAME_LEN];
         for r in ret[..].iter_mut() {
-            *r = <u8 as rand::Rand>::rand(rng);
+            *r = rng.gen::<u8>();
         }
         XorName(ret)
     }
@@ -262,15 +263,17 @@ impl AsRef<XorName> for XorName {
 mod tests {
     use super::*;
     use crate::routing_table::Xorable;
+    // use bincode::{deserialize, serialize};
     use maidsafe_utilities::serialisation::{deserialise, serialise};
-    use rand;
+    use rand::Rng;
     use std::cmp::Ordering;
     use unwrap::unwrap;
 
     #[test]
-    fn serialisation_xor_name() {
-        let obj_before: XorName = rand::random();
-        let data = unwrap!(serialise(&obj_before));
+    fn serialisation_xor_name() -> Result<(), RoutingError> {
+        let mut rng = rand::thread_rng();
+        let obj_before: XorName = rng.gen::<XorName>();
+        let data = serialize(&obj_before)?;
         assert_eq!(data.len(), XOR_NAME_LEN);
         let obj_after: XorName = unwrap!(deserialise(&data));
         assert_eq!(obj_before, obj_after);
@@ -298,9 +301,10 @@ mod tests {
 
     #[test]
     fn xor_name_equal_assertion() {
-        let type1: XorName = rand::random();
+        let mut rng = rand::thread_rng();
+        let type1: XorName = rng.gen::<XorName>();
         let type1_clone = type1;
-        let type2: XorName = rand::random();
+        let type2: XorName = rng.gen::<XorName>();
         assert_eq!(type1, type1_clone);
         assert!(!(type1 != type1_clone));
         assert_ne!(type1, type2);
@@ -308,18 +312,20 @@ mod tests {
 
     #[test]
     fn closeness() {
-        let obj0: XorName = rand::random();
+        let mut rng = rand::thread_rng();
+        let obj0: XorName = rng.gen::<XorName>();
         let obj0_clone = obj0;
-        let obj1: XorName = rand::random();
+        let obj1: XorName = rng.gen::<XorName>();
         assert!(obj0.closer(&obj0_clone, &obj1));
         assert!(!obj0.closer(&obj1, &obj0_clone));
     }
 
     #[test]
-    fn format_random_nametype() {
-        // test for Random XorName
+    fn format_nametype() {
+        // test for
+        let mut rng = rand::thread_rng();
         for _ in 0..5 {
-            let my_name: XorName = rand::random();
+            let my_name: XorName = rng.gen::<XorName>();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.to_hex();
             assert_eq!(debug_id.len(), 8);
@@ -342,7 +348,8 @@ mod tests {
 
     #[test]
     fn with_flipped_bit() {
-        let name: XorName = rand::random();
+        let mut rng = rand::thread_rng();
+        let name: XorName = rng.gen::<XorName>();
         for i in 0..18 {
             assert_eq!(i, name.common_prefix(&name.with_flipped_bit(i)));
         }
@@ -355,7 +362,8 @@ mod tests {
 
     #[test]
     fn count_differing_bits() {
-        let name: XorName = rand::random();
+        let mut rng = rand::thread_rng();
+        let name: XorName = rng.gen::<XorName>();
         assert_eq!(0, name.count_differing_bits(&name));
         let one_bit = name.with_flipped_bit(5);
         assert_eq!(1, name.count_differing_bits(&one_bit));
@@ -365,9 +373,10 @@ mod tests {
 
     #[test]
     fn subtraction() {
+        let mut rng = rand::thread_rng();
         for _ in 0..100_000 {
-            let x = rand::random();
-            let y = rand::random();
+            let x = rng.gen::<XorName>();
+            let y = rng.gen::<XorName>();
             let (larger, smaller) = if x > y { (x, y) } else { (y, x) };
             assert_eq!(
                 &xor_from_int(larger - smaller)[..],
@@ -385,9 +394,10 @@ mod tests {
 
     #[test]
     fn division() {
+        let mut rng = rand::thread_rng();
         for _ in 0..100_000 {
-            let x = rand::random();
-            let y = rand::random::<u32>().saturating_add(1);
+            let x = rng.gen::<XorName>();
+            let y = rng.gen::<u32>().saturating_add(1);
             assert_eq!(xor_from_int(x / u64::from(y)), xor_from_int(x) / y);
             assert_eq!(xor_from_int(1), xor_from_int(u64::from(y)) / y);
         }
