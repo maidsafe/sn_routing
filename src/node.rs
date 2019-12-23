@@ -16,11 +16,10 @@ use crate::{
     pause::PausedState,
     quic_p2p::{OurType, Token},
     rng::{self, MainRng},
-    routing_table::Authority,
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, BootstrappingPeerDetails},
-    xor_name::XorName,
-    ConnectionInfo, Event, NetworkBytes, NetworkConfig,
+    xor_space::XorName,
+    Authority, ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
 use crossbeam_channel as mpmc;
 use std::{net::SocketAddr, sync::mpsc};

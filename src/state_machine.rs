@@ -15,15 +15,14 @@ use crate::{
     outbox::EventBox,
     pause::PausedState,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
-    xor_name::XorName,
+    xor_space::{Prefix, XorName},
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{rng::MainRng, routing_table::Authority, Chain};
+use crate::{rng::MainRng, Authority, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;

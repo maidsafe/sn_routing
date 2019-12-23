@@ -10,7 +10,7 @@ use crate::{
     crypto::{encryption, signing},
     parsec,
     rng::{self, MainRng, RngCompat},
-    xor_name::XorName,
+    xor_space::XorName,
     ConnectionInfo,
 };
 use maidsafe_utilities::serialisation::{deserialise, serialise};

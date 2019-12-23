@@ -18,12 +18,11 @@ use crate::{
     peer_map::PeerMap,
     quic_p2p::{Peer, Token},
     rng::MainRng,
-    routing_table::Authority,
     state_machine::Transition,
     timer::Timer,
     utils::LogIdent,
-    xor_name::XorName,
-    ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
+    xor_space::XorName,
+    Authority, ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;

@@ -14,7 +14,7 @@ use crate::{
     messages::SignedRoutingMessage,
     parsec,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    xor_name::XorName,
+    xor_space::XorName,
     ConnectionInfo,
 };
 use maidsafe_utilities::serialisation::serialise;

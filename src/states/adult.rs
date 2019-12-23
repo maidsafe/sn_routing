@@ -29,14 +29,13 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
-    routing_table::{Authority, Prefix},
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
     utils::LogIdent,
-    xor_name::XorName,
-    BlsSignature, ConnectionInfo, NetworkService,
+    xor_space::{Prefix, XorName},
+    Authority, BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use std::{

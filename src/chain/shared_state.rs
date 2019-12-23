@@ -11,8 +11,8 @@ use super::{
     MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
-    error::RoutingError, id::PublicId, relocation::RelocateDetails, routing_table::Authority,
-    utils::LogIdent, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
+    error::RoutingError, id::PublicId, relocation::RelocateDetails, utils::LogIdent, Authority,
+    BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;

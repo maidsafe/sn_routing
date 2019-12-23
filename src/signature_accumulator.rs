@@ -87,9 +87,7 @@ mod tests {
             SignedRoutingMessage,
         },
         parsec::generate_bls_threshold_secret_key,
-        rng,
-        routing_table::{Authority, Prefix},
-        BlsPublicKeySet, ConnectionInfo, XorName,
+        rng, Authority, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;

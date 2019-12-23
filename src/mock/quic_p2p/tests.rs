@@ -389,8 +389,7 @@ fn packet_is_parsec_gossip() {
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
-        rng,
-        routing_table::Authority,
+        rng, Authority,
     };
 
     use maidsafe_utilities::serialisation;
