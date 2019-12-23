@@ -467,7 +467,7 @@ impl Node {
     /// obtain it.
     ///
     /// Only if we have a chain (meaning we are elders) we will process this API
-    pub fn min_split_size(&self) -> Option<usize> {
+    pub fn safe_section_size(&self) -> Option<usize> {
         self.chain().map(|chain| chain.safe_section_size())
     }
 

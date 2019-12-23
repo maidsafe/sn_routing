@@ -424,10 +424,10 @@ pub fn add_connected_nodes_until_split(
     clear_all_event_queues(nodes, |_, _| {});
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
-    let min_split_size = unwrap!(nodes[0].inner.min_split_size());
+    let safe_section_size = unwrap!(nodes[0].inner.safe_section_size());
     let prefixes_new_count = prefixes
         .iter()
-        .map(|prefix| (*prefix, min_split_size))
+        .map(|prefix| (*prefix, safe_section_size))
         .collect_vec();
     add_nodes_to_prefixes(network, nodes, &prefixes_new_count);
 
@@ -536,7 +536,7 @@ fn add_nodes_to_prefixes(
             .iter()
             .filter(|node| prefix.matches(&node.name()))
             .count();
-        // To ensure you don't hit this assert, don't have more than `min_split_size()` entries in
+        // To ensure you don't hit this assert, don't have more than `safe_section_size()` entries in
         // `nodes` when calling this function.
         assert!(
             num_in_section <= *target_count,
@@ -574,12 +574,12 @@ fn prefixes_and_count_to_split_with_only_one_extra_node(
         .map(|prefix| prefix_half_with_fewer_nodes(nodes, prefix))
         .collect_vec();
 
-    let min_split_size = unwrap!(nodes[0].inner.min_split_size());
+    let safe_section_size = unwrap!(nodes[0].inner.safe_section_size());
 
     let mut prefixes_and_counts = Vec::new();
     for small_prefix in &prefixes_to_add_to_split {
-        prefixes_and_counts.push((*small_prefix, min_split_size - 1));
-        prefixes_and_counts.push((small_prefix.sibling(), min_split_size));
+        prefixes_and_counts.push((*small_prefix, safe_section_size - 1));
+        prefixes_and_counts.push((small_prefix.sibling(), safe_section_size));
     }
 
     (prefixes_and_counts, prefixes_to_add_to_split)

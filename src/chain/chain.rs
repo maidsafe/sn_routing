@@ -1257,8 +1257,8 @@ impl Chain {
             });
 
         // If either of the two new sections will not contain enough entries, return `false`.
-        let min_split_size = self.safe_section_size();
-        Ok(our_new_size >= min_split_size && sibling_new_size >= min_split_size)
+        let safe_section_size = self.safe_section_size();
+        Ok(our_new_size >= safe_section_size && sibling_new_size >= safe_section_size)
     }
 
     /// Splits our section and generates new elders infos for the child sections.
