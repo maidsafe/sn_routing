@@ -35,7 +35,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     utils::LogIdent,
-    xor_name::{Prefix, XorName},
+    xor_space::{Prefix, XorName},
     BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;

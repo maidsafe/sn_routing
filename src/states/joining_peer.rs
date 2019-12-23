@@ -28,7 +28,7 @@ use crate::{
     routing_table::Authority,
     state_machine::{State, Transition},
     timer::Timer,
-    xor_name::XorName,
+    xor_space::XorName,
     NetworkService,
 };
 use log::LogLevel;

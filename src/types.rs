@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_name::XorName;
+use crate::xor_space::XorName;
 use rand::{Rand, Rng};
 
 /// Unique ID for messages
@@ -74,7 +74,7 @@ impl Rand for MessageId {
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::MessageId;
-    use crate::xor_name::{XorName, XOR_NAME_LEN};
+    use crate::xor_space::{XorName, XOR_NAME_LEN};
 
     #[test]
     fn increment() {

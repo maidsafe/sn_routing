@@ -1821,7 +1821,7 @@ mod tests {
         parsec::generate_bls_threshold_secret_key,
         quorum_count, rng,
         rng::MainRng,
-        xor_name::{Prefix, XorName},
+        xor_space::{Prefix, XorName},
         BlsSecretKeySet, ConnectionInfo,
     };
     use rand::Rng;

@@ -17,8 +17,8 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     routing_table::Authority,
-    xor_name::XorName,
-    BlsPublicKeySet, BlsSignature, BlsSignatureShare, Prefix,
+    xor_space::{Prefix, XorName},
+    BlsPublicKeySet, BlsSignature, BlsSignatureShare,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;

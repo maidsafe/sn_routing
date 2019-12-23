@@ -21,7 +21,7 @@ use crate::{
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
-    xor_name::{Prefix, XorName},
+    xor_space::{Prefix, XorName},
     ConnectionInfo, NetworkService,
 };
 use log::LogLevel;
