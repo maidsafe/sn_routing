@@ -395,7 +395,7 @@ impl Elder {
 
         let to_connect: Vec<_> = self
             .chain
-            .our_elders()
+            .our_joined_members()
             .filter(|p2p_node| {
                 p2p_node.public_id() != self.id() && !self.peer_map().has(p2p_node.peer_addr())
             })
