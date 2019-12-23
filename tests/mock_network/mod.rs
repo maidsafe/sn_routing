@@ -71,13 +71,13 @@ pub fn node_prefix_if_split(node: &TestNode) -> Prefix<XorName> {
 fn new_node_prefix_without_split(
     node: &TestNode,
     count_if_split_node: &BTreeMap<Prefix<XorName>, usize>,
-    min_split_size: usize,
+    safe_section_size: usize,
 ) -> Option<Prefix<XorName>> {
     let (sub_prefix, count) = unwrap!(count_if_split_node
         .iter()
         .find(|(pfx, _)| pfx.matches(&node.name())));
 
-    if *count < min_split_size * 2 - 1 {
+    if *count < safe_section_size * 2 - 1 {
         return Some(*sub_prefix);
     }
     None
@@ -85,11 +85,11 @@ fn new_node_prefix_without_split(
 
 fn can_accept_node_without_split(
     count_if_split_node: &BTreeMap<Prefix<XorName>, usize>,
-    min_split_size: usize,
+    safe_section_size: usize,
 ) -> bool {
     count_if_split_node
         .values()
-        .any(|count| *count < min_split_size * 2 - 1)
+        .any(|count| *count < safe_section_size * 2 - 1)
 }
 
 fn create_node_with_contact(network: &Network, contact: &mut TestNode) -> TestNode {
@@ -235,21 +235,21 @@ fn multiple_joining_nodes() {
         info!("Size {}", nodes.len());
 
         let mut count_if_split_node = count_sections_members_if_split(&nodes);
-        let min_split_size = unwrap!(nodes[0].inner.min_split_size());
+        let safe_section_size = unwrap!(nodes[0].inner.safe_section_size());
 
         // Try adding five nodes at once, possibly to the same section. This makes sure one section
         // can handle this, either by adding the nodes in sequence or by rejecting some.
         // Ensure we do not create a situation when a recursive split will occur.
         let count = 5;
         for _ in 0..count {
-            if !can_accept_node_without_split(&count_if_split_node, min_split_size) {
+            if !can_accept_node_without_split(&count_if_split_node, safe_section_size) {
                 break;
             }
 
             loop {
                 let node = create_node_with_contact(&network, &mut nodes[0]);
                 let valid_sub_prefix =
-                    new_node_prefix_without_split(&node, &count_if_split_node, min_split_size);
+                    new_node_prefix_without_split(&node, &count_if_split_node, safe_section_size);
 
                 if let Some(sub_prefix) = valid_sub_prefix {
                     *unwrap!(count_if_split_node.get_mut(&sub_prefix)) += 1;
