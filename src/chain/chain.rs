@@ -18,7 +18,6 @@ use crate::{
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    routing_table::RoutingTableError,
     utils::LogIdent,
     Authority, BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName,
     Xorable,
@@ -1428,7 +1427,7 @@ impl Chain {
     pub fn targets(
         &self,
         dst: &Authority<XorName>,
-    ) -> Result<(Vec<&P2pNode>, usize), RoutingTableError> {
+    ) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
         let candidates = |target_name: &XorName| {
             let filtered_sections =
                 self.closest_sections_info(*target_name)
@@ -1464,7 +1463,7 @@ impl Chain {
             if dg_size > 0 && nodes_to_send.len() >= dg_size {
                 Ok((dg_size, nodes_to_send))
             } else {
-                Err(RoutingTableError::CannotRoute)
+                Err(RoutingError::CannotRoute)
             }
         };
 
@@ -1504,7 +1503,7 @@ impl Chain {
                     if prefix.is_compatible(self.our_prefix())
                         && !prefix.is_covered_by(self.prefixes().iter())
                     {
-                        return Err(RoutingTableError::CannotRoute);
+                        return Err(RoutingError::CannotRoute);
                     }
 
                     let is_compatible = |(pfx, section)| {
