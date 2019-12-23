@@ -111,6 +111,7 @@ extern crate serde_derive;
 mod macros;
 
 mod action;
+mod authority;
 mod chain;
 #[cfg(not(feature = "mock_crypto"))]
 mod crypto;
@@ -170,6 +171,7 @@ pub const ELDER_SIZE: usize = 7;
 #[cfg(feature = "mock_base")]
 pub use crate::mock::quic_p2p;
 pub use crate::{
+    authority::Authority,
     chain::quorum_count,
     error::{InterfaceError, RoutingError},
     event::{ClientEvent, ConnectEvent, Event},
@@ -177,7 +179,7 @@ pub use crate::{
     id::{FullId, P2pNode, PublicId},
     node::{Node, NodeBuilder},
     pause::PausedState,
-    routing_table::{Authority, RoutingTableError},
+    routing_table::RoutingTableError,
     types::MessageId,
     utils::XorTargetInterval,
     xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},

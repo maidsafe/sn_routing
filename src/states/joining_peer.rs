@@ -25,11 +25,10 @@ use crate::{
     relocation::RelocatePayload,
     rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
-    routing_table::Authority,
     state_machine::{State, Transition},
     timer::Timer,
     xor_space::XorName,
-    NetworkService,
+    Authority, NetworkService,
 };
 use log::LogLevel;
 use std::{

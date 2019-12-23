@@ -17,12 +17,11 @@ use crate::{
     peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
     rng::MainRng,
-    routing_table::Authority,
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
     xor_space::{Prefix, XorName},
-    ConnectionInfo, NetworkService,
+    Authority, ConnectionInfo, NetworkService,
 };
 use log::LogLevel;
 use std::{
