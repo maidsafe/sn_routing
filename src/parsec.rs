@@ -387,7 +387,7 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
             &gen_pfx_info.first_info.member_ids().copied().collect(),
             gen_pfx_info.first_state_serialized.clone(),
             ConsensusMode::Single,
-            Box::new(rng),
+            Box::new(rng: new_from(rng)),
         )
     } else {
         Parsec::from_existing(
@@ -397,7 +397,7 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
             &gen_pfx_info.first_info.member_ids().copied().collect(),
             &gen_pfx_info.latest_info.member_ids().copied().collect(),
             ConsensusMode::Single,
-            Box::new(rng),
+            Box::new(crate::rng::RngParsecCompat(rng::new_from(rng))),
         )
     }
 }

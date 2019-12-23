@@ -15,9 +15,9 @@ pub use rand::CryptoRng;
 
 // `Cryptorand::Rng` trait shim.
 // TODO: remove this when we update rand to more recent version as it has its own `CryptoRng` trait.
-pub(crate) trait CryptoRng: rand::Rng {}
-impl<'a, R: CryptoRng> CryptoRng for &'a mut R {}
-impl CryptoRng for MainRng {}
+// pub(crate) trait CryptoRng: rand::Rng {}
+// impl<'a, R: CryptoRng> CryptoRng for &'a mut R {}
+// impl CryptoRng for MainRng {}
 
 // Note: routing uses different version of the rand crate than threshold_crypto. This is a
 // compatibility adapter between the two.
@@ -48,7 +48,7 @@ impl<R: CryptoRng> rand_crypto::CryptoRng for RngCompat<R> {}
 // compatibility adapter between the two.
 pub(crate) struct RngParsecCompat<R>(pub R);
 
-impl<R: rand_new::Rng> rand_parsec::Rng for RngParsecCompat<R> {
+impl<R: rand::Rng> rand_parsec::Rng for RngParsecCompat<R> {
     fn next_u32(&mut self) -> u32 {
         self.0.next_u32()
     }
