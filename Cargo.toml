@@ -31,6 +31,8 @@ quic-p2p = { git = "https://github.com/maidsafe/quic-p2p" }
 rand = "~0.3.16"
 # rand in the version used by threshold_crypto and ed25519_dalek crates, for compatibility
 rand_crypto = { package = "rand", version = "~0.6.5" }
+rand_new = { package = "rand", version = "0.7.2" }
+rand_parsec = { package = "rand", version = "0.4.2" }
 resource_proof = "~0.8.0"
 serde = { version = "~1.0.25", features = ["rc"] }
 serde_derive = "~1.0.25"

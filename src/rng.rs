@@ -12,11 +12,9 @@ pub use self::seed_printer::SeedPrinter;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test::Seed;
 
-use rand::Rng;
-
-// `CryptoRng` trait shim.
+// `Cryptorand::Rng` trait shim.
 // TODO: remove this when we update rand to more recent version as it has its own `CryptoRng` trait.
-pub(crate) trait CryptoRng: Rng {}
+pub(crate) trait CryptoRng: rand::Rng {}
 impl<'a, R: CryptoRng> CryptoRng for &'a mut R {}
 impl CryptoRng for MainRng {}
 
@@ -24,7 +22,7 @@ impl CryptoRng for MainRng {}
 // compatibility adapter between the two.
 pub(crate) struct RngCompat<R>(pub R);
 
-impl<R: Rng> rand_crypto::RngCore for RngCompat<R> {
+impl<R: rand::Rng> rand_crypto::RngCore for RngCompat<R> {
     fn next_u32(&mut self) -> u32 {
         self.0.next_u32()
     }
@@ -44,6 +42,16 @@ impl<R: Rng> rand_crypto::RngCore for RngCompat<R> {
 }
 
 impl<R: CryptoRng> rand_crypto::CryptoRng for RngCompat<R> {}
+
+// Note: routing uses different version of the rand crate than threshold_crypto. This is a
+// compatibility adapter between the two.
+pub(crate) struct RngParsecCompat<R>(pub R);
+
+impl<R: rand_new::Rng> rand_parsec::Rng for RngParsecCompat<R> {
+    fn next_u32(&mut self) -> u32 {
+        self.0.next_u32()
+    }
+}
 
 // Rng implementation used in production. Uses `OsRng` for maximum cryptographic security.
 #[cfg(not(any(test, feature = "mock_base")))]
