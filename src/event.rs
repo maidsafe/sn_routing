@@ -6,14 +6,17 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::routing_table::Authority;
-use crate::routing_table::Prefix;
-use crate::xor_name::XorName;
-use crate::NetworkBytes;
+use crate::{
+    routing_table::Authority,
+    xor_name::{Prefix, XorName},
+    NetworkBytes,
+};
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
-use std::fmt::{self, Debug, Formatter};
-use std::net::SocketAddr;
+use std::{
+    fmt::{self, Debug, Formatter},
+    net::SocketAddr,
+};
 
 /// An Event raised by a `Client`
 ///

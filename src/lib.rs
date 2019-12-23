@@ -177,11 +177,10 @@ pub use crate::{
     id::{FullId, P2pNode, PublicId},
     node::{Node, NodeBuilder},
     pause::PausedState,
-    routing_table::RoutingTableError,
-    routing_table::{Authority, Prefix},
+    routing_table::{Authority, RoutingTableError},
     types::MessageId,
     utils::XorTargetInterval,
-    xor_name::{XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
+    xor_name::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
 };
 #[cfg(feature = "mock_base")]
 pub use crate::{

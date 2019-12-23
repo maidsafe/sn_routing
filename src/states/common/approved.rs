@@ -18,9 +18,8 @@ use crate::{
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
-    routing_table::Prefix,
     state_machine::Transition,
-    xor_name::XorName,
+    xor_name::{Prefix, XorName},
     BlsSignature,
 };
 use log::LogLevel;

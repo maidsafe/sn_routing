@@ -17,11 +17,11 @@ use crate::{
     peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
     rng::MainRng,
-    routing_table::{Authority, Prefix},
+    routing_table::Authority,
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
-    xor_name::XorName,
+    xor_name::{Prefix, XorName},
     ConnectionInfo, NetworkService,
 };
 use log::LogLevel;

@@ -8,11 +8,9 @@
 
 mod authority;
 mod error;
-mod prefix;
 
 pub use self::authority::Authority;
 pub use self::error::RoutingTableError;
-pub use self::prefix::Prefix;
 
 /*
 
@@ -175,26 +173,17 @@ mod tests {
         assert_eq!(table.our_section().len(), table.min_split_size());
 
         // Try to add a name which is already in the RT.
-        assert_eq!(
-            table.add(section_001_name),
-            Err(RoutingTableError::AlreadyExists)
-        );
+        assert_eq!(table.add(section_001_name), Err(Error::AlreadyExists));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add our own name.
-        assert_eq!(
-            table.add(our_name),
-            Err(RoutingTableError::OwnNameDisallowed)
-        );
+        assert_eq!(table.add(our_name), Err(Error::OwnNameDisallowed));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
         // Try to add a name which doesn't fit any section.
-        assert_eq!(
-            table.add(nodes_to_drop[0]),
-            Err(RoutingTableError::PeerNameUnsuitable)
-        );
+        assert_eq!(table.add(nodes_to_drop[0]), Err(Error::PeerNameUnsuitable));
         table.verify_invariant();
         assert_eq!(table.len(), expected_rt_len);
 
@@ -231,15 +220,12 @@ mod tests {
         // Check `need_to_add()`.
         assert_eq!(
             table.need_to_add(&section_001_name),
-            Err(RoutingTableError::AlreadyExists)
+            Err(Error::AlreadyExists)
         );
-        assert_eq!(
-            table.need_to_add(&our_name),
-            Err(RoutingTableError::OwnNameDisallowed)
-        );
+        assert_eq!(table.need_to_add(&our_name), Err(Error::OwnNameDisallowed));
         assert_eq!(
             table.need_to_add(&nodes_to_drop[0]),
-            Err(RoutingTableError::PeerNameUnsuitable)
+            Err(Error::PeerNameUnsuitable)
         );
         assert_eq!(table.need_to_add(&(section_001_name + 1)), Ok(()));
     }
