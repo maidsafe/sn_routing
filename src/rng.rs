@@ -11,14 +11,9 @@ pub use self::implementation::{new, new_from, MainRng};
 pub use self::seed_printer::SeedPrinter;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test::Seed;
+pub use rand::CryptoRng;
 
 use rand::Rng;
-
-// `CryptoRng` trait shim.
-// TODO: remove this when we update rand to more recent version as it has its own `CryptoRng` trait.
-pub(crate) trait CryptoRng: Rng {}
-impl<'a, R: CryptoRng> CryptoRng for &'a mut R {}
-impl CryptoRng for MainRng {}
 
 // Note: routing uses different version of the rand crate than threshold_crypto. This is a
 // compatibility adapter between the two.
@@ -48,15 +43,18 @@ impl<R: CryptoRng> rand_crypto::CryptoRng for RngCompat<R> {}
 // Rng implementation used in production. Uses `OsRng` for maximum cryptographic security.
 #[cfg(not(any(test, feature = "mock_base")))]
 mod implementation {
-    pub use rand::OsRng as MainRng;
+    // Parsec has a very old rand dependecy. This osRng is required to interact wiht that, until
+    // parsec upgrades
+    pub use rand::rngs::OsRng as MainRng;
     use rand::Rng;
 
     /// Create new rng instance.
     pub fn new() -> MainRng {
-        match MainRng::new() {
-            Ok(rng) => rng,
-            Err(error) => panic!("Failed to create OsRng: {:?}", error),
-        }
+        MainRng
+        // match MainRng::new() {
+        //     Ok(rng) => rng,
+        //     Err(error) => panic!("Failed to create OsRng: {:?}", error),
+        // }
     }
 
     /// Same as `new`. Provided only for API parity with test/mock.
@@ -85,7 +83,9 @@ mod implementation {
 
 #[cfg(any(test, feature = "mock_base"))]
 mod test {
-    use rand::{Rand, Rng, SeedableRng, XorShiftRng};
+    use rand::{Distribution, Standard};
+    use rand::{Rng, RngCore, SeedableRng};
+    use rand_xorshift::XorShiftRng;
     use std::{
         env,
         fmt::{self, Display, Formatter},
@@ -113,7 +113,7 @@ mod test {
         }
     }
 
-    impl Rng for TestRng {
+    impl RngCore for TestRng {
         fn next_u32(&mut self) -> u32 {
             self.0.next_u32()
         }
@@ -127,13 +127,10 @@ mod test {
         }
     }
 
-    impl SeedableRng<Seed> for TestRng {
+    impl SeedableRng for TestRng {
+        type Seed = Seed;
         fn from_seed(seed: Seed) -> Self {
             Self(XorShiftRng::from_seed(seed.0))
-        }
-
-        fn reseed(&mut self, seed: Seed) {
-            self.0.reseed(seed.0);
         }
     }
 
@@ -213,12 +210,8 @@ mod test {
         }
     }
 
-    impl Rand for Seed {
-        fn rand<R: Rng>(rng: &mut R) -> Self {
-            // Note: the `wrapping_add` trick is a workaround for what seems to be a weakness in
-            // `XorShiftRng`. Without it we would sometimes end up with multiple rngs producing
-            // identical values.
-            // The idea is taken from: https://github.com/maidsafe/maidsafe_utilities/blob/24dfcbc6ee07a14bf64f3bc573f68cea01e06862/src/seeded_rng.rs#L92
+    impl Distribution<Seed> for Standard {
+        fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Seed {
             Self([
                 rng.next_u32().wrapping_add(rng.next_u32()),
                 rng.next_u32().wrapping_add(rng.next_u32()),

@@ -38,13 +38,14 @@ structopt = "~0.2.18"
 term = "~0.4.6"
 tiny-keccak = "~1.5.0"
 ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.2", features = ["serde"] }
-threshold_crypto = "~0.3.2"
 unwrap = "~1.2.1"
 derive_more = "0.99.2"
 err-derive = "0.2.1"
 rand = "0.7.2"
 rand_core = "0.5.1"
 rand_xorshift = "0.2.0"
+rand_os = "0.1.0"
+threshold_crypto = "~0.3.2"
 
 [dev-dependencies]
 docopt = "~0.8.1"
