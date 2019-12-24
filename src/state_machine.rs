@@ -30,7 +30,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     mem,
 };
-use unwrap::unwrap;
 
 // Execute $expr on the current variant of $self. Execute $term_expr if the current variant is
 // `Terminated`.
@@ -349,12 +348,13 @@ impl StateMachine {
         let (action_tx, action_rx) = mpmc::unbounded();
         let (network_tx, network_rx) = mpmc::unbounded();
 
-        let network_service = unwrap!(
-            NetworkBuilder::new(network_tx)
-                .with_config(network_config)
-                .build(),
-            "Unable to start network service"
-        );
+        let network_service = match NetworkBuilder::new(network_tx)
+            .with_config(network_config)
+            .build()
+        {
+            Ok(network_service) => network_service,
+            Err(err) => panic!("Unable to start network service: {:?}", err),
+        };
 
         let timer = Timer::new(action_tx.clone());
         let state = init_state(network_service, timer, outbox);

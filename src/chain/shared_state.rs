@@ -22,7 +22,6 @@ use std::{
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
-use unwrap::unwrap;
 
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
@@ -312,7 +311,11 @@ impl SharedState {
                 return;
             }
 
-            let old_key_info = unwrap!(self.their_keys.remove(&old_pfx));
+            let old_key_info = self
+                .their_keys
+                .remove(&old_pfx)
+                .expect("Bug in BTreeMap for update_their_keys");
+
             self.their_recent_keys
                 .push_front((old_pfx, old_key_info.clone()));
             if self.their_recent_keys.len() > MAX_THEIR_RECENT_KEYS {
