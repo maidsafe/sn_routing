@@ -14,6 +14,7 @@ use super::{
     Block, ConsensusMode, DkgResult, NetworkEvent, PublicId, SecretId,
 };
 use crate::crypto::Digest256;
+use crate::unwrap;
 use rand::Rng;
 use std::{
     any::Any,
@@ -24,7 +25,6 @@ use std::{
     },
     mem,
 };
-use unwrap::unwrap;
 
 pub(super) struct SectionState<T: NetworkEvent, P: PublicId> {
     observations: BTreeMap<ObservationHolder<T, P>, ObservationState<P>>,

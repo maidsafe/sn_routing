@@ -14,6 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::*;
+use crate::unwrap;
 use crate::{
     chain::SectionKeyInfo,
     generate_bls_threshold_secret_key,
@@ -25,7 +26,6 @@ use crate::{
     BlsSecretKeyShare, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
-use unwrap::unwrap;
 
 // Minimal number of votes to reach accumulation.
 const ACCUMULATE_VOTE_COUNT: usize = 5;

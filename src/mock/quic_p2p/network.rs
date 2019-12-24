@@ -9,6 +9,7 @@
 use super::{node::Node, OurType};
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec;
+use crate::unwrap;
 use crate::{
     chain::NetworkParams,
     rng::{self, MainRng, Seed, SeedPrinter},
@@ -26,7 +27,6 @@ use std::{
     rc::{Rc, Weak},
     sync::Once,
 };
-use unwrap::unwrap;
 
 const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;

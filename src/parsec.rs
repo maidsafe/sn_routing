@@ -10,6 +10,8 @@
 use crate::crypto;
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec as inner;
+#[cfg(feature = "mock_parsec")]
+use crate::unwrap;
 use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
@@ -28,8 +30,6 @@ use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt, mem,
 };
-#[cfg(feature = "mock_parsec")]
-use unwrap::unwrap;
 
 #[cfg(feature = "mock_parsec")]
 pub use crate::mock::parsec::{
@@ -417,6 +417,7 @@ impl From<Error> for CreateGossipError {
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests {
     use super::*;
+    use crate::unwrap;
     use crate::{
         chain::{EldersInfo, MIN_AGE_COUNTER},
         id::P2pNode,
@@ -426,7 +427,6 @@ mod tests {
     };
     use serde::Serialize;
     use std::net::SocketAddr;
-    use unwrap::unwrap;
 
     const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 

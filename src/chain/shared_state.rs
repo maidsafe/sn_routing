@@ -625,6 +625,7 @@ impl SectionKeyInfo {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::unwrap;
     use crate::{
         chain::EldersInfo,
         id::P2pNode,
@@ -634,7 +635,6 @@ mod test {
     };
     use rand::Rng;
     use std::{collections::BTreeMap, str::FromStr};
-    use unwrap::unwrap;
 
     fn gen_elders_info(rng: &mut MainRng, pfx: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;

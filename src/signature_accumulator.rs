@@ -79,6 +79,7 @@ impl SignatureAccumulator {
 #[cfg(feature = "mock_base")]
 mod tests {
     use super::*;
+    use crate::unwrap;
     use crate::{
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain},
         id::{FullId, P2pNode},
@@ -93,7 +94,6 @@ mod tests {
     use rand;
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
-    use unwrap::unwrap;
 
     struct MessageAndSignatures {
         signed_msg: SignedRoutingMessage,

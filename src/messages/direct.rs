@@ -221,7 +221,7 @@ mod implementation {
 mod implementation {
     use super::*;
     use crate::crypto::signing::SIGNATURE_LENGTH;
-    use unwrap::unwrap;
+    use crate::unwrap;
 
     pub fn sign(_: &FullId, _: &DirectMessage) -> Result<Signature, RoutingError> {
         Ok(unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH])))

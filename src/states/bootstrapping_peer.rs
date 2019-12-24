@@ -347,6 +347,7 @@ impl Display for BootstrappingPeer {
 #[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
+    use crate::unwrap;
     use crate::{
         chain::NetworkParams,
         id::FullId,
@@ -358,7 +359,6 @@ mod tests {
         NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;
-    use unwrap::unwrap;
 
     #[test]
     // Check that losing our proxy connection while in the `BootstrappingPeer` state doesn't stall

@@ -558,6 +558,7 @@ impl Debug for MessageContent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::unwrap;
     use crate::{
         chain::SectionKeyInfo,
         id::{FullId, P2pNode},
@@ -567,7 +568,6 @@ mod tests {
     use rand;
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
-    use unwrap::unwrap;
 
     #[test]
     fn signed_routing_message_check_integrity() {

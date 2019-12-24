@@ -195,6 +195,7 @@ mod implementation {
 
 #[cfg(feature = "mock_base")]
 mod implementation {
+    use crate::unwrap;
     use crate::{
         action::Action,
         time::{Duration, Instant},
@@ -204,7 +205,6 @@ mod implementation {
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
-    use unwrap::unwrap;
 
     struct Inner {
         next_token: u64,

@@ -85,13 +85,13 @@ mod implementation {
 
 #[cfg(any(test, feature = "mock_base"))]
 mod test {
+    use crate::unwrap;
     use rand::{Rand, Rng, SeedableRng, XorShiftRng};
     use std::{
         env,
         fmt::{self, Display, Formatter},
         str::FromStr,
     };
-    use unwrap::unwrap;
 
     pub const SEED_ENV_NAME: &str = "SEED";
 

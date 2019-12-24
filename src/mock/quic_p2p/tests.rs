@@ -7,11 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
+use crate::unwrap;
 use crate::NetworkBytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
 use std::{iter, net::SocketAddr};
-use unwrap::unwrap;
 
 // Assert that the expression matches the expected pattern.
 macro_rules! assert_match {

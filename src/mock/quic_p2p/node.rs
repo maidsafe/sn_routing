@@ -15,9 +15,9 @@ use crossbeam_channel::Sender;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
 // consistent iteration order (necessary for repeatable tests). Can't use `BTreeMap` / `BTreeSet`
 // because we key by `SocketAddr` which doesn't implement `Ord`.
+use crate::unwrap;
 use fxhash::{FxHashMap, FxHashSet};
 use std::{cell::RefCell, net::SocketAddr, rc::Rc};
-use unwrap::unwrap;
 
 pub(super) struct Node {
     network: Rc<RefCell<Inner>>,

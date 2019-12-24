@@ -1806,6 +1806,7 @@ impl EldersChangeBuilder {
 mod tests {
     use super::super::{EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER};
     use super::*;
+    use crate::unwrap;
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_bls_threshold_secret_key,
@@ -1819,7 +1820,6 @@ mod tests {
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
-    use unwrap::unwrap;
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),
