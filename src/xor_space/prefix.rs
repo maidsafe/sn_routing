@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::xorable::Xorable;
+use super::Xorable;
 use std::{
     cmp::{self, Ordering},
     fmt::Result as FmtResult,
@@ -15,34 +15,7 @@ use std::{
     ops::RangeInclusive,
 };
 #[cfg(test)]
-use {crate::XorName, std::str::FromStr};
-
-/// A prefix with section version.
-#[derive(
-    Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize,
-)]
-pub struct VersionedPrefix<T: Clone + Copy + Default + Binary + Xorable> {
-    prefix: Prefix<T>,
-    version: u64,
-}
-
-impl<T: Clone + Copy + Default + Binary + Xorable> VersionedPrefix<T> {
-    /// Returns the prefix.
-    pub fn prefix(&self) -> &Prefix<T> {
-        &self.prefix
-    }
-
-    /// Returns the version number.
-    pub fn version(&self) -> u64 {
-        self.version
-    }
-}
-
-impl<T: Clone + Copy + Default + Binary + Xorable> Into<(Prefix<T>, u64)> for VersionedPrefix<T> {
-    fn into(self) -> (Prefix<T>, u64) {
-        (self.prefix, self.version)
-    }
-}
+use {super::XorName, std::str::FromStr};
 
 /// A section prefix, i.e. a sequence of bits specifying the part of the network's name space
 /// consisting of all names that start with this sequence.
@@ -66,14 +39,6 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Returns the name of this prefix.
     pub fn name(&self) -> T {
         self.name
-    }
-
-    /// Returns a `VersionedPrefix` with this prefix and the given version number.
-    pub fn with_version(self, version: u64) -> VersionedPrefix<T> {
-        VersionedPrefix {
-            prefix: self,
-            version: version,
-        }
     }
 
     /// Returns `self` with an appended bit: `0` if `bit` is `false`, and `1` if `bit` is `true`. If
@@ -321,7 +286,7 @@ impl FromStr for Prefix<XorName> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use unwrap::unwrap;
+    use crate::unwrap;
 
     #[test]
     fn prefix() {

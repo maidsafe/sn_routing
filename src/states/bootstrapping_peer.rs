@@ -17,12 +17,11 @@ use crate::{
     peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
     rng::MainRng,
-    routing_table::{Authority, Prefix},
     state_machine::{State, Transition},
     states::JoiningPeer,
     timer::Timer,
-    xor_name::XorName,
-    ConnectionInfo, NetworkService,
+    xor_space::{Prefix, XorName},
+    Authority, ConnectionInfo, NetworkService,
 };
 use log::LogLevel;
 use std::{
@@ -356,10 +355,9 @@ mod tests {
         quic_p2p::{Builder, Peer},
         state_machine::StateMachine,
         states::common::from_network_bytes,
-        NetworkConfig, NetworkEvent,
+        unwrap, NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;
-    use unwrap::unwrap;
 
     #[test]
     // Check that losing our proxy connection while in the `BootstrappingPeer` state doesn't stall

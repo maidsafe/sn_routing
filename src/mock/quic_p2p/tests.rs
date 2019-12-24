@@ -7,11 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
-use crate::NetworkBytes;
+use crate::{unwrap, NetworkBytes};
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
 use std::{iter, net::SocketAddr};
-use unwrap::unwrap;
 
 // Assert that the expression matches the expected pattern.
 macro_rules! assert_match {
@@ -389,8 +388,7 @@ fn packet_is_parsec_gossip() {
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
-        rng,
-        routing_table::Authority,
+        rng, Authority,
     };
 
     use bincode::serialize;

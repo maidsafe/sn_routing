@@ -11,8 +11,7 @@ use crate::{
     crypto::{self, Digest256},
     error::RoutingError,
     id::{P2pNode, PublicId},
-    routing_table::Prefix,
-    XorName, {QUORUM_DENOMINATOR, QUORUM_NUMERATOR},
+    Prefix, XorName, {QUORUM_DENOMINATOR, QUORUM_NUMERATOR},
 };
 use bincode::serialize;
 use itertools::Itertools;

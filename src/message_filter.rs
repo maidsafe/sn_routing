@@ -90,7 +90,7 @@ impl<Message: Hash> MessageFilter<Message> {
             let (hash_code, _) = self
                 .timeout_queue
                 .pop_front()
-                .expect("failed to read expired message");
+                .expect("Bug in VecDeque for remove_expired");
             if let Entry::Occupied(entry) = self.count.entry(hash_code) {
                 if entry.get().1 <= now {
                     let _removed_pair = entry.remove_entry();

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::routing_table::Xorable;
+use super::xorable::Xorable;
 use hex::{FromHex, FromHexError, ToHex};
 use num_bigint::BigUint;
 use rand;
@@ -261,9 +261,8 @@ impl AsRef<XorName> for XorName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::RoutingError;
-    use crate::routing_table::Xorable;
-    use bincode::{deserialize, serialize};
+    use crate::unwrap;
+    use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
     use std::cmp::Ordering;
 

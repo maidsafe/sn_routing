@@ -95,6 +95,7 @@ extern crate serde_derive;
 mod macros;
 
 mod action;
+mod authority;
 mod chain;
 #[cfg(not(feature = "mock_crypto"))]
 mod crypto;
@@ -111,7 +112,6 @@ mod pause;
 mod peer_map;
 mod relocation;
 mod routing_message_filter;
-mod routing_table;
 mod signature_accumulator;
 mod state_machine;
 mod states;
@@ -119,7 +119,7 @@ mod time;
 mod timer;
 mod types;
 mod utils;
-mod xor_name;
+mod xor_space;
 
 /// Random number generation utilities.
 #[cfg(feature = "mock_base")]
@@ -160,6 +160,7 @@ pub const ELDER_SIZE: usize = 4;
 #[cfg(feature = "mock_base")]
 pub use crate::mock::quic_p2p;
 pub use crate::{
+    authority::Authority,
     chain::quorum_count,
     error::{InterfaceError, RoutingError},
     event::{ClientEvent, ConnectEvent, Event},
@@ -167,11 +168,9 @@ pub use crate::{
     id::{FullId, P2pNode, PublicId},
     node::{Node, NodeBuilder},
     pause::PausedState,
-    routing_table::RoutingTableError,
-    routing_table::{Authority, Prefix, RoutingTable, VersionedPrefix, Xorable},
     types::MessageId,
     utils::XorTargetInterval,
-    xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN},
+    xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
 };
 #[cfg(feature = "mock_base")]
 pub use crate::{
@@ -210,6 +209,9 @@ pub(crate) use self::{
 
 #[cfg(feature = "mock_crypto")]
 pub(crate) use self::mock::crypto;
+
+#[cfg(any(test, feature = "mock_base"))]
+pub(crate) use unwrap::unwrap;
 
 #[cfg(feature = "mock_base")]
 #[doc(hidden)]

@@ -198,13 +198,13 @@ mod implementation {
     use crate::{
         action::Action,
         time::{Duration, Instant},
+        unwrap,
     };
     use crossbeam_channel as mpmc;
     use itertools::Itertools;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
     use std::rc::Rc;
-    use unwrap::unwrap;
 
     struct Inner {
         next_token: u64,

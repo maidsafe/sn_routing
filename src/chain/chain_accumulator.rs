@@ -274,10 +274,10 @@ mod test {
         id::FullId,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
+        unwrap,
     };
     use parsec::SecretId;
     use std::iter;
-    use unwrap::unwrap;
 
     const TEST_DATA_FOR_SIGN: [u8; 1] = [1u8];
 

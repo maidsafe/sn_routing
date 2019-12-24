@@ -12,7 +12,7 @@ use crate::mock::parsec;
 use crate::{
     chain::NetworkParams,
     rng::{self, MainRng, Seed, SeedPrinter},
-    NetworkBytes,
+    unwrap, NetworkBytes,
 };
 use fxhash::{FxHashMap, FxHashSet};
 use maidsafe_utilities::log;
@@ -26,7 +26,6 @@ use std::{
     rc::{Rc, Weak},
     sync::Once,
 };
-use unwrap::unwrap;
 
 const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;

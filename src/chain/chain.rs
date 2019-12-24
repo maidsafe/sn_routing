@@ -18,9 +18,9 @@ use crate::{
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    routing_table::{Authority, RoutingTableError},
     utils::LogIdent,
-    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
+    Authority, BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName,
+    Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -781,6 +781,12 @@ impl Chain {
         self.state.our_info().member_nodes()
     }
 
+    pub fn our_joined_members(&self) -> impl Iterator<Item = &P2pNode> {
+        self.state
+            .our_joined_members()
+            .map(|(_, info)| &info.p2p_node)
+    }
+
     fn elders_and_adults(&self) -> impl Iterator<Item = &PublicId> {
         self.state
             .our_joined_members()
@@ -1251,8 +1257,8 @@ impl Chain {
             });
 
         // If either of the two new sections will not contain enough entries, return `false`.
-        let min_split_size = self.safe_section_size();
-        Ok(our_new_size >= min_split_size && sibling_new_size >= min_split_size)
+        let safe_section_size = self.safe_section_size();
+        Ok(our_new_size >= safe_section_size && sibling_new_size >= safe_section_size)
     }
 
     /// Splits our section and generates new elders infos for the child sections.
@@ -1411,7 +1417,7 @@ impl Chain {
     pub fn targets(
         &self,
         dst: &Authority<XorName>,
-    ) -> Result<(Vec<&P2pNode>, usize), RoutingTableError> {
+    ) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
         let candidates = |target_name: &XorName| {
             let filtered_sections =
                 self.closest_sections_info(*target_name)
@@ -1447,7 +1453,7 @@ impl Chain {
             if dg_size > 0 && nodes_to_send.len() >= dg_size {
                 Ok((dg_size, nodes_to_send))
             } else {
-                Err(RoutingTableError::CannotRoute)
+                Err(RoutingError::CannotRoute)
             }
         };
 
@@ -1487,7 +1493,7 @@ impl Chain {
                     if prefix.is_compatible(self.our_prefix())
                         && !prefix.is_covered_by(self.prefixes().iter())
                     {
-                        return Err(RoutingTableError::CannotRoute);
+                        return Err(RoutingError::CannotRoute);
                     }
 
                     let is_compatible = |(pfx, section)| {
@@ -1805,14 +1811,15 @@ mod tests {
         parsec::generate_bls_threshold_secret_key,
         quorum_count, rng,
         rng::MainRng,
-        BlsSecretKeySet, ConnectionInfo, {Prefix, XorName},
+        unwrap,
+        xor_space::{Prefix, XorName},
+        BlsSecretKeySet, ConnectionInfo,
     };
     use rand::Rng;
     use std::{
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
-    use unwrap::unwrap;
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),

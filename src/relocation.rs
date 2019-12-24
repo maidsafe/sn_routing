@@ -13,8 +13,7 @@ use crate::{
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
-    routing_table::Prefix,
-    xor_name::{XorName, XOR_NAME_LEN},
+    xor_space::{Prefix, XorName, XOR_NAME_LEN},
     BlsSignature,
 };
 use bincode::serialize;

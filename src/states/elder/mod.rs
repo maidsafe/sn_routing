@@ -35,14 +35,13 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
-    routing_table::{Authority, Prefix, Xorable},
     signature_accumulator::SignatureAccumulator,
     state_machine::State,
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    xor_name::XorName,
-    BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
+    xor_space::{Prefix, XorName, Xorable},
+    Authority, BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -395,7 +394,7 @@ impl Elder {
 
         let to_connect: Vec<_> = self
             .chain
-            .our_elders()
+            .our_joined_members()
             .filter(|p2p_node| {
                 p2p_node.public_id() != self.id() && !self.peer_map().has(p2p_node.peer_addr())
             })

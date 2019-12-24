@@ -9,13 +9,14 @@
 pub use parsec::{ConsensusMode, Observation};
 
 use super::{Block, NetworkEvent, Proof, PublicId, SecretId};
-use bincode::serialize;
+use crate::unwrap;
+use maidsafe_utilities::serialisation;
+use serde::Serialize;
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Deref,
     rc::Rc,
 };
-use unwrap::unwrap;
 
 /// Wrapper for `Observation` and optionally its creator, depending on the consensus mode.
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]

@@ -85,6 +85,7 @@ mod implementation {
 
 #[cfg(any(test, feature = "mock_base"))]
 mod test {
+    use crate::unwrap;
     use rand::{Rand, Rng, SeedableRng, XorShiftRng};
     use std::{
         env,

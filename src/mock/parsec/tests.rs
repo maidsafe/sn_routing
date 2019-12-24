@@ -10,7 +10,7 @@ use super::{
     init_mock, Block, ConsensusMode, DkgResult, NetworkEvent, Observation, Parsec, PublicId,
     Request, Response, SecretId,
 };
-use crate::rng;
+use crate::{rng, unwrap};
 use itertools::Itertools;
 use rand::Rng;
 use std::{
@@ -20,7 +20,6 @@ use std::{
     iter,
     ops::{Deref, DerefMut},
 };
-use unwrap::unwrap;
 
 #[test]
 fn smoke() {

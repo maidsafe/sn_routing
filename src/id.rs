@@ -10,7 +10,7 @@ use crate::{
     crypto::{encryption, signing},
     parsec,
     rng::{self, MainRng, RngCompat},
-    xor_name::XorName,
+    xor_space::XorName,
     ConnectionInfo,
 };
 use bincode::{deserialize, serialize};
@@ -331,8 +331,7 @@ fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rng;
-    use unwrap::unwrap;
+    use crate::{rng, unwrap};
 
     #[test]
     fn serialisation() {

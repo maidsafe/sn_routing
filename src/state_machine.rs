@@ -15,15 +15,14 @@ use crate::{
     outbox::EventBox,
     pause::PausedState,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    routing_table::Prefix,
     states::common::Base,
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
-    xor_name::XorName,
+    xor_space::{Prefix, XorName},
     ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
 };
 #[cfg(feature = "mock_base")]
-use crate::{rng::MainRng, routing_table::Authority, Chain};
+use crate::{rng::MainRng, Authority, Chain};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
@@ -31,7 +30,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     mem,
 };
-use unwrap::unwrap;
 
 // Execute $expr on the current variant of $self. Execute $term_expr if the current variant is
 // `Terminated`.
@@ -350,12 +348,13 @@ impl StateMachine {
         let (action_tx, action_rx) = mpmc::unbounded();
         let (network_tx, network_rx) = mpmc::unbounded();
 
-        let network_service = unwrap!(
-            NetworkBuilder::new(network_tx)
-                .with_config(network_config)
-                .build(),
-            "Unable to start network service"
-        );
+        let network_service = match NetworkBuilder::new(network_tx)
+            .with_config(network_config)
+            .build()
+        {
+            Ok(network_service) => network_service,
+            Err(err) => panic!("Unable to start network service: {:?}", err),
+        };
 
         let timer = Timer::new(action_tx.clone());
         let state = init_state(network_service, timer, outbox);
