@@ -22,7 +22,6 @@ use std::{
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
-use unwrap::unwrap;
 
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
@@ -312,7 +311,11 @@ impl SharedState {
                 return;
             }
 
-            let old_key_info = unwrap!(self.their_keys.remove(&old_pfx));
+            let old_key_info = self
+                .their_keys
+                .remove(&old_pfx)
+                .expect("Bug in BTreeMap for update_their_keys");
+
             self.their_recent_keys
                 .push_front((old_pfx, old_key_info.clone()));
             if self.their_recent_keys.len() > MAX_THEIR_RECENT_KEYS {
@@ -627,11 +630,10 @@ mod test {
         id::P2pNode,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        ConnectionInfo, FullId, Prefix, XorName,
+        unwrap, ConnectionInfo, FullId, Prefix, XorName,
     };
     use rand::Rng;
     use std::{collections::BTreeMap, str::FromStr};
-    use unwrap::unwrap;
 
     fn gen_elders_info(rng: &mut MainRng, pfx: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;

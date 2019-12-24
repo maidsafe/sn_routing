@@ -261,10 +261,10 @@ impl AsRef<XorName> for XorName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::unwrap;
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
     use std::cmp::Ordering;
-    use unwrap::unwrap;
 
     #[test]
     fn serialisation_xor_name() {

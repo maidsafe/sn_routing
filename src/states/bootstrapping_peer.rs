@@ -355,10 +355,9 @@ mod tests {
         quic_p2p::{Builder, Peer},
         state_machine::StateMachine,
         states::common::from_network_bytes,
-        NetworkConfig, NetworkEvent,
+        unwrap, NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;
-    use unwrap::unwrap;
 
     #[test]
     // Check that losing our proxy connection while in the `BootstrappingPeer` state doesn't stall

@@ -562,12 +562,11 @@ mod tests {
         chain::SectionKeyInfo,
         id::{FullId, P2pNode},
         parsec::generate_bls_threshold_secret_key,
-        rng, Authority, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, Authority, ConnectionInfo, Prefix, XorName,
     };
     use rand;
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
-    use unwrap::unwrap;
 
     #[test]
     fn signed_routing_message_check_integrity() {

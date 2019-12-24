@@ -22,10 +22,9 @@ use crate::{
     outbox::EventBox,
     rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    BlsSecretKeyShare, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
+    unwrap, BlsSecretKeyShare, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
-use unwrap::unwrap;
 
 // Minimal number of votes to reach accumulation.
 const ACCUMULATE_VOTE_COUNT: usize = 5;

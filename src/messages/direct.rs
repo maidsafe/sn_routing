@@ -220,8 +220,7 @@ mod implementation {
 #[cfg(feature = "mock_serialise")]
 mod implementation {
     use super::*;
-    use crate::crypto::signing::SIGNATURE_LENGTH;
-    use unwrap::unwrap;
+    use crate::{crypto::signing::SIGNATURE_LENGTH, unwrap};
 
     pub fn sign(_: &FullId, _: &DirectMessage) -> Result<Signature, RoutingError> {
         Ok(unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH])))

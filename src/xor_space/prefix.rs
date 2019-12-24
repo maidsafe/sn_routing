@@ -286,7 +286,7 @@ impl FromStr for Prefix<XorName> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use unwrap::unwrap;
+    use crate::unwrap;
 
     #[test]
     fn prefix() {

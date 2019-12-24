@@ -126,8 +126,7 @@ impl Debug for ProofSet {
 mod tests {
     use super::super::AccumulatingEvent;
     use super::Proof;
-    use crate::{id::FullId, rng};
-    use unwrap::unwrap;
+    use crate::{id::FullId, rng, unwrap};
 
     #[test]
     fn confirm_proof() {

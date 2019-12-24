@@ -220,6 +220,9 @@ pub(crate) use self::{
 #[cfg(feature = "mock_crypto")]
 pub(crate) use self::mock::crypto;
 
+#[cfg(any(test, feature = "mock_base"))]
+pub(crate) use unwrap::unwrap;
+
 #[cfg(feature = "mock_base")]
 #[doc(hidden)]
 pub mod test_consts {

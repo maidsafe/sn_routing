@@ -10,6 +10,8 @@
 use crate::crypto;
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec as inner;
+#[cfg(feature = "mock_parsec")]
+use crate::unwrap;
 use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
@@ -28,8 +30,6 @@ use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt, mem,
 };
-#[cfg(feature = "mock_parsec")]
-use unwrap::unwrap;
 
 #[cfg(feature = "mock_parsec")]
 pub use crate::mock::parsec::{
@@ -421,12 +421,12 @@ mod tests {
         chain::{EldersInfo, MIN_AGE_COUNTER},
         id::P2pNode,
         rng::MainRng,
+        unwrap,
         xor_space::{Prefix, XorName},
         ConnectionInfo,
     };
     use serde::Serialize;
     use std::net::SocketAddr;
-    use unwrap::unwrap;
 
     const DEFAULT_MIN_SECTION_SIZE: usize = 4;
 

@@ -87,13 +87,12 @@ mod tests {
             SignedRoutingMessage,
         },
         parsec::generate_bls_threshold_secret_key,
-        rng, Authority, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, Authority, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
-    use unwrap::unwrap;
 
     struct MessageAndSignatures {
         signed_msg: SignedRoutingMessage,

@@ -1811,6 +1811,7 @@ mod tests {
         parsec::generate_bls_threshold_secret_key,
         quorum_count, rng,
         rng::MainRng,
+        unwrap,
         xor_space::{Prefix, XorName},
         BlsSecretKeySet, ConnectionInfo,
     };
@@ -1819,7 +1820,6 @@ mod tests {
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
-    use unwrap::unwrap;
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),
