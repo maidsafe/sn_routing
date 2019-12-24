@@ -261,8 +261,8 @@ impl AsRef<XorName> for XorName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::unwrap;
-    use maidsafe_utilities::serialisation::{deserialise, serialise};
+    use crate::error::RoutingError;
+    use bincode::{deserialize, serialize};
     use rand;
     use std::cmp::Ordering;
 

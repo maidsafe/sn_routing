@@ -10,8 +10,7 @@ pub use parsec::{ConsensusMode, Observation};
 
 use super::{Block, NetworkEvent, Proof, PublicId, SecretId};
 use crate::unwrap;
-use maidsafe_utilities::serialisation;
-use serde::Serialize;
+use bincode::serialize;
 use std::{
     collections::{BTreeSet, HashSet},
     ops::Deref,
