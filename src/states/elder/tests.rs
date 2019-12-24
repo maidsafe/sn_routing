@@ -14,7 +14,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::*;
-use crate::unwrap;
 use crate::{
     chain::SectionKeyInfo,
     generate_bls_threshold_secret_key,
@@ -23,7 +22,7 @@ use crate::{
     outbox::EventBox,
     rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    BlsSecretKeyShare, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
+    unwrap, BlsSecretKeyShare, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 

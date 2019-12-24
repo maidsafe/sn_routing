@@ -417,11 +417,11 @@ impl From<Error> for CreateGossipError {
 #[cfg(all(test, feature = "mock_parsec"))]
 mod tests {
     use super::*;
-    use crate::unwrap;
     use crate::{
         chain::{EldersInfo, MIN_AGE_COUNTER},
         id::P2pNode,
         rng::MainRng,
+        unwrap,
         xor_space::{Prefix, XorName},
         ConnectionInfo,
     };

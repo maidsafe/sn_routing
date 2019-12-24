@@ -79,7 +79,6 @@ impl SignatureAccumulator {
 #[cfg(feature = "mock_base")]
 mod tests {
     use super::*;
-    use crate::unwrap;
     use crate::{
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain},
         id::{FullId, P2pNode},
@@ -88,7 +87,7 @@ mod tests {
             SignedRoutingMessage,
         },
         parsec::generate_bls_threshold_secret_key,
-        rng, Authority, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, Authority, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;

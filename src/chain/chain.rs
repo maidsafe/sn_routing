@@ -1806,12 +1806,12 @@ impl EldersChangeBuilder {
 mod tests {
     use super::super::{EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER};
     use super::*;
-    use crate::unwrap;
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_bls_threshold_secret_key,
         quorum_count, rng,
         rng::MainRng,
+        unwrap,
         xor_space::{Prefix, XorName},
         BlsSecretKeySet, ConnectionInfo,
     };

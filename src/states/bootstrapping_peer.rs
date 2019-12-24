@@ -347,7 +347,6 @@ impl Display for BootstrappingPeer {
 #[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
-    use crate::unwrap;
     use crate::{
         chain::NetworkParams,
         id::FullId,
@@ -356,7 +355,7 @@ mod tests {
         quic_p2p::{Builder, Peer},
         state_machine::StateMachine,
         states::common::from_network_bytes,
-        NetworkConfig, NetworkEvent,
+        unwrap, NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;
 

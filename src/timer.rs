@@ -195,10 +195,10 @@ mod implementation {
 
 #[cfg(feature = "mock_base")]
 mod implementation {
-    use crate::unwrap;
     use crate::{
         action::Action,
         time::{Duration, Instant},
+        unwrap,
     };
     use crossbeam_channel as mpmc;
     use itertools::Itertools;

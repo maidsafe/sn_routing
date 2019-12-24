@@ -9,11 +9,10 @@
 use super::{node::Node, OurType};
 #[cfg(feature = "mock_parsec")]
 use crate::mock::parsec;
-use crate::unwrap;
 use crate::{
     chain::NetworkParams,
     rng::{self, MainRng, Seed, SeedPrinter},
-    NetworkBytes,
+    unwrap, NetworkBytes,
 };
 use fxhash::{FxHashMap, FxHashSet};
 use maidsafe_utilities::log;

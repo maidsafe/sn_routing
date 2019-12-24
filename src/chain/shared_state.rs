@@ -625,13 +625,12 @@ impl SectionKeyInfo {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::unwrap;
     use crate::{
         chain::EldersInfo,
         id::P2pNode,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        ConnectionInfo, FullId, Prefix, XorName,
+        unwrap, ConnectionInfo, FullId, Prefix, XorName,
     };
     use rand::Rng;
     use std::{collections::BTreeMap, str::FromStr};

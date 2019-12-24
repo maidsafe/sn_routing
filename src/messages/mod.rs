@@ -558,12 +558,11 @@ impl Debug for MessageContent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::unwrap;
     use crate::{
         chain::SectionKeyInfo,
         id::{FullId, P2pNode},
         parsec::generate_bls_threshold_secret_key,
-        rng, Authority, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, Authority, ConnectionInfo, Prefix, XorName,
     };
     use rand;
     use std::collections::BTreeMap;

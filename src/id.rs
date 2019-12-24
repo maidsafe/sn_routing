@@ -331,8 +331,7 @@ fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rng;
-    use crate::unwrap;
+    use crate::{rng, unwrap};
 
     #[test]
     fn serialisation() {

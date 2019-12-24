@@ -10,8 +10,7 @@ use super::{
     init_mock, Block, ConsensusMode, DkgResult, NetworkEvent, Observation, Parsec, PublicId,
     Request, Response, SecretId,
 };
-use crate::rng;
-use crate::unwrap;
+use crate::{rng, unwrap};
 use itertools::Itertools;
 use rand::Rng;
 use std::{
