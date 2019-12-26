@@ -1702,7 +1702,7 @@ fn key_matching_first_elder_name(
         .ok_or(RoutingError::InvalidElderDkgResult)
 }
 
-/// The outcome of sucessful accumulated poll
+/// The outcome of successful accumulated poll
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum PollAccumulated {
