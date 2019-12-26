@@ -266,7 +266,7 @@ pub enum Event {
         /// Message Token
         token: Token,
     },
-    /// Connection successfuly established.
+    /// Connection successfully established.
     ConnectedTo {
         /// Info about the connected peer.
         peer: Peer,

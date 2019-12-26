@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 const MAX_RESENDS: u8 = 3;
 
 enum TargetState {
-    /// we don't know whether the last send attempt suceeded or failed
+    /// we don't know whether the last send attempt succeeded or failed
     /// the stored number of attempts already failed before
     Sending(u8),
     /// the last sending attempt (if any) failed; in total, the stored number of attempts failed
