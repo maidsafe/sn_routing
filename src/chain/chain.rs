@@ -40,7 +40,7 @@ use crate::crypto::Digest256;
 /// Returns the delivery group size based on the section size `n`
 pub fn delivery_group_size(n: usize) -> usize {
     // this is an integer that is ≥ n/3
-    1 + n / 3
+    2 + n / 3
 }
 
 /// Data chain.
