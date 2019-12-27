@@ -1989,7 +1989,7 @@ mod tests {
     fn neighbour_info_cleaning() {
         let mut rng = rng::new();
         let (mut chain, _, _) = gen_00_chain(&mut rng);
-        for _ in 0..1000 {
+        for _ in 0..100 {
             let (new_info, _new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();
                 let info = rng.choose(&old_info).expect("neighbour infos");
