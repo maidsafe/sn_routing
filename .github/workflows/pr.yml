@@ -4,7 +4,7 @@
 
 name: PR
 
-on: [push, pull_request]
+on: pull_request
 
 env:
   # Run all cargo commands with --verbose.
@@ -65,6 +65,8 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+
+      # Generate Cargo.lock, needed for the cache.
       - uses: actions-rs/cargo@v1
         with:
           command: generate-lockfile
