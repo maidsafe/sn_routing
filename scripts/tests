@@ -1,5 +1,5 @@
 #!/bin/bash
 
 set -x -e
-export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
-cargo test $@ --release --features=mock -- --nocapture
+
+cargo test "$@" --release --features=mock -- --nocapture
