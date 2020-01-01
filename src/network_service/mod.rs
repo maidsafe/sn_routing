@@ -25,7 +25,7 @@ pub struct NetworkService {
     quic_p2p: QuicP2p,
     cache: SendingTargetsCache,
     next_msg_token: Token,
-    pub peer_map: PeerMap,
+    pub(crate) peer_map: PeerMap,
 }
 
 impl NetworkService {

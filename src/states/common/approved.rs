@@ -27,7 +27,7 @@ use rand::Rng;
 use std::collections::BTreeSet;
 
 /// Common functionality for node states post resource proof.
-pub trait Approved: Base {
+pub(crate) trait Approved: Base {
     fn parsec_map(&self) -> &ParsecMap;
     fn parsec_map_mut(&mut self) -> &mut ParsecMap;
     fn chain(&self) -> &Chain;

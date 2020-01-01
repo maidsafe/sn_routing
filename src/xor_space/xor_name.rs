@@ -23,9 +23,6 @@ pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
 /// Constant byte length of `XorName`.
 pub const XOR_NAME_LEN: usize = 32;
 
-/// Constant bit length of `XorName`.
-pub const XOR_NAME_BITS: usize = XOR_NAME_LEN * 8;
-
 /// Errors that can occur when decoding a `XorName` from a string.
 #[derive(Debug)]
 pub enum XorNameFromHexError {
@@ -266,6 +263,8 @@ mod tests {
     use rand;
     use std::cmp::Ordering;
 
+    /// Constant bit length of `XorName`.
+    const XOR_NAME_BITS: usize = XOR_NAME_LEN * 8;
     #[test]
     fn serialisation_xor_name() {
         let obj_before: XorName = rand::random();

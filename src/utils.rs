@@ -9,7 +9,7 @@
 use crate::xor_space::XorName;
 use std::{
     fmt::{self, Display, Formatter},
-    ops::RangeInclusive,
+    // ops::RangeInclusive,
     time::Duration,
 };
 
@@ -58,26 +58,26 @@ impl Display for LogIdent {
 
 /// Target Xor interval
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct XorTargetInterval(pub XorName, pub XorName);
+pub(crate) struct XorTargetInterval(pub XorName, pub XorName);
 
-impl XorTargetInterval {
-    /// Create a XorTargetInterval from the equivalent RangeInclusive
-    pub fn new(range: RangeInclusive<XorName>) -> Self {
-        let (start, end) = range.into_inner();
-        Self(start, end)
-    }
+// impl XorTargetInterval {
+//     /// Create a XorTargetInterval from the equivalent RangeInclusive
+//     pub fn new(range: RangeInclusive<XorName>) -> Self {
+//         let (start, end) = range.into_inner();
+//         Self(start, end)
+//     }
 
-    /// check if the inclusive range contains the value
-    pub fn contains(&self, value: &XorName) -> bool {
-        RangeInclusive::new(self.0, self.1).contains(value)
-    }
-}
+//     /// check if the inclusive range contains the value
+//     pub fn contains(&self, value: &XorName) -> bool {
+//         RangeInclusive::new(self.0, self.1).contains(value)
+//     }
+// }
 
-impl Into<RangeInclusive<XorName>> for XorTargetInterval {
-    fn into(self) -> RangeInclusive<XorName> {
-        RangeInclusive::new(self.0, self.1)
-    }
-}
+// impl Into<RangeInclusive<XorName>> for XorTargetInterval {
+//     fn into(self) -> RangeInclusive<XorName> {
+//         RangeInclusive::new(self.0, self.1)
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

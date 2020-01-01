@@ -48,21 +48,21 @@ use std::{
 // Poke in a similar speed as GOSSIP_TIMEOUT
 const POKE_TIMEOUT: Duration = Duration::from_secs(2);
 
-pub struct AdultDetails {
-    pub network_service: NetworkService,
-    pub event_backlog: Vec<Event>,
-    pub full_id: FullId,
-    pub gen_pfx_info: GenesisPfxInfo,
-    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
-    pub sig_accumulator: SignatureAccumulator,
-    pub routing_msg_filter: RoutingMessageFilter,
-    pub timer: Timer,
-    pub network_cfg: NetworkParams,
-    pub rng: MainRng,
+pub(crate) struct AdultDetails {
+    pub(crate) network_service: NetworkService,
+    pub(crate) event_backlog: Vec<Event>,
+    pub(crate) full_id: FullId,
+    pub(crate) gen_pfx_info: GenesisPfxInfo,
+    pub(crate) routing_msg_backlog: Vec<SignedRoutingMessage>,
+    pub(crate) direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub(crate) sig_accumulator: SignatureAccumulator,
+    pub(crate) routing_msg_filter: RoutingMessageFilter,
+    pub(crate) timer: Timer,
+    pub(crate) network_cfg: NetworkParams,
+    pub(crate) rng: MainRng,
 }
 
-pub struct Adult {
+pub(crate) struct Adult {
     chain: Chain,
     network_service: NetworkService,
     event_backlog: Vec<Event>,
@@ -80,7 +80,7 @@ pub struct Adult {
 }
 
 impl Adult {
-    pub fn new(
+    pub(crate) fn new(
         mut details: AdultDetails,
         parsec_map: ParsecMap,
         _outbox: &mut dyn EventBox,
@@ -120,11 +120,14 @@ impl Adult {
         Ok(node)
     }
 
-    pub fn closest_known_elders_to(&self, _name: &XorName) -> impl Iterator<Item = &P2pNode> {
+    pub(crate) fn closest_known_elders_to(
+        &self,
+        _name: &XorName,
+    ) -> impl Iterator<Item = &P2pNode> {
         self.chain.our_elders()
     }
 
-    pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
+    pub(crate) fn rebootstrap(mut self) -> Result<State, RoutingError> {
         let network_cfg = self.chain.network_cfg();
 
         // Try to join the same section, but using new id, otherwise the section won't accept us
@@ -143,7 +146,7 @@ impl Adult {
         )))
     }
 
-    pub fn relocate(
+    pub(crate) fn relocate(
         self,
         conn_infos: Vec<ConnectionInfo>,
         details: SignedRelocateDetails,
@@ -161,7 +164,7 @@ impl Adult {
         )))
     }
 
-    pub fn into_elder(
+    pub(crate) fn into_elder(
         self,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
@@ -187,7 +190,7 @@ impl Adult {
         Elder::from_adult(details, old_pfx, outbox).map(State::Elder)
     }
 
-    pub fn pause(self) -> Result<PausedState, RoutingError> {
+    pub(crate) fn pause(self) -> Result<PausedState, RoutingError> {
         Ok(PausedState {
             chain: self.chain,
             full_id: self.full_id,
@@ -203,7 +206,7 @@ impl Adult {
         })
     }
 
-    pub fn resume(state: PausedState, timer: Timer) -> Self {
+    pub(crate) fn resume(state: PausedState, timer: Timer) -> Self {
         let parsec_timer_token = timer.schedule(POKE_TIMEOUT);
 
         Self {
@@ -223,7 +226,7 @@ impl Adult {
         }
     }
 
-    pub fn our_prefix(&self) -> &Prefix<XorName> {
+    pub(crate) fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
     }
 
@@ -461,19 +464,19 @@ impl Adult {
 
 #[cfg(feature = "mock_base")]
 impl Adult {
-    pub fn chain(&self) -> &Chain {
+    pub(crate) fn chain(&self) -> &Chain {
         &self.chain
     }
 
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+    pub(crate) fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
 
-    pub fn has_unpolled_observations(&self) -> bool {
+    pub(crate) fn has_unpolled_observations(&self) -> bool {
         self.parsec_map.has_unpolled_observations()
     }
 
-    pub fn unpolled_observations_string(&self) -> String {
+    pub(crate) fn unpolled_observations_string(&self) -> String {
         self.parsec_map.unpolled_observations_string()
     }
 }

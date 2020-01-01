@@ -9,7 +9,4 @@
 mod approved;
 mod base;
 
-pub use self::{
-    approved::Approved,
-    base::{from_network_bytes, Base},
-};
+pub(crate) use self::{approved::Approved, base::Base};

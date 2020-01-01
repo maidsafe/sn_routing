@@ -12,6 +12,6 @@ mod xorable;
 
 pub use self::{
     prefix::Prefix,
-    xor_name::{XorName, XorNameFromHexError, XOR_NAME_BITS, XOR_NAME_LEN},
+    xor_name::{XorName, XorNameFromHexError, XOR_NAME_LEN},
     xorable::Xorable,
 };

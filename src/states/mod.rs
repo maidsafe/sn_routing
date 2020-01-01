@@ -12,7 +12,7 @@ pub mod common;
 mod elder;
 mod joining_peer;
 
-pub use self::{
+pub(crate) use self::{
     adult::Adult,
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     elder::Elder,
@@ -20,7 +20,7 @@ pub use self::{
 };
 
 #[cfg(feature = "mock_base")]
-pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT};
+pub(crate) use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT};
 
 //
 // # The state machine

@@ -37,20 +37,20 @@ use std::{
 };
 
 /// Time after which bootstrap is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
+pub(crate) const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
 
-pub struct JoiningPeerDetails {
-    pub network_service: NetworkService,
-    pub full_id: FullId,
-    pub network_cfg: NetworkParams,
-    pub timer: Timer,
-    pub rng: MainRng,
-    pub elders_info: EldersInfo,
-    pub relocate_payload: Option<RelocatePayload>,
+pub(crate) struct JoiningPeerDetails {
+    pub(crate) network_service: NetworkService,
+    pub(crate) full_id: FullId,
+    pub(crate) network_cfg: NetworkParams,
+    pub(crate) timer: Timer,
+    pub(crate) rng: MainRng,
+    pub(crate) elders_info: EldersInfo,
+    pub(crate) relocate_payload: Option<RelocatePayload>,
 }
 
 // State of a node after bootstrapping, while joining a section
-pub struct JoiningPeer {
+pub(crate) struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
@@ -64,7 +64,7 @@ pub struct JoiningPeer {
 }
 
 impl JoiningPeer {
-    pub fn new(details: JoiningPeerDetails) -> Self {
+    pub(crate) fn new(details: JoiningPeerDetails) -> Self {
         let join_type = match details.relocate_payload {
             Some(payload) => JoinType::Relocate(payload),
             None => {
@@ -90,7 +90,7 @@ impl JoiningPeer {
         joining_peer
     }
 
-    pub fn into_adult(
+    pub(crate) fn into_adult(
         self,
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut dyn EventBox,
@@ -118,7 +118,7 @@ impl JoiningPeer {
         adult
     }
 
-    pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
+    pub(crate) fn rebootstrap(mut self) -> Result<State, RoutingError> {
         let full_id = FullId::gen(&mut self.rng);
 
         Ok(State::BootstrappingPeer(BootstrappingPeer::new(
@@ -188,7 +188,7 @@ impl JoiningPeer {
     }
 
     #[cfg(feature = "mock_base")]
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+    pub(crate) fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
 }

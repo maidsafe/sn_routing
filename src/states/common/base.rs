@@ -29,7 +29,7 @@ use maidsafe_utilities::serialisation;
 use std::{fmt::Display, net::SocketAddr, slice};
 
 // Trait for all states.
-pub trait Base: Display {
+pub(crate) trait Base: Display {
     fn network_service(&self) -> &NetworkService;
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
@@ -453,7 +453,7 @@ pub trait Base: Display {
     }
 }
 
-pub fn to_network_bytes(
+pub(crate) fn to_network_bytes(
     message: &Message,
 ) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
     #[cfg(not(feature = "mock_serialise"))]
@@ -467,7 +467,7 @@ pub fn to_network_bytes(
     result
 }
 
-pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
+pub(crate) fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
     #[cfg(not(feature = "mock_serialise"))]
     let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
 

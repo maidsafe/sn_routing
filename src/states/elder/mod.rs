@@ -67,15 +67,15 @@ const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 
 struct CompleteParsecReset {
     /// The new genesis prefix info.
-    pub gen_pfx_info: GenesisPfxInfo,
+    pub(crate) gen_pfx_info: GenesisPfxInfo,
     /// The cached events that should be revoted. Not shared state: only the ones we voted for.
     /// Also contains our votes that never reached consensus.
-    pub to_vote_again: BTreeSet<NetworkEvent>,
+    pub(crate) to_vote_again: BTreeSet<NetworkEvent>,
     /// The events to process. Not shared state: only the ones we voted for.
     /// Also contains our votes that never reached consensus.
-    pub to_process: BTreeSet<NetworkEvent>,
+    pub(crate) to_process: BTreeSet<NetworkEvent>,
     /// Event to send on completion.
-    pub event_to_send: Option<Event>,
+    pub(crate) event_to_send: Option<Event>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -86,23 +86,23 @@ enum PendingMessageKey {
     },
 }
 
-pub struct ElderDetails {
-    pub chain: Chain,
-    pub network_service: NetworkService,
-    pub event_backlog: Vec<Event>,
-    pub full_id: FullId,
-    pub gen_pfx_info: GenesisPfxInfo,
-    pub routing_msg_queue: VecDeque<SignedRoutingMessage>,
-    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
-    pub sig_accumulator: SignatureAccumulator,
-    pub parsec_map: ParsecMap,
-    pub routing_msg_filter: RoutingMessageFilter,
-    pub timer: Timer,
-    pub rng: MainRng,
+pub(crate) struct ElderDetails {
+    pub(crate) chain: Chain,
+    pub(crate) network_service: NetworkService,
+    pub(crate) event_backlog: Vec<Event>,
+    pub(crate) full_id: FullId,
+    pub(crate) gen_pfx_info: GenesisPfxInfo,
+    pub(crate) routing_msg_queue: VecDeque<SignedRoutingMessage>,
+    pub(crate) routing_msg_backlog: Vec<SignedRoutingMessage>,
+    pub(crate) direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub(crate) sig_accumulator: SignatureAccumulator,
+    pub(crate) parsec_map: ParsecMap,
+    pub(crate) routing_msg_filter: RoutingMessageFilter,
+    pub(crate) timer: Timer,
+    pub(crate) rng: MainRng,
 }
 
-pub struct Elder {
+pub(crate) struct Elder {
     network_service: NetworkService,
     full_id: FullId,
     is_first_node: bool,
@@ -128,7 +128,7 @@ pub struct Elder {
 }
 
 impl Elder {
-    pub fn first(
+    pub(crate) fn first(
         mut network_service: NetworkService,
         full_id: FullId,
         network_cfg: NetworkParams,
@@ -184,7 +184,7 @@ impl Elder {
         Ok(node)
     }
 
-    pub fn from_adult(
+    pub(crate) fn from_adult(
         mut details: ElderDetails,
         old_pfx: Prefix<XorName>,
         outbox: &mut dyn EventBox,
@@ -195,7 +195,7 @@ impl Elder {
         Ok(elder)
     }
 
-    pub fn demote(
+    pub(crate) fn demote(
         self,
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut dyn EventBox,
@@ -216,7 +216,7 @@ impl Elder {
         Adult::new(details, self.parsec_map, outbox).map(State::Adult)
     }
 
-    pub fn pause(self) -> Result<PausedState, RoutingError> {
+    pub(crate) fn pause(self) -> Result<PausedState, RoutingError> {
         Ok(PausedState {
             chain: self.chain,
             full_id: self.full_id,
@@ -232,7 +232,7 @@ impl Elder {
         })
     }
 
-    pub fn resume(state: PausedState, timer: Timer) -> Self {
+    pub(crate) fn resume(state: PausedState, timer: Timer) -> Self {
         Self::new(
             ElderDetails {
                 chain: state.chain,
@@ -253,15 +253,15 @@ impl Elder {
         )
     }
 
-    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
+    pub(crate) fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.chain.our_elders()
     }
 
-    pub fn our_prefix(&self) -> &Prefix<XorName> {
+    pub(crate) fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
     }
 
-    pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
+    pub(crate) fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
         self.chain.closest_section_info(*name).1.member_nodes()
     }
 
@@ -1171,7 +1171,7 @@ impl Elder {
     }
 
     /// Vote for a user-defined event.
-    pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
+    pub(crate) fn vote_for_user_event(&mut self, event: Vec<u8>) {
         self.vote_for_event(AccumulatingEvent::User(event));
     }
 
@@ -1529,30 +1529,30 @@ impl Base for Elder {
 
 #[cfg(feature = "mock_base")]
 impl Elder {
-    pub fn chain(&self) -> &Chain {
+    pub(crate) fn chain(&self) -> &Chain {
         &self.chain
     }
 
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+    pub(crate) fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         self.timer.get_timed_out_tokens()
     }
 
-    pub fn has_unpolled_observations(&self) -> bool {
+    pub(crate) fn has_unpolled_observations(&self) -> bool {
         if !self.chain.is_self_elder() {
             return false;
         }
         self.parsec_map.has_unpolled_observations()
     }
 
-    pub fn unpolled_observations_string(&self) -> String {
+    pub(crate) fn unpolled_observations_string(&self) -> String {
         self.parsec_map.unpolled_observations_string()
     }
 
-    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
+    pub(crate) fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.chain.is_peer_our_elder(pub_id)
     }
 
-    pub fn send_msg_to_targets(
+    pub(crate) fn send_msg_to_targets(
         &mut self,
         dst_targets: &[ConnectionInfo],
         dg_size: usize,
@@ -1561,7 +1561,7 @@ impl Elder {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
 
-    pub fn parsec_last_version(&self) -> u64 {
+    pub(crate) fn parsec_last_version(&self) -> u64 {
         self.parsec_map.last_version()
     }
 }

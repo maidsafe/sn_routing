@@ -46,7 +46,7 @@ macro_rules! state_dispatch {
 }
 
 /// Holds the current state and handles state transitions.
-pub struct StateMachine {
+pub(crate) struct StateMachine {
     state: State,
     network_rx: mpmc::Receiver<NetworkEvent>,
     network_rx_idx: usize,
@@ -59,7 +59,7 @@ pub struct StateMachine {
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
-pub enum State {
+pub(crate) enum State {
     BootstrappingPeer(BootstrappingPeer),
     JoiningPeer(JoiningPeer),
     Adult(Adult),
@@ -87,7 +87,11 @@ impl EventType {
 }
 
 impl State {
-    pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
+    pub(crate) fn handle_action(
+        &mut self,
+        action: Action,
+        outbox: &mut dyn EventBox,
+    ) -> Transition {
         state_dispatch!(
             *self,
             ref mut state => state.handle_action(action, outbox),
@@ -95,7 +99,7 @@ impl State {
         )
     }
 
-    pub fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
+    pub(crate) fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         state_dispatch!(
             *self,
             ref mut state => state.finish_handle_transition(outbox),
@@ -115,7 +119,7 @@ impl State {
         )
     }
 
-    pub fn id(&self) -> Option<PublicId> {
+    pub(crate) fn id(&self) -> Option<PublicId> {
         state_dispatch!(
             *self,
             ref state => Some(*state.id()),
@@ -123,7 +127,7 @@ impl State {
         )
     }
 
-    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
+    pub(crate) fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         state_dispatch!(
             *self,
             ref state => state.close_group(name, count),
@@ -131,7 +135,7 @@ impl State {
         )
     }
 
-    pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
+    pub(crate) fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
         match *self {
             State::Elder(ref state) => Some(state.our_elders()),
             State::BootstrappingPeer(_)
@@ -141,7 +145,7 @@ impl State {
         }
     }
 
-    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
+    pub(crate) fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
         match *self {
             State::Elder(ref state) => Ok(state.our_prefix().matches(name)),
             State::Adult(ref state) => Ok(state.our_prefix().matches(name)),
@@ -151,7 +155,7 @@ impl State {
         }
     }
 
-    pub fn closest_known_elders_to<'a>(
+    pub(crate) fn closest_known_elders_to<'a>(
         &'a self,
         name: &XorName,
     ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
@@ -164,7 +168,7 @@ impl State {
         }
     }
 
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
+    pub(crate) fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         state_dispatch!(
             self,
             state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
@@ -173,7 +177,7 @@ impl State {
     }
 
     /// Returns this elder mut state.
-    pub fn elder_state_mut(&mut self) -> Option<&mut Elder> {
+    pub(crate) fn elder_state_mut(&mut self) -> Option<&mut Elder> {
         match *self {
             State::Elder(ref mut state) => Some(state),
             _ => None,
@@ -220,7 +224,7 @@ impl Debug for State {
 
 #[cfg(feature = "mock_base")]
 impl State {
-    pub fn chain(&self) -> Option<&Chain> {
+    pub(crate) fn chain(&self) -> Option<&Chain> {
         match *self {
             State::Adult(ref state) => Some(state.chain()),
             State::Elder(ref state) => Some(state.chain()),
@@ -229,14 +233,14 @@ impl State {
     }
 
     /// Returns this elder state.
-    pub fn elder_state(&self) -> Option<&Elder> {
+    pub(crate) fn elder_state(&self) -> Option<&Elder> {
         match *self {
             State::Elder(ref state) => Some(state),
             _ => None,
         }
     }
 
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+    pub(crate) fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
             State::BootstrappingPeer(_) | State::Terminated => vec![],
             State::JoiningPeer(ref mut state) => state.get_timed_out_tokens(),
@@ -245,7 +249,7 @@ impl State {
         }
     }
 
-    pub fn has_unpolled_observations(&self) -> bool {
+    pub(crate) fn has_unpolled_observations(&self) -> bool {
         match *self {
             State::Terminated | State::BootstrappingPeer(_) | State::JoiningPeer(_) => false,
             State::Adult(ref state) => state.has_unpolled_observations(),
@@ -253,7 +257,7 @@ impl State {
         }
     }
 
-    pub fn unpolled_observations_string(&self) -> String {
+    pub(crate) fn unpolled_observations_string(&self) -> String {
         match *self {
             State::Terminated | State::BootstrappingPeer(_) | State::JoiningPeer(_) => {
                 String::new()
@@ -263,7 +267,7 @@ impl State {
         }
     }
 
-    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+    pub(crate) fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         state_dispatch!(
             *self,
             ref state => state.in_authority(auth),
@@ -271,7 +275,7 @@ impl State {
         )
     }
 
-    pub fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
+    pub(crate) fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
         state_dispatch!(
             self,
             state => state.peer_map().has(socket_addr),
@@ -279,7 +283,7 @@ impl State {
         )
     }
 
-    pub fn rng(&mut self) -> &mut MainRng {
+    pub(crate) fn rng(&mut self) -> &mut MainRng {
         state_dispatch!(
             self,
             state => state.rng(),
@@ -291,7 +295,7 @@ impl State {
 /// Enum returned from many message handlers
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
-pub enum Transition {
+pub(crate) enum Transition {
     Stay,
     // `BootstrappingPeer` state transitioning to `JoiningPeer`
     IntoJoining {
@@ -337,7 +341,7 @@ impl Debug for Transition {
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    pub fn new<F>(
+    pub(crate) fn new<F>(
         init_state: F,
         network_config: NetworkConfig,
         outbox: &mut dyn EventBox,
@@ -377,7 +381,7 @@ impl StateMachine {
         (action_tx, machine)
     }
 
-    pub fn pause(self) -> Result<PausedState, RoutingError> {
+    pub(crate) fn pause(self) -> Result<PausedState, RoutingError> {
         info!("{} - Pause", self.current());
 
         let mut paused_state = match self.state {
@@ -390,7 +394,7 @@ impl StateMachine {
         Ok(paused_state)
     }
 
-    pub fn resume(mut state: PausedState) -> (mpmc::Sender<Action>, Self) {
+    pub(crate) fn resume(mut state: PausedState) -> (mpmc::Sender<Action>, Self) {
         let (action_tx, action_rx) = mpmc::unbounded();
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
 
@@ -427,7 +431,7 @@ impl StateMachine {
         self.apply_transition(transition, outbox)
     }
 
-    pub fn apply_transition(&mut self, transition: Transition, outbox: &mut dyn EventBox) {
+    pub(crate) fn apply_transition(&mut self, transition: Transition, outbox: &mut dyn EventBox) {
         use self::Transition::*;
         match transition {
             Stay => return,
@@ -478,7 +482,7 @@ impl StateMachine {
     }
 
     /// Register the state machine event channels with the provided [selector](mpmc::Select).
-    pub fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
+    pub(crate) fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
         let network_rx_idx = select.recv(&self.network_rx);
         let action_rx_idx = select.recv(&self.action_rx);
         self.network_rx_idx = network_rx_idx;
@@ -498,7 +502,7 @@ impl StateMachine {
     /// channel index.
     ///
     /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
-    pub fn step(
+    pub(crate) fn step(
         &mut self,
         op_index: usize,
         outbox: &mut dyn EventBox,
@@ -521,12 +525,12 @@ impl StateMachine {
     }
 
     /// Get reference to the current state.
-    pub fn current(&self) -> &State {
+    pub(crate) fn current(&self) -> &State {
         &self.state
     }
 
     /// Get mutable reference to the current state.
-    pub fn current_mut(&mut self) -> &mut State {
+    pub(crate) fn current_mut(&mut self) -> &mut State {
         &mut self.state
     }
 }
@@ -534,7 +538,7 @@ impl StateMachine {
 #[cfg(not(feature = "mock_base"))]
 impl StateMachine {
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
-    pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
+    pub(crate) fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
         if self.is_running {
             match self.network_rx.try_recv() {
                 Ok(event) => {
@@ -567,7 +571,7 @@ impl StateMachine {
     }
 
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
-    pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
+    pub(crate) fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
         use itertools::Itertools;
         use rand::Rng;
         use std::iter;

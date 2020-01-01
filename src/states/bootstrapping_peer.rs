@@ -32,18 +32,18 @@ use std::{
 };
 
 /// Time after which bootstrap is cancelled (and possibly retried).
-pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
+pub(crate) const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
-pub struct BootstrappingPeerDetails {
-    pub network_service: NetworkService,
-    pub full_id: FullId,
-    pub network_cfg: NetworkParams,
-    pub timer: Timer,
-    pub rng: MainRng,
+pub(crate) struct BootstrappingPeerDetails {
+    pub(crate) network_service: NetworkService,
+    pub(crate) full_id: FullId,
+    pub(crate) network_cfg: NetworkParams,
+    pub(crate) timer: Timer,
+    pub(crate) rng: MainRng,
 }
 
 // State of Client or Node while bootstrapping.
-pub struct BootstrappingPeer {
+pub(crate) struct BootstrappingPeer {
     pending_requests: HashSet<SocketAddr>,
     timeout_tokens: HashMap<u64, SocketAddr>,
     network_service: NetworkService,
@@ -55,7 +55,7 @@ pub struct BootstrappingPeer {
 }
 
 impl BootstrappingPeer {
-    pub fn new(mut details: BootstrappingPeerDetails) -> Self {
+    pub(crate) fn new(mut details: BootstrappingPeerDetails) -> Self {
         details.network_service.service_mut().bootstrap();
         Self {
             network_service: details.network_service,
@@ -70,7 +70,7 @@ impl BootstrappingPeer {
     }
 
     /// Create `BootstrappingPeer` for a node that is being relocated into another sections.
-    pub fn relocate(
+    pub(crate) fn relocate(
         details: BootstrappingPeerDetails,
         conn_infos: Vec<ConnectionInfo>,
         relocate_details: SignedRelocateDetails,
@@ -93,7 +93,7 @@ impl BootstrappingPeer {
         node
     }
 
-    pub fn into_joining(
+    pub(crate) fn into_joining(
         self,
         elders_info: EldersInfo,
         relocate_payload: Option<RelocatePayload>,
