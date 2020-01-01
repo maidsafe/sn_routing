@@ -19,9 +19,6 @@ pub(crate) use self::{
     joining_peer::JoiningPeer,
 };
 
-#[cfg(feature = "mock_base")]
-pub(crate) use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT};
-
 //
 // # The state machine
 //

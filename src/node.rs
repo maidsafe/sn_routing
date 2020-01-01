@@ -26,7 +26,7 @@ use std::{net::SocketAddr, sync::mpsc};
 
 #[cfg(feature = "mock_base")]
 use {
-    crate::{chain::SectionProofChain, Chain, Prefix},
+    crate::{chain::Chain, chain::SectionProofChain, Prefix},
     std::{
         collections::{BTreeMap, BTreeSet},
         fmt::{self, Display, Formatter},
@@ -346,6 +346,7 @@ impl EventStepper for Node {
 }
 
 #[cfg(feature = "mock_base")]
+#[allow(dead_code)]
 impl Node {
     /// Returns the chain for this node.
     fn chain(&self) -> Option<&Chain> {
@@ -353,27 +354,27 @@ impl Node {
     }
 
     /// Returns the underlying Elder state.
-    pub fn elder_state(&self) -> Option<&crate::states::Elder> {
+    pub(crate) fn elder_state(&self) -> Option<&crate::states::Elder> {
         self.machine.current().elder_state()
     }
 
     /// Returns mutable reference to the underlying Elder state.
-    pub fn elder_state_mut(&mut self) -> Option<&mut crate::states::Elder> {
+    pub(crate) fn elder_state_mut(&mut self) -> Option<&mut crate::states::Elder> {
         self.machine.current_mut().elder_state_mut()
     }
 
     /// Returns the underlying Elder state unwrapped - panics if not Elder.
-    pub fn elder_state_unchecked(&self) -> &crate::states::Elder {
+    pub(crate) fn elder_state_unchecked(&self) -> &crate::states::Elder {
         unwrap!(self.elder_state(), "Should be State::Elder")
     }
 
     /// Returns whether the current state is `Elder`.
-    pub fn is_elder(&self) -> bool {
+    pub(crate) fn is_elder(&self) -> bool {
         self.elder_state().is_some()
     }
 
     /// Returns whether the current state is `Elder` or `Adult`.
-    pub fn is_approved(&self) -> bool {
+    pub(crate) fn is_approved(&self) -> bool {
         match self.machine.current() {
             State::Elder(_) | State::Adult(_) => true,
             _ => false,
@@ -381,12 +382,12 @@ impl Node {
     }
 
     /// Our `Prefix` once we are a part of the section.
-    pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
+    pub(crate) fn our_prefix(&self) -> Option<&Prefix<XorName>> {
         self.chain().map(Chain::our_prefix)
     }
 
     /// Returns the prefixes of all out neighbours signed by our section
-    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+    pub(crate) fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         if let Some(chain) = self.chain() {
             chain
                 .neighbour_infos()
@@ -399,13 +400,13 @@ impl Node {
     }
 
     /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
-    pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+    pub(crate) fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         self.chain().map(Chain::prefixes).unwrap_or_default()
     }
 
     /// Returns the elder info version of a section with the given prefix.
     /// Prefix must be either our prefix or of one of our neighbours. 0 otherwise.
-    pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> u64 {
+    pub(crate) fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> u64 {
         self.chain()
             .and_then(|chain| chain.get_section(prefix))
             .map(|info| info.version())
@@ -414,7 +415,7 @@ impl Node {
 
     /// Returns the elder of a section with the given prefix.
     /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
-    pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
+    pub(crate) fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.chain()
             .and_then(|chain| chain.get_section(prefix))
             .map(|info| info.member_names().copied().collect())
@@ -422,29 +423,29 @@ impl Node {
     }
 
     /// Returns the elders in our and neighbouring sections.
-    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
+    pub(crate) fn elders(&self) -> impl Iterator<Item = &PublicId> {
         self.elder_nodes().map(P2pNode::public_id)
     }
 
     /// Returns the elders in our and neighbouring sections.
-    pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+    pub(crate) fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.chain().into_iter().flat_map(Chain::elders)
     }
 
     /// Returns the members in our section and elders we know.
-    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+    pub(crate) fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.chain().into_iter().flat_map(Chain::known_nodes)
     }
 
-    /// Returns whether the given `PublicId` is a member of our section.
-    pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
+    /// Returns whether the given `pub(crate)licId` is a member of our section.
+    pub(crate) fn is_peer_our_member(&self, id: &PublicId) -> bool {
         self.chain()
             .map(|chain| chain.is_peer_our_member(id))
             .unwrap_or(false)
     }
 
     /// Returns their knowledge
-    pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
+    pub(crate) fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
         self.chain()
             .map(Chain::get_their_knowledge)
             .cloned()
@@ -453,13 +454,13 @@ impl Node {
 
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
-    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
+    pub(crate) fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
         self.chain().and_then(|chain| chain.close_names(name))
     }
 
     /// Returns the number of elders this vault is using.
     /// Only if we have a chain (meaning we are elders or adults) we will process this API
-    pub fn elder_size(&self) -> Option<usize> {
+    pub(crate) fn elder_size(&self) -> Option<usize> {
         self.chain().map(Chain::elder_size)
     }
 
@@ -467,39 +468,39 @@ impl Node {
     /// obtain it.
     ///
     /// Only if we have a chain (meaning we are elders) we will process this API
-    pub fn safe_section_size(&self) -> Option<usize> {
+    pub(crate) fn safe_section_size(&self) -> Option<usize> {
         self.chain().map(|chain| chain.safe_section_size())
     }
 
     /// Indicates if there are any pending observations in the parsec object
-    pub fn has_unpolled_observations(&self) -> bool {
+    pub(crate) fn has_unpolled_observations(&self) -> bool {
         self.machine.current().has_unpolled_observations()
     }
 
     /// Indicates if there are any pending observations in the parsec object
-    pub fn unpolled_observations_string(&self) -> String {
+    pub(crate) fn unpolled_observations_string(&self) -> String {
         self.machine.current().unpolled_observations_string()
     }
 
     /// Indicates if this node has the connection info to the given peer.
-    pub fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
+    pub(crate) fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
         self.machine.current().is_connected(socket_addr)
     }
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(&self, target: &Authority<XorName>) -> Option<SectionProofChain> {
+    pub(crate) fn prove(&self, target: &Authority<XorName>) -> Option<SectionProofChain> {
         self.chain().map(|chain| chain.prove(target, None))
     }
 
     /// Checks whether the given authority represents self.
-    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+    pub(crate) fn in_authority(&self, auth: &Authority<XorName>) -> bool {
         self.machine.current().in_authority(auth)
     }
 
     /// Returns the age counter of the given node if it is member of the same section as this node,
     /// `None` otherwise.
-    pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
+    pub(crate) fn member_age_counter(&self, name: &XorName) -> Option<u32> {
         self.chain()
             .and_then(|chain| chain.member_age_counter(name))
     }
