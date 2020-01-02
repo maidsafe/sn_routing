@@ -137,14 +137,7 @@ fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, Sectio
 }
 
 /// Adds node per existing prefix using a random proxy. Returns new node indices.
-/// skip_some_prefixes: skip adding to prefixes randomly to allowing sections to merge
-/// when this is executed in the same iteration as `drop_random_nodes`.
-fn add_nodes<R: Rng>(
-    rng: &mut R,
-    network: &Network,
-    nodes: &mut Vec<TestNode>,
-    skip_some_prefixes: bool,
-) -> BTreeSet<usize> {
+fn add_nodes<R: Rng>(rng: &mut R, network: &Network, nodes: &mut Vec<TestNode>) -> BTreeSet<usize> {
     let mut prefixes: BTreeSet<_> = nodes
         .iter()
         .filter_map(|node| node.inner.our_prefix())
@@ -165,9 +158,6 @@ fn add_nodes<R: Rng>(
             .create();
         if let Some(&pfx) = prefixes.iter().find(|pfx| pfx.matches(&node.name())) {
             assert!(prefixes.remove(&pfx));
-            if skip_some_prefixes && !rng.gen_weighted_bool(prefixes.len() as u32) {
-                continue;
-            }
             added_nodes.push(node);
         }
     }
@@ -236,23 +226,22 @@ fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) {
 fn add_nodes_and_poll<R: Rng>(
     rng: &mut R,
     network: &Network,
-    mut nodes: &mut Vec<TestNode>,
-    allow_add_failure: bool,
+    nodes: &mut Vec<TestNode>,
 ) -> BTreeSet<XorName> {
-    let new_indices = add_nodes(rng, &network, nodes, allow_add_failure);
-    poll_and_resend(&mut nodes);
+    let new_indices = add_nodes(rng, &network, nodes);
+    poll_and_resend(nodes);
     let (added_names, failed_indices) = check_added_indices(nodes, new_indices);
 
-    if !allow_add_failure && !failed_indices.is_empty() {
-        panic!("Unable to add new nodes. {} failed.", failed_indices.len());
-    }
+    assert!(
+        failed_indices.is_empty(),
+        "Unable to add new nodes: {}",
+        failed_indices
+            .iter()
+            .map(|index| nodes[*index].name())
+            .format(", ")
+    );
 
-    // Drop failed_indices and poll remaining nodes to clear pending states.
-    for index in failed_indices.into_iter().rev() {
-        drop(nodes.remove(index));
-    }
-
-    poll_and_resend(&mut nodes);
+    poll_and_resend(nodes);
     shuffle_nodes(rng, nodes);
 
     added_names
@@ -273,7 +262,7 @@ fn random_churn<R: Rng>(
 
     let section_count = count_sections(nodes);
     if section_count < max_prefixes_len {
-        return add_nodes(rng, &network, nodes, false);
+        return add_nodes(rng, &network, nodes);
     }
 
     // Use elder_size rather than section size to prevent collapsing any groups.
@@ -509,7 +498,7 @@ fn aggressive_churn() {
 
     // Add nodes to trigger splits.
     while count_sections(&nodes) < target_section_num || nodes.len() < target_network_size {
-        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes, false);
+        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes);
         if !added.is_empty() {
             warn!("Added {:?}. Total: {}", added, nodes.len());
         } else {
@@ -534,7 +523,7 @@ fn aggressive_churn() {
         // making the 1/3rd calculation in drop_random_nodes incorrect for the split pfx when we poll.
         let max_drop = 1;
         let dropped = drop_random_nodes(&mut rng, &mut nodes, Some(max_drop));
-        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes, true);
+        let added = add_nodes_and_poll(&mut rng, &network, &mut nodes);
         warn!("Simultaneously added {:?} and dropped {:?}", added, dropped);
 
         verify_invariant_for_all_nodes(&network, &mut nodes);
