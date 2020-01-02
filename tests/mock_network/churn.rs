@@ -173,10 +173,7 @@ fn add_nodes<R: Rng>(rng: &mut R, network: &Network, nodes: &mut Vec<TestNode>) 
 
 /// Checks if the given indices have been accepted to the network.
 /// Returns the names of added nodes.
-fn check_added_indices(
-    nodes: &mut Vec<TestNode>,
-    new_indices: BTreeSet<usize>,
-) -> BTreeSet<XorName> {
+fn check_added_indices(nodes: &mut [TestNode], new_indices: BTreeSet<usize>) -> BTreeSet<XorName> {
     let mut added = BTreeSet::new();
     let mut failed = Vec::new();
 
@@ -204,7 +201,7 @@ fn check_added_indices(
 }
 
 // Shuffle nodes excluding the first node
-fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) {
+fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut [TestNode]) {
     rng.shuffle(&mut nodes[1..]);
 }
 
@@ -444,12 +441,6 @@ fn setup_expectations<R: Rng>(
     expectations
 }
 
-fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], elder_size: usize) {
-    let expectations = setup_expectations(rng, nodes, elder_size);
-    poll_and_resend(nodes);
-    expectations.verify(nodes, &Default::default());
-}
-
 // Helper to build a map of new names to old names.
 struct RelocationMapBuilder {
     initial_names: Vec<XorName>,
@@ -468,6 +459,70 @@ impl RelocationMapBuilder {
             .map(|(node, old_name)| (node.name(), old_name))
             .filter(|(new_name, old_name)| old_name != new_name)
             .collect()
+    }
+}
+
+// When do we send messages.
+#[derive(PartialEq, Eq)]
+enum MessageSchedule {
+    AfterChurn,
+    DuringChurn,
+}
+
+fn progress_and_verify<R: Rng>(
+    rng: &mut R,
+    network: &Network,
+    nodes: &mut [TestNode],
+    message_schedule: MessageSchedule,
+    added_indices: BTreeSet<usize>,
+    dropped_names: BTreeSet<XorName>,
+) {
+    if !dropped_names.is_empty() {
+        warn!("Dropping {:?}", dropped_names);
+    }
+
+    let (expectations, relocation_map) = match message_schedule {
+        MessageSchedule::AfterChurn => {
+            poll_and_resend(nodes);
+            let added_names = check_added_indices(nodes, added_indices);
+            log_churn_outcome(&added_names, &dropped_names);
+
+            let expectations = setup_expectations(rng, nodes, network.elder_size());
+            poll_and_resend(nodes);
+
+            (expectations, BTreeMap::default())
+        }
+        MessageSchedule::DuringChurn => {
+            let expectations = setup_expectations(rng, nodes, network.elder_size());
+            let relocation_map = RelocationMapBuilder::new(&nodes);
+
+            poll_and_resend(nodes);
+            let added_names = check_added_indices(nodes, added_indices);
+            log_churn_outcome(&added_names, &dropped_names);
+
+            (expectations, relocation_map.build(&nodes))
+        }
+    };
+
+    expectations.verify(nodes, &relocation_map);
+    verify_invariant_for_all_nodes(network, nodes);
+    shuffle_nodes(rng, nodes);
+}
+
+fn log_churn_outcome(added_names: &BTreeSet<XorName>, dropped_names: &BTreeSet<XorName>) {
+    if !added_names.is_empty() {
+        if !dropped_names.is_empty() {
+            warn!(
+                "Simultaneously added {:?} and dropped {:?}",
+                added_names, dropped_names
+            );
+        } else {
+            warn!("Added {:?}, dropped none", added_names);
+        }
+    } else {
+        if !dropped_names.is_empty() {
+            warn!("Added none, dropped {:?}", dropped_names);
+        }
     }
 }
 
@@ -515,18 +570,14 @@ fn aggressive_churn() {
     while count_sections(&nodes) < grow_target_section_num || nodes.len() < grow_target_network_size
     {
         let added_indices = add_nodes(&mut rng, &network, &mut nodes);
-        poll_and_resend(&mut nodes);
-        let added_names = check_added_indices(&mut nodes, added_indices);
-
-        if !added_names.is_empty() {
-            warn!("Added {:?}. Total: {}", added_names, nodes.len());
-        } else {
-            warn!("Unable to add new node.");
-        }
-
-        verify_invariant_for_all_nodes(&network, &mut nodes);
-        send_and_receive(&mut rng, &mut nodes, elder_size);
-        shuffle_nodes(&mut rng, &mut nodes);
+        progress_and_verify(
+            &mut rng,
+            &network,
+            &mut nodes,
+            MessageSchedule::AfterChurn,
+            added_indices,
+            BTreeSet::new(),
+        )
     }
 
     // Simultaneous Add/Drop nodes in the same iteration.
@@ -547,18 +598,14 @@ fn aggressive_churn() {
             0,
             usize::MAX,
         );
-
-        poll_and_resend(&mut nodes);
-        let added_names = check_added_indices(&mut nodes, added_indices);
-
-        warn!(
-            "Simultaneously added {:?} and dropped {:?}",
-            added_names, dropped_names
+        progress_and_verify(
+            &mut rng,
+            &network,
+            &mut nodes,
+            MessageSchedule::AfterChurn,
+            added_indices,
+            dropped_names,
         );
-
-        verify_invariant_for_all_nodes(&network, &mut nodes);
-        send_and_receive(&mut rng, &mut nodes, elder_size);
-        shuffle_nodes(&mut rng, &mut nodes);
 
         warn!(
             "Remaining Prefixes: {{{:?}}}",
@@ -573,17 +620,19 @@ fn aggressive_churn() {
         count_sections(&nodes)
     );
     loop {
-        let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes);
-        if dropped_nodes.is_empty() {
+        let dropped_names = drop_random_nodes(&mut rng, &mut nodes);
+        if dropped_names.is_empty() {
             break;
         }
 
-        warn!("Dropping random nodes. Dropped: {:?}", dropped_nodes);
-        poll_and_resend(&mut nodes);
-
-        verify_invariant_for_all_nodes(&network, &mut nodes);
-        send_and_receive(&mut rng, &mut nodes, elder_size);
-        shuffle_nodes(&mut rng, &mut nodes);
+        progress_and_verify(
+            &mut rng,
+            &network,
+            &mut nodes,
+            MessageSchedule::AfterChurn,
+            BTreeSet::new(),
+            dropped_names,
+        );
 
         warn!(
             "Remaining Prefixes: {{{:?}}}",
@@ -637,26 +686,14 @@ fn messages_during_churn() {
             min_section_num,
             max_section_num,
         );
-
-        if !dropped_names.is_empty() {
-            warn!("Dropping nodes: {:?}", dropped_names);
-        }
-
-        let relocation_map = RelocationMapBuilder::new(&nodes);
-        let expectations = setup_expectations(&mut rng, &mut nodes, elder_size);
-
-        poll_and_resend(&mut nodes);
-
-        let relocation_map = relocation_map.build(&nodes);
-
-        let added_names = check_added_indices(&mut nodes, added_indices);
-        if !added_names.is_empty() {
-            warn!("Added nodes: {:?}", added_names);
-        }
-
-        expectations.verify(&mut nodes, &relocation_map);
-        verify_invariant_for_all_nodes(&network, &mut nodes);
-        shuffle_nodes(&mut rng, &mut nodes);
+        progress_and_verify(
+            &mut rng,
+            &network,
+            &mut nodes,
+            MessageSchedule::DuringChurn,
+            added_indices,
+            dropped_names,
+        );
     }
 }
 
