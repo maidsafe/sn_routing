@@ -126,7 +126,7 @@ struct Params {
     grow_target_section_num: usize,
     // Maximum number of iterations for the churn phase.
     churn_max_iterations: usize,
-    // Probability that churn occurs for each iteration of the churn phase.
+    // Probability that any churn occurs for each iteration of the churn phase.
     churn_probability: f64,
     // During the churn phase, if the number of sections is more than this number, no more nodes
     // are added, only dropped.
@@ -538,6 +538,8 @@ struct Expectations {
     messages: HashSet<MessageKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
     sections: HashMap<Authority<XorName>, HashSet<XorName>>,
+    /// Helper to build the map of new names to old names by which we can track even relocated
+    /// nodes.
     relocation_map_builder: RelocationMapBuilder,
 }
 
