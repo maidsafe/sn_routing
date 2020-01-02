@@ -182,22 +182,21 @@ fn add_nodes<R: Rng>(rng: &mut R, network: &Network, nodes: &mut Vec<TestNode>) 
 }
 
 /// Checks if the given indices have been accepted to the network.
-/// Returns the names of added nodes and indices of failed nodes.
+/// Returns the names of added nodes.
 fn check_added_indices(
     nodes: &mut Vec<TestNode>,
     new_indices: BTreeSet<usize>,
-) -> (BTreeSet<XorName>, Vec<usize>) {
+) -> BTreeSet<XorName> {
     let mut added = BTreeSet::new();
     let mut failed = Vec::new();
-    for (index, node) in nodes.iter_mut().enumerate() {
-        if !new_indices.contains(&index) {
-            continue;
-        }
+
+    for index in new_indices {
+        let node = &mut nodes[index];
 
         loop {
             match node.inner.try_next_ev() {
                 Err(_) => {
-                    failed.push(index);
+                    failed.push(node.name());
                     break;
                 }
                 Ok(Event::Connected(_)) => {
@@ -209,7 +208,9 @@ fn check_added_indices(
         }
     }
 
-    (added, failed)
+    assert!(failed.is_empty(), "Unable to add new nodes: {:?}", failed);
+
+    added
 }
 
 // Shuffle nodes excluding the first node
@@ -230,17 +231,7 @@ fn add_nodes_and_poll<R: Rng>(
 ) -> BTreeSet<XorName> {
     let new_indices = add_nodes(rng, &network, nodes);
     poll_and_resend(nodes);
-    let (added_names, failed_indices) = check_added_indices(nodes, new_indices);
-
-    assert!(
-        failed_indices.is_empty(),
-        "Unable to add new nodes: {}",
-        failed_indices
-            .iter()
-            .map(|index| nodes[*index].name())
-            .format(", ")
-    );
-
+    let added_names = check_added_indices(nodes, new_indices);
     poll_and_resend(nodes);
     shuffle_nodes(rng, nodes);
 
@@ -437,7 +428,11 @@ impl Expectations {
     }
 }
 
-fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], elder_size: usize) {
+fn setup_expectations<R: Rng>(
+    rng: &mut R,
+    nodes: &mut [TestNode],
+    elder_size: usize,
+) -> Expectations {
     // Create random content and pick random sending and receiving nodes.
     let content: Vec<_> = rng.gen_iter().take(100).collect();
     let index0 = gen_elder_index(rng, nodes);
@@ -469,9 +464,34 @@ fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], elder_size: usi
     expectations.send_and_expect(&content, auth_s0, auth_g0, nodes, elder_size);
     expectations.send_and_expect(&content, auth_s0, auth_n0, nodes, elder_size);
 
-    poll_and_resend(nodes);
+    expectations
+}
 
+fn send_and_receive<R: Rng>(rng: &mut R, nodes: &mut [TestNode], elder_size: usize) {
+    let expectations = setup_expectations(rng, nodes, elder_size);
+    poll_and_resend(nodes);
     expectations.verify(nodes, &Default::default());
+}
+
+// Helper to build a map of new names to old names.
+struct RelocationMapBuilder {
+    initial_names: Vec<XorName>,
+}
+
+impl RelocationMapBuilder {
+    fn new(nodes: &[TestNode]) -> Self {
+        let initial_names = nodes.iter().map(|node| node.name()).collect();
+        Self { initial_names }
+    }
+
+    fn build(self, nodes: &[TestNode]) -> BTreeMap<XorName, XorName> {
+        nodes
+            .iter()
+            .zip(self.initial_names)
+            .map(|(node, old_name)| (node.name(), old_name))
+            .filter(|(new_name, old_name)| old_name != new_name)
+            .collect()
+    }
 }
 
 #[test]
@@ -585,62 +605,21 @@ fn messages_during_churn() {
             current_sections(&nodes).format(", ")
         );
         let new_indices = random_churn(&mut rng, &network, &mut nodes, max_prefixes_len);
-
-        // Create random data and pick random sending and receiving nodes.
-        let content: Vec<_> = rng.gen_iter().take(100).collect();
-        let index0 = gen_elder_index(&mut rng, &nodes);
-        let index1 = gen_elder_index(&mut rng, &nodes);
-        let auth_n0 = Authority::Node(nodes[index0].name());
-        let auth_n1 = Authority::Node(nodes[index1].name());
-        let auth_g0 = Authority::Section(rng.gen());
-        let auth_g1 = Authority::Section(rng.gen());
-        let section_name: XorName = rng.gen();
-        let auth_s0 = Authority::Section(section_name);
-        // this makes sure we have two different sections if there exists more than one
-        let auth_s1 = Authority::Section(!section_name);
-
-        let mut expectations = Expectations::default();
-        let initial_names = nodes.iter().map(|node| node.name()).collect_vec();
-
-        // Test messages from a node to itself, another node, a group and a section...
-        expectations.send_and_expect(&content, auth_n0, auth_n0, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_n0, auth_n1, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_n0, auth_g0, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_n0, auth_s0, &mut nodes, elder_size);
-        // ... and from a group to itself, another group, a section and a node...
-        expectations.send_and_expect(&content, auth_g0, auth_g0, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_g0, auth_g1, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_g0, auth_s0, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_g0, auth_n0, &mut nodes, elder_size);
-        // ... and from a section to itself, another section, a group and a node...
-        expectations.send_and_expect(&content, auth_s0, auth_s0, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_s0, auth_s1, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_s0, auth_g0, &mut nodes, elder_size);
-        expectations.send_and_expect(&content, auth_s0, auth_n0, &mut nodes, elder_size);
+        let relocation_map = RelocationMapBuilder::new(&nodes);
+        let expectations = setup_expectations(&mut rng, &mut nodes, elder_size);
 
         poll_and_resend(&mut nodes);
-        let new_to_old_map: BTreeMap<XorName, XorName> = nodes
-            .iter()
-            .zip(initial_names.iter())
-            .map(|(node, old_name)| (node.name(), *old_name))
-            .filter(|(new_name, old_name)| old_name != new_name)
-            .collect();
 
-        let (added_names, failed_indices) = check_added_indices(&mut nodes, new_indices);
-        assert!(
-            failed_indices.is_empty(),
-            "Non-empty set of failed nodes! Failed nodes: {:?}",
-            failed_indices
-                .into_iter()
-                .map(|idx| nodes[idx].name())
-                .collect::<Vec<_>>()
-        );
-        shuffle_nodes(&mut rng, &mut nodes);
+        let relocation_map = relocation_map.build(&nodes);
 
+        let added_names = check_added_indices(&mut nodes, new_indices);
         if !added_names.is_empty() {
             warn!("Added nodes: {:?}", added_names);
         }
-        expectations.verify(&mut nodes, &new_to_old_map);
+
+        shuffle_nodes(&mut rng, &mut nodes);
+
+        expectations.verify(&mut nodes, &relocation_map);
         verify_invariant_for_all_nodes(&network, &mut nodes);
     }
 }
