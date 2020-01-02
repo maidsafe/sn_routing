@@ -17,7 +17,7 @@ use routing::{
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix, XorName,
+    Authority, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix, XorName, Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -391,6 +391,30 @@ fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, Sectio
     output
 }
 
+/// Sub prefix with smaller member counts.
+pub fn sub_perfixes_for_balanced_add(nodes: &[TestNode]) -> BTreeSet<Prefix<XorName>> {
+    let mut counts: BTreeMap<Prefix<XorName>, (usize, usize)> = BTreeMap::new();
+    for node in nodes {
+        let pfx = *node.our_prefix();
+        let name = node.name();
+
+        let (bit_0, bit_1) = counts.entry(pfx).or_default();
+        if name.bit(pfx.bit_count()) {
+            *bit_1 += 1;
+        } else {
+            *bit_0 += 1;
+        }
+    }
+
+    counts
+        .into_iter()
+        .map(|(prefix, (bit_0, bit_1))| {
+            let next_bit_with_fewer_members = bit_0 > bit_1;
+            prefix.pushed(next_bit_with_fewer_members)
+        })
+        .collect()
+}
+
 /// Adds node per existing prefix with the given probability. Returns new node indices.
 fn add_nodes(
     rng: &mut MainRng,
@@ -399,7 +423,7 @@ fn add_nodes(
     add_probability: f64,
 ) -> BTreeSet<usize> {
     let mut added_nodes = Vec::new();
-    let prefixes: Vec<_> = current_sections(nodes).collect();
+    let prefixes: BTreeSet<_> = sub_perfixes_for_balanced_add(nodes);
 
     for prefix in prefixes {
         if rng.gen_range(0.0, 1.0) >= add_probability {
