@@ -38,23 +38,14 @@ struct Params {
     // When are messages sent during each iteration.
     message_schedule: MessageSchedule,
 
-    // The churn phase lasts until the number of sections and/or number of nodes reaches these
-    // values. If both are set, then both section number and node number must reach them. If none
-    // are set, then grow phase is skipped.
-    grow_target_section_num: Option<usize>,
-    grow_target_network_size: Option<usize>,
-
-    // The churn phase ends when the network drops below this size.
-    churn_min_network_size: usize,
+    // The grow phase lasts until the number of sections reaches this number.
+    grow_target_section_num: usize,
     // Maximum number of iterations for the churn phase.
     churn_max_iterations: usize,
     // Probability that churn occurs for each iteration of the churn phase.
     churn_probability: f64,
-    // During the churn phase, if the number of sections is less than this number, nodes are not
-    // dropped, only added.
-    churn_min_section_num: usize,
-    // During the churn phase, if the number of sections is more than this number, nodes are not
-    // added, only dropped.
+    // During the churn phase, if the number of sections is more than this number, no more nodes
+    // are added, only dropped.
     churn_max_section_num: usize,
     // If true, the shrink phase is performed, otherwise it is skipped.
     shrink: bool,
@@ -69,12 +60,9 @@ impl Default for Params {
             },
             initial_prefix_lens: vec![],
             message_schedule: MessageSchedule::AfterChurn,
-            grow_target_section_num: None,
-            grow_target_network_size: None,
-            churn_min_network_size: 0,
+            grow_target_section_num: 5,
             churn_max_iterations: 20,
             churn_probability: 1.0,
-            churn_min_section_num: 0,
             churn_max_section_num: usize::MAX,
             shrink: false,
         }
@@ -594,25 +582,13 @@ fn churn(params: Params) {
     //
     // Grow phase - adding nodes
     //
-    if params.grow_target_network_size.is_some() || params.grow_target_section_num.is_some() {
-        warn!(
-            "Churn [{} nodes, {} sections]: adding nodes",
-            nodes.len(),
-            count_sections(&nodes)
-        );
-    }
-
+    warn!(
+        "Churn [{} nodes, {} sections]: adding nodes",
+        nodes.len(),
+        count_sections(&nodes)
+    );
     loop {
-        let section_num_limit = params
-            .grow_target_section_num
-            .map(|max| count_sections(&nodes) >= max)
-            .unwrap_or(true);
-        let network_size_limit = params
-            .grow_target_network_size
-            .map(|max| nodes.len() >= max)
-            .unwrap_or(true);
-
-        if section_num_limit && network_size_limit {
+        if count_sections(&nodes) >= params.grow_target_section_num {
             break;
         }
 
@@ -636,10 +612,6 @@ fn churn(params: Params) {
         count_sections(&nodes)
     );
     for i in 0..params.churn_max_iterations {
-        if nodes.len() <= params.churn_min_network_size {
-            break;
-        }
-
         warn!("Iteration {}/{}", i, params.churn_max_iterations);
 
         let (added_indices, dropped_names) = random_churn(
@@ -647,7 +619,7 @@ fn churn(params: Params) {
             &network,
             &mut nodes,
             params.churn_probability,
-            params.churn_min_section_num,
+            params.grow_target_section_num,
             params.churn_max_section_num,
         );
         progress_and_verify(
@@ -707,9 +679,7 @@ fn churn(params: Params) {
 fn aggressive_churn() {
     churn(Params {
         message_schedule: MessageSchedule::AfterChurn,
-        grow_target_section_num: Some(5),
-        grow_target_network_size: Some(35),
-        churn_min_network_size: 17,
+        grow_target_section_num: 5,
         churn_max_iterations: 15,
         ..Default::default()
     });
@@ -720,8 +690,8 @@ fn messages_during_churn() {
     churn(Params {
         initial_prefix_lens: vec![2, 2, 2, 3, 3],
         message_schedule: MessageSchedule::DuringChurn,
+        grow_target_section_num: 5,
         churn_probability: 0.8,
-        churn_min_section_num: 5,
         churn_max_section_num: 10,
         churn_max_iterations: 50,
         ..Default::default()
