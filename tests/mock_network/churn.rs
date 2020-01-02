@@ -28,14 +28,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 /// conservative and might change in the future, but it still allows removing at least one node per
 /// section.
 ///
-/// If `max_drops_per_section` is set, never drops more than that number of nodes per section.
-///
 /// Note: it's necessary to call `poll_all` afterwards, as this function doesn't call it itself.
-fn drop_random_nodes<R: Rng>(
-    rng: &mut R,
-    nodes: &mut Vec<TestNode>,
-    max_drops_per_section: Option<usize>,
-) -> BTreeSet<XorName> {
+fn drop_random_nodes<R: Rng>(rng: &mut R, nodes: &mut Vec<TestNode>) -> BTreeSet<XorName> {
     // 10% probability that a node will be dropped.
     let drop_probability = 0.1;
 
@@ -50,13 +44,6 @@ fn drop_random_nodes<R: Rng>(
 
         let elder_size = unwrap!(node.inner.elder_size());
         let section = unwrap!(sections.get_mut(node.our_prefix()));
-
-        // Check the optional additional drop limit.
-        if let Some(max_drops) = max_drops_per_section {
-            if section.all_dropped() >= max_drops {
-                continue;
-            }
-        }
 
         // Don't drop any other node if an elder is already scheduled for drop.
         if section.dropped_elder_count > 0 {
@@ -256,11 +243,7 @@ fn random_churn<R: Rng>(
         return add_nodes(rng, &network, nodes);
     }
 
-    // Use elder_size rather than section size to prevent collapsing any groups.
-    let elder_size = unwrap!(nodes[0].inner.elder_size());
-    let max_drop = elder_size - quorum_count(elder_size);
-    assert!(max_drop > 0);
-    let dropped_nodes = drop_random_nodes(rng, nodes, Some(max_drop));
+    let dropped_nodes = drop_random_nodes(rng, nodes);
     warn!("Dropping nodes: {:?}", dropped_nodes);
     BTreeSet::new()
 }
@@ -557,11 +540,7 @@ fn aggressive_churn() {
     while nodes.len() > churn_min_network_size && iteration < churn_max_iterations {
         iteration += 1;
 
-        // Only max drop a node per pfx as the node added in this iteration could split a pfx
-        // making the 1/3rd calculation in drop_random_nodes incorrect for the split pfx when we poll.
-        // TODO: verify this is still needed.
-        let max_drop = 1;
-        let dropped = drop_random_nodes(&mut rng, &mut nodes, Some(max_drop));
+        let dropped = drop_random_nodes(&mut rng, &mut nodes);
         let added = add_nodes_and_poll(&mut rng, &network, &mut nodes);
         warn!("Simultaneously added {:?} and dropped {:?}", added, dropped);
 
@@ -581,7 +560,7 @@ fn aggressive_churn() {
         count_sections(&nodes)
     );
     loop {
-        let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes, None);
+        let dropped_nodes = drop_random_nodes(&mut rng, &mut nodes);
         if dropped_nodes.is_empty() {
             break;
         }
