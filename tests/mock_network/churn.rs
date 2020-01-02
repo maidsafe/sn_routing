@@ -397,13 +397,6 @@ fn add_nodes<R: Rng>(rng: &mut R, network: &Network, nodes: &mut Vec<TestNode>) 
         }
     }
 
-    if !added_nodes.is_empty() {
-        warn!(
-            "    adding {{{}}}",
-            added_nodes.iter().map(|node| node.name()).format(", ")
-        );
-    }
-
     let mut min_index = 1;
     let mut added_indices = BTreeSet::new();
     for added_node in added_nodes {
@@ -493,10 +486,6 @@ fn progress_and_verify<R: Rng>(
     added_indices: BTreeSet<usize>,
     dropped_names: BTreeSet<XorName>,
 ) {
-    if !dropped_names.is_empty() {
-        warn!("Dropping {:?}", dropped_names);
-    }
-
     let expectations = match message_schedule {
         MessageSchedule::AfterChurn => {
             poll_after_churn(nodes, added_indices, dropped_names);
@@ -521,21 +510,19 @@ fn poll_after_churn(
     added_indices: BTreeSet<usize>,
     dropped_names: BTreeSet<XorName>,
 ) {
+    trace!(
+        "Adding {{{:?}}}, dropping {:?}",
+        added_indices
+            .iter()
+            .map(|index| nodes[*index].name())
+            .format(", "),
+        dropped_names
+    );
+
     poll_and_resend(nodes);
     let added_names = check_added_indices(nodes, added_indices);
 
-    if !added_names.is_empty() {
-        if !dropped_names.is_empty() {
-            warn!(
-                "Simultaneously added {:?} and dropped {:?}",
-                added_names, dropped_names
-            );
-        } else {
-            warn!("Added {:?}, dropped none", added_names);
-        }
-    } else if !dropped_names.is_empty() {
-        warn!("Added none, dropped {:?}", dropped_names);
-    }
+    warn!("Added {:?}, dropped {:?}", added_names, dropped_names);
 }
 
 #[derive(Eq, PartialEq, Hash, Debug)]
