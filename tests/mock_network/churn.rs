@@ -28,7 +28,7 @@ fn aggressive_churn() {
     churn(Params {
         message_schedule: MessageSchedule::AfterChurn,
         grow_target_section_num: 5,
-        churn_max_iterations: 15,
+        churn_max_iterations: 20,
         ..Default::default()
     });
 }
