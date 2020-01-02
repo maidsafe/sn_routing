@@ -61,6 +61,9 @@
 // FIXME - we need to update rand
 #![allow(deprecated)]
 
+// Needs to be before all other modules to make the macros available to them.
+#[macro_use]
+mod macros;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -73,26 +76,18 @@ extern crate serde_derive;
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 
-pub use threshold_crypto::{
-    PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
-    PublicKeyShare as BlsPublicKeyShare, SecretKeySet as BlsSecretKeySet,
-    SecretKeyShare as BlsSecretKeyShare, Signature as BlsSignature,
-    SignatureShare as BlsSignatureShare,
-};
-
-#[cfg(not(feature = "mock_serialise"))]
-pub(crate) type NetworkBytes = bytes::Bytes;
-
-pub use self::quic_p2p::Config as NetworkConfig;
-pub use self::quic_p2p::NodeInfo as ConnectionInfo;
+pub use crate::chain::quorum_count; // FIXME this is only pub for an integration test
+pub use event::ClientEvent;
+pub use event::Event;
+pub use id::FullId; // currently only used in an integration test but will be required in API
+pub use node::Node;
+pub use quic_p2p::Config as NetworkConfig;
+pub use quic_p2p::NodeInfo as ConnectionInfo;
+pub use xor_space::XorName;
 
 // ############################################################################
 // Private
 // ############################################################################
-
-// Needs to be before all other modules to make the macros available to them.
-#[macro_use]
-mod macros;
 
 mod action;
 mod authority;
@@ -120,15 +115,12 @@ mod timer;
 mod utils;
 mod xor_space;
 
-/// Random number generation utilities.
-#[cfg(feature = "mock_base")]
-pub mod rng;
-#[cfg(not(feature = "mock_base"))]
-mod rng;
-
-/// Mocking utilities.
-#[cfg(feature = "mock_base")]
-pub mod mock;
+pub(crate) use threshold_crypto::{
+    PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
+    PublicKeyShare as BlsPublicKeyShare, SecretKeySet as BlsSecretKeySet,
+    SecretKeyShare as BlsSecretKeyShare, Signature as BlsSignature,
+    SignatureShare as BlsSignatureShare,
+};
 
 pub(crate) mod parsec;
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
@@ -149,16 +141,12 @@ pub(crate) const ELDER_SIZE: usize = 7;
 
 pub(crate) use crate::{
     authority::Authority,
-    xor_space::{Prefix, XorName, Xorable},
+    xor_space::{Prefix, Xorable},
 };
-pub use crate::{
-    chain::quorum_count,
-    error::{InterfaceError, RoutingError},
-    event::{ClientEvent, ConnectEvent, Event},
-    event_stream::EventStream,
-    id::{FullId, P2pNode, PublicId},
+pub(crate) use crate::{
+    error::RoutingError,
+    id::{P2pNode, PublicId},
     messages::Message,
-    node::{Node, NodeBuilder},
 };
 
 pub(crate) use self::{
@@ -170,6 +158,19 @@ pub(crate) use self::{
 //  Mock and test below here
 //###############################################################################
 
+/// Random number generation utilities.
+#[cfg(feature = "mock_base")]
+pub mod rng;
+
+#[cfg(not(feature = "mock_base"))]
+mod rng;
+
+/// Mocking utilities.
+#[cfg(feature = "mock_base")]
+pub mod mock;
+
+#[cfg(not(feature = "mock_serialise"))]
+pub(crate) type NetworkBytes = bytes::Bytes;
 #[cfg(any(test, feature = "mock_base"))]
 pub(crate) use unwrap::unwrap;
 
