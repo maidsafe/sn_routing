@@ -25,7 +25,6 @@ use crate::{
     Authority, ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
 };
 use log::LogLevel;
-use maidsafe_utilities::serialisation;
 use std::{fmt::Display, net::SocketAddr, slice};
 
 // Trait for all states.
@@ -245,7 +244,7 @@ pub(crate) trait Base: Display {
         bytes: NetworkBytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = from_network_bytes(bytes)
+        let result = super::from_network_bytes(bytes)
             .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
 
         match result {
@@ -383,7 +382,7 @@ pub(crate) trait Base: Display {
         dg_size: usize,
         message: Message,
     ) {
-        let bytes = match to_network_bytes(&message) {
+        let bytes = match super::to_network_bytes(&message) {
             Ok(bytes) => bytes,
             Err((error, message)) => {
                 error!(
@@ -451,28 +450,4 @@ pub(crate) trait Base: Display {
             err
         })
     }
-}
-
-pub(crate) fn to_network_bytes(
-    message: &Message,
-) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
-    #[cfg(not(feature = "mock_serialise"))]
-    let result = Ok(NetworkBytes::from(
-        serialisation::serialise(message).map_err(|err| (err, message))?,
-    ));
-
-    #[cfg(feature = "mock_serialise")]
-    let result = Ok(NetworkBytes::new(message.clone()));
-
-    result
-}
-
-pub(crate) fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
-    #[cfg(not(feature = "mock_serialise"))]
-    let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
-
-    #[cfg(feature = "mock_serialise")]
-    let result = Ok((*data).clone());
-
-    result
 }

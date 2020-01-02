@@ -54,7 +54,7 @@ use std::{
     net::SocketAddr,
 };
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock_parsec")]
 use crate::messages::Message;
 
 /// Time after which a `Ticked` event is sent.
@@ -1548,10 +1548,12 @@ impl Elder {
         self.parsec_map.unpolled_observations_string()
     }
 
+    #[cfg(feature = "mock_parsec")]
     pub(crate) fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.chain.is_peer_our_elder(pub_id)
     }
 
+    #[cfg(feature = "mock_parsec")]
     pub(crate) fn send_msg_to_targets(
         &mut self,
         dst_targets: &[ConnectionInfo],
@@ -1561,6 +1563,7 @@ impl Elder {
         self.send_message_to_targets(dst_targets, dg_size, message)
     }
 
+    #[cfg(feature = "mock_parsec")]
     pub(crate) fn parsec_last_version(&self) -> u64 {
         self.parsec_map.last_version()
     }

@@ -117,7 +117,6 @@ mod state_machine;
 mod states;
 mod time;
 mod timer;
-mod types;
 mod utils;
 mod xor_space;
 
@@ -160,7 +159,6 @@ pub use crate::{
     id::{FullId, P2pNode, PublicId},
     messages::Message,
     node::{Node, NodeBuilder},
-    types::MessageId,
 };
 
 pub(crate) use self::{
@@ -179,9 +177,14 @@ pub(crate) use unwrap::unwrap;
 pub(crate) use self::mock::crypto;
 
 #[cfg(feature = "mock_base")]
-pub(crate) use crate::{mock::quic_p2p, parsec::generate_bls_threshold_secret_key};
+pub(crate) use crate::mock::quic_p2p;
 
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock_parsec")]
+#[allow(unused)]
+pub(crate) use crate::parsec::generate_bls_threshold_secret_key;
+
+#[cfg(feature = "mock_parsec")]
+#[allow(unused)]
 pub(crate) use chain::NetworkParams;
 
 // Format that can be sent between peers

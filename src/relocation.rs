@@ -183,6 +183,8 @@ mod overrides {
         /// Override relocation destination for the given source prefix - that is, any node to be
         /// relocated from that prefix will be relocated to the given destination.
         /// The override applies only to the exact prefix, not to its parents / children.
+        #[cfg(feature = "mock_base")]
+        #[allow(unused)]
         pub fn set(&mut self, src_prefix: Prefix<XorName>, dst: XorName) {
             let rc = if self.prefixes.insert(src_prefix) {
                 1
@@ -207,6 +209,7 @@ mod overrides {
         }
 
         /// Suppress relocations from the given source prefix.
+        #[cfg(feature = "mock_parsec")]
         pub fn suppress(&mut self, src_prefix: Prefix<XorName>) {
             self.set(src_prefix, src_prefix.name())
         }

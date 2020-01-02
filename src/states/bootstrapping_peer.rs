@@ -354,7 +354,7 @@ mod tests {
         mock::Network,
         quic_p2p::{Builder, Peer},
         state_machine::StateMachine,
-        states::common::base::from_network_bytes,
+        states::common::from_network_bytes,
         unwrap, NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;

@@ -34,6 +34,7 @@ pub use self::{
     shared_state::{SectionKeyInfo, SectionProofChain},
 };
 #[cfg(feature = "mock_base")]
+#[allow(unused)] // FIXME
 use crate::{error::RoutingError, id::P2pNode, BlsPublicKey, Prefix, XorName};
 use crate::{BlsPublicKeySet, PublicId};
 use std::collections::BTreeMap;
@@ -63,6 +64,7 @@ impl Debug for GenesisPfxInfo {
 }
 
 #[cfg(feature = "mock_base")]
+#[allow(unused)]
 /// Test helper to create arbitrary proof.
 pub fn section_proof_chain_from_elders_info(
     elders_info: &EldersInfo,
@@ -71,8 +73,8 @@ pub fn section_proof_chain_from_elders_info(
     SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(&elders_info, key))
 }
 
-#[cfg(feature = "mock_base")]
 /// Test helper to create arbitrary elders nfo.
+#[cfg(feature = "mock_parsec")]
 pub fn elders_info_for_test(
     members: BTreeMap<PublicId, P2pNode>,
     prefix: Prefix<XorName>,
