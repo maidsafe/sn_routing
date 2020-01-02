@@ -15,8 +15,9 @@ use rand::Rng;
 use routing::{
     mock::Network,
     quorum_count,
+    rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, NetworkConfig, NetworkParams, Prefix, XorName,
+    Authority, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix, XorName,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -42,6 +43,7 @@ fn messages_during_churn() {
         churn_probability: 0.8,
         churn_max_section_num: 10,
         churn_max_iterations: 50,
+        shrink_drop_probability: 0.0,
         ..Default::default()
     });
 }
@@ -111,6 +113,8 @@ fn remove_unresponsive_node() {
 // 1. In the grow phase nodes are only added.
 // 2. In the churn phase nodes are added and removed
 // 3. In the shrink phase nodes are only dropped
+//
+// Note: probabilities are expressed as a number in the 0..1 interval, e.g. 80% == 0.8.
 struct Params {
     // Network params
     network: NetworkParams,
@@ -119,20 +123,28 @@ struct Params {
     initial_prefix_lens: Vec<usize>,
     // When are messages sent during each iteration.
     message_schedule: MessageSchedule,
-    // Probability that a node is dropped during a single iteration of the churn and shrink phases
-    // (evaluated per each node).
-    drop_probability: f64,
+    // Probability that a node is added to a section during a single iteration of the grow phase.
+    // Evaluated per each section.
+    grow_add_probability: f64,
     // The grow phase lasts until the number of sections reaches this number.
     grow_target_section_num: usize,
     // Maximum number of iterations for the churn phase.
     churn_max_iterations: usize,
-    // Probability that any churn occurs for each iteration of the churn phase.
+    // Probability that any churn occurs for each iteration of the churn phase. Evaluated once per
+    // iteration.
     churn_probability: f64,
+    // Probability that a node is added to a section during a single iteration of the churn phases.
+    // Evaluated per each section.
+    churn_add_probability: f64,
+    // Probability that a node is dropped during a single iteration of the churn phase.
+    // Evaluated per each node.
+    churn_drop_probability: f64,
     // During the churn phase, if the number of sections is more than this number, no more nodes
     // are added, only dropped.
     churn_max_section_num: usize,
-    // If true, the shrink phase is performed, otherwise it is skipped.
-    shrink: bool,
+    // Probability that a node is dropped during a single iteration of the shrink phase.
+    // Evaluated per each node. If zero, the shrink phase is skipped.
+    shrink_drop_probability: f64,
 }
 
 impl Default for Params {
@@ -144,12 +156,14 @@ impl Default for Params {
             },
             initial_prefix_lens: vec![],
             message_schedule: MessageSchedule::AfterChurn,
-            drop_probability: 0.1,
+            grow_add_probability: 1.0,
             grow_target_section_num: 5,
             churn_max_iterations: 20,
             churn_probability: 1.0,
+            churn_add_probability: 0.2,
+            churn_drop_probability: 0.1,
             churn_max_section_num: usize::MAX,
-            shrink: false,
+            shrink_drop_probability: 0.1,
         }
     }
 }
@@ -183,7 +197,7 @@ fn churn(params: Params) {
             break;
         }
 
-        let added_indices = add_nodes(&mut rng, &network, &mut nodes);
+        let added_indices = add_nodes(&mut rng, &network, &mut nodes, params.grow_add_probability);
         progress_and_verify(
             &mut rng,
             &network,
@@ -205,15 +219,20 @@ fn churn(params: Params) {
     for i in 0..params.churn_max_iterations {
         warn!("Iteration {}/{}", i, params.churn_max_iterations);
 
-        let (added_indices, dropped_names) = random_churn(
-            &mut rng,
-            &network,
-            &mut nodes,
-            params.churn_probability,
-            params.drop_probability,
-            params.grow_target_section_num,
-            params.churn_max_section_num,
-        );
+        let (added_indices, dropped_names) = if rng.gen_range(0.0, 1.0) < params.churn_probability {
+            random_churn(
+                &mut rng,
+                &network,
+                &mut nodes,
+                params.churn_add_probability,
+                params.churn_drop_probability,
+                params.grow_target_section_num,
+                params.churn_max_section_num,
+            )
+        } else {
+            (BTreeSet::new(), BTreeSet::new())
+        };
+
         progress_and_verify(
             &mut rng,
             &network,
@@ -232,14 +251,15 @@ fn churn(params: Params) {
     //
     // Shrink phase - dropping nodes
     //
-    if params.shrink {
+    if params.shrink_drop_probability > 0.0 {
         warn!(
             "Churn [{} nodes, {} sections]: dropping nodes",
             nodes.len(),
             count_sections(&nodes)
         );
         loop {
-            let dropped_names = drop_random_nodes(&mut rng, &mut nodes, params.drop_probability);
+            let dropped_names =
+                drop_random_nodes(&mut rng, &mut nodes, params.shrink_drop_probability);
             if dropped_names.is_empty() {
                 break;
             }
@@ -371,30 +391,33 @@ fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, Sectio
     output
 }
 
-/// Adds node per existing prefix using a random proxy. Returns new node indices.
-fn add_nodes<R: Rng>(rng: &mut R, network: &Network, nodes: &mut Vec<TestNode>) -> BTreeSet<usize> {
-    let mut prefixes: BTreeSet<_> = nodes
-        .iter()
-        .filter_map(|node| node.inner.our_prefix())
-        .copied()
-        .collect();
-
+/// Adds node per existing prefix with the given probability. Returns new node indices.
+fn add_nodes(
+    rng: &mut MainRng,
+    network: &Network,
+    nodes: &mut Vec<TestNode>,
+    add_probability: f64,
+) -> BTreeSet<usize> {
     let mut added_nodes = Vec::new();
-    while !prefixes.is_empty() {
-        let proxy_index = if nodes.len() > unwrap!(nodes[0].inner.elder_size()) {
+    let prefixes: Vec<_> = current_sections(nodes).collect();
+
+    for prefix in prefixes {
+        if rng.gen_range(0.0, 1.0) >= add_probability {
+            continue;
+        }
+
+        let bootstrap_index = if nodes.len() > unwrap!(nodes[0].inner.elder_size()) {
             gen_elder_index(rng, nodes)
         } else {
             0
         };
         let network_config =
-            NetworkConfig::node().with_hard_coded_contact(nodes[proxy_index].endpoint());
+            NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
         let node = TestNode::builder(network)
             .network_config(network_config)
+            .full_id(FullId::within_range(rng, &prefix.range_inclusive()))
             .create();
-        if let Some(&pfx) = prefixes.iter().find(|pfx| pfx.matches(&node.name())) {
-            assert!(prefixes.remove(&pfx));
-            added_nodes.push(node);
-        }
+        added_nodes.push(node);
     }
 
     let mut min_index = 1;
@@ -445,21 +468,16 @@ fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut [TestNode]) {
 
 // Churns the given network randomly. Returns any newly added indices and the
 // dropped node names.
-// If introducing churn, would either drop/add nodes in each prefix.
-fn random_churn<R: Rng>(
-    rng: &mut R,
+fn random_churn(
+    rng: &mut MainRng,
     network: &Network,
     nodes: &mut Vec<TestNode>,
-    churn_probability: f64,
+    add_probability: f64,
     drop_probability: f64,
     min_section_num: usize,
     max_section_num: usize,
 ) -> (BTreeSet<usize>, BTreeSet<XorName>) {
     assert!(min_section_num <= max_section_num);
-
-    if rng.gen_range(0.0, 1.0) > churn_probability {
-        return (BTreeSet::new(), BTreeSet::new());
-    }
 
     let section_num = count_sections(nodes);
 
@@ -470,7 +488,7 @@ fn random_churn<R: Rng>(
     };
 
     let added_indices = if section_num < max_section_num {
-        add_nodes(rng, &network, nodes)
+        add_nodes(rng, &network, nodes, add_probability)
     } else {
         BTreeSet::new()
     };
