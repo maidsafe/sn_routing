@@ -244,15 +244,15 @@ fn random_churn<R: Rng>(
     rng: &mut R,
     network: &Network,
     nodes: &mut Vec<TestNode>,
-    max_prefixes_len: usize,
+    churn_probability: f64,
+    max_section_num: usize,
 ) -> BTreeSet<usize> {
-    // 20% chance to not churn.
-    if rng.gen_weighted_bool(5) {
+    if rng.gen_range(0.0, 1.0) > churn_probability {
         return BTreeSet::new();
     }
 
     let section_count = count_sections(nodes);
-    if section_count < max_prefixes_len {
+    if section_count < max_section_num {
         return add_nodes(rng, &network, nodes);
     }
 
@@ -496,10 +496,27 @@ impl RelocationMapBuilder {
 
 #[test]
 fn aggressive_churn() {
+    // Network params
     let elder_size = 4;
     let safe_section_size = 4;
-    let target_section_num = 5;
-    let target_network_size = 35;
+
+    // The test runs in three phases:
+    // 1. In the grow phase nodes are only added.
+    // 2. In the churn phase nodes are added and removed
+    // 3. In the shrink phase nodes are only dropped
+
+    // Parameters for the grow phase. When the network reaches at least `grow_target_section_num`
+    // sections and `grow_target_network_size` nodes, the grow phase ends.
+    let grow_target_section_num = 5;
+    let grow_target_network_size = 35;
+
+    // Parameters for the churn phase. When the number of nodes drops below `churn_min_network_size`
+    // of the number of iterations exceeds `churn_max_iterations`, the churn phase ends.
+    let churn_min_network_size = grow_target_network_size / 2;
+    let churn_max_iterations = 15;
+
+    // There are no parameters for the shrink phase - it ends when no more nodes can be dropped.
+
     let network = Network::new(NetworkParams {
         elder_size,
         safe_section_size,
@@ -517,7 +534,8 @@ fn aggressive_churn() {
     );
 
     // Add nodes to trigger splits.
-    while count_sections(&nodes) < target_section_num || nodes.len() < target_network_size {
+    while count_sections(&nodes) < grow_target_section_num || nodes.len() < grow_target_network_size
+    {
         let added = add_nodes_and_poll(&mut rng, &network, &mut nodes);
         if !added.is_empty() {
             warn!("Added {:?}. Total: {}", added, nodes.len());
@@ -535,12 +553,13 @@ fn aggressive_churn() {
         nodes.len(),
         count_sections(&nodes)
     );
-    let mut count = 0;
-    while nodes.len() > target_network_size / 2 && count < 15 {
-        count += 1;
+    let mut iteration = 0;
+    while nodes.len() > churn_min_network_size && iteration < churn_max_iterations {
+        iteration += 1;
 
         // Only max drop a node per pfx as the node added in this iteration could split a pfx
         // making the 1/3rd calculation in drop_random_nodes incorrect for the split pfx when we poll.
+        // TODO: verify this is still needed.
         let max_drop = 1;
         let dropped = drop_random_nodes(&mut rng, &mut nodes, Some(max_drop));
         let added = add_nodes_and_poll(&mut rng, &network, &mut nodes);
@@ -587,24 +606,40 @@ fn aggressive_churn() {
 
 #[test]
 fn messages_during_churn() {
+    // Network params
     let elder_size = 4;
     let safe_section_size = 4;
+
+    // The network starts with sections whose prefixes have these lengths.
+    let initial_prefix_lens = vec![2, 2, 2, 3, 3];
+    // Probability of churn in each iteration.
+    let churn_probability = 0.8;
+    // If the number of section in the network reaches this number, no new nodes will be added.
+    let max_section_num = initial_prefix_lens.len() * 2;
+    // How many iterations will the test run for.
+    let max_iterations = 50;
+
     let network = Network::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
     let mut rng = network.new_rng();
-    let prefixes = vec![2, 2, 2, 3, 3];
-    let max_prefixes_len = prefixes.len() * 2;
-    let mut nodes = create_connected_nodes_until_split(&network, prefixes);
+    let mut nodes = create_connected_nodes_until_split(&network, initial_prefix_lens);
 
-    for i in 0..50 {
+    for i in 0..max_iterations {
         warn!(
-            "Iteration {}. Prefixes: {{{:?}}}",
+            "Iteration {}/{}. Prefixes: {{{:?}}}",
             i,
+            max_iterations,
             current_sections(&nodes).format(", ")
         );
-        let new_indices = random_churn(&mut rng, &network, &mut nodes, max_prefixes_len);
+        let new_indices = random_churn(
+            &mut rng,
+            &network,
+            &mut nodes,
+            churn_probability,
+            max_section_num,
+        );
         let relocation_map = RelocationMapBuilder::new(&nodes);
         let expectations = setup_expectations(&mut rng, &mut nodes, elder_size);
 
