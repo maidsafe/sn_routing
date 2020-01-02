@@ -3,7 +3,7 @@ name: Real Parsec tests
 
 jobs:
   test:
-    name: Test
+    name: TestRealParsec
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
