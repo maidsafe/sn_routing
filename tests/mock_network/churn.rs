@@ -23,6 +23,61 @@ use std::{
     usize,
 };
 
+// Parameters for the churn tests.
+//
+// The test run in three phases:
+// 1. In the grow phase nodes are only added.
+// 2. In the churn phase nodes are added and removed
+// 3. In the shrink phase nodes are only dropped
+struct Params {
+    // Network params
+    network: NetworkParams,
+    // The network starts with sections whose prefixes have these lengths. If empty, the network
+    // starts with just the root section with `elder_size` nodes.
+    initial_prefix_lens: Vec<usize>,
+
+    // The churn phase lasts until the number of sections and/or number of nodes reaches these
+    // values. If both are set, then both section number and node number must reach them. If none
+    // are set, then grow phase is skipped.
+    grow_target_section_num: Option<usize>,
+    grow_target_network_size: Option<usize>,
+
+    // The churn phase ends when the network drops below this size.
+    churn_min_network_size: usize,
+    // Maximum number of iterations for the churn phase.
+    churn_max_iterations: usize,
+    // Probability that churn occurs for each iteration of the churn phase.
+    churn_probability: f64,
+    // During the churn phase, if the number of sections is less than this number, nodes are not
+    // dropped, only added.
+    churn_min_section_num: usize,
+    // During the churn phase, if the number of sections is more than this number, nodes are not
+    // added, only dropped.
+    churn_max_section_num: usize,
+    // // If true, the shrink phase is performed, otherwise it is skipped.
+    // shrink: bool,
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            network: NetworkParams {
+                elder_size: 4,
+                safe_section_size: 4,
+            },
+            initial_prefix_lens: vec![],
+            grow_target_section_num: None,
+            grow_target_network_size: None,
+            churn_min_network_size: 0,
+            churn_max_iterations: 20,
+            churn_probability: 1.0,
+            churn_min_section_num: 0,
+            churn_max_section_num: usize::MAX,
+            // shrink: false,
+        }
+    }
+}
+
 /// Randomly removes some nodes.
 ///
 /// Limits the number of nodes simultaneously dropped from a section such that the section still
@@ -519,46 +574,29 @@ fn log_churn_outcome(added_names: &BTreeSet<XorName>, dropped_names: &BTreeSet<X
         } else {
             warn!("Added {:?}, dropped none", added_names);
         }
-    } else {
-        if !dropped_names.is_empty() {
-            warn!("Added none, dropped {:?}", dropped_names);
-        }
+    } else if !dropped_names.is_empty() {
+        warn!("Added none, dropped {:?}", dropped_names);
     }
 }
 
 #[test]
 fn aggressive_churn() {
-    // Network params
-    let elder_size = 4;
-    let safe_section_size = 4;
-
-    // The test runs in three phases:
-    // 1. In the grow phase nodes are only added.
-    // 2. In the churn phase nodes are added and removed
-    // 3. In the shrink phase nodes are only dropped
-
-    // Parameters for the grow phase. When the network reaches at least `grow_target_section_num`
-    // sections and `grow_target_network_size` nodes, the grow phase ends.
-    let grow_target_section_num = 5;
-    let grow_target_network_size = 35;
-
-    // Parameters for the churn phase. When the number of nodes drops below `churn_min_network_size`
-    // of the number of iterations exceeds `churn_max_iterations`, the churn phase ends.
-    let churn_min_network_size = grow_target_network_size / 2;
-    let churn_max_iterations = 15;
-    let churn_probability = 1.0;
+    let params = Params {
+        grow_target_section_num: Some(5),
+        grow_target_network_size: Some(35),
+        churn_min_network_size: 17,
+        churn_max_iterations: 15,
+        ..Default::default()
+    };
 
     // There are no parameters for the shrink phase - it ends when no more nodes can be dropped.
 
-    let network = Network::new(NetworkParams {
-        elder_size,
-        safe_section_size,
-    });
+    let network = Network::new(params.network);
     let mut rng = network.new_rng();
 
     // Create an initial network, increase until we have several sections, then
     // decrease back to elder_size, then increase to again.
-    let mut nodes = create_connected_nodes(&network, elder_size);
+    let mut nodes = create_connected_nodes(&network, network.elder_size());
 
     warn!(
         "Churn [{} nodes, {} sections]: adding nodes",
@@ -567,8 +605,20 @@ fn aggressive_churn() {
     );
 
     // Add nodes to trigger splits.
-    while count_sections(&nodes) < grow_target_section_num || nodes.len() < grow_target_network_size
-    {
+    loop {
+        let section_num_limit = params
+            .grow_target_section_num
+            .map(|max| count_sections(&nodes) >= max)
+            .unwrap_or(true);
+        let network_size_limit = params
+            .grow_target_network_size
+            .map(|max| nodes.len() >= max)
+            .unwrap_or(true);
+
+        if section_num_limit && network_size_limit {
+            break;
+        }
+
         let added_indices = add_nodes(&mut rng, &network, &mut nodes);
         progress_and_verify(
             &mut rng,
@@ -587,14 +637,14 @@ fn aggressive_churn() {
         count_sections(&nodes)
     );
     let mut iteration = 0;
-    while nodes.len() > churn_min_network_size && iteration < churn_max_iterations {
+    while nodes.len() > params.churn_min_network_size && iteration < params.churn_max_iterations {
         iteration += 1;
 
         let (added_indices, dropped_names) = random_churn(
             &mut rng,
             &network,
             &mut nodes,
-            churn_probability,
+            params.churn_probability,
             0,
             usize::MAX,
         );
@@ -649,42 +699,33 @@ fn aggressive_churn() {
 
 #[test]
 fn messages_during_churn() {
-    // Network params
-    let elder_size = 4;
-    let safe_section_size = 4;
+    let params = Params {
+        initial_prefix_lens: vec![2, 2, 2, 3, 3],
+        churn_probability: 0.8,
+        churn_min_section_num: 5,
+        churn_max_section_num: 10,
+        churn_max_iterations: 50,
+        ..Default::default()
+    };
 
-    // The network starts with sections whose prefixes have these lengths.
-    let initial_prefix_lens = vec![2, 2, 2, 3, 3];
-    // Probability of churn in each iteration.
-    let churn_probability = 0.8;
-    // While the number of section is less than this number, no nodes are dropped.
-    let min_section_num = initial_prefix_lens.len();
-    // If the number of section in the network reaches this number, no new nodes are added.
-    let max_section_num = initial_prefix_lens.len() * 2;
-    // How many iterations will the test run for.
-    let max_iterations = 50;
-
-    let network = Network::new(NetworkParams {
-        elder_size,
-        safe_section_size,
-    });
+    let network = Network::new(params.network);
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&network, initial_prefix_lens);
+    let mut nodes = create_connected_nodes_until_split(&network, params.initial_prefix_lens);
 
-    for i in 0..max_iterations {
+    for i in 0..params.churn_max_iterations {
         warn!(
             "Iteration {}/{}. Prefixes: {{{:?}}}",
             i,
-            max_iterations,
+            params.churn_max_iterations,
             current_sections(&nodes).format(", ")
         );
         let (added_indices, dropped_names) = random_churn(
             &mut rng,
             &network,
             &mut nodes,
-            churn_probability,
-            min_section_num,
-            max_section_num,
+            params.churn_probability,
+            params.churn_min_section_num,
+            params.churn_max_section_num,
         );
         progress_and_verify(
             &mut rng,
