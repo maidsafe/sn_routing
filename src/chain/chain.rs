@@ -1534,17 +1534,6 @@ impl Chain {
         }
     }
 
-    /// Returns the total number of entries in the routing table, excluding our own name.
-    pub fn len(&self) -> usize {
-        self.state
-            .neighbour_infos
-            .values()
-            .map(|info| info.len())
-            .sum::<usize>()
-            + self.state.our_info().len()
-            - 1
-    }
-
     /// Compute an estimate of the size of the network from the size of our routing table.
     ///
     /// Return (estimate, exact), with exact = true iff we have the whole network in our
@@ -1635,6 +1624,17 @@ impl Chain {
 
 #[cfg(feature = "mock_base")]
 impl Chain {
+    /// Returns the total number of entries in the routing table, excluding our own name.
+    pub fn len(&self) -> usize {
+        self.state
+            .neighbour_infos
+            .values()
+            .map(|info| info.len())
+            .sum::<usize>()
+            + self.state.our_info().len()
+            - 1
+    }
+
     /// Returns our section info with the given hash, if it exists.
     pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
         self.state.our_info_by_hash(hash)

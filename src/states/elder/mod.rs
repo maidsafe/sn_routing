@@ -21,7 +21,7 @@ use crate::{
         OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
         MIN_AGE_COUNTER,
     },
-    error::{BootstrapResponseError, InterfaceError, RoutingError},
+    error::{InterfaceError, RoutingError},
     event::{ConnectEvent, Event},
     id::{FullId, P2pNode, PublicId},
     messages::{
@@ -105,7 +105,6 @@ pub struct ElderDetails {
 pub struct Elder {
     network_service: NetworkService,
     full_id: FullId,
-    is_first_node: bool,
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
     // although they may wrap a message which needs forwarding.
     routing_msg_queue: VecDeque<SignedRoutingMessage>,
@@ -174,7 +173,7 @@ impl Elder {
             rng,
         };
 
-        let node = Self::new(details, true);
+        let node = Self::new(details);
 
         debug!("{} - State changed to Node.", node);
         info!("{} - Started a new network as a seed node.", node);
@@ -190,7 +189,7 @@ impl Elder {
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
-        let mut elder = Self::new(details, false);
+        let mut elder = Self::new(details);
         elder.init(old_pfx, event_backlog, outbox)?;
         Ok(elder)
     }
@@ -233,24 +232,21 @@ impl Elder {
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
-        Self::new(
-            ElderDetails {
-                chain: state.chain,
-                network_service: state.network_service,
-                event_backlog: Vec::new(),
-                full_id: state.full_id,
-                gen_pfx_info: state.gen_pfx_info,
-                routing_msg_queue: state.routing_msg_queue,
-                routing_msg_backlog: state.routing_msg_backlog,
-                direct_msg_backlog: state.direct_msg_backlog,
-                sig_accumulator: state.sig_accumulator,
-                parsec_map: state.parsec_map,
-                routing_msg_filter: state.routing_msg_filter,
-                timer,
-                rng: rng::new(),
-            },
-            false,
-        )
+        Self::new(ElderDetails {
+            chain: state.chain,
+            network_service: state.network_service,
+            event_backlog: Vec::new(),
+            full_id: state.full_id,
+            gen_pfx_info: state.gen_pfx_info,
+            routing_msg_queue: state.routing_msg_queue,
+            routing_msg_backlog: state.routing_msg_backlog,
+            direct_msg_backlog: state.direct_msg_backlog,
+            sig_accumulator: state.sig_accumulator,
+            parsec_map: state.parsec_map,
+            routing_msg_filter: state.routing_msg_filter,
+            timer,
+            rng: rng::new(),
+        })
     }
 
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
@@ -265,7 +261,7 @@ impl Elder {
         self.chain.closest_section_info(*name).1.member_nodes()
     }
 
-    fn new(details: ElderDetails, is_first_node: bool) -> Self {
+    fn new(details: ElderDetails) -> Self {
         let timer = details.timer;
         let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
@@ -273,7 +269,6 @@ impl Elder {
         Self {
             network_service: details.network_service,
             full_id: details.full_id.clone(),
-            is_first_node,
             routing_msg_queue: details.routing_msg_queue,
             routing_msg_backlog: details.routing_msg_backlog,
             direct_msg_backlog: details.direct_msg_backlog,
@@ -870,25 +865,6 @@ impl Elder {
             // Note: peer_map and this block is scheduled for removal
             return Err(RoutingError::PeerNotFound(pub_id));
         };
-
-        // Check min section size.
-        if !self.is_first_node && self.chain.len() < self.chain.elder_size() - 1 {
-            debug!(
-                "{} - Peer {:?} rejected: Routing table has {} entries. {} required.",
-                self,
-                pub_id,
-                self.chain.len(),
-                self.chain.elder_size() - 1
-            );
-            self.send_direct_message(
-                p2p_node.connection_info(),
-                DirectMessage::BootstrapResponse(BootstrapResponse::Error(
-                    BootstrapResponseError::TooFewPeers,
-                )),
-            );
-            self.disconnect(p2p_node.peer_addr());
-            return Ok(());
-        }
 
         self.respond_to_bootstrap_request(&p2p_node, &name);
 
