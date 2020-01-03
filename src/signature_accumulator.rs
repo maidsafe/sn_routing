@@ -192,9 +192,7 @@ mod tests {
             let msgs_and_sigs = (0..5)
                 .map(|_| MessageAndSignatures::new(&full_ids, &pub_ids, &secret_ids, &pk_set))
                 .collect();
-            Env {
-                msgs_and_sigs: msgs_and_sigs,
-            }
+            Env { msgs_and_sigs }
         }
     }
 

@@ -40,7 +40,7 @@ impl<Message: Hash> MessageFilter<Message> {
         MessageFilter {
             count: HashMap::new(),
             timeout_queue: VecDeque::new(),
-            time_to_live: time_to_live,
+            time_to_live,
             phantom: PhantomData,
         }
     }

@@ -56,7 +56,7 @@ pub struct HopMessage {
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedRoutingMessage) -> Result<HopMessage> {
-        Ok(HopMessage { content: content })
+        Ok(HopMessage { content })
     }
 }
 
