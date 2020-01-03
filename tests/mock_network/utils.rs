@@ -431,43 +431,6 @@ pub fn add_connected_nodes_until_split(
         .collect_vec();
     add_nodes_to_prefixes(network, nodes, &prefixes_new_count);
 
-    // If recursive splits are added to Routing (https://maidsafe.atlassian.net/browse/MAID-1861)
-    // this next step can be removed.
-    // Find and add nodes to sections which still need to split to trigger this.
-    loop {
-        let mut found_prefix = None;
-        for node in nodes.iter() {
-            if let Some(prefix_to_split) = node
-                .inner
-                .prefixes()
-                .iter()
-                .find(|&prefix| !prefixes.contains(prefix))
-            {
-                // Assert that this can be split down to a desired prefix.
-                let is_valid = |prefix: &Prefix<XorName>| {
-                    if prefix.is_compatible(prefix_to_split) {
-                        assert!(
-                            prefix.bit_count() > prefix_to_split.bit_count(),
-                            "prefix_to_split: {:?}, prefix: {:?}",
-                            prefix_to_split,
-                            prefix
-                        );
-                        return true;
-                    }
-                    false
-                };
-                assert!(prefixes.iter().any(is_valid));
-                found_prefix = Some(*prefix_to_split);
-                break;
-            }
-        }
-        if let Some(prefix_to_split) = found_prefix {
-            add_node_to_section(network, nodes, &prefix_to_split);
-        } else {
-            break;
-        }
-    }
-
     // Gather all the actual prefixes and check they are as expected.
     let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
     for node in nodes.iter() {
@@ -928,7 +891,7 @@ fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName
 fn add_node_to_section(network: &Network, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     // Suppress relocations to prevent unwanted splits of other sections.
     let mut overrides = RelocationOverrides::new();
-    overrides.suppress(*prefix);
+    overrides.suppress_self_and_parents(*prefix);
 
     let mut rng = network.new_rng();
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
