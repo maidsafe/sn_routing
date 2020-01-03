@@ -211,6 +211,16 @@ mod overrides {
             self.set(src_prefix, src_prefix.name())
         }
 
+        /// Suppress relocations from the given source prefix and its parent prefixes.
+        pub fn suppress_self_and_parents(&mut self, mut src_prefix: Prefix<XorName>) {
+            self.suppress(src_prefix);
+
+            while !src_prefix.is_empty() {
+                src_prefix = src_prefix.popped();
+                self.suppress(src_prefix);
+            }
+        }
+
         /// Clear all relocation overrides set by this instance.
         pub fn clear(&mut self) {
             OVERRIDES.with(|map| {

@@ -152,6 +152,8 @@ impl Chain {
         _group: &BTreeSet<PublicId>,
         related_info: &[u8],
     ) -> Result<(), RoutingError> {
+        // On split membership may need to be checked again.
+        self.members_changed = true;
         self.state
             .update_with_genesis_related_info(related_info, &LogIdent::new(self))
     }
