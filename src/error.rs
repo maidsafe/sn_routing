@@ -65,8 +65,3 @@ pub enum RoutingError {
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
 }
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub enum BootstrapResponseError {
-    NotApproved,
-}

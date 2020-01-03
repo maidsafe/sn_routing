@@ -9,7 +9,7 @@
 use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     crypto::signing::Signature,
-    error::{BootstrapResponseError, RoutingError},
+    error::RoutingError,
     id::{FullId, PublicId},
     messages::SignedRoutingMessage,
     parsec,
@@ -67,8 +67,6 @@ pub enum BootstrapResponse {
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
     Rebootstrap(Vec<ConnectionInfo>),
-    /// An error has occurred
-    Error(BootstrapResponseError),
 }
 
 /// Request to join a section
