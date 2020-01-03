@@ -6,43 +6,20 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-//! Client and node implementations for a resilient decentralised network.
+//! P2PNode implementation for a resilient decentralised network infrastructure.
 //!
-//! The network is based on the [`kademlia_routing_table`][1] and uses the XOR metric to define the
-//! "distance" between two [`XorName`][2]s. `XorName`s are used as addresses of nodes, clients as
-//! well as data.
+//! This is the "engine room" of a hybrid p2p network, where the p2p nodes are built on
+//! top of this library. The features this library gives us is:
 //!
-//! [1]: ../kademlia_routing_table/index.html
-//! [2]: ../xor_name/struct.XorName.html
+//!  * Sybil resistant p2p nodes
+//!  * Sharded network with up to approx 200 p2p nodes per shard
+//!  * All data encrypted at network level with TLS 1.3
+//!  * Network level `quic` compatibility, satisfying industry standards and further
+//!    obfuscating the p2p network data.
+//!  * Upgrade capable nodes.
+//!  * All network messages signed via ED25519 and/or BLS
+//!  * Section consensus via an ABFT algorithm (PARSEC)
 //!
-//! Messages are exchanged between _authorities_, where an `Authority` can be an individual client
-//! or node, or a collection of nodes called a "section", or a subset of a section called a "group".
-//! In all cases, messages are cryptographically signed by the sender, and in the case of sections
-//! and groups, it is verified that a sufficient number of members agree on the message: only if
-//! that quorum is reached, the message is delivered. In addition, each message has a unique ID, and
-//! is delivered only once.
-//!
-//! Section and group authorities are also addressed using a single `XorName`. The members are the
-//! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
-//! value specified as a network-wide constant. Groups are of fixed size, defined as the above
-//! minimum section size. Since nodes are assigned their name by the network, this provides
-//! redundancy and resilience: a node has no control over which section or group authority it will
-//! be a member of, and without a majority in the section or group it cannot forge a message from
-//! there.
-//!
-//! The library also provides different types for the messages' data.
-//!
-//!
-//! # Usage
-//!
-//! `Node` is used to handle and send requests within that network, and to implement its
-//! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
-//!
-//! # Sequence diagrams
-//!
-//! - [Bootstrapping](bootstrap.png)
-//! - [Churn (`NewNode`)](new-node.png)
-
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
     html_favicon_url = "https://maidsafe.net/img/favicon.ico",
