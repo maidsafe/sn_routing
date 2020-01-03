@@ -9,9 +9,11 @@
 use crate::{error::InterfaceError, xor_space::XorName, Authority, NetworkBytes};
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
-use std::fmt::{self, Debug, Formatter};
-use std::net::SocketAddr;
-use std::sync::mpsc::Sender;
+use std::{
+    fmt::{self, Debug, Formatter},
+    net::SocketAddr,
+    sync::mpsc::Sender,
+};
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. `Action::SendMessage` hands a fully formed `SignedMessage` over to `Core`

@@ -10,14 +10,8 @@ use super::{EldersInfo, SectionKeyInfo};
 use crate::{
     id::{P2pNode, PublicId},
     parsec,
-    //parsec::DkgResult,
     relocation::RelocateDetails,
-    BlsPublicKeyShare,
-    BlsSecretKeyShare,
-    BlsSignature,
-    BlsSignatureShare,
-    Prefix,
-    RoutingError,
+    BlsPublicKeyShare, BlsSecretKeyShare, BlsSignature, BlsSignatureShare, Prefix, RoutingError,
     XorName,
 };
 use hex_fmt::HexFmt;
@@ -69,6 +63,7 @@ impl EventSigPayload {
             sig_share,
         })
     }
+
     pub fn new_for_section_key_info(
         key_share: &BlsSecretKeyShare,
         section_key_info: &SectionKeyInfo,

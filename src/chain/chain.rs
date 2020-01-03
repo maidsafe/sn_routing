@@ -26,8 +26,8 @@ use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use serde::Serialize;
-use std::cmp::Ordering;
 use std::{
+    cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
@@ -1804,8 +1804,10 @@ impl EldersChangeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER};
-    use super::*;
+    use super::{
+        super::{EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER},
+        *,
+    };
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_bls_threshold_secret_key,

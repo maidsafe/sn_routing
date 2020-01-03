@@ -50,6 +50,7 @@ impl<T: NetworkEvent, P: PublicId> ObservationHolder<T, P> {
 
 impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
     type Target = Rc<Observation<T, P>>;
+
     fn deref(&self) -> &Self::Target {
         match *self {
             ObservationHolder::Single {

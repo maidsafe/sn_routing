@@ -76,13 +76,13 @@ extern crate serde_derive;
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 
-pub use crate::chain::quorum_count; // FIXME this is only pub for an integration test
-pub use event::ClientEvent;
-pub use event::Event;
-pub use id::FullId; // currently only used in an integration test but will be required in API
+pub use chain::quorum_count; // FIXME this is only pub for an integration test
+pub use error::RoutingError;
+pub use event::{ClientEvent, Event};
+pub use id::{FullId, P2pNode, PublicId}; // currently only used in an integration test but will be required in API
 pub use node::Node;
-pub use quic_p2p::Config as NetworkConfig;
-pub use quic_p2p::NodeInfo as ConnectionInfo;
+pub use pause::PausedState;
+pub use quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo};
 pub use xor_space::XorName;
 
 // ############################################################################
@@ -141,12 +141,8 @@ pub(crate) const ELDER_SIZE: usize = 7;
 
 pub(crate) use crate::{
     authority::Authority,
-    xor_space::{Prefix, Xorable},
-};
-pub(crate) use crate::{
-    error::RoutingError,
-    id::{P2pNode, PublicId},
     messages::Message,
+    xor_space::{Prefix, Xorable},
 };
 
 pub(crate) use self::{

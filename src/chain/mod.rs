@@ -37,8 +37,10 @@ pub use self::{
 #[allow(unused)] // FIXME
 use crate::{error::RoutingError, id::P2pNode, BlsPublicKey, Prefix, XorName};
 use crate::{BlsPublicKeySet, PublicId};
-use std::collections::BTreeMap;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Debug, Formatter},
+};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {

@@ -13,8 +13,10 @@ use itertools::Itertools;
 #[cfg(any(test, feature = "mock_base"))]
 use maidsafe_utilities::serialisation;
 use serde::Serialize;
-use std::collections::BTreeMap;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Debug, Formatter},
+};
 
 /// Proof as provided by a close group member. This struct should be ordered by age then `PublicKey`
 #[derive(Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Clone, Copy, Hash)]
@@ -124,8 +126,7 @@ impl Debug for ProofSet {
 
 #[cfg(test)]
 mod tests {
-    use super::super::AccumulatingEvent;
-    use super::Proof;
+    use super::{super::AccumulatingEvent, Proof};
     use crate::{id::FullId, rng, unwrap};
 
     #[test]

@@ -9,8 +9,11 @@
 use super::{AccumulatingEvent, EldersInfo, EventSigPayload, NetworkEvent, Proof, ProofSet};
 use crate::{id::PublicId, BlsPublicKeySet, BlsSignature};
 use log::LogLevel;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::{mem, rc::Rc};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    mem,
+    rc::Rc,
+};
 
 /// An unresponsive node is detected by conunting how many (defined by UNRESPONSIVE_THRESHOLD)
 /// missed votes among the certain number (defined by UNRESPONSIVE_WINDOW) of recent consensused
@@ -268,8 +271,10 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
-    use super::super::{EldersInfo, SectionKeyInfo};
-    use super::*;
+    use super::{
+        super::{EldersInfo, SectionKeyInfo},
+        *,
+    };
     use crate::{
         id::FullId,
         parsec::generate_bls_threshold_secret_key,

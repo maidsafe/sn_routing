@@ -121,8 +121,10 @@ mod implementation {
     mod tests {
         use super::*;
         use crate::action::Action;
-        use std::thread;
-        use std::time::{Duration, Instant};
+        use std::{
+            thread,
+            time::{Duration, Instant},
+        };
 
         #[test]
         fn schedule() {
@@ -202,9 +204,7 @@ mod implementation {
     };
     use crossbeam_channel as mpmc;
     use itertools::Itertools;
-    use std::cell::RefCell;
-    use std::collections::BTreeMap;
-    use std::rc::Rc;
+    use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
     struct Inner {
         next_token: u64,

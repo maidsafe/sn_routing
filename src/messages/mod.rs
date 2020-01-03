@@ -565,8 +565,7 @@ mod tests {
         rng, unwrap, Authority, ConnectionInfo, Prefix, XorName,
     };
     use rand;
-    use std::collections::BTreeMap;
-    use std::net::SocketAddr;
+    use std::{collections::BTreeMap, net::SocketAddr};
 
     #[test]
     fn signed_routing_message_check_integrity() {

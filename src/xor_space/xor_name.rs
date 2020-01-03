@@ -10,8 +10,7 @@ use super::xorable::Xorable;
 use hex::{FromHex, FromHexError, ToHex};
 use num_bigint::BigUint;
 use rand;
-use std::cmp::Ordering;
-use std::{fmt, ops};
+use std::{cmp::Ordering, fmt, ops};
 
 /// Create a 32-byte array of `u8` from a 32-byte reference to a `u8` slice.
 pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
@@ -182,6 +181,7 @@ impl rand::Rand for XorName {
 
 impl ops::Index<ops::Range<usize>> for XorName {
     type Output = [u8];
+
     fn index(&self, index: ops::Range<usize>) -> &[u8] {
         let &XorName(ref b) = self;
         b.index(index)
@@ -189,6 +189,7 @@ impl ops::Index<ops::Range<usize>> for XorName {
 }
 impl ops::Index<ops::RangeTo<usize>> for XorName {
     type Output = [u8];
+
     fn index(&self, index: ops::RangeTo<usize>) -> &[u8] {
         let &XorName(ref b) = self;
         b.index(index)
@@ -197,6 +198,7 @@ impl ops::Index<ops::RangeTo<usize>> for XorName {
 
 impl ops::Index<ops::RangeFrom<usize>> for XorName {
     type Output = [u8];
+
     fn index(&self, index: ops::RangeFrom<usize>) -> &[u8] {
         let &XorName(ref b) = self;
         b.index(index)
@@ -205,6 +207,7 @@ impl ops::Index<ops::RangeFrom<usize>> for XorName {
 
 impl ops::Index<ops::RangeFull> for XorName {
     type Output = [u8];
+
     fn index(&self, index: ops::RangeFull) -> &[u8] {
         let &XorName(ref b) = self;
         b.index(index)
@@ -213,6 +216,7 @@ impl ops::Index<ops::RangeFull> for XorName {
 
 impl ops::Not for XorName {
     type Output = XorName;
+
     fn not(mut self) -> XorName {
         for byte in &mut self.0 {
             *byte = !*byte;
@@ -223,6 +227,7 @@ impl ops::Not for XorName {
 
 impl ops::Sub for XorName {
     type Output = XorName;
+
     fn sub(self, rhs: XorName) -> Self::Output {
         (&self).sub(&rhs)
     }
@@ -230,6 +235,7 @@ impl ops::Sub for XorName {
 
 impl<'a> ops::Sub for &'a XorName {
     type Output = XorName;
+
     fn sub(self, rhs: &XorName) -> Self::Output {
         XorName::from_big_uint(BigUint::from_bytes_be(&self.0) - BigUint::from_bytes_be(&rhs.0))
     }
@@ -237,6 +243,7 @@ impl<'a> ops::Sub for &'a XorName {
 
 impl ops::Div<u32> for XorName {
     type Output = XorName;
+
     fn div(self, rhs: u32) -> Self::Output {
         (&self).div(&rhs)
     }
@@ -244,6 +251,7 @@ impl ops::Div<u32> for XorName {
 
 impl<'a> ops::Div<&'a u32> for &'a XorName {
     type Output = XorName;
+
     fn div(self, rhs: &u32) -> Self::Output {
         XorName::from_big_uint(BigUint::from_bytes_be(&self.0) / BigUint::new(vec![*rhs]))
     }
