@@ -69,5 +69,4 @@ pub enum RoutingError {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum BootstrapResponseError {
     NotApproved,
-    TooFewPeers,
 }

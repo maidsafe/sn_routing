@@ -503,15 +503,17 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
 }
 
 #[test]
-fn accept_previously_rejected_node_after_reaching_elder_size() {
+fn accept_node_before_and_after_reaching_elder_size() {
     // Set section size to one less than the desired number of the elders in a section. This makes
     // us reject any bootstrapping nodes.
     let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
-    let node = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.0:5000");
+    let node0 = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.0:5000");
 
-    // Bootstrap fails for insufficient section size.
-    elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
-    assert!(!elder_test.is_connected(&node.connection_info().peer_addr));
+    // Bootstrap succeed even with too few elders.
+    elder_test.handle_bootstrap_request(*node0.public_id(), node0.connection_info());
+    assert!(elder_test.is_connected(&node0.connection_info().peer_addr));
+
+    let node1 = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.1:5000");
 
     // Add new section member to reach elder_size.
     let new_info = elder_test.new_elders_info_with_candidate();
@@ -519,7 +521,7 @@ fn accept_previously_rejected_node_after_reaching_elder_size() {
     elder_test.accumulate_start_dkg(&new_info);
     elder_test.accumulate_section_info_if_vote(&new_info);
 
-    // Re-bootstrap now succeeds.
-    elder_test.handle_bootstrap_request(*node.public_id(), node.connection_info());
-    assert!(elder_test.is_connected(&node.connection_info().peer_addr));
+    // Bootstrap succeeds.
+    elder_test.handle_bootstrap_request(*node1.public_id(), node1.connection_info());
+    assert!(elder_test.is_connected(&node1.connection_info().peer_addr));
 }
