@@ -209,7 +209,7 @@ mod overrides {
         }
 
         /// Suppress relocations from the given source prefix.
-        #[cfg(feature = "mock_parsec")]
+        #[cfg(feature = "mock_base")]
         pub fn suppress(&mut self, src_prefix: Prefix<XorName>) {
             self.set(src_prefix, src_prefix.name())
         }

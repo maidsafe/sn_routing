@@ -75,8 +75,8 @@ pub fn section_proof_chain_from_elders_info(
     SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(&elders_info, key))
 }
 
-/// Test helper to create arbitrary elders nfo.
-#[cfg(feature = "mock_parsec")]
+/// Test helper to create arbitrary elders info.
+#[cfg(feature = "mock_base")]
 pub fn elders_info_for_test(
     members: BTreeMap<PublicId, P2pNode>,
     prefix: Prefix<XorName>,

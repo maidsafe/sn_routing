@@ -32,11 +32,11 @@
     unsafe_code,
     unstable_features,
     unused_import_braces,
-    unused,
+    // unused,
     unused_qualifications
 )]
 // FIXME - we need to update rand
-#![allow(deprecated)]
+#![allow(deprecated, unused)]
 
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]
@@ -53,14 +53,14 @@ extern crate serde_derive;
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 
+pub use self::quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo};
 pub use chain::quorum_count; // FIXME this is only pub for an integration test
 pub use error::RoutingError;
 pub use event::{ClientEvent, Event};
 pub use id::{FullId, P2pNode, PublicId}; // currently only used in an integration test but will be required in API
 pub use node::Node;
 pub use pause::PausedState;
-pub use quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo};
-pub use xor_space::XorName;
+pub use xor_space::{Prefix, XorName};
 
 // ############################################################################
 // Private
@@ -116,11 +116,7 @@ pub(crate) const SAFE_SECTION_SIZE: usize = 100;
 /// Number of elders per section.
 pub(crate) const ELDER_SIZE: usize = 7;
 
-pub(crate) use crate::{
-    authority::Authority,
-    messages::Message,
-    xor_space::{Prefix, Xorable},
-};
+pub(crate) use crate::{messages::Message, xor_space::Xorable};
 
 pub(crate) use self::{
     network_service::NetworkService,
@@ -130,6 +126,13 @@ pub(crate) use self::{
 //###############################################################################
 //  Mock and test below here
 //###############################################################################
+
+#[cfg(feature = "mock_base")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub use crate::chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
+    pub use crate::states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
+}
 
 /// Random number generation utilities.
 #[cfg(feature = "mock_base")]
@@ -153,11 +156,17 @@ pub(crate) use self::mock::crypto;
 #[cfg(feature = "mock_base")]
 pub(crate) use crate::mock::quic_p2p;
 
+#[cfg(feature = "mock_base")]
+pub use authority::Authority;
+
+#[cfg(feature = "mock_base")]
+pub use event_stream::EventStream;
+
 #[cfg(feature = "mock_parsec")]
 #[allow(unused)]
 pub(crate) use crate::parsec::generate_bls_threshold_secret_key;
 
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock_base")]
 #[allow(unused)]
 pub(crate) use chain::NetworkParams;
 

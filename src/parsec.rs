@@ -343,7 +343,6 @@ impl ParsecMap {
         parsec.has_unpolled_observations()
     }
 
-    #[cfg(feature = "mock_parsec")]
     pub fn get_size(&self) -> u64 {
         self.size_counter.size_counter
     }
