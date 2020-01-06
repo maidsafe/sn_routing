@@ -14,10 +14,10 @@ use crate::{
     error::RoutingError,
     id::{FullId, PublicId},
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
-    BlsSignature,
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt;
+use threshold_crypto::Signature as BlsSignature;
 
 #[cfg(feature = "mock_base")]
 pub use self::overrides::Overrides;

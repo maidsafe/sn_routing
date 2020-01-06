@@ -20,7 +20,7 @@ use crate::{
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
     utils::LogIdent,
-    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
+    ConnectionInfo, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -33,6 +33,7 @@ use std::{
     iter, mem,
     net::SocketAddr,
 };
+use threshold_crypto as bls;
 
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
@@ -90,7 +91,7 @@ impl Chain {
         self.network_cfg
     }
 
-    pub fn our_section_bls_keys(&self) -> &BlsPublicKeySet {
+    pub fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
         &self.our_section_bls_keys.public_key_set
     }
 
@@ -115,7 +116,7 @@ impl Chain {
         network_cfg: NetworkParams,
         our_id: PublicId,
         gen_info: GenesisPfxInfo,
-        secret_key_share: Option<BlsSecretKeyShare>,
+        secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.is_member(&our_id);
@@ -1186,7 +1187,7 @@ impl Chain {
         &self,
         signed_payload: &S,
         proofs: AccumulatingProof,
-    ) -> Option<BlsSignature> {
+    ) -> Option<bls::Signature> {
         let signed_bytes = serialise(signed_payload)
             .map_err(|err| {
                 log_or_panic!(
@@ -1729,19 +1730,19 @@ pub struct SectionKeyShare {
     /// Index used to combine signature share and get PublicKeyShare from PublicKeySet.
     pub index: usize,
     /// Secret Key share
-    pub key: BlsSecretKeyShare,
+    pub key: bls::SecretKeyShare,
 }
 
 impl SectionKeyShare {
     /// Create a new share with associated share index.
     #[cfg(any(test, feature = "mock_base"))]
-    pub fn new_with_position(index: usize, key: BlsSecretKeyShare) -> Self {
+    pub fn new_with_position(index: usize, key: bls::SecretKeyShare) -> Self {
         Self { index, key }
     }
 
     /// create a new share finding the position wihtin the elders.
     pub fn new(
-        key: BlsSecretKeyShare,
+        key: bls::SecretKeyShare,
         our_id: &PublicId,
         new_elders_info: &EldersInfo,
     ) -> Option<Self> {
@@ -1756,7 +1757,7 @@ impl SectionKeyShare {
 #[derive(Clone)]
 pub struct SectionKeys {
     /// Public key set to verify threshold signatures and combine shares.
-    pub public_key_set: BlsPublicKeySet,
+    pub public_key_set: bls::PublicKeySet,
     /// Secret Key share and index. None if the node was not participating in the DKG.
     pub secret_key_share: Option<SectionKeyShare>,
 }
@@ -1815,13 +1816,14 @@ mod tests {
         rng::MainRng,
         unwrap,
         xor_space::{Prefix, XorName},
-        BlsSecretKeySet, ConnectionInfo,
+        ConnectionInfo,
     };
     use rand::{seq::SliceRandom, Rng};
     use std::{
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
+    use threshold_crypto::SecretKeySet;
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),
@@ -1889,7 +1891,7 @@ mod tests {
     fn gen_chain<T>(
         rng: &mut MainRng,
         sections: T,
-    ) -> (Chain, HashMap<PublicId, FullId>, BlsSecretKeySet)
+    ) -> (Chain, HashMap<PublicId, FullId>, SecretKeySet)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -1943,7 +1945,7 @@ mod tests {
         (chain, full_ids, secret_key_set)
     }
 
-    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, BlsSecretKeySet) {
+    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, SecretKeySet) {
         let elder_size: usize = 7;
         gen_chain(
             rng,

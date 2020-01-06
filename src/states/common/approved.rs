@@ -20,11 +20,11 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     state_machine::Transition,
     xor_space::{Prefix, XorName},
-    BlsSignature,
 };
 use log::LogLevel;
 use rand::Rng;
 use std::collections::BTreeSet;
+use threshold_crypto::Signature;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -63,7 +63,7 @@ pub trait Approved: Base {
     fn handle_member_relocated(
         &mut self,
         payload: RelocateDetails,
-        signature: BlsSignature,
+        signature: Signature,
         node_knowledge: u64,
         outbox: &mut dyn EventBox,
     );
@@ -479,7 +479,7 @@ pub trait Approved: Base {
     fn invoke_handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        signature: Option<BlsSignature>,
+        signature: Option<Signature>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if let Some(signature) = signature {
@@ -498,7 +498,7 @@ pub trait Approved: Base {
     fn handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        signature: BlsSignature,
+        signature: Signature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain().can_remove_member(&details.pub_id) {

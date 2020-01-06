@@ -18,7 +18,6 @@ use crate::{
     messages::DirectMessage,
     rng::{self, MainRng, RngCompat},
     utils::LogIdent,
-    BlsSecretKeySet,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -30,6 +29,7 @@ use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt, mem,
 };
+use threshold_crypto::SecretKeySet;
 
 #[cfg(feature = "mock")]
 pub use crate::mock::parsec::{
@@ -360,15 +360,12 @@ pub fn generate_first_dkg_result(rng: &mut MainRng) -> DkgResult {
 
 /// Generate a BLS SecretKeySet for the given number of participants.
 /// Used for generating first node, or for test.
-pub fn generate_bls_threshold_secret_key(
-    rng: &mut MainRng,
-    participants: usize,
-) -> BlsSecretKeySet {
+pub fn generate_bls_threshold_secret_key(rng: &mut MainRng, participants: usize) -> SecretKeySet {
     // The BLS scheme will require more than `participants / 3`
     // shares in order to construct a full key or signature.
     let threshold = participants.saturating_sub(1) / 3;
 
-    BlsSecretKeySet::random(threshold, &mut RngCompat(rng))
+    SecretKeySet::random(threshold, &mut RngCompat(rng))
 }
 
 /// Create Parsec instance.

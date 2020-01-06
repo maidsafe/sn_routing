@@ -88,12 +88,13 @@ mod tests {
             SignedRoutingMessage,
         },
         parsec::generate_bls_threshold_secret_key,
-        rng, unwrap, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, ConnectionInfo, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
+    use threshold_crypto::PublicKeySet;
 
     struct MessageAndSignatures {
         signed_msg: SignedRoutingMessage,
@@ -105,7 +106,7 @@ mod tests {
             secret_ids: &BTreeMap<XorName, FullId>,
             all_nodes: &BTreeMap<XorName, P2pNode>,
             secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
-            pk_set: &BlsPublicKeySet,
+            pk_set: &PublicKeySet,
         ) -> MessageAndSignatures {
             let routing_msg = RoutingMessage {
                 src: Authority::Section(rand::random()),

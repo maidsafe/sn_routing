@@ -157,24 +157,16 @@ use self::mock::quic_p2p;
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 
-pub use {
-    self::{
-        chain::quorum_count,
-        error::{InterfaceError, RoutingError},
-        event::{ClientEvent, ConnectEvent, Event},
-        event_stream::EventStream,
-        id::{FullId, P2pNode, PublicId},
-        node::{Node, NodeBuilder},
-        pause::PausedState,
-        quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
-        xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
-    },
-    threshold_crypto::{
-        PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
-        PublicKeyShare as BlsPublicKeyShare, SecretKeySet as BlsSecretKeySet,
-        SecretKeyShare as BlsSecretKeyShare, Signature as BlsSignature,
-        SignatureShare as BlsSignatureShare,
-    },
+pub use self::{
+    chain::quorum_count,
+    error::{InterfaceError, RoutingError},
+    event::{ClientEvent, ConnectEvent, Event},
+    event_stream::EventStream,
+    id::{FullId, P2pNode, PublicId},
+    node::{Node, NodeBuilder},
+    pause::PausedState,
+    quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
+    xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
 };
 
 #[cfg(feature = "mock_base")]

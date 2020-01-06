@@ -33,16 +33,19 @@ pub use self::{
     proof::{Proof, ProofSet},
     shared_state::{SectionKeyInfo, SectionProofChain},
 };
+use crate::PublicId;
 #[cfg(feature = "mock_base")]
-use crate::{error::RoutingError, id::P2pNode, BlsPublicKey, Prefix, XorName};
-use crate::{BlsPublicKeySet, PublicId};
+use crate::{error::RoutingError, id::P2pNode, Prefix, XorName};
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
+#[cfg(feature = "mock_base")]
+use threshold_crypto::PublicKey;
+use threshold_crypto::PublicKeySet;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
     pub first_info: EldersInfo,
-    pub first_bls_keys: BlsPublicKeySet,
+    pub first_bls_keys: PublicKeySet,
     pub first_state_serialized: Vec<u8>,
     pub first_ages: BTreeMap<PublicId, AgeCounter>,
     pub latest_info: EldersInfo,
@@ -66,7 +69,7 @@ impl Debug for GenesisPfxInfo {
 /// Test helper to create arbitrary proof.
 pub fn section_proof_chain_from_elders_info(
     elders_info: &EldersInfo,
-    key: BlsPublicKey,
+    key: PublicKey,
 ) -> SectionProofChain {
     SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(&elders_info, key))
 }

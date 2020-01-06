@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     authority::Authority, error::RoutingError, id::PublicId, relocation::RelocateDetails,
-    utils::LogIdent, BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
+    utils::LogIdent, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -22,6 +22,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
+use threshold_crypto::{PublicKey, PublicKeySet, Signature};
 
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
@@ -68,7 +69,7 @@ pub struct SharedState {
 impl SharedState {
     pub fn new(
         elders_info: EldersInfo,
-        bls_keys: BlsPublicKeySet,
+        bls_keys: PublicKeySet,
         ages: BTreeMap<PublicId, AgeCounter>,
     ) -> Self {
         let pk_info = SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
@@ -490,11 +491,11 @@ where
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key_info: SectionKeyInfo,
-    sig: BlsSignature,
+    sig: Signature,
 }
 
 impl SectionProofBlock {
-    pub fn new(key_info: SectionKeyInfo, sig: BlsSignature) -> Self {
+    pub fn new(key_info: SectionKeyInfo, sig: Signature) -> Self {
         Self { key_info, sig }
     }
 
@@ -502,11 +503,11 @@ impl SectionProofBlock {
         &self.key_info
     }
 
-    pub fn key(&self) -> &BlsPublicKey {
+    pub fn key(&self) -> &PublicKey {
         self.key_info.key()
     }
 
-    pub fn verify_with_pk(&self, pk: BlsPublicKey) -> bool {
+    pub fn verify_with_pk(&self, pk: PublicKey) -> bool {
         if let Ok(to_verify) = self.key_info.serialise_for_signature() {
             pk.verify(&self.sig, to_verify)
         } else {
@@ -555,7 +556,7 @@ impl SectionProofChain {
             .unwrap_or(&self.genesis_key_info)
     }
 
-    pub fn last_public_key(&self) -> &BlsPublicKey {
+    pub fn last_public_key(&self) -> &PublicKey {
         self.last_public_key_info().key()
     }
 
@@ -593,11 +594,11 @@ pub struct SectionKeyInfo {
     /// The section prefix. It matches all the members' names.
     prefix: Prefix<XorName>,
     /// The section BLS public key set
-    key: BlsPublicKey,
+    key: PublicKey,
 }
 
 impl SectionKeyInfo {
-    pub fn from_elders_info(info: &EldersInfo, key: BlsPublicKey) -> Self {
+    pub fn from_elders_info(info: &EldersInfo, key: PublicKey) -> Self {
         Self {
             version: info.version(),
             prefix: *info.prefix(),
@@ -605,7 +606,7 @@ impl SectionKeyInfo {
         }
     }
 
-    pub fn key(&self) -> &BlsPublicKey {
+    pub fn key(&self) -> &PublicKey {
         &self.key
     }
 

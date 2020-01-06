@@ -18,7 +18,6 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     xor_space::{Prefix, XorName},
-    BlsPublicKeySet, BlsSignature, BlsSignatureShare,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
@@ -27,6 +26,7 @@ use std::{
     fmt::{self, Debug, Formatter},
     mem,
 };
+use threshold_crypto::{PublicKeySet, Signature as BlsSignature, SignatureShare};
 
 /// Wrapper of all messages.
 ///
@@ -67,12 +67,12 @@ impl HopMessage {
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
     proof: SectionProofChain,
-    shares: BTreeSet<(usize, BlsSignatureShare)>,
-    pk_set: BlsPublicKeySet,
+    shares: BTreeSet<(usize, SignatureShare)>,
+    pk_set: PublicKeySet,
 }
 
 impl PartialSecurityMetadata {
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<(usize, BlsSignatureShare)> {
+    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<(usize, SignatureShare)> {
         let key_set = &self.pk_set;
         self.shares
             .iter()
@@ -186,7 +186,7 @@ impl SignedRoutingMessage {
     pub fn new(
         content: RoutingMessage,
         section_share: &SectionKeyShare,
-        pk_set: BlsPublicKeySet,
+        pk_set: PublicKeySet,
         proof: SectionProofChain,
     ) -> Result<SignedRoutingMessage> {
         let mut signatures = BTreeSet::new();
@@ -296,7 +296,7 @@ impl SignedRoutingMessage {
 
     /// Adds a proof if it is new, without validating it.
     #[cfg(test)]
-    pub fn add_signature_share(&mut self, pk_share: usize, sig_share: BlsSignatureShare) {
+    pub fn add_signature_share(&mut self, pk_share: usize, sig_share: SignatureShare) {
         if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
             let _ = partial.shares.insert((pk_share, sig_share));
         }
@@ -415,7 +415,7 @@ impl SignedRoutingMessage {
     }
 
     #[cfg(test)]
-    pub fn signatures(&self) -> Option<&BTreeSet<(usize, BlsSignatureShare)>> {
+    pub fn signatures(&self) -> Option<&BTreeSet<(usize, SignatureShare)>> {
         match &self.security_metadata {
             SecurityMetadata::Partial(partial) => Some(&partial.shares),
             _ => None,
