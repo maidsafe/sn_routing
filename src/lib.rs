@@ -113,8 +113,6 @@ mod macros;
 mod action;
 mod authority;
 mod chain;
-#[cfg(not(feature = "mock_crypto"))]
-mod crypto;
 mod error;
 mod event;
 mod event_stream;
@@ -124,6 +122,7 @@ mod messages;
 mod network_service;
 mod node;
 mod outbox;
+mod parsec;
 mod pause;
 mod peer_map;
 mod relocation;
@@ -137,16 +136,70 @@ mod types;
 mod utils;
 mod xor_space;
 
-/// Random number generation utilities.
-#[cfg(feature = "mock_base")]
-pub mod rng;
-#[cfg(not(feature = "mock_base"))]
-mod rng;
-
 /// Mocking utilities.
 #[cfg(feature = "mock_base")]
 pub mod mock;
-pub(crate) mod parsec;
+
+// Random number generation
+#[cfg(not(feature = "mock_base"))]
+mod rng;
+#[cfg(feature = "mock_base")]
+pub mod rng;
+
+// Cryptography
+#[cfg(not(feature = "mock_base"))]
+mod crypto;
+#[cfg(feature = "mock_base")]
+use self::mock::crypto;
+
+// Networking layer
+#[cfg(feature = "mock_base")]
+use self::mock::quic_p2p;
+#[cfg(not(feature = "mock_base"))]
+use quic_p2p;
+
+pub use {
+    self::{
+        authority::Authority,
+        chain::quorum_count,
+        error::{InterfaceError, RoutingError},
+        event::{ClientEvent, ConnectEvent, Event},
+        event_stream::EventStream,
+        id::{FullId, P2pNode, PublicId},
+        node::{Node, NodeBuilder},
+        pause::PausedState,
+        quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
+        types::MessageId,
+        utils::XorTargetInterval,
+        xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
+    },
+    threshold_crypto::{
+        PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
+        PublicKeyShare as BlsPublicKeyShare, SecretKeySet as BlsSecretKeySet,
+        SecretKeyShare as BlsSecretKeyShare, Signature as BlsSignature,
+        SignatureShare as BlsSignatureShare,
+    },
+};
+
+#[cfg(feature = "mock_base")]
+pub use self::{
+    chain::{
+        delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
+        NetworkParams, SectionKeyShare, MIN_AGE,
+    },
+    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    parsec::generate_bls_threshold_secret_key,
+    relocation::Overrides as RelocationOverrides,
+};
+
+#[cfg(feature = "mock_base")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub use crate::{
+        chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
+        states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
+    };
+}
 
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
@@ -158,7 +211,7 @@ pub const QUORUM_DENOMINATOR: usize = 3;
 /// Default minimal section size.
 pub const MIN_SECTION_SIZE: usize = 3;
 
-/// Minimal safe section size. Routing will keep add nodes until the section reaches this size.
+/// Minimal safe section size. Routing will keep adding nodes until the section reaches this size.
 /// More nodes might be added if requested by the upper layers.
 /// This number also detemines when split happens - if both post-split sections would have at least
 /// this number of nodes.
@@ -167,68 +220,15 @@ pub const SAFE_SECTION_SIZE: usize = 100;
 /// Number of elders per section.
 pub const ELDER_SIZE: usize = 7;
 
-#[cfg(feature = "mock_base")]
-pub use crate::mock::quic_p2p;
-pub use crate::{
-    authority::Authority,
-    chain::quorum_count,
-    error::{InterfaceError, RoutingError},
-    event::{ClientEvent, ConnectEvent, Event},
-    event_stream::EventStream,
-    id::{FullId, P2pNode, PublicId},
-    node::{Node, NodeBuilder},
-    pause::PausedState,
-    types::MessageId,
-    utils::XorTargetInterval,
-    xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
-};
-#[cfg(feature = "mock_base")]
-pub use crate::{
-    chain::{
-        delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
-        NetworkParams, SectionKeyShare, MIN_AGE,
-    },
-    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    parsec::generate_bls_threshold_secret_key,
-    relocation::Overrides as RelocationOverrides,
-};
-#[cfg(feature = "mock_base")]
-pub(crate) use chain::Chain;
-#[cfg(not(feature = "mock_base"))]
-use quic_p2p;
-
-pub use threshold_crypto::{
-    PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
-    PublicKeyShare as BlsPublicKeyShare, SecretKeySet as BlsSecretKeySet,
-    SecretKeyShare as BlsSecretKeyShare, Signature as BlsSignature,
-    SignatureShare as BlsSignatureShare,
-};
+use self::quic_p2p::Event as NetworkEvent;
+#[cfg(any(test, feature = "mock_base"))]
+use unwrap::unwrap;
 
 // Format that can be sent between peers
-#[cfg(not(feature = "mock_serialise"))]
-pub(crate) type NetworkBytes = bytes::Bytes;
-#[cfg(feature = "mock_serialise")]
-pub(crate) type NetworkBytes = std::rc::Rc<Message>;
-
-pub use self::quic_p2p::Config as NetworkConfig;
-pub use self::quic_p2p::NodeInfo as ConnectionInfo;
-pub(crate) use self::{
-    network_service::NetworkService,
-    quic_p2p::{Event as NetworkEvent, QuicP2p},
-};
-
-#[cfg(feature = "mock_crypto")]
-pub(crate) use self::mock::crypto;
-
-#[cfg(any(test, feature = "mock_base"))]
-pub(crate) use unwrap::unwrap;
-
+#[cfg(not(feature = "mock_base"))]
+type NetworkBytes = bytes::Bytes;
 #[cfg(feature = "mock_base")]
-#[doc(hidden)]
-pub mod test_consts {
-    pub use crate::chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
-    pub use crate::states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
-}
+type NetworkBytes = std::rc::Rc<Message>;
 
 #[cfg(test)]
 mod tests {

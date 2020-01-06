@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(all(test, feature = "mock_parsec"))]
+#[cfg(all(test, feature = "mock"))]
 mod tests;
 
 use super::{
@@ -28,6 +28,7 @@ use crate::{
         BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
         SecurityMetadata, SignedRoutingMessage,
     },
+    network_service::NetworkService,
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
@@ -41,7 +42,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
-    Authority, BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo, NetworkService,
+    Authority, BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo,
 };
 use itertools::Itertools;
 use log::LogLevel;

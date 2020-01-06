@@ -12,6 +12,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     id::{P2pNode, PublicId},
     network_service::NetworkBuilder,
+    network_service::NetworkService,
     outbox::EventBox,
     pause::PausedState,
     relocation::{RelocatePayload, SignedRelocateDetails},
@@ -19,10 +20,10 @@ use crate::{
     states::{Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
     xor_space::{Prefix, XorName},
-    ConnectionInfo, NetworkConfig, NetworkEvent, NetworkService,
+    ConnectionInfo, NetworkConfig, NetworkEvent,
 };
 #[cfg(feature = "mock_base")]
-use crate::{rng::MainRng, Authority, Chain};
+use crate::{chain::Chain, rng::MainRng, Authority};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;

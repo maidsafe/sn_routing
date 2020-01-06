@@ -10,9 +10,9 @@ mod sending_targets_cache;
 
 use crate::{
     peer_map::PeerMap,
-    quic_p2p::{Builder, Error, Peer, Token},
+    quic_p2p::{Builder, Error, Peer, QuicP2p, Token},
     utils::LogIdent,
-    ConnectionInfo, NetworkBytes, NetworkConfig, NetworkEvent, QuicP2p,
+    ConnectionInfo, NetworkBytes, NetworkConfig, NetworkEvent,
 };
 use crossbeam_channel::Sender;
 use std::net::SocketAddr;

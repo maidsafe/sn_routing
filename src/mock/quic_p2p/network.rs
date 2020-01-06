@@ -7,8 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{node::Node, OurType};
-#[cfg(feature = "mock_parsec")]
-use crate::mock::parsec;
 use crate::{
     chain::NetworkParams,
     rng::{self, MainRng, Seed, SeedPrinter},
@@ -26,6 +24,9 @@ use std::{
     rc::{Rc, Weak},
     sync::Once,
 };
+
+#[cfg(feature = "mock")]
+use crate::mock::parsec;
 
 const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;
@@ -52,7 +53,7 @@ impl Network {
             }
         });
 
-        #[cfg(feature = "mock_parsec")]
+        #[cfg(feature = "mock")]
         parsec::init_mock();
 
         let seed = Seed::default();
@@ -273,17 +274,6 @@ impl Inner {
     }
 }
 
-// Serialised parsec gossip messages start with these bytes.
-#[cfg(not(feature = "mock_serialise"))]
-const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
-    // ParsecPoke
-    &[0, 0, 0, 0, 5, 0, 0, 0],
-    // ParsecRequest
-    &[0, 0, 0, 0, 6, 0, 0, 0],
-    // ParsecResponse
-    &[0, 0, 0, 0, 7, 0, 0, 0],
-];
-
 #[derive(Debug)]
 pub(super) enum Packet {
     BootstrapRequest(OurType),
@@ -300,17 +290,6 @@ pub(super) enum Packet {
 
 impl Packet {
     // Returns `true` if this packet contains a Parsec request or response.
-    #[cfg(not(feature = "mock_serialise"))]
-    pub fn is_parsec_gossip(&self) -> bool {
-        match self {
-            Packet::Message(bytes, _) if bytes.len() >= 8 => {
-                PARSEC_GOSSIP_MSG_TAGS.contains(&&bytes[..8])
-            }
-            _ => false,
-        }
-    }
-
-    #[cfg(feature = "mock_serialise")]
     pub fn is_parsec_gossip(&self) -> bool {
         use crate::messages::{DirectMessage, Message};
 

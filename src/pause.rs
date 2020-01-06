@@ -10,10 +10,11 @@ use crate::{
     chain::{Chain, GenesisPfxInfo},
     id::{FullId, P2pNode},
     messages::{DirectMessage, SignedRoutingMessage},
+    network_service::NetworkService,
     parsec::ParsecMap,
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
-    NetworkEvent, NetworkService,
+    NetworkEvent,
 };
 use crossbeam_channel as mpmc;
 use std::collections::VecDeque;

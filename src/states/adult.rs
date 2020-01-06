@@ -22,6 +22,7 @@ use crate::{
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage,
     },
+    network_service::NetworkService,
     outbox::EventBox,
     parsec::{DkgResultWrapper, ParsecMap},
     pause::PausedState,
@@ -35,7 +36,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
-    Authority, BlsSignature, ConnectionInfo, NetworkService,
+    Authority, BlsSignature, ConnectionInfo,
 };
 use itertools::Itertools;
 use std::{

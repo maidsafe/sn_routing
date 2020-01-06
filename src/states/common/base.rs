@@ -14,6 +14,7 @@ use crate::{
         DirectMessage, HopMessage, Message, RoutingMessage, SignedDirectMessage,
         SignedRoutingMessage,
     },
+    network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::{Peer, Token},
@@ -22,7 +23,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::XorName,
-    Authority, ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
+    Authority, ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -456,22 +457,22 @@ pub trait Base: Display {
 pub fn to_network_bytes(
     message: &Message,
 ) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
-    #[cfg(not(feature = "mock_serialise"))]
+    #[cfg(not(feature = "mock_base"))]
     let result = Ok(NetworkBytes::from(
         serialisation::serialise(message).map_err(|err| (err, message))?,
     ));
 
-    #[cfg(feature = "mock_serialise")]
+    #[cfg(feature = "mock_base")]
     let result = Ok(NetworkBytes::new(message.clone()));
 
     result
 }
 
 pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
-    #[cfg(not(feature = "mock_serialise"))]
+    #[cfg(not(feature = "mock_base"))]
     let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
 
-    #[cfg(feature = "mock_serialise")]
+    #[cfg(feature = "mock_base")]
     let result = Ok((*data).clone());
 
     result

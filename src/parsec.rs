@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock")]
 use crate::crypto;
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock")]
 use crate::mock::parsec as inner;
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock")]
 use crate::unwrap;
 use crate::{
     chain::{self, GenesisPfxInfo},
@@ -22,20 +22,20 @@ use crate::{
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
-#[cfg(not(feature = "mock_parsec"))]
+#[cfg(not(feature = "mock"))]
 use parsec as inner;
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock")]
 use std::collections::BTreeSet;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     fmt, mem,
 };
 
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock")]
 pub use crate::mock::parsec::{
     init_mock, ConsensusMode, Error, NetworkEvent, Observation, Proof, PublicId, SecretId,
 };
-#[cfg(not(feature = "mock_parsec"))]
+#[cfg(not(feature = "mock"))]
 pub use parsec::{ConsensusMode, Error, NetworkEvent, Observation, Proof, PublicId, SecretId};
 
 pub type Block = inner::Block<chain::NetworkEvent, id::PublicId>;
@@ -48,13 +48,13 @@ pub use inner::{DkgResult, DkgResultWrapper};
 const MAX_PARSECS: usize = 10;
 
 // Limit in production
-#[cfg(all(not(feature = "mock_parsec"), not(feature = "mock_base")))]
+#[cfg(not(feature = "mock_base"))]
 const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
 // Limit in integration tests
-#[cfg(all(feature = "mock_base", not(feature = "mock_parsec")))]
+#[cfg(all(feature = "mock_base", not(feature = "mock")))]
 const PARSEC_SIZE_LIMIT: u64 = 20_000_000;
 // Limit for integration tests with mock-parsec
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock")]
 const PARSEC_SIZE_LIMIT: u64 = 500;
 
 // Keep track of size in case we need to prune.
@@ -198,7 +198,7 @@ impl ParsecMap {
     }
 
     // Enable test to simulate other members voting
-    #[cfg(feature = "mock_parsec")]
+    #[cfg(feature = "mock")]
     pub fn vote_for_as(
         &mut self,
         obs: Observation<chain::NetworkEvent, id::PublicId>,
@@ -210,7 +210,7 @@ impl ParsecMap {
     }
 
     // Enable test to simulate other members signing and getting the right pk_set
-    #[cfg(feature = "mock_parsec")]
+    #[cfg(feature = "mock")]
     pub fn get_dkg_result_as(
         &mut self,
         participants: BTreeSet<id::PublicId>,
@@ -254,7 +254,7 @@ impl ParsecMap {
             .flatten()
     }
 
-    #[cfg(feature = "mock_parsec")]
+    #[cfg(feature = "mock")]
     pub fn unpolled_observations_string(&self) -> String {
         let parsec = if let Some(parsec) = self.map.values().last() {
             parsec
@@ -265,7 +265,7 @@ impl ParsecMap {
         parsec.unpolled_observations_string()
     }
 
-    #[cfg(all(not(feature = "mock_parsec"), feature = "mock_base"))]
+    #[cfg(all(not(feature = "mock"), feature = "mock_base"))]
     pub fn unpolled_observations_string(&self) -> String {
         use itertools::Itertools;
 
@@ -275,7 +275,7 @@ impl ParsecMap {
             return String::new();
         };
 
-        // This doesn't contain as much info as the `mock_parsec` version but it's better than
+        // This doesn't contain as much info as the `mock` version but it's better than
         // nothing.
         format!(
             "our_unpolled_observations: {:?}",
@@ -373,7 +373,7 @@ pub fn generate_bls_threshold_secret_key(
 
 /// Create Parsec instance.
 fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
-    #[cfg(feature = "mock_parsec")]
+    #[cfg(feature = "mock")]
     let hash = {
         let fields = (gen_pfx_info.first_info.hash(), gen_pfx_info.parsec_version);
         crypto::sha3_256(&unwrap!(serialisation::serialise(&fields)))
@@ -381,7 +381,7 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
 
     if gen_pfx_info.first_info.is_member(full_id.public_id()) {
         Parsec::from_genesis(
-            #[cfg(feature = "mock_parsec")]
+            #[cfg(feature = "mock")]
             hash,
             full_id,
             &gen_pfx_info.first_info.member_ids().copied().collect(),
@@ -391,7 +391,7 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
         )
     } else {
         Parsec::from_existing(
-            #[cfg(feature = "mock_parsec")]
+            #[cfg(feature = "mock")]
             hash,
             full_id,
             &gen_pfx_info.first_info.member_ids().copied().collect(),
@@ -414,7 +414,7 @@ impl From<Error> for CreateGossipError {
     }
 }
 
-#[cfg(all(test, feature = "mock_parsec"))]
+#[cfg(all(test, feature = "mock"))]
 mod tests {
     use super::*;
     use crate::{
