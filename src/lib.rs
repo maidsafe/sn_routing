@@ -132,7 +132,6 @@ mod state_machine;
 mod states;
 mod time;
 mod timer;
-mod types;
 mod utils;
 mod xor_space;
 
@@ -169,7 +168,6 @@ pub use {
         node::{Node, NodeBuilder},
         pause::PausedState,
         quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
-        types::MessageId,
         utils::XorTargetInterval,
         xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
     },
