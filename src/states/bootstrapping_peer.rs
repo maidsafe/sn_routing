@@ -13,6 +13,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode},
     messages::{BootstrapResponse, DirectMessage, HopMessage, RoutingMessage},
+    network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
@@ -21,7 +22,7 @@ use crate::{
     states::JoiningPeer,
     timer::Timer,
     xor_space::{Prefix, XorName},
-    Authority, ConnectionInfo, NetworkService,
+    Authority, ConnectionInfo,
 };
 use log::LogLevel;
 use std::{

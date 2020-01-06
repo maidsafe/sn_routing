@@ -19,10 +19,11 @@ use crate::{
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
     mock::Network,
+    network_service::NetworkService,
     outbox::EventBox,
     rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    unwrap, BlsSecretKeyShare, NetworkConfig, NetworkParams, NetworkService, ELDER_SIZE,
+    unwrap, BlsSecretKeyShare, NetworkConfig, NetworkParams, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 

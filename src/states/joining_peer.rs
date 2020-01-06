@@ -20,6 +20,7 @@ use crate::{
         BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
         SignedRoutingMessage,
     },
+    network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
     relocation::RelocatePayload,
@@ -28,7 +29,7 @@ use crate::{
     state_machine::{State, Transition},
     timer::Timer,
     xor_space::XorName,
-    Authority, NetworkService,
+    Authority,
 };
 use log::LogLevel;
 use std::{

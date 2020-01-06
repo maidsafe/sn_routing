@@ -14,6 +14,7 @@ use crate::{
         DirectMessage, HopMessage, Message, RoutingMessage, SignedDirectMessage,
         SignedRoutingMessage,
     },
+    network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
     quic_p2p::{Peer, Token},
@@ -22,7 +23,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::XorName,
-    Authority, ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent, NetworkService,
+    Authority, ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;

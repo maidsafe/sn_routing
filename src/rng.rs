@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+//! Random number generation utilities.
+
 pub use self::implementation::{new, new_from, MainRng};
 #[cfg(any(feature = "mock_base"))]
 pub use self::seed_printer::SeedPrinter;

@@ -26,7 +26,10 @@ use std::{net::SocketAddr, sync::mpsc};
 
 #[cfg(feature = "mock_base")]
 use {
-    crate::{chain::SectionProofChain, Chain, Prefix},
+    crate::{
+        chain::{Chain, SectionProofChain},
+        Prefix,
+    },
     std::{
         collections::{BTreeMap, BTreeSet},
         fmt::{self, Display, Formatter},
