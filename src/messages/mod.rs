@@ -10,6 +10,7 @@ mod direct;
 
 pub use self::direct::{BootstrapResponse, DirectMessage, JoinRequest, SignedDirectMessage};
 use crate::{
+    authority::Authority,
     chain::{
         Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,
     },
@@ -17,7 +18,7 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     xor_space::{Prefix, XorName},
-    Authority, BlsPublicKeySet, BlsSignature, BlsSignatureShare,
+    BlsPublicKeySet, BlsSignature, BlsSignatureShare,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
@@ -559,10 +560,11 @@ impl Debug for MessageContent {
 mod tests {
     use super::*;
     use crate::{
+        authority::Authority,
         chain::SectionKeyInfo,
         id::{FullId, P2pNode},
         parsec::generate_bls_threshold_secret_key,
-        rng, unwrap, Authority, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, ConnectionInfo, Prefix, XorName,
     };
     use rand;
     use std::collections::BTreeMap;

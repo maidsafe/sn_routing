@@ -23,7 +23,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent,
 };
 #[cfg(feature = "mock_base")]
-use crate::{chain::Chain, rng::MainRng, Authority};
+use crate::{authority::Authority, chain::Chain, rng::MainRng};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use rand::seq::SliceRandom;

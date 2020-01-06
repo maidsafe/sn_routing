@@ -15,6 +15,7 @@ use super::{
     Adult,
 };
 use crate::{
+    authority::Authority,
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
@@ -42,7 +43,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
-    Authority, BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo,
+    BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo,
 };
 use itertools::Itertools;
 use log::LogLevel;

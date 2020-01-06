@@ -12,6 +12,7 @@ use super::{
     common::Base,
 };
 use crate::{
+    authority::Authority,
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::{ConnectEvent, Event},
@@ -29,7 +30,6 @@ use crate::{
     state_machine::{State, Transition},
     timer::Timer,
     xor_space::XorName,
-    Authority,
 };
 use log::LogLevel;
 use std::{

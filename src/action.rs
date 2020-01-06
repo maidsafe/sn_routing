@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{error::InterfaceError, xor_space::XorName, Authority, NetworkBytes};
+use crate::{authority::Authority, error::InterfaceError, xor_space::XorName, NetworkBytes};
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
 use std::fmt::{self, Debug, Formatter};

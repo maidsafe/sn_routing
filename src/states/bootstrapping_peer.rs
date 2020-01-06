@@ -8,6 +8,7 @@
 
 use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
+    authority::Authority,
     chain::{EldersInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::Event,
@@ -22,7 +23,7 @@ use crate::{
     states::JoiningPeer,
     timer::Timer,
     xor_space::{Prefix, XorName},
-    Authority, ConnectionInfo,
+    ConnectionInfo,
 };
 use log::LogLevel;
 use std::{

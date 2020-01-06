@@ -7,8 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    authority::Authority,
     xor_space::{Prefix, XorName},
-    Authority, NetworkBytes,
+    NetworkBytes,
 };
 use hex_fmt::HexFmt;
 use quic_p2p::Token;

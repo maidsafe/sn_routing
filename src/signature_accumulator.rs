@@ -80,6 +80,7 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
+        authority::Authority,
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain},
         id::{FullId, P2pNode},
         messages::{
@@ -87,7 +88,7 @@ mod tests {
             SignedRoutingMessage,
         },
         parsec::generate_bls_threshold_secret_key,
-        rng, unwrap, Authority, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, BlsPublicKeySet, ConnectionInfo, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;

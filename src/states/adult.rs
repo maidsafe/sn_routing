@@ -12,6 +12,7 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
+    authority::Authority,
     chain::{
         Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
@@ -36,7 +37,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
-    Authority, BlsSignature, ConnectionInfo,
+    BlsSignature, ConnectionInfo,
 };
 use itertools::Itertools;
 use std::{

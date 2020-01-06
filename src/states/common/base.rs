@@ -8,6 +8,7 @@
 
 use crate::{
     action::Action,
+    authority::Authority,
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode, PublicId},
     messages::{
@@ -23,7 +24,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::XorName,
-    Authority, ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent,
+    ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;

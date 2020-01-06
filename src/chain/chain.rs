@@ -14,13 +14,13 @@ use super::{
     SectionProofChain,
 };
 use crate::{
+    authority::Authority,
     error::RoutingError,
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
     utils::LogIdent,
-    Authority, BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName,
-    Xorable,
+    BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName, Xorable,
 };
 use itertools::Itertools;
 use log::LogLevel;
