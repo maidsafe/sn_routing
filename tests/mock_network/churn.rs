@@ -574,9 +574,9 @@ struct MessageKey {
     dst: Authority<XorName>,
 }
 
-/// A set of expectations: Which nodes, groups and sections are supposed to receive a request.
+/// A set of expectations: Which nodes, groups and sections are supposed to receive a message.
 struct Expectations {
-    /// The Put requests expected to be received.
+    /// The message expected to be received.
     messages: HashSet<MessageKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
     sections: HashMap<Authority<XorName>, HashSet<XorName>>,
@@ -594,7 +594,7 @@ impl Expectations {
         }
     }
 
-    /// Sends a request using the nodes specified by `src`, and adds the expectation. Panics if not
+    /// Sends a message using the nodes specified by `src`, and adds the expectation. Panics if not
     /// enough nodes sent a section message, or if an individual sending node could not be found.
     fn send_and_expect(
         &mut self,
@@ -675,7 +675,7 @@ impl Expectations {
             })
             .collect();
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
-        for node in nodes {
+        for node in nodes.iter_mut() {
             let curr_name = node.name();
             let orig_name = new_to_old_map.get(&curr_name).copied().unwrap_or(curr_name);
 
@@ -688,14 +688,14 @@ impl Expectations {
                         if !self.sections.get(&key.dst).map_or(false, checker) {
                             if let Authority::Section(_) = dst {
                                 trace!(
-                                    "Unexpected request for node {}: {:?} / {:?}",
+                                    "Unexpected message for node {}: {:?} / {:?}",
                                     orig_name,
                                     key,
                                     self.sections
                                 );
                             } else {
                                 panic!(
-                                    "Unexpected request for node {}: {:?} / {:?}",
+                                    "Unexpected message for node {}: {:?} / {:?}",
                                     orig_name, key, self.sections
                                 );
                             }
@@ -713,7 +713,7 @@ impl Expectations {
                         );
                         assert!(
                             self.messages.remove(&key),
-                            "Unexpected request for node {}: {:?}",
+                            "Unexpected message for node {}: {:?}",
                             node.name(),
                             key
                         );
@@ -723,8 +723,20 @@ impl Expectations {
         }
 
         for key in self.messages {
-            // All received messages for single nodes were removed: if any are left, they failed.
-            assert!(key.dst.is_multiple(), "Failed to receive request {:?}", key);
+            if let Authority::Node(dst_name) = key.dst {
+                // Verify that if the message destination is a single node, then that node either
+                // received it, or if not it's only because it got dropped, relocated or demoted.
+                if let Some(node) = nodes.iter().find(|node| node.name() == dst_name) {
+                    assert!(
+                        !node.inner.is_elder(),
+                        "{} failed to receive message {:?}",
+                        node.inner,
+                        key
+                    );
+                }
+
+                continue;
+            }
 
             let (section_size, added, removed) = &section_size_added_removed[&key.dst];
 
