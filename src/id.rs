@@ -280,8 +280,9 @@ impl Display for P2pNode {
     }
 }
 
+/// Trait implement of ConnectionInfo.
 #[derive(Clone, Serialize, Deserialize)]
-struct OrderedConnectionInfo(pub ConnectionInfo);
+pub struct OrderedConnectionInfo(pub ConnectionInfo);
 
 impl Hash for OrderedConnectionInfo {
     fn hash<H: Hasher>(&self, state: &mut H) {

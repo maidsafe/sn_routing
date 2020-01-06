@@ -175,7 +175,7 @@ pub use crate::{
     error::{InterfaceError, RoutingError},
     event::{ClientEvent, ConnectEvent, Event},
     event_stream::EventStream,
-    id::{FullId, P2pNode, PublicId},
+    id::{FullId, OrderedConnectionInfo, P2pNode, PublicId},
     node::{Node, NodeBuilder},
     pause::PausedState,
     types::MessageId,
