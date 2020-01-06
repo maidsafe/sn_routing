@@ -167,7 +167,6 @@ pub use {
         node::{Node, NodeBuilder},
         pause::PausedState,
         quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
-        utils::XorTargetInterval,
         xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
     },
     threshold_crypto::{

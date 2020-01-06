@@ -6,10 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_space::XorName;
 use std::{
     fmt::{self, Display, Formatter},
-    ops::RangeInclusive,
     time::Duration,
 };
 
@@ -53,29 +51,6 @@ impl LogIdent {
 impl Display for LogIdent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "{}", self.0)
-    }
-}
-
-/// Target Xor interval
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct XorTargetInterval(pub XorName, pub XorName);
-
-impl XorTargetInterval {
-    /// Create a XorTargetInterval from the equivalent RangeInclusive
-    pub fn new(range: RangeInclusive<XorName>) -> Self {
-        let (start, end) = range.into_inner();
-        Self(start, end)
-    }
-
-    /// check if the inclusive range contains the value
-    pub fn contains(&self, value: &XorName) -> bool {
-        RangeInclusive::new(self.0, self.1).contains(value)
-    }
-}
-
-impl Into<RangeInclusive<XorName>> for XorTargetInterval {
-    fn into(self) -> RangeInclusive<XorName> {
-        RangeInclusive::new(self.0, self.1)
     }
 }
 
