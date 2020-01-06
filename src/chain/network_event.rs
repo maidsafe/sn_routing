@@ -150,7 +150,7 @@ impl AccumulatingEvent {
 }
 
 impl Debug for AccumulatingEvent {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
             AccumulatingEvent::StartDkg(participants) => {
                 write!(formatter, "StartDkg({:?})", participants)
@@ -207,7 +207,7 @@ impl NetworkEvent {
 impl parsec::NetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         if self.signature.is_some() {
             write!(formatter, "{:?}(signature)", self.payload)
         } else {
@@ -246,7 +246,7 @@ impl AccumulatedEvent {
 }
 
 impl Debug for AccumulatedEvent {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "AccumulatedEvent({:?})", self.content)
     }
 }

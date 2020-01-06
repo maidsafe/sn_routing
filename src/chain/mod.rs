@@ -50,7 +50,7 @@ pub struct GenesisPfxInfo {
 }
 
 impl Debug for GenesisPfxInfo {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "GenesisPfxInfo({:?}, gen_version: {}, latest_version: {}, parsec_version {})",

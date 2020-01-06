@@ -1588,7 +1588,7 @@ impl Chain {
 }
 
 impl Debug for Chain {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         writeln!(formatter, "Chain {{")?;
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
@@ -1614,7 +1614,7 @@ impl Debug for Chain {
 }
 
 impl Display for Chain {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Node({}({:b}))", self.our_id(), self.state.our_prefix())
     }
 }
@@ -1829,7 +1829,7 @@ mod tests {
 
     fn gen_section_info(
         rng: &mut MainRng,
-        gen: SecInfoGen,
+        gen: SecInfoGen<'_>,
     ) -> (EldersInfo, HashMap<PublicId, FullId>) {
         match gen {
             SecInfoGen::New(pfx, n) => {

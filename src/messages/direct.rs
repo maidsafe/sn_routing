@@ -82,7 +82,7 @@ pub struct JoinRequest {
 }
 
 impl Debug for DirectMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         use self::DirectMessage::*;
         match self {
             MessageSignature(msg) => write!(formatter, "MessageSignature ({:?})", msg),
@@ -183,7 +183,7 @@ impl SignedDirectMessage {
 }
 
 impl Debug for SignedDirectMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "SignedDirectMessage {{ content: {:?}, src_id: {:?}, signature: {:?} }}",

@@ -42,7 +42,7 @@ pub enum Action {
 }
 
 impl Debug for Action {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match *self {
             Action::SendMessage { ref content, .. } => write!(
                 formatter,

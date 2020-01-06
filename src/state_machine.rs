@@ -199,7 +199,7 @@ impl State {
 }
 
 impl Display for State {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         state_dispatch!(
             *self,
             ref state => write!(formatter, "{}", state),
@@ -209,7 +209,7 @@ impl Display for State {
 }
 
 impl Debug for State {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         state_dispatch!(
             *self,
             ref state => write!(formatter, "State::{}", state),
@@ -321,7 +321,7 @@ pub enum Transition {
 }
 
 impl Debug for Transition {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Stay => write!(f, "Stay"),
             Self::IntoJoining { .. } => write!(f, "IntoJoining"),
@@ -640,7 +640,7 @@ impl StateMachine {
 }
 
 impl Display for StateMachine {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:?}", self.state)
     }
 }

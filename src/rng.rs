@@ -229,7 +229,7 @@ mod test {
     }
 
     impl Display for Seed {
-        fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
             write!(f, "{:?}", self.0)
         }
     }

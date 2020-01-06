@@ -1837,7 +1837,7 @@ impl Approved for Elder {
 }
 
 impl Display for Elder {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "Elder({}({:b}))", self.name(), self.our_prefix())
     }
 }

@@ -329,7 +329,7 @@ impl Base for JoiningPeer {
 }
 
 impl Display for JoiningPeer {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "JoiningPeer({})", self.name())
     }
 }

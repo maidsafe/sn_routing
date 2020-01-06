@@ -482,7 +482,7 @@ impl<T> Debug for NonEmptyList<T>
 where
     T: Debug,
 {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "[{:?}]", self.iter().format(", "))
     }
 }

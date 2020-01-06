@@ -144,13 +144,13 @@ pub struct PublicId {
 }
 
 impl Debug for PublicId {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "PublicId(name: {})", self.name())
     }
 }
 
 impl Display for PublicId {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name())
     }
 }
@@ -264,7 +264,7 @@ impl P2pNode {
 }
 
 impl Debug for P2pNode {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "P2pNode({} at {})",
@@ -275,7 +275,7 @@ impl Debug for P2pNode {
 }
 
 impl Display for P2pNode {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.public_id)
     }
 }

@@ -31,7 +31,7 @@ pub struct DisplayDurObj {
 }
 
 impl Display for DisplayDurObj {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut secs = self.dur.as_secs();
         if self.dur.subsec_nanos() >= 500_000_000 {
             secs += 1;
@@ -51,7 +51,7 @@ impl LogIdent {
 }
 
 impl Display for LogIdent {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "{}", self.0)
     }
 }

@@ -82,7 +82,7 @@ impl PartialSecurityMetadata {
 }
 
 impl Debug for PartialSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "PartialSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
@@ -118,7 +118,7 @@ impl FullSecurityMetadata {
 }
 
 impl Debug for FullSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "FullSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
@@ -142,7 +142,7 @@ impl SingleSrcSecurityMetadata {
 }
 
 impl Debug for SingleSrcSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "SingleSrcSecurityMetadata {{ public_id: {:?}, .. }}",
@@ -161,7 +161,7 @@ pub enum SecurityMetadata {
 }
 
 impl Debug for SecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match &self {
             SecurityMetadata::None => write!(formatter, "None"),
             SecurityMetadata::Partial(pmd) => write!(formatter, "{:?}", pmd),
@@ -521,7 +521,7 @@ pub enum MessageContent {
 }
 
 impl Debug for HopMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "HopMessage {{ content: {:?}, signature: .. }}",
@@ -531,7 +531,7 @@ impl Debug for HopMessage {
 }
 
 impl Debug for SignedRoutingMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "SignedRoutingMessage {{ content: {:?}, security_metadata: {:?} }}",
@@ -541,7 +541,7 @@ impl Debug for SignedRoutingMessage {
 }
 
 impl Debug for MessageContent {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         use self::MessageContent::*;
         match self {
             NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),

@@ -56,7 +56,7 @@ impl Proof {
 }
 
 impl Debug for Proof {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "Proof{{ {:?}, sig: ... }}", self.pub_id.name(),)
     }
 }
@@ -113,7 +113,7 @@ impl ProofSet {
 }
 
 impl Debug for ProofSet {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "ProofSet {{ {:?} }}",

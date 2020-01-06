@@ -746,7 +746,7 @@ impl Approved for Adult {
 }
 
 impl Display for Adult {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "Adult({}({:b}))", self.name(), self.our_prefix())
     }
 }

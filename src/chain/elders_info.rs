@@ -173,7 +173,7 @@ impl EldersInfo {
 }
 
 impl Debug for EldersInfo {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "EldersInfo(prefix: {:?}, members: {{{:?}}}, prev_hash_len: {}, version: {})",
@@ -186,7 +186,7 @@ impl Debug for EldersInfo {
 }
 
 impl Display for EldersInfo {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         writeln!(formatter, "EldersInfo {{")?;
         writeln!(formatter, "\t\tprefix: {:?},", self.prefix)?;
         writeln!(formatter, "\t\tversion: {:?},", self.version)?;

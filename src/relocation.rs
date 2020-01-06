@@ -81,7 +81,7 @@ impl SignedRelocateDetails {
 }
 
 impl fmt::Debug for SignedRelocateDetails {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
             "SignedRelocateDetails {{ content: {:?}, .. }}",

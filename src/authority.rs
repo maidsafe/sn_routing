@@ -74,7 +74,7 @@ impl Authority<XorName> {
 }
 
 impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match *self {
             Authority::Section(ref name) => write!(formatter, "Section(name: {})", name),
             Authority::PrefixSection(ref prefix) => {

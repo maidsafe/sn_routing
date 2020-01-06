@@ -231,7 +231,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Hash for Prefix<T> {
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Binary for Prefix<T> {
-    fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         let mut binary = self.name.binary();
         binary.truncate(self.bit_count());
         write!(formatter, "{}", binary)
@@ -239,7 +239,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Binary for Prefix<T> {
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Debug for Prefix<T> {
-    fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         write!(formatter, "Prefix({:b})", self)
     }
 }
