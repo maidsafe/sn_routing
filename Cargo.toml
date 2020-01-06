@@ -49,7 +49,13 @@ docopt = "~0.8.1"
 libc = "~0.2.29"
 
 [features]
-mock_base = ["lru_time_cache/fake_clock", "parsec/mock", "parsec/malice-detection", "ctrlc", "lazy_static"]
-mock_crypto = ["mock_base", "threshold_crypto/use-insecure-test-only-mock-crypto"]
+mock_base = [
+    "lru_time_cache/fake_clock",
+    "parsec/mock",
+    "parsec/malice-detection",
+    "ctrlc",
+    "lazy_static",
+    "threshold_crypto/use-insecure-test-only-mock-crypto"
+]
 mock_parsec = ["mock_base"]
-mock = ["mock_crypto", "mock_parsec"]
+mock = ["mock_parsec"]

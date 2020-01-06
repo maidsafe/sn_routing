@@ -113,7 +113,7 @@ mod macros;
 mod action;
 mod authority;
 mod chain;
-#[cfg(not(feature = "mock_crypto"))]
+#[cfg(not(feature = "mock_base"))]
 mod crypto;
 mod error;
 mod event;
@@ -217,7 +217,7 @@ pub(crate) use self::{
     quic_p2p::{Event as NetworkEvent, QuicP2p},
 };
 
-#[cfg(feature = "mock_crypto")]
+#[cfg(feature = "mock_base")]
 pub(crate) use self::mock::crypto;
 
 #[cfg(any(test, feature = "mock_base"))]

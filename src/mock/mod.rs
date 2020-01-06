@@ -14,7 +14,6 @@ pub(crate) mod parsec;
 pub mod quic_p2p;
 
 /// Mock cryptography
-#[cfg(feature = "mock_crypto")]
 pub(crate) mod crypto;
 
 pub use self::quic_p2p::Network;
