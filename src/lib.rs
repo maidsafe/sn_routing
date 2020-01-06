@@ -205,9 +205,9 @@ pub use threshold_crypto::{
 };
 
 // Format that can be sent between peers
-#[cfg(not(feature = "mock_serialise"))]
+#[cfg(not(feature = "mock_base"))]
 pub(crate) type NetworkBytes = bytes::Bytes;
-#[cfg(feature = "mock_serialise")]
+#[cfg(feature = "mock_base")]
 pub(crate) type NetworkBytes = std::rc::Rc<Message>;
 
 pub use self::quic_p2p::Config as NetworkConfig;

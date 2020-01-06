@@ -273,17 +273,6 @@ impl Inner {
     }
 }
 
-// Serialised parsec gossip messages start with these bytes.
-#[cfg(not(feature = "mock_serialise"))]
-const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
-    // ParsecPoke
-    &[0, 0, 0, 0, 5, 0, 0, 0],
-    // ParsecRequest
-    &[0, 0, 0, 0, 6, 0, 0, 0],
-    // ParsecResponse
-    &[0, 0, 0, 0, 7, 0, 0, 0],
-];
-
 #[derive(Debug)]
 pub(super) enum Packet {
     BootstrapRequest(OurType),
@@ -300,17 +289,6 @@ pub(super) enum Packet {
 
 impl Packet {
     // Returns `true` if this packet contains a Parsec request or response.
-    #[cfg(not(feature = "mock_serialise"))]
-    pub fn is_parsec_gossip(&self) -> bool {
-        match self {
-            Packet::Message(bytes, _) if bytes.len() >= 8 => {
-                PARSEC_GOSSIP_MSG_TAGS.contains(&&bytes[..8])
-            }
-            _ => false,
-        }
-    }
-
-    #[cfg(feature = "mock_serialise")]
     pub fn is_parsec_gossip(&self) -> bool {
         use crate::messages::{DirectMessage, Message};
 

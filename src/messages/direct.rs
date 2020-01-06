@@ -25,7 +25,7 @@ use std::{
 };
 
 /// Direct message content.
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
+#[cfg_attr(feature = "mock_base", derive(Clone))]
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
@@ -58,7 +58,7 @@ pub enum DirectMessage {
 }
 
 /// Response to a BootstrapRequest
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
+#[cfg_attr(feature = "mock_base", derive(Clone))]
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
@@ -70,7 +70,7 @@ pub enum BootstrapResponse {
 }
 
 /// Request to join a section
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
+#[cfg_attr(feature = "mock_base", derive(Clone))]
 #[derive(Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct JoinRequest {
     /// The section version to join
@@ -141,7 +141,7 @@ impl Hash for DirectMessage {
     }
 }
 
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
+#[cfg_attr(feature = "mock_base", derive(Clone))]
 #[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedDirectMessage {
     content: DirectMessage,
@@ -174,7 +174,7 @@ impl SignedDirectMessage {
     }
 
     /// Content of the message.
-    #[cfg(any(all(test, feature = "mock_base"), feature = "mock_serialise"))]
+    #[cfg(feature = "mock_base")]
     pub fn content(&self) -> &DirectMessage {
         &self.content
     }
@@ -190,7 +190,7 @@ impl Debug for SignedDirectMessage {
     }
 }
 
-#[cfg(not(feature = "mock_serialise"))]
+#[cfg(not(feature = "mock_base"))]
 mod implementation {
     use super::*;
 
@@ -215,7 +215,7 @@ mod implementation {
     }
 }
 
-#[cfg(feature = "mock_serialise")]
+#[cfg(feature = "mock_base")]
 mod implementation {
     use super::*;
     use crate::{crypto::signing::SIGNATURE_LENGTH, unwrap};

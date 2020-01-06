@@ -52,5 +52,4 @@ libc = "~0.2.29"
 mock_base = ["lru_time_cache/fake_clock", "parsec/mock", "parsec/malice-detection", "ctrlc", "lazy_static"]
 mock_crypto = ["mock_base", "threshold_crypto/use-insecure-test-only-mock-crypto"]
 mock_parsec = ["mock_base"]
-mock_serialise = ["mock_base"]
-mock = ["mock_crypto", "mock_parsec", "mock_serialise"]
+mock = ["mock_crypto", "mock_parsec"]

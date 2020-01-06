@@ -456,22 +456,22 @@ pub trait Base: Display {
 pub fn to_network_bytes(
     message: &Message,
 ) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
-    #[cfg(not(feature = "mock_serialise"))]
+    #[cfg(not(feature = "mock_base"))]
     let result = Ok(NetworkBytes::from(
         serialisation::serialise(message).map_err(|err| (err, message))?,
     ));
 
-    #[cfg(feature = "mock_serialise")]
+    #[cfg(feature = "mock_base")]
     let result = Ok(NetworkBytes::new(message.clone()));
 
     result
 }
 
 pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
-    #[cfg(not(feature = "mock_serialise"))]
+    #[cfg(not(feature = "mock_base"))]
     let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
 
-    #[cfg(feature = "mock_serialise")]
+    #[cfg(feature = "mock_base")]
     let result = Ok((*data).clone());
 
     result
