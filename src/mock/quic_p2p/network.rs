@@ -7,8 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{node::Node, OurType};
-#[cfg(feature = "mock_parsec")]
-use crate::mock::parsec;
 use crate::{
     chain::NetworkParams,
     rng::{self, MainRng, Seed, SeedPrinter},
@@ -26,6 +24,9 @@ use std::{
     rc::{Rc, Weak},
     sync::Once,
 };
+
+#[cfg(feature = "mock")]
+use crate::mock::parsec;
 
 const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;
@@ -52,7 +53,7 @@ impl Network {
             }
         });
 
-        #[cfg(feature = "mock_parsec")]
+        #[cfg(feature = "mock")]
         parsec::init_mock();
 
         let seed = Seed::default();

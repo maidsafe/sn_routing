@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 /// Mock version of Parsec.
-#[cfg(feature = "mock_parsec")]
+#[cfg(feature = "mock")]
 pub(crate) mod parsec;
 
 /// Mock version of Quic-P2P
