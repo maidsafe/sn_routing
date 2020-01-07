@@ -17,7 +17,6 @@ use crate::{
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt;
-use threshold_crypto::Signature as BlsSignature;
 
 #[cfg(feature = "mock_base")]
 pub use self::overrides::Overrides;
@@ -47,14 +46,14 @@ impl IntoAccumulatingEvent for RelocateDetails {
 pub struct SignedRelocateDetails {
     content: RelocateDetails,
     proof: SectionProofChain,
-    signature: BlsSignature,
+    signature: bls::Signature,
 }
 
 impl SignedRelocateDetails {
     pub fn new(
         content: RelocateDetails,
         proof: SectionProofChain,
-        signature: BlsSignature,
+        signature: bls::Signature,
     ) -> Self {
         Self {
             content,

@@ -89,7 +89,6 @@ mod tests {
     use rand;
     use std::collections::BTreeMap;
     use std::net::SocketAddr;
-    use threshold_crypto::PublicKeySet;
 
     struct MessageAndSignatures {
         signed_msg: SignedRoutingMessage,
@@ -101,7 +100,7 @@ mod tests {
             secret_ids: &BTreeMap<XorName, FullId>,
             all_nodes: &BTreeMap<XorName, P2pNode>,
             secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
-            pk_set: &PublicKeySet,
+            pk_set: &bls::PublicKeySet,
         ) -> Self {
             let routing_msg = RoutingMessage {
                 src: Authority::Section(rand::random()),

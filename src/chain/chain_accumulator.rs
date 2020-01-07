@@ -14,7 +14,6 @@ use std::{
     mem,
     rc::Rc,
 };
-use threshold_crypto::{PublicKeySet, Signature};
 
 /// An unresponsive node is detected by conunting how many (defined by UNRESPONSIVE_THRESHOLD)
 /// missed votes among the certain number (defined by UNRESPONSIVE_WINDOW) of recent consensused
@@ -235,9 +234,9 @@ impl AccumulatingProof {
     pub fn check_and_combine_signatures(
         self,
         elder_info: &EldersInfo,
-        pk_set: &PublicKeySet,
+        pk_set: &bls::PublicKeySet,
         signed_bytes: &[u8],
-    ) -> Option<Signature> {
+    ) -> Option<bls::Signature> {
         let fr_and_shares = elder_info
             .member_ids()
             .enumerate()
@@ -308,7 +307,7 @@ mod test {
         ))
     }
 
-    fn random_section_info_sig_payload(rng: &mut MainRng) -> (EventSigPayload, PublicKeySet) {
+    fn random_section_info_sig_payload(rng: &mut MainRng) -> (EventSigPayload, bls::PublicKeySet) {
         let participants = 2;
         let first_secret_key_index = 0;
         let bls_keys = generate_bls_threshold_secret_key(rng, participants);

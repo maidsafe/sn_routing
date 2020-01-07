@@ -27,5 +27,5 @@ pub mod signing {
 
 /// Encryption and decryption
 pub mod encryption {
-    pub use threshold_crypto::{Ciphertext, PublicKey, SecretKey};
+    pub use bls::{Ciphertext, PublicKey, SecretKey};
 }

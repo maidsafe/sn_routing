@@ -23,7 +23,6 @@ use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
 };
-use threshold_crypto::{PublicKeyShare, SecretKeyShare, Signature, SignatureShare};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct AckMessagePayload {
@@ -48,14 +47,14 @@ pub struct SendAckMessagePayload {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct EventSigPayload {
     /// The public key share for that signature share
-    pub pub_key_share: PublicKeyShare,
+    pub pub_key_share: bls::PublicKeyShare,
     /// The signature share signing the SectionInfo.
-    pub sig_share: SignatureShare,
+    pub sig_share: bls::SignatureShare,
 }
 
 impl EventSigPayload {
     pub fn new<T: Serialize>(
-        key_share: &SecretKeyShare,
+        key_share: &bls::SecretKeyShare,
         payload: &T,
     ) -> Result<Self, RoutingError> {
         let sig_share = key_share.sign(&serialisation::serialise(&payload)?[..]);
@@ -67,7 +66,7 @@ impl EventSigPayload {
         })
     }
     pub fn new_for_section_key_info(
-        key_share: &SecretKeyShare,
+        key_share: &bls::SecretKeyShare,
         section_key_info: &SectionKeyInfo,
     ) -> Result<Self, RoutingError> {
         let sig_share = key_share.sign(&section_key_info.serialise_for_signature()?);
@@ -208,7 +207,7 @@ impl Debug for NetworkEvent {
 pub struct AccumulatedEvent {
     pub content: AccumulatingEvent,
     pub elders_change: EldersChange,
-    pub signature: Option<Signature>,
+    pub signature: Option<bls::Signature>,
 }
 
 impl AccumulatedEvent {
@@ -220,7 +219,7 @@ impl AccumulatedEvent {
         }
     }
 
-    pub fn with_signature(self, signature: Option<Signature>) -> Self {
+    pub fn with_signature(self, signature: Option<bls::Signature>) -> Self {
         Self { signature, ..self }
     }
 

@@ -24,7 +24,6 @@ use crate::{
 use log::LogLevel;
 use rand::Rng;
 use std::collections::BTreeSet;
-use threshold_crypto::Signature;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -63,7 +62,7 @@ pub trait Approved: Base {
     fn handle_member_relocated(
         &mut self,
         payload: RelocateDetails,
-        signature: Signature,
+        signature: bls::Signature,
         node_knowledge: u64,
         outbox: &mut dyn EventBox,
     );
@@ -478,7 +477,7 @@ pub trait Approved: Base {
     fn invoke_handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        signature: Option<Signature>,
+        signature: Option<bls::Signature>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if let Some(signature) = signature {
@@ -497,7 +496,7 @@ pub trait Approved: Base {
     fn handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        signature: Signature,
+        signature: bls::Signature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain().can_remove_member(&details.pub_id) {

@@ -13,10 +13,9 @@ use super::{DkgResult, PublicId};
 use crate::rng::RngCompat;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
-use threshold_crypto::SecretKeySet;
 
 pub(super) struct KeyGen<P: PublicId> {
-    instances: BTreeMap<BTreeSet<P>, SecretKeySet>,
+    instances: BTreeMap<BTreeSet<P>, bls::SecretKeySet>,
 }
 
 impl<P: PublicId> KeyGen<P> {
@@ -37,7 +36,7 @@ impl<P: PublicId> KeyGen<P> {
         let secret_key_set = self
             .instances
             .entry(participants)
-            .or_insert_with(|| SecretKeySet::random(threshold, &mut RngCompat(rng)));
+            .or_insert_with(|| bls::SecretKeySet::random(threshold, &mut RngCompat(rng)));
 
         let secret_key_share = index.map(|index| secret_key_set.secret_key_share(index));
         DkgResult::new(secret_key_set.public_keys(), secret_key_share)

@@ -11,6 +11,7 @@ version = "0.37.0"
 edition = "2018"
 
 [dependencies]
+bls = { package = "threshold_crypto", version = "~0.3.2" }
 bytes = "~0.4.12"
 config_file_handler = "~0.11.0"
 crossbeam-channel = "~0.3.9"
@@ -45,7 +46,6 @@ serde_json = "~1.0.8"
 structopt = "~0.2.18"
 term = "~0.4.6"
 tiny-keccak = "~1.5.0"
-threshold_crypto = "~0.3.2"
 unwrap = "~1.2.1"
 
 [dev-dependencies]
@@ -59,6 +59,6 @@ mock_base = [
     "parsec/malice-detection",
     "ctrlc",
     "lazy_static",
-    "threshold_crypto/use-insecure-test-only-mock-crypto"
+    "bls/use-insecure-test-only-mock-crypto"
 ]
 mock = ["mock_base"]

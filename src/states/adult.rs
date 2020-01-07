@@ -46,7 +46,6 @@ use std::{
     mem,
     net::SocketAddr,
 };
-use threshold_crypto::Signature;
 
 // Poke in a similar speed as GOSSIP_TIMEOUT
 const POKE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -682,7 +681,7 @@ impl Approved for Adult {
     fn handle_member_relocated(
         &mut self,
         _details: RelocateDetails,
-        _signature: Signature,
+        _signature: bls::Signature,
         _node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {

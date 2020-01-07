@@ -55,7 +55,6 @@ use std::{
     iter, mem,
     net::SocketAddr,
 };
-use threshold_crypto::{PublicKey, PublicKeySet, Signature};
 
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
@@ -350,7 +349,7 @@ impl Elder {
         Transition::Stay
     }
 
-    fn our_section_bls_keys(&self) -> &PublicKeySet {
+    fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
         self.chain.our_section_bls_keys()
     }
 
@@ -1045,7 +1044,7 @@ impl Elder {
     fn vote_for_section_info(
         &mut self,
         elders_info: EldersInfo,
-        section_key: PublicKey,
+        section_key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
         let key_info = SectionKeyInfo::from_elders_info(&elders_info, section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
@@ -1604,7 +1603,7 @@ impl Approved for Elder {
     fn handle_member_relocated(
         &mut self,
         details: RelocateDetails,
-        signature: Signature,
+        signature: bls::Signature,
         node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {

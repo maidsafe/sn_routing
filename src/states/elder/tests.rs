@@ -26,7 +26,6 @@ use crate::{
     unwrap, NetworkConfig, NetworkParams, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
-use threshold_crypto::SecretKeyShare;
 
 // Minimal number of votes to reach accumulation.
 const ACCUMULATE_VOTE_COUNT: usize = 5;
@@ -39,8 +38,8 @@ struct JoiningNodeInfo {
 }
 struct DkgToSectionInfo {
     participants: BTreeSet<PublicId>,
-    new_pk_set: PublicKeySet,
-    new_other_ids: Vec<(FullId, SecretKeyShare)>,
+    new_pk_set: bls::PublicKeySet,
+    new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     new_elder_info: EldersInfo,
 }
 
@@ -64,8 +63,8 @@ impl JoiningNodeInfo {
 struct ElderUnderTest {
     pub rng: MainRng,
     pub machine: StateMachine,
-    pub full_id: (FullId, SecretKeyShare),
-    pub other_ids: Vec<(FullId, SecretKeyShare)>,
+    pub full_id: (FullId, bls::SecretKeyShare),
+    pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
 }
@@ -356,7 +355,7 @@ impl ElderUnderTest {
 }
 
 fn new_elder_state(
-    (full_id, secret_key_share): (&FullId, &SecretKeyShare),
+    (full_id, secret_key_share): (&FullId, &bls::SecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
     network_service: NetworkService,
     timer: Timer,
@@ -397,7 +396,7 @@ fn new_elder_state(
 
 fn make_state_machine(
     rng: &mut MainRng,
-    full_id: (&FullId, &SecretKeyShare),
+    full_id: (&FullId, &bls::SecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {

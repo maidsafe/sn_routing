@@ -34,7 +34,6 @@ use std::{
     iter, mem,
     net::SocketAddr,
 };
-use threshold_crypto as bls;
 
 #[cfg(feature = "mock_base")]
 use crate::crypto::Digest256;
@@ -1822,7 +1821,6 @@ mod tests {
         collections::{BTreeMap, HashMap},
         str::FromStr,
     };
-    use threshold_crypto::SecretKeySet;
 
     enum SecInfoGen<'a> {
         New(Prefix<XorName>, usize),
@@ -1890,7 +1888,7 @@ mod tests {
     fn gen_chain<T>(
         rng: &mut MainRng,
         sections: T,
-    ) -> (Chain, HashMap<PublicId, FullId>, SecretKeySet)
+    ) -> (Chain, HashMap<PublicId, FullId>, bls::SecretKeySet)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -1944,7 +1942,7 @@ mod tests {
         (chain, full_ids, secret_key_set)
     }
 
-    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, SecretKeySet) {
+    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, bls::SecretKeySet) {
         let elder_size: usize = 7;
         gen_chain(
             rng,

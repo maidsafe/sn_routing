@@ -269,7 +269,7 @@ fn dkg() {
 
         assert_eq!(
             public_key_set.combine_signatures(iter::once((index, &sig_share))),
-            Err(threshold_crypto::error::Error::NotEnoughShares)
+            Err(bls::error::Error::NotEnoughShares)
         );
     }
 

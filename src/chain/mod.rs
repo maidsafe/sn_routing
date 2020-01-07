@@ -18,8 +18,6 @@ mod network_event;
 mod proof;
 mod shared_state;
 
-#[cfg(feature = "mock_base")]
-pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
 pub use self::{
     chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
     chain_accumulator::AccumulatingProof,
@@ -34,18 +32,18 @@ pub use self::{
     shared_state::{SectionKeyInfo, SectionProofChain},
 };
 use crate::PublicId;
-#[cfg(feature = "mock_base")]
-use crate::{error::RoutingError, id::P2pNode, Prefix, XorName};
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
+
 #[cfg(feature = "mock_base")]
-use threshold_crypto::PublicKey;
-use threshold_crypto::PublicKeySet;
+pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
+#[cfg(feature = "mock_base")]
+use crate::{error::RoutingError, id::P2pNode, Prefix, XorName};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
     pub first_info: EldersInfo,
-    pub first_bls_keys: PublicKeySet,
+    pub first_bls_keys: bls::PublicKeySet,
     pub first_state_serialized: Vec<u8>,
     pub first_ages: BTreeMap<PublicId, AgeCounter>,
     pub latest_info: EldersInfo,
@@ -69,7 +67,7 @@ impl Debug for GenesisPfxInfo {
 /// Test helper to create arbitrary proof.
 pub fn section_proof_chain_from_elders_info(
     elders_info: &EldersInfo,
-    key: PublicKey,
+    key: bls::PublicKey,
 ) -> SectionProofChain {
     SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(elders_info, key))
 }
