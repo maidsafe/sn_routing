@@ -102,6 +102,7 @@ pub mod mock;
 #[cfg(feature = "mock_base")]
 pub mod rng;
 
+/// Mock network
 #[cfg(feature = "mock_base")]
 pub use self::{
     authority::Authority,
@@ -110,6 +111,7 @@ pub use self::{
         section_proof_chain_from_elders_info, NetworkParams, SectionKeyShare, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    mock::quic_p2p,
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
     xor_space::Xorable,
@@ -161,12 +163,6 @@ mod crypto;
 #[cfg(feature = "mock_base")]
 use self::mock::crypto;
 
-// Networking layer
-#[cfg(feature = "mock_base")]
-use self::mock::quic_p2p;
-#[cfg(not(feature = "mock_base"))]
-use quic_p2p;
-
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
 /// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
@@ -184,6 +180,8 @@ const SAFE_SECTION_SIZE: usize = 100;
 const ELDER_SIZE: usize = 7;
 
 use self::quic_p2p::Event as NetworkEvent;
+#[cfg(not(feature = "mock_base"))]
+use quic_p2p;
 #[cfg(any(test, feature = "mock_base"))]
 use unwrap::unwrap;
 
