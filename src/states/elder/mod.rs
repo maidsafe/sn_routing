@@ -413,7 +413,13 @@ impl Elder {
             self.parsec_map
                 .our_unpolled_observations()
                 .filter_map(|obs| match obs {
-                    parsec::Observation::OpaquePayload(event) => Some(event),
+                    parsec::Observation::OpaquePayload(event) => {
+                        if !completed_events.contains(&event.payload) {
+                            Some(event)
+                        } else {
+                            None
+                        }
+                    }
 
                     parsec::Observation::Genesis { .. }
                     | parsec::Observation::Add { .. }
@@ -432,7 +438,7 @@ impl Elder {
             .iter()
             .filter(|event| match &event.payload {
                 // Events to re-process
-                AccumulatingEvent::Online(_) => !completed_events.contains(&event.payload),
+                AccumulatingEvent::Online(_) => true,
                 // Events to re-insert
                 AccumulatingEvent::Offline(_)
                 | AccumulatingEvent::AckMessage(_)
@@ -453,22 +459,17 @@ impl Elder {
             .into_iter()
             .filter(|event| {
                 match event.payload {
-                    // Only re-vote not yet accumulated events and still relevant to our new prefix.
+                    // Only re-vote if still relevant to our new prefix.
                     AccumulatingEvent::Online(ref payload) => {
                         our_pfx.matches(payload.p2p_node.name())
-                            && !completed_events.contains(&event.payload)
                     }
-                    AccumulatingEvent::Offline(pub_id) => {
-                        our_pfx.matches(pub_id.name()) && !completed_events.contains(&event.payload)
-                    }
+                    AccumulatingEvent::Offline(pub_id) => our_pfx.matches(pub_id.name()),
                     AccumulatingEvent::AckMessage(ref payload) => {
                         our_pfx.matches(&payload.dst_name)
-                            && !completed_events.contains(&event.payload)
                     }
                     AccumulatingEvent::Relocate(ref details)
                     | AccumulatingEvent::RelocatePrepare(ref details, _) => {
                         our_pfx.matches(details.pub_id.name())
-                            && !completed_events.contains(&event.payload)
                     }
                     // Drop: no longer relevant after prefix change.
                     AccumulatingEvent::StartDkg(_) | AccumulatingEvent::ParsecPrune => false,
