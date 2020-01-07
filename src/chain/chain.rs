@@ -20,7 +20,8 @@ use crate::{
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
     utils::LogIdent,
-    ConnectionInfo, Prefix, XorName, Xorable,
+    xor_space::Xorable,
+    ConnectionInfo, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -1804,13 +1805,14 @@ impl EldersChangeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER};
+    use super::super::{
+        quorum_count, EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER,
+    };
     use super::*;
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_bls_threshold_secret_key,
-        quorum_count, rng,
-        rng::MainRng,
+        rng::{self, MainRng},
         unwrap,
         xor_space::{Prefix, XorName},
         ConnectionInfo,

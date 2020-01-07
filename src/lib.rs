@@ -81,7 +81,6 @@ mod macros;
 // Public API
 // ############################################################################
 pub use self::{
-    chain::quorum_count,
     error::{InterfaceError, RoutingError},
     event::{ClientEvent, ConnectEvent, Event},
     event_stream::EventStream,
@@ -89,7 +88,7 @@ pub use self::{
     node::{Node, NodeBuilder},
     pause::PausedState,
     quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
-    xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
+    xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 
 // ############################################################################
@@ -107,12 +106,13 @@ pub mod rng;
 pub use self::{
     authority::Authority,
     chain::{
-        delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
-        NetworkParams, SectionKeyShare, MIN_AGE,
+        delivery_group_size, elders_info_for_test, quorum_count,
+        section_proof_chain_from_elders_info, NetworkParams, SectionKeyShare, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
+    xor_space::Xorable,
 };
 
 #[cfg(feature = "mock_base")]
