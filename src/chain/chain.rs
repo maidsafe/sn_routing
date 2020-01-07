@@ -661,10 +661,9 @@ impl Chain {
         self.state.split_in_progress
     }
 
-    /// Returns whether a membership change is in progress (a node leaving, joining or being
-    /// relocated).
-    pub fn membership_change_in_progress(&self) -> bool {
-        self.churn_in_progress || self.relocation_in_progress
+    /// Returns whether a churn (elders change) is in progress.
+    pub fn churn_in_progress(&self) -> bool {
+        self.churn_in_progress
     }
 
     /// Neighbour infos signed by our section
