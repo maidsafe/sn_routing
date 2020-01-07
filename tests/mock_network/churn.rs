@@ -8,10 +8,10 @@
 
 use super::{
     count_sections, create_connected_nodes, create_connected_nodes_until_split, current_sections,
-    gen_elder_index, gen_range, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+    gen_elder_index, gen_range, gen_vec, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use itertools::Itertools;
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use routing::{
     mock::Network,
     quorum_count,
@@ -72,14 +72,13 @@ fn remove_unresponsive_node() {
     // Sending some user events to create a sequence of observations.
     let mut responded = 0;
     for i in 0..UNRESPONSIVE_WINDOW {
-        let event: Vec<_> = rng.gen_iter().take(100).collect();
+        let event = gen_vec(&mut rng, 100);
         nodes.iter_mut().for_each(|node| {
             if node.name() == non_responsive_name {
                 // `chain_accumulator` gets reset during parsec pruning, which will reset the
                 // tracking of unresponsiveness as well. So this test has to assume there is no
                 // parsec pruning being carried out.
-                if responded < UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 1
-                    && rng.gen_weighted_bool(3)
+                if responded < UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 1 && rng.gen_bool(0.3)
                 {
                     responded += 1;
                 } else {
@@ -487,7 +486,7 @@ fn check_added_indices(nodes: &mut [TestNode], new_indices: BTreeSet<usize>) -> 
 
 // Shuffle nodes excluding the first node
 fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut [TestNode]) {
-    rng.shuffle(&mut nodes[1..]);
+    nodes[1..].shuffle(rng);
 }
 
 // Churns the given network randomly. Returns any newly added indices and the
@@ -760,7 +759,7 @@ fn setup_expectations<R: Rng>(
     elder_size: usize,
 ) -> Expectations {
     // Create random content and pick random sending and receiving nodes.
-    let content: Vec<_> = rng.gen_iter().take(100).collect();
+    let content = gen_vec(rng, 100);
     let index0 = gen_elder_index(rng, nodes);
     let index1 = gen_elder_index(rng, nodes);
     let auth_n0 = Authority::Node(nodes[index0].name());

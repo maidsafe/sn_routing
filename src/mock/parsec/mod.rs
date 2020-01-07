@@ -23,7 +23,7 @@ pub use parsec::{DkgResult, DkgResultWrapper, NetworkEvent, Proof, PublicId, Sec
 
 use self::{observation::ObservationHolder, state::SectionState};
 use crate::crypto::Digest256;
-use rand::Rng;
+use rand::RngCore;
 use std::{
     collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
@@ -44,7 +44,7 @@ pub struct Parsec<T: NetworkEvent, S: SecretId> {
     first_unconsensused: usize,
     first_unpolled: usize,
     observations: BTreeMap<ObservationHolder<T, S::PublicId>, ObservationInfo>,
-    rng: Box<dyn Rng>,
+    rng: Box<dyn RngCore>,
 }
 
 impl<T, S> Parsec<T, S>
@@ -59,7 +59,7 @@ where
         genesis_group: &BTreeSet<S::PublicId>,
         genesis_related_info: Vec<u8>,
         consensus_mode: ConsensusMode,
-        secure_rng: Box<dyn Rng>,
+        secure_rng: Box<dyn RngCore>,
     ) -> Self {
         let mut parsec = Self {
             section_hash,
@@ -88,7 +88,7 @@ where
         genesis_group: &BTreeSet<S::PublicId>,
         _section: &BTreeSet<S::PublicId>,
         consensus_mode: ConsensusMode,
-        secure_rng: Box<dyn Rng>,
+        secure_rng: Box<dyn RngCore>,
     ) -> Self {
         Self {
             section_hash,

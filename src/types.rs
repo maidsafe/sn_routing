@@ -7,7 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::xor_space::XorName;
-use rand::{Rand, Rng};
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 
 /// Unique ID for messages
 ///
@@ -64,9 +67,9 @@ impl Default for MessageId {
     }
 }
 
-impl Rand for MessageId {
-    fn rand<R: Rng>(rng: &mut R) -> Self {
-        Self(rng.gen())
+impl Distribution<MessageId> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> MessageId {
+        rng.gen()
     }
 }
 

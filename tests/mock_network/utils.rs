@@ -9,7 +9,10 @@
 use crossbeam_channel as mpmc;
 use fake_clock::FakeClock;
 use itertools::Itertools;
-use rand::Rng;
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng,
+};
 use routing::{
     mock::Network, test_consts, Authority, ConnectEvent, Event, EventStream, FullId, NetworkConfig,
     Node, NodeBuilder, PausedState, Prefix, PublicId, RelocationOverrides, XorName, Xorable,
@@ -830,9 +833,17 @@ pub fn verify_invariant_for_all_nodes(network: &Network, nodes: &mut [TestNode])
     );
 }
 
+// Generate a vector of random T of the given length.
+pub fn gen_vec<R: Rng, T>(rng: &mut R, size: usize) -> Vec<T>
+where
+    Standard: Distribution<T>,
+{
+    rng.sample_iter(&Standard).take(size).collect()
+}
+
 // Generate a vector of random bytes of the given length.
 pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
-    rng.gen_iter().take(size).collect()
+    gen_vec(rng, size)
 }
 
 fn sanity_check(prefix_lengths: &[usize]) {

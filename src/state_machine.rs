@@ -26,6 +26,8 @@ use crate::{
 use crate::{chain::Chain, rng::MainRng, Authority};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
+use rand::seq::SliceRandom;
+#[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -570,7 +572,6 @@ impl StateMachine {
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
     pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
         use itertools::Itertools;
-        use rand::Rng;
         use std::iter;
 
         if !self.is_running {
@@ -614,7 +615,7 @@ impl StateMachine {
             .chain(iter::repeat(false).take(events.len()))
             .collect_vec();
 
-        self.state.rng().shuffle(&mut positions);
+        positions.shuffle(&mut self.state.rng());
 
         let mut interleaved = positions
             .iter()

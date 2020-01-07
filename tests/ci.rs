@@ -296,8 +296,8 @@ pub struct MutableData {
 }
 
 fn gen_mutable_data<R: Rng>(rng: &mut R) -> MutableData {
-    let key: Vec<u8> = rng.gen_iter().take(10).collect();
-    let value: Vec<u8> = rng.gen_iter().take(10).collect();
+    let key = gen_vec(&mut rng, 10);
+    let value = gen_vec(&mut rng, 10);
 
     MutableData {
         key: key,
