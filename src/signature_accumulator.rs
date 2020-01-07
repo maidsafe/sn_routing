@@ -28,12 +28,7 @@ impl SignatureAccumulator {
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
     pub fn add_proof(&mut self, msg: SignedRoutingMessage) -> Option<SignedRoutingMessage> {
         self.remove_expired();
-        let hash = match msg.routing_message().hash() {
-            Ok(hash) => hash,
-            _ => {
-                return None;
-            }
-        };
+        let hash = msg.routing_message().hash().ok()?;
         if let Some(&mut (ref mut existing_msg, _)) = self.msgs.get_mut(&hash) {
             if let Some(existing_msg) = existing_msg {
                 existing_msg.add_signature_shares(msg);
@@ -107,7 +102,7 @@ mod tests {
             all_nodes: &BTreeMap<XorName, P2pNode>,
             secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
             pk_set: &PublicKeySet,
-        ) -> MessageAndSignatures {
+        ) -> Self {
             let routing_msg = RoutingMessage {
                 src: Authority::Section(rand::random()),
                 dst: Authority::Section(rand::random()),
@@ -145,7 +140,7 @@ mod tests {
                 })
                 .collect();
 
-            MessageAndSignatures {
+            Self {
                 signed_msg,
                 signature_msgs,
             }
@@ -157,7 +152,7 @@ mod tests {
     }
 
     impl Env {
-        fn new() -> Env {
+        fn new() -> Self {
             let mut rng = rng::new();
 
             let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
@@ -195,9 +190,7 @@ mod tests {
             let msgs_and_sigs = (0..5)
                 .map(|_| MessageAndSignatures::new(&full_ids, &pub_ids, &secret_ids, &pk_set))
                 .collect();
-            Env {
-                msgs_and_sigs: msgs_and_sigs,
-            }
+            Self { msgs_and_sigs }
         }
     }
 
@@ -225,7 +218,7 @@ mod tests {
 
                 let result = match signature_msg.content() {
                     DirectMessage::MessageSignature(msg) => sig_accumulator.add_proof(msg.clone()),
-                    ref unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
+                    unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
                 if let Some(mut returned_msg) = result {

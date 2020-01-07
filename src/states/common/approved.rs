@@ -269,8 +269,7 @@ pub trait Approved: Base {
                         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
                     }
 
-                    self.chain_mut()
-                        .handle_genesis_event(&group, &related_info)?;
+                    self.chain_mut().handle_genesis_event(group, related_info)?;
                     self.set_pfx_successfully_polled(true);
 
                     continue;
@@ -414,7 +413,7 @@ pub trait Approved: Base {
     fn check_voting_status(&mut self) {
         let unresponsive_nodes = self.chain_mut().check_vote_status();
         let log_ident = self.log_ident();
-        for pub_id in unresponsive_nodes.iter() {
+        for pub_id in &unresponsive_nodes {
             info!("{} Voting for unresponsive node {:?}", log_ident, pub_id);
             self.parsec_map_mut().vote_for(
                 AccumulatingEvent::Offline(*pub_id).into_network_event(),
@@ -527,7 +526,7 @@ pub trait Approved: Base {
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
         use itertools::Itertools;
-        if !self.chain().check_trust(&details.proof()) {
+        if !self.chain().check_trust(details.proof()) {
             log_or_panic!(
                 LogLevel::Error,
                 "{} - Untrusted {:?} Proof: {:?} --- [{:?}]",

@@ -64,7 +64,7 @@ pub mod signing {
     pub struct Signature([u8; SIGNATURE_LENGTH]);
 
     impl Signature {
-        pub fn from_bytes(bytes: &[u8]) -> Result<Signature, SignatureError> {
+        pub fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
             if bytes.len() < SIGNATURE_LENGTH {
                 Err(SignatureError)
             } else {
@@ -116,7 +116,7 @@ pub mod signing {
     impl<'de> Deserialize<'de> for Signature {
         fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
             let bytes: &[u8] = Deserialize::deserialize(deserialiser)?;
-            Signature::from_bytes(bytes).map_err(de::Error::custom)
+            Self::from_bytes(bytes).map_err(de::Error::custom)
         }
     }
 

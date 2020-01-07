@@ -71,7 +71,7 @@ pub fn section_proof_chain_from_elders_info(
     elders_info: &EldersInfo,
     key: PublicKey,
 ) -> SectionProofChain {
-    SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(&elders_info, key))
+    SectionProofChain::from_genesis(SectionKeyInfo::from_elders_info(elders_info, key))
 }
 
 #[cfg(feature = "mock_base")]

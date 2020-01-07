@@ -26,16 +26,16 @@ enum TargetState {
 impl TargetState {
     pub fn is_complete(&self) -> bool {
         match *self {
-            TargetState::Failed(x) => x > MAX_RESENDS,
-            TargetState::Sent => true,
-            TargetState::Sending(_) => false,
+            Self::Failed(x) => x > MAX_RESENDS,
+            Self::Sent => true,
+            Self::Sending(_) => false,
         }
     }
 
     pub fn is_sending(&self) -> bool {
         match *self {
-            TargetState::Failed(_) | TargetState::Sent => false,
-            TargetState::Sending(_) => true,
+            Self::Failed(_) | Self::Sent => false,
+            Self::Sending(_) => true,
         }
     }
 }

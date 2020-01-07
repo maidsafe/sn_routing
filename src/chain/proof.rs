@@ -39,7 +39,7 @@ impl Proof {
     #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Serialize>(full_id: &FullId, payload: &S) -> Result<Self> {
         let sig = full_id.sign(&serialisation::serialise(&payload)?[..]);
-        Ok(Proof {
+        Ok(Self {
             pub_id: *full_id.public_id(),
             sig,
         })

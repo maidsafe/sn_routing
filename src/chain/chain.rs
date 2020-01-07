@@ -39,7 +39,7 @@ use threshold_crypto as bls;
 use crate::crypto::Digest256;
 
 /// Returns the delivery group size based on the section size `n`
-pub fn delivery_group_size(n: usize) -> usize {
+pub const fn delivery_group_size(n: usize) -> usize {
     // this is an integer that is ≥ n/3
     (n + 2) / 3
 }
@@ -86,7 +86,7 @@ impl Chain {
         self.network_cfg.safe_section_size
     }
 
-    /// Returns the full NetworkParams structure (if present)
+    /// Returns the full `NetworkParams` structure (if present)
     pub fn network_cfg(&self) -> NetworkParams {
         self.network_cfg
     }
@@ -212,8 +212,8 @@ impl Chain {
             .chain_accumulator
             .add_proof(acc_event, proof, signature)
         {
-            Err(InsertError::AlreadyComplete) => {
-                // Ignore further votes for completed events.
+            Ok(()) | Err(InsertError::AlreadyComplete) => {
+                // Proof added or event already completed.
             }
             Err(InsertError::ReplacedAlreadyInserted) => {
                 // TODO: If detecting duplicate vote from peer, penalise.
@@ -224,9 +224,6 @@ impl Chain {
                     event,
                     self.chain_accumulator.incomplete_events().collect_vec()
                 );
-            }
-            Ok(()) => {
-                // Proof added.
             }
         }
         Ok(())
@@ -1338,13 +1335,13 @@ impl Chain {
         connected_peers: &[&XorName],
     ) -> Vec<XorName> {
         self.all_sections()
-            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
+            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
             .into_iter()
             .flat_map(|(_, si)| {
                 si.member_names()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
             })
-            .filter(|name| connected_peers.contains(&name))
+            .filter(|name| connected_peers.contains(name))
             .take(count)
             .copied()
             .collect_vec()
@@ -1359,7 +1356,7 @@ impl Chain {
         connected_peers: &[&XorName],
     ) -> Option<Vec<XorName>> {
         let result = self.closest_known_names(name, count, connected_peers);
-        if result.contains(&&self.our_id().name()) {
+        if result.contains(self.our_id().name()) {
             Some(result)
         } else {
             None
@@ -1371,7 +1368,7 @@ impl Chain {
     pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
         let mut best_pfx = self.our_prefix();
         let mut best_info = self.our_info();
-        for (ref pfx, ref info) in &self.state.neighbour_infos {
+        for (pfx, info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
             if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
                 best_pfx = pfx;
@@ -1656,7 +1653,7 @@ impl Chain {
     pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
             let mut section: BTreeSet<_> = self.our_info().member_names().copied().collect();
-            let _ = section.remove(&self.our_id().name());
+            let _ = section.remove(self.our_id().name());
             Some(section)
         } else {
             None
@@ -1665,7 +1662,7 @@ impl Chain {
 
     /// Returns their_knowledge
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
-        &self.state.get_their_knowledge()
+        self.state.get_their_knowledge()
     }
 
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
@@ -1673,7 +1670,7 @@ impl Chain {
         *iter::once(self.our_prefix())
             .chain(self.state.neighbour_infos.keys())
             .min_by_key(|prefix| prefix.bit_count())
-            .unwrap_or(&self.our_prefix())
+            .unwrap_or_else(|| self.our_prefix())
     }
 
     /// Returns the age counter of the given member or `None` if not a member.
@@ -1736,7 +1733,7 @@ pub struct SectionKeyShare {
 impl SectionKeyShare {
     /// Create a new share with associated share index.
     #[cfg(any(test, feature = "mock_base"))]
-    pub fn new_with_position(index: usize, key: bls::SecretKeyShare) -> Self {
+    pub const fn new_with_position(index: usize, key: bls::SecretKeyShare) -> Self {
         Self { index, key }
     }
 

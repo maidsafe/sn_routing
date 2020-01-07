@@ -447,7 +447,7 @@ fn randomized_static_network() {
 struct PeerId(usize);
 
 impl SecretId for PeerId {
-    type PublicId = PeerId;
+    type PublicId = Self;
 
     fn public_id(&self) -> &Self::PublicId {
         self
@@ -506,7 +506,7 @@ impl Peer {
 
 impl From<Parsec<Payload, PeerId>> for Peer {
     fn from(parsec: Parsec<Payload, PeerId>) -> Self {
-        Peer {
+        Self {
             parsec,
             blocks: vec![],
         }

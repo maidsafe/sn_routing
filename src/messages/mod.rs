@@ -56,8 +56,8 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
-    pub fn new(content: SignedRoutingMessage) -> Result<HopMessage> {
-        Ok(HopMessage { content: content })
+    pub fn new(content: SignedRoutingMessage) -> Result<Self> {
+        Ok(Self { content })
     }
 }
 
@@ -164,10 +164,10 @@ pub enum SecurityMetadata {
 impl Debug for SecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match &self {
-            SecurityMetadata::None => write!(formatter, "None"),
-            SecurityMetadata::Partial(pmd) => write!(formatter, "{:?}", pmd),
-            SecurityMetadata::Full(smd) => write!(formatter, "{:?}", smd),
-            SecurityMetadata::Single(smd) => write!(formatter, "{:?}", smd),
+            Self::None => write!(formatter, "None"),
+            Self::Partial(pmd) => write!(formatter, "{:?}", pmd),
+            Self::Full(smd) => write!(formatter, "{:?}", smd),
+            Self::Single(smd) => write!(formatter, "{:?}", smd),
         }
     }
 }
@@ -188,7 +188,7 @@ impl SignedRoutingMessage {
         section_share: &SectionKeyShare,
         pk_set: PublicKeySet,
         proof: SectionProofChain,
-    ) -> Result<SignedRoutingMessage> {
+    ) -> Result<Self> {
         let mut signatures = BTreeSet::new();
         let sig = section_share.key.sign(&serialise(&content)?);
         let _ = signatures.insert((section_share.index, sig));
@@ -204,10 +204,7 @@ impl SignedRoutingMessage {
     }
 
     /// Creates a `SignedRoutingMessage` security metadata from a single source
-    pub fn single_source(
-        content: RoutingMessage,
-        full_id: &FullId,
-    ) -> Result<SignedRoutingMessage> {
+    pub fn single_source(content: RoutingMessage, full_id: &FullId) -> Result<Self> {
         let single_metadata = SingleSrcSecurityMetadata {
             public_id: *full_id.public_id(),
             signature: full_id.sign(&serialise(&content)?),
@@ -221,7 +218,7 @@ impl SignedRoutingMessage {
 
     /// Creates a `SignedRoutingMessage` without security metadata
     #[cfg(all(test, feature = "mock_base"))]
-    pub fn insecure(content: RoutingMessage) -> SignedRoutingMessage {
+    pub fn insecure(content: RoutingMessage) -> Self {
         Self {
             content,
             security_metadata: SecurityMetadata::None,
@@ -303,7 +300,7 @@ impl SignedRoutingMessage {
     }
 
     /// Adds all signatures from the given message, without validating them.
-    pub fn add_signature_shares(&mut self, mut msg: SignedRoutingMessage) {
+    pub fn add_signature_shares(&mut self, mut msg: Self) {
         if self.content.src.is_multiple() {
             if let (
                 SecurityMetadata::Partial(self_partial),

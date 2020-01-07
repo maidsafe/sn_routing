@@ -44,7 +44,7 @@ pub struct LogIdent(String);
 
 impl LogIdent {
     pub fn new<T: Display + ?Sized>(node: &T) -> Self {
-        LogIdent(format!("{}", node))
+        Self(format!("{}", node))
     }
 }
 

@@ -1183,7 +1183,7 @@ impl Elder {
             }
         };
 
-        if !list.contains(&self.name()) {
+        if !list.contains(self.name()) {
             None
         } else {
             let len = list.len();
@@ -1387,9 +1387,10 @@ impl Base for Elder {
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        use crate::messages::DirectMessage::*;
+
         let pub_id = *p2p_node.public_id();
 
-        use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
             BootstrapRequest(name) => {
@@ -1706,7 +1707,7 @@ impl Approved for Elder {
         let elders_info = self.chain.our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
-        let is_member = elders_info.is_member(&self.full_id.public_id());
+        let is_member = elders_info.is_member(self.full_id.public_id());
 
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 

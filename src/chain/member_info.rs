@@ -35,7 +35,7 @@ impl AgeCounter {
 }
 
 impl Default for AgeCounter {
-    fn default() -> AgeCounter {
+    fn default() -> Self {
         MIN_AGE_COUNTER
     }
 }

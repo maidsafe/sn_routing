@@ -519,7 +519,7 @@ mod tests {
             pub_id: &id::PublicId,
             log_ident: &LogIdent,
         ) {
-            let _ = parsec_map.handle_request(msg_version, self.clone(), *pub_id, &log_ident);
+            let _ = parsec_map.handle_request(msg_version, self.clone(), *pub_id, log_ident);
         }
     }
 
@@ -531,7 +531,7 @@ mod tests {
             pub_id: &id::PublicId,
             log_ident: &LogIdent,
         ) {
-            let _ = parsec_map.handle_response(msg_version, self.clone(), *pub_id, &log_ident);
+            let _ = parsec_map.handle_response(msg_version, self.clone(), *pub_id, log_ident);
         }
     }
 
@@ -571,7 +571,7 @@ mod tests {
         // Sometimes send to an old parsec
         let msg_version = number_of_parsecs - parsec_age;
 
-        handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, &pub_id, &log_ident);
+        handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, pub_id, &log_ident);
 
         msg.handle(&mut parsec_map, msg_version, pub_id, &log_ident);
         assert_eq!(parsec_map.needs_pruning(), prune_needed);

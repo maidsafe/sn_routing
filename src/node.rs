@@ -247,8 +247,8 @@ impl Node {
         let _ = self.poll();
 
         let action = Action::SendMessage {
-            src: src,
-            dst: dst,
+            src,
+            dst,
             content,
             result_tx: self.interface_result_tx.clone(),
         };

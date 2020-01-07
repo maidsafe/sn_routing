@@ -224,7 +224,7 @@ impl SharedState {
 
     /// Returns our own current section info.
     pub fn our_info(&self) -> &EldersInfo {
-        &self.our_infos.last()
+        self.our_infos.last()
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
@@ -564,7 +564,7 @@ impl SectionProofChain {
         iter::once(&self.genesis_key_info).chain(self.blocks.iter().map(|block| block.key_info()))
     }
 
-    pub fn slice_from(&self, first_index: usize) -> SectionProofChain {
+    pub fn slice_from(&self, first_index: usize) -> Self {
         if first_index == 0 || self.blocks.is_empty() {
             return self.clone();
         }
@@ -579,7 +579,7 @@ impl SectionProofChain {
             self.blocks[block_first_index..].to_vec()
         };
 
-        SectionProofChain {
+        Self {
             genesis_key_info,
             blocks,
         }

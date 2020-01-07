@@ -41,7 +41,7 @@ impl VoteStatuses {
         let event_rc = Rc::new(event);
         for id in non_voters {
             let events = self.unvoted.entry(id).or_insert_with(BTreeSet::new);
-            let _ = events.insert(event_rc.clone());
+            let _ = events.insert(Rc::clone(&event_rc));
         }
         self.tracked_events.push_back(event_rc);
 
@@ -207,8 +207,8 @@ pub struct AccumulatingProof {
 
 impl AccumulatingProof {
     #[allow(unused)]
-    pub fn from_proof_set(parsec_proofs: ProofSet) -> AccumulatingProof {
-        AccumulatingProof {
+    pub fn from_proof_set(parsec_proofs: ProofSet) -> Self {
+        Self {
             parsec_proofs,
             sig_shares: Default::default(),
         }

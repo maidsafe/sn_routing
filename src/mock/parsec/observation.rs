@@ -51,11 +51,9 @@ impl<T: NetworkEvent, P: PublicId> ObservationHolder<T, P> {
 impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
     type Target = Rc<Observation<T, P>>;
     fn deref(&self) -> &Self::Target {
-        match *self {
-            ObservationHolder::Single {
-                ref observation, ..
-            } => observation,
-            ObservationHolder::Supermajority(ref observation) => observation,
+        match self {
+            ObservationHolder::Single { observation, .. }
+            | ObservationHolder::Supermajority(observation) => observation,
         }
     }
 }

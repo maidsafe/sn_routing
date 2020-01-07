@@ -33,10 +33,10 @@ pub struct MessageFilter<Message> {
 impl<Message: Hash> MessageFilter<Message> {
     /// Constructor for time based `MessageFilter`.
     pub fn with_expiry_duration(time_to_live: Duration) -> MessageFilter<Message> {
-        MessageFilter {
+        Self {
             count: HashMap::new(),
             timeout_queue: VecDeque::new(),
-            time_to_live: time_to_live,
+            time_to_live,
             phantom: PhantomData,
         }
     }
@@ -156,9 +156,9 @@ mod tests {
         }
 
         impl Default for Temp {
-            fn default() -> Temp {
+            fn default() -> Self {
                 let mut rng = rand::thread_rng();
-                Temp {
+                Self {
                     id: (0u8..255).choose_multiple(&mut rng, 64),
                 }
             }

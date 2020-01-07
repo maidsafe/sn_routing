@@ -37,7 +37,7 @@ pub struct FullId {
 
 impl FullId {
     /// Construct a `FullId` with randomly generated keys.
-    pub fn gen(rng: &mut MainRng) -> FullId {
+    pub fn gen(rng: &mut MainRng) -> Self {
         let mut rng = RngCompat(rng);
 
         let secret_signing_key = signing::SecretKey::generate(&mut rng);
@@ -48,7 +48,7 @@ impl FullId {
 
         let public_id = PublicId::new(public_signing_key, public_encryption_key);
 
-        FullId {
+        Self {
             public_id,
             secret_keys: Rc::new(SecretKeys {
                 signing: secret_signing_key,
@@ -59,7 +59,7 @@ impl FullId {
 
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
     /// FIXME(Fraser) - time limit this function? Document behaviour
-    pub fn within_range(rng: &mut MainRng, range: &RangeInclusive<XorName>) -> FullId {
+    pub fn within_range(rng: &mut MainRng, range: &RangeInclusive<XorName>) -> Self {
         let mut rng = RngCompat(rng);
 
         loop {
@@ -164,7 +164,7 @@ impl Serialize for PublicId {
 impl<'de> Deserialize<'de> for PublicId {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
         let (public_signing_key, public_encryption_key) = Deserialize::deserialize(deserialiser)?;
-        Ok(PublicId::new(public_signing_key, public_encryption_key))
+        Ok(Self::new(public_signing_key, public_encryption_key))
     }
 }
 
@@ -200,8 +200,8 @@ impl PublicId {
     fn new(
         public_signing_key: signing::PublicKey,
         public_encryption_key: encryption::PublicKey,
-    ) -> PublicId {
-        PublicId {
+    ) -> Self {
+        Self {
             name: name_from_key(&public_signing_key),
             public_signing_key,
             public_encryption_key,
@@ -249,7 +249,7 @@ impl P2pNode {
 
     /// Returns the `XorName` of the underlying `PublicId`.
     pub fn name(&self) -> &XorName {
-        &self.public_id.name()
+        self.public_id.name()
     }
 
     /// Returns the `ConnectionInfo`.

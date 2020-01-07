@@ -44,16 +44,16 @@ pub enum Action {
 impl Debug for Action {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Action::SendMessage { ref content, .. } => write!(
+            Self::SendMessage { ref content, .. } => write!(
                 formatter,
                 "Action::SendMessage {{ \"{:<8}\", result_tx }}",
                 HexFmt(content)
             ),
-            Action::HandleTimeout(token) => write!(formatter, "Action::HandleTimeout({})", token),
-            Action::DisconnectClient { peer_addr, .. } => {
+            Self::HandleTimeout(token) => write!(formatter, "Action::HandleTimeout({})", token),
+            Self::DisconnectClient { peer_addr, .. } => {
                 write!(formatter, "Action::DisconnectClient: {}", peer_addr)
             }
-            Action::SendMessageToClient {
+            Self::SendMessageToClient {
                 peer_addr, token, ..
             } => write!(
                 formatter,

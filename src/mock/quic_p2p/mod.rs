@@ -211,7 +211,7 @@ pub enum OurType {
 
 impl Default for OurType {
     fn default() -> Self {
-        OurType::Node
+        Self::Node
     }
 }
 
@@ -220,8 +220,8 @@ impl FromStr for OurType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "client" => Ok(OurType::Client),
-            "node" => Ok(OurType::Node),
+            "client" => Ok(Self::Client),
+            "node" => Ok(Self::Node),
             x => Err(format!("Unknown client type: {}", x)),
         }
     }
@@ -301,8 +301,8 @@ impl Peer {
     /// Create `Peer` with the given type and address.
     pub(super) fn new(peer_type: OurType, addr: SocketAddr) -> Self {
         match peer_type {
-            OurType::Client => Peer::Client { peer_addr: addr },
-            OurType::Node => Peer::Node {
+            OurType::Client => Self::Client { peer_addr: addr },
+            OurType::Node => Self::Node {
                 node_info: NodeInfo::from(addr),
             },
         }
@@ -310,7 +310,7 @@ impl Peer {
 
     /// Create `Peer::Node` with the given address.
     pub(super) fn node(addr: SocketAddr) -> Self {
-        Peer::Node {
+        Self::Node {
             node_info: NodeInfo::from(addr),
         }
     }
@@ -318,8 +318,8 @@ impl Peer {
     /// Return the peer address.
     pub fn peer_addr(&self) -> SocketAddr {
         match *self {
-            Peer::Node { ref node_info } => node_info.peer_addr,
-            Peer::Client { peer_addr } => peer_addr,
+            Self::Node { ref node_info } => node_info.peer_addr,
+            Self::Client { peer_addr } => peer_addr,
         }
     }
 }

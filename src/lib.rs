@@ -62,7 +62,8 @@
     unused_extern_crates,
     unused_import_braces,
     unused_qualifications,
-    unused_results
+    unused_results,
+    clippy::needless_borrow
 )]
 // FIXME: move `deprecated` to `deny` section above
 #![allow(
@@ -71,11 +72,7 @@
     missing_copy_implementations,
     missing_debug_implementations,
     variant_size_differences,
-    non_camel_case_types,
-    // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
-    // FIXME: Re-enable `redundant_field_names`.
-    clippy::needless_pass_by_value,
-    clippy::redundant_field_names
+    non_camel_case_types
 )]
 
 #[macro_use]
