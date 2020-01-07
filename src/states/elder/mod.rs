@@ -465,14 +465,13 @@ impl Elder {
                         our_pfx.matches(&payload.dst_name)
                             && !completed_events.contains(&event.payload)
                     }
-
+                    AccumulatingEvent::Relocate(ref details)
+                    | AccumulatingEvent::RelocatePrepare(ref details, _) => {
+                        our_pfx.matches(details.pub_id.name())
+                            && !completed_events.contains(&event.payload)
+                    }
                     // Drop: no longer relevant after prefix change.
-                    // TODO: verify this is really the case. Some/all of these might still make sense
-                    // to carry over. In case it does not, add a comment explaining why.
-                    AccumulatingEvent::StartDkg(_)
-                    | AccumulatingEvent::ParsecPrune
-                    | AccumulatingEvent::Relocate(_)
-                    | AccumulatingEvent::RelocatePrepare(_, _) => false,
+                    AccumulatingEvent::StartDkg(_) | AccumulatingEvent::ParsecPrune => false,
 
                     // Keep: Additional signatures for neighbours for sec-msg-relay.
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
@@ -1672,11 +1671,8 @@ impl Approved for Elder {
             );
             return Ok(());
         }
-        if self.chain.membership_change_in_progress() {
-            trace!(
-                "{} - ignore ParsecPrune - membership change in progress.",
-                self
-            );
+        if self.chain.churn_in_progress() {
+            trace!("{} - ignore ParsecPrune - churn in progress.", self);
             return Ok(());
         }
 
