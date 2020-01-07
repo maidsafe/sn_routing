@@ -222,7 +222,7 @@ fn node_joins_in_front() {
 // This would not be an issue if Joining did not time out, or if elder processed them quicker.
 // This should be solved by Taking on all queued Adults before processing Elder change.
 #[test]
-#[cfg_attr(not(feature = "mock"), ignore)]
+#[cfg_attr(not(feature = "mock_parsec"), ignore)]
 fn multiple_joining_nodes() {
     let network = Network::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
