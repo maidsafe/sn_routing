@@ -66,14 +66,7 @@
     clippy::needless_borrow
 )]
 // FIXME: move `deprecated` to `deny` section above
-#![allow(
-    box_pointers,
-    deprecated,
-    missing_copy_implementations,
-    missing_debug_implementations,
-    variant_size_differences,
-    non_camel_case_types
-)]
+#![allow(deprecated)]
 
 #[macro_use]
 extern crate log;
