@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes, gen_elder_index, poll_all};
+use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_all};
 use rand::Rng;
 use routing::{mock::Network, quorum_count, Authority, Event, EventStream, NetworkParams};
 
@@ -25,7 +25,7 @@ fn send() {
     let sender_index = gen_elder_index(&mut rng, &nodes);
     let src = Authority::Node(nodes[sender_index].name());
     let dst = Authority::Section(rng.gen());
-    let content: Vec<_> = rng.gen_iter().take(1024).collect();
+    let content = gen_vec(&mut rng, 1024);
     assert!(nodes[sender_index]
         .inner
         .send_message(src, dst, content.clone())
@@ -74,8 +74,8 @@ fn send_and_receive() {
     let src = Authority::Node(nodes[sender_index].name());
     let dst = Authority::Section(rng.gen());
 
-    let req_content: Vec<_> = rng.gen_iter().take(10).collect();
-    let res_content: Vec<_> = rng.gen_iter().take(11).collect();
+    let req_content = gen_vec(&mut rng, 10);
+    let res_content = gen_vec(&mut rng, 11);
 
     assert!(nodes[sender_index]
         .inner

@@ -11,7 +11,11 @@ use super::{
     current_sections, nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
     verify_invariant_for_all_nodes, PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
-use rand::{Rand, Rng};
+use rand::{
+    distributions::{Distribution, Standard},
+    seq::SliceRandom,
+    Rng,
+};
 use routing::{
     mock::Network, FullId, NetworkConfig, NetworkParams, Prefix, PublicId, RelocationOverrides,
     XorName,
@@ -134,7 +138,7 @@ fn relocate_during_split() {
     let oldest_age_counter = node_age_counter(&nodes, 0);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    let source_prefix = *unwrap!(rng.choose(&prefixes));
+    let source_prefix = *unwrap!(prefixes.choose(&mut rng));
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
     let _ = add_connected_nodes_until_one_away_from_split(
@@ -197,7 +201,7 @@ fn choose_other_prefix<'a, R: Rng>(
     assert!(prefixes.iter().any(|prefix| prefix != except));
 
     unwrap!(iter::repeat(())
-        .filter_map(|_| rng.choose(prefixes))
+        .filter_map(|_| prefixes.choose(rng))
         .find(|prefix| *prefix != except))
 }
 
@@ -370,12 +374,12 @@ enum Churn {
     Remove,
 }
 
-impl Rand for Churn {
-    fn rand<R: Rng>(rng: &mut R) -> Self {
+impl Distribution<Churn> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Churn {
         if rng.gen() {
-            Self::Add
+            Churn::Add
         } else {
-            Self::Remove
+            Churn::Remove
         }
     }
 }

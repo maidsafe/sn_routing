@@ -15,6 +15,9 @@ bytes = "~0.4.12"
 config_file_handler = "~0.11.0"
 crossbeam-channel = "~0.3.9"
 ctrlc = { version = "~3", optional = true, features = ["termination"] }
+derive_more = "0.99.2"
+ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.2", features = ["serde"] }
+err-derive = "0.2.1"
 fake_clock = "~0.3.0"
 fxhash = "~0.2.1"
 hex = "~0.2.0"
@@ -28,9 +31,13 @@ num-bigint = "~0.1.40"
 parsec = { git = "https://github.com/maidsafe/parsec", rev = "818676c" }
 # quic-p2p = "~0.2.0"
 quic-p2p = { git = "https://github.com/maidsafe/quic-p2p" }
-# rand in the version used by threshold_crypto and ed25519_dalek crates, for compatibility
+# rand in the versions used for compatibility
+rand = "0.7.2"
 rand_crypto = { package = "rand", version = "~0.6.5" }
 rand_parsec = { package = "rand", version = "0.4.2" }
+rand_core = "0.5.1"
+rand_os = "0.1.0"
+rand_xorshift = "0.2.0"
 resource_proof = "~0.8.0"
 serde = { version = "~1.0.25", features = ["rc"] }
 serde_derive = "~1.0.25"
@@ -38,15 +45,8 @@ serde_json = "~1.0.8"
 structopt = "~0.2.18"
 term = "~0.4.6"
 tiny-keccak = "~1.5.0"
-ed25519_dalek = { package = "tmp-ed25519", version = "1.0.0-pre.2", features = ["serde"] }
-unwrap = "~1.2.1"
-derive_more = "0.99.2"
-err-derive = "0.2.1"
-rand = "0.7.2"
-rand_core = "0.5.1"
-rand_xorshift = "0.2.0"
-rand_os = "0.1.0"
 threshold_crypto = "~0.3.2"
+unwrap = "~1.2.1"
 
 [dev-dependencies]
 docopt = "~0.8.1"

@@ -14,7 +14,7 @@ use crate::{
 };
 use fxhash::{FxHashMap, FxHashSet};
 use maidsafe_utilities::log;
-use rand::{self, Rng, SeedableRng};
+use rand::{self, seq::SliceRandom, Rng, SeedableRng};
 use std::{
     cell::RefCell,
     cmp,
@@ -244,7 +244,7 @@ impl Inner {
             .map(|(connection, _)| connection)
             .collect();
 
-        let connection = if let Some(connection) = self.rng.choose(&connections) {
+        let connection = if let Some(connection) = connections.choose(&mut self.rng) {
             **connection
         } else {
             return None;

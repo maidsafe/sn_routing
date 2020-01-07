@@ -1817,7 +1817,7 @@ mod tests {
         xor_space::{Prefix, XorName},
         BlsSecretKeySet, ConnectionInfo,
     };
-    use rand::Rng;
+    use rand::{seq::SliceRandom, Rng};
     use std::{
         collections::{BTreeMap, HashMap},
         str::FromStr,
@@ -1994,8 +1994,8 @@ mod tests {
         for _ in 0..100 {
             let (new_info, _new_ids) = {
                 let old_info: Vec<_> = chain.neighbour_infos().collect();
-                let info = rng.choose(&old_info).expect("neighbour infos");
-                if rng.gen_weighted_bool(2) {
+                let info = old_info.choose(&mut rng).expect("neighbour infos");
+                if rng.gen_bool(0.5) {
                     gen_section_info(&mut rng, SecInfoGen::Add(info))
                 } else {
                     gen_section_info(&mut rng, SecInfoGen::Remove(info))

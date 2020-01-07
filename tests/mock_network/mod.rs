@@ -16,7 +16,7 @@ mod utils;
 
 pub use self::utils::*;
 use itertools::Itertools;
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use routing::{
     mock::Network, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix,
     RelocationOverrides, XorName,
@@ -309,7 +309,7 @@ fn simultaneous_joining_nodes(
     // Setup nodes so relocation will happen as specified by nodes_to_add_setup.
     //
     let mut rng = network.new_rng();
-    rng.shuffle(&mut nodes);
+    nodes.shuffle(&mut rng);
 
     let mut overrides = RelocationOverrides::new();
 
@@ -327,7 +327,7 @@ fn simultaneous_joining_nodes(
                 let config = {
                     let mut compatible_proxies =
                         nodes_with_prefix_mut(&mut nodes, &setup.proxy_prefix).collect_vec();
-                    rng.shuffle(&mut compatible_proxies);
+                    compatible_proxies.shuffle(&mut rng);
 
                     NetworkConfig::node()
                         .with_hard_coded_contact(unwrap!(nodes.first_mut()).endpoint())
@@ -570,7 +570,7 @@ fn carry_out_parsec_pruning() {
     // Keeps polling and dispatching user data till trigger a pruning.
     let max_gossips = 1_000;
     for _ in 0..max_gossips {
-        let event: Vec<_> = rng.gen_iter().take(10_000).collect();
+        let event = gen_vec(&mut rng, 10_000);
         nodes.iter_mut().for_each(|node| {
             let _ = node
                 .inner

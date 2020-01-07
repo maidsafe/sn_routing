@@ -10,8 +10,9 @@ use super::{
     init_mock, Block, ConsensusMode, DkgResult, NetworkEvent, Observation, Parsec, PublicId,
     Request, Response, SecretId,
 };
-use crate::{rng, unwrap};
+use crate::{rng, rng::MainRng, unwrap};
 use itertools::Itertools;
+use rand::seq::SliceRandom;
 use rand::Rng;
 use std::{
     cmp,
@@ -376,7 +377,7 @@ fn randomized_static_network() {
         .collect();
 
     for peer in peers.values_mut() {
-        rng.shuffle(&mut votes);
+        votes.shuffle(&mut rng);
         for vote in votes.iter().cloned() {
             unwrap!(peer.vote_for(vote));
         }
@@ -405,7 +406,7 @@ fn randomized_static_network() {
         }
 
         // Deliver the messages in random order
-        rng.shuffle(&mut messages);
+        messages.shuffle(&mut rng);
         messages = messages
             .drain(..)
             .filter_map(|message| {
@@ -547,7 +548,7 @@ fn from_genesis(
         genesis_group,
         vec![],
         consensus_mode,
-        Box::new(unwrap!(rand::os::OsRng::new())),
+        Box::new(MainRng::new()),
     )
 }
 
@@ -563,7 +564,7 @@ fn from_existing(
         genesis_group,
         section,
         consensus_mode,
-        Box::new(unwrap!(rand::os::OsRng::new())),
+        Box::new(MainRng::new()),
     )
 }
 
@@ -579,7 +580,7 @@ fn pick_gossip_recipient<'a, R: Rng>(
     src: &'a Parsec<Payload, PeerId>,
 ) -> Option<&'a PeerId> {
     let recipients: Vec<_> = src.gossip_recipients().collect();
-    rng.choose(&recipients[..]).cloned()
+    recipients.choose(rng).cloned()
 }
 
 fn is_gossip_recipient(parsec: &Parsec<Payload, PeerId>, peer_id: PeerId) -> bool {

@@ -103,7 +103,7 @@ impl<Message: Hash> MessageFilter<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{self, Rng};
+    use rand::{self, seq::IteratorRandom, Rng};
     use std::time::Duration;
 
     #[cfg(feature = "mock_base")]
@@ -159,7 +159,7 @@ mod tests {
             fn default() -> Temp {
                 let mut rng = rand::thread_rng();
                 Temp {
-                    id: rand::sample(&mut rng, 0u8..255, 64),
+                    id: (0u8..255).choose_multiple(&mut rng, 64),
                 }
             }
         }
