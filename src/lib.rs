@@ -6,43 +6,20 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-//! Client and node implementations for a resilient decentralised network.
+//! P2PNode implementation for a resilient decentralised network infrastructure.
 //!
-//! The network is based on the [`kademlia_routing_table`][1] and uses the XOR metric to define the
-//! "distance" between two [`XorName`][2]s. `XorName`s are used as addresses of nodes, clients as
-//! well as data.
+//! This is the "engine room" of a hybrid p2p network, where the p2p nodes are built on
+//! top of this library. The features this library gives us is:
 //!
-//! [1]: ../kademlia_routing_table/index.html
-//! [2]: ../xor_name/struct.XorName.html
+//!  * Sybil resistant p2p nodes
+//!  * Sharded network with up to approx 200 p2p nodes per shard
+//!  * All data encrypted at network level with TLS 1.3
+//!  * Network level `quic` compatibility, satisfying industry standards and further
+//!    obfuscating the p2p network data.
+//!  * Upgrade capable nodes.
+//!  * All network messages signed via ED25519 and/or BLS
+//!  * Section consensus via an ABFT algorithm (PARSEC)
 //!
-//! Messages are exchanged between _authorities_, where an `Authority` can be an individual client
-//! or node, or a collection of nodes called a "section", or a subset of a section called a "group".
-//! In all cases, messages are cryptographically signed by the sender, and in the case of sections
-//! and groups, it is verified that a sufficient number of members agree on the message: only if
-//! that quorum is reached, the message is delivered. In addition, each message has a unique ID, and
-//! is delivered only once.
-//!
-//! Section and group authorities are also addressed using a single `XorName`. The members are the
-//! nodes that are closest to that name. Sections contain a minimum number of nodes with the minimum
-//! value specified as a network-wide constant. Groups are of fixed size, defined as the above
-//! minimum section size. Since nodes are assigned their name by the network, this provides
-//! redundancy and resilience: a node has no control over which section or group authority it will
-//! be a member of, and without a majority in the section or group it cannot forge a message from
-//! there.
-//!
-//! The library also provides different types for the messages' data.
-//!
-//!
-//! # Usage
-//!
-//! `Node` is used to handle and send requests within that network, and to implement its
-//! functionality, e.g. storing and retrieving data, validating permissions, managing metadata, etc.
-//!
-//! # Sequence diagrams
-//!
-//! - [Bootstrapping](bootstrap.png)
-//! - [Churn (`NewNode`)](new-node.png)
-
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
     html_favicon_url = "https://maidsafe.net/img/favicon.ico",
@@ -85,21 +62,11 @@
     unused_extern_crates,
     unused_import_braces,
     unused_qualifications,
-    unused_results
+    unused_results,
+    clippy::needless_borrow
 )]
 // FIXME: move `deprecated` to `deny` section above
-#![allow(
-    box_pointers,
-    deprecated,
-    missing_copy_implementations,
-    missing_debug_implementations,
-    variant_size_differences,
-    non_camel_case_types,
-    // FIXME: allow `needless_pass_by_value` until it's OK to change the public API
-    // FIXME: Re-enable `redundant_field_names`.
-    clippy::needless_pass_by_value,
-    clippy::redundant_field_names
-)]
+#![allow(deprecated)]
 
 #[macro_use]
 extern crate log;
@@ -109,6 +76,57 @@ extern crate serde_derive;
 // Needs to be before all other modules to make the macros available to them.
 #[macro_use]
 mod macros;
+
+// ############################################################################
+// Public API
+// ############################################################################
+pub use self::{
+    error::{InterfaceError, RoutingError},
+    event::{ClientEvent, ConnectEvent, Event},
+    event_stream::EventStream,
+    id::{FullId, P2pNode, PublicId},
+    node::{Node, NodeBuilder},
+    pause::PausedState,
+    quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
+    xor_space::{Prefix, XorName, XOR_NAME_LEN},
+};
+
+// ############################################################################
+// Mock and test API
+// ############################################################################
+
+/// Mocking utilities.
+#[cfg(feature = "mock_base")]
+pub mod mock;
+/// Random number generation
+#[cfg(feature = "mock_base")]
+pub mod rng;
+
+#[cfg(feature = "mock_base")]
+pub use self::{
+    authority::Authority,
+    chain::{
+        delivery_group_size, elders_info_for_test, quorum_count,
+        section_proof_chain_from_elders_info, NetworkParams, SectionKeyShare, MIN_AGE,
+    },
+    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    parsec::generate_bls_threshold_secret_key,
+    relocation::Overrides as RelocationOverrides,
+    xor_space::Xorable,
+};
+
+#[cfg(feature = "mock_base")]
+#[doc(hidden)]
+pub mod test_consts {
+    pub use crate::{
+        chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
+        states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
+    };
+}
+
+// ############################################################################
+// Private
+// ############################################################################
 
 mod action;
 mod authority;
@@ -126,25 +144,16 @@ mod parsec;
 mod pause;
 mod peer_map;
 mod relocation;
+#[cfg(not(feature = "mock_base"))]
+mod rng;
 mod routing_message_filter;
 mod signature_accumulator;
 mod state_machine;
 mod states;
 mod time;
 mod timer;
-mod types;
 mod utils;
 mod xor_space;
-
-/// Mocking utilities.
-#[cfg(feature = "mock_base")]
-pub mod mock;
-
-// Random number generation
-#[cfg(not(feature = "mock_base"))]
-mod rng;
-#[cfg(feature = "mock_base")]
-pub mod rng;
 
 // Cryptography
 #[cfg(not(feature = "mock_base"))]
@@ -158,67 +167,21 @@ use self::mock::quic_p2p;
 #[cfg(not(feature = "mock_base"))]
 use quic_p2p;
 
-pub use {
-    self::{
-        authority::Authority,
-        chain::quorum_count,
-        error::{InterfaceError, RoutingError},
-        event::{ClientEvent, ConnectEvent, Event},
-        event_stream::EventStream,
-        id::{FullId, P2pNode, PublicId},
-        node::{Node, NodeBuilder},
-        pause::PausedState,
-        quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
-        types::MessageId,
-        utils::XorTargetInterval,
-        xor_space::{Prefix, XorName, XorNameFromHexError, Xorable, XOR_NAME_BITS, XOR_NAME_LEN},
-    },
-    threshold_crypto::{
-        PublicKey as BlsPublicKey, PublicKeySet as BlsPublicKeySet,
-        PublicKeyShare as BlsPublicKeyShare, SecretKeySet as BlsSecretKeySet,
-        SecretKeyShare as BlsSecretKeyShare, Signature as BlsSignature,
-        SignatureShare as BlsSignatureShare,
-    },
-};
-
-#[cfg(feature = "mock_base")]
-pub use self::{
-    chain::{
-        delivery_group_size, elders_info_for_test, section_proof_chain_from_elders_info,
-        NetworkParams, SectionKeyShare, MIN_AGE,
-    },
-    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    parsec::generate_bls_threshold_secret_key,
-    relocation::Overrides as RelocationOverrides,
-};
-
-#[cfg(feature = "mock_base")]
-#[doc(hidden)]
-pub mod test_consts {
-    pub use crate::{
-        chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-        states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
-    };
-}
-
 /// Quorum is defined as having strictly greater than `QUORUM_NUMERATOR / QUORUM_DENOMINATOR`
 /// agreement; using only integer arithmetic a quorum can be checked with
 /// `votes * QUORUM_DENOMINATOR > voters * QUORUM_NUMERATOR`.
-pub const QUORUM_NUMERATOR: usize = 2;
+const QUORUM_NUMERATOR: usize = 2;
 /// See `QUORUM_NUMERATOR`.
-pub const QUORUM_DENOMINATOR: usize = 3;
-
-/// Default minimal section size.
-pub const MIN_SECTION_SIZE: usize = 3;
+const QUORUM_DENOMINATOR: usize = 3;
 
 /// Minimal safe section size. Routing will keep adding nodes until the section reaches this size.
 /// More nodes might be added if requested by the upper layers.
 /// This number also detemines when split happens - if both post-split sections would have at least
 /// this number of nodes.
-pub const SAFE_SECTION_SIZE: usize = 100;
+const SAFE_SECTION_SIZE: usize = 100;
 
 /// Number of elders per section.
-pub const ELDER_SIZE: usize = 7;
+const ELDER_SIZE: usize = 7;
 
 use self::quic_p2p::Event as NetworkEvent;
 #[cfg(any(test, feature = "mock_base"))]

@@ -23,7 +23,7 @@ use crate::{
     outbox::EventBox,
     rng::{self, MainRng},
     state_machine::{State, StateMachine, Transition},
-    unwrap, BlsSecretKeyShare, NetworkConfig, NetworkParams, ELDER_SIZE,
+    unwrap, NetworkConfig, NetworkParams, ELDER_SIZE,
 };
 use std::{iter, net::SocketAddr};
 
@@ -38,8 +38,8 @@ struct JoiningNodeInfo {
 }
 struct DkgToSectionInfo {
     participants: BTreeSet<PublicId>,
-    new_pk_set: BlsPublicKeySet,
-    new_other_ids: Vec<(FullId, BlsSecretKeyShare)>,
+    new_pk_set: bls::PublicKeySet,
+    new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     new_elder_info: EldersInfo,
 }
 
@@ -63,8 +63,8 @@ impl JoiningNodeInfo {
 struct ElderUnderTest {
     pub rng: MainRng,
     pub machine: StateMachine,
-    pub full_id: (FullId, BlsSecretKeyShare),
-    pub other_ids: Vec<(FullId, BlsSecretKeyShare)>,
+    pub full_id: (FullId, bls::SecretKeyShare),
+    pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
 }
@@ -155,7 +155,7 @@ impl ElderUnderTest {
                     let sig_event =
                         if let AccumulatingEvent::SectionInfo(ref _info, ref section_key) = event {
                             Some(unwrap!(EventSigPayload::new_for_section_key_info(
-                                &bls_id,
+                                bls_id,
                                 section_key
                             )))
                         } else {
@@ -165,7 +165,7 @@ impl ElderUnderTest {
                     info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
                     parsec.vote_for_as(
                         event.clone().into_network_event_with(sig_event).into_obs(),
-                        &full_id,
+                        full_id,
                     );
                 });
         }
@@ -174,14 +174,14 @@ impl ElderUnderTest {
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
         let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
-        for event in events.into_iter() {
+        for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
                 info!(
                     "Vote as {:?} for unconsensused event {:?}",
                     full_id.public_id(),
                     event
                 );
-                parsec.vote_for_as(event.clone(), &full_id);
+                parsec.vote_for_as(event.clone(), full_id);
             });
         }
     }
@@ -226,7 +226,7 @@ impl ElderUnderTest {
             .map(|(full_id, _)| {
                 (
                     full_id.clone(),
-                    unwrap!(parsec.get_dkg_result_as(participants.clone(), &full_id)),
+                    unwrap!(parsec.get_dkg_result_as(participants.clone(), full_id)),
                 )
             })
             .collect_vec();
@@ -355,7 +355,7 @@ impl ElderUnderTest {
 }
 
 fn new_elder_state(
-    (full_id, secret_key_share): (&FullId, &BlsSecretKeyShare),
+    (full_id, secret_key_share): (&FullId, &bls::SecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
     network_service: NetworkService,
     timer: Timer,
@@ -396,7 +396,7 @@ fn new_elder_state(
 
 fn make_state_machine(
     rng: &mut MainRng,
-    full_id: (&FullId, &BlsSecretKeyShare),
+    full_id: (&FullId, &bls::SecretKeyShare),
     gen_pfx_info: &GenesisPfxInfo,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {

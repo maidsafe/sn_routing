@@ -11,8 +11,8 @@ use super::{
     MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
-    error::RoutingError, id::PublicId, relocation::RelocateDetails, utils::LogIdent, Authority,
-    BlsPublicKey, BlsPublicKeySet, BlsSignature, Prefix, XorName,
+    authority::Authority, error::RoutingError, id::PublicId, relocation::RelocateDetails,
+    utils::LogIdent, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -68,7 +68,7 @@ pub struct SharedState {
 impl SharedState {
     pub fn new(
         elders_info: EldersInfo,
-        bls_keys: BlsPublicKeySet,
+        bls_keys: bls::PublicKeySet,
         ages: BTreeMap<PublicId, AgeCounter>,
     ) -> Self {
         let pk_info = SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
@@ -223,7 +223,7 @@ impl SharedState {
 
     /// Returns our own current section info.
     pub fn our_info(&self) -> &EldersInfo {
-        &self.our_infos.last()
+        self.our_infos.last()
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
@@ -490,11 +490,11 @@ where
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct SectionProofBlock {
     key_info: SectionKeyInfo,
-    sig: BlsSignature,
+    sig: bls::Signature,
 }
 
 impl SectionProofBlock {
-    pub fn new(key_info: SectionKeyInfo, sig: BlsSignature) -> Self {
+    pub fn new(key_info: SectionKeyInfo, sig: bls::Signature) -> Self {
         Self { key_info, sig }
     }
 
@@ -502,11 +502,11 @@ impl SectionProofBlock {
         &self.key_info
     }
 
-    pub fn key(&self) -> &BlsPublicKey {
+    pub fn key(&self) -> &bls::PublicKey {
         self.key_info.key()
     }
 
-    pub fn verify_with_pk(&self, pk: BlsPublicKey) -> bool {
+    pub fn verify_with_pk(&self, pk: bls::PublicKey) -> bool {
         if let Ok(to_verify) = self.key_info.serialise_for_signature() {
             pk.verify(&self.sig, to_verify)
         } else {
@@ -555,7 +555,7 @@ impl SectionProofChain {
             .unwrap_or(&self.genesis_key_info)
     }
 
-    pub fn last_public_key(&self) -> &BlsPublicKey {
+    pub fn last_public_key(&self) -> &bls::PublicKey {
         self.last_public_key_info().key()
     }
 
@@ -563,7 +563,7 @@ impl SectionProofChain {
         iter::once(&self.genesis_key_info).chain(self.blocks.iter().map(|block| block.key_info()))
     }
 
-    pub fn slice_from(&self, first_index: usize) -> SectionProofChain {
+    pub fn slice_from(&self, first_index: usize) -> Self {
         if first_index == 0 || self.blocks.is_empty() {
             return self.clone();
         }
@@ -578,7 +578,7 @@ impl SectionProofChain {
             self.blocks[block_first_index..].to_vec()
         };
 
-        SectionProofChain {
+        Self {
             genesis_key_info,
             blocks,
         }
@@ -593,11 +593,11 @@ pub struct SectionKeyInfo {
     /// The section prefix. It matches all the members' names.
     prefix: Prefix<XorName>,
     /// The section BLS public key set
-    key: BlsPublicKey,
+    key: bls::PublicKey,
 }
 
 impl SectionKeyInfo {
-    pub fn from_elders_info(info: &EldersInfo, key: BlsPublicKey) -> Self {
+    pub fn from_elders_info(info: &EldersInfo, key: bls::PublicKey) -> Self {
         Self {
             version: info.version(),
             prefix: *info.prefix(),
@@ -605,7 +605,7 @@ impl SectionKeyInfo {
         }
     }
 
-    pub fn key(&self) -> &BlsPublicKey {
+    pub fn key(&self) -> &bls::PublicKey {
         &self.key
     }
 

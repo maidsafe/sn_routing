@@ -33,32 +33,32 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
         match self {
-            Authority::Section(_) | Authority::PrefixSection(_) => true,
-            Authority::Node(_) => false,
+            Self::Section(_) | Self::PrefixSection(_) => true,
+            Self::Node(_) => false,
         }
     }
 
     /// Returns `true` if the authority is a single node, and `false` otherwise.
     pub fn is_single(&self) -> bool {
         match self {
-            Authority::Section(_) | Authority::PrefixSection(_) => false,
-            Authority::Node(_) => true,
+            Self::Section(_) | Self::PrefixSection(_) => false,
+            Self::Node(_) => true,
         }
     }
 
     /// Returns the name of authority.
     pub fn name(&self) -> N {
         match self {
-            Authority::Section(name) | Authority::Node(name) => *name,
-            Authority::PrefixSection(prefix) => prefix.lower_bound(),
+            Self::Section(name) | Self::Node(name) => *name,
+            Self::PrefixSection(prefix) => prefix.lower_bound(),
         }
     }
 
     /// Returns if the authority is compatible with that prefix
     pub fn is_compatible(&self, other_prefix: &Prefix<N>) -> bool {
         match self {
-            Authority::Section(name) | Authority::Node(name) => other_prefix.matches(name),
-            Authority::PrefixSection(prefix) => other_prefix.is_compatible(prefix),
+            Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
+            Self::PrefixSection(prefix) => other_prefix.is_compatible(prefix),
         }
     }
 }
@@ -67,8 +67,8 @@ impl Authority<XorName> {
     /// provide the name mathching a single node's public key
     pub fn single_signing_name(&self) -> Option<&XorName> {
         match *self {
-            Authority::Section(_) | Authority::PrefixSection(_) => None,
-            Authority::Node(ref name) => Some(name),
+            Self::Section(_) | Self::PrefixSection(_) => None,
+            Self::Node(ref name) => Some(name),
         }
     }
 }
@@ -76,11 +76,11 @@ impl Authority<XorName> {
 impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Authority::Section(ref name) => write!(formatter, "Section(name: {})", name),
-            Authority::PrefixSection(ref prefix) => {
+            Self::Section(ref name) => write!(formatter, "Section(name: {})", name),
+            Self::PrefixSection(ref prefix) => {
                 write!(formatter, "PrefixSection(prefix: {:?})", prefix)
             }
-            Authority::Node(ref name) => write!(formatter, "Node(name: {})", name),
+            Self::Node(ref name) => write!(formatter, "Node(name: {})", name),
         }
     }
 }

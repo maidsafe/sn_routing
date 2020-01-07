@@ -105,7 +105,7 @@ where
 
     #[allow(unused)]
     pub fn our_pub_id(&self) -> &S::PublicId {
-        &self.our_id.public_id()
+        self.our_id.public_id()
     }
 
     pub fn vote_for(&mut self, observation: Observation<T, S::PublicId>) -> Result<(), Error> {
@@ -340,7 +340,7 @@ pub struct Request<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>, u8);
 
 impl<T: NetworkEvent, P: PublicId> Request<T, P> {
     pub fn new() -> Self {
-        Request(PhantomData, 1)
+        Self(PhantomData, 1)
     }
 }
 
@@ -349,7 +349,7 @@ pub struct Response<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>, u8);
 
 impl<T: NetworkEvent, P: PublicId> Response<T, P> {
     pub fn new() -> Self {
-        Response(PhantomData, 1)
+        Self(PhantomData, 1)
     }
 }
 

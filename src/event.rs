@@ -7,8 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    authority::Authority,
     xor_space::{Prefix, XorName},
-    Authority, NetworkBytes,
+    NetworkBytes,
 };
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
@@ -102,26 +103,23 @@ pub enum Event {
     RestartRequired,
     /// Startup failed - terminate.
     Terminated,
-    // TODO: Find a better solution for periodic tasks.
-    /// This event is sent periodically every time Routing sends the `Heartbeat` messages.
-    TimerTicked,
     /// Consensus on a custom event.
     Consensus(Vec<u8>),
 }
 
 impl From<ClientEvent> for Event {
-    fn from(client_event: ClientEvent) -> Event {
-        Event::ClientEvent(client_event)
+    fn from(client_event: ClientEvent) -> Self {
+        Self::ClientEvent(client_event)
     }
 }
 
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::ClientEvent(ref client_event) => {
+            Self::ClientEvent(ref client_event) => {
                 write!(formatter, "Event::ClientEvent({:?})", client_event)
             }
-            Event::MessageReceived {
+            Self::MessageReceived {
                 ref content,
                 ref src,
                 ref dst,
@@ -132,20 +130,19 @@ impl Debug for Event {
                 src,
                 dst
             ),
-            Event::NodeAdded(ref node_name) => {
+            Self::NodeAdded(ref node_name) => {
                 write!(formatter, "Event::NodeAdded({:?})", node_name)
             }
-            Event::NodeLost(ref node_name) => write!(formatter, "Event::NodeLost({:?})", node_name),
-            Event::SectionSplit(ref prefix) => {
+            Self::NodeLost(ref node_name) => write!(formatter, "Event::NodeLost({:?})", node_name),
+            Self::SectionSplit(ref prefix) => {
                 write!(formatter, "Event::SectionSplit({:?})", prefix)
             }
-            Event::Connected(ref connect_type) => {
+            Self::Connected(ref connect_type) => {
                 write!(formatter, "Event::Connected({:?})", connect_type)
             }
-            Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
-            Event::Terminated => write!(formatter, "Event::Terminated"),
-            Event::TimerTicked => write!(formatter, "Event::TimerTicked"),
-            Event::Consensus(ref payload) => {
+            Self::RestartRequired => write!(formatter, "Event::RestartRequired"),
+            Self::Terminated => write!(formatter, "Event::Terminated"),
+            Self::Consensus(ref payload) => {
                 write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
             }
         }
@@ -155,27 +152,27 @@ impl Debug for Event {
 impl Debug for ClientEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            ClientEvent::ConnectedToClient { peer_addr } => {
+            Self::ConnectedToClient { peer_addr } => {
                 write!(formatter, "ClientEvent::ConnectedToClient - {}", peer_addr)
             }
-            ClientEvent::ConnectionFailureToClient { peer_addr } => write!(
+            Self::ConnectionFailureToClient { peer_addr } => write!(
                 formatter,
                 "ClientEvent::ConnectionFailureToClient: {}",
                 peer_addr
             ),
-            ClientEvent::NewMessageFromClient { peer_addr, .. } => write!(
+            Self::NewMessageFromClient { peer_addr, .. } => write!(
                 formatter,
                 "ClientEvent::NewMessageFromClient: {}",
                 peer_addr
             ),
-            ClientEvent::UnsentUserMsgToClient {
+            Self::UnsentUserMsgToClient {
                 peer_addr, token, ..
             } => write!(
                 formatter,
                 "ClientEvent::UnsentUserMsgToClient: {} with Token: {}",
                 peer_addr, token
             ),
-            ClientEvent::SentUserMsgToClient {
+            Self::SentUserMsgToClient {
                 peer_addr, token, ..
             } => write!(
                 formatter,

@@ -20,7 +20,6 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     state_machine::Transition,
     xor_space::{Prefix, XorName},
-    BlsSignature,
 };
 use log::LogLevel;
 use rand::Rng;
@@ -63,7 +62,7 @@ pub trait Approved: Base {
     fn handle_member_relocated(
         &mut self,
         payload: RelocateDetails,
-        signature: BlsSignature,
+        signature: bls::Signature,
         node_knowledge: u64,
         outbox: &mut dyn EventBox,
     );
@@ -269,8 +268,7 @@ pub trait Approved: Base {
                         self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
                     }
 
-                    self.chain_mut()
-                        .handle_genesis_event(&group, &related_info)?;
+                    self.chain_mut().handle_genesis_event(group, related_info)?;
                     self.set_pfx_successfully_polled(true);
 
                     continue;
@@ -414,7 +412,7 @@ pub trait Approved: Base {
     fn check_voting_status(&mut self) {
         let unresponsive_nodes = self.chain_mut().check_vote_status();
         let log_ident = self.log_ident();
-        for pub_id in unresponsive_nodes.iter() {
+        for pub_id in &unresponsive_nodes {
             info!("{} Voting for unresponsive node {:?}", log_ident, pub_id);
             self.parsec_map_mut().vote_for(
                 AccumulatingEvent::Offline(*pub_id).into_network_event(),
@@ -479,7 +477,7 @@ pub trait Approved: Base {
     fn invoke_handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        signature: Option<BlsSignature>,
+        signature: Option<bls::Signature>,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if let Some(signature) = signature {
@@ -498,7 +496,7 @@ pub trait Approved: Base {
     fn handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        signature: BlsSignature,
+        signature: bls::Signature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain().can_remove_member(&details.pub_id) {
@@ -527,7 +525,7 @@ pub trait Approved: Base {
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
         use itertools::Itertools;
-        if !self.chain().check_trust(&details.proof()) {
+        if !self.chain().check_trust(details.proof()) {
             log_or_panic!(
                 LogLevel::Error,
                 "{} - Untrusted {:?} Proof: {:?} --- [{:?}]",

@@ -15,6 +15,7 @@ use super::{
     Adult,
 };
 use crate::{
+    authority::Authority,
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
@@ -42,7 +43,7 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
-    Authority, BlsPublicKey, BlsPublicKeySet, BlsSignature, ConnectionInfo,
+    ConnectionInfo,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -58,8 +59,6 @@ use std::{
 #[cfg(feature = "mock_base")]
 use crate::messages::Message;
 
-/// Time after which a `Ticked` event is sent.
-const TICK_TIMEOUT: Duration = Duration::from_secs(15);
 /// Time after which an Elder should send a new Gossip.
 const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 /// Number of RelocatePrepare to consensus before actually relocating a node.
@@ -113,7 +112,6 @@ pub struct Elder {
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
-    tick_timer_token: u64,
     timer: Timer,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
@@ -264,7 +262,6 @@ impl Elder {
 
     fn new(details: ElderDetails) -> Self {
         let timer = details.timer;
-        let tick_timer_token = timer.schedule(TICK_TIMEOUT);
         let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
 
         Self {
@@ -275,7 +272,6 @@ impl Elder {
             direct_msg_backlog: details.direct_msg_backlog,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator: details.sig_accumulator,
-            tick_timer_token,
             timer,
             parsec_map: details.parsec_map,
             gen_pfx_info: details.gen_pfx_info,
@@ -353,7 +349,7 @@ impl Elder {
         Transition::Stay
     }
 
-    fn our_section_bls_keys(&self) -> &BlsPublicKeySet {
+    fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
         self.chain.our_section_bls_keys()
     }
 
@@ -1048,7 +1044,7 @@ impl Elder {
     fn vote_for_section_info(
         &mut self,
         elders_info: EldersInfo,
-        section_key: BlsPublicKey,
+        section_key: bls::PublicKey,
     ) -> Result<(), RoutingError> {
         let key_info = SectionKeyInfo::from_elders_info(&elders_info, section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
@@ -1181,7 +1177,7 @@ impl Elder {
             }
         };
 
-        if !list.contains(&self.name()) {
+        if !list.contains(self.name()) {
             None
         } else {
             let len = list.len();
@@ -1316,12 +1312,7 @@ impl Base for Elder {
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
-        if self.tick_timer_token == token {
-            // TODO: we no longer need tick for any internal purposes. Verify it is not needed by
-            // the upper layers and remove it.
-            self.tick_timer_token = self.timer.schedule(TICK_TIMEOUT);
-            outbox.send_event(Event::TimerTicked);
-        } else if self.gossip_timer_token == token {
+        if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
 
             // If we're the only node then invoke parsec_poll directly
@@ -1385,9 +1376,10 @@ impl Base for Elder {
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        use crate::messages::DirectMessage::*;
+
         let pub_id = *p2p_node.public_id();
 
-        use crate::messages::DirectMessage::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
             BootstrapRequest(name) => {
@@ -1611,7 +1603,7 @@ impl Approved for Elder {
     fn handle_member_relocated(
         &mut self,
         details: RelocateDetails,
-        signature: BlsSignature,
+        signature: bls::Signature,
         node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {
@@ -1704,7 +1696,7 @@ impl Approved for Elder {
         let elders_info = self.chain.our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
-        let is_member = elders_info.is_member(&self.full_id.public_id());
+        let is_member = elders_info.is_member(self.full_id.public_id());
 
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 

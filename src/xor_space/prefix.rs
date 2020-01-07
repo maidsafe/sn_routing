@@ -175,7 +175,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         if i >= self.bit_count() {
             *self
         } else {
-            Prefix::new(self.bit_count(), self.name.with_flipped_bit(i))
+            Self::new(self.bit_count(), self.name.with_flipped_bit(i))
         }
     }
 
@@ -259,7 +259,7 @@ impl FromStr for Prefix<u8> {
                 ));
             }
         }
-        Ok(Prefix::new(bits.len(), name))
+        Ok(Self::new(bits.len(), name))
     }
 }
 
@@ -279,7 +279,7 @@ impl FromStr for Prefix<XorName> {
                 ));
             }
         }
-        Ok(Prefix::new(bits.len(), XorName(name)))
+        Ok(Self::new(bits.len(), XorName(name)))
     }
 }
 

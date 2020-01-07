@@ -12,10 +12,6 @@ use crate::{
     parsec,
     //parsec::DkgResult,
     relocation::RelocateDetails,
-    BlsPublicKeyShare,
-    BlsSecretKeyShare,
-    BlsSignature,
-    BlsSignatureShare,
     Prefix,
     RoutingError,
     XorName,
@@ -51,14 +47,14 @@ pub struct SendAckMessagePayload {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct EventSigPayload {
     /// The public key share for that signature share
-    pub pub_key_share: BlsPublicKeyShare,
+    pub pub_key_share: bls::PublicKeyShare,
     /// The signature share signing the SectionInfo.
-    pub sig_share: BlsSignatureShare,
+    pub sig_share: bls::SignatureShare,
 }
 
 impl EventSigPayload {
     pub fn new<T: Serialize>(
-        key_share: &BlsSecretKeyShare,
+        key_share: &bls::SecretKeyShare,
         payload: &T,
     ) -> Result<Self, RoutingError> {
         let sig_share = key_share.sign(&serialisation::serialise(&payload)?[..]);
@@ -70,7 +66,7 @@ impl EventSigPayload {
         })
     }
     pub fn new_for_section_key_info(
-        key_share: &BlsSecretKeyShare,
+        key_share: &bls::SecretKeyShare,
         section_key_info: &SectionKeyInfo,
     ) -> Result<Self, RoutingError> {
         let sig_share = key_share.sign(&section_key_info.serialise_for_signature()?);
@@ -130,7 +126,7 @@ pub enum AccumulatingEvent {
 }
 
 impl AccumulatingEvent {
-    pub fn from_network_event(event: NetworkEvent) -> (AccumulatingEvent, Option<EventSigPayload>) {
+    pub fn from_network_event(event: NetworkEvent) -> (Self, Option<EventSigPayload>) {
         (event.payload, event.signature)
     }
 
@@ -152,30 +148,20 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
-            AccumulatingEvent::StartDkg(participants) => {
-                write!(formatter, "StartDkg({:?})", participants)
-            }
-            AccumulatingEvent::Online(payload) => write!(formatter, "Online({:?})", payload),
-            AccumulatingEvent::Offline(id) => write!(formatter, "Offline({})", id),
-            AccumulatingEvent::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
-            AccumulatingEvent::NeighbourInfo(info) => {
-                write!(formatter, "NeighbourInfo({:?})", info)
-            }
-            AccumulatingEvent::TheirKeyInfo(payload) => {
-                write!(formatter, "TheirKeyInfo({:?})", payload)
-            }
-            AccumulatingEvent::AckMessage(payload) => {
-                write!(formatter, "AckMessage({:?})", payload)
-            }
-            AccumulatingEvent::SendAckMessage(payload) => {
-                write!(formatter, "SendAckMessage({:?})", payload)
-            }
-            AccumulatingEvent::ParsecPrune => write!(formatter, "ParsecPrune"),
-            AccumulatingEvent::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
-            AccumulatingEvent::RelocatePrepare(payload, count_down) => {
+            Self::StartDkg(participants) => write!(formatter, "StartDkg({:?})", participants),
+            Self::Online(payload) => write!(formatter, "Online({:?})", payload),
+            Self::Offline(id) => write!(formatter, "Offline({})", id),
+            Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
+            Self::NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
+            Self::TheirKeyInfo(payload) => write!(formatter, "TheirKeyInfo({:?})", payload),
+            Self::AckMessage(payload) => write!(formatter, "AckMessage({:?})", payload),
+            Self::SendAckMessage(payload) => write!(formatter, "SendAckMessage({:?})", payload),
+            Self::ParsecPrune => write!(formatter, "ParsecPrune"),
+            Self::Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
+            Self::RelocatePrepare(payload, count_down) => {
                 write!(formatter, "RelocatePrepare({:?}, {})", payload, count_down)
             }
-            AccumulatingEvent::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
+            Self::User(payload) => write!(formatter, "User({:<8})", HexFmt(payload)),
         }
     }
 }
@@ -193,9 +179,9 @@ pub struct NetworkEvent {
 
 impl NetworkEvent {
     /// Convert `NetworkEvent` into a Parsec Observation
-    pub fn into_obs(self) -> parsec::Observation<NetworkEvent, PublicId> {
+    pub fn into_obs(self) -> parsec::Observation<Self, PublicId> {
         match self {
-            NetworkEvent {
+            Self {
                 payload: AccumulatingEvent::StartDkg(participants),
                 ..
             } => parsec::Observation::StartDkg(participants),
@@ -221,7 +207,7 @@ impl Debug for NetworkEvent {
 pub struct AccumulatedEvent {
     pub content: AccumulatingEvent,
     pub elders_change: EldersChange,
-    pub signature: Option<BlsSignature>,
+    pub signature: Option<bls::Signature>,
 }
 
 impl AccumulatedEvent {
@@ -233,7 +219,7 @@ impl AccumulatedEvent {
         }
     }
 
-    pub fn with_signature(self, signature: Option<BlsSignature>) -> Self {
+    pub fn with_signature(self, signature: Option<bls::Signature>) -> Self {
         Self { signature, ..self }
     }
 

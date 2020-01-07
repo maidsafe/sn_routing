@@ -23,7 +23,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent,
 };
 #[cfg(feature = "mock_base")]
-use crate::{chain::Chain, rng::MainRng, Authority};
+use crate::{authority::Authority, chain::Chain, rng::MainRng};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use rand::seq::SliceRandom;
@@ -39,11 +39,11 @@ use std::{
 macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
-            State::BootstrappingPeer($state) => $expr,
-            State::JoiningPeer($state) => $expr,
-            State::Adult($state) => $expr,
-            State::Elder($state) => $expr,
-            State::Terminated => $term_expr,
+            Self::BootstrappingPeer($state) => $expr,
+            Self::JoiningPeer($state) => $expr,
+            Self::Adult($state) => $expr,
+            Self::Elder($state) => $expr,
+            Self::Terminated => $term_expr,
         }
     };
 }
@@ -80,7 +80,7 @@ enum EventType {
 impl EventType {
     fn is_not_a_timeout(&self) -> bool {
         match *self {
-            EventType::Action(ref action) => match **action {
+            Self::Action(ref action) => match **action {
                 Action::HandleTimeout(_) => false,
                 _ => true,
             },
@@ -136,19 +136,19 @@ impl State {
 
     pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
         match *self {
-            State::Elder(ref state) => Some(state.our_elders()),
-            State::BootstrappingPeer(_)
-            | State::JoiningPeer(_)
-            | State::Adult(_)
-            | State::Terminated => None,
+            Self::Elder(ref state) => Some(state.our_elders()),
+            Self::BootstrappingPeer(_)
+            | Self::JoiningPeer(_)
+            | Self::Adult(_)
+            | Self::Terminated => None,
         }
     }
 
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
         match *self {
-            State::Elder(ref state) => Ok(state.our_prefix().matches(name)),
-            State::Adult(ref state) => Ok(state.our_prefix().matches(name)),
-            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => {
+            Self::Elder(ref state) => Ok(state.our_prefix().matches(name)),
+            Self::Adult(ref state) => Ok(state.our_prefix().matches(name)),
+            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
                 Err((InterfaceError::InvalidState).into())
             }
         }
@@ -159,9 +159,9 @@ impl State {
         name: &XorName,
     ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
         match *self {
-            State::Elder(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
-            State::Adult(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
-            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => {
+            Self::Elder(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
+            Self::Adult(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
+            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
                 Err(RoutingError::InvalidStateForOperation)
             }
         }
@@ -178,7 +178,7 @@ impl State {
     /// Returns this elder mut state.
     pub fn elder_state_mut(&mut self) -> Option<&mut Elder> {
         match *self {
-            State::Elder(ref mut state) => Some(state),
+            Self::Elder(ref mut state) => Some(state),
             _ => None,
         }
     }
@@ -188,7 +188,7 @@ impl State {
         F: FnOnce(Self) -> Result<Self, E>,
         E: Debug,
     {
-        let old_state = mem::replace(self, State::Terminated);
+        let old_state = mem::replace(self, Self::Terminated);
         let old_state_log_ident = format!("{}", old_state);
 
         match f(old_state) {
@@ -225,44 +225,42 @@ impl Debug for State {
 impl State {
     pub fn chain(&self) -> Option<&Chain> {
         match *self {
-            State::Adult(ref state) => Some(state.chain()),
-            State::Elder(ref state) => Some(state.chain()),
-            State::BootstrappingPeer(_) | State::JoiningPeer(_) | State::Terminated => None,
+            Self::Adult(ref state) => Some(state.chain()),
+            Self::Elder(ref state) => Some(state.chain()),
+            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => None,
         }
     }
 
     /// Returns this elder state.
     pub fn elder_state(&self) -> Option<&Elder> {
         match *self {
-            State::Elder(ref state) => Some(state),
+            Self::Elder(ref state) => Some(state),
             _ => None,
         }
     }
 
     pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
         match *self {
-            State::BootstrappingPeer(_) | State::Terminated => vec![],
-            State::JoiningPeer(ref mut state) => state.get_timed_out_tokens(),
-            State::Adult(ref mut state) => state.get_timed_out_tokens(),
-            State::Elder(ref mut state) => state.get_timed_out_tokens(),
+            Self::BootstrappingPeer(_) | Self::Terminated => vec![],
+            Self::JoiningPeer(ref mut state) => state.get_timed_out_tokens(),
+            Self::Adult(ref mut state) => state.get_timed_out_tokens(),
+            Self::Elder(ref mut state) => state.get_timed_out_tokens(),
         }
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
         match *self {
-            State::Terminated | State::BootstrappingPeer(_) | State::JoiningPeer(_) => false,
-            State::Adult(ref state) => state.has_unpolled_observations(),
-            State::Elder(ref state) => state.has_unpolled_observations(),
+            Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => false,
+            Self::Adult(ref state) => state.has_unpolled_observations(),
+            Self::Elder(ref state) => state.has_unpolled_observations(),
         }
     }
 
     pub fn unpolled_observations_string(&self) -> String {
         match *self {
-            State::Terminated | State::BootstrappingPeer(_) | State::JoiningPeer(_) => {
-                String::new()
-            }
-            State::Adult(ref state) => state.unpolled_observations_string(),
-            State::Elder(ref state) => state.unpolled_observations_string(),
+            Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => String::new(),
+            Self::Adult(ref state) => state.unpolled_observations_string(),
+            Self::Elder(ref state) => state.unpolled_observations_string(),
         }
     }
 
@@ -366,7 +364,7 @@ impl StateMachine {
             _ => true,
         };
 
-        let machine = StateMachine {
+        let machine = Self {
             state,
             network_rx,
             network_rx_idx: 0,
@@ -404,7 +402,7 @@ impl StateMachine {
             State::Adult(Adult::resume(state, timer))
         };
 
-        let machine = StateMachine {
+        let machine = Self {
             state,
             network_rx,
             network_rx_idx: 0,

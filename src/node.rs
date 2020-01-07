@@ -8,6 +8,7 @@
 
 use crate::{
     action::Action,
+    authority::Authority,
     chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event_stream::{EventStepper, EventStream},
@@ -19,7 +20,7 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, BootstrappingPeerDetails},
     xor_space::XorName,
-    Authority, ConnectionInfo, Event, NetworkBytes, NetworkConfig,
+    ConnectionInfo, Event, NetworkBytes, NetworkConfig,
 };
 use crossbeam_channel as mpmc;
 use std::{net::SocketAddr, sync::mpsc};
@@ -246,8 +247,8 @@ impl Node {
         let _ = self.poll();
 
         let action = Action::SendMessage {
-            src: src,
-            dst: dst,
+            src,
+            dst,
             content,
             result_tx: self.interface_result_tx.clone(),
         };

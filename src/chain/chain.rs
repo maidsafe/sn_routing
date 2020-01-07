@@ -14,13 +14,14 @@ use super::{
     SectionProofChain,
 };
 use crate::{
+    authority::Authority,
     error::RoutingError,
     id::{P2pNode, PublicId},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
     utils::LogIdent,
-    Authority, BlsPublicKeySet, BlsSecretKeyShare, BlsSignature, ConnectionInfo, Prefix, XorName,
-    Xorable,
+    xor_space::Xorable,
+    ConnectionInfo, Prefix, XorName,
 };
 use itertools::Itertools;
 use log::LogLevel;
@@ -38,7 +39,7 @@ use std::{
 use crate::crypto::Digest256;
 
 /// Returns the delivery group size based on the section size `n`
-pub fn delivery_group_size(n: usize) -> usize {
+pub const fn delivery_group_size(n: usize) -> usize {
     // this is an integer that is ≥ n/3
     (n + 2) / 3
 }
@@ -85,12 +86,12 @@ impl Chain {
         self.network_cfg.safe_section_size
     }
 
-    /// Returns the full NetworkParams structure (if present)
+    /// Returns the full `NetworkParams` structure (if present)
     pub fn network_cfg(&self) -> NetworkParams {
         self.network_cfg
     }
 
-    pub fn our_section_bls_keys(&self) -> &BlsPublicKeySet {
+    pub fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
         &self.our_section_bls_keys.public_key_set
     }
 
@@ -115,7 +116,7 @@ impl Chain {
         network_cfg: NetworkParams,
         our_id: PublicId,
         gen_info: GenesisPfxInfo,
-        secret_key_share: Option<BlsSecretKeyShare>,
+        secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let is_elder = gen_info.first_info.is_member(&our_id);
@@ -211,8 +212,8 @@ impl Chain {
             .chain_accumulator
             .add_proof(acc_event, proof, signature)
         {
-            Err(InsertError::AlreadyComplete) => {
-                // Ignore further votes for completed events.
+            Ok(()) | Err(InsertError::AlreadyComplete) => {
+                // Proof added or event already completed.
             }
             Err(InsertError::ReplacedAlreadyInserted) => {
                 // TODO: If detecting duplicate vote from peer, penalise.
@@ -223,9 +224,6 @@ impl Chain {
                     event,
                     self.chain_accumulator.incomplete_events().collect_vec()
                 );
-            }
-            Ok(()) => {
-                // Proof added.
             }
         }
         Ok(())
@@ -1186,7 +1184,7 @@ impl Chain {
         &self,
         signed_payload: &S,
         proofs: AccumulatingProof,
-    ) -> Option<BlsSignature> {
+    ) -> Option<bls::Signature> {
         let signed_bytes = serialise(signed_payload)
             .map_err(|err| {
                 log_or_panic!(
@@ -1337,13 +1335,13 @@ impl Chain {
         connected_peers: &[&XorName],
     ) -> Vec<XorName> {
         self.all_sections()
-            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(&pfx1, name))
+            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
             .into_iter()
             .flat_map(|(_, si)| {
                 si.member_names()
                     .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
             })
-            .filter(|name| connected_peers.contains(&name))
+            .filter(|name| connected_peers.contains(name))
             .take(count)
             .copied()
             .collect_vec()
@@ -1358,7 +1356,7 @@ impl Chain {
         connected_peers: &[&XorName],
     ) -> Option<Vec<XorName>> {
         let result = self.closest_known_names(name, count, connected_peers);
-        if result.contains(&&self.our_id().name()) {
+        if result.contains(self.our_id().name()) {
             Some(result)
         } else {
             None
@@ -1370,7 +1368,7 @@ impl Chain {
     pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
         let mut best_pfx = self.our_prefix();
         let mut best_info = self.our_info();
-        for (ref pfx, ref info) in &self.state.neighbour_infos {
+        for (pfx, info) in &self.state.neighbour_infos {
             // TODO: Remove the first check after verifying that section infos are never empty.
             if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
                 best_pfx = pfx;
@@ -1655,7 +1653,7 @@ impl Chain {
     pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
         if self.our_prefix().matches(name) {
             let mut section: BTreeSet<_> = self.our_info().member_names().copied().collect();
-            let _ = section.remove(&self.our_id().name());
+            let _ = section.remove(self.our_id().name());
             Some(section)
         } else {
             None
@@ -1664,7 +1662,7 @@ impl Chain {
 
     /// Returns their_knowledge
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
-        &self.state.get_their_knowledge()
+        self.state.get_their_knowledge()
     }
 
     /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
@@ -1672,7 +1670,7 @@ impl Chain {
         *iter::once(self.our_prefix())
             .chain(self.state.neighbour_infos.keys())
             .min_by_key(|prefix| prefix.bit_count())
-            .unwrap_or(&self.our_prefix())
+            .unwrap_or_else(|| self.our_prefix())
     }
 
     /// Returns the age counter of the given member or `None` if not a member.
@@ -1729,19 +1727,19 @@ pub struct SectionKeyShare {
     /// Index used to combine signature share and get PublicKeyShare from PublicKeySet.
     pub index: usize,
     /// Secret Key share
-    pub key: BlsSecretKeyShare,
+    pub key: bls::SecretKeyShare,
 }
 
 impl SectionKeyShare {
     /// Create a new share with associated share index.
     #[cfg(any(test, feature = "mock_base"))]
-    pub fn new_with_position(index: usize, key: BlsSecretKeyShare) -> Self {
+    pub const fn new_with_position(index: usize, key: bls::SecretKeyShare) -> Self {
         Self { index, key }
     }
 
     /// create a new share finding the position wihtin the elders.
     pub fn new(
-        key: BlsSecretKeyShare,
+        key: bls::SecretKeyShare,
         our_id: &PublicId,
         new_elders_info: &EldersInfo,
     ) -> Option<Self> {
@@ -1756,7 +1754,7 @@ impl SectionKeyShare {
 #[derive(Clone)]
 pub struct SectionKeys {
     /// Public key set to verify threshold signatures and combine shares.
-    pub public_key_set: BlsPublicKeySet,
+    pub public_key_set: bls::PublicKeySet,
     /// Secret Key share and index. None if the node was not participating in the DKG.
     pub secret_key_share: Option<SectionKeyShare>,
 }
@@ -1806,16 +1804,17 @@ impl EldersChangeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER};
+    use super::super::{
+        quorum_count, EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER,
+    };
     use super::*;
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_bls_threshold_secret_key,
-        quorum_count, rng,
-        rng::MainRng,
+        rng::{self, MainRng},
         unwrap,
         xor_space::{Prefix, XorName},
-        BlsSecretKeySet, ConnectionInfo,
+        ConnectionInfo,
     };
     use rand::{seq::SliceRandom, Rng};
     use std::{
@@ -1889,7 +1888,7 @@ mod tests {
     fn gen_chain<T>(
         rng: &mut MainRng,
         sections: T,
-    ) -> (Chain, HashMap<PublicId, FullId>, BlsSecretKeySet)
+    ) -> (Chain, HashMap<PublicId, FullId>, bls::SecretKeySet)
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -1943,7 +1942,7 @@ mod tests {
         (chain, full_ids, secret_key_set)
     }
 
-    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, BlsSecretKeySet) {
+    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, bls::SecretKeySet) {
         let elder_size: usize = 7;
         gen_chain(
             rng,

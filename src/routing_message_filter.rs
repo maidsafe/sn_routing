@@ -47,7 +47,7 @@ impl RoutingMessageFilter {
         let incoming_duration = Duration::from_secs(INCOMING_EXPIRY_DURATION_SECS);
         let outgoing_duration = Duration::from_secs(OUTGOING_EXPIRY_DURATION_SECS);
 
-        RoutingMessageFilter {
+        Self {
             incoming: MessageFilter::with_expiry_duration(incoming_duration),
             outgoing: LruCache::with_expiry_duration(outgoing_duration),
         }

@@ -67,9 +67,9 @@ impl Network {
             message_sent: false,
         }));
 
-        NETWORK.with(|network| *network.borrow_mut() = Some(inner.clone()));
+        NETWORK.with(|network| *network.borrow_mut() = Some(Rc::clone(&inner)));
 
-        Network {
+        Self {
             inner,
             seed_printer: Some(SeedPrinter::on_failure(seed)),
         }
@@ -169,7 +169,7 @@ impl Network {
 impl Clone for Network {
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone(),
+            inner: Rc::clone(&self.inner),
             seed_printer: None,
         }
     }
@@ -294,7 +294,7 @@ impl Packet {
         use crate::messages::{DirectMessage, Message};
 
         match self {
-            Packet::Message(ref message, _) => match **message {
+            Self::Message(ref message, _) => match **message {
                 Message::Direct(ref message) => match message.content() {
                     DirectMessage::ParsecRequest(..)
                     | DirectMessage::ParsecResponse(..)
@@ -312,7 +312,7 @@ struct Queue(VecDeque<Packet>);
 
 impl Queue {
     fn new() -> Self {
-        Queue(VecDeque::new())
+        Self(VecDeque::new())
     }
 
     fn push(&mut self, packet: Packet) {

@@ -48,7 +48,7 @@ impl<S> EventStream for S
 where
     S: EventStepper,
 {
-    type Item = <S as EventStepper>::Item;
+    type Item = <Self as EventStepper>::Item;
 
     fn next_ev(&mut self) -> Result<Self::Item, RecvError> {
         // We loop blocking on `produce_events` until an event is produced.

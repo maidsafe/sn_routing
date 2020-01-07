@@ -39,7 +39,7 @@ impl Node {
         });
 
         let addr = network.borrow_mut().gen_addr(config.ip, config.port);
-        let node = Rc::new(RefCell::new(Node {
+        let node = Rc::new(RefCell::new(Self {
             network,
             addr,
             event_tx,
@@ -324,8 +324,8 @@ enum ConnectionType {
 impl ConnectionType {
     fn is_bootstrap(self) -> bool {
         match self {
-            ConnectionType::Normal => false,
-            ConnectionType::Bootstrap => true,
+            Self::Normal => false,
+            Self::Bootstrap => true,
         }
     }
 }

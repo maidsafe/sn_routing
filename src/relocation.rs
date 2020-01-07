@@ -14,7 +14,6 @@ use crate::{
     error::RoutingError,
     id::{FullId, PublicId},
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
-    BlsSignature,
 };
 use maidsafe_utilities::serialisation::serialise;
 use std::fmt;
@@ -47,14 +46,14 @@ impl IntoAccumulatingEvent for RelocateDetails {
 pub struct SignedRelocateDetails {
     content: RelocateDetails,
     proof: SectionProofChain,
-    signature: BlsSignature,
+    signature: bls::Signature,
 }
 
 impl SignedRelocateDetails {
     pub fn new(
         content: RelocateDetails,
         proof: SectionProofChain,
-        signature: BlsSignature,
+        signature: bls::Signature,
     ) -> Self {
         Self {
             content,

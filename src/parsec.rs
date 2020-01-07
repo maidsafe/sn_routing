@@ -18,7 +18,6 @@ use crate::{
     messages::DirectMessage,
     rng::{self, MainRng, RngCompat},
     utils::LogIdent,
-    BlsSecretKeySet,
 };
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
@@ -363,12 +362,12 @@ pub fn generate_first_dkg_result(rng: &mut MainRng) -> DkgResult {
 pub fn generate_bls_threshold_secret_key(
     rng: &mut MainRng,
     participants: usize,
-) -> BlsSecretKeySet {
+) -> bls::SecretKeySet {
     // The BLS scheme will require more than `participants / 3`
     // shares in order to construct a full key or signature.
     let threshold = participants.saturating_sub(1) / 3;
 
-    BlsSecretKeySet::random(threshold, &mut RngCompat(rng))
+    bls::SecretKeySet::random(threshold, &mut RngCompat(rng))
 }
 
 /// Create Parsec instance.
@@ -522,7 +521,7 @@ mod tests {
             pub_id: &id::PublicId,
             log_ident: &LogIdent,
         ) {
-            let _ = parsec_map.handle_request(msg_version, self.clone(), *pub_id, &log_ident);
+            let _ = parsec_map.handle_request(msg_version, self.clone(), *pub_id, log_ident);
         }
     }
 
@@ -534,7 +533,7 @@ mod tests {
             pub_id: &id::PublicId,
             log_ident: &LogIdent,
         ) {
-            let _ = parsec_map.handle_response(msg_version, self.clone(), *pub_id, &log_ident);
+            let _ = parsec_map.handle_response(msg_version, self.clone(), *pub_id, log_ident);
         }
     }
 
@@ -574,7 +573,7 @@ mod tests {
         // Sometimes send to an old parsec
         let msg_version = number_of_parsecs - parsec_age;
 
-        handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, &pub_id, &log_ident);
+        handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, pub_id, &log_ident);
 
         msg.handle(&mut parsec_map, msg_version, pub_id, &log_ident);
         assert_eq!(parsec_map.needs_pruning(), prune_needed);

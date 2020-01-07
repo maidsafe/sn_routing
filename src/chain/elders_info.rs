@@ -202,6 +202,7 @@ impl Display for EldersInfo {
 
 /// Returns the number of vote for a quorum of this section such that:
 /// quorum_count * QUORUM_DENOMINATOR > elder_size * QUORUM_NUMERATOR
-pub fn quorum_count(elder_size: usize) -> usize {
+#[inline]
+pub const fn quorum_count(elder_size: usize) -> usize {
     1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR
 }

@@ -53,7 +53,7 @@ impl PeerMap {
 
     // Inserts a new client entry
     pub fn remove_client(&mut self, peer_addr: &SocketAddr) {
-        let _ = self.clients.remove(&peer_addr);
+        let _ = self.clients.remove(peer_addr);
     }
 
     // Return true if we know of that peer as a client

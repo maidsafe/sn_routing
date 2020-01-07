@@ -12,6 +12,7 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
+    authority::Authority,
     chain::{
         Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
@@ -36,7 +37,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
-    Authority, BlsSignature, ConnectionInfo,
+    ConnectionInfo,
 };
 use itertools::Itertools;
 use std::{
@@ -680,7 +681,7 @@ impl Approved for Adult {
     fn handle_member_relocated(
         &mut self,
         _details: RelocateDetails,
-        _signature: BlsSignature,
+        _signature: bls::Signature,
         _node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {

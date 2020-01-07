@@ -269,7 +269,7 @@ fn dkg() {
 
         assert_eq!(
             public_key_set.combine_signatures(iter::once((index, &sig_share))),
-            Err(threshold_crypto::error::Error::NotEnoughShares)
+            Err(bls::error::Error::NotEnoughShares)
         );
     }
 
@@ -447,7 +447,7 @@ fn randomized_static_network() {
 struct PeerId(usize);
 
 impl SecretId for PeerId {
-    type PublicId = PeerId;
+    type PublicId = Self;
 
     fn public_id(&self) -> &Self::PublicId {
         self
@@ -506,7 +506,7 @@ impl Peer {
 
 impl From<Parsec<Payload, PeerId>> for Peer {
     fn from(parsec: Parsec<Payload, PeerId>) -> Self {
-        Peer {
+        Self {
             parsec,
             blocks: vec![],
         }

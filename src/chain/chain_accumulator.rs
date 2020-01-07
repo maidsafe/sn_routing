@@ -7,10 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{AccumulatingEvent, EldersInfo, EventSigPayload, NetworkEvent, Proof, ProofSet};
-use crate::{id::PublicId, BlsPublicKeySet, BlsSignature};
+use crate::id::PublicId;
 use log::LogLevel;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::{mem, rc::Rc};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    mem,
+    rc::Rc,
+};
 
 /// An unresponsive node is detected by conunting how many (defined by UNRESPONSIVE_THRESHOLD)
 /// missed votes among the certain number (defined by UNRESPONSIVE_WINDOW) of recent consensused
@@ -37,7 +40,7 @@ impl VoteStatuses {
         let event_rc = Rc::new(event);
         for id in non_voters {
             let events = self.unvoted.entry(id).or_insert_with(BTreeSet::new);
-            let _ = events.insert(event_rc.clone());
+            let _ = events.insert(Rc::clone(&event_rc));
         }
         self.tracked_events.push_back(event_rc);
 
@@ -203,8 +206,8 @@ pub struct AccumulatingProof {
 
 impl AccumulatingProof {
     #[allow(unused)]
-    pub fn from_proof_set(parsec_proofs: ProofSet) -> AccumulatingProof {
-        AccumulatingProof {
+    pub fn from_proof_set(parsec_proofs: ProofSet) -> Self {
+        Self {
             parsec_proofs,
             sig_shares: Default::default(),
         }
@@ -231,9 +234,9 @@ impl AccumulatingProof {
     pub fn check_and_combine_signatures(
         self,
         elder_info: &EldersInfo,
-        pk_set: &BlsPublicKeySet,
+        pk_set: &bls::PublicKeySet,
         signed_bytes: &[u8],
-    ) -> Option<BlsSignature> {
+    ) -> Option<bls::Signature> {
         let fr_and_shares = elder_info
             .member_ids()
             .enumerate()
@@ -304,7 +307,7 @@ mod test {
         ))
     }
 
-    fn random_section_info_sig_payload(rng: &mut MainRng) -> (EventSigPayload, BlsPublicKeySet) {
+    fn random_section_info_sig_payload(rng: &mut MainRng) -> (EventSigPayload, bls::PublicKeySet) {
         let participants = 2;
         let first_secret_key_index = 0;
         let bls_keys = generate_bls_threshold_secret_key(rng, participants);
