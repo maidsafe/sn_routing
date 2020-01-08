@@ -54,7 +54,8 @@
     while_true,
     clippy::unicode_not_nfc,
     clippy::wrong_pub_self_convention,
-    clippy::option_unwrap_used
+    clippy::option_unwrap_used,
+    deprecated
 )]
 #![warn(
     trivial_casts,
@@ -65,8 +66,6 @@
     unused_results,
     clippy::needless_borrow
 )]
-// FIXME: move `deprecated` to `deny` section above
-#![allow(deprecated)]
 
 #[macro_use]
 extern crate log;
