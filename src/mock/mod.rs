@@ -16,4 +16,5 @@ pub mod quic_p2p;
 /// Mock cryptography
 pub(crate) mod crypto;
 
-pub use self::quic_p2p::Network;
+mod env;
+pub use self::env::Network;

@@ -7,32 +7,20 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{node::Node, OurType};
-use crate::{
-    chain::NetworkParams,
-    rng::{self, MainRng, Seed, SeedPrinter},
-    unwrap,
-};
+use crate::rng::{self, MainRng, Seed, SeedPrinter};
 use bytes::Bytes;
 use fxhash::{FxHashMap, FxHashSet};
-use maidsafe_utilities::log;
 use rand::{self, seq::SliceRandom, Rng, SeedableRng};
 use std::{
     cell::RefCell,
     cmp,
     collections::{hash_map::Entry, VecDeque},
-    env,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     rc::{Rc, Weak},
-    sync::Once,
 };
-
-#[cfg(feature = "mock")]
-use crate::mock::parsec;
 
 const IP_BASE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const PORT: u16 = 9999;
-
-static LOG_INIT: Once = Once::new();
 
 /// Handle to the mock network. Create one before testing with mocks. Call `set_next_node_addr` or
 /// `gen_next_node_addr` before creating a `QuicP2p` instance.
@@ -44,23 +32,10 @@ pub struct Network {
 
 impl Network {
     /// Construct new mock network.
-    pub fn new(network_cfg: NetworkParams) -> Self {
-        LOG_INIT.call_once(|| {
-            if env::var("RUST_LOG")
-                .map(|value| !value.is_empty())
-                .unwrap_or(false)
-            {
-                unwrap!(log::init(true));
-            }
-        });
-
-        #[cfg(feature = "mock")]
-        parsec::init_mock();
-
+    pub fn new() -> Self {
         let seed = Seed::default();
 
         let inner = Rc::new(RefCell::new(Inner {
-            network_cfg,
             rng: MainRng::from_seed(seed),
             nodes: Default::default(),
             connections: Default::default(),
@@ -99,21 +74,6 @@ impl Network {
     /// Is the peer at `addr0` connected to the one at `addr1`?
     pub fn is_connected(&self, addr0: &SocketAddr, addr1: &SocketAddr) -> bool {
         self.inner.borrow().is_connected(addr0, addr1)
-    }
-
-    /// Get the chain network config.
-    pub fn network_cfg(&self) -> NetworkParams {
-        self.inner.borrow().network_cfg
-    }
-
-    /// Get the number of elders
-    pub fn elder_size(&self) -> usize {
-        self.inner.borrow().network_cfg.elder_size
-    }
-
-    /// Get the safe section size
-    pub fn safe_section_size(&self) -> usize {
-        self.inner.borrow().network_cfg.safe_section_size
     }
 
     /// Construct a new random number generator using a seed generated from random data provided by `self`.
@@ -167,6 +127,12 @@ impl Network {
     }
 }
 
+impl Default for Network {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Clone for Network {
     fn clone(&self) -> Self {
         Self {
@@ -177,7 +143,6 @@ impl Clone for Network {
 }
 
 pub(super) struct Inner {
-    network_cfg: NetworkParams,
     rng: MainRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
