@@ -18,7 +18,7 @@ use crate::{
     chain::SectionKeyInfo,
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
-    mock::Network,
+    mock::Environment,
     network_service::NetworkService,
     outbox::EventBox,
     rng::{self, MainRng},
@@ -400,12 +400,12 @@ fn make_state_machine(
     gen_pfx_info: &GenesisPfxInfo,
     outbox: &mut dyn EventBox,
 ) -> StateMachine {
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: ELDER_SIZE,
         safe_section_size: ELDER_SIZE,
     });
 
-    let endpoint = network.gen_addr();
+    let endpoint = env.gen_addr();
     let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
 
     StateMachine::new(

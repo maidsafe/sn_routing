@@ -28,7 +28,7 @@ use std::{
 static LOG_INIT: Once = Once::new();
 
 /// Test environment. Should be created once at the beginning of each test.
-pub struct Network {
+pub struct Environment {
     rng: RefCell<MainRng>,
     network: quic_p2p::Network,
     network_cfg: NetworkParams,
@@ -36,7 +36,7 @@ pub struct Network {
     seed_printer: Option<SeedPrinter>,
 }
 
-impl Network {
+impl Environment {
     /// Construct new mock network.
     pub fn new(network_cfg: NetworkParams) -> Self {
         LOG_INIT.call_once(|| {
@@ -113,7 +113,7 @@ impl Network {
     }
 }
 
-impl Clone for Network {
+impl Clone for Environment {
     fn clone(&self) -> Self {
         Self {
             rng: RefCell::new(self.new_rng()),
@@ -125,7 +125,7 @@ impl Clone for Network {
     }
 }
 
-impl Deref for Network {
+impl Deref for Environment {
     type Target = self::quic_p2p::Network;
 
     fn deref(&self) -> &Self::Target {
@@ -133,7 +133,7 @@ impl Deref for Network {
     }
 }
 
-impl DerefMut for Network {
+impl DerefMut for Environment {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.network
     }

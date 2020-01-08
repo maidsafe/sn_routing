@@ -353,7 +353,7 @@ mod tests {
         chain::NetworkParams,
         id::FullId,
         messages::Message,
-        mock::Network,
+        mock::Environment,
         quic_p2p::{Builder, Peer},
         state_machine::StateMachine,
         states::common::from_network_bytes,
@@ -372,18 +372,18 @@ mod tests {
             network_cfg.safe_section_size = 30;
         };
 
-        let network = Network::new(Default::default());
-        let mut rng = network.new_rng();
+        let env = Environment::new(Default::default());
+        let mut rng = env.new_rng();
 
         // Start a bare-bones network service.
         let (event_tx, event_rx) = mpmc::unbounded();
-        let node_a_endpoint = network.gen_addr();
+        let node_a_endpoint = env.gen_addr();
         let config = NetworkConfig::node().with_endpoint(node_a_endpoint);
         let node_a_network_service = unwrap!(Builder::new(event_tx).with_config(config).build());
 
         // Construct a `StateMachine` which will start in the `BootstrappingPeer` state and
         // bootstrap off the network service above.
-        let node_b_endpoint = network.gen_addr();
+        let node_b_endpoint = env.gen_addr();
         let config = NetworkConfig::node()
             .with_hard_coded_contact(node_a_endpoint)
             .with_endpoint(node_b_endpoint);
@@ -406,7 +406,7 @@ mod tests {
         );
 
         // Check the network service received `ConnectedTo`.
-        network.poll();
+        env.poll();
         match unwrap!(event_rx.try_recv()) {
             NetworkEvent::ConnectedTo {
                 peer: Peer::Node { .. },
@@ -419,11 +419,11 @@ mod tests {
 
         // The state machine should have received the `BootstrappedTo` event and this will have
         // caused it to send a `BootstrapRequest` message.
-        network.poll();
+        env.poll();
         step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
 
         // Check the network service received the `BootstrapRequest`
-        network.poll();
+        env.poll();
         if let NetworkEvent::NewMessage { peer_addr, msg } = unwrap!(event_rx.try_recv()) {
             assert_eq!(peer_addr, node_b_endpoint);
 
@@ -444,13 +444,13 @@ mod tests {
 
         // Drop the network service...
         drop(node_a_network_service);
-        network.poll();
+        env.poll();
 
         // ...which triggers `ConnectionFailure` on the state machine which then attempts to
         // rebootstrap..
         step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
         assert!(node_b_outbox.is_empty());
-        network.poll();
+        env.poll();
 
         // ... but there is no one to bootstrap to, so the bootstrap fails which causes the state
         // machine to terminate.

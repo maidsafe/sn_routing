@@ -13,7 +13,7 @@ use super::{
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
-    mock::Network,
+    mock::Environment,
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
@@ -52,15 +52,15 @@ fn messages_during_churn() {
 fn remove_unresponsive_node() {
     let elder_size = 8;
     let safe_section_size = 8;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
 
-    let mut nodes = create_connected_nodes(&network, safe_section_size);
+    let mut nodes = create_connected_nodes(&env, safe_section_size);
     poll_and_resend(&mut nodes);
     // Pause a node to act as non-responsive.
-    let mut rng = network.new_rng();
+    let mut rng = env.new_rng();
     let non_responsive_index = gen_elder_index(&mut rng, &nodes);
     let non_responsive_name = nodes[non_responsive_index].name();
     info!(
@@ -175,12 +175,12 @@ enum MessageSchedule {
 }
 
 fn churn(params: Params) {
-    let network = Network::new(params.network);
-    let mut rng = network.new_rng();
+    let env = Environment::new(params.network);
+    let mut rng = env.new_rng();
     let mut nodes = if params.initial_prefix_lens.is_empty() {
-        create_connected_nodes(&network, network.elder_size())
+        create_connected_nodes(&env, env.elder_size())
     } else {
-        create_connected_nodes_until_split(&network, params.initial_prefix_lens)
+        create_connected_nodes_until_split(&env, params.initial_prefix_lens)
     };
 
     //
@@ -196,10 +196,10 @@ fn churn(params: Params) {
             break;
         }
 
-        let added_indices = add_nodes(&mut rng, &network, &mut nodes, params.grow_add_probability);
+        let added_indices = add_nodes(&mut rng, &env, &mut nodes, params.grow_add_probability);
         progress_and_verify(
             &mut rng,
-            &network,
+            &env,
             &mut nodes,
             params.message_schedule,
             added_indices,
@@ -221,7 +221,7 @@ fn churn(params: Params) {
         let (added_indices, dropped_names) = if rng.gen_range(0.0, 1.0) < params.churn_probability {
             random_churn(
                 &mut rng,
-                &network,
+                &env,
                 &mut nodes,
                 params.churn_add_probability,
                 params.churn_drop_probability,
@@ -234,7 +234,7 @@ fn churn(params: Params) {
 
         progress_and_verify(
             &mut rng,
-            &network,
+            &env,
             &mut nodes,
             params.message_schedule,
             added_indices,
@@ -265,7 +265,7 @@ fn churn(params: Params) {
 
             progress_and_verify(
                 &mut rng,
-                &network,
+                &env,
                 &mut nodes,
                 params.message_schedule,
                 BTreeSet::new(),
@@ -417,7 +417,7 @@ pub fn sub_perfixes_for_balanced_add(nodes: &[TestNode]) -> BTreeSet<Prefix<XorN
 /// Adds node per existing prefix with the given probability. Returns new node indices.
 fn add_nodes(
     rng: &mut MainRng,
-    network: &Network,
+    env: &Environment,
     nodes: &mut Vec<TestNode>,
     add_probability: f64,
 ) -> BTreeSet<usize> {
@@ -436,7 +436,7 @@ fn add_nodes(
         };
         let network_config =
             NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
-        let node = TestNode::builder(network)
+        let node = TestNode::builder(env)
             .network_config(network_config)
             .full_id(FullId::within_range(rng, &prefix.range_inclusive()))
             .create();
@@ -493,7 +493,7 @@ fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut [TestNode]) {
 // dropped node names.
 fn random_churn(
     rng: &mut MainRng,
-    network: &Network,
+    env: &Environment,
     nodes: &mut Vec<TestNode>,
     add_probability: f64,
     drop_probability: f64,
@@ -511,7 +511,7 @@ fn random_churn(
     };
 
     let added_indices = if section_num < max_section_num {
-        add_nodes(rng, &network, nodes, add_probability)
+        add_nodes(rng, &env, nodes, add_probability)
     } else {
         BTreeSet::new()
     };
@@ -521,7 +521,7 @@ fn random_churn(
 
 fn progress_and_verify<R: Rng>(
     rng: &mut R,
-    network: &Network,
+    env: &Environment,
     nodes: &mut [TestNode],
     message_schedule: MessageSchedule,
     added_indices: BTreeSet<usize>,
@@ -530,19 +530,19 @@ fn progress_and_verify<R: Rng>(
     let expectations = match message_schedule {
         MessageSchedule::AfterChurn => {
             poll_after_churn(nodes, added_indices, dropped_names);
-            let expectations = setup_expectations(rng, nodes, network.elder_size());
+            let expectations = setup_expectations(rng, nodes, env.elder_size());
             poll_and_resend(nodes);
             expectations
         }
         MessageSchedule::DuringChurn => {
-            let expectations = setup_expectations(rng, nodes, network.elder_size());
+            let expectations = setup_expectations(rng, nodes, env.elder_size());
             poll_after_churn(nodes, added_indices, dropped_names);
             expectations
         }
     };
 
     expectations.verify(nodes);
-    verify_invariant_for_all_nodes(network, nodes);
+    verify_invariant_for_all_nodes(env, nodes);
     shuffle_nodes(rng, nodes);
 }
 

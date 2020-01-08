@@ -17,4 +17,4 @@ pub mod quic_p2p;
 pub(crate) mod crypto;
 
 mod env;
-pub use self::env::Network;
+pub use self::env::Environment;

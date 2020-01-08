@@ -18,7 +18,7 @@ pub use self::utils::*;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
-    mock::Network, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix,
+    mock::Environment, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix,
     RelocationOverrides, XorName,
 };
 use std::collections::BTreeMap;
@@ -39,12 +39,12 @@ fn nodes_with_candidate(nodes: &[TestNode]) -> Vec<XorName> {
 
 fn test_nodes(percentage_size: usize) {
     let size = LOWERED_ELDER_SIZE * percentage_size / 100;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes(&network, size);
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    let mut nodes = create_connected_nodes(&env, size);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
 pub fn count_sections_members_if_split(nodes: &[TestNode]) -> BTreeMap<Prefix<XorName>, usize> {
@@ -92,28 +92,28 @@ fn can_accept_node_without_split(
         .any(|count| *count < safe_section_size * 2 - 1)
 }
 
-fn create_node_with_contact(network: &Network, contact: &mut TestNode) -> TestNode {
+fn create_node_with_contact(env: &Environment, contact: &mut TestNode) -> TestNode {
     let config = NetworkConfig::node().with_hard_coded_contact(contact.endpoint());
-    TestNode::builder(&network).network_config(config).create()
+    TestNode::builder(&env).network_config(config).create()
 }
 
 #[test]
 // TODO (quic-p2p): This test requires bootstrap blacklist which isn't implemented in quic-p2p.
 #[ignore]
 fn disconnect_on_rebootstrap() {
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes(&network, 2);
+    let mut nodes = create_connected_nodes(&env, 2);
 
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[1].endpoint());
-    nodes.push(TestNode::builder(&network).network_config(config).create());
+    nodes.push(TestNode::builder(&env).network_config(config).create());
     let _ = poll_all(&mut nodes);
 
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
-    assert!(!network.is_connected(&nodes[2].endpoint(), &nodes[1].endpoint()));
+    assert!(!env.is_connected(&nodes[2].endpoint(), &nodes[1].endpoint()));
 
     expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminated);
 }
@@ -122,12 +122,12 @@ fn disconnect_on_rebootstrap() {
  * TODO: either modify this test or remove it
 #[test]
 fn candidate_expiration() {
-    let network = Network::new(LOWERED_ELDER_SIZE, LOWERED_ELDER_SIZE * 2, None);
-    let mut nodes = create_connected_nodes(&network, LOWERED_ELDER_SIZE);
+    let env = Environment::new(LOWERED_ELDER_SIZE, LOWERED_ELDER_SIZE * 2, None);
+    let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
     let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.insert(
         0,
-        TestNode::builder(&network)
+        TestNode::builder(&env)
             .network_config(network_config)
             .create(),
     );
@@ -175,12 +175,12 @@ fn candidate_expiration() {
 #[test]
 fn single_section() {
     let sec_size = 10;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: sec_size,
         safe_section_size: sec_size,
     });
-    let mut nodes = create_connected_nodes(&network, sec_size);
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    let mut nodes = create_connected_nodes(&env, sec_size);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
 #[test]
@@ -200,21 +200,21 @@ fn more_than_section_size_nodes() {
 
 #[test]
 fn node_joins_in_front() {
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes(&network, 2 * LOWERED_ELDER_SIZE);
+    let mut nodes = create_connected_nodes(&env, 2 * LOWERED_ELDER_SIZE);
     let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.insert(
         0,
-        TestNode::builder(&network)
+        TestNode::builder(&env)
             .network_config(network_config)
             .create(),
     );
     poll_and_resend(&mut nodes);
 
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
 // Only run for mock parsec, as with DKG Joining node timeouts waiting for NodeApproval.
@@ -224,11 +224,11 @@ fn node_joins_in_front() {
 #[test]
 #[cfg_attr(not(feature = "mock"), ignore)]
 fn multiple_joining_nodes() {
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes(&network, LOWERED_ELDER_SIZE);
+    let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
 
     while nodes.len() < 25 {
         let initial_size = nodes.len();
@@ -247,7 +247,7 @@ fn multiple_joining_nodes() {
             }
 
             loop {
-                let node = create_node_with_contact(&network, &mut nodes[0]);
+                let node = create_node_with_contact(&env, &mut nodes[0]);
                 let valid_sub_prefix =
                     new_node_prefix_without_split(&node, &count_if_split_node, safe_section_size);
 
@@ -271,7 +271,7 @@ fn multiple_joining_nodes() {
             .map(TestNode::name)
             .collect();
         info!("Added Nodes: {:?}", nodes_added);
-        verify_invariant_for_all_nodes(&network, &mut nodes);
+        verify_invariant_for_all_nodes(&env, &mut nodes);
         assert!(
             !nodes_added.is_empty(),
             "Should always handle at least one node"
@@ -281,12 +281,12 @@ fn multiple_joining_nodes() {
 
 #[test]
 fn multi_split() {
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes_until_split(&network, vec![2, 2, 2, 2]);
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    let mut nodes = create_connected_nodes_until_split(&env, vec![2, 2, 2, 2]);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
 struct SimultaneousJoiningNode {
@@ -300,7 +300,7 @@ struct SimultaneousJoiningNode {
 
 // Proceed with testing joining nodes at the same time with the given configuration.
 fn simultaneous_joining_nodes(
-    network: Network,
+    env: Environment,
     mut nodes: Nodes,
     nodes_to_add_setup: &[SimultaneousJoiningNode],
 ) {
@@ -308,7 +308,7 @@ fn simultaneous_joining_nodes(
     // Arrange
     // Setup nodes so relocation will happen as specified by nodes_to_add_setup.
     //
-    let mut rng = network.new_rng();
+    let mut rng = env.new_rng();
     nodes.shuffle(&mut rng);
 
     let mut overrides = RelocationOverrides::new();
@@ -333,7 +333,7 @@ fn simultaneous_joining_nodes(
                         .with_hard_coded_contact(unwrap!(nodes.first_mut()).endpoint())
                 };
 
-                let node = TestNode::builder(&network).network_config(config).create();
+                let node = TestNode::builder(&env).network_config(config).create();
                 if setup.src_section_prefix.matches(&node.name()) {
                     break node;
                 }
@@ -375,7 +375,7 @@ fn simultaneous_joining_nodes(
     }
     let prefixes_not_enough_elders = elders_count_by_prefix
         .into_iter()
-        .filter(|(_, num_elders)| *num_elders < network.elder_size())
+        .filter(|(_, num_elders)| *num_elders < env.elder_size())
         .map(|(prefix, _)| prefix)
         .collect::<Vec<_>>();
     assert!(
@@ -383,17 +383,17 @@ fn simultaneous_joining_nodes(
         "Prefixes with too few elders: {:?}",
         prefixes_not_enough_elders
     );
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
 #[test]
 fn simultaneous_joining_nodes_two_sections() {
     // Create a network with two sections:
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -411,17 +411,17 @@ fn simultaneous_joining_nodes_two_sections() {
             proxy_prefix: prefix_0,
         },
     ];
-    simultaneous_joining_nodes(network, nodes, &nodes_to_add_setup);
+    simultaneous_joining_nodes(env, nodes, &nodes_to_add_setup);
 }
 
 #[test]
 fn simultaneous_joining_nodes_two_sections_switch_section() {
     // Create a network with two sections:
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -439,7 +439,7 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
             proxy_prefix: prefix_0,
         },
     ];
-    simultaneous_joining_nodes(network, nodes, &nodes_to_add_setup);
+    simultaneous_joining_nodes(env, nodes, &nodes_to_add_setup);
 }
 
 #[test]
@@ -450,11 +450,11 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let safe_section_size = LOWERED_ELDER_SIZE + 1;
 
     // Create a network with three sections:
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
-    let mut nodes = create_connected_nodes_until_split(&network, vec![1, 2, 2]);
+    let mut nodes = create_connected_nodes_until_split(&env, vec![1, 2, 2]);
 
     // The created sections
     let sections = current_sections(&nodes).collect_vec();
@@ -463,12 +463,11 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let long_prefix_1 = long_prefix_0.sibling();
 
     // Setup the network so the small_prefix will split with one more node in small_prefix_to_add.
-    let _ = *unwrap!(add_connected_nodes_until_one_away_from_split(
-        &network,
-        &mut nodes,
-        &[small_prefix],
-    )
-    .first());
+    let _ =
+        *unwrap!(
+            add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &[small_prefix],)
+                .first()
+        );
 
     // First node will trigger the split: src, destination and proxy together.
     // Other nodes validate getting relocated to a section with a proxy from section splitting
@@ -490,13 +489,13 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
             proxy_prefix: long_prefix_1.with_flipped_bit(0).with_flipped_bit(1),
         },
     ];
-    simultaneous_joining_nodes(network, nodes, &nodes_to_add_setup);
+    simultaneous_joining_nodes(env, nodes, &nodes_to_add_setup);
 }
 
 #[test]
 fn check_close_names_for_elder_size_nodes() {
     let nodes = create_connected_nodes(
-        &Network::new(NetworkParams {
+        &Environment::new(NetworkParams {
             elder_size: LOWERED_ELDER_SIZE,
             safe_section_size: LOWERED_ELDER_SIZE,
         }),
@@ -515,7 +514,7 @@ fn check_section_info_ack() {
     //
     let elder_size = 8;
     let safe_section_size = 8;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
@@ -523,7 +522,7 @@ fn check_section_info_ack() {
     //
     // Act
     //
-    let nodes = create_connected_nodes_until_split(&network, vec![1, 1]);
+    let nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
     let node_with_sibling_knowledge: Vec<_> = nodes
         .iter()
         .filter(|node| {
@@ -550,11 +549,11 @@ fn carry_out_parsec_pruning() {
     let init_network_size = 7;
     let elder_size = 8;
     let safe_section_size = 8;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
-    let mut nodes = create_connected_nodes(&network, init_network_size);
+    let mut nodes = create_connected_nodes(&env, init_network_size);
     poll_and_resend(&mut nodes);
 
     let parsec_versions = |nodes: &Nodes| {
@@ -566,7 +565,7 @@ fn carry_out_parsec_pruning() {
 
     let initial_parsec_versions = parsec_versions(&nodes);
 
-    let mut rng = network.new_rng();
+    let mut rng = env.new_rng();
     // Keeps polling and dispatching user data till trigger a pruning.
     let max_gossips = 1_000;
     for _ in 0..max_gossips {
@@ -593,12 +592,12 @@ fn carry_out_parsec_pruning() {
     let actual = parsec_versions(&nodes);
     assert_eq!(expected, actual);
 
-    let node = create_node_with_contact(&network, &mut nodes[0]);
+    let node = create_node_with_contact(&env, &mut nodes[0]);
     nodes.push(node);
 
     poll_and_resend(&mut nodes);
 
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
 // The paused node does not participate until resumed, so we need enough elders to reach
@@ -610,29 +609,28 @@ const NODE_PAUSE_AND_RESUME_PARAMS: NetworkParams = NetworkParams {
 
 #[test]
 fn node_pause_and_resume_simple() {
-    let network = Network::new(NODE_PAUSE_AND_RESUME_PARAMS);
-    let nodes = create_connected_nodes(&network, 2 * network.safe_section_size() - 2);
-    let new_node_id = FullId::gen(&mut network.new_rng());
-    node_pause_and_resume(network, nodes, new_node_id)
+    let env = Environment::new(NODE_PAUSE_AND_RESUME_PARAMS);
+    let nodes = create_connected_nodes(&env, 2 * env.safe_section_size() - 2);
+    let new_node_id = FullId::gen(&mut env.new_rng());
+    node_pause_and_resume(env, nodes, new_node_id)
 }
 
 #[test]
 fn node_pause_and_resume_during_split() {
-    let network = Network::new(NODE_PAUSE_AND_RESUME_PARAMS);
+    let env = Environment::new(NODE_PAUSE_AND_RESUME_PARAMS);
 
-    let mut nodes = create_connected_nodes(&network, network.safe_section_size());
+    let mut nodes = create_connected_nodes(&env, env.safe_section_size());
     let prefix =
-        add_connected_nodes_until_one_away_from_split(&network, &mut nodes, &[Prefix::default()])
-            [0];
+        add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &[Prefix::default()])[0];
 
-    let new_node_id = FullId::within_range(&mut network.new_rng(), &prefix.range_inclusive());
-    node_pause_and_resume(network, nodes, new_node_id)
+    let new_node_id = FullId::within_range(&mut env.new_rng(), &prefix.range_inclusive());
+    node_pause_and_resume(env, nodes, new_node_id)
 }
 
 // Pause a random node, then add new node with the given id, then resume the paused node and verify
 // everything still works as expected.
-fn node_pause_and_resume(network: Network, mut nodes: Nodes, new_node_id: FullId) {
-    let index = network.new_rng().gen_range(0, nodes.len());
+fn node_pause_and_resume(env: Environment, mut nodes: Nodes, new_node_id: FullId) {
+    let index = env.new_rng().gen_range(0, nodes.len());
     let state = unwrap!(nodes.remove(index).inner.pause());
 
     // Verify the other nodes do not see the node as going offline.
@@ -643,7 +641,7 @@ fn node_pause_and_resume(network: Network, mut nodes: Nodes, new_node_id: FullId
 
     // Do some work while the node is paused.
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-    let node = TestNode::builder(&network)
+    let node = TestNode::builder(&env)
         .network_config(config)
         .full_id(new_node_id)
         .create();
@@ -656,7 +654,7 @@ fn node_pause_and_resume(network: Network, mut nodes: Nodes, new_node_id: FullId
     poll_and_resend_with_options(&mut nodes, PollOptions::default().fire_join_timeout(false));
 
     // Resume the node and verify it caugh up to the changes in the network.
-    nodes.push(TestNode::resume(&network, state));
+    nodes.push(TestNode::resume(&env, state));
     poll_and_resend(&mut nodes);
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }

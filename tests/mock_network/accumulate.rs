@@ -8,18 +8,18 @@
 
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
-use routing::{mock::Network, Authority, Event, EventStream, NetworkParams, XorName};
+use routing::{mock::Environment, Authority, Event, EventStream, NetworkParams, XorName};
 
 #[test]
 fn messages_accumulate_with_quorum() {
     let section_size = 15;
     let elder_size = 8;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size: elder_size,
     });
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, section_size);
+    let mut rng = env.new_rng();
+    let mut nodes = create_connected_nodes(&env, section_size);
 
     let src = Authority::Section(rng.gen());
     sort_nodes_by_distance_to(&mut nodes, &src.name());
