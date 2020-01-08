@@ -71,7 +71,7 @@ impl<R: rand::Rng> rand::RngCore for RngParsecCompat<R> {
 // Rng implementation used in production. Uses `OsRng` for maximum cryptographic security.
 #[cfg(not(any(test, feature = "mock_base")))]
 mod implementation {
-    // Parsec has a very old rand dependecy. This osRng is required to interact wiht that, until
+    // Parsec has a very old rand dependecy. This osRng is required to interact with that, until
     // parsec upgrades
     pub use rand::rngs::OsRng as MainRng;
     use rand::Rng;
