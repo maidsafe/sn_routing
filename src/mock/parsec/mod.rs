@@ -30,7 +30,6 @@ use std::{
 };
 
 /// Initialise mock parsec. Call this function at the beginning of each test.
-#[allow(unused)]
 pub fn init_mock() {
     state::reset()
 }
