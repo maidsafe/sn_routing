@@ -478,6 +478,10 @@ impl StateMachine {
 
     /// Register the state machine event channels with the provided [selector](mpmc::Select).
     pub fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
+        // Populate action_rx timeouts
+        #[cfg(feature = "mock_base")]
+        self.state.process_timers();
+
         let network_rx_idx = select.recv(&self.network_rx);
         let action_rx_idx = select.recv(&self.action_rx);
         self.network_rx_idx = network_rx_idx;
