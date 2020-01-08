@@ -26,8 +26,6 @@ use crate::{
 use crate::{authority::Authority, chain::Chain, rng::MainRng};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
-use rand::seq::SliceRandom;
-#[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -239,12 +237,12 @@ impl State {
         }
     }
 
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
+    pub fn process_timers(&mut self) {
         match *self {
-            Self::BootstrappingPeer(_) | Self::Terminated => vec![],
-            Self::JoiningPeer(ref mut state) => state.get_timed_out_tokens(),
-            Self::Adult(ref mut state) => state.get_timed_out_tokens(),
-            Self::Elder(ref mut state) => state.get_timed_out_tokens(),
+            Self::BootstrappingPeer(_) | Self::Terminated => (),
+            Self::JoiningPeer(ref mut state) => state.process_timers(),
+            Self::Adult(ref mut state) => state.process_timers(),
+            Self::Elder(ref mut state) => state.process_timers(),
         }
     }
 
@@ -480,6 +478,10 @@ impl StateMachine {
 
     /// Register the state machine event channels with the provided [selector](mpmc::Select).
     pub fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
+        // Populate action_rx timeouts
+        #[cfg(feature = "mock_base")]
+        self.state.process_timers();
+
         let network_rx_idx = select.recv(&self.network_rx);
         let action_rx_idx = select.recv(&self.action_rx);
         self.network_rx_idx = network_rx_idx;
@@ -570,6 +572,7 @@ impl StateMachine {
     /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
     pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
         use itertools::Itertools;
+        use rand::seq::SliceRandom;
         use std::iter;
 
         if !self.is_running {
@@ -577,7 +580,11 @@ impl StateMachine {
         }
 
         let mut events = Vec::new();
+        let mut timed_out_events = Vec::new();
         let mut received = true;
+
+        // Populate action_rx timeouts
+        self.state.process_timers();
 
         while received {
             received = false;
@@ -596,16 +603,13 @@ impl StateMachine {
 
             if let Ok(action) = self.action_rx.try_recv() {
                 received = true;
-                events.push(EventType::Action(Box::new(action)));
+                let queue = match &action {
+                    Action::HandleTimeout(_) => &mut timed_out_events,
+                    _ => &mut events,
+                };
+                queue.push(EventType::Action(Box::new(action)));
             }
         }
-
-        let mut timed_out_events = self
-            .state
-            .get_timed_out_tokens()
-            .iter()
-            .map(|token| EventType::Action(Box::new(Action::HandleTimeout(*token))))
-            .collect_vec();
 
         // Interleave timer events with routing or network events.
         let mut positions = iter::repeat(true)

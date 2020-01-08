@@ -375,7 +375,6 @@ pub fn create_connected_nodes(network: &Network, size: usize) -> Nodes {
                 | Event::SectionSplit(..)
                 | Event::RestartRequired
                 | Event::ClientEvent(..)
-                | Event::TimerTicked
                 | Event::Connected(ConnectEvent::Relocate) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
@@ -451,7 +450,6 @@ pub fn add_connected_nodes_until_split(
     clear_all_event_queues(nodes, |node, event| match event {
         Event::NodeAdded(..)
         | Event::NodeLost(..)
-        | Event::TimerTicked
         | Event::ClientEvent(..)
         | Event::SectionSplit(..)
         | Event::Connected(ConnectEvent::Relocate) => (),

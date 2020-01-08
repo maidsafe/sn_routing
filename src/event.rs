@@ -103,9 +103,6 @@ pub enum Event {
     RestartRequired,
     /// Startup failed - terminate.
     Terminated,
-    // TODO: Find a better solution for periodic tasks.
-    /// This event is sent periodically every time Routing sends the `Heartbeat` messages.
-    TimerTicked,
     /// Consensus on a custom event.
     Consensus(Vec<u8>),
 }
@@ -145,7 +142,6 @@ impl Debug for Event {
             }
             Self::RestartRequired => write!(formatter, "Event::RestartRequired"),
             Self::Terminated => write!(formatter, "Event::Terminated"),
-            Self::TimerTicked => write!(formatter, "Event::TimerTicked"),
             Self::Consensus(ref payload) => {
                 write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
             }
