@@ -71,6 +71,7 @@ macro_rules! expect_next_event {
         loop {
             match $node.inner.try_next_ev() {
                 Ok($pattern) => break,
+                Ok(Event::TimerTicked) => (),
                 other => panic!(
                     "Expected Ok({}) at {}, got {:?}",
                     stringify!($pattern),
@@ -110,6 +111,7 @@ macro_rules! expect_any_event {
 macro_rules! expect_no_event {
     ($node:expr) => {{
         match $node.inner.try_next_ev() {
+            Ok(Event::TimerTicked) => (),
             Err(crossbeam_channel::TryRecvError::Empty) => (),
             other => panic!("Expected no event at {}, got {:?}", $node.name(), other),
         }
