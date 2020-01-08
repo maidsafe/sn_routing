@@ -40,7 +40,7 @@ impl Network {
             nodes: Default::default(),
             connections: Default::default(),
             used_ips: Default::default(),
-            message_sent: false,
+            message_sent_hook: None,
         }));
 
         NETWORK.with(|network| *network.borrow_mut() = Some(Rc::clone(&inner)));
@@ -81,20 +81,20 @@ impl Network {
         rng::new_from(&mut self.inner.borrow_mut().rng)
     }
 
-    /// Return whether sent any message since previous query and reset the flag.
-    pub fn reset_message_sent(&self) -> bool {
-        let mut inner = self.inner.borrow_mut();
-        let message_sent = inner.message_sent;
-        inner.message_sent = false;
-        message_sent
-    }
-
     /// Call this in tests annotated with `#[should_panic]` to suppress printing the seed. Will
     /// instead print the seed if the panic does *not* happen.
     pub fn expect_panic(&mut self) {
         if let Some(seed) = self.seed_printer.as_ref().map(|printer| *printer.seed()) {
             self.seed_printer = Some(SeedPrinter::on_success(seed));
         }
+    }
+
+    /// Set a function that will be called for each message sent over the network.
+    pub fn set_message_sent_hook<F>(&self, hook: F)
+    where
+        F: FnMut(&Bytes) + 'static,
+    {
+        self.inner.borrow_mut().message_sent_hook = Some(Box::new(hook))
     }
 
     fn pop_random_packet(&self) -> Option<(Connection, Packet)> {
@@ -147,7 +147,7 @@ pub(super) struct Inner {
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
     used_ips: FxHashSet<IpAddr>,
-    message_sent: bool,
+    message_sent_hook: Option<Box<dyn FnMut(&Bytes)>>,
 }
 
 impl Inner {
@@ -182,10 +182,10 @@ impl Inner {
     }
 
     pub fn send(&mut self, src: SocketAddr, dst: SocketAddr, packet: Packet) {
-        // Ignore gossip messages from being considered as a message that
-        // requires further polling.
-        if !packet.is_parsec_gossip() {
-            self.message_sent = true;
+        if let Some(hook) = self.message_sent_hook.as_mut() {
+            if let Packet::Message(content, _) = &packet {
+                hook(content)
+            }
         }
 
         self.connections
@@ -240,16 +240,6 @@ impl Inner {
     }
 }
 
-// Serialised parsec gossip messages start with these bytes.
-const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
-    // ParsecPoke
-    &[0, 0, 0, 0, 5, 0, 0, 0],
-    // ParsecRequest
-    &[0, 0, 0, 0, 6, 0, 0, 0],
-    // ParsecResponse
-    &[0, 0, 0, 0, 7, 0, 0, 0],
-];
-
 #[derive(Debug)]
 pub(super) enum Packet {
     BootstrapRequest(OurType),
@@ -262,18 +252,6 @@ pub(super) enum Packet {
     MessageFailure(Bytes, u64),
     MessageSent(Bytes, u64),
     Disconnect,
-}
-
-impl Packet {
-    // Returns `true` if this packet contains a Parsec request or response.
-    pub fn is_parsec_gossip(&self) -> bool {
-        match self {
-            Packet::Message(bytes, _) if bytes.len() >= 8 => {
-                PARSEC_GOSSIP_MSG_TAGS.contains(&&bytes[..8])
-            }
-            _ => false,
-        }
-    }
 }
 
 struct Queue(VecDeque<Packet>);

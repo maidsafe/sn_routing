@@ -10,10 +10,13 @@ use super::quic_p2p;
 #[cfg(feature = "mock")]
 use crate::mock::parsec;
 use crate::{chain::NetworkParams, unwrap};
+use bytes::Bytes;
 use maidsafe_utilities::log;
 use std::{
+    cell::Cell,
     env,
     ops::{Deref, DerefMut},
+    rc::Rc,
     sync::Once,
 };
 
@@ -24,6 +27,7 @@ static LOG_INIT: Once = Once::new();
 pub struct Network {
     network: quic_p2p::Network,
     network_cfg: NetworkParams,
+    message_sent: Rc<Cell<bool>>,
 }
 
 impl Network {
@@ -41,9 +45,22 @@ impl Network {
         #[cfg(feature = "mock")]
         parsec::init_mock();
 
+        let network = quic_p2p::Network::new();
+        let message_sent = Rc::new(Cell::new(false));
+
+        network.set_message_sent_hook({
+            let message_sent = Rc::clone(&message_sent);
+            move |content| {
+                if !is_parsec_gossip(content) {
+                    message_sent.set(true)
+                }
+            }
+        });
+
         Self {
-            network: quic_p2p::Network::new(),
+            network,
             network_cfg,
+            message_sent,
         }
     }
 
@@ -61,6 +78,11 @@ impl Network {
     pub fn safe_section_size(&self) -> usize {
         self.network_cfg.safe_section_size
     }
+
+    /// Return whether sent any message since previous query and reset the flag.
+    pub fn reset_message_sent(&self) -> bool {
+        self.message_sent.replace(false)
+    }
 }
 
 impl Deref for Network {
@@ -74,5 +96,98 @@ impl Deref for Network {
 impl DerefMut for Network {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.network
+    }
+}
+
+// Serialised parsec gossip messages start with these bytes.
+const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
+    // ParsecPoke
+    &[0, 0, 0, 0, 5, 0, 0, 0],
+    // ParsecRequest
+    &[0, 0, 0, 0, 6, 0, 0, 0],
+    // ParsecResponse
+    &[0, 0, 0, 0, 7, 0, 0, 0],
+];
+
+// Returns `true` if this message contains a Parsec request or response.
+fn is_parsec_gossip(content: &Bytes) -> bool {
+    content.len() >= 8 && PARSEC_GOSSIP_MSG_TAGS.contains(&&content[..8])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        id::FullId,
+        messages::{
+            DirectMessage, HopMessage, Message, MessageContent, RoutingMessage,
+            SignedDirectMessage, SignedRoutingMessage,
+        },
+        parsec::{Request, Response},
+        rng, unwrap, Authority,
+    };
+    use maidsafe_utilities::serialisation;
+    use rand::Rng;
+    use serde::Serialize;
+
+    #[test]
+    fn message_is_parsec_gossip() {
+        let mut rng = rng::new();
+        let full_id = FullId::gen(&mut rng);
+
+        fn serialise<T: Serialize>(msg: &T) -> Vec<u8> {
+            unwrap!(serialisation::serialise(&msg))
+        }
+
+        let make_message =
+            |content| Message::Direct(unwrap!(SignedDirectMessage::new(content, &full_id)));
+
+        // Real parsec doesn't provide constructors for requests and responses, but they have the same
+        // representation as a `Vec`.
+        #[cfg(not(feature = "mock"))]
+        let (req, rsp): (Request, Response) = {
+            let repr = Vec::<u64>::new();
+
+            (
+                unwrap!(serialisation::deserialise(&serialise(&repr))),
+                unwrap!(serialisation::deserialise(&serialise(&repr))),
+            )
+        };
+
+        #[cfg(feature = "mock")]
+        let (req, rsp) = (Request::new(), Response::new());
+
+        let msgs = [
+            make_message(DirectMessage::ParsecPoke(23)),
+            make_message(DirectMessage::ParsecRequest(42, req)),
+            make_message(DirectMessage::ParsecResponse(1337, rsp)),
+        ];
+        for msg in &msgs {
+            assert!(is_parsec_gossip(&Bytes::from(serialise(msg))));
+        }
+
+        // No other direct message types contain a Parsec request or response.
+        let msgs = [
+            make_message(DirectMessage::BootstrapRequest(rng.gen())),
+            make_message(DirectMessage::ConnectionResponse),
+        ];
+        for msg in &msgs {
+            assert!(!is_parsec_gossip(&Bytes::from(serialise(msg))));
+        }
+
+        // A hop message never contains a Parsec message.
+        let msg = RoutingMessage {
+            src: Authority::Section(rand::random()),
+            dst: Authority::Section(rand::random()),
+            content: MessageContent::UserMessage(vec![
+                rand::random(),
+                rand::random(),
+                rand::random(),
+            ]),
+        };
+        let msg = SignedRoutingMessage::insecure(msg);
+        let msg = unwrap!(HopMessage::new(msg));
+        let msg = Message::Hop(msg);
+        assert!(!is_parsec_gossip(&Bytes::from(serialise(&msg))));
     }
 }
