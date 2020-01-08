@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::quic_p2p;
 #[cfg(feature = "mock")]
 use crate::mock::parsec;
 use crate::{
     chain::NetworkParams,
+    quic_p2p::Network,
     rng::{self, MainRng, Seed, SeedPrinter},
     unwrap,
 };
@@ -30,7 +30,7 @@ static LOG_INIT: Once = Once::new();
 /// Test environment. Should be created once at the beginning of each test.
 pub struct Environment {
     rng: RefCell<MainRng>,
-    network: quic_p2p::Network,
+    network: Network,
     network_cfg: NetworkParams,
     message_sent: Rc<Cell<bool>>,
     seed_printer: Option<SeedPrinter>,
@@ -53,7 +53,7 @@ impl Environment {
 
         let seed = Seed::default();
 
-        let network = quic_p2p::Network::new();
+        let network = Network::new();
         let message_sent = Rc::new(Cell::new(false));
 
         network.set_message_sent_hook({
@@ -126,7 +126,7 @@ impl Clone for Environment {
 }
 
 impl Deref for Environment {
-    type Target = self::quic_p2p::Network;
+    type Target = Network;
 
     fn deref(&self) -> &Self::Target {
         &self.network

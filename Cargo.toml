@@ -28,6 +28,7 @@ lazy_static = { version = "~1", optional = true }
 log = "~0.3.8"
 lru_time_cache = "~0.8.1"
 maidsafe_utilities = "~0.18.0"
+mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
 num-bigint = "~0.1.40"
 parsec = { git = "https://github.com/maidsafe/parsec", rev = "a3a1eb2" }
 # quic-p2p = "~0.2.0"
@@ -54,6 +55,7 @@ libc = "~0.2.29"
 [features]
 mock_base = [
     "lru_time_cache/fake_clock",
+    "mock-quic-p2p",
     "parsec/mock",
     "parsec/malice-detection",
     "ctrlc",
