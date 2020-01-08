@@ -377,6 +377,94 @@ fn drop_disconnects() {
     b.expect_connection_failure(&a_addr);
 }
 
+#[test]
+#[cfg(not(feature = "mock_serialise"))]
+fn packet_is_parsec_gossip() {
+    use super::network::Packet;
+    use crate::{
+        id::FullId,
+        messages::{
+            DirectMessage, HopMessage, Message, MessageContent, RoutingMessage,
+            SignedDirectMessage, SignedRoutingMessage,
+        },
+        parsec::{Request, Response},
+        rng, Authority,
+    };
+
+    use maidsafe_utilities::serialisation;
+    use rand::Rng;
+    use serde::Serialize;
+
+    let mut rng = rng::new();
+    let full_id = FullId::gen(&mut rng);
+
+    fn serialise<T: Serialize>(msg: &T) -> Vec<u8> {
+        unwrap!(serialisation::serialise(&msg))
+    }
+
+    let make_message =
+        |content| Message::Direct(unwrap!(SignedDirectMessage::new(content, &full_id)));
+
+    // Real parsec doesn't provide constructors for requests and responses, but they have the same
+    // representation as a `Vec`.
+    #[cfg(not(feature = "mock"))]
+    let (req, rsp): (Request, Response) = {
+        let repr = Vec::<u64>::new();
+
+        (
+            unwrap!(serialisation::deserialise(&serialise(&repr))),
+            unwrap!(serialisation::deserialise(&serialise(&repr))),
+        )
+    };
+
+    #[cfg(feature = "mock")]
+    let (req, rsp) = (Request::new(), Response::new());
+
+    let msgs = [
+        make_message(DirectMessage::ParsecPoke(23)),
+        make_message(DirectMessage::ParsecRequest(42, req)),
+        make_message(DirectMessage::ParsecResponse(1337, rsp)),
+    ];
+    for msg in &msgs {
+        assert!(Packet::Message(NetworkBytes::from(serialise(msg)), 0).is_parsec_gossip());
+    }
+
+    // No other direct message types contain a Parsec request or response.
+    let msgs = [
+        make_message(DirectMessage::BootstrapRequest(rng.gen())),
+        make_message(DirectMessage::ConnectionResponse),
+    ];
+    for msg in &msgs {
+        assert!(!Packet::Message(NetworkBytes::from(serialise(msg)), 0).is_parsec_gossip());
+    }
+
+    // A hop message never contains a Parsec message.
+    let msg = RoutingMessage {
+        src: Authority::Section(rand::random()),
+        dst: Authority::Section(rand::random()),
+        content: MessageContent::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
+    };
+    let msg = SignedRoutingMessage::insecure(msg);
+    let msg = unwrap!(HopMessage::new(msg));
+    let msg = Message::Hop(msg);
+    assert!(!Packet::Message(NetworkBytes::from(serialise(&msg)), 0).is_parsec_gossip());
+
+    // No packet types other than `Message` represent a Parsec request or response.
+    let packets = [
+        Packet::BootstrapRequest(OurType::Client),
+        Packet::BootstrapSuccess,
+        Packet::BootstrapFailure,
+        Packet::ConnectRequest(OurType::Client),
+        Packet::ConnectSuccess,
+        Packet::ConnectFailure,
+        Packet::MessageFailure(NetworkBytes::from_static(b"hello"), 0),
+        Packet::Disconnect,
+    ];
+    for packet in &packets {
+        assert!(!packet.is_parsec_gossip());
+    }
+}
+
 struct Agent {
     inner: QuicP2p,
     rx: Receiver<Event>,
@@ -594,24 +682,31 @@ fn assert_connected_to_node(event: Event, addr: &SocketAddr) {
 
 // Generate unique message.
 fn gen_message() -> NetworkBytes {
-    use crate::{
-        id::FullId,
-        messages::{DirectMessage, Message, SignedDirectMessage},
-        rng,
-    };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let num = COUNTER.fetch_add(1, Ordering::Relaxed);
 
-    thread_local! {
-        static FULL_ID: FullId = FullId::gen(&mut rng::new());
+    #[cfg(feature = "mock_serialise")]
+    {
+        use crate::{
+            id::FullId,
+            messages::{DirectMessage, Message, SignedDirectMessage},
+            rng,
+        };
+
+        thread_local! {
+            static FULL_ID: FullId = FullId::gen(&mut rng::new());
+        }
+
+        // The actual content of the message doesn't matter for the purposes of these tests, only
+        // that it is unique. Let's use `DirectMessage::ParsecPoke` as it is the simplest message
+        // that carries some data.
+        let content = DirectMessage::ParsecPoke(num as u64);
+        let message = FULL_ID.with(|full_id| unwrap!(SignedDirectMessage::new(content, full_id)));
+        NetworkBytes::new(Message::Direct(message))
     }
 
-    // The actual content of the message doesn't matter for the purposes of these tests, only
-    // that it is unique. Let's use `DirectMessage::ParsecPoke` as it is the simplest message
-    // that carries some data.
-    let content = DirectMessage::ParsecPoke(num as u64);
-    let message = FULL_ID.with(|full_id| unwrap!(SignedDirectMessage::new(content, full_id)));
-    NetworkBytes::new(Message::Direct(message))
+    #[cfg(not(feature = "mock_serialise"))]
+    bytes::Bytes::from(format!("message {}", num))
 }
