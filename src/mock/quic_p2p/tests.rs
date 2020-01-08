@@ -405,13 +405,10 @@ fn packet_is_parsec_gossip() {
     let make_message =
         |content| Message::Direct(unwrap!(SignedDirectMessage::new(content, &full_id)));
 
-    // Parsec doesn't provide constructors for requests and responses, but they have the same
-    // representation as a `Vec`, or a `()` in real or mock Parsec respectively.
-    #[allow(clippy::let_unit_value)]
+    // Real parsec doesn't provide constructors for requests and responses, but they have the same
+    // representation as a `Vec`.
+    #[cfg(not(feature = "mock_parsec"))]
     let (req, rsp): (Request, Response) = {
-        #[cfg(feature = "mock_parsec")]
-        let repr = ();
-        #[cfg(not(feature = "mock_parsec"))]
         let repr = Vec::<u64>::new();
 
         (
@@ -419,6 +416,9 @@ fn packet_is_parsec_gossip() {
             unwrap!(serialisation::deserialise(&serialise(&repr))),
         )
     };
+
+    #[cfg(feature = "mock_parsec")]
+    let (req, rsp) = (Request::new(), Response::new());
 
     let msgs = [
         make_message(DirectMessage::ParsecPoke(23)),
