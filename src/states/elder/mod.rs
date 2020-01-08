@@ -1512,8 +1512,8 @@ impl Elder {
         &self.chain
     }
 
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
-        self.timer.get_timed_out_tokens()
+    pub fn process_timers(&mut self) {
+        self.timer.process_timers()
     }
 
     pub fn has_unpolled_observations(&self) -> bool {

@@ -189,8 +189,8 @@ impl JoiningPeer {
     }
 
     #[cfg(feature = "mock_base")]
-    pub fn get_timed_out_tokens(&mut self) -> Vec<u64> {
-        self.timer.get_timed_out_tokens()
+    pub fn process_timers(&mut self) {
+        self.timer.process_timers()
     }
 }
 
