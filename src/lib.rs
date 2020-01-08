@@ -186,9 +186,9 @@ use quic_p2p;
 use unwrap::unwrap;
 
 // Format that can be sent between peers
-#[cfg(not(feature = "mock_base"))]
+#[cfg(not(feature = "mock_serialise"))]
 type NetworkBytes = bytes::Bytes;
-#[cfg(feature = "mock_base")]
+#[cfg(feature = "mock_serialise")]
 type NetworkBytes = std::rc::Rc<Message>;
 
 #[cfg(test)]

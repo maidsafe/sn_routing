@@ -30,7 +30,7 @@ use std::{
 /// Wrapper of all messages.
 ///
 /// This is the only type allowed to be sent / received on the network.
-#[cfg_attr(feature = "mock_base", derive(Clone))]
+#[cfg_attr(feature = "mock_serialise", derive(Clone))]
 #[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
@@ -46,7 +46,7 @@ pub enum Message {
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
 /// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
-#[cfg_attr(feature = "mock_base", derive(Clone))]
+#[cfg_attr(feature = "mock_serialise", derive(Clone))]
 #[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct HopMessage {
     /// Wrapped signed message.
