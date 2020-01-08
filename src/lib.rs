@@ -184,12 +184,6 @@ use quic_p2p;
 #[cfg(any(test, feature = "mock_base"))]
 use unwrap::unwrap;
 
-// Format that can be sent between peers
-#[cfg(not(feature = "mock_serialise"))]
-type NetworkBytes = bytes::Bytes;
-#[cfg(feature = "mock_serialise")]
-type NetworkBytes = std::rc::Rc<Message>;
-
 #[cfg(test)]
 mod tests {
     use super::{QUORUM_DENOMINATOR, QUORUM_NUMERATOR};

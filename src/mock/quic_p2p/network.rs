@@ -10,8 +10,9 @@ use super::{node::Node, OurType};
 use crate::{
     chain::NetworkParams,
     rng::{self, MainRng, Seed, SeedPrinter},
-    unwrap, NetworkBytes,
+    unwrap,
 };
+use bytes::Bytes;
 use fxhash::{FxHashMap, FxHashSet};
 use maidsafe_utilities::log;
 use rand::{self, seq::SliceRandom, Rng, SeedableRng};
@@ -275,7 +276,6 @@ impl Inner {
 }
 
 // Serialised parsec gossip messages start with these bytes.
-#[cfg(not(feature = "mock_serialise"))]
 const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
     // ParsecPoke
     &[0, 0, 0, 0, 5, 0, 0, 0],
@@ -293,38 +293,19 @@ pub(super) enum Packet {
     ConnectRequest(OurType),
     ConnectSuccess,
     ConnectFailure,
-    Message(NetworkBytes, u64),
-    MessageFailure(NetworkBytes, u64),
-    MessageSent(NetworkBytes, u64),
+    Message(Bytes, u64),
+    MessageFailure(Bytes, u64),
+    MessageSent(Bytes, u64),
     Disconnect,
 }
 
 impl Packet {
     // Returns `true` if this packet contains a Parsec request or response.
-    #[cfg(not(feature = "mock_serialise"))]
     pub fn is_parsec_gossip(&self) -> bool {
         match self {
             Packet::Message(bytes, _) if bytes.len() >= 8 => {
                 PARSEC_GOSSIP_MSG_TAGS.contains(&&bytes[..8])
             }
-            _ => false,
-        }
-    }
-
-    #[cfg(feature = "mock_serialise")]
-    pub fn is_parsec_gossip(&self) -> bool {
-        use crate::messages::{DirectMessage, Message};
-
-        match self {
-            Self::Message(ref message, _) => match **message {
-                Message::Direct(ref message) => match message.content() {
-                    DirectMessage::ParsecRequest(..)
-                    | DirectMessage::ParsecResponse(..)
-                    | DirectMessage::ParsecPoke(..) => true,
-                    _ => false,
-                },
-                _ => false,
-            },
             _ => false,
         }
     }

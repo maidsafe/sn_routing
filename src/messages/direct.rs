@@ -25,7 +25,6 @@ use std::{
 };
 
 /// Direct message content.
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
@@ -58,7 +57,6 @@ pub enum DirectMessage {
 }
 
 /// Response to a BootstrapRequest
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
@@ -70,7 +68,6 @@ pub enum BootstrapResponse {
 }
 
 /// Request to join a section
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
 #[derive(Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct JoinRequest {
     /// The section version to join
@@ -141,7 +138,6 @@ impl Hash for DirectMessage {
     }
 }
 
-#[cfg_attr(feature = "mock_serialise", derive(Clone))]
 #[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedDirectMessage {
     content: DirectMessage,
@@ -152,7 +148,8 @@ pub struct SignedDirectMessage {
 impl SignedDirectMessage {
     /// Create new `DirectMessage` with `content` and signed by `src_full_id`.
     pub fn new(content: DirectMessage, src_full_id: &FullId) -> Result<Self, RoutingError> {
-        let signature = self::implementation::sign(src_full_id, &content)?;
+        let serialised = serialise(&content)?;
+        let signature = src_full_id.sign(&serialised);
 
         Ok(Self {
             content,
@@ -163,7 +160,13 @@ impl SignedDirectMessage {
 
     /// Verify the message signature.
     pub fn verify(&self) -> Result<(), RoutingError> {
-        self::implementation::verify(&self.src_id, &self.signature, &self.content)
+        let serialised = serialise(&self.content)?;
+
+        if self.src_id.verify(&serialised, &self.signature) {
+            Ok(())
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
     }
 
     /// Verify the message signature and return its content and the sender id.
@@ -174,7 +177,7 @@ impl SignedDirectMessage {
     }
 
     /// Content of the message.
-    #[cfg(any(all(test, feature = "mock_base"), feature = "mock_serialise"))]
+    #[cfg(all(test, feature = "mock_base"))]
     pub fn content(&self) -> &DirectMessage {
         &self.content
     }
@@ -187,44 +190,5 @@ impl Debug for SignedDirectMessage {
             "SignedDirectMessage {{ content: {:?}, src_id: {:?}, signature: {:?} }}",
             self.content, self.src_id, self.signature
         )
-    }
-}
-
-#[cfg(not(feature = "mock_serialise"))]
-mod implementation {
-    use super::*;
-
-    pub fn sign(src_full_id: &FullId, content: &DirectMessage) -> Result<Signature, RoutingError> {
-        let serialised = serialise(content)?;
-        let signature = src_full_id.sign(&serialised);
-        Ok(signature)
-    }
-
-    pub fn verify(
-        src_id: &PublicId,
-        signature: &Signature,
-        content: &DirectMessage,
-    ) -> Result<(), RoutingError> {
-        let serialised = serialise(content)?;
-
-        if src_id.verify(&serialised, signature) {
-            Ok(())
-        } else {
-            Err(RoutingError::FailedSignature)
-        }
-    }
-}
-
-#[cfg(feature = "mock_serialise")]
-mod implementation {
-    use super::*;
-    use crate::{crypto::signing::SIGNATURE_LENGTH, unwrap};
-
-    pub fn sign(_: &FullId, _: &DirectMessage) -> Result<Signature, RoutingError> {
-        Ok(unwrap!(Signature::from_bytes(&[0; SIGNATURE_LENGTH])))
-    }
-
-    pub fn verify(_: &PublicId, _: &Signature, _: &DirectMessage) -> Result<(), RoutingError> {
-        Ok(())
     }
 }

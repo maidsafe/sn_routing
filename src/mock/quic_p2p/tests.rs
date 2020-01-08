@@ -7,7 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
-use crate::{unwrap, NetworkBytes};
+use crate::unwrap;
+use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
 use std::{iter, net::SocketAddr};
@@ -378,7 +379,6 @@ fn drop_disconnects() {
 }
 
 #[test]
-#[cfg(not(feature = "mock_serialise"))]
 fn packet_is_parsec_gossip() {
     use super::network::Packet;
     use crate::{
@@ -426,7 +426,7 @@ fn packet_is_parsec_gossip() {
         make_message(DirectMessage::ParsecResponse(1337, rsp)),
     ];
     for msg in &msgs {
-        assert!(Packet::Message(NetworkBytes::from(serialise(msg)), 0).is_parsec_gossip());
+        assert!(Packet::Message(Bytes::from(serialise(msg)), 0).is_parsec_gossip());
     }
 
     // No other direct message types contain a Parsec request or response.
@@ -435,7 +435,7 @@ fn packet_is_parsec_gossip() {
         make_message(DirectMessage::ConnectionResponse),
     ];
     for msg in &msgs {
-        assert!(!Packet::Message(NetworkBytes::from(serialise(msg)), 0).is_parsec_gossip());
+        assert!(!Packet::Message(Bytes::from(serialise(msg)), 0).is_parsec_gossip());
     }
 
     // A hop message never contains a Parsec message.
@@ -447,7 +447,7 @@ fn packet_is_parsec_gossip() {
     let msg = SignedRoutingMessage::insecure(msg);
     let msg = unwrap!(HopMessage::new(msg));
     let msg = Message::Hop(msg);
-    assert!(!Packet::Message(NetworkBytes::from(serialise(&msg)), 0).is_parsec_gossip());
+    assert!(!Packet::Message(Bytes::from(serialise(&msg)), 0).is_parsec_gossip());
 
     // No packet types other than `Message` represent a Parsec request or response.
     let packets = [
@@ -457,7 +457,7 @@ fn packet_is_parsec_gossip() {
         Packet::ConnectRequest(OurType::Client),
         Packet::ConnectSuccess,
         Packet::ConnectFailure,
-        Packet::MessageFailure(NetworkBytes::from_static(b"hello"), 0),
+        Packet::MessageFailure(Bytes::from_static(b"hello"), 0),
         Packet::Disconnect,
     ];
     for packet in &packets {
@@ -517,7 +517,7 @@ impl Agent {
         self.inner.disconnect_from(dst_addr);
     }
 
-    fn send(&mut self, dst_addr: SocketAddr, msg: NetworkBytes, token: u64) {
+    fn send(&mut self, dst_addr: SocketAddr, msg: Bytes, token: u64) {
         self.inner.send(Peer::node(dst_addr), msg, token)
     }
 
@@ -589,7 +589,7 @@ impl Agent {
     }
 
     // Expect `Event::NewMessage` with the given sender address and content.
-    fn expect_new_message(&self, src_addr: &SocketAddr, expected_msg: &NetworkBytes) {
+    fn expect_new_message(&self, src_addr: &SocketAddr, expected_msg: &Bytes) {
         let (actual_addr, actual_msg) = assert_match!(
             self.rx.try_recv(),
             Ok(Event::NewMessage { peer_addr, msg }) => (peer_addr, msg)
@@ -602,7 +602,7 @@ impl Agent {
     fn expect_sent_message(
         &self,
         dst_addr: &SocketAddr,
-        expected_msg: &NetworkBytes,
+        expected_msg: &Bytes,
         expected_token: u64,
     ) {
         let (actual_addr, actual_msg, actual_id) = assert_match!(
@@ -619,7 +619,7 @@ impl Agent {
     fn expect_unsent_message(
         &self,
         dst_addr: &SocketAddr,
-        expected_msg: &NetworkBytes,
+        expected_msg: &Bytes,
         expected_token: u64,
     ) {
         let (actual_addr, actual_msg, actual_id) = assert_match!(
@@ -637,7 +637,7 @@ impl Agent {
         assert_match!(self.rx.try_recv(), Err(TryRecvError::Empty));
     }
 
-    fn received_messages(&self, src_addr: &SocketAddr) -> FxHashSet<NetworkBytes> {
+    fn received_messages(&self, src_addr: &SocketAddr) -> FxHashSet<Bytes> {
         let mut received_messages = FxHashSet::default();
         while let Ok(Event::NewMessage { peer_addr, msg }) = self.rx.try_recv() {
             assert_eq!(peer_addr, *src_addr);
@@ -647,7 +647,7 @@ impl Agent {
     }
 }
 
-fn expected_messages_received(sent: Vec<NetworkBytes>, received: FxHashSet<NetworkBytes>) {
+fn expected_messages_received(sent: Vec<Bytes>, received: FxHashSet<Bytes>) {
     let expected: FxHashSet<_> = sent.into_iter().collect();
     assert_eq!(expected, received);
 }
@@ -681,32 +681,11 @@ fn assert_connected_to_node(event: Event, addr: &SocketAddr) {
 }
 
 // Generate unique message.
-fn gen_message() -> NetworkBytes {
+fn gen_message() -> Bytes {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
     let num = COUNTER.fetch_add(1, Ordering::Relaxed);
 
-    #[cfg(feature = "mock_serialise")]
-    {
-        use crate::{
-            id::FullId,
-            messages::{DirectMessage, Message, SignedDirectMessage},
-            rng,
-        };
-
-        thread_local! {
-            static FULL_ID: FullId = FullId::gen(&mut rng::new());
-        }
-
-        // The actual content of the message doesn't matter for the purposes of these tests, only
-        // that it is unique. Let's use `DirectMessage::ParsecPoke` as it is the simplest message
-        // that carries some data.
-        let content = DirectMessage::ParsecPoke(num as u64);
-        let message = FULL_ID.with(|full_id| unwrap!(SignedDirectMessage::new(content, full_id)));
-        NetworkBytes::new(Message::Direct(message))
-    }
-
-    #[cfg(not(feature = "mock_serialise"))]
     bytes::Bytes::from(format!("message {}", num))
 }

@@ -9,8 +9,8 @@
 use crate::{
     authority::Authority,
     xor_space::{Prefix, XorName},
-    NetworkBytes,
 };
+use bytes::Bytes;
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
 use std::{
@@ -38,14 +38,14 @@ pub enum ClientEvent {
         /// Client's endpoint
         peer_addr: SocketAddr,
         /// Client's message
-        msg: NetworkBytes,
+        msg: Bytes,
     },
     /// Inform the user (library) that we couldn't send this message to a client
     UnsentUserMsgToClient {
         /// Client's endpoint
         peer_addr: SocketAddr,
         /// Message we had tried to send to the client
-        msg: NetworkBytes,
+        msg: Bytes,
         /// Token that we had used to identify this message
         token: Token,
     },
@@ -54,7 +54,7 @@ pub enum ClientEvent {
         /// Client's endpoint
         peer_addr: SocketAddr,
         /// Message we had tried to send to the client
-        msg: NetworkBytes,
+        msg: Bytes,
         /// Token that we had used to identify this message
         token: Token,
     },

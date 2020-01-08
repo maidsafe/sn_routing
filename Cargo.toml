@@ -60,6 +60,5 @@ mock_base = [
     "lazy_static",
     "bls/use-insecure-test-only-mock-crypto"
 ]
-mock_serialise = ["mock_base"]
 mock = ["mock_base"]
 

@@ -15,7 +15,7 @@ pub use self::network::Network;
 pub use quic_p2p::Token;
 
 use self::node::Node;
-use crate::NetworkBytes;
+use bytes::Bytes;
 use crossbeam_channel::Sender;
 use std::{
     cell::RefCell,
@@ -91,7 +91,7 @@ impl QuicP2p {
     /// If the peer is not connected, it will attempt to connect to it first
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer: Peer, msg: NetworkBytes, token: Token) {
+    pub fn send(&mut self, peer: Peer, msg: Bytes, token: Token) {
         self.inner.borrow_mut().send(peer.peer_addr(), msg, token)
     }
 
@@ -249,7 +249,7 @@ pub enum Event {
         /// Intended message recipient.
         peer_addr: SocketAddr,
         /// Message content.
-        msg: NetworkBytes,
+        msg: Bytes,
         /// Message Token
         token: Token,
     },
@@ -262,7 +262,7 @@ pub enum Event {
         /// Intended message recipient.
         peer_addr: SocketAddr,
         /// Message content.
-        msg: NetworkBytes,
+        msg: Bytes,
         /// Message Token
         token: Token,
     },
@@ -276,7 +276,7 @@ pub enum Event {
         /// Message sender.
         peer_addr: SocketAddr,
         /// Message content.
-        msg: NetworkBytes,
+        msg: Bytes,
     },
     /// Sent right before the `QuickP2p` instance drops.
     Finish,

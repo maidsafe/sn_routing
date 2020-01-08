@@ -10,7 +10,8 @@ use super::{
     network::{Inner, Packet, NETWORK},
     Config, Error, Event, NodeInfo, OurType, Peer,
 };
-use crate::{unwrap, NetworkBytes};
+use crate::unwrap;
+use bytes::Bytes;
 use crossbeam_channel::Sender;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
 // consistent iteration order (necessary for repeatable tests). Can't use `BTreeMap` / `BTreeSet`
@@ -26,7 +27,7 @@ pub(super) struct Node {
     peers: FxHashMap<SocketAddr, ConnectionType>,
     bootstrap_cache: FxHashSet<NodeInfo>,
     pending_bootstraps: FxHashSet<SocketAddr>,
-    pending_messages: FxHashMap<SocketAddr, Vec<(NetworkBytes, u64)>>,
+    pending_messages: FxHashMap<SocketAddr, Vec<(Bytes, u64)>>,
 }
 
 impl Node {
@@ -102,7 +103,7 @@ impl Node {
         }
     }
 
-    pub fn send(&mut self, dst: SocketAddr, msg: NetworkBytes, token: u64) {
+    pub fn send(&mut self, dst: SocketAddr, msg: Bytes, token: u64) {
         if self.peers.contains_key(&dst) {
             self.send_message(dst, msg, token)
         } else {
@@ -249,13 +250,13 @@ impl Node {
             .send(self.addr, dst, Packet::ConnectRequest(self.config.our_type))
     }
 
-    fn send_message(&self, dst: SocketAddr, msg: NetworkBytes, token: u64) {
+    fn send_message(&self, dst: SocketAddr, msg: Bytes, token: u64) {
         self.network
             .borrow_mut()
             .send(self.addr, dst, Packet::Message(msg, token))
     }
 
-    fn add_pending_message(&mut self, addr: SocketAddr, msg: NetworkBytes, token: u64) {
+    fn add_pending_message(&mut self, addr: SocketAddr, msg: Bytes, token: u64) {
         self.pending_messages
             .entry(addr)
             .or_insert_with(Default::default)
