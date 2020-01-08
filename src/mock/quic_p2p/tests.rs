@@ -407,7 +407,7 @@ fn packet_is_parsec_gossip() {
 
     // Real parsec doesn't provide constructors for requests and responses, but they have the same
     // representation as a `Vec`.
-    #[cfg(not(feature = "mock_parsec"))]
+    #[cfg(not(feature = "mock"))]
     let (req, rsp): (Request, Response) = {
         let repr = Vec::<u64>::new();
 
@@ -417,7 +417,7 @@ fn packet_is_parsec_gossip() {
         )
     };
 
-    #[cfg(feature = "mock_parsec")]
+    #[cfg(feature = "mock")]
     let (req, rsp) = (Request::new(), Response::new());
 
     let msgs = [
