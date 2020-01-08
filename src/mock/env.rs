@@ -9,11 +9,16 @@
 use super::quic_p2p;
 #[cfg(feature = "mock")]
 use crate::mock::parsec;
-use crate::{chain::NetworkParams, unwrap};
+use crate::{
+    chain::NetworkParams,
+    rng::{self, MainRng, Seed, SeedPrinter},
+    unwrap,
+};
 use bytes::Bytes;
 use maidsafe_utilities::log;
+use rand::SeedableRng;
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     env,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -23,11 +28,12 @@ use std::{
 static LOG_INIT: Once = Once::new();
 
 /// Test environment. Should be created once at the beginning of each test.
-#[derive(Clone)]
 pub struct Network {
+    rng: RefCell<MainRng>,
     network: quic_p2p::Network,
     network_cfg: NetworkParams,
     message_sent: Rc<Cell<bool>>,
+    seed_printer: Option<SeedPrinter>,
 }
 
 impl Network {
@@ -45,6 +51,8 @@ impl Network {
         #[cfg(feature = "mock")]
         parsec::init_mock();
 
+        let seed = Seed::default();
+
         let network = quic_p2p::Network::new();
         let message_sent = Rc::new(Cell::new(false));
 
@@ -58,9 +66,11 @@ impl Network {
         });
 
         Self {
+            rng: RefCell::new(MainRng::from_seed(seed)),
             network,
             network_cfg,
             message_sent,
+            seed_printer: Some(SeedPrinter::on_failure(seed)),
         }
     }
 
@@ -79,9 +89,39 @@ impl Network {
         self.network_cfg.safe_section_size
     }
 
+    /// Poll the mock network.
+    pub fn poll(&self) {
+        self.network.poll(&mut *self.rng.borrow_mut())
+    }
+
+    /// Construct a new random number generator using a seed generated from random data provided by `self`.
+    pub fn new_rng(&self) -> MainRng {
+        rng::new_from(&mut *self.rng.borrow_mut())
+    }
+
     /// Return whether sent any message since previous query and reset the flag.
     pub fn reset_message_sent(&self) -> bool {
         self.message_sent.replace(false)
+    }
+
+    /// Call this in tests annotated with `#[should_panic]` to suppress printing the seed. Will
+    /// instead print the seed if the panic does *not* happen.
+    pub fn expect_panic(&mut self) {
+        if let Some(seed) = self.seed_printer.as_ref().map(|printer| *printer.seed()) {
+            self.seed_printer = Some(SeedPrinter::on_success(seed));
+        }
+    }
+}
+
+impl Clone for Network {
+    fn clone(&self) -> Self {
+        Self {
+            rng: RefCell::new(self.new_rng()),
+            network: self.network.clone(),
+            network_cfg: self.network_cfg,
+            message_sent: Rc::clone(&self.message_sent),
+            seed_printer: None,
+        }
     }
 }
 

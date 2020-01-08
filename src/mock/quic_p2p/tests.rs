@@ -11,6 +11,7 @@ use crate::unwrap;
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
+use rand::{self, Rng};
 use std::{iter, net::SocketAddr};
 
 // Assert that the expression matches the expected pattern.
@@ -29,35 +30,39 @@ macro_rules! assert_match {
 
 #[test]
 fn successful_bootstrap_node_to_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let a = Agent::node();
-    let b = Agent::bootstrapped_node(&network, a.addr());
+    let b = Agent::bootstrapped_node(&mut rng, &network, a.addr());
     a.expect_connected_to_node(&b.addr());
 }
 
 #[test]
 fn successful_bootstrap_client_to_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let a = Agent::node();
-    let b = Agent::bootstrapped_client(&network, a.addr());
+    let b = Agent::bootstrapped_client(&mut rng, &network, a.addr());
     a.expect_connected_to_client(&b.addr());
 }
 
 #[test]
 fn bootstrap_to_nonexisting_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let a_addr = network.gen_addr();
 
     let config = Config::node().with_hard_coded_contacts(iter::once(a_addr));
     let mut b = Agent::with_config(config);
     b.inner.bootstrap();
-    network.poll();
+    network.poll(&mut rng);
 
     b.expect_bootstrap_failure();
 }
 
 #[test]
 fn bootstrap_to_multiple_nodes() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let bootstrappers: Vec<_> = (0..3).map(|_| Agent::node()).collect();
@@ -65,7 +70,7 @@ fn bootstrap_to_multiple_nodes() {
     let config = Config::node().with_hard_coded_contacts(bootstrappers.iter().map(Agent::addr));
     let mut bootstrapee = Agent::with_config(config);
     bootstrapee.inner.bootstrap();
-    network.poll();
+    network.poll(&mut rng);
 
     let actual_addr =
         bootstrapee.expect_bootstrapped_to_exactly_one_of(bootstrappers.iter().map(Agent::addr));
@@ -89,6 +94,7 @@ fn bootstrap_to_multiple_nodes() {
 
 #[test]
 fn bootstrap_using_bootstrap_cache() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     // Address of a bootstrap node that is currently offline.
@@ -100,14 +106,14 @@ fn bootstrap_using_bootstrap_cache() {
     let mut c = Agent::node();
 
     // B successfully connects to C, thus adding it ot its bootstrap cache, then disconnects.
-    establish_connection(&network, &mut b, &mut c);
+    establish_connection(&mut rng, &network, &mut b, &mut c);
     b.disconnect_from(c.addr());
-    network.poll();
+    network.poll(&mut rng);
 
     // B now bootstraps. Because A (which is a hard-coded-contact) is offline, it bootstraps
     // against C which is in the bootstrap cache.
     b.inner.bootstrap();
-    network.poll();
+    network.poll(&mut rng);
 
     b.expect_bootstrapped_to(&c.addr());
     b.expect_none();
@@ -115,44 +121,48 @@ fn bootstrap_using_bootstrap_cache() {
 
 #[test]
 fn successful_connect_node_to_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let mut a = Agent::node();
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 }
 
 #[test]
 fn successful_connect_client_to_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let mut a = Agent::client();
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 }
 
 #[test]
 fn connect_to_nonexisting_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let mut a = Agent::node();
     let b_addr = network.gen_addr();
 
     a.connect_to(b_addr);
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_none();
 }
 
 #[test]
 fn connect_to_already_connected_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let mut a = Agent::node();
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 
     a.connect_to(b.addr());
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_none();
     b.expect_none();
@@ -160,14 +170,15 @@ fn connect_to_already_connected_node() {
 
 #[test]
 fn disconnect_incoming_bootstrap_connection() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let a = Agent::node();
-    let mut b = Agent::bootstrapped_node(&network, a.addr());
+    let mut b = Agent::bootstrapped_node(&mut rng, &network, a.addr());
     a.expect_connected_to_node(&b.addr());
 
     b.disconnect_from(a.addr());
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_connection_failure(&b.addr());
     b.expect_none();
@@ -175,14 +186,15 @@ fn disconnect_incoming_bootstrap_connection() {
 
 #[test]
 fn disconnect_outgoing_bootstrap_connection() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let mut a = Agent::node();
-    let b = Agent::bootstrapped_node(&network, a.addr());
+    let b = Agent::bootstrapped_node(&mut rng, &network, a.addr());
     a.expect_connected_to_node(&b.addr());
 
     a.disconnect_from(b.addr());
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_none();
     b.expect_connection_failure(&a.addr());
@@ -190,15 +202,16 @@ fn disconnect_outgoing_bootstrap_connection() {
 
 #[test]
 fn disconnect_outgoing_connection() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let mut a = Agent::node();
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 
     b.disconnect_from(a.addr());
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_connection_failure(&b.addr());
     b.expect_none();
@@ -206,15 +219,16 @@ fn disconnect_outgoing_connection() {
 
 #[test]
 fn disconnect_incoming_connection() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let mut a = Agent::node();
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 
     a.disconnect_from(b.addr());
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_none();
     b.expect_connection_failure(&a.addr());
@@ -222,16 +236,17 @@ fn disconnect_incoming_connection() {
 
 #[test]
 fn send_to_connected_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let mut a = Agent::node();
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 
     let msg = gen_message();
     a.send(b.addr(), msg.clone(), 0);
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_sent_message(&b.addr(), &msg, 0);
     b.expect_new_message(&a.addr(), &msg);
@@ -239,16 +254,17 @@ fn send_to_connected_node() {
 
 #[test]
 fn send_to_disconnecting_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let mut a = Agent::node();
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 
     let msg = gen_message();
     a.send(b.addr(), msg.clone(), 0);
     b.disconnect_from(a.addr());
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_connection_failure(&b.addr());
     a.expect_unsent_message(&b.addr(), &msg, 0);
@@ -257,6 +273,7 @@ fn send_to_disconnecting_node() {
 
 #[test]
 fn send_to_nonexisting_node() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let mut a = Agent::node();
@@ -264,7 +281,7 @@ fn send_to_nonexisting_node() {
 
     let msg = gen_message();
     a.send(b_addr, msg.clone(), 0);
-    network.poll();
+    network.poll(&mut rng);
 
     // Note: the real quick-p2p will only emit `UnsentUserMessage` when a connection to the peer
     // was previously successfully established. That is not the case here, so we expect nothing.
@@ -274,6 +291,7 @@ fn send_to_nonexisting_node() {
 
 #[test]
 fn send_without_connecting_first() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let mut a = Agent::node();
     let b = Agent::node();
@@ -281,7 +299,7 @@ fn send_without_connecting_first() {
     let msg = gen_message();
     a.send(b.addr(), msg.clone(), 0);
 
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_connected_to_node(&b.addr());
     a.expect_sent_message(&b.addr(), &msg, 0);
@@ -291,6 +309,7 @@ fn send_without_connecting_first() {
 
 #[test]
 fn send_multiple_messages_without_connecting_first() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
     let mut a = Agent::node();
     let b = Agent::node();
@@ -301,7 +320,7 @@ fn send_multiple_messages_without_connecting_first() {
         a.send(b.addr(), msg.clone(), token as u64);
     }
 
-    network.poll();
+    network.poll(&mut rng);
 
     a.expect_connected_to_node(&b.addr());
     for (token, msg) in msgs.iter().enumerate() {
@@ -344,6 +363,7 @@ fn our_connection_info_of_client() {
 
 #[test]
 fn bootstrap_cache() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let mut a = Agent::node();
@@ -352,7 +372,7 @@ fn bootstrap_cache() {
     assert!(unwrap!(a.inner.bootstrap_cache()).is_empty());
     assert!(unwrap!(b.inner.bootstrap_cache()).is_empty());
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 
     // outgoing connections are cached
     assert!(unwrap!(a.inner.bootstrap_cache()).contains(&NodeInfo::from(b.addr())));
@@ -363,6 +383,7 @@ fn bootstrap_cache() {
 
 #[test]
 fn drop_disconnects() {
+    let mut rng = rand::thread_rng();
     let network = Network::new();
 
     let mut a = Agent::node();
@@ -370,10 +391,10 @@ fn drop_disconnects() {
 
     let mut b = Agent::node();
 
-    establish_connection(&network, &mut a, &mut b);
+    establish_connection(&mut rng, &network, &mut a, &mut b);
 
     drop(a);
-    network.poll();
+    network.poll(&mut rng);
 
     b.expect_connection_failure(&a_addr);
 }
@@ -402,22 +423,30 @@ impl Agent {
     }
 
     /// Create new node and bootstrap it against the given address.
-    fn bootstrapped_node(network: &Network, bootstrap_addr: SocketAddr) -> Self {
+    fn bootstrapped_node<R: Rng>(
+        rng: &mut R,
+        network: &Network,
+        bootstrap_addr: SocketAddr,
+    ) -> Self {
         let config = Config::node().with_hard_coded_contacts(iter::once(bootstrap_addr));
         let mut node = Self::with_config(config);
 
         node.inner.bootstrap();
-        network.poll();
+        network.poll(rng);
         node.expect_bootstrapped_to(&bootstrap_addr);
         node
     }
 
-    fn bootstrapped_client(network: &Network, bootstrap_addr: SocketAddr) -> Self {
+    fn bootstrapped_client<R: Rng>(
+        rng: &mut R,
+        network: &Network,
+        bootstrap_addr: SocketAddr,
+    ) -> Self {
         let config = Config::client().with_hard_coded_contacts(iter::once(bootstrap_addr));
         let mut client = Self::with_config(config);
 
         client.inner.bootstrap();
-        network.poll();
+        network.poll(rng);
         client.expect_bootstrapped_to(&bootstrap_addr);
         client
     }
@@ -565,9 +594,9 @@ fn expected_messages_received(sent: Vec<Bytes>, received: FxHashSet<Bytes>) {
     assert_eq!(expected, received);
 }
 
-fn establish_connection(network: &Network, a: &mut Agent, b: &mut Agent) {
+fn establish_connection<R: Rng>(rng: &mut R, network: &Network, a: &mut Agent, b: &mut Agent) {
     a.connect_to(b.addr());
-    network.poll();
+    network.poll(rng);
 
     match a.our_type() {
         OurType::Client => b.expect_connected_to_client(&a.addr()),

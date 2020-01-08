@@ -7,10 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{node::Node, OurType};
-use crate::rng::{self, MainRng, Seed, SeedPrinter};
 use bytes::Bytes;
 use fxhash::{FxHashMap, FxHashSet};
-use rand::{self, seq::SliceRandom, Rng, SeedableRng};
+use rand::{self, seq::SliceRandom, Rng};
 use std::{
     cell::RefCell,
     cmp,
@@ -25,18 +24,15 @@ const PORT: u16 = 9999;
 /// Handle to the mock network. Create one before testing with mocks. Call `set_next_node_addr` or
 /// `gen_next_node_addr` before creating a `QuicP2p` instance.
 /// This handle is cheap to clone. Each clone refers to the same underlying mock network instance.
+#[derive(Clone)]
 pub struct Network {
     inner: Rc<RefCell<Inner>>,
-    seed_printer: Option<SeedPrinter>,
 }
 
 impl Network {
     /// Construct new mock network.
     pub fn new() -> Self {
-        let seed = Seed::default();
-
         let inner = Rc::new(RefCell::new(Inner {
-            rng: MainRng::from_seed(seed),
             nodes: Default::default(),
             connections: Default::default(),
             used_ips: Default::default(),
@@ -45,10 +41,7 @@ impl Network {
 
         NETWORK.with(|network| *network.borrow_mut() = Some(Rc::clone(&inner)));
 
-        Self {
-            inner,
-            seed_printer: Some(SeedPrinter::on_failure(seed)),
-        }
+        Self { inner }
     }
 
     /// Generate new unique socket addrs.
@@ -57,8 +50,8 @@ impl Network {
     }
 
     /// Poll the network by delivering the queued messages.
-    pub fn poll(&self) {
-        while let Some((connection, packet)) = self.pop_random_packet() {
+    pub fn poll<R: Rng>(&self, rng: &mut R) {
+        while let Some((connection, packet)) = self.pop_random_packet(rng) {
             self.process_packet(&connection, packet)
         }
     }
@@ -76,19 +69,6 @@ impl Network {
         self.inner.borrow().is_connected(addr0, addr1)
     }
 
-    /// Construct a new random number generator using a seed generated from random data provided by `self`.
-    pub fn new_rng(&self) -> MainRng {
-        rng::new_from(&mut self.inner.borrow_mut().rng)
-    }
-
-    /// Call this in tests annotated with `#[should_panic]` to suppress printing the seed. Will
-    /// instead print the seed if the panic does *not* happen.
-    pub fn expect_panic(&mut self) {
-        if let Some(seed) = self.seed_printer.as_ref().map(|printer| *printer.seed()) {
-            self.seed_printer = Some(SeedPrinter::on_success(seed));
-        }
-    }
-
     /// Set a function that will be called for each message sent over the network.
     pub fn set_message_sent_hook<F>(&self, hook: F)
     where
@@ -97,8 +77,8 @@ impl Network {
         self.inner.borrow_mut().message_sent_hook = Some(Box::new(hook))
     }
 
-    fn pop_random_packet(&self) -> Option<(Connection, Packet)> {
-        self.inner.borrow_mut().pop_random_packet()
+    fn pop_random_packet<R: Rng>(&self, rng: &mut R) -> Option<(Connection, Packet)> {
+        self.inner.borrow_mut().pop_random_packet(rng)
     }
 
     fn process_packet(&self, connection: &Connection, packet: Packet) {
@@ -133,17 +113,7 @@ impl Default for Network {
     }
 }
 
-impl Clone for Network {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Rc::clone(&self.inner),
-            seed_printer: None,
-        }
-    }
-}
-
 pub(super) struct Inner {
-    rng: MainRng,
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
     connections: FxHashMap<Connection, Queue>,
     used_ips: FxHashSet<IpAddr>,
@@ -202,7 +172,7 @@ impl Inner {
         self.nodes.get(addr).and_then(Weak::upgrade)
     }
 
-    fn pop_random_packet(&mut self) -> Option<(Connection, Packet)> {
+    fn pop_random_packet<R: Rng>(&mut self, rng: &mut R) -> Option<(Connection, Packet)> {
         let connections: Vec<_> = self
             .connections
             .iter()
@@ -210,20 +180,20 @@ impl Inner {
             .map(|(connection, _)| connection)
             .collect();
 
-        let connection = if let Some(connection) = connections.choose(&mut self.rng) {
+        let connection = if let Some(connection) = connections.choose(rng) {
             **connection
         } else {
             return None;
         };
 
-        self.pop_packet(connection)
+        self.pop_packet(rng, connection)
             .map(|packet| (connection, packet))
     }
 
-    fn pop_packet(&mut self, connection: Connection) -> Option<Packet> {
+    fn pop_packet<R: Rng>(&mut self, rng: &mut R, connection: Connection) -> Option<Packet> {
         match self.connections.entry(connection) {
             Entry::Occupied(mut entry) => {
-                let packet = entry.get_mut().pop_random_msg(&mut self.rng);
+                let packet = entry.get_mut().pop_random_msg(rng);
                 if entry.get().is_empty() {
                     let _ = entry.remove_entry();
                 }
@@ -270,7 +240,7 @@ impl Queue {
     }
 
     // This function will pop random msg from the queue.
-    fn pop_random_msg(&mut self, rng: &mut MainRng) -> Option<Packet> {
+    fn pop_random_msg<R: Rng>(&mut self, rng: &mut R) -> Option<Packet> {
         let first_non_msg_packet = self
             .0
             .iter()

@@ -9,7 +9,7 @@
 //! Random number generation utilities.
 
 pub use self::implementation::{new, new_from, MainRng};
-#[cfg(any(feature = "mock_base"))]
+#[cfg(feature = "mock_base")]
 pub use self::seed_printer::SeedPrinter;
 #[cfg(any(test, feature = "mock_base"))]
 pub use self::test::Seed;
