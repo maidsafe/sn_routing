@@ -172,7 +172,7 @@ impl<'a> TestNodeBuilder<'a> {
         let (inner, _node_rx) = unwrap!(self
             .inner
             .network_cfg(self.env.network_cfg())
-            .rng(self.env.new_rng())
+            .rng(&mut self.env.new_rng())
             .create());
 
         TestNode {
