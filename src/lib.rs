@@ -110,7 +110,6 @@ pub use self::{
         section_proof_chain_from_elders_info, NetworkParams, SectionKeyShare, MIN_AGE,
     },
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
-    mock::quic_p2p,
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
     xor_space::Xorable,
@@ -124,6 +123,9 @@ pub mod test_consts {
         states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
     };
 }
+
+#[cfg(feature = "mock")]
+pub use self::mock::parsec::init_mock;
 
 // ############################################################################
 // Private
@@ -179,16 +181,14 @@ const SAFE_SECTION_SIZE: usize = 100;
 const ELDER_SIZE: usize = 7;
 
 use self::quic_p2p::Event as NetworkEvent;
-#[cfg(not(feature = "mock_base"))]
-use quic_p2p;
 #[cfg(any(test, feature = "mock_base"))]
 use unwrap::unwrap;
 
-// Format that can be sent between peers
-#[cfg(not(feature = "mock_serialise"))]
-type NetworkBytes = bytes::Bytes;
-#[cfg(feature = "mock_serialise")]
-type NetworkBytes = std::rc::Rc<Message>;
+// Quic-p2p
+#[cfg(feature = "mock_base")]
+use mock_quic_p2p as quic_p2p;
+#[cfg(not(feature = "mock_base"))]
+use quic_p2p;
 
 #[cfg(test)]
 mod tests {

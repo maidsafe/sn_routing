@@ -6,7 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{authority::Authority, error::InterfaceError, xor_space::XorName, NetworkBytes};
+use crate::{authority::Authority, error::InterfaceError, xor_space::XorName};
+use bytes::Bytes;
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
 use std::fmt::{self, Debug, Formatter};
@@ -35,7 +36,7 @@ pub enum Action {
     },
     SendMessageToClient {
         peer_addr: SocketAddr,
-        msg: NetworkBytes,
+        msg: Bytes,
         token: Token,
         result_tx: Sender<Result<(), InterfaceError>>,
     },

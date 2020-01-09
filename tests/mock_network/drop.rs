@@ -10,7 +10,7 @@ use super::{
     create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use rand::Rng;
-use routing::{mock::Network, Event, EventStream, NetworkParams};
+use routing::{mock::Environment, Event, EventStream, NetworkParams};
 
 // Drop node at index and verify its own section detected it.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
@@ -33,17 +33,17 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 fn node_drops() {
     let elder_size = 8;
     let safe_section_size = 8;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
-    let mut nodes = create_connected_nodes(&network, elder_size + 2);
+    let mut nodes = create_connected_nodes(&env, elder_size + 2);
     drop_node(&mut nodes, 0);
 
     // Trigger poll_and_resend to allow remaining nodes to gossip and
     // update their chain accordingly.
     poll_and_resend(&mut nodes);
-    verify_invariant_for_all_nodes(&network, &mut nodes);
+    verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
 #[test]
@@ -52,12 +52,12 @@ fn node_restart() {
     // (with the exception of the first node which is special).
     let elder_size = 5;
     let safe_section_size = 5;
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, elder_size);
+    let mut rng = env.new_rng();
+    let mut nodes = create_connected_nodes(&env, elder_size);
 
     // Drop all but last node in random order:
     while nodes.len() > 1 {

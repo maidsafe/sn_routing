@@ -12,8 +12,9 @@ use crate::{
     peer_map::PeerMap,
     quic_p2p::{Builder, Error, Peer, QuicP2p, Token},
     utils::LogIdent,
-    ConnectionInfo, NetworkBytes, NetworkConfig, NetworkEvent,
+    ConnectionInfo, NetworkConfig, NetworkEvent,
 };
+use bytes::Bytes;
 use crossbeam_channel::Sender;
 use std::net::SocketAddr;
 
@@ -46,7 +47,7 @@ impl NetworkService {
         &mut self,
         conn_infos: &[ConnectionInfo],
         dg_size: usize,
-        msg: NetworkBytes,
+        msg: Bytes,
     ) {
         let token = self.next_msg_token();
 
@@ -67,7 +68,7 @@ impl NetworkService {
 
     pub fn send_message_to_next_target(
         &mut self,
-        msg: NetworkBytes,
+        msg: Bytes,
         token: Token,
         failed_tgt: SocketAddr,
         log_ident: LogIdent,

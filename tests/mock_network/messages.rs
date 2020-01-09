@@ -8,19 +8,19 @@
 
 use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_all};
 use rand::Rng;
-use routing::{mock::Network, quorum_count, Authority, Event, EventStream, NetworkParams};
+use routing::{mock::Environment, quorum_count, Authority, Event, EventStream, NetworkParams};
 
 #[test]
 fn send() {
     let elder_size = 8;
     let safe_section_size = 8;
     let quorum = quorum_count(elder_size);
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, elder_size + 1);
+    let mut rng = env.new_rng();
+    let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
     let src = Authority::Node(nodes[sender_index].name());
@@ -63,12 +63,12 @@ fn send_and_receive() {
     let elder_size = 8;
     let safe_section_size = 8;
     let quorum = quorum_count(elder_size);
-    let network = Network::new(NetworkParams {
+    let env = Environment::new(NetworkParams {
         elder_size,
         safe_section_size,
     });
-    let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes(&network, elder_size + 1);
+    let mut rng = env.new_rng();
+    let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
     let src = Authority::Node(nodes[sender_index].name());

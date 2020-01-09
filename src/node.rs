@@ -20,9 +20,11 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, BootstrappingPeerDetails},
     xor_space::XorName,
-    ConnectionInfo, Event, NetworkBytes, NetworkConfig,
+    ConnectionInfo, Event, NetworkConfig,
 };
+use bytes::Bytes;
 use crossbeam_channel as mpmc;
+use rand::RngCore;
 use std::{net::SocketAddr, sync::mpsc};
 
 #[cfg(feature = "mock_base")]
@@ -78,9 +80,9 @@ impl NodeBuilder {
     }
 
     /// Use the supplied random number generator. If this is not called, a default `OsRng` is used.
-    pub fn rng(self, rng: MainRng) -> Self {
+    pub fn rng<R: RngCore>(self, rng: &mut R) -> Self {
         Self {
-            rng: Some(rng),
+            rng: Some(rng::new_from(rng)),
             ..self
         }
     }
@@ -260,7 +262,7 @@ impl Node {
     pub fn send_message_to_client(
         &mut self,
         peer_addr: SocketAddr,
-        msg: NetworkBytes,
+        msg: Bytes,
         token: Token,
     ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding network events.

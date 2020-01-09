@@ -10,10 +10,8 @@
 #[cfg(feature = "mock")]
 pub(crate) mod parsec;
 
-/// Mock version of Quic-P2P
-pub mod quic_p2p;
-
 /// Mock cryptography
 pub(crate) mod crypto;
 
-pub use self::quic_p2p::Network;
+mod env;
+pub use self::env::Environment;

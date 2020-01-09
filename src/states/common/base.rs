@@ -24,8 +24,9 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::XorName,
-    ClientEvent, ConnectionInfo, NetworkBytes, NetworkEvent,
+    ClientEvent, ConnectionInfo, NetworkEvent,
 };
+use bytes::Bytes;
 use log::LogLevel;
 use maidsafe_utilities::serialisation;
 use std::{fmt::Display, net::SocketAddr, slice};
@@ -244,7 +245,7 @@ pub trait Base: Display {
     fn handle_new_message(
         &mut self,
         src_addr: SocketAddr,
-        bytes: NetworkBytes,
+        bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
         let result = from_network_bytes(bytes)
@@ -291,7 +292,7 @@ pub trait Base: Display {
     fn handle_unsent_message(
         &mut self,
         peer_addr: SocketAddr,
-        msg: NetworkBytes,
+        msg: Bytes,
         token: Token,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
@@ -304,7 +305,7 @@ pub trait Base: Display {
     fn handle_sent_message(
         &mut self,
         peer_addr: SocketAddr,
-        _msg: NetworkBytes,
+        _msg: Bytes,
         token: Token,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
@@ -387,7 +388,7 @@ pub trait Base: Display {
     ) {
         let bytes = match to_network_bytes(&message) {
             Ok(bytes) => bytes,
-            Err((error, message)) => {
+            Err(error) => {
                 error!(
                     "{} Failed to serialise message {:?}: {:?}",
                     self, message, error
@@ -431,7 +432,7 @@ pub trait Base: Display {
             .disconnect_from(peer_addr);
     }
 
-    fn send_msg_to_client(&mut self, peer_addr: SocketAddr, msg: NetworkBytes, token: Token) {
+    fn send_msg_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
         let client = Peer::Client { peer_addr };
         self.network_service_mut()
             .service_mut()
@@ -455,26 +456,10 @@ pub trait Base: Display {
     }
 }
 
-pub fn to_network_bytes(
-    message: &Message,
-) -> Result<NetworkBytes, (serialisation::SerialisationError, &Message)> {
-    #[cfg(not(feature = "mock_serialise"))]
-    let result = Ok(NetworkBytes::from(
-        serialisation::serialise(message).map_err(|err| (err, message))?,
-    ));
-
-    #[cfg(feature = "mock_serialise")]
-    let result = Ok(NetworkBytes::new(message.clone()));
-
-    result
+pub fn to_network_bytes(message: &Message) -> Result<Bytes, serialisation::SerialisationError> {
+    Ok(Bytes::from(serialisation::serialise(message)?))
 }
 
-pub fn from_network_bytes(data: NetworkBytes) -> Result<Message, RoutingError> {
-    #[cfg(not(feature = "mock_serialise"))]
-    let result = serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError);
-
-    #[cfg(feature = "mock_serialise")]
-    let result = Ok((*data).clone());
-
-    result
+pub fn from_network_bytes(data: Bytes) -> Result<Message, RoutingError> {
+    serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError)
 }
