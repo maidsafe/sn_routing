@@ -40,34 +40,6 @@ impl<R: rand::Rng> rand_crypto::RngCore for RngCompat<R> {
 
 impl<R: CryptoRng> rand_crypto::CryptoRng for RngCompat<R> {}
 
-// Note: routing uses different version of the rand crate than parsec. This is a
-// compatibility adapter between the two.
-pub(crate) struct RngParsecCompat<R>(pub R);
-
-impl<R: rand::Rng> rand_parsec::Rng for RngParsecCompat<R> {
-    fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
-    }
-}
-
-impl<R: rand::Rng> rand::RngCore for RngParsecCompat<R> {
-    fn next_u32(&mut self) -> u32 {
-        self.0.next_u32()
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.0.next_u64()
-    }
-
-    fn fill_bytes(&mut self, dest: &mut [u8]) {
-        self.0.fill_bytes(dest)
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
-        self.0.try_fill_bytes(dest)
-    }
-}
-
 // Rng implementation used in production. Uses `OsRng` for maximum cryptographic security.
 #[cfg(not(any(test, feature = "mock_base")))]
 mod implementation {
