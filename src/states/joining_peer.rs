@@ -264,15 +264,19 @@ impl Base for JoiningPeer {
             DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 if info.version() > self.elders_info.version() {
                     if info.prefix().matches(self.name()) {
-                        info!("{} - Newer Join response for our prefix {:?}", self, info);
+                        info!(
+                            "{} - Newer Join response for our prefix {:?} from {:?}",
+                            self, info, p2p_node
+                        );
                         self.elders_info = info;
                         self.send_join_requests();
                     } else {
                         log_or_panic!(
                             LogLevel::Error,
-                            "{} - Newer Join response not for our prefix {:?}",
+                            "{} - Newer Join response not for our prefix {:?} from {:?}",
                             self,
-                            info
+                            info,
+                            p2p_node,
                         );
                     }
                 }
