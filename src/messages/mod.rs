@@ -513,6 +513,8 @@ pub enum MessageContent {
         /// The version acknowledged.
         ack_version: u64,
     },
+    /// Update sent to Adults and Infants by Elders
+    GenesisUpdate(GenesisPfxInfo),
 }
 
 impl Debug for HopMessage {
@@ -546,6 +548,7 @@ impl Debug for MessageContent {
                 src_prefix,
                 ack_version,
             } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
+            GenesisUpdate(info) => write!(formatter, "GenesisUpdate({:?})", info),
         }
     }
 }

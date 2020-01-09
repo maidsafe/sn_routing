@@ -606,9 +606,31 @@ impl Elder {
     }
 
     fn send_genesis_updates(&mut self) {
-        for conn_info in self.chain.adults_and_infants_conn_infos() {
-            let message = DirectMessage::GenesisUpdate(self.gen_pfx_info.clone());
-            self.send_direct_message(&conn_info, message);
+        let src = Authority::PrefixSection(*self.our_prefix());
+
+        let nodes: Vec<_> = self.chain.adults_and_infants_p2p_nodes().cloned().collect();
+        for node in nodes {
+            let msg = RoutingMessage {
+                src,
+                dst: Authority::Node(*node.name()),
+                content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
+            };
+            let msg = match self.to_signed_routing_message(msg) {
+                Ok(msg) => msg,
+                Err(error) => {
+                    warn!("{} - Failed to create signed message: {:?}", self, error);
+                    continue;
+                }
+            };
+
+            trace!(
+                "{} - Sending GenesisUpdate({:?}) to {}",
+                self,
+                self.gen_pfx_info,
+                node
+            );
+
+            self.send_direct_message(node.connection_info(), DirectMessage::MessageSignature(msg));
         }
     }
 
@@ -1233,6 +1255,18 @@ impl Elder {
             Err(RoutingError::UntrustedMessage)
         }
     }
+
+    // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
+    fn to_signed_routing_message(
+        &self,
+        msg: RoutingMessage,
+    ) -> Result<SignedRoutingMessage, RoutingError> {
+        let proof = self.chain.prove(&msg.dst, None);
+        let pk_set = self.our_section_bls_keys().clone();
+        let secret_key = self.chain.our_section_bls_secret_key_share()?;
+
+        SignedRoutingMessage::new(msg, secret_key, pk_set, proof)
+    }
 }
 
 impl Base for Elder {
@@ -1413,9 +1447,6 @@ impl Base for Elder {
                 );
                 self.direct_msg_backlog.push((p2p_node, msg));
             }
-            GenesisUpdate(_) => {
-                debug!("{} Unhandled direct message: {:?}", self, msg);
-            }
         }
         Ok(Transition::Stay)
     }
@@ -1455,10 +1486,7 @@ impl Base for Elder {
             return Ok(());
         }
 
-        let proof = self.chain.prove(&routing_msg.dst, None);
-        let pk_set = self.our_section_bls_keys().clone();
-        let secret_key = self.chain.our_section_bls_secret_key_share()?;
-        let signed_msg = SignedRoutingMessage::new(routing_msg, secret_key, pk_set, proof)?;
+        let signed_msg = self.to_signed_routing_message(routing_msg)?;
 
         for target in Iterator::flatten(
             self.get_signature_targets(&signed_msg.routing_message().src)

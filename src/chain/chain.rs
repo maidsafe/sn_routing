@@ -714,13 +714,12 @@ impl Chain {
             .map(|member_info| &member_info.p2p_node)
     }
 
-    /// Returns the connection infos for all non-Elders in the section
-    pub fn adults_and_infants_conn_infos(&self) -> Vec<ConnectionInfo> {
+    /// Returns the `P2pNode` of all non-elders in the section
+    pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.state
             .our_joined_members()
-            .filter(|(_, info)| !self.state.our_info().is_member(info.p2p_node.public_id()))
-            .map(|(_, info)| info.p2p_node.connection_info().clone())
-            .collect()
+            .filter(move |(_, info)| !self.state.our_info().is_member(info.p2p_node.public_id()))
+            .map(|(_, info)| &info.p2p_node)
     }
 
     pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
