@@ -316,8 +316,12 @@ impl Adult {
         // This is problematic since Elders do additional checks before doing this.
         // This was necessary to merge the initial work for promotion demotion.
         let response = if self.our_prefix().matches(&destination) {
-            debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
-            BootstrapResponse::Join(self.chain.our_info().clone())
+            let our_info = self.chain.our_info().clone();
+            debug!(
+                "{} - Sending BootstrapResponse::Join to {:?} ({:?})",
+                self, p2p_node, our_info
+            );
+            BootstrapResponse::Join(our_info)
         } else {
             let conn_infos: Vec<_> = self
                 .closest_known_elders_to(&destination)

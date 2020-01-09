@@ -405,32 +405,30 @@ impl Elder {
     fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
         let ParsecResetData {
             gen_pfx_info,
-            mut cached_events,
+            cached_events,
             completed_events,
         } = reset_data;
 
-        cached_events.extend(
-            self.parsec_map
-                .our_unpolled_observations()
-                .filter_map(|obs| match obs {
-                    parsec::Observation::OpaquePayload(event) => {
-                        if !completed_events.contains(&event.payload) {
-                            Some(event)
-                        } else {
-                            None
-                        }
-                    }
+        let cached_events: BTreeSet<_> = cached_events
+            .into_iter()
+            .chain(
+                self.parsec_map
+                    .our_unpolled_observations()
+                    .filter_map(|obs| match obs {
+                        parsec::Observation::OpaquePayload(event) => Some(event),
 
-                    parsec::Observation::Genesis { .. }
-                    | parsec::Observation::Add { .. }
-                    | parsec::Observation::Remove { .. }
-                    | parsec::Observation::Accusation { .. }
-                    | parsec::Observation::StartDkg(_)
-                    | parsec::Observation::DkgResult { .. }
-                    | parsec::Observation::DkgMessage(_) => None,
-                })
-                .cloned(),
-        );
+                        parsec::Observation::Genesis { .. }
+                        | parsec::Observation::Add { .. }
+                        | parsec::Observation::Remove { .. }
+                        | parsec::Observation::Accusation { .. }
+                        | parsec::Observation::StartDkg(_)
+                        | parsec::Observation::DkgResult { .. }
+                        | parsec::Observation::DkgMessage(_) => None,
+                    })
+                    .cloned(),
+            )
+            .filter(|event| !completed_events.contains(&event.payload))
+            .collect();
 
         let our_pfx = *self.our_prefix();
 
@@ -870,8 +868,12 @@ impl Elder {
 
     fn respond_to_bootstrap_request(&mut self, p2p_node: &P2pNode, name: &XorName) {
         let response = if self.our_prefix().matches(name) {
-            debug!("{} - Sending BootstrapResponse::Join to {}", self, p2p_node);
-            BootstrapResponse::Join(self.chain.our_info().clone())
+            let our_info = self.chain.our_info().clone();
+            debug!(
+                "{} - Sending BootstrapResponse::Join to {:?} ({:?})",
+                self, p2p_node, our_info
+            );
+            BootstrapResponse::Join(our_info)
         } else {
             let conn_infos: Vec<_> = self
                 .closest_known_elders_to(name)
