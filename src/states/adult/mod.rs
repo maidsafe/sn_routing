@@ -464,7 +464,8 @@ impl Adult {
 
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    return self.handle_genesis_update(info.clone())
+                    self.check_signed_message_trust(&signed_msg)?;
+                    return self.handle_genesis_update(info.clone());
                 }
                 _ => {
                     self.routing_msg_backlog.push(signed_msg.clone());

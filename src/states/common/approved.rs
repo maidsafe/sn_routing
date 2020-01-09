@@ -15,12 +15,14 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
+    messages::SignedRoutingMessage,
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
     state_machine::Transition,
     xor_space::{Prefix, XorName},
 };
+use itertools::Itertools;
 use log::LogLevel;
 use rand::Rng;
 use std::collections::BTreeSet;
@@ -519,7 +521,6 @@ pub trait Approved: Base {
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
-        use itertools::Itertools;
         if !self.chain().check_trust(details.proof()) {
             log_or_panic!(
                 LogLevel::Error,
@@ -543,6 +544,21 @@ pub trait Approved: Base {
         }
 
         true
+    }
+
+    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+        if msg.check_trust(self.chain()) {
+            Ok(())
+        } else {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - Untrusted {:?} --- [{:?}]",
+                self,
+                msg,
+                self.chain().get_their_keys_info().format(", ")
+            );
+            Err(RoutingError::UntrustedMessage)
+        }
     }
 }
 

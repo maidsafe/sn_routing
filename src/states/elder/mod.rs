@@ -1289,21 +1289,6 @@ impl Elder {
         }
     }
 
-    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        if msg.check_trust(&self.chain) {
-            Ok(())
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Untrusted {:?} --- [{:?}]",
-                self,
-                msg,
-                self.chain.get_their_keys_info().format(", ")
-            );
-            Err(RoutingError::UntrustedMessage)
-        }
-    }
-
     // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
     fn to_signed_routing_message(
         &self,
