@@ -21,8 +21,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, RoutingMessage,
-        SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, MessageContent, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -372,7 +371,7 @@ impl Adult {
     // Send signed_msg to our elders so they can route it properly.
     fn send_signed_message_to_elders(
         &mut self,
-        signed_msg: &SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
@@ -470,7 +469,7 @@ impl Adult {
             }
         }
 
-        self.send_signed_message_to_elders(&signed_msg)?;
+        self.send_signed_message_to_elders(signed_msg)?;
         Ok(Transition::Stay)
     }
 }
@@ -618,16 +617,6 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
         self.handle_signed_message(msg)
-    }
-
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
-        if self.in_authority(&routing_msg.dst) {
-            return Ok(()); // Message is for us.
-        }
-
-        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
-        self.send_signed_message_to_elders(&signed_msg)?;
-        Ok(())
     }
 }
 
