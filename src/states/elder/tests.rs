@@ -343,10 +343,9 @@ impl ElderUnderTest {
 
     fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
         self.handle_connected_to(conn_info.clone());
-        unwrap!(self
-            .machine
+        self.machine
             .elder_state_mut()
-            .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name()));
+            .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name());
     }
 
     fn is_connected(&self, peer_addr: &SocketAddr) -> bool {

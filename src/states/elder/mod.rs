@@ -862,29 +862,13 @@ impl Elder {
     }
 
     // If this returns an error, the peer will be dropped.
-    fn handle_bootstrap_request(
-        &mut self,
-        p2p_node: P2pNode,
-        name: XorName,
-    ) -> Result<(), RoutingError> {
+    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, name: XorName) {
         debug!(
             "{} - Received BootstrapRequest to section at {} from {:?}.",
             self, name, p2p_node
         );
 
-        let pub_id = *p2p_node.public_id();
-        if !self.peer_map().has(p2p_node.peer_addr()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "Not connected to the sender of BootstrapRequest."
-            );
-            // Note: peer_map and this block is scheduled for removal
-            return Err(RoutingError::PeerNotFound(*pub_id.name()));
-        };
-
         self.respond_to_bootstrap_request(&p2p_node, &name);
-
-        Ok(())
     }
 
     fn respond_to_bootstrap_request(&mut self, p2p_node: &P2pNode, name: &XorName) {
@@ -1481,14 +1465,7 @@ impl Base for Elder {
 
         match msg {
             MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
-            BootstrapRequest(name) => {
-                if let Err(error) = self.handle_bootstrap_request(p2p_node, name) {
-                    warn!(
-                        "{} Invalid BootstrapRequest received from {} ({:?}).",
-                        self, pub_id, error,
-                    );
-                }
-            }
+            BootstrapRequest(name) => self.handle_bootstrap_request(p2p_node, name),
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             JoinRequest(join_request) => self.handle_join_request(p2p_node, join_request),
             ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
