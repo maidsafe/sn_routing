@@ -13,9 +13,7 @@ use routing::{
     MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare,
     SignedRoutingMessage, XorName,
 };
-use std::collections::BTreeMap;
-use std::iter;
-use std::net::SocketAddr;
+use std::{collections::BTreeMap, iter, net::SocketAddr};
 
 fn get_prefix(node: &TestNode) -> Prefix<XorName> {
     *unwrap!(node.inner.our_prefix())

@@ -6,10 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use std::cmp::{min, Ordering};
-use std::marker::Sized;
-use std::mem;
-use std::num::Wrapping;
+use std::{
+    cmp::{min, Ordering},
+    marker::Sized,
+    mem,
+    num::Wrapping,
+};
 
 /// A sequence of bits, as a point in XOR space.
 ///

@@ -7,8 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{observation::Observation, DkgResult, DkgResultWrapper, NetworkEvent, Proof, PublicId};
-use std::collections::BTreeSet;
-use std::rc::Rc;
+use std::{collections::BTreeSet, rc::Rc};
 
 #[serde(bound = "")]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]

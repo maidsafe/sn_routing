@@ -8,8 +8,7 @@
 
 use crate::{quic_p2p::Token, ConnectionInfo};
 use log::LogLevel;
-use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr};
 
 const MAX_RESENDS: u8 = 3;
 
