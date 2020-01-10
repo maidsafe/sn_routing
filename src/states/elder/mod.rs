@@ -879,7 +879,7 @@ impl Elder {
                 "Not connected to the sender of BootstrapRequest."
             );
             // Note: peer_map and this block is scheduled for removal
-            return Err(RoutingError::PeerNotFound(pub_id));
+            return Err(RoutingError::PeerNotFound(*pub_id.name()));
         };
 
         self.respond_to_bootstrap_request(&p2p_node, &name);
@@ -1250,10 +1250,6 @@ impl Elder {
                 .map(|p2p_node| p2p_node.name())
                 .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            // FIXME: This does not include recently accepted peers which would affect quorum
-            // calculation. This even when going via RT would have only allowed route-0 to succeed
-            // as by ack-failure, the new node would have been accepted to the RT.
-            // Need a better network startup separation.
             Authority::PrefixSection(pfx) => self
                 .chain
                 .all_sections()
