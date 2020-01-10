@@ -16,7 +16,6 @@ pub type Result<T> = ::std::result::Result<T, RoutingError>;
 
 /// The type of errors that can occur if routing is unable to handle a send request.
 #[derive(Debug, Error, derive_more::From)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(missing_docs)]
 pub enum InterfaceError {
     #[error(display = "We are not in a state to handle the action.")]
@@ -27,7 +26,6 @@ pub enum InterfaceError {
 
 /// The type of errors that can occur during handling of routing events.
 #[derive(Debug, Error, derive_more::From)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(missing_docs)]
 pub enum RoutingError {
     #[error(display = "Invalid State.")]

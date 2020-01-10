@@ -26,8 +26,6 @@ use std::{
 
 /// Direct message content.
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.

@@ -22,8 +22,6 @@ use std::{
 ///    2. `Action::Terminate` indicates to `Core` that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
 pub enum Action {
     SendMessage {
         src: Authority<XorName>,
