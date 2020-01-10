@@ -670,7 +670,6 @@ mod test {
         updates: Vec<(usize, &str)>,
         expected: Vec<(&str, usize)>,
     ) {
-        //
         // Arrange
         //
         let keys_to_update = updates
@@ -699,14 +698,12 @@ mod test {
             SharedState::new(info, keys, Default::default())
         };
 
-        //
         // Act
         //
         for (key_info, _, _) in keys_to_update.iter().skip(1) {
             state.update_their_keys(key_info);
         }
 
-        //
         // Assert
         //
         let actual_keys = state

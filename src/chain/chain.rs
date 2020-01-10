@@ -961,8 +961,10 @@ impl Chain {
                 if !info.is_successor_of(self.our_info()) {
                     log_or_panic!(
                         LogLevel::Error,
-                        "We shouldn't have a SectionInfo that is not a direct descendant. our: {:?}, new: {:?}",
-                        self.our_info(), info
+                        "We shouldn't have a SectionInfo that is not a direct descendant. our: \
+                         {:?}, new: {:?}",
+                        self.our_info(),
+                        info
                     );
                 }
 
@@ -2021,7 +2023,6 @@ mod tests {
     }
 
     fn filter_invalid_relocation_signatures(malicious_bls_count: usize) {
-        //
         // Arrange
         //
         let mut rng = rng::new();
@@ -2055,7 +2056,6 @@ mod tests {
             })
             .collect_vec();
 
-        //
         // Act
         //
         for (signature, proof) in opaque_infos {
@@ -2065,7 +2065,6 @@ mod tests {
         }
         let chain_accumulated = chain.poll_accumulated();
 
-        //
         // Assert
         //
         let accumulated_event = match chain_accumulated {

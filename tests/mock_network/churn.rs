@@ -183,7 +183,6 @@ fn churn(params: Params) {
         create_connected_nodes_until_split(&env, params.initial_prefix_lens)
     };
 
-    //
     // Grow phase - adding nodes
     //
     warn!(
@@ -207,7 +206,6 @@ fn churn(params: Params) {
         )
     }
 
-    //
     // Churn phase - simultaneously adding and dropping nodes
     //
     warn!(
@@ -247,7 +245,6 @@ fn churn(params: Params) {
         );
     }
 
-    //
     // Shrink phase - dropping nodes
     //
     if params.shrink_drop_probability > 0.0 {

@@ -22,7 +22,6 @@ pub use self::{
 #[cfg(feature = "mock_base")]
 pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT};
 
-//
 // # The state machine
 //
 //            START

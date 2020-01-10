@@ -27,15 +27,13 @@ pub const LOWERED_ELDER_SIZE: usize = 3;
 
 // -----  Miscellaneous tests below  -----
 
-/*
-fn nodes_with_candidate(nodes: &[TestNode]) -> Vec<XorName> {
-    nodes
-        .iter()
-        .filter(|node| node.inner.elder_state_unchecked().has_candidate())
-        .map(TestNode::name)
-        .collect()
-}
-*/
+// fn nodes_with_candidate(nodes: &[TestNode]) -> Vec<XorName> {
+// nodes
+// .iter()
+// .filter(|node| node.inner.elder_state_unchecked().has_candidate())
+// .map(TestNode::name)
+// .collect()
+// }
 
 fn test_nodes(percentage_size: usize) {
     let size = LOWERED_ELDER_SIZE * percentage_size / 100;
@@ -118,59 +116,57 @@ fn disconnect_on_rebootstrap() {
     expect_next_event!(unwrap!(nodes.last_mut()), Event::Terminated);
 }
 
-/*
- * TODO: either modify this test or remove it
-#[test]
-fn candidate_expiration() {
-    let env = Environment::new(LOWERED_ELDER_SIZE, LOWERED_ELDER_SIZE * 2, None);
-    let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
-    let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-    nodes.insert(
-        0,
-        TestNode::builder(&env)
-            .network_config(network_config)
-            .create(),
-    );
-
-    // Initiate connection until the candidate switch to ProvingNode:
-    info!("Candidate joining name: {}", nodes[0].name());
-    poll_and_resend_until(&mut nodes, &|nodes| nodes[0].inner.is_proving_node(), None);
-    let proving_node = nodes.remove(0);
-
-    assert!(
-        proving_node.inner.is_proving_node(),
-        "Accepted as candidate"
-    );
-
-    // Continue without the joining node until all nodes accept the candidate:
-    info!("Candidate new name: {}", proving_node.name());
-    poll_and_resend_until(
-        &mut nodes,
-        &|nodes| {
-            nodes
-                .iter()
-                .all(|node| node.inner.elder_state_unchecked().has_candidate())
-        },
-        None,
-    );
-
-    assert_eq!(
-        nodes.iter().map(TestNode::name).collect_vec(),
-        nodes_with_candidate(&nodes),
-        "All members of destination section accepted node as candidate"
-    );
-
-    // Continue after candidate time out:
-    FakeClock::advance_time(1000 * test_consts::CANDIDATE_EXPIRED_TIMEOUT_SECS);
-    poll_and_resend(&mut nodes);
-
-    assert_eq!(
-        Vec::<XorName>::new(),
-        nodes_with_candidate(&nodes),
-        "All members have rejected the candidate"
-    );
-}
-*/
+// TODO: either modify this test or remove it
+// #[test]
+// fn candidate_expiration() {
+// let env = Environment::new(LOWERED_ELDER_SIZE, LOWERED_ELDER_SIZE * 2, None);
+// let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
+// let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+// nodes.insert(
+// 0,
+// TestNode::builder(&env)
+// .network_config(network_config)
+// .create(),
+// );
+//
+// Initiate connection until the candidate switch to ProvingNode:
+// info!("Candidate joining name: {}", nodes[0].name());
+// poll_and_resend_until(&mut nodes, &|nodes| nodes[0].inner.is_proving_node(), None);
+// let proving_node = nodes.remove(0);
+//
+// assert!(
+// proving_node.inner.is_proving_node(),
+// "Accepted as candidate"
+// );
+//
+// Continue without the joining node until all nodes accept the candidate:
+// info!("Candidate new name: {}", proving_node.name());
+// poll_and_resend_until(
+// &mut nodes,
+// &|nodes| {
+// nodes
+// .iter()
+// .all(|node| node.inner.elder_state_unchecked().has_candidate())
+// },
+// None,
+// );
+//
+// assert_eq!(
+// nodes.iter().map(TestNode::name).collect_vec(),
+// nodes_with_candidate(&nodes),
+// "All members of destination section accepted node as candidate"
+// );
+//
+// Continue after candidate time out:
+// FakeClock::advance_time(1000 * test_consts::CANDIDATE_EXPIRED_TIMEOUT_SECS);
+// poll_and_resend(&mut nodes);
+//
+// assert_eq!(
+// Vec::<XorName>::new(),
+// nodes_with_candidate(&nodes),
+// "All members have rejected the candidate"
+// );
+// }
 
 #[test]
 fn single_section() {
@@ -304,7 +300,6 @@ fn simultaneous_joining_nodes(
     mut nodes: Nodes,
     nodes_to_add_setup: &[SimultaneousJoiningNode],
 ) {
-    //
     // Arrange
     // Setup nodes so relocation will happen as specified by nodes_to_add_setup.
     //
@@ -342,14 +337,12 @@ fn simultaneous_joining_nodes(
         nodes_to_add.push(node_to_add);
     }
 
-    //
     // Act
     // Add new nodes and process until complete
     //
     nodes.extend(nodes_to_add);
     poll_and_resend(&mut nodes);
 
-    //
     // Assert
     // Verify that the sections all have enough elders and other invariants
     //
@@ -509,7 +502,6 @@ fn check_close_names_for_elder_size_nodes() {
 
 #[test]
 fn check_section_info_ack() {
-    //
     // Arrange
     //
     let elder_size = 8;
@@ -519,7 +511,6 @@ fn check_section_info_ack() {
         safe_section_size,
     });
 
-    //
     // Act
     //
     let nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
@@ -533,7 +524,6 @@ fn check_section_info_ack() {
         .map(|node| node.id())
         .collect();
 
-    //
     // Assert
     //
     let expected_all_elder: Vec<_> = nodes

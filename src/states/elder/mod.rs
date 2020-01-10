@@ -967,8 +967,12 @@ impl Elder {
 
             if !self.our_prefix().matches(&details.content().destination) {
                 debug!(
-                    "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
-                    self, pub_id, details.content().destination, self.our_prefix()
+                    "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match \
+                     our prefix {:?}.",
+                    self,
+                    pub_id,
+                    details.content().destination,
+                    self.our_prefix()
                 );
                 return;
             }

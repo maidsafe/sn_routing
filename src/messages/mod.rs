@@ -324,7 +324,8 @@ impl SignedRoutingMessage {
                 } else {
                     log_or_panic!(
                         LogLevel::Error,
-                        "Combining signatures failed on {:?}! Part Shares: {:?}, Part Set: {:?}, Partial: {:?}",
+                        "Combining signatures failed on {:?}! Part Shares: {:?}, Part Set: {:?}, \
+                         Partial: {:?}",
                         self,
                         partial.shares,
                         partial.pk_set,
@@ -493,7 +494,6 @@ impl RoutingMessage {
 /// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A and
 /// add it into their routing table. When A receives the `NodeApproval` message, it adds the members
 /// of Y to its routing table.
-///
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
