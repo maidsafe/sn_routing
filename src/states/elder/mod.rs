@@ -26,8 +26,8 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
-        SecurityMetadata, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MemberKnowledge, MessageContent,
+        RoutingMessage, SecurityMetadata, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -350,8 +350,8 @@ impl Elder {
         self.chain.our_section_bls_keys()
     }
 
-    fn handle_parsec_poke(&mut self, msg_version: u64, p2p_node: P2pNode) {
-        self.send_parsec_gossip(Some((msg_version, p2p_node)))
+    fn handle_member_knowledge(&mut self, p2p_node: P2pNode, payload: MemberKnowledge) {
+        self.send_parsec_gossip(Some((payload.parsec_version, p2p_node)))
     }
 
     // Connect to all elders from our section or neighbour sections that we are not yet connected
@@ -1461,7 +1461,7 @@ impl Base for Elder {
             BootstrapRequest(name) => self.handle_bootstrap_request(p2p_node, name),
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             JoinRequest(join_request) => self.handle_join_request(p2p_node, *join_request),
-            ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
+            MemberKnowledge(payload) => self.handle_member_knowledge(p2p_node, payload),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, p2p_node, outbox);
             }

@@ -8,7 +8,9 @@
 
 mod direct;
 
-pub use self::direct::{BootstrapResponse, DirectMessage, JoinRequest, SignedDirectMessage};
+pub use self::direct::{
+    BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage,
+};
 use crate::{
     authority::Authority,
     chain::{

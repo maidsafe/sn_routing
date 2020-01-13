@@ -24,7 +24,8 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, MemberKnowledge, MessageContent,
+        SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -241,14 +242,9 @@ impl Adult {
         Ok(())
     }
 
-    // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
-    //
-    // TODO: Should restrict targets to few(counter churn-threshold)/single.
-    // Currently this can result in incoming spam of gossip history from everyone.
-    // Can also just be a single target once node-ageing makes Offline votes Opaque which should
-    // remove invalid test failures for unaccumulated parsec::Remove blocks.
-    fn send_parsec_poke(&mut self) {
-        let version = self.gen_pfx_info.parsec_version;
+    // Sends a `MemberKnowledge` message to our elders to update them about what we know about our
+    // own section.
+    fn send_member_knowledge(&mut self) {
         let recipients = self
             .gen_pfx_info
             .latest_info
@@ -257,15 +253,16 @@ impl Adult {
             .map(P2pNode::connection_info)
             .cloned()
             .collect_vec();
+        let payload = MemberKnowledge {
+            elders_version: self.gen_pfx_info.latest_info.version(),
+            parsec_version: self.gen_pfx_info.parsec_version,
+        };
 
-        debug!(
-            "{} Sending Parsec Poke for version {} to {:?}",
-            self, version, recipients
-        );
+        debug!("{} - Send {:?} to {:?}", self, payload, recipients);
 
         for recipient in recipients {
-            trace!("{} send poke to {:?}", self, recipient);
-            self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
+            trace!("{} - Send MemberKnowledge to {:?}", self, recipient);
+            self.send_direct_message(&recipient, DirectMessage::MemberKnowledge(payload))
         }
     }
 
@@ -556,7 +553,8 @@ impl Base for Adult {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         if self.parsec_timer_token == token {
-            self.send_parsec_poke();
+            // TODO: send this only when the knowledge changes, not periodically.
+            self.send_member_knowledge();
             self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
         }
 
@@ -601,7 +599,7 @@ impl Base for Adult {
                 );
                 Ok(Transition::Stay)
             }
-            msg @ JoinRequest(_) | msg @ ParsecPoke(_) => {
+            msg @ JoinRequest(_) | msg @ MemberKnowledge { .. } => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
                     self,
