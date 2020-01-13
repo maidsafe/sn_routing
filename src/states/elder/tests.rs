@@ -71,7 +71,8 @@ impl ElderUnderTest {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
+        let (elders_info, full_ids) =
+            test_utils::create_elders_info(&mut rng, &network, sec_size, None);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
         let gen_pfx_info =
             test_utils::create_gen_pfx_info(elders_info.clone(), secret_key_set.public_keys(), 0);

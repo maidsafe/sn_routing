@@ -25,7 +25,7 @@ use crate::{
 };
 use crossbeam_channel as mpmc;
 use mock_quic_p2p::Network;
-use std::{collections::BTreeMap, iter};
+use std::collections::BTreeMap;
 
 pub fn create_network_service(network: &Network) -> NetworkService {
     let endpoint = network.gen_addr();
@@ -46,6 +46,7 @@ pub fn create_elders_info(
     rng: &mut MainRng,
     network: &Network,
     elder_size: usize,
+    prev: Option<&EldersInfo>,
 ) -> (EldersInfo, BTreeMap<XorName, FullId>) {
     let full_ids: BTreeMap<_, _> = (0..elder_size)
         .map(|_| {
@@ -64,11 +65,7 @@ pub fn create_elders_info(
         })
         .collect();
 
-    let elders_info = unwrap!(EldersInfo::new(
-        members_map,
-        Prefix::default(),
-        iter::empty()
-    ));
+    let elders_info = unwrap!(EldersInfo::new(members_map, Prefix::default(), prev));
     (elders_info, full_ids)
 }
 

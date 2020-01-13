@@ -18,6 +18,8 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 };
 
 struct AdultUnderTest {
+    rng: MainRng,
+    network: Network,
     adult: Adult,
     elders: BTreeMap<XorName, Chain>,
 }
@@ -27,33 +29,28 @@ impl AdultUnderTest {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let secret_key_set = generate_bls_threshold_secret_key(&mut rng, ELDER_SIZE);
-        let public_key_set = secret_key_set.public_keys();
+        let elders = create_elders(&mut rng, &network, None);
 
-        let (elders_info, _) = test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
-        let elders = elders_info
-            .member_ids()
-            .enumerate()
-            .map(|(index, id)| {
-                let gen_pfx_info =
-                    test_utils::create_gen_pfx_info(elders_info.clone(), public_key_set.clone(), 0);
-                let chain = Chain::new(
-                    NETWORK_PARAMS,
-                    *id,
-                    gen_pfx_info,
-                    Some(secret_key_set.secret_key_share(index)),
-                );
-                (*id.name(), chain)
-            })
-            .collect();
+        let elder = unwrap!(elders.values().next());
+        let public_key_set = elder.our_section_bls_keys().clone();
+        let elders_info = elder.our_info().clone();
 
         let adult = new_adult_state(&mut rng, &network, elders_info, public_key_set);
 
-        Self { adult, elders }
+        Self {
+            rng,
+            network,
+            adult,
+            elders,
+        }
     }
 
-    fn gen_pfx_info_on_parsec_prune(&self, parsec_version: u64) -> GenesisPfxInfo {
-        let elder = unwrap!(self.elders.values().next());
+    fn one_elder(&self) -> &Chain {
+        unwrap!(self.elders.values().next())
+    }
+
+    fn gen_pfx_info(&self, parsec_version: u64) -> GenesisPfxInfo {
+        let elder = self.one_elder();
         test_utils::create_gen_pfx_info(
             elder.our_info().clone(),
             elder.our_section_bls_keys().clone(),
@@ -94,6 +91,37 @@ impl AdultUnderTest {
         msg.combine_signatures();
         msg
     }
+
+    fn perform_elders_change(&mut self) {
+        let prev_elders_info = unwrap!(self.elders.values().next()).our_info();
+        self.elders = create_elders(&mut self.rng, &self.network, Some(&prev_elders_info));
+    }
+}
+
+fn create_elders(
+    rng: &mut MainRng,
+    network: &Network,
+    prev_info: Option<&EldersInfo>,
+) -> BTreeMap<XorName, Chain> {
+    let secret_key_set = generate_bls_threshold_secret_key(rng, ELDER_SIZE);
+    let public_key_set = secret_key_set.public_keys();
+    let (elders_info, _) = test_utils::create_elders_info(rng, network, ELDER_SIZE, prev_info);
+
+    elders_info
+        .member_ids()
+        .enumerate()
+        .map(|(index, id)| {
+            let gen_pfx_info =
+                test_utils::create_gen_pfx_info(elders_info.clone(), public_key_set.clone(), 0);
+            let chain = Chain::new(
+                NETWORK_PARAMS,
+                *id,
+                gen_pfx_info,
+                Some(secret_key_set.secret_key_share(index)),
+            );
+            (*id.name(), chain)
+        })
+        .collect()
 }
 
 fn new_adult_state(
@@ -137,7 +165,7 @@ fn handle_genesis_update_on_parsec_prune() {
     let mut adult_test = AdultUnderTest::new();
     assert_eq!(adult_test.adult.parsec_map.last_version(), 0);
 
-    let gen_pfx_info = adult_test.gen_pfx_info_on_parsec_prune(1);
+    let gen_pfx_info = adult_test.gen_pfx_info(1);
     match adult_test.adult.handle_genesis_update(gen_pfx_info) {
         Ok(Transition::Stay) => (),
         result => panic!("Unexpected {:?}", result),
@@ -150,8 +178,8 @@ fn handle_genesis_update_on_parsec_prune() {
 fn handle_genesis_update_ignore_old_vesions() {
     let mut adult_test = AdultUnderTest::new();
 
-    let gen_pfx_info_1 = adult_test.gen_pfx_info_on_parsec_prune(1);
-    let gen_pfx_info_2 = adult_test.gen_pfx_info_on_parsec_prune(2);
+    let gen_pfx_info_1 = adult_test.gen_pfx_info(1);
+    let gen_pfx_info_2 = adult_test.gen_pfx_info(2);
 
     let _ = unwrap!(adult_test
         .adult
@@ -168,7 +196,7 @@ fn handle_genesis_update_allow_skipped_versions() {
     let mut adult_test = AdultUnderTest::new();
     assert_eq!(adult_test.adult.parsec_map.last_version(), 0);
 
-    let gen_pfx_info = adult_test.gen_pfx_info_on_parsec_prune(2);
+    let gen_pfx_info = adult_test.gen_pfx_info(2);
     let _ = unwrap!(adult_test.adult.handle_genesis_update(gen_pfx_info));
     assert_eq!(adult_test.adult.parsec_map.last_version(), 2);
 }
@@ -176,9 +204,20 @@ fn handle_genesis_update_allow_skipped_versions() {
 #[test]
 fn genesis_update_message_successful_trust_check() {
     let mut adult_test = AdultUnderTest::new();
-    let gen_pfx_info = adult_test.gen_pfx_info_on_parsec_prune(1);
+    let gen_pfx_info = adult_test.gen_pfx_info(1);
     let msg = adult_test.genesis_update_message(gen_pfx_info);
 
     let _ = unwrap!(adult_test.adult.handle_signed_message(msg));
     assert_eq!(adult_test.adult.parsec_map.last_version(), 1);
+}
+
+#[test]
+#[should_panic(expected = "Untrusted")]
+fn genesis_update_message_failed_trust_check_proof_too_new() {
+    let mut adult_test = AdultUnderTest::new();
+    adult_test.perform_elders_change();
+
+    let gen_pfx_info = adult_test.gen_pfx_info(1);
+    let msg = adult_test.genesis_update_message(gen_pfx_info);
+    let _ = adult_test.adult.handle_signed_message(msg);
 }
