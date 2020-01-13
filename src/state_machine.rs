@@ -288,6 +288,7 @@ impl State {
 /// Enum returned from many message handlers
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
+#[derive(PartialEq, Eq)]
 pub enum Transition {
     Stay,
     // `BootstrappingPeer` state transitioning to `JoiningPeer`
