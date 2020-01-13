@@ -29,7 +29,7 @@ use std::{
 pub enum DirectMessage {
     /// Sent from members of a section or group message's source authority to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(SignedRoutingMessage),
+    MessageSignature(Box<SignedRoutingMessage>),
     /// Sent from a newly connected peer to the bootstrap node to request connection infos of
     /// members of the section matching the given name.
     BootstrapRequest(XorName),
@@ -38,7 +38,7 @@ pub enum DirectMessage {
     BootstrapResponse(BootstrapResponse),
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
-    JoinRequest(JoinRequest),
+    JoinRequest(Box<JoinRequest>),
     /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
     ConnectionResponse,
@@ -49,7 +49,7 @@ pub enum DirectMessage {
     /// Parsec response message
     ParsecResponse(u64, parsec::Response),
     /// Send from a section to the node being relocated.
-    Relocate(SignedRelocateDetails),
+    Relocate(Box<SignedRelocateDetails>),
 }
 
 /// Response to a BootstrapRequest

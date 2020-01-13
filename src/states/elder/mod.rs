@@ -629,7 +629,10 @@ impl Elder {
                 node
             );
 
-            self.send_direct_message(node.connection_info(), DirectMessage::MessageSignature(msg));
+            self.send_direct_message(
+                node.connection_info(),
+                DirectMessage::MessageSignature(Box::new(msg)),
+            );
         }
     }
 
@@ -1153,7 +1156,7 @@ impl Elder {
                 let conn_info = p2p_node.connection_info().clone();
                 self.send_direct_message(
                     &conn_info,
-                    DirectMessage::MessageSignature(signed_msg.clone()),
+                    DirectMessage::MessageSignature(Box::new(signed_msg.clone())),
                 );
             } else {
                 error!(
@@ -1464,10 +1467,10 @@ impl Base for Elder {
         let pub_id = *p2p_node.public_id();
 
         match msg {
-            MessageSignature(msg) => self.handle_message_signature(msg, pub_id)?,
+            MessageSignature(msg) => self.handle_message_signature(*msg, pub_id)?,
             BootstrapRequest(name) => self.handle_bootstrap_request(p2p_node, name),
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest(join_request) => self.handle_join_request(p2p_node, join_request),
+            JoinRequest(join_request) => self.handle_join_request(p2p_node, *join_request),
             ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, p2p_node, outbox);
@@ -1644,8 +1647,9 @@ impl Approved for Elder {
             .get_member_connection_info(&details.pub_id)
             .cloned()
         {
-            let message =
-                DirectMessage::Relocate(SignedRelocateDetails::new(details, proof, signature));
+            let message = DirectMessage::Relocate(Box::new(SignedRelocateDetails::new(
+                details, proof, signature,
+            )));
             self.send_direct_message(&conn_info, message);
         }
     }
