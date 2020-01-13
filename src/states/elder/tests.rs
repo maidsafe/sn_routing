@@ -73,14 +73,8 @@ impl ElderUnderTest {
 
         let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
-        let gen_pfx_info = GenesisPfxInfo {
-            first_info: elders_info.clone(),
-            first_bls_keys: secret_key_set.public_keys(),
-            first_state_serialized: Vec::new(),
-            first_ages: test_utils::elder_age_counters(elders_info.member_ids()),
-            latest_info: EldersInfo::default(),
-            parsec_version: 0,
-        };
+        let gen_pfx_info =
+            test_utils::create_gen_pfx_info(elders_info.clone(), secret_key_set.public_keys(), 0);
 
         let mut full_and_bls_ids = full_ids
             .into_iter()

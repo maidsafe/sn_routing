@@ -14,7 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{AgeCounter, EldersInfo, MIN_AGE_COUNTER},
+    chain::{AgeCounter, EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER},
     id::{FullId, P2pNode, PublicId},
     network_service::{NetworkBuilder, NetworkService},
     rng::MainRng,
@@ -70,6 +70,23 @@ pub fn create_elders_info(
         iter::empty()
     ));
     (elders_info, full_ids)
+}
+
+pub fn create_gen_pfx_info(
+    elders_info: EldersInfo,
+    public_key_set: bls::PublicKeySet,
+    parsec_version: u64,
+) -> GenesisPfxInfo {
+    let first_ages = elder_age_counters(elders_info.member_ids());
+
+    GenesisPfxInfo {
+        first_info: elders_info,
+        first_bls_keys: public_key_set,
+        first_state_serialized: Vec::new(),
+        first_ages,
+        latest_info: EldersInfo::default(),
+        parsec_version,
+    }
 }
 
 pub fn elder_age_counters<'a, I>(elders: I) -> BTreeMap<PublicId, AgeCounter>

@@ -7,15 +7,19 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{super::test_utils, *};
-use crate::{parsec::generate_bls_threshold_secret_key, unwrap};
+use crate::{messages::RoutingMessage, parsec::generate_bls_threshold_secret_key, unwrap};
 use mock_quic_p2p::Network;
+use std::collections::BTreeMap;
 
 const ELDER_SIZE: usize = 3;
+const NETWORK_PARAMS: NetworkParams = NetworkParams {
+    elder_size: ELDER_SIZE,
+    safe_section_size: ELDER_SIZE + 1,
+};
 
 struct AdultUnderTest {
     adult: Adult,
-    elders_info: EldersInfo,
-    public_key_set: bls::PublicKeySet,
+    elders: BTreeMap<XorName, Chain>,
 }
 
 impl AdultUnderTest {
@@ -23,28 +27,72 @@ impl AdultUnderTest {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let (elders_info, _) = test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, ELDER_SIZE);
         let public_key_set = secret_key_set.public_keys();
 
-        let adult = new_adult_state(&mut rng, &network, elders_info.clone(), secret_key_set);
+        let (elders_info, _) = test_utils::create_elders_info(&mut rng, &network, ELDER_SIZE);
+        let elders = elders_info
+            .member_ids()
+            .enumerate()
+            .map(|(index, id)| {
+                let gen_pfx_info =
+                    test_utils::create_gen_pfx_info(elders_info.clone(), public_key_set.clone(), 0);
+                let chain = Chain::new(
+                    NETWORK_PARAMS,
+                    *id,
+                    gen_pfx_info,
+                    Some(secret_key_set.secret_key_share(index)),
+                );
+                (*id.name(), chain)
+            })
+            .collect();
 
-        Self {
-            adult,
-            elders_info,
-            public_key_set,
-        }
+        let adult = new_adult_state(&mut rng, &network, elders_info, public_key_set);
+
+        Self { adult, elders }
     }
 
     fn gen_pfx_info_on_parsec_prune(&self, parsec_version: u64) -> GenesisPfxInfo {
-        GenesisPfxInfo {
-            first_info: self.elders_info.clone(),
-            first_bls_keys: self.public_key_set.clone(),
-            first_state_serialized: Vec::new(),
-            first_ages: test_utils::elder_age_counters(self.elders_info.member_ids()),
-            latest_info: EldersInfo::default(),
+        let elder = unwrap!(self.elders.values().next());
+        test_utils::create_gen_pfx_info(
+            elder.our_info().clone(),
+            elder.our_section_bls_keys().clone(),
             parsec_version,
-        }
+        )
+    }
+
+    fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> SignedRoutingMessage {
+        let msg = RoutingMessage {
+            src: Authority::PrefixSection(Prefix::default()),
+            dst: Authority::Node(*self.adult.name()),
+            content: MessageContent::GenesisUpdate(gen_pfx_info),
+        };
+
+        let mut msg = unwrap!(self
+            .elders
+            .values()
+            .take(2)
+            .map(|chain| {
+                let secret_key = unwrap!(chain.our_section_bls_secret_key_share());
+                let public_key_set = chain.our_section_bls_keys().clone();
+                let proof = chain.prove(&msg.dst, None);
+
+                unwrap!(SignedRoutingMessage::new(
+                    msg.clone(),
+                    secret_key,
+                    public_key_set,
+                    proof
+                ))
+            })
+            .fold(None, |acc, msg| match acc {
+                None => Some(msg),
+                Some(mut acc) => {
+                    acc.add_signature_shares(msg);
+                    Some(acc)
+                }
+            }));
+        msg.combine_signatures();
+        msg
     }
 }
 
@@ -52,13 +100,13 @@ fn new_adult_state(
     rng: &mut MainRng,
     network: &Network,
     elders_info: EldersInfo,
-    secret_key_set: bls::SecretKeySet,
+    public_key_set: bls::PublicKeySet,
 ) -> Adult {
     let first_ages = test_utils::elder_age_counters(elders_info.member_ids());
 
     let gen_pfx_info = GenesisPfxInfo {
         first_info: elders_info,
-        first_bls_keys: secret_key_set.public_keys(),
+        first_bls_keys: public_key_set,
         first_state_serialized: Vec::new(),
         first_ages,
         latest_info: EldersInfo::default(),
@@ -77,10 +125,7 @@ fn new_adult_state(
         sig_accumulator: Default::default(),
         routing_msg_filter: Default::default(),
         timer: test_utils::create_timer(),
-        network_cfg: NetworkParams {
-            elder_size: ELDER_SIZE,
-            safe_section_size: ELDER_SIZE + 1,
-        },
+        network_cfg: NETWORK_PARAMS,
         rng: rng::new_from(rng),
     };
 
@@ -126,4 +171,14 @@ fn handle_genesis_update_allow_skipped_versions() {
     let gen_pfx_info = adult_test.gen_pfx_info_on_parsec_prune(2);
     let _ = unwrap!(adult_test.adult.handle_genesis_update(gen_pfx_info));
     assert_eq!(adult_test.adult.parsec_map.last_version(), 2);
+}
+
+#[test]
+fn genesis_update_message_successful_trust_check() {
+    let mut adult_test = AdultUnderTest::new();
+    let gen_pfx_info = adult_test.gen_pfx_info_on_parsec_prune(1);
+    let msg = adult_test.genesis_update_message(gen_pfx_info);
+
+    let _ = unwrap!(adult_test.adult.handle_signed_message(msg));
+    assert_eq!(adult_test.adult.parsec_map.last_version(), 1);
 }
