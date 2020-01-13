@@ -324,13 +324,6 @@ impl Base for JoiningPeer {
             Ok(Transition::Stay)
         }
     }
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
-        warn!(
-            "{} - Tried to send a routing message: {:?}",
-            self, routing_msg
-        );
-        Ok(())
-    }
 }
 
 impl Display for JoiningPeer {

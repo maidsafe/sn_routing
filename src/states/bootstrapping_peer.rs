@@ -13,7 +13,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode},
-    messages::{BootstrapResponse, DirectMessage, HopMessage, RoutingMessage},
+    messages::{BootstrapResponse, DirectMessage, HopMessage},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -25,7 +25,6 @@ use crate::{
     xor_space::{Prefix, XorName},
     ConnectionInfo,
 };
-use log::LogLevel;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display, Formatter},
@@ -327,16 +326,6 @@ impl Base for BootstrappingPeer {
     ) -> Result<Transition, RoutingError> {
         trace!("{} - Unhandled hop message: {:?}", self, msg);
         Ok(Transition::Stay)
-    }
-
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
-        log_or_panic!(
-            LogLevel::Error,
-            "{} - Tried to send a routing message: {:?}",
-            self,
-            routing_msg
-        );
-        Ok(())
     }
 }
 

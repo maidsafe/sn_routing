@@ -21,7 +21,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, RoutingMessage, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, MessageContent, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -371,7 +371,7 @@ impl Adult {
     // Send signed_msg to our elders so they can route it properly.
     fn send_signed_message_to_elders(
         &mut self,
-        signed_msg: &SignedRoutingMessage,
+        signed_msg: SignedRoutingMessage,
     ) -> Result<(), RoutingError> {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
@@ -409,7 +409,7 @@ impl Adult {
         &mut self,
         msg: SignedRoutingMessage,
         pub_id: PublicId,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {
             debug!(
                 "{} - Received message signature from not known elder (still use it) {}, {:?}",
@@ -418,9 +418,10 @@ impl Adult {
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
-            self.handle_signed_message(signed_msg)?;
+            self.handle_signed_message(signed_msg)
+        } else {
+            Ok(Transition::Stay)
         }
-        Ok(())
     }
 
     // If the message is for us, verify it then, handle the enclosed routing message and swarm it
@@ -428,7 +429,7 @@ impl Adult {
     fn handle_signed_message(
         &mut self,
         signed_msg: SignedRoutingMessage,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         if !self
             .routing_msg_filter
             .filter_incoming(signed_msg.routing_message())
@@ -439,7 +440,7 @@ impl Adult {
                 self,
                 signed_msg.routing_message()
             );
-            return Ok(());
+            return Ok(Transition::Stay);
         }
 
         self.handle_filtered_signed_message(signed_msg)
@@ -448,7 +449,7 @@ impl Adult {
     fn handle_filtered_signed_message(
         &mut self,
         signed_msg: SignedRoutingMessage,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<Transition, RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
             self,
@@ -457,11 +458,19 @@ impl Adult {
 
         if self.in_authority(&signed_msg.routing_message().dst) {
             self.check_signed_message_integrity(&signed_msg)?;
-            self.routing_msg_backlog.push(signed_msg.clone());
+
+            match &signed_msg.routing_message().content {
+                MessageContent::GenesisUpdate(info) => {
+                    return self.handle_genesis_update(info.clone())
+                }
+                _ => {
+                    self.routing_msg_backlog.push(signed_msg.clone());
+                }
+            }
         }
 
-        self.send_signed_message_to_elders(&signed_msg)?;
-        Ok(())
+        self.send_signed_message_to_elders(signed_msg)?;
+        Ok(Transition::Stay)
     }
 }
 
@@ -563,10 +572,7 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::DirectMessage::*;
         match msg {
-            MessageSignature(msg) => {
-                self.handle_message_signature(msg, *p2p_node.public_id())?;
-                Ok(Transition::Stay)
-            }
+            MessageSignature(msg) => self.handle_message_signature(msg, *p2p_node.public_id()),
             ParsecRequest(version, par_request) => {
                 self.handle_parsec_request(version, par_request, p2p_node, outbox)
             }
@@ -581,7 +587,6 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            GenesisUpdate(gen_pfx_info) => self.handle_genesis_update(gen_pfx_info),
             Relocate(details) => Ok(self.handle_relocate(details)),
             msg @ BootstrapResponse(_) => {
                 debug!(
@@ -611,18 +616,7 @@ impl Base for Adult {
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let HopMessage { content: msg, .. } = msg;
-        self.handle_signed_message(msg)?;
-        Ok(Transition::Stay)
-    }
-
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
-        if self.in_authority(&routing_msg.dst) {
-            return Ok(()); // Message is for us.
-        }
-
-        let signed_msg = SignedRoutingMessage::single_source(routing_msg, self.full_id())?;
-        self.send_signed_message_to_elders(&signed_msg)?;
-        Ok(())
+        self.handle_signed_message(msg)
     }
 }
 

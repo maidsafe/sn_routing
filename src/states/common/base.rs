@@ -11,10 +11,7 @@ use crate::{
     authority::Authority,
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode, PublicId},
-    messages::{
-        DirectMessage, HopMessage, Message, RoutingMessage, SignedDirectMessage,
-        SignedRoutingMessage,
-    },
+    messages::{DirectMessage, HopMessage, Message, SignedDirectMessage, SignedRoutingMessage},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -40,7 +37,6 @@ pub trait Base: Display {
     fn peer_map(&self) -> &PeerMap;
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError>;
     fn rng(&mut self) -> &mut MainRng;
 
     fn log_ident(&self) -> LogIdent {
