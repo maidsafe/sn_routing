@@ -13,17 +13,15 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::*;
+use super::{super::test_utils, *};
 use crate::{
     chain::SectionKeyInfo,
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
-    network_service::NetworkBuilder,
     rng::{self, MainRng},
     state_machine::Transition,
-    unwrap, NetworkConfig, ELDER_SIZE,
+    unwrap, ELDER_SIZE,
 };
-use crossbeam_channel as mpmc;
 use mock_quic_p2p::Network;
 use std::{iter, net::SocketAddr};
 
@@ -71,46 +69,23 @@ struct ElderUnderTest {
 impl ElderUnderTest {
     fn new(sec_size: usize) -> Self {
         let mut rng = rng::new();
-        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
-        let connection_info = ConnectionInfo::from(socket_addr);
-        let full_ids: BTreeMap<_, _> = (0..sec_size)
-            .map(|_| {
-                let id = FullId::gen(&mut rng);
-                (*id.public_id().name(), id)
-            })
-            .collect();
+        let network = Network::new();
 
-        let prefix = Prefix::<XorName>::default();
-        let elders_info = unwrap!(EldersInfo::new(
-            full_ids
-                .iter()
-                .map(|(name, id)| (
-                    *name,
-                    P2pNode::new(*id.public_id(), connection_info.clone())
-                ))
-                .collect(),
-            prefix,
-            iter::empty()
-        ));
-        let first_ages = full_ids
-            .values()
-            .map(|id| (*id.public_id(), MIN_AGE_COUNTER))
-            .collect();
-
+        let (elders_info, full_ids) = test_utils::create_elders_info(&mut rng, &network, sec_size);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
         let gen_pfx_info = GenesisPfxInfo {
             first_info: elders_info.clone(),
             first_bls_keys: secret_key_set.public_keys(),
             first_state_serialized: Vec::new(),
-            first_ages,
+            first_ages: test_utils::elder_age_counters(elders_info.member_ids()),
             latest_info: EldersInfo::default(),
             parsec_version: 0,
         };
 
         let mut full_and_bls_ids = full_ids
-            .values()
+            .into_iter()
             .enumerate()
-            .map(|(idx, full_id)| (full_id.clone(), secret_key_set.secret_key_share(idx)))
+            .map(|(idx, (_, full_id))| (full_id, secret_key_set.secret_key_share(idx)))
             .collect_vec();
 
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
@@ -122,7 +97,7 @@ impl ElderUnderTest {
             ConnectionInfo::from(candidate_addr),
         );
 
-        let elder = new_elder_state(full_id, secret_key_share, gen_pfx_info, &mut rng);
+        let elder = new_elder_state(&mut rng, &network, full_id, secret_key_share, gen_pfx_info);
 
         let mut elder_test = Self {
             rng,
@@ -339,22 +314,12 @@ impl ElderUnderTest {
 }
 
 fn new_elder_state(
+    rng: &mut MainRng,
+    network: &Network,
     full_id: FullId,
     secret_key_share: bls::SecretKeyShare,
     gen_pfx_info: GenesisPfxInfo,
-    rng: &mut MainRng,
 ) -> Elder {
-    let network = Network::new();
-    let endpoint = network.gen_addr();
-    let network_config = NetworkConfig::node().with_hard_coded_contact(endpoint);
-    let (network_tx, _) = mpmc::unbounded();
-    let network_service = unwrap!(NetworkBuilder::new(network_tx)
-        .with_config(network_config)
-        .build());
-
-    let (action_tx, _) = mpmc::unbounded();
-    let timer = Timer::new(action_tx);
-
     let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), &gen_pfx_info);
     let chain = Chain::new(
         Default::default(),
@@ -366,7 +331,7 @@ fn new_elder_state(
     let prefix = *gen_pfx_info.first_info.prefix();
     let details = ElderDetails {
         chain,
-        network_service,
+        network_service: test_utils::create_network_service(network),
         event_backlog: Default::default(),
         full_id,
         gen_pfx_info,
@@ -376,7 +341,7 @@ fn new_elder_state(
         sig_accumulator: Default::default(),
         parsec_map,
         routing_msg_filter: RoutingMessageFilter::new(),
-        timer,
+        timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
 
