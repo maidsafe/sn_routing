@@ -18,13 +18,13 @@ use crate::{
     chain::SectionKeyInfo,
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
-    mock::Environment,
-    network_service::NetworkService,
-    outbox::EventBox,
+    network_service::NetworkBuilder,
     rng::{self, MainRng},
-    state_machine::{State, StateMachine, Transition},
-    unwrap, NetworkConfig, NetworkParams, ELDER_SIZE,
+    state_machine::Transition,
+    unwrap, NetworkConfig, ELDER_SIZE,
 };
+use crossbeam_channel as mpmc;
+use mock_quic_p2p::Network;
 use std::{iter, net::SocketAddr};
 
 // Minimal number of votes to reach accumulation.
@@ -62,8 +62,7 @@ impl JoiningNodeInfo {
 
 struct ElderUnderTest {
     pub rng: MainRng,
-    pub machine: StateMachine,
-    pub full_id: (FullId, bls::SecretKeyShare),
+    pub elder: Elder,
     pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
@@ -108,17 +107,14 @@ impl ElderUnderTest {
             parsec_version: 0,
         };
 
-        let full_and_bls_ids = full_ids
+        let mut full_and_bls_ids = full_ids
             .values()
             .enumerate()
             .map(|(idx, full_id)| (full_id.clone(), secret_key_set.secret_key_share(idx)))
             .collect_vec();
 
-        let full_id = full_and_bls_ids[0].clone();
-        let machine =
-            make_state_machine(&mut rng, (&full_id.0, &full_id.1), &gen_pfx_info, &mut ());
-
-        let other_ids = full_and_bls_ids[1..].iter().cloned().collect_vec();
+        let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
+        let other_ids = full_and_bls_ids;
 
         let candidate_addr: SocketAddr = unwrap!("127.0.0.2:9999".parse());
         let candidate = P2pNode::new(
@@ -126,10 +122,11 @@ impl ElderUnderTest {
             ConnectionInfo::from(candidate_addr),
         );
 
+        let elder = new_elder_state(full_id, secret_key_share, gen_pfx_info, &mut rng);
+
         let mut elder_test = Self {
             rng,
-            machine,
-            full_id,
+            elder,
             other_ids,
             elders_info,
             candidate,
@@ -141,12 +138,8 @@ impl ElderUnderTest {
         elder_test
     }
 
-    fn elder_state(&self) -> &Elder {
-        unwrap!(self.machine.current().elder_state())
-    }
-
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let parsec = self.elder.parsec_map_mut();
         for event in events {
             self.other_ids
                 .iter()
@@ -172,7 +165,7 @@ impl ElderUnderTest {
     }
 
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let parsec = self.elder.parsec_map_mut();
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
         for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
@@ -190,7 +183,7 @@ impl ElderUnderTest {
         let other_pub_id = *self.other_ids[0].0.public_id();
         let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
         let connection_info = ConnectionInfo::from(addr);
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let parsec = self.elder.parsec_map_mut();
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
         let message = DirectMessage::ParsecRequest(parsec_version, request);
@@ -218,7 +211,7 @@ impl ElderUnderTest {
 
     fn updated_other_ids(&mut self, new_elder_info: EldersInfo) -> DkgToSectionInfo {
         let participants: BTreeSet<_> = new_elder_info.member_ids().copied().collect();
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let parsec = self.elder.parsec_map_mut();
 
         let dkg_results = self
             .other_ids
@@ -307,35 +300,28 @@ impl ElderUnderTest {
     }
 
     fn has_unpolled_observations(&self) -> bool {
-        self.elder_state().has_unpolled_observations()
+        self.elder.has_unpolled_observations()
     }
 
     fn is_candidate_member(&self) -> bool {
-        self.elder_state()
+        self.elder
             .chain()
             .is_peer_our_member(self.candidate.public_id())
     }
 
     fn is_candidate_elder(&self) -> bool {
-        self.elder_state()
+        self.elder
             .chain()
             .is_peer_our_elder(self.candidate.public_id())
     }
 
     fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {
-        let _ = self
-            .machine
-            .elder_state_mut()
-            .handle_direct_message(msg.0, msg.1, &mut ())?;
+        let _ = self.elder.handle_direct_message(msg.0, msg.1, &mut ())?;
         Ok(())
     }
 
     fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
-        match self
-            .machine
-            .elder_state_mut()
-            .handle_connected_to(conn_info, &mut ())
-        {
+        match self.elder.handle_connected_to(conn_info, &mut ()) {
             Transition::Stay => (),
             _ => panic!("Unexpected transition"),
         }
@@ -343,40 +329,47 @@ impl ElderUnderTest {
 
     fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
         self.handle_connected_to(conn_info.clone());
-        self.machine
-            .elder_state_mut()
+        self.elder
             .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name());
     }
 
     fn is_connected(&self, peer_addr: &SocketAddr) -> bool {
-        self.machine.current().is_connected(peer_addr)
+        self.elder.peer_map().has(peer_addr)
     }
 }
 
 fn new_elder_state(
-    (full_id, secret_key_share): (&FullId, &bls::SecretKeyShare),
-    gen_pfx_info: &GenesisPfxInfo,
-    network_service: NetworkService,
-    timer: Timer,
+    full_id: FullId,
+    secret_key_share: bls::SecretKeyShare,
+    gen_pfx_info: GenesisPfxInfo,
     rng: &mut MainRng,
-    outbox: &mut dyn EventBox,
-) -> State {
-    let public_id = *full_id.public_id();
+) -> Elder {
+    let network = Network::new();
+    let endpoint = network.gen_addr();
+    let network_config = NetworkConfig::node().with_hard_coded_contact(endpoint);
+    let (network_tx, _) = mpmc::unbounded();
+    let network_service = unwrap!(NetworkBuilder::new(network_tx)
+        .with_config(network_config)
+        .build());
 
-    let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), gen_pfx_info);
+    let (action_tx, _) = mpmc::unbounded();
+    let timer = Timer::new(action_tx);
+
+    let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), &gen_pfx_info);
     let chain = Chain::new(
         Default::default(),
-        public_id,
+        *full_id.public_id(),
         gen_pfx_info.clone(),
-        Some(secret_key_share.clone()),
+        Some(secret_key_share),
     );
 
+    let prefix = *gen_pfx_info.first_info.prefix();
     let details = ElderDetails {
         chain,
         network_service,
         event_backlog: Default::default(),
-        full_id: full_id.clone(),
-        gen_pfx_info: gen_pfx_info.clone(),
+        full_id,
+        gen_pfx_info,
         routing_msg_queue: Default::default(),
         routing_msg_backlog: Default::default(),
         direct_msg_backlog: Default::default(),
@@ -387,44 +380,7 @@ fn new_elder_state(
         rng: rng::new_from(rng),
     };
 
-    let prefix = *gen_pfx_info.first_info.prefix();
-    Elder::from_adult(details, prefix, outbox)
-        .map(State::Elder)
-        .unwrap_or(State::Terminated)
-}
-
-fn make_state_machine(
-    rng: &mut MainRng,
-    full_id: (&FullId, &bls::SecretKeyShare),
-    gen_pfx_info: &GenesisPfxInfo,
-    outbox: &mut dyn EventBox,
-) -> StateMachine {
-    let env = Environment::new(NetworkParams {
-        elder_size: ELDER_SIZE,
-        safe_section_size: ELDER_SIZE,
-    });
-
-    let endpoint = env.gen_addr();
-    let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
-
-    StateMachine::new(
-        move |network_service, timer, outbox2| {
-            new_elder_state(full_id, gen_pfx_info, network_service, timer, rng, outbox2)
-        },
-        config,
-        outbox,
-    )
-    .1
-}
-
-trait StateMachineExt {
-    fn elder_state_mut(&mut self) -> &mut Elder;
-}
-
-impl StateMachineExt for StateMachine {
-    fn elder_state_mut(&mut self) -> &mut Elder {
-        unwrap!(self.current_mut().elder_state_mut())
-    }
+    unwrap!(Elder::from_adult(details, prefix, &mut ()))
 }
 
 #[test]
