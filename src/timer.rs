@@ -166,8 +166,10 @@ impl Timer {
 mod tests {
     use super::*;
     use crate::action::Action;
-    use std::thread;
-    use std::time::{Duration, Instant};
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
 
     #[test]
     fn schedule() {

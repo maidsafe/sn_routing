@@ -10,8 +10,7 @@ use crate::{crypto, id::PublicId, message_filter::MessageFilter, messages::Routi
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use serde::Serialize;
-use std::fmt::Debug;
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 
 type Digest = [u8; 32];
 

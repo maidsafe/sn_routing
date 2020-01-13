@@ -7,10 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::time::{Duration, Instant};
-use std::collections::hash_map::{DefaultHasher, Entry};
-use std::collections::{HashMap, VecDeque};
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
+use std::{
+    collections::{
+        hash_map::{DefaultHasher, Entry},
+        HashMap, VecDeque,
+    },
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+};
 
 fn hash<T: Hash>(t: &T) -> u64 {
     let mut hasher = DefaultHasher::new();

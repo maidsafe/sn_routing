@@ -32,8 +32,10 @@ pub use self::{
     shared_state::{SectionKeyInfo, SectionProofChain},
 };
 use crate::PublicId;
-use std::collections::BTreeMap;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{self, Debug, Formatter},
+};
 
 #[cfg(feature = "mock_base")]
 pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};

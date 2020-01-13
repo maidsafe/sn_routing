@@ -13,9 +13,7 @@ use routing::{
     MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare,
     SignedRoutingMessage, XorName,
 };
-use std::collections::BTreeMap;
-use std::iter;
-use std::net::SocketAddr;
+use std::{collections::BTreeMap, iter, net::SocketAddr};
 
 fn get_prefix(node: &TestNode) -> Prefix<XorName> {
     *unwrap!(node.inner.our_prefix())
@@ -45,7 +43,6 @@ enum FailType {
 // that bad BLS key for `UntrustedProofValidSig` or a trusted SectionProofChain not containing it
 // for `TrustedProofInvalidSig`.
 fn message_with_invalid_security(fail_type: FailType) {
-    //
     // Arrange
     //
     let elder_size = 3;
@@ -104,7 +101,6 @@ fn message_with_invalid_security(fail_type: FailType) {
         Message::Hop(unwrap!(HopMessage::new(signed_msg)))
     };
 
-    //
     // Act/Assert:
     // poll_all will panic, when the receiving node process the message
     // and detect an invalid signature or proof.

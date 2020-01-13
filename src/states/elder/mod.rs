@@ -38,8 +38,7 @@ use crate::{
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
-    state_machine::State,
-    state_machine::Transition,
+    state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
@@ -968,8 +967,12 @@ impl Elder {
 
             if !self.our_prefix().matches(&details.content().destination) {
                 debug!(
-                    "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match our prefix {:?}.",
-                    self, pub_id, details.content().destination, self.our_prefix()
+                    "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match \
+                     our prefix {:?}.",
+                    self,
+                    pub_id,
+                    details.content().destination,
+                    self.our_prefix()
                 );
                 return;
             }

@@ -12,8 +12,7 @@ use super::{
 };
 use crate::{rng, rng::MainRng, unwrap};
 use itertools::Itertools;
-use rand::seq::SliceRandom;
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet},
@@ -515,6 +514,7 @@ impl From<Parsec<Payload, PeerId>> for Peer {
 
 impl Deref for Peer {
     type Target = Parsec<Payload, PeerId>;
+
     fn deref(&self) -> &Self::Target {
         &self.parsec
     }
@@ -730,6 +730,7 @@ impl<'a> PollAll<'a> {
 
 impl<'a> Iterator for PollAll<'a> {
     type Item = Block<Payload, PeerId>;
+
     fn next(&mut self) -> Option<Self::Item> {
         self.0.poll()
     }

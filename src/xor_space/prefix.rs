@@ -9,8 +9,7 @@
 use super::Xorable;
 use std::{
     cmp::{self, Ordering},
-    fmt::Result as FmtResult,
-    fmt::{Binary, Debug, Formatter},
+    fmt::{Binary, Debug, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     ops::RangeInclusive,
 };
@@ -247,6 +246,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Debug for Prefix<T> {
 #[cfg(test)]
 impl FromStr for Prefix<u8> {
     type Err = String;
+
     fn from_str(bits: &str) -> Result<Prefix<u8>, String> {
         let mut name = 0u8;
         for (i, bit) in bits.chars().enumerate() {
@@ -266,6 +266,7 @@ impl FromStr for Prefix<u8> {
 #[cfg(test)]
 impl FromStr for Prefix<XorName> {
     type Err = String;
+
     fn from_str(bits: &str) -> Result<Prefix<XorName>, String> {
         let mut name = [0; 32];
         for (i, bit) in bits.chars().enumerate() {

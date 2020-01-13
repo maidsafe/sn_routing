@@ -15,8 +15,7 @@ use crate::{
 };
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rand_crypto::Rng as _;
-use serde::de::Deserialize;
-use serde::{Deserializer, Serialize, Serializer};
+use serde::{de::Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     cmp::Ordering,
     fmt::{self, Debug, Display, Formatter},

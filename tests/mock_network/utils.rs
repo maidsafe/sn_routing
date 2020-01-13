@@ -505,8 +505,8 @@ fn add_nodes_to_prefixes(
         // `nodes` when calling this function.
         assert!(
             num_in_section <= *target_count,
-            "The existing nodes' names disallow creation of the requested prefixes. There \
-             are {} nodes which all belong in {:?} which exceeds the limit here of {}.",
+            "The existing nodes' names disallow creation of the requested prefixes. There are {} \
+             nodes which all belong in {:?} which exceeds the limit here of {}.",
             num_in_section,
             prefix,
             target_count
@@ -639,8 +639,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .find(|prefix| prefix.is_compatible(our_prefix))
     {
         panic!(
-            "{} Our prefix is compatible with one of the neighbour prefixes:\
-             us: {:?} / neighbour: {:?}, neighbour_prefixes: {:?}",
+            "{} Our prefix is compatible with one of the neighbour prefixes:us: {:?} / neighbour: \
+             {:?}, neighbour_prefixes: {:?}",
             node.inner, our_prefix, compatible_prefix, neighbour_prefixes,
         );
     }
@@ -650,7 +650,8 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         .find(|prefix| node.inner.section_elders(prefix).len() < elder_size)
     {
         panic!(
-            "{} A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), neighbour_prefixes: {:?}",
+            "{} A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), \
+             neighbour_prefixes: {:?}",
             node.inner,
             prefix,
             node.inner.section_elders(prefix).len(),
@@ -746,8 +747,8 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
                         &their_info.view_section_elders,
                         &their_info.view_section_version
                     ),
-                    "Section with prefix {:?} doesn't agree between nodes {:?} and {:?}\n\
-                     {:?},\n{:?}",
+                    "Section with prefix {:?} doesn't agree between nodes {:?} and \
+                     {:?}\n{:?},\n{:?}",
                     prefix,
                     our_info.node_name,
                     their_info.node_name,
@@ -768,9 +769,8 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
             }
             if prefix1.is_compatible(prefix2) {
                 panic!(
-                    "Section prefixes should be disjoint, but these are not:\n\
-                     Section {:?}, according to node {:?}: {:?}\n\
-                     Section {:?}, according to node {:?}: {:?}",
+                    "Section prefixes should be disjoint, but these are not:\nSection {:?}, \
+                     according to node {:?}: {:?}\nSection {:?}, according to node {:?}: {:?}",
                     prefix1,
                     sections[prefix1].node_name,
                     sections[prefix1].node_prefix,
@@ -787,8 +787,7 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
         for name in &info.view_section_elders {
             if !prefix.matches(name) {
                 panic!(
-                    "Section members should match the prefix, but {:?} \
-                     does not match {:?}",
+                    "Section members should match the prefix, but {:?} does not match {:?}",
                     name, prefix
                 );
             }

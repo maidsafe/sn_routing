@@ -27,8 +27,8 @@ use itertools::Itertools;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use serde::Serialize;
-use std::cmp::Ordering;
 use std::{
+    cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
@@ -961,8 +961,10 @@ impl Chain {
                 if !info.is_successor_of(self.our_info()) {
                     log_or_panic!(
                         LogLevel::Error,
-                        "We shouldn't have a SectionInfo that is not a direct descendant. our: {:?}, new: {:?}",
-                        self.our_info(), info
+                        "We shouldn't have a SectionInfo that is not a direct descendant. our: \
+                         {:?}, new: {:?}",
+                        self.our_info(),
+                        info
                     );
                 }
 
@@ -1802,10 +1804,10 @@ impl EldersChangeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        quorum_count, EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER,
+    use super::{
+        super::{quorum_count, EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER},
+        *,
     };
-    use super::*;
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_bls_threshold_secret_key,
@@ -2021,7 +2023,6 @@ mod tests {
     }
 
     fn filter_invalid_relocation_signatures(malicious_bls_count: usize) {
-        //
         // Arrange
         //
         let mut rng = rng::new();
@@ -2055,7 +2056,6 @@ mod tests {
             })
             .collect_vec();
 
-        //
         // Act
         //
         for (signature, proof) in opaque_infos {
@@ -2065,7 +2065,6 @@ mod tests {
         }
         let chain_accumulated = chain.poll_accumulated();
 
-        //
         // Assert
         //
         let accumulated_event = match chain_accumulated {

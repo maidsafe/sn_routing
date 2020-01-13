@@ -19,7 +19,6 @@
 //!  * Upgrade capable nodes.
 //!  * All network messages signed via ED25519 and/or BLS
 //!  * Section consensus via an ABFT algorithm (PARSEC)
-//!
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
     html_favicon_url = "https://maidsafe.net/img/favicon.ico",

@@ -133,6 +133,7 @@ mod test {
 
     impl SeedableRng for TestRng {
         type Seed = Seed;
+
         fn from_seed(seed: Seed) -> Self {
             Self(XorShiftRng::from_seed(seed.0))
         }

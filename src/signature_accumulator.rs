@@ -87,8 +87,7 @@ mod tests {
     };
     use itertools::Itertools;
     use rand;
-    use std::collections::BTreeMap;
-    use std::net::SocketAddr;
+    use std::{collections::BTreeMap, net::SocketAddr};
 
     struct MessageAndSignatures {
         signed_msg: SignedRoutingMessage,
