@@ -94,7 +94,7 @@ impl AdultUnderTest {
 
     fn perform_elders_change(&mut self) {
         let prev_elders_info = unwrap!(self.elders.values().next()).our_info();
-        self.elders = create_elders(&mut self.rng, &self.network, Some(&prev_elders_info));
+        self.elders = create_elders(&mut self.rng, &self.network, Some(prev_elders_info));
     }
 }
 

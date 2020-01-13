@@ -603,35 +603,42 @@ impl Elder {
     }
 
     fn send_genesis_updates(&mut self) {
-        let src = Authority::PrefixSection(*self.our_prefix());
-
-        let nodes: Vec<_> = self.chain.adults_and_infants_p2p_nodes().cloned().collect();
-        for node in nodes {
-            let msg = RoutingMessage {
-                src,
-                dst: Authority::Node(*node.name()),
-                content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
-            };
-            let msg = match self.to_signed_routing_message(msg) {
-                Ok(msg) => msg,
-                Err(error) => {
-                    warn!("{} - Failed to create signed message: {:?}", self, error);
-                    continue;
-                }
-            };
-
+        for (recipient, msg) in self.create_genesis_updates() {
             trace!(
                 "{} - Sending GenesisUpdate({:?}) to {}",
                 self,
                 self.gen_pfx_info,
-                node
+                recipient
             );
 
             self.send_direct_message(
-                node.connection_info(),
+                recipient.connection_info(),
                 DirectMessage::MessageSignature(Box::new(msg)),
             );
         }
+    }
+
+    fn create_genesis_updates(&self) -> Vec<(P2pNode, SignedRoutingMessage)> {
+        let src = Authority::PrefixSection(*self.our_prefix());
+        self.chain
+            .adults_and_infants_p2p_nodes()
+            .cloned()
+            .filter_map(|recipient| {
+                let msg = RoutingMessage {
+                    src,
+                    dst: Authority::Node(*recipient.name()),
+                    content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
+                };
+
+                match self.to_signed_routing_message(msg) {
+                    Ok(msg) => Some((recipient, msg)),
+                    Err(error) => {
+                        error!("{} - Failed to create signed message: {:?}", self, error);
+                        None
+                    }
+                }
+            })
+            .collect()
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -1648,9 +1655,10 @@ impl Approved for Elder {
         } else {
             log_or_panic!(
                 LogLevel::Error,
-                "{} DKG for an unexpected info {:?}.",
+                "{} DKG for an unexpected info {:?} (expected: {{{:?}}})",
                 self,
-                participants
+                participants,
+                self.dkg_cache.keys().format(", ")
             );
         }
         Ok(())

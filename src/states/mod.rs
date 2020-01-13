@@ -11,7 +11,7 @@ mod bootstrapping_peer;
 pub mod common;
 mod elder;
 mod joining_peer;
-#[cfg(all(test, feature = "mock"))]
+#[cfg(all(test, feature = "mock_base"))]
 mod test_utils;
 
 pub use self::{

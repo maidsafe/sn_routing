@@ -416,6 +416,15 @@ impl SignedRoutingMessage {
             _ => None,
         }
     }
+
+    #[cfg(all(test, feature = "mock_base"))]
+    pub fn proof_chain(&self) -> Option<&SectionProofChain> {
+        match &self.security_metadata {
+            SecurityMetadata::Full(md) => Some(&md.proof),
+            SecurityMetadata::Partial(md) => Some(&md.proof),
+            SecurityMetadata::Single(_) | SecurityMetadata::None => None,
+        }
+    }
 }
 
 /// A routing message with source and destination authorities.
