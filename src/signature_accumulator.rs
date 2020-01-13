@@ -127,11 +127,13 @@ mod tests {
             let signature_msgs = other_ids
                 .map(|(id, bls_id)| {
                     unwrap!(SignedDirectMessage::new(
-                        DirectMessage::MessageSignature(unwrap!(SignedRoutingMessage::new(
-                            routing_msg.clone(),
-                            bls_id,
-                            pk_set.clone(),
-                            proof.clone(),
+                        DirectMessage::MessageSignature(Box::new(unwrap!(
+                            SignedRoutingMessage::new(
+                                routing_msg.clone(),
+                                bls_id,
+                                pk_set.clone(),
+                                proof.clone(),
+                            )
                         ))),
                         id,
                     ))
@@ -215,7 +217,7 @@ mod tests {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
                 let result = match signature_msg.content() {
-                    DirectMessage::MessageSignature(msg) => sig_accumulator.add_proof(msg.clone()),
+                    DirectMessage::MessageSignature(msg) => sig_accumulator.add_proof(*msg.clone()),
                     unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
