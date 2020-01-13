@@ -74,10 +74,17 @@ pub struct JoinRequest {
 }
 
 /// Node's knowledge about its own section.
-#[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
+#[derive(Default, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub struct MemberKnowledge {
     pub elders_version: u64,
     pub parsec_version: u64,
+}
+
+impl MemberKnowledge {
+    pub fn update(&mut self, other: MemberKnowledge) {
+        self.elders_version = self.elders_version.max(other.elders_version);
+        self.parsec_version = self.parsec_version.max(other.parsec_version);
+    }
 }
 
 impl Debug for DirectMessage {

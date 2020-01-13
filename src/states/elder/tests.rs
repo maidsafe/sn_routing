@@ -495,7 +495,7 @@ fn accept_node_before_and_after_reaching_elder_size() {
 fn send_genesis_update() {
     let mut elder_test = ElderUnderTest::new(ELDER_SIZE);
 
-    // let orig_section_version = elder_test.elders_info.version();
+    let orig_elders_version = elder_test.elders_info.version();
 
     let adult0 = elder_test.gen_p2p_node();
     let adult1 = elder_test.gen_p2p_node();
@@ -520,17 +520,14 @@ fn send_genesis_update() {
     assert_eq!(messages.len(), 1); // only one adult.
     assert_eq!(messages[0].0, adult1);
 
-    // TODO: uncomment this when the corresponding functionality is implemented.
-    /*
     // Check the proof contains the version the adult is at.
     let proof_chain = unwrap!(messages[0].1.proof_chain());
     assert!(
         proof_chain
             .all_key_infos()
-            .any(|key_info| key_info.version() == orig_section_version),
+            .any(|key_info| key_info.version() == orig_elders_version),
         "{:?} doesn't contain expected version {}",
         proof_chain,
-        orig_section_version
+        orig_elders_version
     );
-    */
 }

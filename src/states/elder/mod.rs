@@ -121,6 +121,8 @@ pub struct Elder {
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     // Messages we received but not accumulated yet, so may need to re-swarm.
     pending_voted_msgs: BTreeMap<PendingMessageKey, SignedRoutingMessage>,
+    /// The knowledge of the non-elder members about our section.
+    members_knowledge: BTreeMap<XorName, MemberKnowledge>,
     rng: MainRng,
 }
 
@@ -279,6 +281,7 @@ impl Elder {
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
             pending_voted_msgs: Default::default(),
+            members_knowledge: Default::default(),
             rng: details.rng,
         }
     }
@@ -324,6 +327,7 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let change = EldersChange {
+            own_removed: Default::default(),
             neighbour_added: self.chain.neighbour_elder_nodes().cloned().collect(),
             neighbour_removed: Default::default(),
         };
@@ -351,12 +355,16 @@ impl Elder {
     }
 
     fn handle_member_knowledge(&mut self, p2p_node: P2pNode, payload: MemberKnowledge) {
+        if let Some(old_knowledge) = self.members_knowledge.get_mut(p2p_node.name()) {
+            old_knowledge.update(payload)
+        }
+
         self.send_parsec_gossip(Some((payload.parsec_version, p2p_node)))
     }
 
     // Connect to all elders from our section or neighbour sections that we are not yet connected
     // to and disconnect from peers that are no longer elders of neighbour sections.
-    fn update_peer_connections(&mut self, change: EldersChange) {
+    fn update_peer_connections(&mut self, change: &EldersChange) {
         if !self.chain.split_in_progress() {
             let our_needed_connections: HashSet<_> = self
                 .chain
@@ -364,7 +372,7 @@ impl Elder {
                 .map(|node| *node.peer_addr())
                 .collect();
 
-            for p2p_node in change.neighbour_removed {
+            for p2p_node in &change.neighbour_removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
                 if our_needed_connections.contains(p2p_node.peer_addr()) {
@@ -375,7 +383,7 @@ impl Elder {
             }
         }
 
-        for p2p_node in change.neighbour_added {
+        for p2p_node in &change.neighbour_added {
             if !self.peer_map().has(p2p_node.peer_addr()) {
                 self.establish_connection(p2p_node)
             }
@@ -391,11 +399,11 @@ impl Elder {
             .collect();
 
         for p2p_node in to_connect {
-            self.establish_connection(p2p_node)
+            self.establish_connection(&p2p_node)
         }
     }
 
-    fn establish_connection(&mut self, node: P2pNode) {
+    fn establish_connection(&mut self, node: &P2pNode) {
         self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
     }
 
@@ -630,7 +638,13 @@ impl Elder {
                     content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
                 };
 
-                match self.to_signed_routing_message(msg) {
+                let version = self
+                    .members_knowledge
+                    .get(recipient.name())
+                    .map(|knowledge| knowledge.elders_version)
+                    .unwrap_or(0);
+
+                match self.to_signed_routing_message(msg, Some(version)) {
                     Ok(msg) => Some((recipient, msg)),
                     Err(error) => {
                         error!("{} - Failed to create signed message: {:?}", self, error);
@@ -1137,7 +1151,7 @@ impl Elder {
             return Ok(());
         }
 
-        let signed_msg = self.to_signed_routing_message(routing_msg)?;
+        let signed_msg = self.to_signed_routing_message(routing_msg, None)?;
 
         for target in Iterator::flatten(
             self.get_signature_targets(&signed_msg.routing_message().src)
@@ -1300,12 +1314,34 @@ impl Elder {
     fn to_signed_routing_message(
         &self,
         msg: RoutingMessage,
+        node_knowledge_override: Option<u64>,
     ) -> Result<SignedRoutingMessage, RoutingError> {
-        let proof = self.chain.prove(&msg.dst, None);
+        let proof = self.chain.prove(&msg.dst, node_knowledge_override);
         let pk_set = self.our_section_bls_keys().clone();
         let secret_key = self.chain.our_section_bls_secret_key_share()?;
 
         SignedRoutingMessage::new(msg, secret_key, pk_set, proof)
+    }
+
+    // Starts tracking knowledge of recently demoted elders.
+    fn update_demoted_members_knowledge(&mut self, removed_elders: &BTreeSet<P2pNode>) {
+        // The demoted members did process the SectionInfo that demoted them, so they are aware of
+        // the latest versions.
+        let knowledge = MemberKnowledge {
+            elders_version: self.chain.our_info().version(),
+            parsec_version: self.parsec_map.last_version(),
+        };
+
+        for node in removed_elders {
+            if !self.chain.is_peer_our_member(node.public_id()) {
+                continue;
+            }
+
+            self.members_knowledge
+                .entry(*node.name())
+                .or_default()
+                .update(knowledge);
+        }
     }
 }
 
@@ -1586,6 +1622,11 @@ impl Approved for Elder {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        let _ = self
+            .members_knowledge
+            .entry(*payload.p2p_node.name())
+            .or_default();
+
         self.handle_candidate_approval(payload.p2p_node, outbox);
         self.print_rt_size();
         Ok(())
@@ -1593,9 +1634,10 @@ impl Approved for Elder {
 
     fn handle_member_removed(
         &mut self,
-        _pub_id: PublicId,
+        pub_id: PublicId,
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        let _ = self.members_knowledge.remove(pub_id.name());
         Ok(())
     }
 
@@ -1606,6 +1648,8 @@ impl Approved for Elder {
         node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {
+        let _ = self.members_knowledge.remove(details.pub_id.name());
+
         if &details.pub_id == self.id() {
             // Do not send the message to ourselves.
             return;
@@ -1721,7 +1765,8 @@ impl Approved for Elder {
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.process_post_reset_events(old_pfx, complete_data.to_process);
 
-        self.update_peer_connections(elders_change);
+        self.update_peer_connections(&elders_change);
+        self.update_demoted_members_knowledge(&elders_change.own_removed);
         self.send_neighbour_infos();
         self.send_genesis_updates();
 
@@ -1751,7 +1796,7 @@ impl Approved for Elder {
                 version: elders_info.version(),
                 prefix: *elders_info.prefix(),
             });
-        self.update_peer_connections(neighbour_change);
+        self.update_peer_connections(&neighbour_change);
         Ok(())
     }
 
