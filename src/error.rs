@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{id::PublicId, quic_p2p};
+use crate::{quic_p2p, xor_space::XorName};
 use err_derive::Error;
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc;
@@ -16,8 +16,7 @@ pub type Result<T> = ::std::result::Result<T, RoutingError>;
 
 /// The type of errors that can occur if routing is unable to handle a send request.
 #[derive(Debug, Error, derive_more::From)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant, missing_docs)]
+#[allow(missing_docs)]
 pub enum InterfaceError {
     #[error(display = "We are not in a state to handle the action.")]
     InvalidState,
@@ -27,8 +26,7 @@ pub enum InterfaceError {
 
 /// The type of errors that can occur during handling of routing events.
 #[derive(Debug, Error, derive_more::From)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant, missing_docs)]
+#[allow(missing_docs)]
 pub enum RoutingError {
     #[error(display = "Invalid State.")]
     Terminated,
@@ -49,7 +47,7 @@ pub enum RoutingError {
     #[error(display = "Serialisation Error.")]
     SerialisationError(serialisation::SerialisationError),
     #[error(display = "Peer not found.")]
-    PeerNotFound(PublicId),
+    PeerNotFound(XorName),
     #[error(display = "Invalid Source.")]
     InvalidSource,
     #[error(display = "Content of a received message is inconsistent.")]

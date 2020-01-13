@@ -149,7 +149,7 @@ impl JoiningPeer {
 
             self.send_direct_message(
                 dst.connection_info(),
-                DirectMessage::JoinRequest(join_request),
+                DirectMessage::JoinRequest(Box::new(join_request)),
             );
         }
     }

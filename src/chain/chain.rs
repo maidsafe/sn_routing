@@ -1395,7 +1395,7 @@ impl Chain {
     /// * If the destination is an `Authority::Section`:
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `N/3` closest members of the RT to the target
+    ///     - returns the `N/3` closest members to the target
     ///
     /// * If the destination is an `Authority::PrefixSection`:
     ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
@@ -1405,12 +1405,7 @@ impl Chain {
     ///     - returns the `N/3` closest members of the RT to the lower bound of the target
     ///       prefix
     ///
-    /// * If the destination is a group (`ClientManager`, `NaeManager` or `NodeManager`):
-    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
-    ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `N/3` closest members of the RT to the target
-    ///
-    /// * If the destination is an individual node (`ManagedNode` or `Client`):
+    /// * If the destination is an individual node:
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
@@ -1418,46 +1413,7 @@ impl Chain {
         &self,
         dst: &Authority<XorName>,
     ) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
-        let candidates = |target_name: &XorName| {
-            let filtered_sections =
-                self.closest_sections_info(*target_name)
-                    .into_iter()
-                    .map(|(prefix, members)| {
-                        (
-                            prefix,
-                            members.len(),
-                            members.member_nodes().collect::<Vec<_>>(),
-                        )
-                    });
-
-            let mut dg_size = 0;
-            let mut nodes_to_send = Vec::new();
-            for (idx, (prefix, len, connected)) in filtered_sections.enumerate() {
-                nodes_to_send.extend(connected.into_iter());
-                dg_size = delivery_group_size(len);
-
-                if prefix == self.our_prefix() {
-                    // Send to all connected targets so they can forward the message
-                    let our_name = self.our_id().name();
-                    nodes_to_send.retain(|&node| node.name() != our_name);
-                    dg_size = nodes_to_send.len();
-                    break;
-                }
-                if idx == 0 && nodes_to_send.len() >= dg_size {
-                    // can deliver to enough of the closest section
-                    break;
-                }
-            }
-            nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
-
-            if dg_size > 0 && nodes_to_send.len() >= dg_size {
-                Ok((dg_size, nodes_to_send))
-            } else {
-                Err(RoutingError::CannotRoute)
-            }
-        };
-
-        let (dg_size, best_section) = match *dst {
+        let (best_section, dg_size) = match *dst {
             Authority::Node(ref target_name) => {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
@@ -1465,7 +1421,7 @@ impl Chain {
                 if let Some(node) = self.get_p2p_node(target_name) {
                     return Ok((vec![node], 1));
                 }
-                candidates(target_name)?
+                self.candidates(target_name)?
             }
             Authority::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section_info(*target_name);
@@ -1482,12 +1438,12 @@ impl Chain {
                     let dg_size = section.len();
                     return Ok((section, dg_size));
                 }
-                candidates(target_name)?
+                self.candidates(target_name)?
             }
             Authority::PrefixSection(ref prefix) => {
                 if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
                 {
-                    // only route the message when we have all the targets in our routing table -
+                    // only route the message when we have all the targets in our chain -
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
                     if prefix.is_compatible(self.our_prefix())
@@ -1516,11 +1472,51 @@ impl Chain {
                     let dg_size = targets.len();
                     return Ok((targets, dg_size));
                 }
-                candidates(&prefix.lower_bound())?
+                self.candidates(&prefix.lower_bound())?
             }
         };
 
         Ok((best_section, dg_size))
+    }
+
+    // Obtain the delivery group candidates for this target
+    fn candidates(&self, target_name: &XorName) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
+        let filtered_sections =
+            self.closest_sections_info(*target_name)
+                .into_iter()
+                .map(|(prefix, members)| {
+                    (
+                        prefix,
+                        members.len(),
+                        members.member_nodes().collect::<Vec<_>>(),
+                    )
+                });
+
+        let mut dg_size = 0;
+        let mut nodes_to_send = Vec::new();
+        for (idx, (prefix, len, connected)) in filtered_sections.enumerate() {
+            nodes_to_send.extend(connected.into_iter());
+            dg_size = delivery_group_size(len);
+
+            if prefix == self.our_prefix() {
+                // Send to all connected targets so they can forward the message
+                let our_name = self.our_id().name();
+                nodes_to_send.retain(|&node| node.name() != our_name);
+                dg_size = nodes_to_send.len();
+                break;
+            }
+            if idx == 0 && nodes_to_send.len() >= dg_size {
+                // can deliver to enough of the closest section
+                break;
+            }
+        }
+        nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
+
+        if dg_size > 0 && nodes_to_send.len() >= dg_size {
+            Ok((nodes_to_send, dg_size))
+        } else {
+            Err(RoutingError::CannotRoute)
+        }
     }
 
     /// Returns whether we are a part of the given authority.

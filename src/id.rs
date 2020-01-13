@@ -57,7 +57,6 @@ impl FullId {
     }
 
     /// Construct a `FullId` whose name is in the interval [start, end] (both endpoints inclusive).
-    /// FIXME(Fraser) - time limit this function? Document behaviour
     pub fn within_range(rng: &mut MainRng, range: &RangeInclusive<XorName>) -> Self {
         let mut rng = RngCompat(rng);
 

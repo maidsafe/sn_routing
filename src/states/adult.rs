@@ -572,7 +572,7 @@ impl Base for Adult {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::DirectMessage::*;
         match msg {
-            MessageSignature(msg) => self.handle_message_signature(msg, *p2p_node.public_id()),
+            MessageSignature(msg) => self.handle_message_signature(*msg, *p2p_node.public_id()),
             ParsecRequest(version, par_request) => {
                 self.handle_parsec_request(version, par_request, p2p_node, outbox)
             }
@@ -587,7 +587,7 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            Relocate(details) => Ok(self.handle_relocate(details)),
+            Relocate(details) => Ok(self.handle_relocate(*details)),
             msg @ BootstrapResponse(_) => {
                 debug!(
                     "{} Unhandled direct message from {}, discard: {:?}",
