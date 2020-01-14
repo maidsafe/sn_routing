@@ -81,7 +81,7 @@ pub enum Connect {
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
     /// Client events - to be sent to the user library and not handled in the routing library.
-    ClientEvent(Client),
+    Client(Client),
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -105,14 +105,14 @@ pub enum Event {
 
 impl From<Client> for Event {
     fn from(client_event: Client) -> Self {
-        Self::ClientEvent(client_event)
+        Self::Client(client_event)
     }
 }
 
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Self::ClientEvent(ref client_event) => {
+            Self::Client(ref client_event) => {
                 write!(formatter, "Event::ClientEvent({:?})", client_event)
             }
             Self::MessageReceived {

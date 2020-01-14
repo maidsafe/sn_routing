@@ -14,9 +14,8 @@ use rand::{
     Rng,
 };
 use routing::{
-    mock::Environment, test_consts, Authority, ConnectEvent, Event, EventStream, FullId,
-    NetworkConfig, Node, NodeBuilder, PausedState, Prefix, PublicId, RelocationOverrides, XorName,
-    Xorable,
+    mock::Environment, test_consts, Authority, Connect, Event, EventStream, FullId, NetworkConfig,
+    Node, NodeBuilder, PausedState, Prefix, PublicId, RelocationOverrides, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -363,14 +362,14 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
     }
 
     for node in &mut nodes {
-        expect_next_event!(node, Event::Connected(ConnectEvent::First));
+        expect_next_event!(node, Event::Connected(Connect::First));
 
         while let Ok(event) = node.try_next_ev() {
             match event {
                 Event::SectionSplit(..)
                 | Event::RestartRequired
-                | Event::ClientEvent(..)
-                | Event::Connected(ConnectEvent::Relocate) => (),
+                | Event::Client(..)
+                | Event::Connected(Connect::Relocate) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -435,9 +434,7 @@ pub fn add_connected_nodes_until_split(
     );
 
     clear_all_event_queues(nodes, |node, event| match event {
-        Event::ClientEvent(..)
-        | Event::SectionSplit(..)
-        | Event::Connected(ConnectEvent::Relocate) => (),
+        Event::Client(..) | Event::SectionSplit(..) | Event::Connected(Connect::Relocate) => (),
         event => panic!("Got unexpected event for {}: {:?}", node.inner, event),
     });
 
