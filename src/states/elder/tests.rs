@@ -535,7 +535,7 @@ fn send_genesis_update() {
     elder_test.perform_offline_and_promote(&dropped_id, adult0);
 
     // Create `GenesisUpdate` message and check its proof contains the version the adult is at.
-    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    let message = utils::exactly_one(elder_test.elder.create_genesis_updates(&Default::default()));
     assert_eq!(message.0, adult1);
 
     let proof_chain = unwrap!(message.1.proof_chain());
@@ -552,7 +552,7 @@ fn send_genesis_update() {
 
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
     // contain the previous version.
-    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    let message = utils::exactly_one(elder_test.elder.create_genesis_updates(&Default::default()));
     let proof_chain = unwrap!(message.1.proof_chain());
     verify_proof_chain_contains(proof_chain, elder_test.elders_info.version());
     verify_proof_chain_does_not_contain(proof_chain, orig_elders_version);

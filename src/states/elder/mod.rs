@@ -610,8 +610,9 @@ impl Elder {
         });
     }
 
-    fn send_genesis_updates(&mut self) {
-        for (recipient, msg) in self.create_genesis_updates() {
+    // Send `GenesisUpdate` message to all non-elders except the ones in `exclude`.
+    fn send_genesis_updates(&mut self, exclude: &BTreeSet<P2pNode>) {
+        for (recipient, msg) in self.create_genesis_updates(exclude) {
             trace!(
                 "{} - Sending GenesisUpdate({:?}) to {}",
                 self,
@@ -626,10 +627,14 @@ impl Elder {
         }
     }
 
-    fn create_genesis_updates(&self) -> Vec<(P2pNode, SignedRoutingMessage)> {
+    fn create_genesis_updates(
+        &self,
+        exclude: &BTreeSet<P2pNode>,
+    ) -> Vec<(P2pNode, SignedRoutingMessage)> {
         let src = Authority::PrefixSection(*self.our_prefix());
         self.chain
             .adults_and_infants_p2p_nodes()
+            .filter(|recipient| !exclude.contains(recipient))
             .cloned()
             .filter_map(|recipient| {
                 let msg = RoutingMessage {
@@ -1725,7 +1730,7 @@ impl Approved for Elder {
         info!("{} - handle ParsecPrune", self);
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
-        self.send_genesis_updates();
+        self.send_genesis_updates(&BTreeSet::new());
         Ok(())
     }
 
@@ -1766,9 +1771,10 @@ impl Approved for Elder {
         self.process_post_reset_events(old_pfx, complete_data.to_process);
 
         self.update_peer_connections(&elders_change);
-        self.update_demoted_members_knowledge(&elders_change.own_removed);
         self.send_neighbour_infos();
-        self.send_genesis_updates();
+
+        self.update_demoted_members_knowledge(&elders_change.own_removed);
+        self.send_genesis_updates(&elders_change.own_removed);
 
         // Vote to update our self messages proof
         self.vote_send_section_info_ack(SendAckMessagePayload {
