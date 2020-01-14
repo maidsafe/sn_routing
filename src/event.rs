@@ -22,26 +22,26 @@ use std::{
 ///
 /// These are send transparently to the user library and not handled by routing
 #[derive(Clone, Eq, PartialEq)]
-pub enum ClientEvent {
+pub enum Client {
     /// Inform the user (library) that we are connected to a client
-    ConnectedToClient {
+    ConnectedTo {
         /// Client's endpoint
         peer_addr: SocketAddr,
     },
     /// Inform the user (library) that we are disconnected from a client
-    ConnectionFailureToClient {
+    ConnectionFailureTo {
         /// Client's endpoint
         peer_addr: SocketAddr,
     },
     /// Inform the user (library) that we have a new message from a client
-    NewMessageFromClient {
+    NewMessageFrom {
         /// Client's endpoint
         peer_addr: SocketAddr,
         /// Client's message
         msg: Bytes,
     },
     /// Inform the user (library) that we couldn't send this message to a client
-    UnsentUserMsgToClient {
+    UnsentUserMsg {
         /// Client's endpoint
         peer_addr: SocketAddr,
         /// Message we had tried to send to the client
@@ -50,7 +50,7 @@ pub enum ClientEvent {
         token: Token,
     },
     /// Inform the user (library) that we have successfully sent this message to a client
-    SentUserMsgToClient {
+    SentUserMsg {
         /// Client's endpoint
         peer_addr: SocketAddr,
         /// Message we had tried to send to the client
@@ -62,7 +62,7 @@ pub enum ClientEvent {
 
 /// An Event raised as node complete joining
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum ConnectEvent {
+pub enum Connect {
     /// Node first joining the network
     First,
     /// Node relocating from one section to another
@@ -81,7 +81,7 @@ pub enum ConnectEvent {
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
     /// Client events - to be sent to the user library and not handled in the routing library.
-    ClientEvent(ClientEvent),
+    ClientEvent(Client),
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -94,7 +94,7 @@ pub enum Event {
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
-    Connected(ConnectEvent),
+    Connected(Connect),
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
@@ -103,8 +103,8 @@ pub enum Event {
     Consensus(Vec<u8>),
 }
 
-impl From<ClientEvent> for Event {
-    fn from(client_event: ClientEvent) -> Self {
+impl From<Client> for Event {
+    fn from(client_event: Client) -> Self {
         Self::ClientEvent(client_event)
     }
 }
@@ -141,30 +141,30 @@ impl Debug for Event {
     }
 }
 
-impl Debug for ClientEvent {
+impl Debug for Client {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Self::ConnectedToClient { peer_addr } => {
+            Self::ConnectedTo { peer_addr } => {
                 write!(formatter, "ClientEvent::ConnectedToClient - {}", peer_addr)
             }
-            Self::ConnectionFailureToClient { peer_addr } => write!(
+            Self::ConnectionFailureTo { peer_addr } => write!(
                 formatter,
                 "ClientEvent::ConnectionFailureToClient: {}",
                 peer_addr
             ),
-            Self::NewMessageFromClient { peer_addr, .. } => write!(
+            Self::NewMessageFrom { peer_addr, .. } => write!(
                 formatter,
                 "ClientEvent::NewMessageFromClient: {}",
                 peer_addr
             ),
-            Self::UnsentUserMsgToClient {
+            Self::UnsentUserMsg {
                 peer_addr, token, ..
             } => write!(
                 formatter,
                 "ClientEvent::UnsentUserMsgToClient: {} with Token: {}",
                 peer_addr, token
             ),
-            Self::SentUserMsgToClient {
+            Self::SentUserMsg {
                 peer_addr, token, ..
             } => write!(
                 formatter,

@@ -21,7 +21,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::XorName,
-    ClientEvent, ConnectionInfo, NetworkEvent,
+    Client, ConnectionInfo, NetworkEvent,
 };
 use bytes::Bytes;
 use log::LogLevel;
@@ -142,13 +142,13 @@ pub trait Base: Display {
                 peer: Peer::Client { peer_addr },
             } => {
                 self.peer_map_mut().insert_client(peer_addr);
-                let client_event = ClientEvent::ConnectedToClient { peer_addr };
+                let client_event = Client::ConnectedTo { peer_addr };
                 outbox.send_event(From::from(client_event));
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
                 if self.peer_map().is_known_client(&peer_addr) {
-                    let client_event = ClientEvent::ConnectionFailureToClient { peer_addr };
+                    let client_event = Client::ConnectionFailureTo { peer_addr };
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {
@@ -157,7 +157,7 @@ pub trait Base: Display {
             }
             NewMessage { peer_addr, msg } => {
                 if self.peer_map().is_known_client(&peer_addr) {
-                    let client_event = ClientEvent::NewMessageFromClient { peer_addr, msg };
+                    let client_event = Client::NewMessageFrom { peer_addr, msg };
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {
@@ -170,7 +170,7 @@ pub trait Base: Display {
                 token,
             } => {
                 if self.peer_map().is_known_client(&peer_addr) {
-                    let client_event = ClientEvent::UnsentUserMsgToClient {
+                    let client_event = Client::UnsentUserMsg {
                         peer_addr,
                         msg,
                         token,
@@ -187,7 +187,7 @@ pub trait Base: Display {
                 token,
             } => {
                 if self.peer_map().is_known_client(&peer_addr) {
-                    let client_event = ClientEvent::SentUserMsgToClient {
+                    let client_event = Client::SentUserMsg {
                         peer_addr,
                         msg,
                         token,

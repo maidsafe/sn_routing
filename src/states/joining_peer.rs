@@ -15,7 +15,7 @@ use crate::{
     authority::Authority,
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
-    event::{ConnectEvent, Event},
+    event::{Connect, Event},
     id::{FullId, P2pNode},
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
@@ -112,8 +112,8 @@ impl JoiningPeer {
         let adult = Adult::new(details, Default::default(), outbox).map(State::Adult);
 
         let connect_type = match self.join_type {
-            JoinType::First { .. } => ConnectEvent::First,
-            JoinType::Relocate(_) => ConnectEvent::Relocate,
+            JoinType::First { .. } => Connect::First,
+            JoinType::Relocate(_) => Connect::Relocate,
         };
         outbox.send_event(Event::Connected(connect_type));
         adult
