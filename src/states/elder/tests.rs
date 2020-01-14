@@ -15,12 +15,12 @@
 
 use super::{super::test_utils, *};
 use crate::{
-    chain::SectionKeyInfo,
+    chain::{SectionKeyInfo, SectionProofChain},
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
     rng::{self, MainRng},
     state_machine::Transition,
-    unwrap, ELDER_SIZE,
+    unwrap, utils, ELDER_SIZE,
 };
 use mock_quic_p2p::Network;
 use std::{iter, net::SocketAddr};
@@ -287,6 +287,13 @@ impl ElderUnderTest {
         dropped_elder_id: &PublicId,
         promoted_adult_node: P2pNode,
     ) -> DkgToSectionInfo {
+        assert!(
+            self.other_ids
+                .iter()
+                .any(|(full_id, _)| { full_id.public_id() == dropped_elder_id }),
+            "dropped node must be one of the other elders"
+        );
+
         let new_member_map = self
             .elders_info
             .member_map()
@@ -347,6 +354,25 @@ impl ElderUnderTest {
 
     fn gen_p2p_node(&mut self) -> P2pNode {
         gen_p2p_node(&mut self.rng, &self.network)
+    }
+
+    // Drop an existing elder and promote an adult to take its place. Drive the whole process to
+    // completion by casting all necessary votes and letting them accumulate.
+    fn perform_offline_and_promote(
+        &mut self,
+        dropped_elder_id: &PublicId,
+        promoted_adult_node: P2pNode,
+    ) {
+        let new_info =
+            self.new_elders_info_after_offline_and_promote(dropped_elder_id, promoted_adult_node);
+
+        self.accumulate_offline(*dropped_elder_id);
+        self.accumulate_start_dkg(&new_info);
+        self.accumulate_section_info_if_vote(&new_info);
+        self.accumulate_voted_unconsensused_events();
+        self.elders_info = new_info.new_elders_info;
+        self.other_ids = new_info.new_other_ids;
+        self.accumulate_self_ack_message();
     }
 }
 
@@ -506,28 +532,50 @@ fn send_genesis_update() {
     // Remove one existing elder and promote an adult to take its place. This increments the
     // section version.
     let dropped_id = *elder_test.other_ids[0].0.public_id();
-    let new_info = elder_test.new_elders_info_after_offline_and_promote(&dropped_id, adult0);
+    elder_test.perform_offline_and_promote(&dropped_id, adult0);
 
-    elder_test.accumulate_offline(dropped_id);
-    elder_test.accumulate_start_dkg(&new_info);
-    elder_test.accumulate_section_info_if_vote(&new_info);
-    elder_test.accumulate_voted_unconsensused_events();
-    elder_test.elders_info = new_info.new_elders_info;
-    elder_test.other_ids = new_info.new_other_ids;
-    elder_test.accumulate_self_ack_message();
+    // Create `GenesisUpdate` message and check its proof contains the version the adult is at.
+    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    assert_eq!(message.0, adult1);
 
-    let messages = elder_test.elder.create_genesis_updates();
-    assert_eq!(messages.len(), 1); // only one adult.
-    assert_eq!(messages[0].0, adult1);
+    let proof_chain = unwrap!(message.1.proof_chain());
+    verify_proof_chain_contains(proof_chain, orig_elders_version);
 
-    // Check the proof contains the version the adult is at.
-    let proof_chain = unwrap!(messages[0].1.proof_chain());
+    // Receive MemberKnowledge from the adult
+    elder_test.elder.handle_member_knowledge(
+        adult1,
+        MemberKnowledge {
+            elders_version: elder_test.elders_info.version(),
+            parsec_version: elder_test.elder.parsec_map.last_version(),
+        },
+    );
+
+    // Create another `GenesisUpdate` and check the proof contains the updated version and does not
+    // contain the previous version.
+    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    let proof_chain = unwrap!(message.1.proof_chain());
+    verify_proof_chain_contains(proof_chain, elder_test.elders_info.version());
+    verify_proof_chain_does_not_contain(proof_chain, orig_elders_version);
+}
+
+fn verify_proof_chain_contains(proof_chain: &SectionProofChain, expected_version: u64) {
     assert!(
         proof_chain
             .all_key_infos()
-            .any(|key_info| key_info.version() == orig_elders_version),
+            .any(|key_info| key_info.version() == expected_version),
         "{:?} doesn't contain expected version {}",
         proof_chain,
-        orig_elders_version
+        expected_version,
+    );
+}
+
+fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofChain, unexpected_version: u64) {
+    assert!(
+        proof_chain
+            .all_key_infos()
+            .all(|key_info| key_info.version() != unexpected_version),
+        "{:?} contains unexpected version {}",
+        proof_chain,
+        unexpected_version,
     );
 }
