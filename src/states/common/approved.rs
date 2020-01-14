@@ -263,11 +263,6 @@ pub trait Approved: Base {
                         related_info.len()
                     );
 
-                    for pub_id in group {
-                        // Notify upper layers about the new node.
-                        self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-                    }
-
                     self.chain_mut().handle_genesis_event(group, related_info)?;
                     self.set_pfx_successfully_polled(true);
 

@@ -28,11 +28,11 @@ lazy_static = { version = "~1", optional = true }
 log = "~0.3.8"
 lru_time_cache = "~0.8.1"
 maidsafe_utilities = "~0.18.0"
-mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", optional = true }
+mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", rev = "5c023b7ded2", optional = true }
 num-bigint = "~0.1.40"
 parsec = { git = "https://github.com/maidsafe/parsec", rev = "a3a1eb2" }
 # quic-p2p = "~0.2.0"
-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p" }
+quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", rev = "5c023b7ded2" }
 # rand in the versions used for compatibility
 rand = "0.7.2"
 rand_crypto = { package = "rand", version = "~0.6.5" }
