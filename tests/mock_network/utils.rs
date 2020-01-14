@@ -362,32 +362,18 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
         verify_invariant_for_all_nodes(&env, &mut nodes);
     }
 
-    let n = cmp::min(nodes.len(), env.elder_size()) - 1;
-
     for node in &mut nodes {
         expect_next_event!(node, Event::Connected(ConnectEvent::First));
 
-        let mut node_added_count = 0;
-
         while let Ok(event) = node.try_next_ev() {
             match event {
-                Event::NodeAdded(..) => node_added_count += 1,
-                Event::NodeLost(..)
-                | Event::SectionSplit(..)
+                Event::SectionSplit(..)
                 | Event::RestartRequired
                 | Event::ClientEvent(..)
                 | Event::Connected(ConnectEvent::Relocate) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
-
-        assert!(
-            node_added_count >= n || !node.inner.is_elder(),
-            "{} - Got only {} NodeAdded events, expected at least {}.",
-            node.inner,
-            node_added_count,
-            n
-        );
     }
 
     Nodes(nodes)
@@ -449,9 +435,7 @@ pub fn add_connected_nodes_until_split(
     );
 
     clear_all_event_queues(nodes, |node, event| match event {
-        Event::NodeAdded(..)
-        | Event::NodeLost(..)
-        | Event::ClientEvent(..)
+        Event::ClientEvent(..)
         | Event::SectionSplit(..)
         | Event::Connected(ConnectEvent::Relocate) => (),
         event => panic!("Got unexpected event for {}: {:?}", node.inner, event),

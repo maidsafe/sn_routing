@@ -621,13 +621,14 @@ fn node_pause_and_resume_during_split() {
 // everything still works as expected.
 fn node_pause_and_resume(env: Environment, mut nodes: Nodes, new_node_id: FullId) {
     let index = env.new_rng().gen_range(0, nodes.len());
+    let paused_id = nodes[index].id();
     let state = unwrap!(nodes.remove(index).inner.pause());
 
     // Verify the other nodes do not see the node as going offline.
     poll_and_resend(&mut nodes);
-    for node in nodes.iter_mut() {
-        expect_no_event!(node, Event::NodeLost(_));
-    }
+    assert!(nodes
+        .iter()
+        .all(|n| !n.inner.is_elder() || n.inner.is_peer_our_member(&paused_id)));
 
     // Do some work while the node is paused.
     let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());

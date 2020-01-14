@@ -324,8 +324,6 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let change = EldersChange {
-            own_added: Default::default(),
-            own_removed: Default::default(),
             neighbour_added: self.chain.neighbour_elder_nodes().cloned().collect(),
             neighbour_removed: Default::default(),
         };
@@ -1706,14 +1704,6 @@ impl Approved for Elder {
         let is_member = elders_info.is_member(self.full_id.public_id());
 
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
-
-        for pub_id in &elders_change.own_added {
-            self.send_event(Event::NodeAdded(*pub_id.name()), outbox);
-        }
-
-        for pub_id in &elders_change.own_removed {
-            self.send_event(Event::NodeLost(*pub_id.name()), outbox);
-        }
 
         let complete_data = if info_prefix.is_extension_of(&old_pfx) {
             self.prepare_finalise_split()?

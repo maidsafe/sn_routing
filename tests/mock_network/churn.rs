@@ -100,10 +100,13 @@ fn remove_unresponsive_node() {
         poll_and_resend(&mut nodes);
     }
 
-    // Verify the other nodes saw the paused node and removed it.
-    for node in nodes.iter_mut().filter(|n| n.inner.is_elder()) {
-        expect_any_event!(node, Event::NodeLost(_));
-    }
+    let still_has_unresponsibe_elder = nodes
+        .iter()
+        .map(|n| &n.inner)
+        .filter(|n| n.elders().any(|id| *id.name() == non_responsive_name))
+        .map(|n| format!("{}", n))
+        .collect_vec();
+    assert_eq!(still_has_unresponsibe_elder, Vec::<String>::new());
 }
 
 // Parameters for the churn tests.

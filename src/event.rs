@@ -91,10 +91,6 @@ pub enum Event {
         /// The destination authority that receives the message.
         dst: Authority<XorName>,
     },
-    /// A node has connected to us.
-    NodeAdded(XorName),
-    /// A node has disconnected from us.
-    NodeLost(XorName),
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
@@ -130,10 +126,6 @@ impl Debug for Event {
                 src,
                 dst
             ),
-            Self::NodeAdded(ref node_name) => {
-                write!(formatter, "Event::NodeAdded({:?})", node_name)
-            }
-            Self::NodeLost(ref node_name) => write!(formatter, "Event::NodeLost({:?})", node_name),
             Self::SectionSplit(ref prefix) => {
                 write!(formatter, "Event::SectionSplit({:?})", prefix)
             }

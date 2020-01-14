@@ -1767,21 +1767,18 @@ impl SectionKeys {
 }
 
 struct EldersChangeBuilder {
-    old_own: BTreeSet<P2pNode>,
     old_neighbour: BTreeSet<P2pNode>,
 }
 
 impl EldersChangeBuilder {
     fn new(chain: &Chain) -> Self {
         Self {
-            old_own: chain.our_info().member_nodes().cloned().collect(),
             old_neighbour: chain.neighbour_elder_nodes().cloned().collect(),
         }
     }
 
     fn build(self, chain: &Chain) -> EldersChange {
         let new_neighbour: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
-        let new_own: BTreeSet<_> = chain.our_info().member_nodes().cloned().collect();
         EldersChange {
             neighbour_added: new_neighbour
                 .difference(&self.old_neighbour)
@@ -1792,8 +1789,6 @@ impl EldersChangeBuilder {
                 .difference(&new_neighbour)
                 .cloned()
                 .collect(),
-            own_added: new_own.difference(&self.old_own).cloned().collect(),
-            own_removed: self.old_own.difference(&new_own).cloned().collect(),
         }
     }
 }

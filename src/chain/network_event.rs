@@ -242,8 +242,4 @@ pub struct EldersChange {
     pub neighbour_added: BTreeSet<P2pNode>,
     // Peers that ceased to be elders.
     pub neighbour_removed: BTreeSet<P2pNode>,
-    // Peers that became elders.
-    pub own_added: BTreeSet<P2pNode>,
-    // Peers that ceased to be elders.
-    pub own_removed: BTreeSet<P2pNode>,
 }
