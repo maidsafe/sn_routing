@@ -41,7 +41,7 @@ use {
 };
 
 /// A builder to configure and create a new `Node`.
-pub struct NodeBuilder {
+pub struct Builder {
     first: bool,
     rng: Option<MainRng>,
     network_config: Option<NetworkConfig>,
@@ -49,15 +49,15 @@ pub struct NodeBuilder {
     network_cfg: NetworkParams,
 }
 
-impl NodeBuilder {
+impl Builder {
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> Self {
-        Self { first, ..self }
+        Builder { first, ..self }
     }
 
     /// The node will use the given network config rather than default.
     pub fn network_config(self, config: NetworkConfig) -> Self {
-        Self {
+        Builder {
             network_config: Some(config),
             ..self
         }
@@ -65,7 +65,7 @@ impl NodeBuilder {
 
     /// The node will use the given full id rather than default, randomly generated one.
     pub fn full_id(self, full_id: FullId) -> Self {
-        Self {
+        Builder {
             full_id: Some(full_id),
             ..self
         }
@@ -73,7 +73,7 @@ impl NodeBuilder {
 
     /// Override the default network config.
     pub fn network_cfg(self, network_cfg: NetworkParams) -> Self {
-        Self {
+        Builder {
             network_cfg,
             ..self
         }
@@ -81,7 +81,7 @@ impl NodeBuilder {
 
     /// Use the supplied random number generator. If this is not called, a default `OsRng` is used.
     pub fn rng<R: RngCore>(self, rng: &mut R) -> Self {
-        Self {
+        Builder {
             rng: Some(rng::new_from(rng)),
             ..self
         }
@@ -164,8 +164,8 @@ pub struct Node {
 
 impl Node {
     /// Creates a new builder to configure and create a `Node`.
-    pub fn builder() -> NodeBuilder {
-        NodeBuilder {
+    pub fn builder() -> Builder {
+        Builder {
             first: false,
             rng: None,
             network_config: None,

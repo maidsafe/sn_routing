@@ -83,7 +83,7 @@ pub use self::{
     event::{Client, Connect, Event},
     event_stream::EventStream,
     id::{FullId, P2pNode, PublicId},
-    node::{Node, NodeBuilder},
+    node::{Builder, Node},
     pause::PausedState,
     quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
