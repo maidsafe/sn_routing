@@ -142,13 +142,13 @@ pub trait Base: Display {
                 peer: Peer::Client { peer_addr },
             } => {
                 self.peer_map_mut().insert_client(peer_addr);
-                let client_event = Client::ConnectedTo { peer_addr };
+                let client_event = Client::Connected { peer_addr };
                 outbox.send_event(From::from(client_event));
                 Transition::Stay
             }
             ConnectionFailure { peer_addr, .. } => {
                 if self.peer_map().is_known_client(&peer_addr) {
-                    let client_event = Client::ConnectionFailureTo { peer_addr };
+                    let client_event = Client::ConnectionFailure { peer_addr };
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {
@@ -157,7 +157,7 @@ pub trait Base: Display {
             }
             NewMessage { peer_addr, msg } => {
                 if self.peer_map().is_known_client(&peer_addr) {
-                    let client_event = Client::NewMessageFrom { peer_addr, msg };
+                    let client_event = Client::NewMessage { peer_addr, msg };
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 } else {

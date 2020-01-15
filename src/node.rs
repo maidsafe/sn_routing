@@ -52,12 +52,12 @@ pub struct Builder {
 impl Builder {
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> Self {
-        Builder { first, ..self }
+        Self { first, ..self }
     }
 
     /// The node will use the given network config rather than default.
     pub fn network_config(self, config: NetworkConfig) -> Self {
-        Builder {
+        Self {
             network_config: Some(config),
             ..self
         }
@@ -65,7 +65,7 @@ impl Builder {
 
     /// The node will use the given full id rather than default, randomly generated one.
     pub fn full_id(self, full_id: FullId) -> Self {
-        Builder {
+        Self {
             full_id: Some(full_id),
             ..self
         }
@@ -73,7 +73,7 @@ impl Builder {
 
     /// Override the default network config.
     pub fn network_cfg(self, network_cfg: NetworkParams) -> Self {
-        Builder {
+        Self {
             network_cfg,
             ..self
         }
@@ -81,7 +81,7 @@ impl Builder {
 
     /// Use the supplied random number generator. If this is not called, a default `OsRng` is used.
     pub fn rng<R: RngCore>(self, rng: &mut R) -> Self {
-        Builder {
+        Self {
             rng: Some(rng::new_from(rng)),
             ..self
         }

@@ -24,17 +24,17 @@ use std::{
 #[derive(Clone, Eq, PartialEq)]
 pub enum Client {
     /// Inform the user (library) that we are connected to a client
-    ConnectedTo {
+    Connected {
         /// Client's endpoint
         peer_addr: SocketAddr,
     },
     /// Inform the user (library) that we are disconnected from a client
-    ConnectionFailureTo {
+    ConnectionFailure {
         /// Client's endpoint
         peer_addr: SocketAddr,
     },
     /// Inform the user (library) that we have a new message from a client
-    NewMessageFrom {
+    NewMessage {
         /// Client's endpoint
         peer_addr: SocketAddr,
         /// Client's message
@@ -144,31 +144,31 @@ impl Debug for Event {
 impl Debug for Client {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Self::ConnectedTo { peer_addr } => {
+            Self::Connected { peer_addr } => {
                 write!(formatter, "ClientEvent::ConnectedToClient - {}", peer_addr)
             }
-            Self::ConnectionFailureTo { peer_addr } => write!(
+            Self::ConnectionFailure { peer_addr } => write!(
                 formatter,
-                "ClientEvent::ConnectionFailureToClient: {}",
+                "ClientEvent::ConnectionFailure: {}",
                 peer_addr
             ),
-            Self::NewMessageFrom { peer_addr, .. } => write!(
+            Self::NewMessage { peer_addr, .. } => write!(
                 formatter,
-                "ClientEvent::NewMessageFromClient: {}",
+                "ClientEvent::NewMessage: {}",
                 peer_addr
             ),
             Self::UnsentUserMsg {
                 peer_addr, token, ..
             } => write!(
                 formatter,
-                "ClientEvent::UnsentUserMsgToClient: {} with Token: {}",
+                "ClientEvent::UnsentUserMsg: {} with Token: {}",
                 peer_addr, token
             ),
             Self::SentUserMsg {
                 peer_addr, token, ..
             } => write!(
                 formatter,
-                "ClientEvent::SentUserMsgToClient: {} with Token: {}",
+                "ClientEvent::SentUserMsg: {} with Token: {}",
                 peer_addr, token
             ),
         }
