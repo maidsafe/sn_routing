@@ -571,7 +571,10 @@ impl Chain {
         let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
         let current_elders: BTreeSet<_> = self.state.our_info().member_nodes().cloned().collect();
 
-        if expected_elders != current_elders {
+        if expected_elders == current_elders {
+            self.members_changed = false;
+            Ok(None)
+        } else {
             let old_size = self.state.our_info().len();
 
             let new_info = EldersInfo::new(
@@ -591,9 +594,6 @@ impl Chain {
             self.members_changed = false;
             self.churn_in_progress = true;
             Ok(Some(vec![new_info]))
-        } else {
-            self.members_changed = false;
-            Ok(None)
         }
     }
 
@@ -1134,8 +1134,8 @@ impl Chain {
 
     fn add_neighbour_elders_info(&mut self, elders_info: EldersInfo) -> Result<(), RoutingError> {
         let pfx = *elders_info.prefix();
-        let ppfx = elders_info.prefix().popped();
-        let spfx = elders_info.prefix().sibling();
+        let parent_pfx = elders_info.prefix().popped();
+        let sibling_pfx = elders_info.prefix().sibling();
         let new_elders_info_version = elders_info.version();
 
         if let Some(old_elders_info) = self.state.neighbour_infos.insert(pfx, elders_info) {
@@ -1154,15 +1154,15 @@ impl Chain {
         if let Some(sinfo) = self
             .state
             .neighbour_infos
-            .get(&ppfx)
+            .get(&parent_pfx)
             .filter(|pinfo| {
                 pinfo.version() < new_elders_info_version
-                    && self.our_prefix().is_neighbour(&spfx)
-                    && !self.state.neighbour_infos.contains_key(&spfx)
+                    && self.our_prefix().is_neighbour(&sibling_pfx)
+                    && !self.state.neighbour_infos.contains_key(&sibling_pfx)
             })
             .cloned()
         {
-            let _ = self.state.neighbour_infos.insert(spfx, sinfo);
+            let _ = self.state.neighbour_infos.insert(sibling_pfx, sinfo);
         }
 
         self.check_and_clean_neighbour_infos(Some(&pfx));

@@ -41,7 +41,7 @@ use {
 };
 
 /// A builder to configure and create a new `Node`.
-pub struct NodeBuilder {
+pub struct Builder {
     first: bool,
     rng: Option<MainRng>,
     network_config: Option<NetworkConfig>,
@@ -49,7 +49,7 @@ pub struct NodeBuilder {
     network_cfg: NetworkParams,
 }
 
-impl NodeBuilder {
+impl Builder {
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> Self {
         Self { first, ..self }
@@ -164,8 +164,8 @@ pub struct Node {
 
 impl Node {
     /// Creates a new builder to configure and create a `Node`.
-    pub fn builder() -> NodeBuilder {
-        NodeBuilder {
+    pub fn builder() -> Builder {
+        Builder {
             first: false,
             rng: None,
             network_config: None,

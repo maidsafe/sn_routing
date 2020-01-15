@@ -58,13 +58,13 @@ impl SignatureAccumulator {
 
     fn remove_if_complete(&mut self, hash: &Digest256) -> Option<SignedRoutingMessage> {
         self.msgs.get_mut(hash).and_then(|&mut (ref mut msg, _)| {
-            if !msg.as_mut().map_or(false, |msg| msg.check_fully_signed()) {
-                None
-            } else {
+            if msg.as_mut().map_or(false, |msg| msg.check_fully_signed()) {
                 msg.take().map(|mut msg| {
                     msg.combine_signatures();
                     msg
                 })
+            } else {
+                None
             }
         })
     }
