@@ -9,7 +9,7 @@
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
-    section_proof_chain_from_elders_info, Authority, ConnectionInfo, FullId, HopMessage, Message,
+    section_proof_chain_from_elders_info, ConnectionInfo, FullId, HopMessage, Location, Message,
     MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare,
     SignedRoutingMessage, XorName,
 };
@@ -75,8 +75,8 @@ fn message_with_invalid_security(fail_type: FailType) {
     let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001,));
 
     let routing_msg = RoutingMessage {
-        src: Authority::Section(our_prefix.name()),
-        dst: Authority::PrefixSection(their_prefix),
+        src: Location::Section(our_prefix.name()),
+        dst: Location::PrefixSection(their_prefix),
         content: MessageContent::NeighbourInfo(new_info.clone()),
     };
 
@@ -84,7 +84,7 @@ fn message_with_invalid_security(fail_type: FailType) {
         let proof = match fail_type {
             FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos]
                 .inner
-                .prove(&Authority::PrefixSection(their_prefix))),
+                .prove(&Location::PrefixSection(their_prefix))),
             FailType::UntrustedProofValidSig => {
                 section_proof_chain_from_elders_info(&new_info, bls_keys.public_keys().public_key())
             }

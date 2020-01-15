@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    authority::Authority,
+    location::Location,
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
@@ -74,7 +74,7 @@ pub enum Connected {
 /// These are sent by routing to the library's user. It allows the user to handle requests and
 /// responses, and to react to changes in the network.
 ///
-/// `Request` and `Response` events from section authorities are only raised once the quorum has
+/// `Request` and `Response` events from section locations are only raised once the quorum has
 /// been reached, i.e. enough members of the section have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -86,10 +86,10 @@ pub enum Event {
     MessageReceived {
         /// The content of the message.
         content: Vec<u8>,
-        /// The source authority that sent the message.
-        src: Authority<XorName>,
-        /// The destination authority that receives the message.
-        dst: Authority<XorName>,
+        /// The source location that sent the message.
+        src: Location<XorName>,
+        /// The destination location that receives the message.
+        dst: Location<XorName>,
     },
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),

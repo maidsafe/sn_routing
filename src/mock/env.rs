@@ -166,7 +166,7 @@ mod tests {
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
-        rng, unwrap, Authority,
+        rng, unwrap, Location,
     };
     use maidsafe_utilities::serialisation;
     use rand::Rng;
@@ -222,8 +222,8 @@ mod tests {
 
         // A hop message never contains a Parsec message.
         let msg = RoutingMessage {
-            src: Authority::Section(rand::random()),
-            dst: Authority::Section(rand::random()),
+            src: Location::Section(rand::random()),
+            dst: Location::Section(rand::random()),
             content: MessageContent::UserMessage(vec![
                 rand::random(),
                 rand::random(),

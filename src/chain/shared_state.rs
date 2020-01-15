@@ -11,7 +11,7 @@ use super::{
     MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
-    authority::Authority, error::RoutingError, id::PublicId, relocation::RelocateDetails,
+    error::RoutingError, id::PublicId, location::Location, relocation::RelocateDetails,
     utils::LogIdent, Prefix, XorName,
 };
 use itertools::Itertools;
@@ -395,8 +395,8 @@ impl SharedState {
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the target
-    /// Authority
-    pub fn proving_index(&self, target: &Authority<XorName>) -> u64 {
+    /// Location
+    pub fn proving_index(&self, target: &Location<XorName>) -> u64 {
         let (prefix, &index) = if let Some(pair) = self
             .their_knowledge
             .iter()
@@ -410,7 +410,7 @@ impl SharedState {
 
         if let Some(sibling_index) = self.their_knowledge.get(&prefix.sibling()) {
             // The sibling section might not have processed the split yet, so it might still be in
-            // `target`'s authority. Because of that, we need to return index that would be trusted
+            // `target`'s location. Because of that, we need to return index that would be trusted
             // by them too.
             index.min(*sibling_index)
         } else {
@@ -793,10 +793,10 @@ mod test {
     }
 
     // Perform a series of updates to `their_knowledge`, then verify that the proving indices for
-    // the given dst authorities are as expected.
+    // the given dst locations are as expected.
     //
     // - `updates` - pairs of (prefix, version) to pass to `update_their_knowledge`
-    // - `expected_proving_indices` - pairs of (prefix, index) where the dst authority name is
+    // - `expected_proving_indices` - pairs of (prefix, index) where the dst location name is
     //   generated such that it matches `prefix` and `index` is the expected proving index.
     fn update_their_knowledge_and_check_proving_index(
         rng: &mut MainRng,
@@ -817,7 +817,7 @@ mod test {
         for (dst_name_prefix_str, expected_index) in expected_proving_indices {
             let dst_name_prefix: Prefix<_> = unwrap!(dst_name_prefix_str.parse());
             let dst_name = dst_name_prefix.substituted_in(rng.gen());
-            let dst = Authority::Section(dst_name);
+            let dst = Location::Section(dst_name);
 
             assert_eq!(state.proving_index(&dst), expected_index);
         }

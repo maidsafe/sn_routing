@@ -12,11 +12,11 @@ use super::{
     common::Base,
 };
 use crate::{
-    authority::Authority,
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode},
+    location::Location,
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
         SignedRoutingMessage,
@@ -164,8 +164,8 @@ impl JoiningPeer {
         match msg {
             RoutingMessage {
                 content: MessageContent::NodeApproval(gen_info),
-                src: Authority::PrefixSection(_),
-                dst: Authority::Node { .. },
+                src: Location::PrefixSection(_),
+                dst: Location::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),
             _ => {
                 debug!(
@@ -207,7 +207,7 @@ impl Base for JoiningPeer {
         &self.full_id
     }
 
-    fn in_authority(&self, dst: &Authority<XorName>) -> bool {
+    fn in_location(&self, dst: &Location<XorName>) -> bool {
         dst.is_single() && dst.name() == *self.full_id.public_id().name()
     }
 
@@ -229,8 +229,8 @@ impl Base for JoiningPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Authority<XorName>,
-        _: Authority<XorName>,
+        _: Location<XorName>,
+        _: Location<XorName>,
         _: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         warn!("{} - Cannot handle SendMessage - not joined.", self);
@@ -316,7 +316,7 @@ impl Base for JoiningPeer {
             return Ok(Transition::Stay);
         }
 
-        if self.in_authority(&msg.routing_message().dst) {
+        if self.in_location(&msg.routing_message().dst) {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)
         } else {

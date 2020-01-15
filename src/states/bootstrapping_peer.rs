@@ -8,11 +8,11 @@
 
 use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
-    authority::Authority,
     chain::{EldersInfo, NetworkParams},
     error::{InterfaceError, RoutingError},
     event::Event,
     id::{FullId, P2pNode},
+    location::Location,
     messages::{BootstrapResponse, DirectMessage, HopMessage},
     network_service::NetworkService,
     outbox::EventBox,
@@ -203,7 +203,7 @@ impl Base for BootstrappingPeer {
         &self.full_id
     }
 
-    fn in_authority(&self, _: &Authority<XorName>) -> bool {
+    fn in_location(&self, _: &Location<XorName>) -> bool {
         false
     }
 
@@ -225,8 +225,8 @@ impl Base for BootstrappingPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Authority<XorName>,
-        _: Authority<XorName>,
+        _: Location<XorName>,
+        _: Location<XorName>,
         _: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         warn!("{} - Cannot handle SendMessage - not bootstrapped.", self);

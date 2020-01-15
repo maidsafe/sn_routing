@@ -21,7 +21,7 @@ use crate::{
     ConnectionInfo, NetworkConfig, NetworkEvent,
 };
 #[cfg(feature = "mock_base")]
-use crate::{authority::Authority, chain::Chain, rng::MainRng};
+use crate::{chain::Chain, location::Location, rng::MainRng};
 use crossbeam_channel as mpmc;
 #[cfg(feature = "mock_base")]
 use std::net::SocketAddr;
@@ -260,10 +260,10 @@ impl State {
         }
     }
 
-    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
+    pub fn in_location(&self, auth: &Location<XorName>) -> bool {
         state_dispatch!(
             *self,
-            ref state => state.in_authority(auth),
+            ref state => state.in_location(auth),
             Terminated => false
         )
     }

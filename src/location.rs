@@ -9,16 +9,13 @@
 use crate::xor_space::{Prefix, XorName, Xorable};
 use std::fmt::{self, Binary, Debug, Display, Formatter};
 
-/// An entity that can act as a source or destination of a message.
+/// A `Location` is a source or destination of a message.
 ///
-/// `Client` and `ManagedNode` are single-node authorities (i.e. no verification of messages from
-/// additional sources needed); other authorities require agreement by a quorum of some set.
-/// `NodeManager`, `ClientManager` and `NaeManager` use _group_ verification of messages: they
-/// require quorum agreement from the group of nodes closest to the source, while `Section` and
-/// `PrefixSection` use _section_ verification: the set from which a quorum is required is all
-/// members of the section (`Section`) or of all sections matching the prefix (`PrefixSection`).
+/// `Node` is single-node location (i.e. no verification of messages from
+/// additional sources needed). It's name is the `Authority::key` other
+/// locations require agreement by a quorum of `Elders`.
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
-pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
+pub enum Location<N: Xorable + Clone + Copy + Binary + Default> {
     /// A single section whose prefix matches the given name
     Section(N),
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
@@ -28,8 +25,8 @@ pub enum Authority<N: Xorable + Clone + Copy + Binary + Default> {
     Node(N),
 }
 
-impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
-    /// Returns `true` if the authority consists of multiple nodes, otherwise `false`.
+impl<N: Xorable + Clone + Copy + Binary + Default> Location<N> {
+    /// Returns `true` if the location consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
         match self {
             Self::Section(_) | Self::PrefixSection(_) => true,
@@ -37,7 +34,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
         }
     }
 
-    /// Returns `true` if the authority is a single node, and `false` otherwise.
+    /// Returns `true` if the location is a single node, and `false` otherwise.
     pub fn is_single(&self) -> bool {
         match self {
             Self::Section(_) | Self::PrefixSection(_) => false,
@@ -45,7 +42,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
         }
     }
 
-    /// Returns the name of authority.
+    /// Returns the name of location.
     pub fn name(&self) -> N {
         match self {
             Self::Section(name) | Self::Node(name) => *name,
@@ -53,7 +50,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
         }
     }
 
-    /// Returns if the authority is compatible with that prefix
+    /// Returns if the location is compatible with that prefix
     pub fn is_compatible(&self, other_prefix: &Prefix<N>) -> bool {
         match self {
             Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
@@ -62,7 +59,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Authority<N> {
     }
 }
 
-impl Authority<XorName> {
+impl Location<XorName> {
     /// provide the name mathching a single node's public key
     pub fn single_signing_name(&self) -> Option<&XorName> {
         match *self {
@@ -72,7 +69,7 @@ impl Authority<XorName> {
     }
 }
 
-impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Authority<N> {
+impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Location<N> {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Self::Section(ref name) => write!(formatter, "Section(name: {})", name),

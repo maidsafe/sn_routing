@@ -60,8 +60,8 @@ impl AdultUnderTest {
 
     fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> SignedRoutingMessage {
         let msg = RoutingMessage {
-            src: Authority::PrefixSection(Prefix::default()),
-            dst: Authority::Node(*self.adult.name()),
+            src: Location::PrefixSection(Prefix::default()),
+            dst: Location::Node(*self.adult.name()),
             content: MessageContent::GenesisUpdate(gen_pfx_info),
         };
 

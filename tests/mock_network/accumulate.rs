@@ -8,7 +8,7 @@
 
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
-use routing::{mock::Environment, Authority, Event, EventStream, NetworkParams, XorName};
+use routing::{mock::Environment, Event, EventStream, Location, NetworkParams, XorName};
 
 #[test]
 fn messages_accumulate_with_quorum() {
@@ -21,10 +21,10 @@ fn messages_accumulate_with_quorum() {
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes(&env, section_size);
 
-    let src = Authority::Section(rng.gen());
+    let src = Location::Section(rng.gen());
     sort_nodes_by_distance_to(&mut nodes, &src.name());
 
-    let send = |node: &mut TestNode, dst: &Authority<XorName>, content: Vec<u8>| {
+    let send = |node: &mut TestNode, dst: &Location<XorName>, content: Vec<u8>| {
         assert!(node.inner.send_message(src, *dst, content).is_ok());
     };
 
@@ -37,7 +37,7 @@ fn messages_accumulate_with_quorum() {
         .next()
         .unwrap();
 
-    let dst = Authority::Node(nodes[closest_elder_index].name()); // The closest node.
+    let dst = Location::Node(nodes[closest_elder_index].name()); // The closest node.
     let content = gen_bytes(&mut rng, 8);
 
     // The BLS scheme will require more than `participants / 3`
@@ -80,7 +80,7 @@ fn messages_accumulate_with_quorum() {
     let _ = poll_all(&mut nodes);
     expect_no_event!(nodes[closest_elder_index]);
 
-    let dst_grp = Authority::Section(src.name()); // The whole section.
+    let dst_grp = Location::Section(src.name()); // The whole section.
     let content = gen_bytes(&mut rng, 9);
 
     // Send a message from the section `src` to the section `dst_grp`. Only the `quorum`-th sender
