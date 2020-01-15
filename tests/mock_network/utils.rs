@@ -141,7 +141,7 @@ pub fn current_sections<'a>(nodes: &'a [TestNode]) -> impl Iterator<Item = Prefi
 }
 
 pub struct TestNodeBuilder<'a> {
-    inner: NodeBuilder,
+    inner: Builder,
     env: &'a Environment,
 }
 
