@@ -793,9 +793,21 @@ impl Elder {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
             }
+            (content @ GenesisUpdate(_), src, dst) => {
+                debug!(
+                    "{} Unhandled routing message {:?} from {:?} to {:?}, adding to backlog",
+                    self, content, src, dst
+                );
+                self.routing_msg_backlog
+                    .push(SignedRoutingMessage::from_parts(
+                        RoutingMessage { content, src, dst },
+                        security_metadata,
+                    ));
+                Ok(Transition::Stay)
+            }
             (content, src, dst) => {
                 debug!(
-                    "{} Unhandled routing message {:?} from {:?} to {:?}",
+                    "{} Unhandled routing message {:?} from {:?} to {:?}, ignoring",
                     self, content, src, dst
                 );
                 Err(RoutingError::BadAuthority)

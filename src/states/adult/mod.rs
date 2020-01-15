@@ -232,25 +232,6 @@ impl Adult {
         self.chain.our_prefix()
     }
 
-    fn dispatch_routing_message(
-        &mut self,
-        msg: SignedRoutingMessage,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        self.add_message_to_backlog(msg);
-        Ok(())
-    }
-
-    // Backlog the message to be processed once we are established.
-    fn add_message_to_backlog(&mut self, msg: SignedRoutingMessage) {
-        trace!(
-            "{} Not elder yet. Delaying message handling: {:?}",
-            self,
-            msg
-        );
-        self.routing_msg_backlog.push(msg)
-    }
-
     fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Transition {
         if details.content().pub_id != *self.id() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
@@ -448,6 +429,36 @@ impl Adult {
         self.send_signed_message_to_elders(signed_msg)?;
         Ok(Transition::Stay)
     }
+
+    fn handle_backlogged_filtered_signed_message(
+        &mut self,
+        signed_msg: SignedRoutingMessage,
+    ) -> Result<Transition, RoutingError> {
+        trace!(
+            "{} - Handle backlogged signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
+        match &signed_msg.routing_message().content {
+            MessageContent::GenesisUpdate(info) => {
+                if signed_msg.check_trust(&self.chain) {
+                    self.handle_genesis_update(info.clone())
+                } else {
+                    trace!("{} - Untrusted GenesisUpdate({:?}) - ignoring", self, info);
+                    Ok(Transition::Stay)
+                }
+            }
+            _ => {
+                trace!(
+                    "{} - Unhandled routing message {:?} - ignoring",
+                    self,
+                    signed_msg.routing_message()
+                );
+                Ok(Transition::Stay)
+            }
+        }
+    }
 }
 
 #[cfg(feature = "mock_base")]
@@ -505,13 +516,8 @@ impl Base for Adult {
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State changed to Adult finished.", self);
 
-        for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
-            if let Err(err) = self.dispatch_routing_message(msg, outbox) {
-                debug!("{} - {:?}", self, err);
-            }
-        }
-
         let mut transition = Transition::Stay;
+
         for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
                 match self.handle_direct_message(msg, pub_id, outbox) {
@@ -520,6 +526,17 @@ impl Base for Adult {
                 }
             } else {
                 self.direct_msg_backlog.push((pub_id, msg));
+            }
+        }
+
+        for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
+            if let Transition::Stay = &transition {
+                match self.handle_backlogged_filtered_signed_message(msg) {
+                    Ok(new_transition) => transition = new_transition,
+                    Err(err) => debug!("{} - {:?}", self, err),
+                }
+            } else {
+                self.routing_msg_backlog.push(msg);
             }
         }
 
