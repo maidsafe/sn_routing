@@ -80,7 +80,7 @@ mod macros;
 // ############################################################################
 pub use self::{
     error::{InterfaceError, RoutingError},
-    event::{Client, Connect, Event},
+    event::{Client, Connected, Event},
     event_stream::EventStream,
     id::{FullId, P2pNode, PublicId},
     node::{Builder, Node},

@@ -62,7 +62,7 @@ pub enum Client {
 
 /// An Event raised as node complete joining
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Connect {
+pub enum Connected {
     /// Node first joining the network
     First,
     /// Node relocating from one section to another
@@ -94,7 +94,7 @@ pub enum Event {
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
-    Connected(Connect),
+    Connected(Connected),
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
@@ -145,18 +145,14 @@ impl Debug for Client {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Self::Connected { peer_addr } => {
-                write!(formatter, "ClientEvent::ConnectedToClient - {}", peer_addr)
+                write!(formatter, "ClientEvent::Connected: {}", peer_addr)
             }
-            Self::ConnectionFailure { peer_addr } => write!(
-                formatter,
-                "ClientEvent::ConnectionFailure: {}",
-                peer_addr
-            ),
-            Self::NewMessage { peer_addr, .. } => write!(
-                formatter,
-                "ClientEvent::NewMessage: {}",
-                peer_addr
-            ),
+            Self::ConnectionFailure { peer_addr } => {
+                write!(formatter, "ClientEvent::ConnectionFailure: {}", peer_addr)
+            }
+            Self::NewMessage { peer_addr, .. } => {
+                write!(formatter, "ClientEvent::NewMessage: {}", peer_addr)
+            }
             Self::UnsentUserMsg {
                 peer_addr, token, ..
             } => write!(
