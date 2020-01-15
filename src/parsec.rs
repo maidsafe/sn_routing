@@ -119,7 +119,6 @@ impl ParsecMap {
         pub_id: id::PublicId,
         log_ident: &LogIdent,
     ) -> (Option<DirectMessage>, bool) {
-        trace!("{} handle_request from {:?}", log_ident, pub_id);
         // Increase the size before fetching the parsec to satisfy the borrow checker
         self.count_size(
             serialisation::serialised_size(&request),

@@ -15,7 +15,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::SignedRoutingMessage,
+    messages::{DirectMessage, MemberKnowledge, SignedRoutingMessage},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -130,10 +130,11 @@ pub trait Approved: Base {
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         trace!(
-            "{} - handle parsec request v{} from {}",
+            "{} - handle parsec request v{} from {} (last: v{})",
             self,
             msg_version,
-            p2p_node.public_id()
+            p2p_node.public_id(),
+            self.parsec_map().last_version(),
         );
 
         let log_ident = self.log_ident();
@@ -558,6 +559,29 @@ pub trait Approved: Base {
                 self.chain().get_their_keys_info().format(", ")
             );
             Err(RoutingError::UntrustedMessage)
+        }
+    }
+
+    fn send_member_knowledge(&mut self) {
+        let recipients = self
+            .chain()
+            .our_info()
+            .member_nodes()
+            .filter(|node| node.public_id() != self.id())
+            .cloned()
+            .collect_vec();
+        let payload = MemberKnowledge {
+            elders_version: self.chain().our_info().version(),
+            parsec_version: self.parsec_map().last_version(),
+        };
+
+        trace!("{} - Send {:?} to {:?}", self, payload, recipients);
+
+        for recipient in recipients {
+            self.send_direct_message(
+                recipient.connection_info(),
+                DirectMessage::MemberKnowledge(payload),
+            )
         }
     }
 }

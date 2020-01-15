@@ -24,8 +24,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MemberKnowledge, MessageContent,
-        SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, MessageContent, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -51,8 +50,8 @@ use std::{
     net::SocketAddr,
 };
 
-// Poke in a similar speed as GOSSIP_TIMEOUT
-const POKE_TIMEOUT: Duration = Duration::from_secs(2);
+// Send our knowledge in a similar speed as GOSSIP_TIMEOUT
+const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -79,7 +78,7 @@ pub struct Adult {
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
-    parsec_timer_token: u64,
+    knowledge_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
     rng: MainRng,
@@ -92,7 +91,7 @@ impl Adult {
         _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
-        let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
+        let knowledge_timer_token = details.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         let parsec_map = parsec_map.with_init(
             &mut details.rng,
@@ -119,7 +118,7 @@ impl Adult {
             parsec_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
-            parsec_timer_token,
+            knowledge_timer_token,
             rng: details.rng,
         };
 
@@ -210,7 +209,7 @@ impl Adult {
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
-        let parsec_timer_token = timer.schedule(POKE_TIMEOUT);
+        let knowledge_timer_token = timer.schedule(KNOWLEDGE_TIMEOUT);
 
         Self {
             chain: state.chain,
@@ -222,7 +221,7 @@ impl Adult {
             direct_msg_backlog: state.direct_msg_backlog,
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
-            parsec_timer_token,
+            knowledge_timer_token,
             routing_msg_filter: state.routing_msg_filter,
             timer,
             rng: rng::new(),
@@ -240,30 +239,6 @@ impl Adult {
     ) -> Result<(), RoutingError> {
         self.add_message_to_backlog(msg);
         Ok(())
-    }
-
-    // Sends a `MemberKnowledge` message to our elders to update them about what we know about our
-    // own section.
-    fn send_member_knowledge(&mut self) {
-        let recipients = self
-            .gen_pfx_info
-            .latest_info
-            .member_nodes()
-            .filter(|node| node.public_id() != self.id())
-            .map(P2pNode::connection_info)
-            .cloned()
-            .collect_vec();
-        let payload = MemberKnowledge {
-            elders_version: self.gen_pfx_info.latest_info.version(),
-            parsec_version: self.gen_pfx_info.parsec_version,
-        };
-
-        debug!("{} - Send {:?} to {:?}", self, payload, recipients);
-
-        for recipient in recipients {
-            trace!("{} - Send MemberKnowledge to {:?}", self, recipient);
-            self.send_direct_message(&recipient, DirectMessage::MemberKnowledge(payload))
-        }
     }
 
     // Backlog the message to be processed once we are established.
@@ -552,10 +527,10 @@ impl Base for Adult {
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if self.parsec_timer_token == token {
+        if self.knowledge_timer_token == token {
             // TODO: send this only when the knowledge changes, not periodically.
             self.send_member_knowledge();
-            self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
+            self.knowledge_timer_token = self.timer.schedule(KNOWLEDGE_TIMEOUT);
         }
 
         Transition::Stay

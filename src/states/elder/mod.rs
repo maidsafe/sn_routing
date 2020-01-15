@@ -327,7 +327,6 @@ impl Elder {
 
         // Handle the SectionInfo event which triggered us becoming established node.
         let change = EldersChange {
-            own_removed: Default::default(),
             neighbour_added: self.chain.neighbour_elder_nodes().cloned().collect(),
             neighbour_removed: Default::default(),
         };
@@ -355,8 +354,13 @@ impl Elder {
     }
 
     fn handle_member_knowledge(&mut self, p2p_node: P2pNode, payload: MemberKnowledge) {
-        if let Some(old_knowledge) = self.members_knowledge.get_mut(p2p_node.name()) {
-            old_knowledge.update(payload)
+        trace!("{} - Received {:?} from {:?}", self, payload, p2p_node);
+
+        if self.chain.is_peer_our_active_member(p2p_node.public_id()) {
+            self.members_knowledge
+                .entry(*p2p_node.name())
+                .or_default()
+                .update(payload);
         }
 
         self.send_parsec_gossip(Some((payload.parsec_version, p2p_node)))
@@ -610,11 +614,11 @@ impl Elder {
         });
     }
 
-    // Send `GenesisUpdate` message to all non-elders except the ones in `exclude`.
-    fn send_genesis_updates(&mut self, exclude: &BTreeSet<P2pNode>) {
-        for (recipient, msg) in self.create_genesis_updates(exclude) {
+    // Send `GenesisUpdate` message to all non-elders.
+    fn send_genesis_updates(&mut self) {
+        for (recipient, msg) in self.create_genesis_updates() {
             trace!(
-                "{} - Sending GenesisUpdate({:?}) to {}",
+                "{} - Send GenesisUpdate({:?}) to {}",
                 self,
                 self.gen_pfx_info,
                 recipient
@@ -627,14 +631,10 @@ impl Elder {
         }
     }
 
-    fn create_genesis_updates(
-        &self,
-        exclude: &BTreeSet<P2pNode>,
-    ) -> Vec<(P2pNode, SignedRoutingMessage)> {
+    fn create_genesis_updates(&self) -> Vec<(P2pNode, SignedRoutingMessage)> {
         let src = Authority::PrefixSection(*self.our_prefix());
         self.chain
             .adults_and_infants_p2p_nodes()
-            .filter(|recipient| !exclude.contains(recipient))
             .cloned()
             .filter_map(|recipient| {
                 let msg = RoutingMessage {
@@ -1327,27 +1327,6 @@ impl Elder {
 
         SignedRoutingMessage::new(msg, secret_key, pk_set, proof)
     }
-
-    // Starts tracking knowledge of recently demoted elders.
-    fn update_demoted_members_knowledge(&mut self, removed_elders: &BTreeSet<P2pNode>) {
-        // The demoted members did process the SectionInfo that demoted them, so they are aware of
-        // the latest versions.
-        let knowledge = MemberKnowledge {
-            elders_version: self.chain.our_info().version(),
-            parsec_version: self.parsec_map.last_version(),
-        };
-
-        for node in removed_elders {
-            if !self.chain.is_peer_our_member(node.public_id()) {
-                continue;
-            }
-
-            self.members_knowledge
-                .entry(*node.name())
-                .or_default()
-                .update(knowledge);
-        }
-    }
 }
 
 impl Base for Elder {
@@ -1627,11 +1606,6 @@ impl Approved for Elder {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        let _ = self
-            .members_knowledge
-            .entry(*payload.p2p_node.name())
-            .or_default();
-
         self.handle_candidate_approval(payload.p2p_node, outbox);
         self.print_rt_size();
         Ok(())
@@ -1730,7 +1704,8 @@ impl Approved for Elder {
         info!("{} - handle ParsecPrune", self);
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
-        self.send_genesis_updates(&BTreeSet::new());
+        self.send_genesis_updates();
+        self.send_member_knowledge();
         Ok(())
     }
 
@@ -1772,9 +1747,8 @@ impl Approved for Elder {
 
         self.update_peer_connections(&elders_change);
         self.send_neighbour_infos();
-
-        self.update_demoted_members_knowledge(&elders_change.own_removed);
-        self.send_genesis_updates(&elders_change.own_removed);
+        self.send_genesis_updates();
+        self.send_member_knowledge();
 
         // Vote to update our self messages proof
         self.vote_send_section_info_ack(SendAckMessagePayload {
