@@ -12,38 +12,22 @@ use maidsafe_utilities::serialisation;
 use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
-pub type Result<T> = ::std::result::Result<T, RoutingError>;
+pub type Result<T, E = RoutingError> = std::result::Result<T, E>;
 
-/// The type of errors that can occur if routing is unable to handle a send request.
-#[derive(Debug, Error, derive_more::From)]
-#[allow(missing_docs)]
-pub enum InterfaceError {
-    #[error(display = "We are not in a state to handle the action.")]
-    InvalidState,
-    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
-    MpscRecvError(mpsc::RecvError),
-}
-
-/// The type of errors that can occur during handling of routing events.
+/// Internal error.
 #[derive(Debug, Error, derive_more::From)]
 #[allow(missing_docs)]
 pub enum RoutingError {
-    #[error(display = "Invalid State.")]
-    Terminated,
     #[error(display = "Invalid requester or handler locations.")]
     BadLocation,
     #[error(display = "Failed signature check.")]
     FailedSignature,
-    #[error(display = "Duplicate request received.")]
-    FilterCheckFailed,
     #[error(display = "Cannot route.")]
     CannotRoute,
-    #[error(display = "Interface error.")]
-    Interface(InterfaceError),
     #[error(display = "Network layer error.")]
     Network(quic_p2p::Error),
-    #[error(display = "Current state is invalid for the operation.")]
-    InvalidStateForOperation,
+    #[error(display = "The node is not in a state to handle the action.")]
+    InvalidState,
     #[error(display = "Serialisation Error.")]
     SerialisationError(serialisation::SerialisationError),
     #[error(display = "Peer not found.")]
@@ -62,4 +46,6 @@ pub enum RoutingError {
     InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
+    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
+    MpscRecvError(mpsc::RecvError),
 }

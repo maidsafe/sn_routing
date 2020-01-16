@@ -9,7 +9,7 @@
 use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
     chain::{EldersInfo, NetworkParams},
-    error::{InterfaceError, RoutingError},
+    error::RoutingError,
     event::Event,
     id::{FullId, P2pNode},
     location::Location,
@@ -228,7 +228,7 @@ impl Base for BootstrappingPeer {
         _: Location<XorName>,
         _: Location<XorName>,
         _: Vec<u8>,
-    ) -> Result<(), InterfaceError> {
+    ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not bootstrapped.", self);
         // TODO: return Err here eventually. Returning Ok for now to
         // preserve the pre-refactor behaviour.

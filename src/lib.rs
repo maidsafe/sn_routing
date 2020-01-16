@@ -79,7 +79,7 @@ mod macros;
 // Public API
 // ############################################################################
 pub use self::{
-    error::{InterfaceError, RoutingError},
+    error::RoutingError,
     event::{Client, Connected, Event},
     event_stream::EventStream,
     id::{FullId, P2pNode, PublicId},

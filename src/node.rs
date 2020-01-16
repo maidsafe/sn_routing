@@ -9,7 +9,7 @@
 use crate::{
     action::Action,
     chain::NetworkParams,
-    error::{InterfaceError, RoutingError},
+    error::RoutingError,
     event_stream::{EventStepper, EventStream},
     id::{FullId, P2pNode, PublicId},
     location::Location,
@@ -88,12 +88,7 @@ impl Builder {
     }
 
     /// Creates new `Node`.
-    ///
-    /// It will automatically connect to the network in the same way a client does, but then
-    /// request a new name and integrate itself into the network using the new name.
-    ///
-    /// The initial `Node` object will have newly generated keys.
-    pub fn create(self) -> Result<(Node, mpmc::Receiver<Event>), RoutingError> {
+    pub fn create(self) -> (Node, mpmc::Receiver<Event>) {
         // start the handler for routing without a restriction to become a full node
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
         let (mut user_event_tx, user_event_rx) = mpmc::unbounded();
@@ -108,7 +103,7 @@ impl Builder {
             machine,
         };
 
-        Ok((node, user_event_rx))
+        (node, user_event_rx)
     }
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
@@ -157,8 +152,8 @@ impl Builder {
 pub struct Node {
     user_event_tx: mpmc::Sender<Event>,
     user_event_rx: mpmc::Receiver<Event>,
-    interface_result_tx: mpsc::Sender<Result<(), InterfaceError>>,
-    interface_result_rx: mpsc::Receiver<Result<(), InterfaceError>>,
+    interface_result_tx: mpsc::Sender<Result<(), RoutingError>>,
+    interface_result_rx: mpsc::Receiver<Result<(), RoutingError>>,
     machine: StateMachine,
 }
 
@@ -225,7 +220,10 @@ impl Node {
 
     /// Returns the `PublicId` of this node.
     pub fn id(&self) -> Result<PublicId, RoutingError> {
-        self.machine.current().id().ok_or(RoutingError::Terminated)
+        self.machine
+            .current()
+            .id()
+            .ok_or(RoutingError::InvalidState)
     }
 
     /// Vote for a custom event.
@@ -244,7 +242,7 @@ impl Node {
         src: Location<XorName>,
         dst: Location<XorName>,
         content: Vec<u8>,
-    ) -> Result<(), InterfaceError> {
+    ) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
@@ -264,7 +262,7 @@ impl Node {
         peer_addr: SocketAddr,
         msg: Bytes,
         token: Token,
-    ) -> Result<(), InterfaceError> {
+    ) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
@@ -279,7 +277,7 @@ impl Node {
     }
 
     /// Disconnect form a client peer.
-    pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), InterfaceError> {
+    pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
@@ -291,7 +289,7 @@ impl Node {
         self.perform_action(action)
     }
 
-    fn perform_action(&mut self, action: Action) -> Result<(), InterfaceError> {
+    fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
         let transition = self
             .machine
             .current_mut()

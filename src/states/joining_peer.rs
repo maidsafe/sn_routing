@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
-    error::{InterfaceError, RoutingError},
+    error::RoutingError,
     event::{Connected, Event},
     id::{FullId, P2pNode},
     location::Location,
@@ -232,7 +232,7 @@ impl Base for JoiningPeer {
         _: Location<XorName>,
         _: Location<XorName>,
         _: Vec<u8>,
-    ) -> Result<(), InterfaceError> {
+    ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not joined.", self);
         // TODO: return Err here eventually. Returning Ok for now to
         // preserve the pre-refactor behaviour.

@@ -8,7 +8,7 @@
 
 use crate::{
     action::Action,
-    error::{InterfaceError, RoutingError},
+    error::RoutingError,
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
@@ -111,9 +111,9 @@ pub trait Base: Display {
         _src: Location<XorName>,
         _dst: Location<XorName>,
         _content: Vec<u8>,
-    ) -> Result<(), InterfaceError> {
+    ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);
-        Err(InterfaceError::InvalidState)
+        Err(RoutingError::InvalidState)
     }
 
     fn handle_timeout(&mut self, _token: u64, _outbox: &mut dyn EventBox) -> Transition {
@@ -252,7 +252,6 @@ pub trait Base: Display {
 
         match result {
             Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
             Err(err) => {
                 debug!("{} - {:?}", self, err);
                 Transition::Stay

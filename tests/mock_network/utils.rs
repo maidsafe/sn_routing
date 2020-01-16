@@ -168,11 +168,11 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let (inner, _node_rx) = unwrap!(self
+        let (inner, _node_rx) = self
             .inner
             .network_cfg(self.env.network_cfg())
             .rng(&mut self.env.new_rng())
-            .create());
+            .create();
 
         TestNode {
             inner,

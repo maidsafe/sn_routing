@@ -9,7 +9,7 @@
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo},
-    error::{InterfaceError, RoutingError},
+    error::RoutingError,
     id::{P2pNode, PublicId},
     network_service::{NetworkBuilder, NetworkService},
     outbox::EventBox,
@@ -145,7 +145,7 @@ impl State {
             Self::Elder(ref state) => Ok(state.our_prefix().matches(name)),
             Self::Adult(ref state) => Ok(state.our_prefix().matches(name)),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
-                Err((InterfaceError::InvalidState).into())
+                Err(RoutingError::InvalidState)
             }
         }
     }
@@ -158,7 +158,7 @@ impl State {
             Self::Elder(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
             Self::Adult(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
-                Err(RoutingError::InvalidStateForOperation)
+                Err(RoutingError::InvalidState)
             }
         }
     }
@@ -167,7 +167,7 @@ impl State {
         state_dispatch!(
             self,
             state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
-            Terminated => Err(RoutingError::InvalidStateForOperation)
+            Terminated => Err(RoutingError::InvalidState)
         )
     }
 
@@ -379,9 +379,9 @@ impl StateMachine {
         info!("{} - Pause", self.current());
 
         let mut paused_state = match self.state {
-            State::Elder(state) => state.pause()?,
-            State::Adult(state) => state.pause()?,
-            _ => return Err(RoutingError::InvalidStateForOperation),
+            State::Elder(state) => state.pause(),
+            State::Adult(state) => state.pause(),
+            _ => return Err(RoutingError::InvalidState),
         };
 
         paused_state.network_rx = Some(self.network_rx);

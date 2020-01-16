@@ -192,8 +192,8 @@ impl Adult {
         Elder::from_adult(details, old_pfx, outbox).map(State::Elder)
     }
 
-    pub fn pause(self) -> Result<PausedState, RoutingError> {
-        Ok(PausedState {
+    pub fn pause(self) -> PausedState {
+        PausedState {
             chain: self.chain,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
@@ -205,7 +205,7 @@ impl Adult {
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
-        })
+        }
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
