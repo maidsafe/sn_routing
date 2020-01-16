@@ -24,8 +24,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithSerializedMessage, MessageContent,
-        SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -328,7 +327,7 @@ impl Adult {
     // Send signed_msg to our elders so they can route it properly.
     fn send_signed_message_to_elders(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
     ) -> Result<(), RoutingError> {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
@@ -349,7 +348,8 @@ impl Adult {
             .map(|node| node.connection_info().clone())
             .collect();
 
-        self.send_message_to_targets(&targets, targets.len(), msg.serialized_message());
+        let cheap_bytes_clone = msg.full_message_bytes().clone();
+        self.send_message_to_targets(&targets, targets.len(), cheap_bytes_clone);
 
         // we've seen this message - don't handle it again if someone else sends it to us
         let _ = self.routing_msg_filter.filter_incoming(&msg);
@@ -372,7 +372,7 @@ impl Adult {
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
-            let signed_msg = HopMessageWithSerializedMessage::new(signed_msg)?;
+            let signed_msg = HopMessageWithBytes::new(signed_msg)?;
             self.handle_signed_message(signed_msg)
         } else {
             Ok(Transition::Stay)
@@ -383,7 +383,7 @@ impl Adult {
     // to the rest of our section when destination is targeting multiple; if not, forward it.
     fn handle_signed_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
     ) -> Result<Transition, RoutingError> {
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
@@ -399,7 +399,7 @@ impl Adult {
 
     fn handle_filtered_signed_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
     ) -> Result<Transition, RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
@@ -602,7 +602,7 @@ impl Base for Adult {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         self.handle_signed_message(msg)

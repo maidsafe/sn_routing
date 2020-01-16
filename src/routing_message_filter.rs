@@ -6,9 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    crypto, id::PublicId, message_filter::MessageFilter, messages::HopMessageWithSerializedMessage,
-};
+use crate::{crypto, id::PublicId, message_filter::MessageFilter, messages::HopMessageWithBytes};
 use bytes::Bytes;
 use lru_time_cache::LruCache;
 use std::time::Duration;
@@ -54,8 +52,8 @@ impl RoutingMessageFilter {
     }
 
     // Filter incoming `RoutingMessage`. Return whether this specific message has already been seen.
-    pub fn filter_incoming(&mut self, msg: &HopMessageWithSerializedMessage) -> FilteringResult {
-        let hash = hash(&msg.serialized_message());
+    pub fn filter_incoming(&mut self, msg: &HopMessageWithBytes) -> FilteringResult {
+        let hash = hash(msg.full_message_bytes());
 
         if self.incoming.insert(&hash) > 1 {
             FilteringResult::KnownMessage
@@ -70,10 +68,10 @@ impl RoutingMessageFilter {
     // Return `KnownMessage` also if hashing the message fails - that can be handled elsewhere.
     pub fn filter_outgoing(
         &mut self,
-        msg: &HopMessageWithSerializedMessage,
+        msg: &HopMessageWithBytes,
         pub_id: &PublicId,
     ) -> FilteringResult {
-        let hash = hash(&msg.serialized_message());
+        let hash = hash(msg.full_message_bytes());
 
         if self.outgoing.insert((hash, *pub_id), ()).is_some() {
             FilteringResult::KnownMessage

@@ -45,16 +45,16 @@ pub enum Message {
 
 #[allow(clippy::large_enum_variant)]
 pub enum MessageWithBytes {
-    Hop(HopMessageWithSerializedMessage),
+    Hop(HopMessageWithBytes),
     Direct(SignedDirectMessage, Bytes),
 }
 
 impl MessageWithBytes {
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {
         match from_network_bytes(&bytes)? {
-            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithSerializedMessage {
+            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes {
                 content: msg.content,
-                serialized_message: bytes,
+                full_message_bytes: bytes,
             })),
             Message::Direct(msg) => Ok(Self::Direct(msg, bytes)),
         }
@@ -80,19 +80,19 @@ impl HopMessage {
 }
 
 #[derive(Eq, PartialEq, Clone)]
-pub struct HopMessageWithSerializedMessage {
+pub struct HopMessageWithBytes {
     /// Wrapped signed message.
     content: SignedRoutingMessage,
     /// Serialized Message as received or sent to quic_p2p.
-    serialized_message: Bytes,
+    full_message_bytes: Bytes,
 }
 
-impl HopMessageWithSerializedMessage {
+impl HopMessageWithBytes {
     /// Serialize message and keep both SignedRoutingMessage and Bytes.
     pub fn new(content: SignedRoutingMessage) -> Result<Self> {
         let hop_msg = HopMessage::new(content)?;
         let message = Message::Hop(hop_msg);
-        let serialized_message = to_network_bytes(&message)?;
+        let full_message_bytes = to_network_bytes(&message)?;
 
         let content = if let Message::Hop(hop_msg) = message {
             hop_msg.content
@@ -102,7 +102,7 @@ impl HopMessageWithSerializedMessage {
 
         Ok(Self {
             content,
-            serialized_message,
+            full_message_bytes,
         })
     }
 
@@ -118,9 +118,8 @@ impl HopMessageWithSerializedMessage {
         self.content.routing_message()
     }
 
-    pub fn serialized_message(&self) -> Bytes {
-        // Bytes is backed by Rc so clone is cheap and result in the same memory held.
-        self.serialized_message.clone()
+    pub fn full_message_bytes(&self) -> &Bytes {
+        &self.full_message_bytes
     }
 
     pub fn message_dst(&self) -> &Location<XorName> {

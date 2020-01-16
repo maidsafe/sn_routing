@@ -12,8 +12,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        DirectMessage, HopMessageWithSerializedMessage, Message, MessageWithBytes,
-        SignedDirectMessage, SignedRoutingMessage,
+        DirectMessage, HopMessageWithBytes, Message, MessageWithBytes, SignedDirectMessage,
+        SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -63,7 +63,7 @@ pub trait Base: Display {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 

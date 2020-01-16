@@ -26,8 +26,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithSerializedMessage, JoinRequest,
-        MemberKnowledge, MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MemberKnowledge,
+        MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -558,7 +558,7 @@ impl Elder {
     // them but possibly did not receive them already.
     fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
         for (_, msg) in mem::replace(&mut self.pending_voted_msgs, Default::default()) {
-            let msg = match HopMessageWithSerializedMessage::new(msg) {
+            let msg = match HopMessageWithBytes::new(msg) {
                 Ok(msg) => msg,
                 Err(err) => {
                     error!("Failed to make message {:?}", err);
@@ -683,7 +683,7 @@ impl Elder {
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
-            let signed_msg = HopMessageWithSerializedMessage::new(signed_msg)?;
+            let signed_msg = HopMessageWithBytes::new(signed_msg)?;
             self.handle_signed_message(signed_msg)?;
         }
         Ok(())
@@ -691,10 +691,7 @@ impl Elder {
 
     // If the message is for us, verify it then, handle the enclosed routing message and swarm it
     // to the rest of our section when destination is targeting multiple; if not, forward it.
-    fn handle_signed_message(
-        &mut self,
-        msg: HopMessageWithSerializedMessage,
-    ) -> Result<(), RoutingError> {
+    fn handle_signed_message(&mut self, msg: HopMessageWithBytes) -> Result<(), RoutingError> {
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
@@ -709,7 +706,7 @@ impl Elder {
 
     fn handle_filtered_signed_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
     ) -> Result<(), RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
@@ -1167,7 +1164,7 @@ impl Elder {
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
             let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
-            let msg = HopMessageWithSerializedMessage::new(msg)?;
+            let msg = HopMessageWithBytes::new(msg)?;
             if self.in_location(&msg.routing_message().dst) {
                 self.handle_signed_message(msg)?;
             } else {
@@ -1184,7 +1181,7 @@ impl Elder {
         ) {
             if target == *self.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
-                    let msg = HopMessageWithSerializedMessage::new(msg)?;
+                    let msg = HopMessageWithBytes::new(msg)?;
                     if self.in_location(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
@@ -1218,10 +1215,7 @@ impl Elder {
 
     // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
     // we are the first sender or the proxy for a client or joining node.
-    fn send_signed_message(
-        &mut self,
-        msg: &HopMessageWithSerializedMessage,
-    ) -> Result<(), RoutingError> {
+    fn send_signed_message(&mut self, msg: &HopMessageWithBytes) -> Result<(), RoutingError> {
         let dst = msg.message_dst();
 
         // If the message is to a single node and we have the connection info for this node, don't
@@ -1255,7 +1249,8 @@ impl Elder {
             .map(|node| node.connection_info().clone())
             .collect();
 
-        self.send_message_to_targets(&targets, dg_size, msg.serialized_message());
+        let cheap_bytes_clone = msg.full_message_bytes().clone();
+        self.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
 
         // we've seen this message - don't handle it again if someone else sends it to us
         let _ = self.routing_msg_filter.filter_incoming(msg);
@@ -1521,7 +1516,7 @@ impl Base for Elder {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         self.handle_signed_message(msg)?;

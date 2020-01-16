@@ -13,7 +13,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode},
     location::Location,
-    messages::{BootstrapResponse, DirectMessage, HopMessageWithSerializedMessage},
+    messages::{BootstrapResponse, DirectMessage, HopMessageWithBytes},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -321,7 +321,7 @@ impl Base for BootstrappingPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         trace!(

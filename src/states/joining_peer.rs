@@ -18,8 +18,8 @@ use crate::{
     id::{FullId, P2pNode},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithSerializedMessage, JoinRequest,
-        MessageContent, RoutingMessage, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MessageContent,
+        RoutingMessage, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -298,7 +298,7 @@ impl Base for JoiningPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithSerializedMessage,
+        msg: HopMessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
