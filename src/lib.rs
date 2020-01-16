@@ -109,7 +109,7 @@ pub use self::{
         section_proof_chain_from_elders_info, NetworkParams, SectionKeyShare, MIN_AGE,
     },
     location::Location,
-    messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    messages::{Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
     xor_space::Xorable,

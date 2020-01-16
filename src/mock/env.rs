@@ -162,7 +162,7 @@ mod tests {
     use crate::{
         id::FullId,
         messages::{
-            DirectMessage, HopMessage, MemberKnowledge, Message, MessageContent, RoutingMessage,
+            DirectMessage, MemberKnowledge, Message, MessageContent, RoutingMessage,
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
@@ -231,7 +231,6 @@ mod tests {
             ]),
         };
         let msg = SignedRoutingMessage::insecure(msg);
-        let msg = unwrap!(HopMessage::new(msg));
         let msg = Message::Hop(msg);
         assert!(!is_periodic_message(&Bytes::from(serialise(&msg))));
     }

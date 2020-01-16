@@ -9,7 +9,7 @@
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
-    section_proof_chain_from_elders_info, ConnectionInfo, FullId, HopMessage, Location, Message,
+    section_proof_chain_from_elders_info, ConnectionInfo, FullId, Location, Message,
     MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare,
     SignedRoutingMessage, XorName,
 };
@@ -98,7 +98,7 @@ fn message_with_invalid_security(fail_type: FailType) {
             proof
         ));
         signed_msg.combine_signatures();
-        Message::Hop(unwrap!(HopMessage::new(signed_msg)))
+        Message::Hop(signed_msg)
     };
 
     // Act/Assert:
