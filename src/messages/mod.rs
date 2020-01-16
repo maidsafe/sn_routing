@@ -109,8 +109,9 @@ impl HopMessageWithSerializedMessage {
         self.content
     }
 
-    pub fn serialized_message(&self) -> &Bytes {
-        &self.serialized_message
+    pub fn serialized_message(&self) -> Bytes {
+        // Bytes is backed by Rc so clone is cheap and result in the same memory held.
+        self.serialized_message.clone()
     }
 
     pub fn message_dst(&self) -> &Location<XorName> {

@@ -303,11 +303,7 @@ impl Base for JoiningPeer {
     ) -> Result<Transition, RoutingError> {
         let signed_message = msg.signed_routing_message();
 
-        if !self
-            .routing_msg_filter
-            .filter_incoming(signed_message.routing_message())
-            .is_new()
-        {
+        if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,

@@ -344,18 +344,16 @@ impl Adult {
             .our_elders()
             .filter(|p2p_node| {
                 routing_msg_filter
-                    .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
+                    .filter_outgoing(&msg, p2p_node.public_id())
                     .is_new()
             })
             .map(|node| node.connection_info().clone())
             .collect();
 
-        self.send_message_to_targets(&targets, targets.len(), msg.serialized_message().clone());
+        self.send_message_to_targets(&targets, targets.len(), msg.serialized_message());
 
         // we've seen this message - don't handle it again if someone else sends it to us
-        let _ = self
-            .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message());
+        let _ = self.routing_msg_filter.filter_incoming(&msg);
 
         Ok(())
     }
@@ -389,11 +387,7 @@ impl Adult {
         msg: HopMessageWithSerializedMessage,
     ) -> Result<Transition, RoutingError> {
         let signed_msg = msg.signed_routing_message();
-        if !self
-            .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message())
-            .is_new()
-        {
+        if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,

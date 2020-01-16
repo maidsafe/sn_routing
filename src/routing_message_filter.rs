@@ -6,11 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto, id::PublicId, message_filter::MessageFilter, messages::RoutingMessage};
+use crate::{
+    crypto, id::PublicId, message_filter::MessageFilter, messages::HopMessageWithSerializedMessage,
+};
+use bytes::Bytes;
 use lru_time_cache::LruCache;
-use maidsafe_utilities::serialisation::serialise;
-use serde::Serialize;
-use std::{fmt::Debug, time::Duration};
+use std::time::Duration;
 
 type Digest = [u8; 32];
 
@@ -53,11 +54,9 @@ impl RoutingMessageFilter {
     }
 
     // Filter incoming `RoutingMessage`. Return whether this specific message has already been seen.
-    pub fn filter_incoming(&mut self, msg: &RoutingMessage) -> FilteringResult {
-        let hash = match hash(msg) {
-            Some(hash) => hash,
-            None => return FilteringResult::NewMessage,
-        };
+    pub fn filter_incoming(&mut self, msg: &HopMessageWithSerializedMessage) -> FilteringResult {
+        let hash = hash(&msg.serialized_message());
+
         if self.incoming.insert(&hash) > 1 {
             FilteringResult::KnownMessage
         } else {
@@ -69,14 +68,18 @@ impl RoutingMessageFilter {
     // (and thus should not be sent, due to deduplication).
     //
     // Return `KnownMessage` also if hashing the message fails - that can be handled elsewhere.
-    pub fn filter_outgoing(&mut self, msg: &RoutingMessage, pub_id: &PublicId) -> FilteringResult {
-        hash(msg).map_or(FilteringResult::KnownMessage, |hash| {
-            if self.outgoing.insert((hash, *pub_id), ()).is_some() {
-                FilteringResult::KnownMessage
-            } else {
-                FilteringResult::NewMessage
-            }
-        })
+    pub fn filter_outgoing(
+        &mut self,
+        msg: &HopMessageWithSerializedMessage,
+        pub_id: &PublicId,
+    ) -> FilteringResult {
+        let hash = hash(&msg.serialized_message());
+
+        if self.outgoing.insert((hash, *pub_id), ()).is_some() {
+            FilteringResult::KnownMessage
+        } else {
+            FilteringResult::NewMessage
+        }
     }
 }
 
@@ -86,11 +89,6 @@ impl Default for RoutingMessageFilter {
     }
 }
 
-fn hash<T: Serialize + Debug>(msg: &T) -> Option<Digest> {
-    if let Ok(msg_bytes) = serialise(msg) {
-        Some(crypto::sha3_256(&msg_bytes))
-    } else {
-        trace!("Tried to filter oversized routing message: {:?}", msg);
-        None
-    }
+fn hash(msg_bytes: &Bytes) -> Digest {
+    crypto::sha3_256(msg_bytes)
 }
