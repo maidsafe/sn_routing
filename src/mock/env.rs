@@ -59,7 +59,7 @@ impl Environment {
         network.set_message_sent_hook({
             let message_sent = Rc::clone(&message_sent);
             move |content| {
-                if !is_parsec_gossip(content) {
+                if !is_periodic_message(content) {
                     message_sent.set(true)
                 }
             }
@@ -139,9 +139,9 @@ impl DerefMut for Environment {
     }
 }
 
-// Serialised parsec gossip messages start with these bytes.
-const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
-    // ParsecPoke
+// Periodically sent messages start with these bytes when serialised.
+const PERIODIC_MSG_TAGS: &[&[u8]] = &[
+    // MemberKnowledge
     &[0, 0, 0, 0, 5, 0, 0, 0],
     // ParsecRequest
     &[0, 0, 0, 0, 6, 0, 0, 0],
@@ -149,9 +149,11 @@ const PARSEC_GOSSIP_MSG_TAGS: &[&[u8]] = &[
     &[0, 0, 0, 0, 7, 0, 0, 0],
 ];
 
-// Returns `true` if this message contains a Parsec request or response.
-fn is_parsec_gossip(content: &Bytes) -> bool {
-    content.len() >= 8 && PARSEC_GOSSIP_MSG_TAGS.contains(&&content[..8])
+// Returns `true` if this message is sent periodically (on timer tick).
+// Sending a periodic message doesn't set the `messages_sent` flag which is a hack/workaround to
+// avoid infinite poll loop.
+fn is_periodic_message(content: &Bytes) -> bool {
+    content.len() >= 8 && PERIODIC_MSG_TAGS.contains(&&content[..8])
 }
 
 #[cfg(test)]
@@ -160,7 +162,7 @@ mod tests {
     use crate::{
         id::FullId,
         messages::{
-            DirectMessage, HopMessage, Message, MessageContent, RoutingMessage,
+            DirectMessage, HopMessage, MemberKnowledge, Message, MessageContent, RoutingMessage,
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
@@ -171,7 +173,7 @@ mod tests {
     use serde::Serialize;
 
     #[test]
-    fn message_is_parsec_gossip() {
+    fn message_is_periodic() {
         let mut rng = rng::new();
         let full_id = FullId::gen(&mut rng);
 
@@ -198,12 +200,15 @@ mod tests {
         let (req, rsp) = (Request::new(), Response::new());
 
         let msgs = [
-            make_message(DirectMessage::ParsecPoke(23)),
+            make_message(DirectMessage::MemberKnowledge(MemberKnowledge {
+                elders_version: 23,
+                parsec_version: 24,
+            })),
             make_message(DirectMessage::ParsecRequest(42, req)),
             make_message(DirectMessage::ParsecResponse(1337, rsp)),
         ];
         for msg in &msgs {
-            assert!(is_parsec_gossip(&Bytes::from(serialise(msg))));
+            assert!(is_periodic_message(&Bytes::from(serialise(msg))));
         }
 
         // No other direct message types contain a Parsec request or response.
@@ -212,7 +217,7 @@ mod tests {
             make_message(DirectMessage::ConnectionResponse),
         ];
         for msg in &msgs {
-            assert!(!is_parsec_gossip(&Bytes::from(serialise(msg))));
+            assert!(!is_periodic_message(&Bytes::from(serialise(msg))));
         }
 
         // A hop message never contains a Parsec message.
@@ -228,6 +233,6 @@ mod tests {
         let msg = SignedRoutingMessage::insecure(msg);
         let msg = unwrap!(HopMessage::new(msg));
         let msg = Message::Hop(msg);
-        assert!(!is_parsec_gossip(&Bytes::from(serialise(&msg))));
+        assert!(!is_periodic_message(&Bytes::from(serialise(&msg))));
     }
 }

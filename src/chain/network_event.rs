@@ -238,8 +238,8 @@ impl Debug for AccumulatedEvent {
 // Change to section elders.
 #[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EldersChange {
-    // Peers that became elders.
+    // Neighbour peers that became elders.
     pub neighbour_added: BTreeSet<P2pNode>,
-    // Peers that ceased to be elders.
+    // Neighbour peers that ceased to be elders.
     pub neighbour_removed: BTreeSet<P2pNode>,
 }

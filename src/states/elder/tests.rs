@@ -13,18 +13,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::*;
+use super::{super::test_utils, *};
 use crate::{
-    chain::SectionKeyInfo,
+    chain::{SectionKeyInfo, SectionProofChain},
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
-    mock::Environment,
-    network_service::NetworkService,
-    outbox::EventBox,
     rng::{self, MainRng},
-    state_machine::{State, StateMachine, Transition},
-    unwrap, NetworkConfig, NetworkParams, ELDER_SIZE,
+    state_machine::Transition,
+    unwrap, utils, ELDER_SIZE,
 };
+use mock_quic_p2p::Network;
 use std::{iter, net::SocketAddr};
 
 // Minimal number of votes to reach accumulation.
@@ -40,7 +38,7 @@ struct DkgToSectionInfo {
     participants: BTreeSet<PublicId>,
     new_pk_set: bls::PublicKeySet,
     new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
-    new_elder_info: EldersInfo,
+    new_elders_info: EldersInfo,
 }
 
 impl JoiningNodeInfo {
@@ -62,8 +60,8 @@ impl JoiningNodeInfo {
 
 struct ElderUnderTest {
     pub rng: MainRng,
-    pub machine: StateMachine,
-    pub full_id: (FullId, bls::SecretKeyShare),
+    pub network: Network,
+    pub elder: Elder,
     pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
@@ -72,64 +70,29 @@ struct ElderUnderTest {
 impl ElderUnderTest {
     fn new(sec_size: usize) -> Self {
         let mut rng = rng::new();
-        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
-        let connection_info = ConnectionInfo::from(socket_addr);
-        let full_ids: BTreeMap<_, _> = (0..sec_size)
-            .map(|_| {
-                let id = FullId::gen(&mut rng);
-                (*id.public_id().name(), id)
-            })
-            .collect();
+        let network = Network::new();
 
-        let prefix = Prefix::<XorName>::default();
-        let elders_info = unwrap!(EldersInfo::new(
-            full_ids
-                .iter()
-                .map(|(name, id)| (
-                    *name,
-                    P2pNode::new(*id.public_id(), connection_info.clone())
-                ))
-                .collect(),
-            prefix,
-            iter::empty()
-        ));
-        let first_ages = full_ids
-            .values()
-            .map(|id| (*id.public_id(), MIN_AGE_COUNTER))
-            .collect();
-
+        let (elders_info, full_ids) =
+            test_utils::create_elders_info(&mut rng, &network, sec_size, None);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
-        let gen_pfx_info = GenesisPfxInfo {
-            first_info: elders_info.clone(),
-            first_bls_keys: secret_key_set.public_keys(),
-            first_state_serialized: Vec::new(),
-            first_ages,
-            latest_info: EldersInfo::default(),
-            parsec_version: 0,
-        };
+        let gen_pfx_info =
+            test_utils::create_gen_pfx_info(elders_info.clone(), secret_key_set.public_keys(), 0);
 
-        let full_and_bls_ids = full_ids
-            .values()
+        let mut full_and_bls_ids = full_ids
+            .into_iter()
             .enumerate()
-            .map(|(idx, full_id)| (full_id.clone(), secret_key_set.secret_key_share(idx)))
+            .map(|(idx, (_, full_id))| (full_id, secret_key_set.secret_key_share(idx)))
             .collect_vec();
 
-        let full_id = full_and_bls_ids[0].clone();
-        let machine =
-            make_state_machine(&mut rng, (&full_id.0, &full_id.1), &gen_pfx_info, &mut ());
-
-        let other_ids = full_and_bls_ids[1..].iter().cloned().collect_vec();
-
-        let candidate_addr: SocketAddr = unwrap!("127.0.0.2:9999".parse());
-        let candidate = P2pNode::new(
-            *FullId::gen(&mut rng).public_id(),
-            ConnectionInfo::from(candidate_addr),
-        );
+        let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
+        let other_ids = full_and_bls_ids;
+        let elder = new_elder_state(&mut rng, &network, full_id, secret_key_share, gen_pfx_info);
+        let candidate = gen_p2p_node(&mut rng, &network);
 
         let mut elder_test = Self {
             rng,
-            machine,
-            full_id,
+            network,
+            elder,
             other_ids,
             elders_info,
             candidate,
@@ -141,12 +104,10 @@ impl ElderUnderTest {
         elder_test
     }
 
-    fn elder_state(&self) -> &Elder {
-        unwrap!(self.machine.current().elder_state())
-    }
-
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        assert!(count <= self.other_ids.len());
+
+        let parsec = self.elder.parsec_map_mut();
         for event in events {
             self.other_ids
                 .iter()
@@ -172,7 +133,7 @@ impl ElderUnderTest {
     }
 
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let parsec = self.elder.parsec_map_mut();
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
         for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
@@ -190,7 +151,7 @@ impl ElderUnderTest {
         let other_pub_id = *self.other_ids[0].0.public_id();
         let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
         let connection_info = ConnectionInfo::from(addr);
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+        let parsec = self.elder.parsec_map_mut();
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
         let message = DirectMessage::ParsecRequest(parsec_version, request);
@@ -216,9 +177,9 @@ impl ElderUnderTest {
         );
     }
 
-    fn updated_other_ids(&mut self, new_elder_info: EldersInfo) -> DkgToSectionInfo {
-        let participants: BTreeSet<_> = new_elder_info.member_ids().copied().collect();
-        let parsec = unwrap!(self.machine.current_mut().elder_state_mut()).parsec_map_mut();
+    fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
+        let participants: BTreeSet<_> = new_elders_info.member_ids().copied().collect();
+        let parsec = self.elder.parsec_map_mut();
 
         let dkg_results = self
             .other_ids
@@ -240,19 +201,19 @@ impl ElderUnderTest {
             participants,
             new_pk_set,
             new_other_ids,
-            new_elder_info,
+            new_elders_info,
         }
     }
 
     fn accumulate_section_info_if_vote(&mut self, new_info: &DkgToSectionInfo) {
         let section_key_info = SectionKeyInfo::from_elders_info(
-            &new_info.new_elder_info,
+            &new_info.new_elders_info,
             new_info.new_pk_set.public_key(),
         );
         let _ = self.n_vote_for_gossipped(
             NOT_ACCUMULATE_ALONE_VOTE_COUNT,
             iter::once(AccumulatingEvent::SectionInfo(
-                new_info.new_elder_info.clone(),
+                new_info.new_elders_info.clone(),
                 section_key_info,
             )),
         );
@@ -275,6 +236,19 @@ impl ElderUnderTest {
             ACCUMULATE_VOTE_COUNT,
             iter::once(AccumulatingEvent::StartDkg(info.participants.clone())),
         );
+    }
+
+    // Accumulate `AckMessage` for the latest version of our own section.
+    fn accumulate_self_ack_message(&mut self) {
+        let event = AccumulatingEvent::AckMessage(AckMessagePayload {
+            dst_name: self.elders_info.prefix().name(),
+            src_prefix: *self.elders_info.prefix(),
+            ack_version: self.elders_info.version(),
+        });
+
+        // This event needs total consensus.
+        self.elder.vote_for_event(event.clone());
+        let _ = self.n_vote_for_gossipped(self.other_ids.len(), iter::once(event));
     }
 
     fn new_elders_info_with_candidate(&mut self) -> DkgToSectionInfo {
@@ -300,42 +274,69 @@ impl ElderUnderTest {
         let old_info = self.new_elders_info_with_candidate();
         let new_elder_info = unwrap!(EldersInfo::new(
             self.elders_info.member_map().clone(),
-            *old_info.new_elder_info.prefix(),
-            Some(&old_info.new_elder_info)
+            *old_info.new_elders_info.prefix(),
+            Some(&old_info.new_elders_info)
         ));
         self.updated_other_ids(new_elder_info)
     }
 
+    // Returns the EldersInfo after an elder is dropped and an adult is promoted to take
+    // its place.
+    fn new_elders_info_after_offline_and_promote(
+        &mut self,
+        dropped_elder_id: &PublicId,
+        promoted_adult_node: P2pNode,
+    ) -> DkgToSectionInfo {
+        assert!(
+            self.other_ids
+                .iter()
+                .any(|(full_id, _)| { full_id.public_id() == dropped_elder_id }),
+            "dropped node must be one of the other elders"
+        );
+
+        let new_member_map = self
+            .elders_info
+            .member_map()
+            .iter()
+            .filter(|(_, node)| node.public_id() != dropped_elder_id)
+            .map(|(name, node)| (*name, node.clone()))
+            .chain(iter::once((
+                *promoted_adult_node.name(),
+                promoted_adult_node,
+            )))
+            .collect();
+
+        let new_elders_info = unwrap!(EldersInfo::new(
+            new_member_map,
+            *self.elders_info.prefix(),
+            Some(&self.elders_info)
+        ));
+        self.updated_other_ids(new_elders_info)
+    }
+
     fn has_unpolled_observations(&self) -> bool {
-        self.elder_state().has_unpolled_observations()
+        self.elder.has_unpolled_observations()
     }
 
     fn is_candidate_member(&self) -> bool {
-        self.elder_state()
+        self.elder
             .chain()
             .is_peer_our_member(self.candidate.public_id())
     }
 
     fn is_candidate_elder(&self) -> bool {
-        self.elder_state()
+        self.elder
             .chain()
             .is_peer_our_elder(self.candidate.public_id())
     }
 
     fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {
-        let _ = self
-            .machine
-            .elder_state_mut()
-            .handle_direct_message(msg.0, msg.1, &mut ())?;
+        let _ = self.elder.handle_direct_message(msg.0, msg.1, &mut ())?;
         Ok(())
     }
 
     fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
-        match self
-            .machine
-            .elder_state_mut()
-            .handle_connected_to(conn_info, &mut ())
-        {
+        match self.elder.handle_connected_to(conn_info, &mut ()) {
             Transition::Stay => (),
             _ => panic!("Unexpected transition"),
         }
@@ -343,88 +344,78 @@ impl ElderUnderTest {
 
     fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
         self.handle_connected_to(conn_info.clone());
-        self.machine
-            .elder_state_mut()
+        self.elder
             .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name());
     }
 
     fn is_connected(&self, peer_addr: &SocketAddr) -> bool {
-        self.machine.current().is_connected(peer_addr)
+        self.elder.peer_map().has(peer_addr)
+    }
+
+    fn gen_p2p_node(&mut self) -> P2pNode {
+        gen_p2p_node(&mut self.rng, &self.network)
+    }
+
+    // Drop an existing elder and promote an adult to take its place. Drive the whole process to
+    // completion by casting all necessary votes and letting them accumulate.
+    fn perform_offline_and_promote(
+        &mut self,
+        dropped_elder_id: &PublicId,
+        promoted_adult_node: P2pNode,
+    ) {
+        let new_info =
+            self.new_elders_info_after_offline_and_promote(dropped_elder_id, promoted_adult_node);
+
+        self.accumulate_offline(*dropped_elder_id);
+        self.accumulate_start_dkg(&new_info);
+        self.accumulate_section_info_if_vote(&new_info);
+        self.accumulate_voted_unconsensused_events();
+        self.elders_info = new_info.new_elders_info;
+        self.other_ids = new_info.new_other_ids;
+        self.accumulate_self_ack_message();
     }
 }
 
 fn new_elder_state(
-    (full_id, secret_key_share): (&FullId, &bls::SecretKeyShare),
-    gen_pfx_info: &GenesisPfxInfo,
-    network_service: NetworkService,
-    timer: Timer,
     rng: &mut MainRng,
-    outbox: &mut dyn EventBox,
-) -> State {
-    let public_id = *full_id.public_id();
-
-    let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), gen_pfx_info);
+    network: &Network,
+    full_id: FullId,
+    secret_key_share: bls::SecretKeyShare,
+    gen_pfx_info: GenesisPfxInfo,
+) -> Elder {
+    let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), &gen_pfx_info);
     let chain = Chain::new(
         Default::default(),
-        public_id,
+        *full_id.public_id(),
         gen_pfx_info.clone(),
-        Some(secret_key_share.clone()),
+        Some(secret_key_share),
     );
 
+    let prefix = *gen_pfx_info.first_info.prefix();
     let details = ElderDetails {
         chain,
-        network_service,
+        network_service: test_utils::create_network_service(network),
         event_backlog: Default::default(),
-        full_id: full_id.clone(),
-        gen_pfx_info: gen_pfx_info.clone(),
+        full_id,
+        gen_pfx_info,
         routing_msg_queue: Default::default(),
         routing_msg_backlog: Default::default(),
         direct_msg_backlog: Default::default(),
         sig_accumulator: Default::default(),
         parsec_map,
         routing_msg_filter: RoutingMessageFilter::new(),
-        timer,
+        timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
 
-    let prefix = *gen_pfx_info.first_info.prefix();
-    Elder::from_adult(details, prefix, outbox)
-        .map(State::Elder)
-        .unwrap_or(State::Terminated)
+    unwrap!(Elder::from_adult(details, prefix, &mut ()))
 }
 
-fn make_state_machine(
-    rng: &mut MainRng,
-    full_id: (&FullId, &bls::SecretKeyShare),
-    gen_pfx_info: &GenesisPfxInfo,
-    outbox: &mut dyn EventBox,
-) -> StateMachine {
-    let env = Environment::new(NetworkParams {
-        elder_size: ELDER_SIZE,
-        safe_section_size: ELDER_SIZE,
-    });
-
-    let endpoint = env.gen_addr();
-    let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
-
-    StateMachine::new(
-        move |network_service, timer, outbox2| {
-            new_elder_state(full_id, gen_pfx_info, network_service, timer, rng, outbox2)
-        },
-        config,
-        outbox,
+fn gen_p2p_node(rng: &mut MainRng, network: &Network) -> P2pNode {
+    P2pNode::new(
+        *FullId::gen(rng).public_id(),
+        ConnectionInfo::from(network.gen_addr()),
     )
-    .1
-}
-
-trait StateMachineExt {
-    fn elder_state_mut(&mut self) -> &mut Elder;
-}
-
-impl StateMachineExt for StateMachine {
-    fn elder_state_mut(&mut self) -> &mut Elder {
-        unwrap!(self.current_mut().elder_state_mut())
-    }
 }
 
 #[test]
@@ -524,4 +515,67 @@ fn accept_node_before_and_after_reaching_elder_size() {
     // Bootstrap succeeds.
     elder_test.handle_bootstrap_request(*node1.public_id(), node1.connection_info());
     assert!(elder_test.is_connected(&node1.connection_info().peer_addr));
+}
+
+#[test]
+fn send_genesis_update() {
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE);
+
+    let orig_elders_version = elder_test.elders_info.version();
+
+    let adult0 = elder_test.gen_p2p_node();
+    let adult1 = elder_test.gen_p2p_node();
+
+    elder_test.accumulate_online(adult0.clone());
+    elder_test.accumulate_online(adult1.clone());
+
+    // Remove one existing elder and promote an adult to take its place. This increments the
+    // section version.
+    let dropped_id = *elder_test.other_ids[0].0.public_id();
+    elder_test.perform_offline_and_promote(&dropped_id, adult0);
+
+    // Create `GenesisUpdate` message and check its proof contains the version the adult is at.
+    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    assert_eq!(message.0, adult1);
+
+    let proof_chain = unwrap!(message.1.proof_chain());
+    verify_proof_chain_contains(proof_chain, orig_elders_version);
+
+    // Receive MemberKnowledge from the adult
+    elder_test.elder.handle_member_knowledge(
+        adult1,
+        MemberKnowledge {
+            elders_version: elder_test.elders_info.version(),
+            parsec_version: elder_test.elder.parsec_map.last_version(),
+        },
+    );
+
+    // Create another `GenesisUpdate` and check the proof contains the updated version and does not
+    // contain the previous version.
+    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    let proof_chain = unwrap!(message.1.proof_chain());
+    verify_proof_chain_contains(proof_chain, elder_test.elders_info.version());
+    verify_proof_chain_does_not_contain(proof_chain, orig_elders_version);
+}
+
+fn verify_proof_chain_contains(proof_chain: &SectionProofChain, expected_version: u64) {
+    assert!(
+        proof_chain
+            .all_key_infos()
+            .any(|key_info| key_info.version() == expected_version),
+        "{:?} doesn't contain expected version {}",
+        proof_chain,
+        expected_version,
+    );
+}
+
+fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofChain, unexpected_version: u64) {
+    assert!(
+        proof_chain
+            .all_key_infos()
+            .all(|key_info| key_info.version() != unexpected_version),
+        "{:?} contains unexpected version {}",
+        proof_chain,
+        unexpected_version,
+    );
 }

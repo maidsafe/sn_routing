@@ -597,12 +597,16 @@ pub struct SectionKeyInfo {
 }
 
 impl SectionKeyInfo {
-    pub fn from_elders_info(info: &EldersInfo, key: bls::PublicKey) -> Self {
+    pub fn new(version: u64, prefix: Prefix<XorName>, key: bls::PublicKey) -> Self {
         Self {
-            version: info.version(),
-            prefix: *info.prefix(),
+            version,
+            prefix,
             key,
         }
+    }
+
+    pub fn from_elders_info(elders_info: &EldersInfo, key: bls::PublicKey) -> Self {
+        Self::new(elders_info.version(), *elders_info.prefix(), key)
     }
 
     pub fn key(&self) -> &bls::PublicKey {

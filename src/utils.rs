@@ -54,6 +54,25 @@ impl Display for LogIdent {
     }
 }
 
+// Test utils
+
+/// If the iterator yields exactly one element, returns it. Otherwise panics.
+#[cfg(all(test, feature = "mock"))]
+pub fn exactly_one<I>(input: I) -> I::Item
+where
+    I: IntoIterator,
+{
+    let mut input = input.into_iter();
+    let first = match input.next() {
+        Some(first) => first,
+        None => panic!("exactly one element expected, got none"),
+    };
+    if input.next().is_some() {
+        panic!("exactly one element expected, got more");
+    }
+    first
+}
+
 #[cfg(test)]
 mod tests {
     use super::DisplayDuration;

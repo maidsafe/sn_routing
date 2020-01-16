@@ -774,6 +774,15 @@ impl Chain {
         self.neighbour_infos().any(|info| info.is_member(pub_id))
     }
 
+    /// Returns whether the given peer is an active (not left) member of our section.
+    pub fn is_peer_our_active_member(&self, pub_id: &PublicId) -> bool {
+        self.state
+            .our_members
+            .get(pub_id.name())
+            .map(|info| info.state != MemberState::Left)
+            .unwrap_or(false)
+    }
+
     /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
         self.state.our_info().member_nodes()
@@ -1779,6 +1788,7 @@ impl EldersChangeBuilder {
 
     fn build(self, chain: &Chain) -> EldersChange {
         let new_neighbour: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+
         EldersChange {
             neighbour_added: new_neighbour
                 .difference(&self.old_neighbour)

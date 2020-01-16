@@ -42,8 +42,9 @@ pub enum DirectMessage {
     /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
     /// a routing message)
     ConnectionResponse,
-    /// Poke a node to send us the first gossip request
-    ParsecPoke(u64),
+    /// Sent from Adults and Infants to Elders. Updates Elders about the sender's knowledge of its
+    /// own section.
+    MemberKnowledge(MemberKnowledge),
     /// Parsec request message
     ParsecRequest(u64, parsec::Request),
     /// Parsec response message
@@ -72,11 +73,25 @@ pub struct JoinRequest {
     pub relocate_payload: Option<RelocatePayload>,
 }
 
+/// Node's knowledge about its own section.
+#[derive(Default, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
+pub struct MemberKnowledge {
+    pub elders_version: u64,
+    pub parsec_version: u64,
+}
+
+impl MemberKnowledge {
+    pub fn update(&mut self, other: MemberKnowledge) {
+        self.elders_version = self.elders_version.max(other.elders_version);
+        self.parsec_version = self.parsec_version.max(other.parsec_version);
+    }
+}
+
 impl Debug for DirectMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         use self::DirectMessage::*;
         match self {
-            MessageSignature(msg) => write!(formatter, "MessageSignature ({:?})", msg),
+            MessageSignature(msg) => write!(formatter, "MessageSignature({:?})", msg),
             BootstrapRequest(name) => write!(formatter, "BootstrapRequest({})", name),
             BootstrapResponse(response) => write!(formatter, "BootstrapResponse({:?})", response),
             JoinRequest(join_request) => write!(
@@ -91,7 +106,7 @@ impl Debug for DirectMessage {
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
-            ParsecPoke(v) => write!(formatter, "ParsecPoke({})", v),
+            MemberKnowledge(payload) => write!(formatter, "{:?}", payload),
             Relocate(payload) => write!(formatter, "Relocate({:?})", payload.content()),
         }
     }
@@ -114,7 +129,7 @@ impl Hash for DirectMessage {
             BootstrapResponse(response) => response.hash(state),
             JoinRequest(join_request) => join_request.hash(state),
             ConnectionResponse => (),
-            ParsecPoke(version) => version.hash(state),
+            MemberKnowledge(payload) => payload.hash(state),
             ParsecRequest(version, request) => {
                 version.hash(state);
                 // Fake hash via serialisation

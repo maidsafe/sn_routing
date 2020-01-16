@@ -6,6 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+#[cfg(all(test, feature = "mock_base"))]
+mod tests;
+
 use super::{
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     common::{Approved, Base},
@@ -47,8 +50,8 @@ use std::{
     net::SocketAddr,
 };
 
-// Poke in a similar speed as GOSSIP_TIMEOUT
-const POKE_TIMEOUT: Duration = Duration::from_secs(2);
+// Send our knowledge in a similar speed as GOSSIP_TIMEOUT
+const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -75,7 +78,7 @@ pub struct Adult {
     direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
-    parsec_timer_token: u64,
+    knowledge_timer_token: u64,
     routing_msg_filter: RoutingMessageFilter,
     timer: Timer,
     rng: MainRng,
@@ -88,7 +91,7 @@ impl Adult {
         _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
-        let parsec_timer_token = details.timer.schedule(POKE_TIMEOUT);
+        let knowledge_timer_token = details.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         let parsec_map = parsec_map.with_init(
             &mut details.rng,
@@ -115,7 +118,7 @@ impl Adult {
             parsec_map,
             routing_msg_filter: details.routing_msg_filter,
             timer: details.timer,
-            parsec_timer_token,
+            knowledge_timer_token,
             rng: details.rng,
         };
 
@@ -206,7 +209,7 @@ impl Adult {
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
-        let parsec_timer_token = timer.schedule(POKE_TIMEOUT);
+        let knowledge_timer_token = timer.schedule(KNOWLEDGE_TIMEOUT);
 
         Self {
             chain: state.chain,
@@ -218,7 +221,7 @@ impl Adult {
             direct_msg_backlog: state.direct_msg_backlog,
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
-            parsec_timer_token,
+            knowledge_timer_token,
             routing_msg_filter: state.routing_msg_filter,
             timer,
             rng: rng::new(),
@@ -227,53 +230,6 @@ impl Adult {
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
         self.chain.our_prefix()
-    }
-
-    fn dispatch_routing_message(
-        &mut self,
-        msg: SignedRoutingMessage,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        self.add_message_to_backlog(msg);
-        Ok(())
-    }
-
-    // Sends a `ParsecPoke` message to trigger a gossip request from current section members to us.
-    //
-    // TODO: Should restrict targets to few(counter churn-threshold)/single.
-    // Currently this can result in incoming spam of gossip history from everyone.
-    // Can also just be a single target once node-ageing makes Offline votes Opaque which should
-    // remove invalid test failures for unaccumulated parsec::Remove blocks.
-    fn send_parsec_poke(&mut self) {
-        let version = self.gen_pfx_info.parsec_version;
-        let recipients = self
-            .gen_pfx_info
-            .latest_info
-            .member_nodes()
-            .filter(|node| node.public_id() != self.id())
-            .map(P2pNode::connection_info)
-            .cloned()
-            .collect_vec();
-
-        debug!(
-            "{} Sending Parsec Poke for version {} to {:?}",
-            self, version, recipients
-        );
-
-        for recipient in recipients {
-            trace!("{} send poke to {:?}", self, recipient);
-            self.send_direct_message(&recipient, DirectMessage::ParsecPoke(version));
-        }
-    }
-
-    // Backlog the message to be processed once we are established.
-    fn add_message_to_backlog(&mut self, msg: SignedRoutingMessage) {
-        trace!(
-            "{} Not elder yet. Delaying message handling: {:?}",
-            self,
-            msg
-        );
-        self.routing_msg_backlog.push(msg)
     }
 
     fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Transition {
@@ -461,7 +417,8 @@ impl Adult {
 
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    return self.handle_genesis_update(info.clone())
+                    self.check_signed_message_trust(&signed_msg)?;
+                    return self.handle_genesis_update(info.clone());
                 }
                 _ => {
                     self.routing_msg_backlog.push(signed_msg.clone());
@@ -471,6 +428,36 @@ impl Adult {
 
         self.send_signed_message_to_elders(signed_msg)?;
         Ok(Transition::Stay)
+    }
+
+    fn handle_backlogged_filtered_signed_message(
+        &mut self,
+        signed_msg: SignedRoutingMessage,
+    ) -> Result<Transition, RoutingError> {
+        trace!(
+            "{} - Handle backlogged signed message: {:?}",
+            self,
+            signed_msg.routing_message()
+        );
+
+        match &signed_msg.routing_message().content {
+            MessageContent::GenesisUpdate(info) => {
+                if signed_msg.check_trust(&self.chain) {
+                    self.handle_genesis_update(info.clone())
+                } else {
+                    trace!("{} - Untrusted GenesisUpdate({:?}) - ignoring", self, info);
+                    Ok(Transition::Stay)
+                }
+            }
+            _ => {
+                trace!(
+                    "{} - Unhandled routing message {:?} - ignoring",
+                    self,
+                    signed_msg.routing_message()
+                );
+                Ok(Transition::Stay)
+            }
+        }
     }
 }
 
@@ -529,13 +516,8 @@ impl Base for Adult {
     fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State changed to Adult finished.", self);
 
-        for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
-            if let Err(err) = self.dispatch_routing_message(msg, outbox) {
-                debug!("{} - {:?}", self, err);
-            }
-        }
-
         let mut transition = Transition::Stay;
+
         for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
                 match self.handle_direct_message(msg, pub_id, outbox) {
@@ -547,13 +529,25 @@ impl Base for Adult {
             }
         }
 
+        for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
+            if let Transition::Stay = &transition {
+                match self.handle_backlogged_filtered_signed_message(msg) {
+                    Ok(new_transition) => transition = new_transition,
+                    Err(err) => debug!("{} - {:?}", self, err),
+                }
+            } else {
+                self.routing_msg_backlog.push(msg);
+            }
+        }
+
         transition
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if self.parsec_timer_token == token {
-            self.send_parsec_poke();
-            self.parsec_timer_token = self.timer.schedule(POKE_TIMEOUT);
+        if self.knowledge_timer_token == token {
+            // TODO: send this only when the knowledge changes, not periodically.
+            self.send_member_knowledge();
+            self.knowledge_timer_token = self.timer.schedule(KNOWLEDGE_TIMEOUT);
         }
 
         Transition::Stay
@@ -597,7 +591,7 @@ impl Base for Adult {
                 );
                 Ok(Transition::Stay)
             }
-            msg @ JoinRequest(_) | msg @ ParsecPoke(_) => {
+            msg @ JoinRequest(_) | msg @ MemberKnowledge { .. } => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
                     self,

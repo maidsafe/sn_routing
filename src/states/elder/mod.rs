@@ -26,8 +26,8 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
-        SecurityMetadata, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MemberKnowledge, MessageContent,
+        RoutingMessage, SecurityMetadata, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -121,6 +121,8 @@ pub struct Elder {
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     // Messages we received but not accumulated yet, so may need to re-swarm.
     pending_voted_msgs: BTreeMap<PendingMessageKey, SignedRoutingMessage>,
+    /// The knowledge of the non-elder members about our section.
+    members_knowledge: BTreeMap<XorName, MemberKnowledge>,
     rng: MainRng,
 }
 
@@ -279,6 +281,7 @@ impl Elder {
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
             pending_voted_msgs: Default::default(),
+            members_knowledge: Default::default(),
             rng: details.rng,
         }
     }
@@ -350,13 +353,22 @@ impl Elder {
         self.chain.our_section_bls_keys()
     }
 
-    fn handle_parsec_poke(&mut self, msg_version: u64, p2p_node: P2pNode) {
-        self.send_parsec_gossip(Some((msg_version, p2p_node)))
+    fn handle_member_knowledge(&mut self, p2p_node: P2pNode, payload: MemberKnowledge) {
+        trace!("{} - Received {:?} from {:?}", self, payload, p2p_node);
+
+        if self.chain.is_peer_our_active_member(p2p_node.public_id()) {
+            self.members_knowledge
+                .entry(*p2p_node.name())
+                .or_default()
+                .update(payload);
+        }
+
+        self.send_parsec_gossip(Some((payload.parsec_version, p2p_node)))
     }
 
     // Connect to all elders from our section or neighbour sections that we are not yet connected
     // to and disconnect from peers that are no longer elders of neighbour sections.
-    fn update_peer_connections(&mut self, change: EldersChange) {
+    fn update_peer_connections(&mut self, change: &EldersChange) {
         if !self.chain.split_in_progress() {
             let our_needed_connections: HashSet<_> = self
                 .chain
@@ -364,7 +376,7 @@ impl Elder {
                 .map(|node| *node.peer_addr())
                 .collect();
 
-            for p2p_node in change.neighbour_removed {
+            for p2p_node in &change.neighbour_removed {
                 // The peer might have been relocated from a neighbour to us - in that case do not
                 // disconnect from them.
                 if our_needed_connections.contains(p2p_node.peer_addr()) {
@@ -375,7 +387,7 @@ impl Elder {
             }
         }
 
-        for p2p_node in change.neighbour_added {
+        for p2p_node in &change.neighbour_added {
             if !self.peer_map().has(p2p_node.peer_addr()) {
                 self.establish_connection(p2p_node)
             }
@@ -391,11 +403,11 @@ impl Elder {
             .collect();
 
         for p2p_node in to_connect {
-            self.establish_connection(p2p_node)
+            self.establish_connection(&p2p_node)
         }
     }
 
-    fn establish_connection(&mut self, node: P2pNode) {
+    fn establish_connection(&mut self, node: &P2pNode) {
         self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
     }
 
@@ -602,36 +614,50 @@ impl Elder {
         });
     }
 
+    // Send `GenesisUpdate` message to all non-elders.
     fn send_genesis_updates(&mut self) {
-        let src = Authority::PrefixSection(*self.our_prefix());
-
-        let nodes: Vec<_> = self.chain.adults_and_infants_p2p_nodes().cloned().collect();
-        for node in nodes {
-            let msg = RoutingMessage {
-                src,
-                dst: Authority::Node(*node.name()),
-                content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
-            };
-            let msg = match self.to_signed_routing_message(msg) {
-                Ok(msg) => msg,
-                Err(error) => {
-                    warn!("{} - Failed to create signed message: {:?}", self, error);
-                    continue;
-                }
-            };
-
+        for (recipient, msg) in self.create_genesis_updates() {
             trace!(
-                "{} - Sending GenesisUpdate({:?}) to {}",
+                "{} - Send GenesisUpdate({:?}) to {}",
                 self,
                 self.gen_pfx_info,
-                node
+                recipient
             );
 
             self.send_direct_message(
-                node.connection_info(),
+                recipient.connection_info(),
                 DirectMessage::MessageSignature(Box::new(msg)),
             );
         }
+    }
+
+    fn create_genesis_updates(&self) -> Vec<(P2pNode, SignedRoutingMessage)> {
+        let src = Authority::PrefixSection(*self.our_prefix());
+        self.chain
+            .adults_and_infants_p2p_nodes()
+            .cloned()
+            .filter_map(|recipient| {
+                let msg = RoutingMessage {
+                    src,
+                    dst: Authority::Node(*recipient.name()),
+                    content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
+                };
+
+                let version = self
+                    .members_knowledge
+                    .get(recipient.name())
+                    .map(|knowledge| knowledge.elders_version)
+                    .unwrap_or(0);
+
+                match self.to_signed_routing_message(msg, Some(version)) {
+                    Ok(msg) => Some((recipient, msg)),
+                    Err(error) => {
+                        error!("{} - Failed to create signed message: {:?}", self, error);
+                        None
+                    }
+                }
+            })
+            .collect()
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -767,9 +793,21 @@ impl Elder {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
             }
+            (content @ GenesisUpdate(_), src, dst) => {
+                debug!(
+                    "{} Unhandled routing message {:?} from {:?} to {:?}, adding to backlog",
+                    self, content, src, dst
+                );
+                self.routing_msg_backlog
+                    .push(SignedRoutingMessage::from_parts(
+                        RoutingMessage { content, src, dst },
+                        security_metadata,
+                    ));
+                Ok(Transition::Stay)
+            }
             (content, src, dst) => {
                 debug!(
-                    "{} Unhandled routing message {:?} from {:?} to {:?}",
+                    "{} Unhandled routing message {:?} from {:?} to {:?}, ignoring",
                     self, content, src, dst
                 );
                 Err(RoutingError::BadAuthority)
@@ -1130,7 +1168,7 @@ impl Elder {
             return Ok(());
         }
 
-        let signed_msg = self.to_signed_routing_message(routing_msg)?;
+        let signed_msg = self.to_signed_routing_message(routing_msg, None)?;
 
         for target in Iterator::flatten(
             self.get_signature_targets(&signed_msg.routing_message().src)
@@ -1289,27 +1327,13 @@ impl Elder {
         }
     }
 
-    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        if msg.check_trust(&self.chain) {
-            Ok(())
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Untrusted {:?} --- [{:?}]",
-                self,
-                msg,
-                self.chain.get_their_keys_info().format(", ")
-            );
-            Err(RoutingError::UntrustedMessage)
-        }
-    }
-
     // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
     fn to_signed_routing_message(
         &self,
         msg: RoutingMessage,
+        node_knowledge_override: Option<u64>,
     ) -> Result<SignedRoutingMessage, RoutingError> {
-        let proof = self.chain.prove(&msg.dst, None);
+        let proof = self.chain.prove(&msg.dst, node_knowledge_override);
         let pk_set = self.our_section_bls_keys().clone();
         let secret_key = self.chain.our_section_bls_secret_key_share()?;
 
@@ -1469,7 +1493,7 @@ impl Base for Elder {
             BootstrapRequest(name) => self.handle_bootstrap_request(p2p_node, name),
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
             JoinRequest(join_request) => self.handle_join_request(p2p_node, *join_request),
-            ParsecPoke(version) => self.handle_parsec_poke(version, p2p_node),
+            MemberKnowledge(payload) => self.handle_member_knowledge(p2p_node, payload),
             ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, p2p_node, outbox);
             }
@@ -1601,9 +1625,10 @@ impl Approved for Elder {
 
     fn handle_member_removed(
         &mut self,
-        _pub_id: PublicId,
+        pub_id: PublicId,
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        let _ = self.members_knowledge.remove(pub_id.name());
         Ok(())
     }
 
@@ -1614,6 +1639,8 @@ impl Approved for Elder {
         node_knowledge: u64,
         _outbox: &mut dyn EventBox,
     ) {
+        let _ = self.members_knowledge.remove(details.pub_id.name());
+
         if &details.pub_id == self.id() {
             // Do not send the message to ourselves.
             return;
@@ -1663,9 +1690,10 @@ impl Approved for Elder {
         } else {
             log_or_panic!(
                 LogLevel::Error,
-                "{} DKG for an unexpected info {:?}.",
+                "{} DKG for an unexpected info {:?} (expected: {{{:?}}})",
                 self,
-                participants
+                participants,
+                self.dkg_cache.keys().format(", ")
             );
         }
         Ok(())
@@ -1689,6 +1717,7 @@ impl Approved for Elder {
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.send_genesis_updates();
+        self.send_member_knowledge();
         Ok(())
     }
 
@@ -1728,9 +1757,10 @@ impl Approved for Elder {
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.process_post_reset_events(old_pfx, complete_data.to_process);
 
-        self.update_peer_connections(elders_change);
+        self.update_peer_connections(&elders_change);
         self.send_neighbour_infos();
         self.send_genesis_updates();
+        self.send_member_knowledge();
 
         // Vote to update our self messages proof
         self.vote_send_section_info_ack(SendAckMessagePayload {
@@ -1758,7 +1788,7 @@ impl Approved for Elder {
                 version: elders_info.version(),
                 prefix: *elders_info.prefix(),
             });
-        self.update_peer_connections(neighbour_change);
+        self.update_peer_connections(&neighbour_change);
         Ok(())
     }
 

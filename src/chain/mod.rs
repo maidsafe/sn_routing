@@ -39,6 +39,8 @@ use std::{
 
 #[cfg(feature = "mock_base")]
 pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
+#[cfg(test)]
+pub use self::shared_state::SectionProofBlock;
 #[cfg(feature = "mock_base")]
 use crate::{error::RoutingError, id::P2pNode, Prefix, XorName};
 

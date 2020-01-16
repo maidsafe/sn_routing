@@ -8,7 +8,9 @@
 
 mod direct;
 
-pub use self::direct::{BootstrapResponse, DirectMessage, JoinRequest, SignedDirectMessage};
+pub use self::direct::{
+    BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage,
+};
 use crate::{
     authority::Authority,
     chain::{
@@ -288,14 +290,6 @@ impl SignedRoutingMessage {
         }
     }
 
-    /// Adds a proof if it is new, without validating it.
-    #[cfg(test)]
-    pub fn add_signature_share(&mut self, pk_share: usize, sig_share: bls::SignatureShare) {
-        if let SecurityMetadata::Partial(ref mut partial) = self.security_metadata {
-            let _ = partial.shares.insert((pk_share, sig_share));
-        }
-    }
-
     /// Adds all signatures from the given message, without validating them.
     pub fn add_signature_shares(&mut self, mut msg: Self) {
         if self.content.src.is_multiple() {
@@ -409,11 +403,12 @@ impl SignedRoutingMessage {
         }
     }
 
-    #[cfg(test)]
-    pub fn signatures(&self) -> Option<&BTreeSet<(usize, bls::SignatureShare)>> {
+    #[cfg(all(test, feature = "mock"))]
+    pub(crate) fn proof_chain(&self) -> Option<&SectionProofChain> {
         match &self.security_metadata {
-            SecurityMetadata::Partial(partial) => Some(&partial.shares),
-            _ => None,
+            SecurityMetadata::Full(md) => Some(&md.proof),
+            SecurityMetadata::Partial(md) => Some(&md.proof),
+            SecurityMetadata::Single(_) | SecurityMetadata::None => None,
         }
     }
 }
@@ -559,144 +554,105 @@ mod tests {
     use crate::{
         authority::Authority,
         chain::SectionKeyInfo,
-        id::{FullId, P2pNode},
         parsec::generate_bls_threshold_secret_key,
-        rng, unwrap, ConnectionInfo, Prefix, XorName,
+        rng::{self, MainRng},
+        unwrap, Prefix,
     };
-    use rand;
-    use std::{collections::BTreeMap, net::SocketAddr};
+    use rand::{self, Rng};
+    use std::iter;
 
     #[test]
-    fn signed_routing_message_check_integrity() {
+    fn combine_signatures() {
         let mut rng = rng::new();
+        let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
+        let pk_set = sk_set.public_keys();
 
-        let full_id = FullId::gen(&mut rng);
-        let full_id_2 = FullId::gen(&mut rng);
-        let bls_keys = generate_bls_threshold_secret_key(&mut rng, 2);
-        let bls_secret_key_share =
-            SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
-        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
-        let connection_info = ConnectionInfo {
-            peer_addr: socket_addr,
-            peer_cert_der: vec![],
-        };
-        let prefix = Prefix::new(0, *full_id.public_id().name());
-        let pub_ids: BTreeMap<_, _> = vec![
-            P2pNode::new(*full_id.public_id(), connection_info.clone()),
-            P2pNode::new(*full_id_2.public_id(), connection_info),
-        ]
-        .into_iter()
-        .map(|p2p_node| (*p2p_node.public_id().name(), p2p_node))
-        .collect();
-        let dummy_elders_info = unwrap!(EldersInfo::new(pub_ids, prefix, None));
-        let dummy_pk_set = bls_keys.public_keys();
-        let dummy_key_info =
-            SectionKeyInfo::from_elders_info(&dummy_elders_info, dummy_pk_set.public_key());
-        let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
+        let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
+        let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
 
-        let msg = RoutingMessage {
-            src: Authority::Node(rand::random()),
-            dst: Authority::Section(rand::random()),
-            content: MessageContent::UserMessage(vec![0, 1, 2, 3, 4]),
-        };
-        let mut signed_msg = unwrap!(SignedRoutingMessage::new(
+        let msg = gen_message(&mut rng);
+        let proof = make_proof_chain(&pk_set);
+
+        let mut signed_msg_0 = unwrap!(SignedRoutingMessage::new(
             msg.clone(),
-            &bls_secret_key_share,
-            dummy_pk_set,
-            dummy_proof,
+            &sk_share_0,
+            pk_set.clone(),
+            proof.clone(),
         ));
+        assert!(!signed_msg_0.check_fully_signed());
+        assert!(signed_msg_0.check_integrity().is_err());
 
-        assert_eq!(msg, *signed_msg.routing_message());
-        assert_eq!(1, signed_msg.signatures().expect("no signatures").len());
-        assert!(signed_msg
-            .signatures()
-            .expect("no signatures")
-            .iter()
-            .any(|(idx, _sig)| idx == &0));
+        let signed_msg_1 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_1, pk_set, proof));
+        signed_msg_0.add_signature_shares(signed_msg_1);
+        assert!(signed_msg_0.check_fully_signed());
 
-        assert!(signed_msg.check_integrity().is_err());
-
-        signed_msg.security_metadata = SecurityMetadata::None;
-
-        assert!(signed_msg.check_integrity().is_err());
+        signed_msg_0.combine_signatures();
+        unwrap!(signed_msg_0.check_integrity());
     }
 
     #[test]
-    fn signed_routing_message_signatures() {
+    fn invalid_signatures() {
         let mut rng = rng::new();
+        let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
+        let pk_set = sk_set.public_keys();
 
-        let full_id_0 = FullId::gen(&mut rng);
-        let full_id_1 = FullId::gen(&mut rng);
-        let full_id_2 = FullId::gen(&mut rng);
-        let full_id_3 = FullId::gen(&mut rng);
+        let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
+        let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
+        let sk_share_2 = SectionKeyShare::new_with_position(2, sk_set.secret_key_share(2));
 
-        let bls_keys = generate_bls_threshold_secret_key(&mut rng, 4);
-        let bls_secret_key_share_0 =
-            SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
-        let bls_secret_key_share_3 = bls_keys.secret_key_share(3);
+        let msg = gen_message(&mut rng);
+        let proof = make_proof_chain(&pk_set);
 
-        let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
-        let connection_info = ConnectionInfo {
-            peer_addr: socket_addr,
-            peer_cert_der: vec![],
-        };
-        let content = (0..10).collect();
-        let name: XorName = rand::random();
-        let msg = RoutingMessage {
+        // Message with valid signature
+        let mut signed_msg_0 = unwrap!(SignedRoutingMessage::new(
+            msg.clone(),
+            &sk_share_0,
+            pk_set.clone(),
+            proof.clone()
+        ));
+
+        // Message with invalid signature
+        let invalid_signature_share = sk_share_1.key.sign(b"bad message");
+        let metadata = SecurityMetadata::Partial(PartialSecurityMetadata {
+            pk_set: pk_set.clone(),
+            proof: proof.clone(),
+            shares: iter::once((1, invalid_signature_share)).collect(),
+        });
+        let signed_msg_1 = SignedRoutingMessage::from_parts(msg.clone(), metadata);
+
+        signed_msg_0.add_signature_shares(signed_msg_1);
+
+        // There is enough signature shares in total, but not enough valid ones, so the message is
+        // not fully signed.
+        assert!(!signed_msg_0.check_fully_signed());
+        assert!(signed_msg_0.check_integrity().is_err());
+
+        // Another valid signature
+        let signed_msg_2 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_2, pk_set, proof));
+        signed_msg_0.add_signature_shares(signed_msg_2);
+
+        // There are now two valid signatures which is enough.
+        assert!(signed_msg_0.check_fully_signed());
+
+        signed_msg_0.combine_signatures();
+        unwrap!(signed_msg_0.check_integrity());
+    }
+
+    fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
+        let version = 0u64;
+        let prefix = Prefix::default();
+        let section_key_info = SectionKeyInfo::new(version, prefix, pk_set.public_key());
+        SectionProofChain::from_genesis(section_key_info)
+    }
+
+    fn gen_message(rng: &mut MainRng) -> RoutingMessage {
+        use rand::distributions::Standard;
+
+        let name = rng.gen();
+        RoutingMessage {
             src: Authority::Section(name),
             dst: Authority::Section(name),
-            content: MessageContent::UserMessage(content),
-        };
-
-        let prefix = Prefix::new(0, *full_id_0.public_id().name());
-        let src_section_nodes = vec![
-            P2pNode::new(*full_id_0.public_id(), connection_info.clone()),
-            P2pNode::new(*full_id_1.public_id(), connection_info.clone()),
-            P2pNode::new(*full_id_2.public_id(), connection_info.clone()),
-            P2pNode::new(*full_id_3.public_id(), connection_info),
-        ];
-        let src_section = unwrap!(EldersInfo::new(
-            src_section_nodes
-                .into_iter()
-                .map(|node| (*node.public_id().name(), node))
-                .collect(),
-            prefix,
-            None,
-        ));
-        let pk_set = bls_keys.public_keys();
-        let dummy_key_info = SectionKeyInfo::from_elders_info(&src_section, pk_set.public_key());
-        let dummy_proof = SectionProofChain::from_genesis(dummy_key_info);
-        let mut signed_msg = unwrap!(SignedRoutingMessage::new(
-            msg,
-            &bls_secret_key_share_0,
-            pk_set,
-            dummy_proof
-        ));
-        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 1);
-        assert!(!signed_msg.check_fully_signed());
-
-        // Add an invalid signature for IDs 1 added by the 3rd malicious node.
-        // Add a valid signature for IDs 1 and 2 and an invalid one for ID 3
-        // Add an invalid signature for ID 3 added by the same 3rd malicious node.
-        let bad_sig = bls_secret_key_share_3.sign(&[1]);
-        signed_msg.add_signature_share(1, bad_sig.clone());
-        for key_share_idx in 1..3 {
-            let key_share = bls_keys.secret_key_share(key_share_idx);
-            let sig = key_share.sign(&unwrap!(serialise(signed_msg.routing_message())));
-            signed_msg.add_signature_share(key_share_idx, sig);
+            content: MessageContent::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
-        signed_msg.add_signature_share(3, bad_sig);
-        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 5);
-
-        let fully_signed = signed_msg.check_fully_signed();
-
-        // Check the bad signature got removed (by check_fully_signed) properly.
-        assert!(fully_signed);
-        assert_eq!(signed_msg.signatures().expect("no signatures").len(), 3);
-        assert!(!signed_msg
-            .signatures()
-            .expect("no signatures")
-            .iter()
-            .any(|(idx, _sig)| idx == &3));
     }
 }
