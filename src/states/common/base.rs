@@ -252,7 +252,6 @@ pub trait Base: Display {
 
         match result {
             Ok(transition) => transition,
-            Err(RoutingError::FilterCheckFailed) => Transition::Stay,
             Err(err) => {
                 debug!("{} - {:?}", self, err);
                 Transition::Stay

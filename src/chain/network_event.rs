@@ -8,10 +8,11 @@
 
 use super::{EldersInfo, SectionKeyInfo};
 use crate::{
+    error::RoutingError,
     id::{P2pNode, PublicId},
     parsec,
     relocation::RelocateDetails,
-    Prefix, RoutingError, XorName,
+    Prefix, XorName,
 };
 use hex_fmt::HexFmt;
 use maidsafe_utilities::serialisation;

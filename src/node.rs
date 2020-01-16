@@ -9,7 +9,7 @@
 use crate::{
     action::Action,
     chain::NetworkParams,
-    error::{InterfaceError, RoutingError},
+    error::InterfaceError,
     event_stream::{EventStepper, EventStream},
     id::{FullId, P2pNode, PublicId},
     location::Location,
@@ -88,12 +88,7 @@ impl Builder {
     }
 
     /// Creates new `Node`.
-    ///
-    /// It will automatically connect to the network in the same way a client does, but then
-    /// request a new name and integrate itself into the network using the new name.
-    ///
-    /// The initial `Node` object will have newly generated keys.
-    pub fn create(self) -> Result<(Node, mpmc::Receiver<Event>), RoutingError> {
+    pub fn create(self) -> (Node, mpmc::Receiver<Event>) {
         // start the handler for routing without a restriction to become a full node
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
         let (mut user_event_tx, user_event_rx) = mpmc::unbounded();
@@ -108,7 +103,7 @@ impl Builder {
             machine,
         };
 
-        Ok((node, user_event_rx))
+        (node, user_event_rx)
     }
 
     fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
@@ -175,7 +170,7 @@ impl Node {
     }
 
     /// Pauses the node in order to be upgraded and/or restarted.
-    pub fn pause(self) -> Result<PausedState, RoutingError> {
+    pub fn pause(self) -> Result<PausedState, InterfaceError> {
         self.machine.pause()
     }
 
@@ -208,7 +203,7 @@ impl Node {
     }
 
     /// Find out if the given XorName matches our prefix.
-    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
+    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, InterfaceError> {
         self.machine.current().matches_our_prefix(name)
     }
 
@@ -219,13 +214,16 @@ impl Node {
     pub fn closest_known_elders_to(
         &self,
         name: &XorName,
-    ) -> Result<impl Iterator<Item = &P2pNode>, RoutingError> {
+    ) -> Result<impl Iterator<Item = &P2pNode>, InterfaceError> {
         self.machine.current().closest_known_elders_to(name)
     }
 
     /// Returns the `PublicId` of this node.
-    pub fn id(&self) -> Result<PublicId, RoutingError> {
-        self.machine.current().id().ok_or(RoutingError::Terminated)
+    pub fn id(&self) -> Result<PublicId, InterfaceError> {
+        self.machine
+            .current()
+            .id()
+            .ok_or(InterfaceError::InvalidState)
     }
 
     /// Vote for a custom event.
@@ -326,7 +324,7 @@ impl Node {
     }
 
     /// Returns connection info of this node.
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, InterfaceError> {
         self.machine.current_mut().our_connection_info()
     }
 }
