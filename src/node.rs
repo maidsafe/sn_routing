@@ -9,7 +9,7 @@
 use crate::{
     action::Action,
     chain::NetworkParams,
-    error::InterfaceError,
+    error::RoutingError,
     event_stream::{EventStepper, EventStream},
     id::{FullId, P2pNode, PublicId},
     location::Location,
@@ -152,8 +152,8 @@ impl Builder {
 pub struct Node {
     user_event_tx: mpmc::Sender<Event>,
     user_event_rx: mpmc::Receiver<Event>,
-    interface_result_tx: mpsc::Sender<Result<(), InterfaceError>>,
-    interface_result_rx: mpsc::Receiver<Result<(), InterfaceError>>,
+    interface_result_tx: mpsc::Sender<Result<(), RoutingError>>,
+    interface_result_rx: mpsc::Receiver<Result<(), RoutingError>>,
     machine: StateMachine,
 }
 
@@ -170,7 +170,7 @@ impl Node {
     }
 
     /// Pauses the node in order to be upgraded and/or restarted.
-    pub fn pause(self) -> Result<PausedState, InterfaceError> {
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
         self.machine.pause()
     }
 
@@ -203,7 +203,7 @@ impl Node {
     }
 
     /// Find out if the given XorName matches our prefix.
-    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, InterfaceError> {
+    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
         self.machine.current().matches_our_prefix(name)
     }
 
@@ -214,16 +214,16 @@ impl Node {
     pub fn closest_known_elders_to(
         &self,
         name: &XorName,
-    ) -> Result<impl Iterator<Item = &P2pNode>, InterfaceError> {
+    ) -> Result<impl Iterator<Item = &P2pNode>, RoutingError> {
         self.machine.current().closest_known_elders_to(name)
     }
 
     /// Returns the `PublicId` of this node.
-    pub fn id(&self) -> Result<PublicId, InterfaceError> {
+    pub fn id(&self) -> Result<PublicId, RoutingError> {
         self.machine
             .current()
             .id()
-            .ok_or(InterfaceError::InvalidState)
+            .ok_or(RoutingError::InvalidState)
     }
 
     /// Vote for a custom event.
@@ -242,7 +242,7 @@ impl Node {
         src: Location<XorName>,
         dst: Location<XorName>,
         content: Vec<u8>,
-    ) -> Result<(), InterfaceError> {
+    ) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
@@ -262,7 +262,7 @@ impl Node {
         peer_addr: SocketAddr,
         msg: Bytes,
         token: Token,
-    ) -> Result<(), InterfaceError> {
+    ) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
@@ -277,7 +277,7 @@ impl Node {
     }
 
     /// Disconnect form a client peer.
-    pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), InterfaceError> {
+    pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
         let _ = self.poll();
 
@@ -289,7 +289,7 @@ impl Node {
         self.perform_action(action)
     }
 
-    fn perform_action(&mut self, action: Action) -> Result<(), InterfaceError> {
+    fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
         let transition = self
             .machine
             .current_mut()
@@ -324,7 +324,7 @@ impl Node {
     }
 
     /// Returns connection info of this node.
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, InterfaceError> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         self.machine.current_mut().our_connection_info()
     }
 }

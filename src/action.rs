@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{error::InterfaceError, location::Location, xor_space::XorName};
+use crate::{error::RoutingError, location::Location, xor_space::XorName};
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
@@ -27,18 +27,18 @@ pub enum Action {
         src: Location<XorName>,
         dst: Location<XorName>,
         content: Vec<u8>,
-        result_tx: Sender<Result<(), InterfaceError>>,
+        result_tx: Sender<Result<(), RoutingError>>,
     },
     HandleTimeout(u64),
     DisconnectClient {
         peer_addr: SocketAddr,
-        result_tx: Sender<Result<(), InterfaceError>>,
+        result_tx: Sender<Result<(), RoutingError>>,
     },
     SendMessageToClient {
         peer_addr: SocketAddr,
         msg: Bytes,
         token: Token,
-        result_tx: Sender<Result<(), InterfaceError>>,
+        result_tx: Sender<Result<(), RoutingError>>,
     },
 }
 

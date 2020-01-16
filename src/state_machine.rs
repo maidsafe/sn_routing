@@ -9,7 +9,7 @@
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo},
-    error::InterfaceError,
+    error::RoutingError,
     id::{P2pNode, PublicId},
     network_service::{NetworkBuilder, NetworkService},
     outbox::EventBox,
@@ -140,12 +140,12 @@ impl State {
         }
     }
 
-    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, InterfaceError> {
+    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
         match *self {
             Self::Elder(ref state) => Ok(state.our_prefix().matches(name)),
             Self::Adult(ref state) => Ok(state.our_prefix().matches(name)),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
-                Err(InterfaceError::InvalidState)
+                Err(RoutingError::InvalidState)
             }
         }
     }
@@ -153,21 +153,21 @@ impl State {
     pub fn closest_known_elders_to<'a>(
         &'a self,
         name: &XorName,
-    ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, InterfaceError> {
+    ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
         match *self {
             Self::Elder(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
             Self::Adult(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
-                Err(InterfaceError::InvalidState)
+                Err(RoutingError::InvalidState)
             }
         }
     }
 
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, InterfaceError> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
         state_dispatch!(
             self,
-            state => state.network_service_mut().our_connection_info().map_err(InterfaceError::from),
-            Terminated => Err(InterfaceError::InvalidState)
+            state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
+            Terminated => Err(RoutingError::InvalidState)
         )
     }
 
@@ -375,13 +375,13 @@ impl StateMachine {
         (action_tx, machine)
     }
 
-    pub fn pause(self) -> Result<PausedState, InterfaceError> {
+    pub fn pause(self) -> Result<PausedState, RoutingError> {
         info!("{} - Pause", self.current());
 
         let mut paused_state = match self.state {
             State::Elder(state) => state.pause(),
             State::Adult(state) => state.pause(),
-            _ => return Err(InterfaceError::InvalidState),
+            _ => return Err(RoutingError::InvalidState),
         };
 
         paused_state.network_rx = Some(self.network_rx);

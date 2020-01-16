@@ -11,18 +11,6 @@ use err_derive::Error;
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc;
 
-/// Public error.
-#[derive(Debug, Error, derive_more::From)]
-#[allow(missing_docs)]
-pub enum InterfaceError {
-    #[error(display = "The node is not in a state to handle the action.")]
-    InvalidState,
-    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
-    MpscRecvError(mpsc::RecvError),
-    #[error(display = "Network layer error.")]
-    Network(quic_p2p::Error),
-}
-
 /// The type returned by the routing message handling methods.
 pub type Result<T, E = RoutingError> = std::result::Result<T, E>;
 
@@ -36,10 +24,10 @@ pub enum RoutingError {
     FailedSignature,
     #[error(display = "Cannot route.")]
     CannotRoute,
-    #[error(display = "Interface error.")]
-    Interface(InterfaceError),
     #[error(display = "Network layer error.")]
     Network(quic_p2p::Error),
+    #[error(display = "The node is not in a state to handle the action.")]
+    InvalidState,
     #[error(display = "Serialisation Error.")]
     SerialisationError(serialisation::SerialisationError),
     #[error(display = "Peer not found.")]
@@ -58,4 +46,6 @@ pub enum RoutingError {
     InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
+    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
+    MpscRecvError(mpsc::RecvError),
 }

@@ -21,7 +21,7 @@ use crate::{
         OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
         MIN_AGE_COUNTER,
     },
-    error::{InterfaceError, RoutingError},
+    error::RoutingError,
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::Location,
@@ -1133,20 +1133,6 @@ impl Elder {
         self.parsec_map.vote_for(event, &self.log_ident())
     }
 
-    // ----- Send Functions -----------------------------------------------------------------------
-    fn send_user_message(
-        &mut self,
-        src: Location<XorName>,
-        dst: Location<XorName>,
-        content: Vec<u8>,
-    ) -> Result<(), RoutingError> {
-        self.send_routing_message(RoutingMessage {
-            src,
-            dst,
-            content: MessageContent::UserMessage(content),
-        })
-    }
-
     // Constructs a signed message, finds the nodes responsible for accumulation, and either sends
     // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
@@ -1410,11 +1396,12 @@ impl Base for Elder {
         src: Location<XorName>,
         dst: Location<XorName>,
         content: Vec<u8>,
-    ) -> Result<(), InterfaceError> {
-        match self.send_user_message(src, dst, content) {
-            Err(RoutingError::Interface(err)) => Err(err),
-            Err(_) | Ok(()) => Ok(()),
-        }
+    ) -> Result<(), RoutingError> {
+        self.send_routing_message(RoutingMessage {
+            src,
+            dst,
+            content: MessageContent::UserMessage(content),
+        })
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
