@@ -301,23 +301,21 @@ impl Base for JoiningPeer {
         msg: HopMessageWithSerializedMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let signed_message = msg.signed_routing_message();
-
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                signed_message.routing_message()
+                msg.routing_message()
             );
             return Ok(Transition::Stay);
         }
 
-        if self.in_location(&signed_message.routing_message().dst) {
-            self.check_signed_message_integrity(signed_message)?;
-            self.dispatch_routing_message(msg.into_signed_routing_message(), outbox)
+        let msg = msg.into_signed_routing_message();
+        if self.in_location(&msg.routing_message().dst) {
+            self.check_signed_message_integrity(&msg)?;
+            self.dispatch_routing_message(msg, outbox)
         } else {
-            self.routing_msg_backlog
-                .push(msg.into_signed_routing_message());
+            self.routing_msg_backlog.push(msg);
             Ok(Transition::Stay)
         }
     }

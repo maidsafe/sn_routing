@@ -109,6 +109,10 @@ impl HopMessageWithSerializedMessage {
         self.content
     }
 
+    pub fn routing_message(&self) -> &RoutingMessage {
+        self.content.routing_message()
+    }
+
     pub fn serialized_message(&self) -> Bytes {
         // Bytes is backed by Rc so clone is cheap and result in the same memory held.
         self.serialized_message.clone()

@@ -565,12 +565,13 @@ impl Elder {
                     continue;
                 }
             };
-            let routing_message = msg.signed_routing_message().routing_message();
             match self.send_signed_message(&msg) {
-                Ok(()) => trace!("{} - Resend {:?}", self, routing_message),
+                Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
                 Err(error) => debug!(
                     "{} - Failed to resend {:?}: {:?}",
-                    self, routing_message, error
+                    self,
+                    msg.routing_message(),
+                    error
                 ),
             }
         }
@@ -694,12 +695,11 @@ impl Elder {
         &mut self,
         msg: HopMessageWithSerializedMessage,
     ) -> Result<(), RoutingError> {
-        let signed_msg = msg.signed_routing_message();
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                signed_msg.routing_message()
+                msg.routing_message()
             );
             return Ok(());
         }
@@ -711,19 +711,20 @@ impl Elder {
         &mut self,
         msg: HopMessageWithSerializedMessage,
     ) -> Result<(), RoutingError> {
-        let signed_msg = msg.signed_routing_message();
         trace!(
             "{} - Handle signed message: {:?}",
             self,
-            signed_msg.routing_message()
+            msg.routing_message()
         );
 
-        if self.in_location(&signed_msg.routing_message().dst) {
+        let dst = msg.message_dst();
+        let signed_msg = msg.signed_routing_message();
+        if self.in_location(dst) {
             self.check_signed_message_trust(signed_msg)?;
             self.check_signed_message_integrity(signed_msg)?;
             self.update_our_knowledge(signed_msg);
 
-            if signed_msg.routing_message().dst.is_multiple() {
+            if dst.is_multiple() {
                 // Broadcast to the rest of the section.
                 if let Err(error) = self.send_signed_message(&msg) {
                     debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
@@ -1167,7 +1168,7 @@ impl Elder {
         if !routing_msg.src.is_multiple() {
             let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
             let msg = HopMessageWithSerializedMessage::new(msg)?;
-            if self.in_location(&msg.signed_routing_message().routing_message().dst) {
+            if self.in_location(&msg.routing_message().dst) {
                 self.handle_signed_message(msg)?;
             } else {
                 self.send_signed_message(&msg)?;
@@ -1184,7 +1185,7 @@ impl Elder {
             if target == *self.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
                     let msg = HopMessageWithSerializedMessage::new(msg)?;
-                    if self.in_location(&msg.signed_routing_message().routing_message().dst) {
+                    if self.in_location(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
                         self.send_signed_message(&msg)?;
@@ -1221,7 +1222,6 @@ impl Elder {
         &mut self,
         msg: &HopMessageWithSerializedMessage,
     ) -> Result<(), RoutingError> {
-        let signed_msg = msg.signed_routing_message();
         let dst = msg.message_dst();
 
         // If the message is to a single node and we have the connection info for this node, don't
@@ -1241,7 +1241,7 @@ impl Elder {
         trace!(
             "{}: Sending message {:?} via targets {:?}",
             self,
-            signed_msg,
+            msg.signed_routing_message(),
             target_p2p_nodes
         );
 
@@ -1524,7 +1524,8 @@ impl Base for Elder {
         msg: HopMessageWithSerializedMessage,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        self.handle_signed_message(msg).map(|()| Transition::Stay)
+        self.handle_signed_message(msg)?;
+        Ok(Transition::Stay)
     }
 }
 

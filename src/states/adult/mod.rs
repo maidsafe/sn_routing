@@ -330,11 +330,10 @@ impl Adult {
         &mut self,
         msg: HopMessageWithSerializedMessage,
     ) -> Result<(), RoutingError> {
-        let signed_msg = msg.signed_routing_message();
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
             self,
-            signed_msg,
+            msg.signed_routing_message(),
             self.chain.our_elders().format(", ")
         );
 
@@ -386,12 +385,11 @@ impl Adult {
         &mut self,
         msg: HopMessageWithSerializedMessage,
     ) -> Result<Transition, RoutingError> {
-        let signed_msg = msg.signed_routing_message();
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                signed_msg.routing_message()
+                msg.routing_message()
             );
             return Ok(Transition::Stay);
         }
@@ -403,14 +401,14 @@ impl Adult {
         &mut self,
         msg: HopMessageWithSerializedMessage,
     ) -> Result<Transition, RoutingError> {
-        let signed_msg = msg.signed_routing_message();
         trace!(
             "{} - Handle signed message: {:?}",
             self,
-            signed_msg.routing_message()
+            msg.routing_message()
         );
 
-        if self.in_location(&signed_msg.routing_message().dst) {
+        if self.in_location(msg.message_dst()) {
+            let signed_msg = msg.signed_routing_message();
             self.check_signed_message_integrity(signed_msg)?;
 
             match &signed_msg.routing_message().content {
