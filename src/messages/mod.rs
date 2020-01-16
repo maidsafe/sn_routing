@@ -19,8 +19,10 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::Location,
+    states::common::{from_network_bytes, to_network_bytes},
     xor_space::{Prefix, XorName},
 };
+use bytes::Bytes;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use std::{
@@ -33,13 +35,30 @@ use std::{
 ///
 /// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(SignedDirectMessage),
     /// A message sent across the network (in transit)
     Hop(HopMessage),
+}
+
+#[allow(clippy::large_enum_variant)]
+pub enum MessageWithBytes {
+    Hop(HopMessageWithBytes),
+    Direct(SignedDirectMessage, Bytes),
+}
+
+impl MessageWithBytes {
+    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
+        match from_network_bytes(&bytes)? {
+            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes {
+                content: msg.content,
+                full_message_bytes: bytes,
+            })),
+            Message::Direct(msg) => Ok(Self::Direct(msg, bytes)),
+        }
+    }
 }
 
 /// An individual hop message that represents a part of the route of a message in transit.
@@ -57,6 +76,54 @@ impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedRoutingMessage) -> Result<Self> {
         Ok(Self { content })
+    }
+}
+
+#[derive(Eq, PartialEq, Clone)]
+pub struct HopMessageWithBytes {
+    /// Wrapped signed message.
+    content: SignedRoutingMessage,
+    /// Serialized Message as received or sent to quic_p2p.
+    full_message_bytes: Bytes,
+}
+
+impl HopMessageWithBytes {
+    /// Serialize message and keep both SignedRoutingMessage and Bytes.
+    pub fn new(content: SignedRoutingMessage) -> Result<Self> {
+        let hop_msg = HopMessage::new(content)?;
+        let message = Message::Hop(hop_msg);
+        let full_message_bytes = to_network_bytes(&message)?;
+
+        let content = if let Message::Hop(hop_msg) = message {
+            hop_msg.content
+        } else {
+            unreachable!("Created as Hop can only match Hop.")
+        };
+
+        Ok(Self {
+            content,
+            full_message_bytes,
+        })
+    }
+
+    pub fn signed_routing_message(&self) -> &SignedRoutingMessage {
+        &self.content
+    }
+
+    pub fn into_signed_routing_message(self) -> SignedRoutingMessage {
+        self.content
+    }
+
+    pub fn routing_message(&self) -> &RoutingMessage {
+        self.content.routing_message()
+    }
+
+    pub fn full_message_bytes(&self) -> &Bytes {
+        &self.full_message_bytes
+    }
+
+    pub fn message_dst(&self) -> &Location<XorName> {
+        &self.content.routing_message().dst
     }
 }
 

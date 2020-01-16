@@ -18,8 +18,8 @@ use crate::{
     id::{FullId, P2pNode},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
-        SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MessageContent,
+        RoutingMessage, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -298,16 +298,10 @@ impl Base for JoiningPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessage,
+        msg: HopMessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let HopMessage { content: msg, .. } = msg;
-
-        if !self
-            .routing_msg_filter
-            .filter_incoming(msg.routing_message())
-            .is_new()
-        {
+        if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
@@ -316,6 +310,7 @@ impl Base for JoiningPeer {
             return Ok(Transition::Stay);
         }
 
+        let msg = msg.into_signed_routing_message();
         if self.in_location(&msg.routing_message().dst) {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)

@@ -11,7 +11,10 @@ use crate::{
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode, PublicId},
     location::Location,
-    messages::{DirectMessage, HopMessage, Message, SignedDirectMessage, SignedRoutingMessage},
+    messages::{
+        DirectMessage, HopMessageWithBytes, Message, MessageWithBytes, SignedDirectMessage,
+        SignedRoutingMessage,
+    },
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -60,7 +63,7 @@ pub trait Base: Display {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessage,
+        msg: HopMessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -244,7 +247,7 @@ pub trait Base: Display {
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = from_network_bytes(bytes)
+        let result = MessageWithBytes::from_bytes(bytes)
             .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
 
         match result {
@@ -260,12 +263,12 @@ pub trait Base: Display {
     fn handle_new_deserialised_message(
         &mut self,
         src_addr: SocketAddr,
-        message: Message,
+        message: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
-            Message::Hop(msg) => self.handle_hop_message(msg, outbox),
-            Message::Direct(msg) => {
+            MessageWithBytes::Hop(msg) => self.handle_hop_message(msg, outbox),
+            MessageWithBytes::Direct(msg, _) => {
                 let (msg, public_id) = msg.open()?;
                 let connection_info =
                     if let Some(connection_info) = self.peer_map().get_connection_info(&src_addr) {
@@ -353,10 +356,21 @@ pub trait Base: Display {
             return;
         };
 
+        let message = match to_network_bytes(&message) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                error!(
+                    "{} Failed to serialise message {:?}: {:?}",
+                    self, message, error
+                );
+                return;
+            }
+        };
+
         self.send_message(dst, message);
     }
 
-    fn send_message(&mut self, dst: &ConnectionInfo, message: Message) {
+    fn send_message(&mut self, dst: &ConnectionInfo, message: Bytes) {
         self.send_message_to_targets(slice::from_ref(dst), 1, message);
     }
 
@@ -364,7 +378,7 @@ pub trait Base: Display {
         &mut self,
         conn_infos: &[ConnectionInfo],
         dg_size: usize,
-        message: Message,
+        message: Bytes,
     ) {
         if conn_infos.len() < dg_size {
             warn!(
@@ -380,30 +394,10 @@ pub trait Base: Display {
         &mut self,
         conn_infos: &[ConnectionInfo],
         dg_size: usize,
-        message: Message,
+        message: Bytes,
     ) {
-        let bytes = match to_network_bytes(&message) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                error!(
-                    "{} Failed to serialise message {:?}: {:?}",
-                    self, message, error
-                );
-                // The caller can't do much to handle this except log more messages, so just stop
-                // trying to send here and let other mechanisms handle the lost message. If the
-                // node drops too many messages, it should fail to join the network anyway.
-                return;
-            }
-        };
-
         self.network_service_mut()
-            .send_message_to_initial_targets(conn_infos, dg_size, bytes);
-    }
-
-    // Create HopMessage containing the given signed message.
-    fn to_hop_message(&self, signed_msg: SignedRoutingMessage) -> Result<Message, RoutingError> {
-        let hop_msg = HopMessage::new(signed_msg)?;
-        Ok(Message::Hop(hop_msg))
+            .send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
     fn to_signed_direct_message(&self, content: DirectMessage) -> Result<Message, RoutingError> {
@@ -456,6 +450,6 @@ pub fn to_network_bytes(message: &Message) -> Result<Bytes, serialisation::Seria
     Ok(Bytes::from(serialisation::serialise(message)?))
 }
 
-pub fn from_network_bytes(data: Bytes) -> Result<Message, RoutingError> {
+pub fn from_network_bytes(data: &Bytes) -> Result<Message, RoutingError> {
     serialisation::deserialise(&data[..]).map_err(RoutingError::SerialisationError)
 }

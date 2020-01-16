@@ -24,7 +24,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, MessageContent, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -327,12 +327,12 @@ impl Adult {
     // Send signed_msg to our elders so they can route it properly.
     fn send_signed_message_to_elders(
         &mut self,
-        signed_msg: SignedRoutingMessage,
+        msg: HopMessageWithBytes,
     ) -> Result<(), RoutingError> {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
             self,
-            signed_msg,
+            msg.signed_routing_message(),
             self.chain.our_elders().format(", ")
         );
 
@@ -342,19 +342,17 @@ impl Adult {
             .our_elders()
             .filter(|p2p_node| {
                 routing_msg_filter
-                    .filter_outgoing(signed_msg.routing_message(), p2p_node.public_id())
+                    .filter_outgoing(&msg, p2p_node.public_id())
                     .is_new()
             })
             .map(|node| node.connection_info().clone())
             .collect();
 
-        let message = self.to_hop_message(signed_msg.clone())?;
-        self.send_message_to_targets(&targets, targets.len(), message);
+        let cheap_bytes_clone = msg.full_message_bytes().clone();
+        self.send_message_to_targets(&targets, targets.len(), cheap_bytes_clone);
 
         // we've seen this message - don't handle it again if someone else sends it to us
-        let _ = self
-            .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message());
+        let _ = self.routing_msg_filter.filter_incoming(&msg);
 
         Ok(())
     }
@@ -374,6 +372,7 @@ impl Adult {
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
+            let signed_msg = HopMessageWithBytes::new(signed_msg)?;
             self.handle_signed_message(signed_msg)
         } else {
             Ok(Transition::Stay)
@@ -384,40 +383,37 @@ impl Adult {
     // to the rest of our section when destination is targeting multiple; if not, forward it.
     fn handle_signed_message(
         &mut self,
-        signed_msg: SignedRoutingMessage,
+        msg: HopMessageWithBytes,
     ) -> Result<Transition, RoutingError> {
-        if !self
-            .routing_msg_filter
-            .filter_incoming(signed_msg.routing_message())
-            .is_new()
-        {
+        if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                signed_msg.routing_message()
+                msg.routing_message()
             );
             return Ok(Transition::Stay);
         }
 
-        self.handle_filtered_signed_message(signed_msg)
+        self.handle_filtered_signed_message(msg)
     }
 
     fn handle_filtered_signed_message(
         &mut self,
-        signed_msg: SignedRoutingMessage,
+        msg: HopMessageWithBytes,
     ) -> Result<Transition, RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
             self,
-            signed_msg.routing_message()
+            msg.routing_message()
         );
 
-        if self.in_location(&signed_msg.routing_message().dst) {
-            self.check_signed_message_integrity(&signed_msg)?;
+        if self.in_location(msg.message_dst()) {
+            let signed_msg = msg.signed_routing_message();
+            self.check_signed_message_integrity(signed_msg)?;
 
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    self.check_signed_message_trust(&signed_msg)?;
+                    self.check_signed_message_trust(signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
                 _ => {
@@ -426,7 +422,7 @@ impl Adult {
             }
         }
 
-        self.send_signed_message_to_elders(signed_msg)?;
+        self.send_signed_message_to_elders(msg)?;
         Ok(Transition::Stay)
     }
 
@@ -606,10 +602,9 @@ impl Base for Adult {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessage,
+        msg: HopMessageWithBytes,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let HopMessage { content: msg, .. } = msg;
         self.handle_signed_message(msg)
     }
 }
