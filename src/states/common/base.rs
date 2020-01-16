@@ -12,8 +12,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        DirectMessage, HopMessageWithSerializedMessage, Message, SignedDirectMessage,
-        SignedRoutingMessage,
+        DirectMessage, HopMessageWithSerializedMessage, Message, MessageWithBytes,
+        SignedDirectMessage, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -247,9 +247,8 @@ pub trait Base: Display {
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = from_network_bytes(&bytes).and_then(|message| {
-            self.handle_new_deserialised_message(src_addr, message, bytes, outbox)
-        });
+        let result = MessageWithBytes::from_bytes(bytes)
+            .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
 
         match result {
             Ok(transition) => transition,
@@ -264,19 +263,12 @@ pub trait Base: Display {
     fn handle_new_deserialised_message(
         &mut self,
         src_addr: SocketAddr,
-        message: Message,
-        message_bytes: Bytes,
+        message: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match message {
-            Message::Hop(msg) => {
-                let msg = HopMessageWithSerializedMessage::new_with_serialized_message(
-                    msg.content,
-                    message_bytes,
-                );
-                self.handle_hop_message(msg, outbox)
-            }
-            Message::Direct(msg) => {
+            MessageWithBytes::Hop(msg) => self.handle_hop_message(msg, outbox),
+            MessageWithBytes::Direct(msg, _) => {
                 let (msg, public_id) = msg.open()?;
                 let connection_info =
                     if let Some(connection_info) = self.peer_map().get_connection_info(&src_addr) {

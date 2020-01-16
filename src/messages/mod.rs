@@ -19,7 +19,7 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::Location,
-    states::common::to_network_bytes,
+    states::common::{from_network_bytes, to_network_bytes},
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
@@ -35,13 +35,30 @@ use std::{
 ///
 /// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
     /// A message sent between two nodes directly
     Direct(SignedDirectMessage),
     /// A message sent across the network (in transit)
     Hop(HopMessage),
+}
+
+#[allow(clippy::large_enum_variant)]
+pub enum MessageWithBytes {
+    Hop(HopMessageWithSerializedMessage),
+    Direct(SignedDirectMessage, Bytes),
+}
+
+impl MessageWithBytes {
+    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
+        match from_network_bytes(&bytes)? {
+            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithSerializedMessage {
+                content: msg.content,
+                serialized_message: bytes,
+            })),
+            Message::Direct(msg) => Ok(Self::Direct(msg, bytes)),
+        }
+    }
 }
 
 /// An individual hop message that represents a part of the route of a message in transit.
@@ -87,18 +104,6 @@ impl HopMessageWithSerializedMessage {
             content,
             serialized_message,
         })
-    }
-
-    /// Create from part with serialized_message the bytes of the serialization
-    /// for `Message::Hop(HopMessage::new(content))`
-    pub fn new_with_serialized_message(
-        content: SignedRoutingMessage,
-        serialized_message: Bytes,
-    ) -> Self {
-        Self {
-            content,
-            serialized_message,
-        }
     }
 
     pub fn signed_routing_message(&self) -> &SignedRoutingMessage {
