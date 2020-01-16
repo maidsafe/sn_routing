@@ -19,8 +19,10 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::Location,
+    states::common::to_network_bytes,
     xor_space::{Prefix, XorName},
 };
+use bytes::Bytes;
 use log::LogLevel;
 use maidsafe_utilities::serialisation::serialise;
 use std::{
@@ -57,6 +59,62 @@ impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedRoutingMessage) -> Result<Self> {
         Ok(Self { content })
+    }
+}
+
+#[derive(Eq, PartialEq, Clone)]
+pub struct HopMessageWithSerializedMessage {
+    /// Wrapped signed message.
+    content: SignedRoutingMessage,
+    /// Serialized Message as received or sent to quic_p2p.
+    serialized_message: Bytes,
+}
+
+impl HopMessageWithSerializedMessage {
+    /// Serialize message and keep both SignedRoutingMessage and Bytes.
+    pub fn new(content: SignedRoutingMessage) -> Result<Self> {
+        let hop_msg = HopMessage::new(content)?;
+        let message = Message::Hop(hop_msg);
+        let serialized_message = to_network_bytes(&message)?;
+
+        let content = if let Message::Hop(hop_msg) = message {
+            hop_msg.content
+        } else {
+            unreachable!("Created as Hop can only match Hop.")
+        };
+
+        Ok(Self {
+            content,
+            serialized_message,
+        })
+    }
+
+    /// Create from part with serialized_message the bytes of the serialization
+    /// for `Message::Hop(HopMessage::new(content))`
+    pub fn new_with_serialized_message(
+        content: SignedRoutingMessage,
+        serialized_message: Bytes,
+    ) -> Self {
+        Self {
+            content,
+            serialized_message,
+        }
+    }
+
+    pub fn signed_routing_message(&self) -> &SignedRoutingMessage {
+        &self.content
+    }
+
+    pub fn into_signed_routing_message(self) -> SignedRoutingMessage {
+        self.content
+    }
+
+    pub fn serialized_message(&self) -> &Bytes {
+        &self.serialized_message
+    }
+
+    pub fn message_dst(&self) -> &Location<XorName> {
+        &self.content.routing_message().dst
     }
 }
 

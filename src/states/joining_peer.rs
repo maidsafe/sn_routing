@@ -18,8 +18,8 @@ use crate::{
     id::{FullId, P2pNode},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MessageContent, RoutingMessage,
-        SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithSerializedMessage, JoinRequest,
+        MessageContent, RoutingMessage, SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -298,29 +298,30 @@ impl Base for JoiningPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessage,
+        msg: HopMessageWithSerializedMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        let HopMessage { content: msg, .. } = msg;
+        let signed_message = msg.signed_routing_message();
 
         if !self
             .routing_msg_filter
-            .filter_incoming(msg.routing_message())
+            .filter_incoming(signed_message.routing_message())
             .is_new()
         {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                msg.routing_message()
+                signed_message.routing_message()
             );
             return Ok(Transition::Stay);
         }
 
-        if self.in_location(&msg.routing_message().dst) {
-            self.check_signed_message_integrity(&msg)?;
-            self.dispatch_routing_message(msg, outbox)
+        if self.in_location(&signed_message.routing_message().dst) {
+            self.check_signed_message_integrity(signed_message)?;
+            self.dispatch_routing_message(msg.into_signed_routing_message(), outbox)
         } else {
-            self.routing_msg_backlog.push(msg);
+            self.routing_msg_backlog
+                .push(msg.into_signed_routing_message());
             Ok(Transition::Stay)
         }
     }

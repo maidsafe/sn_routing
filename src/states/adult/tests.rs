@@ -58,7 +58,10 @@ impl AdultUnderTest {
         )
     }
 
-    fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> SignedRoutingMessage {
+    fn genesis_update_message(
+        &self,
+        gen_pfx_info: GenesisPfxInfo,
+    ) -> HopMessageWithSerializedMessage {
         let msg = RoutingMessage {
             src: Location::PrefixSection(Prefix::default()),
             dst: Location::Node(*self.adult.name()),
@@ -89,7 +92,7 @@ impl AdultUnderTest {
                 }
             }));
         msg.combine_signatures();
-        msg
+        unwrap!(HopMessageWithSerializedMessage::new(msg))
     }
 
     fn perform_elders_change(&mut self) {

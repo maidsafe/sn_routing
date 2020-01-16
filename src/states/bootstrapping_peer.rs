@@ -13,7 +13,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode},
     location::Location,
-    messages::{BootstrapResponse, DirectMessage, HopMessage},
+    messages::{BootstrapResponse, DirectMessage, HopMessageWithSerializedMessage},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -321,10 +321,14 @@ impl Base for BootstrappingPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessage,
+        msg: HopMessageWithSerializedMessage,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        trace!("{} - Unhandled hop message: {:?}", self, msg);
+        trace!(
+            "{} - Unhandled hop message: {:?}",
+            self,
+            msg.signed_routing_message()
+        );
         Ok(Transition::Stay)
     }
 }
@@ -416,7 +420,7 @@ mod tests {
         if let NetworkEvent::NewMessage { peer_addr, msg } = unwrap!(event_rx.try_recv()) {
             assert_eq!(peer_addr, node_b_endpoint);
 
-            let ok = match unwrap!(from_network_bytes(msg)) {
+            let ok = match unwrap!(from_network_bytes(&msg)) {
                 Message::Direct(msg) => match *msg.content() {
                     DirectMessage::BootstrapRequest(_) => true,
                     _ => false,
