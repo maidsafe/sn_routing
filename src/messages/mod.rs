@@ -12,13 +12,13 @@ pub use self::direct::{
     BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage,
 };
 use crate::{
-    authority::Authority,
     chain::{
         Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,
     },
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
     id::{FullId, PublicId},
+    location::Location,
     xor_space::{Prefix, XorName},
 };
 use log::LogLevel;
@@ -413,13 +413,13 @@ impl SignedRoutingMessage {
     }
 }
 
-/// A routing message with source and destination authorities.
+/// A routing message with source and destination locations.
 #[derive(Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
-    /// Source authority
-    pub src: Authority<XorName>,
-    /// Destination authority
-    pub dst: Authority<XorName>,
+    /// Source location
+    pub src: Location<XorName>,
+    /// Destination location
+    pub dst: Location<XorName>,
     /// The message content
     pub content: MessageContent,
 }
@@ -447,7 +447,7 @@ impl RoutingMessage {
 /// responds with a `BootstrapResponse`, indicating success or failure. Once it receives that, A
 /// goes into the `Client` state and uses B as its proxy to the network.
 ///
-/// A can now exchange messages with any `Authority`. This completes the bootstrap process for
+/// A can now exchange messages with any `Location`. This completes the bootstrap process for
 /// clients.
 ///
 ///
@@ -460,7 +460,7 @@ impl RoutingMessage {
 ///
 /// ### Relocating on the network
 ///
-/// Once in `JoiningNode` state, A sends a `Relocate` request to the `NaeManager` section authority
+/// Once in `JoiningNode` state, A sends a `Relocate` request to the `NaeManager` section location
 /// X of A's current name. X computes a target destination Y to which A should relocate and sends
 /// that section's `NaeManager`s an `ExpectCandidate` containing A's current public ID. Each member
 /// of Y votes for `ExpectCandidate`. Once Y accumulates votes for `ExpectCandidate`, send a
@@ -552,7 +552,6 @@ impl Debug for MessageContent {
 mod tests {
     use super::*;
     use crate::{
-        authority::Authority,
         chain::SectionKeyInfo,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
@@ -650,8 +649,8 @@ mod tests {
 
         let name = rng.gen();
         RoutingMessage {
-            src: Authority::Section(name),
-            dst: Authority::Section(name),
+            src: Location::Section(name),
+            dst: Location::Section(name),
             content: MessageContent::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }

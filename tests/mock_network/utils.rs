@@ -14,7 +14,7 @@ use rand::{
     Rng,
 };
 use routing::{
-    mock::Environment, test_consts, Authority, Builder, Connected, Event, EventStream, FullId,
+    mock::Environment, test_consts, Builder, Connected, Event, EventStream, FullId, Location,
     NetworkConfig, Node, PausedState, Prefix, PublicId, RelocationOverrides, XorName, Xorable,
 };
 use std::{
@@ -123,8 +123,8 @@ impl TestNode {
         unwrap!(self.inner.our_prefix(), "{}", self.inner)
     }
 
-    pub fn is_recipient(&self, dst: &Authority<XorName>) -> bool {
-        self.inner.in_authority(dst)
+    pub fn is_recipient(&self, dst: &Location<XorName>) -> bool {
+        self.inner.in_location(dst)
     }
 
     pub fn env(&self) -> &Environment {

@@ -8,9 +8,9 @@
 
 use crate::{
     action::Action,
-    authority::Authority,
     error::{InterfaceError, RoutingError},
     id::{FullId, P2pNode, PublicId},
+    location::Location,
     messages::{DirectMessage, HopMessage, Message, SignedDirectMessage, SignedRoutingMessage},
     network_service::NetworkService,
     outbox::EventBox,
@@ -33,7 +33,7 @@ pub trait Base: Display {
     fn network_service(&self) -> &NetworkService;
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
-    fn in_authority(&self, auth: &Authority<XorName>) -> bool;
+    fn in_location(&self, auth: &Location<XorName>) -> bool;
     fn peer_map(&self) -> &PeerMap;
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
@@ -105,8 +105,8 @@ pub trait Base: Display {
 
     fn handle_send_message(
         &mut self,
-        _src: Authority<XorName>,
-        _dst: Authority<XorName>,
+        _src: Location<XorName>,
+        _dst: Location<XorName>,
         _content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);

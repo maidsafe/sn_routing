@@ -8,11 +8,11 @@
 
 use crate::{
     action::Action,
-    authority::Authority,
     chain::NetworkParams,
     error::{InterfaceError, RoutingError},
     event_stream::{EventStepper, EventStream},
     id::{FullId, P2pNode, PublicId},
+    location::Location,
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::{OurType, Token},
@@ -151,9 +151,9 @@ impl Builder {
 /// routing node.
 ///
 /// A node is a part of the network that can route messages and be a member of a section or group
-/// authority. Its methods can be used to send requests and responses as either an individual
-/// `Node` or as a part of a section or group authority. Their `src` argument indicates that
-/// role, and can be any [`Authority`](enum.Authority.html).
+/// location. Its methods can be used to send requests and responses as either an individual
+/// `Node` or as a part of a section or group location. Their `src` argument indicates that
+/// role, and can be any [`Location`](enum.Location.html).
 pub struct Node {
     user_event_tx: mpmc::Sender<Event>,
     user_event_rx: mpmc::Receiver<Event>,
@@ -241,8 +241,8 @@ impl Node {
     /// Send a message.
     pub fn send_message(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Location<XorName>,
+        dst: Location<XorName>,
         content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         // Make sure the state machine has processed any outstanding network events.
@@ -494,13 +494,13 @@ impl Node {
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(&self, target: &Authority<XorName>) -> Option<SectionProofChain> {
+    pub fn prove(&self, target: &Location<XorName>) -> Option<SectionProofChain> {
         self.chain().map(|chain| chain.prove(target, None))
     }
 
-    /// Checks whether the given authority represents self.
-    pub fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        self.machine.current().in_authority(auth)
+    /// Checks whether the given location represents self.
+    pub fn in_location(&self, auth: &Location<XorName>) -> bool {
+        self.machine.current().in_location(auth)
     }
 
     /// Returns the age counter of the given node if it is member of the same section as this node,

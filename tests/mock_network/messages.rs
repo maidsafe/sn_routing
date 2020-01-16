@@ -8,7 +8,7 @@
 
 use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_all};
 use rand::Rng;
-use routing::{mock::Environment, quorum_count, Authority, Event, EventStream, NetworkParams};
+use routing::{mock::Environment, quorum_count, Event, EventStream, Location, NetworkParams};
 
 #[test]
 fn send() {
@@ -23,8 +23,8 @@ fn send() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = Authority::Node(nodes[sender_index].name());
-    let dst = Authority::Section(rng.gen());
+    let src = Location::Node(nodes[sender_index].name());
+    let dst = Location::Section(rng.gen());
     let content = gen_vec(&mut rng, 1024);
     assert!(nodes[sender_index]
         .inner
@@ -71,8 +71,8 @@ fn send_and_receive() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = Authority::Node(nodes[sender_index].name());
-    let dst = Authority::Section(rng.gen());
+    let src = Location::Node(nodes[sender_index].name());
+    let dst = Location::Section(rng.gen());
 
     let req_content = gen_vec(&mut rng, 10);
     let res_content = gen_vec(&mut rng, 11);

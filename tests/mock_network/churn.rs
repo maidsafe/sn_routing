@@ -17,7 +17,7 @@ use routing::{
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Authority, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix, XorName, Xorable,
+    Event, EventStream, FullId, Location, NetworkConfig, NetworkParams, Prefix, XorName, Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -569,8 +569,8 @@ fn poll_after_churn(
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct MessageKey {
     content: Vec<u8>,
-    src: Authority<XorName>,
-    dst: Authority<XorName>,
+    src: Location<XorName>,
+    dst: Location<XorName>,
 }
 
 /// A set of expectations: Which nodes, groups and sections are supposed to receive a message.
@@ -578,7 +578,7 @@ struct Expectations {
     /// The message expected to be received.
     messages: HashSet<MessageKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
-    sections: HashMap<Authority<XorName>, HashSet<XorName>>,
+    sections: HashMap<Location<XorName>, HashSet<XorName>>,
     /// Helper to build the map of new names to old names by which we can track even relocated
     /// nodes.
     relocation_map_builder: RelocationMapBuilder,
@@ -598,8 +598,8 @@ impl Expectations {
     fn send_and_expect(
         &mut self,
         content: &[u8],
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Location<XorName>,
+        dst: Location<XorName>,
         nodes: &mut [TestNode],
         elder_size: usize,
     ) {
@@ -633,7 +633,7 @@ impl Expectations {
     }
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
-    fn expect(&mut self, nodes: &mut [TestNode], dst: Authority<XorName>, key: MessageKey) {
+    fn expect(&mut self, nodes: &mut [TestNode], dst: Location<XorName>, key: MessageKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.is_recipient(&dst);
             let section = nodes
@@ -685,7 +685,7 @@ impl Expectations {
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&orig_name);
                         if !self.sections.get(&key.dst).map_or(false, checker) {
-                            if let Authority::Section(_) = dst {
+                            if let Location::Section(_) = dst {
                                 trace!(
                                     "Unexpected message for node {}: {:?} / {:?}",
                                     orig_name,
@@ -722,7 +722,7 @@ impl Expectations {
         }
 
         for key in self.messages {
-            if let Authority::Node(dst_name) = key.dst {
+            if let Location::Node(dst_name) = key.dst {
                 // Verify that if the message destination is a single node, then that node either
                 // received it, or if not it's only because it got dropped, relocated or demoted.
                 if let Some(node) = nodes.iter().find(|node| node.name() == dst_name) {
@@ -762,14 +762,14 @@ fn setup_expectations<R: Rng>(
     let content = gen_vec(rng, 100);
     let index0 = gen_elder_index(rng, nodes);
     let index1 = gen_elder_index(rng, nodes);
-    let auth_n0 = Authority::Node(nodes[index0].name());
-    let auth_n1 = Authority::Node(nodes[index1].name());
-    let auth_g0 = Authority::Section(rng.gen());
-    let auth_g1 = Authority::Section(rng.gen());
+    let auth_n0 = Location::Node(nodes[index0].name());
+    let auth_n1 = Location::Node(nodes[index1].name());
+    let auth_g0 = Location::Section(rng.gen());
+    let auth_g1 = Location::Section(rng.gen());
     let section_name: XorName = rng.gen();
-    let auth_s0 = Authority::Section(section_name);
+    let auth_s0 = Location::Section(section_name);
     // this makes sure we have two different sections if there exists more than one
-    let auth_s1 = Authority::Section(!section_name);
+    let auth_s1 = Location::Section(!section_name);
 
     let mut expectations = Expectations::new(nodes);
 

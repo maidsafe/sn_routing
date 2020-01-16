@@ -103,11 +103,11 @@ pub mod rng;
 /// Mock network
 #[cfg(feature = "mock_base")]
 pub use self::{
-    authority::Authority,
     chain::{
         delivery_group_size, elders_info_for_test, quorum_count,
         section_proof_chain_from_elders_info, NetworkParams, SectionKeyShare, MIN_AGE,
     },
+    location::Location,
     messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
@@ -131,12 +131,12 @@ pub use self::mock::parsec::init_mock;
 // ############################################################################
 
 mod action;
-mod authority;
 mod chain;
 mod error;
 mod event;
 mod event_stream;
 mod id;
+mod location;
 mod message_filter;
 mod messages;
 mod network_service;

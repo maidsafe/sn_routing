@@ -27,7 +27,7 @@ use std::{
 /// Direct message content.
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
 pub enum DirectMessage {
-    /// Sent from members of a section or group message's source authority to the first hop. The
+    /// Sent from members of a section or group message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(Box<SignedRoutingMessage>),
     /// Sent from a newly connected peer to the bootstrap node to request connection infos of

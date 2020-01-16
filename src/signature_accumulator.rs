@@ -75,9 +75,9 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        authority::Authority,
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain},
         id::{FullId, P2pNode},
+        location::Location,
         messages::{
             DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
             SignedRoutingMessage,
@@ -102,8 +102,8 @@ mod tests {
             pk_set: &bls::PublicKeySet,
         ) -> Self {
             let routing_msg = RoutingMessage {
-                src: Authority::Section(rand::random()),
-                dst: Authority::Section(rand::random()),
+                src: Location::Section(rand::random()),
+                dst: Location::Section(rand::random()),
                 content: MessageContent::UserMessage(vec![
                     rand::random(),
                     rand::random(),

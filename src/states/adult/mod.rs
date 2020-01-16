@@ -15,7 +15,6 @@ use super::{
     elder::{Elder, ElderDetails},
 };
 use crate::{
-    authority::Authority,
     chain::{
         Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
@@ -23,6 +22,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
+    location::Location,
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, MessageContent, SignedRoutingMessage,
     },
@@ -412,7 +412,7 @@ impl Adult {
             signed_msg.routing_message()
         );
 
-        if self.in_authority(&signed_msg.routing_message().dst) {
+        if self.in_location(&signed_msg.routing_message().dst) {
             self.check_signed_message_integrity(&signed_msg)?;
 
             match &signed_msg.routing_message().content {
@@ -493,8 +493,8 @@ impl Base for Adult {
         &self.full_id
     }
 
-    fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        self.chain.in_authority(auth)
+    fn in_location(&self, auth: &Location<XorName>) -> bool {
+        self.chain.in_location(auth)
     }
 
     fn peer_map(&self) -> &PeerMap {

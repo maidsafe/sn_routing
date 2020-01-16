@@ -15,7 +15,6 @@ use super::{
     Adult,
 };
 use crate::{
-    authority::Authority,
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
@@ -25,6 +24,7 @@ use crate::{
     error::{InterfaceError, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
+    location::Location,
     messages::{
         BootstrapResponse, DirectMessage, HopMessage, JoinRequest, MemberKnowledge, MessageContent,
         RoutingMessage, SecurityMetadata, SignedRoutingMessage,
@@ -337,7 +337,7 @@ impl Elder {
 
     fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
         while let Some(msg) = self.routing_msg_queue.pop_front() {
-            if self.in_authority(&msg.routing_message().dst) {
+            if self.in_location(&msg.routing_message().dst) {
                 match self.dispatch_routing_message(msg, outbox) {
                     Ok(Transition::Stay) => (),
                     Ok(transition) => return transition,
@@ -604,8 +604,8 @@ impl Elder {
 
     fn send_neighbour_infos(&mut self) {
         self.chain.other_prefixes().iter().for_each(|pfx| {
-            let src = Authority::Section(self.our_prefix().name());
-            let dst = Authority::PrefixSection(*pfx);
+            let src = Location::Section(self.our_prefix().name());
+            let dst = Location::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
 
             if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
@@ -632,14 +632,14 @@ impl Elder {
     }
 
     fn create_genesis_updates(&self) -> Vec<(P2pNode, SignedRoutingMessage)> {
-        let src = Authority::PrefixSection(*self.our_prefix());
+        let src = Location::PrefixSection(*self.our_prefix());
         self.chain
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
                 let msg = RoutingMessage {
                     src,
-                    dst: Authority::Node(*recipient.name()),
+                    dst: Location::Node(*recipient.name()),
                     content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
                 };
 
@@ -713,7 +713,7 @@ impl Elder {
             signed_msg.routing_message()
         );
 
-        if self.in_authority(&signed_msg.routing_message().dst) {
+        if self.in_location(&signed_msg.routing_message().dst) {
             self.check_signed_message_trust(&signed_msg)?;
             self.check_signed_message_integrity(&signed_msg)?;
             self.update_our_knowledge(&signed_msg);
@@ -743,7 +743,7 @@ impl Elder {
             signed_msg.routing_message()
         );
 
-        if self.in_authority(&signed_msg.routing_message().dst)
+        if self.in_location(&signed_msg.routing_message().dst)
             && signed_msg.check_trust(&self.chain)
         {
             // If message still for us and we still trust it, then it must not be stale.
@@ -772,8 +772,8 @@ impl Elder {
         match (msg.content, msg.src, msg.dst) {
             (
                 NeighbourInfo(elders_info),
-                src @ Authority::Section(_),
-                dst @ Authority::PrefixSection(_),
+                src @ Location::Section(_),
+                dst @ Location::PrefixSection(_),
             ) => {
                 self.handle_neighbour_info(elders_info, src, dst, security_metadata)?;
                 Ok(Transition::Stay)
@@ -787,8 +787,8 @@ impl Elder {
                     src_prefix,
                     ack_version,
                 },
-                Authority::Section(src),
-                Authority::Section(dst),
+                Location::Section(src),
+                Location::Section(dst),
             ) => {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
@@ -810,7 +810,7 @@ impl Elder {
                     "{} Unhandled routing message {:?} from {:?} to {:?}, ignoring",
                     self, content, src, dst
                 );
-                Err(RoutingError::BadAuthority)
+                Err(RoutingError::BadLocation)
             }
         }
     }
@@ -854,7 +854,7 @@ impl Elder {
         );
 
         let pub_id = *p2p_node.public_id();
-        let dst = Authority::Node(*pub_id.name());
+        let dst = Location::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
         if !self.peer_map().has(p2p_node.peer_addr()) {
@@ -878,7 +878,7 @@ impl Elder {
             parsec_version: self.gen_pfx_info.parsec_version,
         };
 
-        let src = Authority::PrefixSection(*trimmed_info.first_info.prefix());
+        let src = Location::PrefixSection(*trimmed_info.first_info.prefix());
         let content = MessageContent::NodeApproval(trimmed_info);
         if let Err(error) = self.send_routing_message(RoutingMessage { src, dst, content }) {
             debug!(
@@ -1037,8 +1037,8 @@ impl Elder {
     fn handle_neighbour_info(
         &mut self,
         elders_info: EldersInfo,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Location<XorName>,
+        dst: Location<XorName>,
         security_metadata: SecurityMetadata,
     ) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
@@ -1132,8 +1132,8 @@ impl Elder {
     // ----- Send Functions -----------------------------------------------------------------------
     fn send_user_message(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Location<XorName>,
+        dst: Location<XorName>,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         self.send_routing_message(RoutingMessage {
@@ -1147,10 +1147,10 @@ impl Elder {
     // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
     fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
-        if !self.in_authority(&routing_msg.src) {
+        if !self.in_location(&routing_msg.src) {
             log_or_panic!(
                 LogLevel::Error,
-                "{} Not part of the source authority. Not sending message {:?}.",
+                "{} Not part of the source location. Not sending message {:?}.",
                 self,
                 routing_msg
             );
@@ -1160,7 +1160,7 @@ impl Elder {
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
             let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
-            if self.in_authority(&msg.routing_message().dst) {
+            if self.in_location(&msg.routing_message().dst) {
                 self.handle_signed_message(msg)?;
             } else {
                 self.send_signed_message(&msg)?;
@@ -1176,7 +1176,7 @@ impl Elder {
         ) {
             if target == *self.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
-                    if self.in_authority(&msg.routing_message().dst) {
+                    if self.in_location(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
                         self.send_signed_message(&msg)?;
@@ -1217,7 +1217,7 @@ impl Elder {
 
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
-        let single_target = if let Authority::Node(node_name) = dst {
+        let single_target = if let Location::Node(node_name) = dst {
             self.chain.get_p2p_node(&node_name)
         } else {
             None
@@ -1265,22 +1265,22 @@ impl Elder {
     /// Returns the set of peers that are responsible for collecting signatures to verify a message;
     /// this may contain us or only other nodes. If our signature is not required, this returns
     /// `None`.
-    fn get_signature_targets(&self, src: &Authority<XorName>) -> Option<BTreeSet<XorName>> {
+    fn get_signature_targets(&self, src: &Location<XorName>) -> Option<BTreeSet<XorName>> {
         let list: Vec<XorName> = match *src {
-            Authority::Section(_) => self
+            Location::Section(_) => self
                 .chain
                 .our_elders()
                 .map(|p2p_node| p2p_node.name())
                 .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            Authority::PrefixSection(pfx) => self
+            Location::PrefixSection(pfx) => self
                 .chain
                 .all_sections()
                 .flat_map(|(_, si)| si.member_names())
                 .filter(|name| pfx.matches(name))
                 .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            Authority::Node(_) => {
+            Location::Node(_) => {
                 let mut result = BTreeSet::new();
                 let _ = result.insert(*self.name());
                 return Some(result);
@@ -1354,8 +1354,8 @@ impl Base for Elder {
         &self.full_id
     }
 
-    fn in_authority(&self, auth: &Authority<XorName>) -> bool {
-        self.chain.in_authority(auth)
+    fn in_location(&self, auth: &Location<XorName>) -> bool {
+        self.chain.in_location(auth)
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
@@ -1409,8 +1409,8 @@ impl Base for Elder {
 
     fn handle_send_message(
         &mut self,
-        src: Authority<XorName>,
-        dst: Authority<XorName>,
+        src: Location<XorName>,
+        dst: Location<XorName>,
         content: Vec<u8>,
     ) -> Result<(), InterfaceError> {
         match self.send_user_message(src, dst, content) {
@@ -1653,12 +1653,12 @@ impl Approved for Elder {
         // node might be lagging behind the target section in the knowledge of the source section.
         let proof = {
             let proof_for_source = self.chain.prove(
-                &Authority::Node(*details.pub_id.name()),
+                &Location::Node(*details.pub_id.name()),
                 Some(node_knowledge),
             );
             let proof_for_target = self
                 .chain
-                .prove(&Authority::Section(details.destination), None);
+                .prove(&Location::Section(details.destination), None);
 
             if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
                 proof_for_source
@@ -1807,8 +1807,8 @@ impl Approved for Elder {
         &mut self,
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError> {
-        let src = Authority::Section(self.our_prefix().name());
-        let dst = Authority::Section(ack_payload.ack_prefix.name());
+        let src = Location::Section(self.our_prefix().name());
+        let dst = Location::Section(ack_payload.ack_prefix.name());
         let content = MessageContent::AckMessage {
             src_prefix: *self.our_prefix(),
             ack_version: ack_payload.ack_version,

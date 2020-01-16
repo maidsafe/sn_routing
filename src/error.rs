@@ -30,8 +30,8 @@ pub enum InterfaceError {
 pub enum RoutingError {
     #[error(display = "Invalid State.")]
     Terminated,
-    #[error(display = "Invalid requester or handler authorities.")]
-    BadAuthority,
+    #[error(display = "Invalid requester or handler locations.")]
+    BadLocation,
     #[error(display = "Failed signature check.")]
     FailedSignature,
     #[error(display = "Duplicate request received.")]
