@@ -8,7 +8,9 @@
 
 use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_all};
 use rand::Rng;
-use routing::{mock::Environment, quorum_count, Event, EventStream, Location, NetworkParams};
+use routing::{
+    event::Event, mock::Environment, quorum_count, EventStream, Location, NetworkParams,
+};
 
 #[test]
 fn send() {

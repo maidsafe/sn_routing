@@ -10,6 +10,7 @@ use crate::{
     action::Action,
     chain::NetworkParams,
     error::RoutingError,
+    event::Event,
     event_stream::{EventStepper, EventStream},
     id::{FullId, P2pNode, PublicId},
     location::Location,
@@ -20,7 +21,7 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, BootstrappingPeerDetails},
     xor_space::XorName,
-    ConnectionInfo, Event, NetworkConfig,
+    ConnectionInfo, NetworkConfig,
 };
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
