@@ -80,7 +80,6 @@ mod macros;
 // ############################################################################
 pub use self::{
     error::RoutingError,
-    event::{Client, Connected, Event},
     event_stream::EventStream,
     id::{FullId, P2pNode, PublicId},
     node::{Builder, Node},
@@ -88,6 +87,8 @@ pub use self::{
     quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
+/// Routing events.
+pub mod event;
 
 // ############################################################################
 // Mock and test API
@@ -133,7 +134,6 @@ pub use self::mock::parsec::init_mock;
 mod action;
 mod chain;
 mod error;
-mod event;
 mod event_stream;
 mod id;
 mod location;

@@ -9,6 +9,7 @@
 use crate::{
     action::Action,
     error::RoutingError,
+    event::Client,
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
@@ -24,7 +25,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::XorName,
-    Client, ConnectionInfo, NetworkEvent,
+    ConnectionInfo, NetworkEvent,
 };
 use bytes::Bytes;
 use log::LogLevel;

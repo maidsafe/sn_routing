@@ -18,7 +18,7 @@ pub use self::utils::*;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
-    mock::Environment, Event, EventStream, FullId, NetworkConfig, NetworkParams, Prefix,
+    event::Event, mock::Environment, EventStream, FullId, NetworkConfig, NetworkParams, Prefix,
     RelocationOverrides, XorName,
 };
 use std::collections::BTreeMap;

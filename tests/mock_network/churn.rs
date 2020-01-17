@@ -13,11 +13,12 @@ use super::{
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
+    event::Event,
     mock::Environment,
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    Event, EventStream, FullId, Location, NetworkConfig, NetworkParams, Prefix, XorName, Xorable,
+    EventStream, FullId, Location, NetworkConfig, NetworkParams, Prefix, XorName, Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},

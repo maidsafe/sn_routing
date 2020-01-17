@@ -14,8 +14,10 @@ use rand::{
     Rng,
 };
 use routing::{
-    mock::Environment, test_consts, Builder, Connected, Event, EventStream, FullId, Location,
-    NetworkConfig, Node, PausedState, Prefix, PublicId, RelocationOverrides, XorName, Xorable,
+    event::{Connected, Event},
+    mock::Environment,
+    test_consts, Builder, EventStream, FullId, Location, NetworkConfig, Node, PausedState, Prefix,
+    PublicId, RelocationOverrides, XorName, Xorable,
 };
 use std::{
     cmp,

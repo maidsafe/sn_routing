@@ -8,7 +8,7 @@
 
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
-use routing::{mock::Environment, Event, EventStream, Location, NetworkParams, XorName};
+use routing::{event::Event, mock::Environment, EventStream, Location, NetworkParams, XorName};
 
 #[test]
 fn messages_accumulate_with_quorum() {
