@@ -396,7 +396,7 @@ impl SharedState {
 
     /// Returns the index of the public key in our_history that will be trusted by the target
     /// Location
-    pub fn proving_index(&self, target: &Location<XorName>) -> u64 {
+    pub fn proving_index(&self, target: &Location) -> u64 {
         let (prefix, &index) = if let Some(pair) = self
             .their_knowledge
             .iter()

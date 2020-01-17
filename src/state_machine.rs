@@ -260,7 +260,7 @@ impl State {
         }
     }
 
-    pub fn in_location(&self, auth: &Location<XorName>) -> bool {
+    pub fn in_location(&self, auth: &Location) -> bool {
         state_dispatch!(
             *self,
             ref state => state.in_location(auth),

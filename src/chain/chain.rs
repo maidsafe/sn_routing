@@ -912,7 +912,7 @@ impl Chain {
     /// `Location::Node` instead of the stored knowledge. Has no effect for other location types.
     pub fn prove(
         &self,
-        target: &Location<XorName>,
+        target: &Location,
         node_knowledge_override: Option<u64>,
     ) -> SectionProofChain {
         let first_index = match (target, node_knowledge_override) {
@@ -1418,7 +1418,7 @@ impl Chain {
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(&self, dst: &Location<XorName>) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
+    pub fn targets(&self, dst: &Location) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
         let (best_section, dg_size) = match *dst {
             Location::Node(ref target_name) => {
                 if target_name == self.our_id().name() {
@@ -1526,7 +1526,7 @@ impl Chain {
     }
 
     /// Returns whether we are a part of the given location.
-    pub fn in_location(&self, auth: &Location<XorName>) -> bool {
+    pub fn in_location(&self, auth: &Location) -> bool {
         match *auth {
             Location::Node(ref name) => self.our_id().name() == name,
             Location::Section(ref name) => self.our_prefix().matches(name),

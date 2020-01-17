@@ -570,8 +570,8 @@ fn poll_after_churn(
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct MessageKey {
     content: Vec<u8>,
-    src: Location<XorName>,
-    dst: Location<XorName>,
+    src: Location,
+    dst: Location,
 }
 
 /// A set of expectations: Which nodes, groups and sections are supposed to receive a message.
@@ -579,7 +579,7 @@ struct Expectations {
     /// The message expected to be received.
     messages: HashSet<MessageKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
-    sections: HashMap<Location<XorName>, HashSet<XorName>>,
+    sections: HashMap<Location, HashSet<XorName>>,
     /// Helper to build the map of new names to old names by which we can track even relocated
     /// nodes.
     relocation_map_builder: RelocationMapBuilder,
@@ -599,8 +599,8 @@ impl Expectations {
     fn send_and_expect(
         &mut self,
         content: &[u8],
-        src: Location<XorName>,
-        dst: Location<XorName>,
+        src: Location,
+        dst: Location,
         nodes: &mut [TestNode],
         elder_size: usize,
     ) {
@@ -634,7 +634,7 @@ impl Expectations {
     }
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
-    fn expect(&mut self, nodes: &mut [TestNode], dst: Location<XorName>, key: MessageKey) {
+    fn expect(&mut self, nodes: &mut [TestNode], dst: Location, key: MessageKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
             let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.is_recipient(&dst);
             let section = nodes

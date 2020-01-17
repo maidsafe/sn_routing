@@ -125,7 +125,7 @@ impl TestNode {
         unwrap!(self.inner.our_prefix(), "{}", self.inner)
     }
 
-    pub fn is_recipient(&self, dst: &Location<XorName>) -> bool {
+    pub fn is_recipient(&self, dst: &Location) -> bool {
         self.inner.in_location(dst)
     }
 

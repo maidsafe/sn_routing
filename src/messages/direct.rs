@@ -39,8 +39,8 @@ pub enum DirectMessage {
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
     JoinRequest(Box<JoinRequest>),
-    /// Sent from members of a section to a joining node in response to `ConnectionRequest` (which is
-    /// a routing message)
+    /// Sent from members of a section to a joining node in response to `ConnectionRequest`
+    /// (which is a routing message)
     ConnectionResponse,
     /// Sent from Adults and Infants to Elders. Updates Elders about the sender's knowledge of its
     /// own section.

@@ -8,7 +8,7 @@
 
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
-use routing::{event::Event, mock::Environment, EventStream, Location, NetworkParams, XorName};
+use routing::{event::Event, mock::Environment, EventStream, Location, NetworkParams};
 
 #[test]
 fn messages_accumulate_with_quorum() {
@@ -24,7 +24,7 @@ fn messages_accumulate_with_quorum() {
     let src = Location::Section(rng.gen());
     sort_nodes_by_distance_to(&mut nodes, &src.name());
 
-    let send = |node: &mut TestNode, dst: &Location<XorName>, content: Vec<u8>| {
+    let send = |node: &mut TestNode, dst: &Location, content: Vec<u8>| {
         assert!(node.inner.send_message(src, *dst, content).is_ok());
     };
 
