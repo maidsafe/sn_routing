@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto, id::PublicId, message_filter::MessageFilter, messages::HopMessageWithBytes};
-use bytes::Bytes;
+use crate::{
+    crypto::Digest256, id::PublicId, message_filter::MessageFilter, messages::HopMessageWithBytes,
+};
 use lru_time_cache::LruCache;
 use std::time::Duration;
-
-type Digest = [u8; 32];
 
 const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
@@ -36,8 +35,8 @@ impl FilteringResult {
 
 // Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
 pub struct RoutingMessageFilter {
-    incoming: MessageFilter<Digest>,
-    outgoing: LruCache<(Digest, PublicId), ()>,
+    incoming: MessageFilter<Digest256>,
+    outgoing: LruCache<(Digest256, PublicId), ()>,
 }
 
 impl RoutingMessageFilter {
@@ -53,9 +52,9 @@ impl RoutingMessageFilter {
 
     // Filter incoming `RoutingMessage`. Return whether this specific message has already been seen.
     pub fn filter_incoming(&mut self, msg: &HopMessageWithBytes) -> FilteringResult {
-        let hash = hash(msg.full_message_bytes());
+        let hash = msg.full_message_crypto_hash();
 
-        if self.incoming.insert(&hash) > 1 {
+        if self.incoming.insert(hash) > 1 {
             FilteringResult::KnownMessage
         } else {
             FilteringResult::NewMessage
@@ -71,9 +70,9 @@ impl RoutingMessageFilter {
         msg: &HopMessageWithBytes,
         pub_id: &PublicId,
     ) -> FilteringResult {
-        let hash = hash(msg.full_message_bytes());
+        let hash = msg.full_message_crypto_hash();
 
-        if self.outgoing.insert((hash, *pub_id), ()).is_some() {
+        if self.outgoing.insert((*hash, *pub_id), ()).is_some() {
             FilteringResult::KnownMessage
         } else {
             FilteringResult::NewMessage
@@ -85,8 +84,4 @@ impl Default for RoutingMessageFilter {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn hash(msg_bytes: &Bytes) -> Digest {
-    crypto::sha3_256(msg_bytes)
 }

@@ -52,10 +52,7 @@ pub enum MessageWithBytes {
 impl MessageWithBytes {
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {
         match from_network_bytes(&bytes)? {
-            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes {
-                content: msg,
-                full_message_bytes: bytes,
-            })),
+            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes::new_from_parts(msg, bytes))),
             Message::Direct(msg) => Ok(Self::Direct(msg, bytes)),
         }
     }
@@ -68,6 +65,8 @@ pub struct HopMessageWithBytes {
     content: SignedRoutingMessage,
     /// Serialized Message as received or sent to quic_p2p.
     full_message_bytes: Bytes,
+    /// Crypto hash of the full message.
+    full_message_crypto_hash: Digest256,
 }
 
 impl HopMessageWithBytes {
@@ -82,10 +81,17 @@ impl HopMessageWithBytes {
             unreachable!("Created as Hop can only match Hop.")
         };
 
-        Ok(Self {
+        Ok(Self::new_from_parts(content, full_message_bytes))
+    }
+
+    fn new_from_parts(content: SignedRoutingMessage, full_message_bytes: Bytes) -> Self {
+        let full_message_crypto_hash = crypto::sha3_256(&full_message_bytes);
+
+        Self {
             content,
             full_message_bytes,
-        })
+            full_message_crypto_hash,
+        }
     }
 
     pub fn signed_routing_message(&self) -> &SignedRoutingMessage {
@@ -102,6 +108,10 @@ impl HopMessageWithBytes {
 
     pub fn full_message_bytes(&self) -> &Bytes {
         &self.full_message_bytes
+    }
+
+    pub fn full_message_crypto_hash(&self) -> &Digest256 {
+        &self.full_message_crypto_hash
     }
 
     pub fn message_dst(&self) -> &Location {
