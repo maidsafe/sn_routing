@@ -40,7 +40,7 @@ pub enum Message {
     /// A message sent between two nodes directly
     Direct(SignedDirectMessage),
     /// A message sent across the network (in transit)
-    Hop(HopMessage),
+    Hop(SignedRoutingMessage),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -52,58 +52,46 @@ pub enum MessageWithBytes {
 impl MessageWithBytes {
     pub fn from_bytes(bytes: Bytes) -> Result<Self> {
         match from_network_bytes(&bytes)? {
-            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes {
-                content: msg.content,
-                full_message_bytes: bytes,
-            })),
+            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes::new_from_parts(msg, bytes))),
             Message::Direct(msg) => Ok(Self::Direct(msg, bytes)),
         }
     }
 }
 
-/// An individual hop message that represents a part of the route of a message in transit.
-///
-/// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
-/// The `signature` is from the node that sends this directly to a node in its routing table. To
-/// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
-#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct HopMessage {
-    /// Wrapped signed message.
-    pub content: SignedRoutingMessage,
-}
-
-impl HopMessage {
-    /// Wrap `content` for transmission to the next hop and sign it.
-    pub fn new(content: SignedRoutingMessage) -> Result<Self> {
-        Ok(Self { content })
-    }
-}
-
+/// An individual hop message that will be relayed to its destination.
 #[derive(Eq, PartialEq, Clone)]
 pub struct HopMessageWithBytes {
     /// Wrapped signed message.
     content: SignedRoutingMessage,
     /// Serialized Message as received or sent to quic_p2p.
     full_message_bytes: Bytes,
+    /// Crypto hash of the full message.
+    full_message_crypto_hash: Digest256,
 }
 
 impl HopMessageWithBytes {
     /// Serialize message and keep both SignedRoutingMessage and Bytes.
     pub fn new(content: SignedRoutingMessage) -> Result<Self> {
-        let hop_msg = HopMessage::new(content)?;
-        let message = Message::Hop(hop_msg);
+        let message = Message::Hop(content);
         let full_message_bytes = to_network_bytes(&message)?;
 
-        let content = if let Message::Hop(hop_msg) = message {
-            hop_msg.content
+        let content = if let Message::Hop(content) = message {
+            content
         } else {
             unreachable!("Created as Hop can only match Hop.")
         };
 
-        Ok(Self {
+        Ok(Self::new_from_parts(content, full_message_bytes))
+    }
+
+    fn new_from_parts(content: SignedRoutingMessage, full_message_bytes: Bytes) -> Self {
+        let full_message_crypto_hash = crypto::sha3_256(&full_message_bytes);
+
+        Self {
             content,
             full_message_bytes,
-        })
+            full_message_crypto_hash,
+        }
     }
 
     pub fn signed_routing_message(&self) -> &SignedRoutingMessage {
@@ -120,6 +108,10 @@ impl HopMessageWithBytes {
 
     pub fn full_message_bytes(&self) -> &Bytes {
         &self.full_message_bytes
+    }
+
+    pub fn full_message_crypto_hash(&self) -> &Digest256 {
+        &self.full_message_crypto_hash
     }
 
     pub fn message_dst(&self) -> &Location {
@@ -521,16 +513,6 @@ pub enum MessageContent {
     },
     /// Update sent to Adults and Infants by Elders
     GenesisUpdate(GenesisPfxInfo),
-}
-
-impl Debug for HopMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "HopMessage {{ content: {:?}, signature: .. }}",
-            self.content
-        )
-    }
 }
 
 impl Debug for SignedRoutingMessage {
