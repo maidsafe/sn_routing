@@ -425,36 +425,6 @@ impl Adult {
         self.send_signed_message_to_elders(msg)?;
         Ok(Transition::Stay)
     }
-
-    fn handle_backlogged_filtered_signed_message(
-        &mut self,
-        signed_msg: SignedRoutingMessage,
-    ) -> Result<Transition, RoutingError> {
-        trace!(
-            "{} - Handle backlogged signed message: {:?}",
-            self,
-            signed_msg.routing_message()
-        );
-
-        match &signed_msg.routing_message().content {
-            MessageContent::GenesisUpdate(info) => {
-                if signed_msg.check_trust(&self.chain) {
-                    self.handle_genesis_update(info.clone())
-                } else {
-                    trace!("{} - Untrusted GenesisUpdate({:?}) - ignoring", self, info);
-                    Ok(Transition::Stay)
-                }
-            }
-            _ => {
-                trace!(
-                    "{} - Unhandled routing message {:?} - ignoring",
-                    self,
-                    signed_msg.routing_message()
-                );
-                Ok(Transition::Stay)
-            }
-        }
-    }
 }
 
 #[cfg(feature = "mock_base")]
@@ -527,7 +497,15 @@ impl Base for Adult {
 
         for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
-                match self.handle_backlogged_filtered_signed_message(msg) {
+                let msg = match HopMessageWithBytes::new(msg) {
+                    Ok(msg) => msg,
+                    Err(err) => {
+                        error!("{} - Failed to make message {:?}", self, err);
+                        continue;
+                    }
+                };
+
+                match self.handle_filtered_signed_message(msg) {
                     Ok(new_transition) => transition = new_transition,
                     Err(err) => debug!("{} - {:?}", self, err),
                 }

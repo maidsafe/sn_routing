@@ -310,6 +310,13 @@ impl Base for JoiningPeer {
         }
 
         let msg = msg.into_signed_routing_message();
+
+        trace!(
+            "{} - Handle signed message: {:?}",
+            self,
+            msg.routing_message()
+        );
+
         if self.in_location(&msg.routing_message().dst) {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)
