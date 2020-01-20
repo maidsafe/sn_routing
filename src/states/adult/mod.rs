@@ -489,7 +489,7 @@ impl Base for Adult {
         &self.full_id
     }
 
-    fn in_location(&self, auth: &Location<XorName>) -> bool {
+    fn in_location(&self, auth: &Location) -> bool {
         self.chain.in_location(auth)
     }
 

@@ -29,7 +29,6 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     state_machine::{State, Transition},
     timer::Timer,
-    xor_space::XorName,
 };
 use log::LogLevel;
 use std::{
@@ -207,7 +206,7 @@ impl Base for JoiningPeer {
         &self.full_id
     }
 
-    fn in_location(&self, dst: &Location<XorName>) -> bool {
+    fn in_location(&self, dst: &Location) -> bool {
         dst.is_single() && dst.name() == *self.full_id.public_id().name()
     }
 
@@ -229,8 +228,8 @@ impl Base for JoiningPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Location<XorName>,
-        _: Location<XorName>,
+        _: Location,
+        _: Location,
         _: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not joined.", self);

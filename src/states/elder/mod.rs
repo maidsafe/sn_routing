@@ -1041,8 +1041,8 @@ impl Elder {
     fn handle_neighbour_info(
         &mut self,
         elders_info: EldersInfo,
-        src: Location<XorName>,
-        dst: Location<XorName>,
+        src: Location,
+        dst: Location,
         security_metadata: SecurityMetadata,
     ) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
@@ -1252,7 +1252,7 @@ impl Elder {
     /// Returns the set of peers that are responsible for collecting signatures to verify a message;
     /// this may contain us or only other nodes. If our signature is not required, this returns
     /// `None`.
-    fn get_signature_targets(&self, src: &Location<XorName>) -> Option<BTreeSet<XorName>> {
+    fn get_signature_targets(&self, src: &Location) -> Option<BTreeSet<XorName>> {
         let list: Vec<XorName> = match *src {
             Location::Section(_) => self
                 .chain
@@ -1284,7 +1284,7 @@ impl Elder {
 
     /// Returns a list of target IDs for a message sent via route.
     /// Name in exclude will be excluded from the result.
-    fn get_targets(&self, dst: &Location<XorName>) -> Result<(Vec<P2pNode>, usize), RoutingError> {
+    fn get_targets(&self, dst: &Location) -> Result<(Vec<P2pNode>, usize), RoutingError> {
         let (targets, dg_size) = self.chain.targets(dst)?;
         Ok((targets.into_iter().cloned().collect(), dg_size))
     }
@@ -1338,7 +1338,7 @@ impl Base for Elder {
         &self.full_id
     }
 
-    fn in_location(&self, auth: &Location<XorName>) -> bool {
+    fn in_location(&self, auth: &Location) -> bool {
         self.chain.in_location(auth)
     }
 
@@ -1393,8 +1393,8 @@ impl Base for Elder {
 
     fn handle_send_message(
         &mut self,
-        src: Location<XorName>,
-        dst: Location<XorName>,
+        src: Location,
+        dst: Location,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         self.send_routing_message(RoutingMessage {

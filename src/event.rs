@@ -87,9 +87,9 @@ pub enum Event {
         /// The content of the message.
         content: Vec<u8>,
         /// The source location that sent the message.
-        src: Location<XorName>,
+        src: Location,
         /// The destination location that receives the message.
-        dst: Location<XorName>,
+        dst: Location,
     },
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),

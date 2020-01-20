@@ -122,7 +122,7 @@ impl HopMessageWithBytes {
         &self.full_message_bytes
     }
 
-    pub fn message_dst(&self) -> &Location<XorName> {
+    pub fn message_dst(&self) -> &Location {
         &self.content.routing_message().dst
     }
 }
@@ -484,9 +484,9 @@ impl SignedRoutingMessage {
 #[derive(Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
     /// Source location
-    pub src: Location<XorName>,
+    pub src: Location,
     /// Destination location
-    pub dst: Location<XorName>,
+    pub dst: Location,
     /// The message content
     pub content: MessageContent,
 }
@@ -499,66 +499,10 @@ impl RoutingMessage {
     }
 }
 
-/// The routing message types
-///
-/// # The bootstrap process
-///
-///
-/// ## Bootstrapping a client
-///
-/// A newly created `Core`, A, starts in `Disconnected` state and tries to establish a connection to
-/// any node B of the network via Crust. When successful, i.e. when receiving an `OnConnect` event,
-/// it moves to the `Bootstrapping` state.
-///
-/// A now sends a `BootstrapRequest` message to B, containing the signature of A's public ID. B
-/// responds with a `BootstrapResponse`, indicating success or failure. Once it receives that, A
-/// goes into the `Client` state and uses B as its proxy to the network.
-///
-/// A can now exchange messages with any `Location`. This completes the bootstrap process for
-/// clients.
-///
-///
-/// ## Becoming a node
-///
-/// If A wants to become a full routing node (`client_restriction == false`), it needs to relocate,
-/// i. e. change its name to a value chosen by the network, and then add its peers to its routing
-/// table and get added to their routing tables.
-///
-///
-/// ### Relocating on the network
-///
-/// Once in `JoiningNode` state, A sends a `Relocate` request to the `NaeManager` section location
-/// X of A's current name. X computes a target destination Y to which A should relocate and sends
-/// that section's `NaeManager`s an `ExpectCandidate` containing A's current public ID. Each member
-/// of Y votes for `ExpectCandidate`. Once Y accumulates votes for `ExpectCandidate`, send a
-/// `RelocateResponse` back to A, which includes an address space range
-/// into which A should relocate and also the public IDs of the members of Y. A then disconnects
-/// from the network and reconnects with a new ID which falls within the specified address range.
-/// After connecting to the members of Y, it begins the resource proof process. Upon successful
-/// completion, A is regarded as a full node and connects to all neighbouring sections' peers.
-///
-///
-/// ### Connecting to the matching section
-///
-/// To the `ManagedNode` for each public ID it receives from members of Y, A sends its
-/// `ConnectionInfo`. It also caches the ID.
-///
-/// For each `ConnectionInfo` that a node Z receives from A, it decides whether it wants A in its
-/// routing table. If yes, and if A's ID is in its ID cache, Z sends its own `ConnectionInfo` back
-/// to A and also attempts to connect to A via Crust. A does the same, once it receives the
-/// `ConnectionInfo`.
-///
-///
-/// ### Resource Proof Evaluation to approve
-/// When nodes Z of section Y receive `CandidateInfo` from A, they reply with a `ResourceProof`
-/// request. Node A needs to answer these requests (resolving a hashing challenge) with
-/// `ResourceProofResponse`. Members of Y will send out `CandidateApproval` messages to vote for the
-/// approval in their section. Once the vote succeeds, the members of Y send `NodeApproval` to A and
-/// add it into their routing table. When A receives the `NodeApproval` message, it adds the members
-/// of Y to its routing table.
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
+/// Content
 pub enum MessageContent {
     /// Inform neighbours about our new section.
     NeighbourInfo(EldersInfo),

@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_space::{Prefix, XorName, Xorable};
-use std::fmt::{self, Binary, Debug, Display, Formatter};
+use crate::xor_space::{Prefix, XorName};
+use std::fmt::{self, Debug, Formatter};
 
 /// A `Location` is a source or destination of a message.
 ///
@@ -15,17 +15,17 @@ use std::fmt::{self, Binary, Debug, Display, Formatter};
 /// additional sources needed). It's name is the `Authority::key` other
 /// locations require agreement by a quorum of `Elders`.
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
-pub enum Location<N: Xorable + Clone + Copy + Binary + Default> {
+pub enum Location {
     /// A single section whose prefix matches the given name
-    Section(N),
+    Section(XorName),
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
     /// the routing table or only a part of a `Section`
-    PrefixSection(Prefix<N>),
+    PrefixSection(Prefix<XorName>),
     /// A single node
-    Node(N),
+    Node(XorName),
 }
 
-impl<N: Xorable + Clone + Copy + Binary + Default> Location<N> {
+impl Location {
     /// Returns `true` if the location consists of multiple nodes, otherwise `false`.
     pub fn is_multiple(&self) -> bool {
         match self {
@@ -43,7 +43,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Location<N> {
     }
 
     /// Returns the name of location.
-    pub fn name(&self) -> N {
+    pub fn name(&self) -> XorName {
         match self {
             Self::Section(name) | Self::Node(name) => *name,
             Self::PrefixSection(prefix) => prefix.lower_bound(),
@@ -51,7 +51,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Location<N> {
     }
 
     /// Returns if the location is compatible with that prefix
-    pub fn is_compatible(&self, other_prefix: &Prefix<N>) -> bool {
+    pub fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
         match self {
             Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
             Self::PrefixSection(prefix) => other_prefix.is_compatible(prefix),
@@ -59,7 +59,7 @@ impl<N: Xorable + Clone + Copy + Binary + Default> Location<N> {
     }
 }
 
-impl Location<XorName> {
+impl Location {
     /// provide the name mathching a single node's public key
     pub fn single_signing_name(&self) -> Option<&XorName> {
         match *self {
@@ -69,7 +69,7 @@ impl Location<XorName> {
     }
 }
 
-impl<N: Xorable + Clone + Copy + Binary + Default + Display> Debug for Location<N> {
+impl Debug for Location {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Self::Section(ref name) => write!(formatter, "Section(name: {})", name),

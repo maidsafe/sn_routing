@@ -240,8 +240,8 @@ impl Node {
     /// Send a message.
     pub fn send_message(
         &mut self,
-        src: Location<XorName>,
-        dst: Location<XorName>,
+        src: Location,
+        dst: Location,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
@@ -493,12 +493,12 @@ impl Node {
 
     /// Provide a SectionProofChain that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(&self, target: &Location<XorName>) -> Option<SectionProofChain> {
+    pub fn prove(&self, target: &Location) -> Option<SectionProofChain> {
         self.chain().map(|chain| chain.prove(target, None))
     }
 
     /// Checks whether the given location represents self.
-    pub fn in_location(&self, auth: &Location<XorName>) -> bool {
+    pub fn in_location(&self, auth: &Location) -> bool {
         self.machine.current().in_location(auth)
     }
 

@@ -37,7 +37,7 @@ pub trait Base: Display {
     fn network_service(&self) -> &NetworkService;
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
-    fn in_location(&self, auth: &Location<XorName>) -> bool;
+    fn in_location(&self, auth: &Location) -> bool;
     fn peer_map(&self) -> &PeerMap;
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
@@ -109,8 +109,8 @@ pub trait Base: Display {
 
     fn handle_send_message(
         &mut self,
-        _src: Location<XorName>,
-        _dst: Location<XorName>,
+        _src: Location,
+        _dst: Location,
         _content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);

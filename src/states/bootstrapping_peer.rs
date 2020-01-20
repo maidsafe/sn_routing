@@ -203,7 +203,7 @@ impl Base for BootstrappingPeer {
         &self.full_id
     }
 
-    fn in_location(&self, _: &Location<XorName>) -> bool {
+    fn in_location(&self, _: &Location) -> bool {
         false
     }
 
@@ -225,8 +225,8 @@ impl Base for BootstrappingPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Location<XorName>,
-        _: Location<XorName>,
+        _: Location,
+        _: Location,
         _: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not bootstrapped.", self);
