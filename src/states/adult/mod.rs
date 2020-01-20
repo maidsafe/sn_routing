@@ -17,7 +17,7 @@ use super::{
 use crate::{
     chain::{
         Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
-        SectionKeyInfo, SendAckMessagePayload,
+        SectionKeyInfo, SendAckMessagePayload, TrustStatus,
     },
     error::RoutingError,
     event::Event,
@@ -424,6 +424,16 @@ impl Adult {
 
         self.send_signed_message_to_elders(msg)?;
         Ok(Transition::Stay)
+    }
+
+    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+        match msg.check_trust(&self.chain) {
+            TrustStatus::Trusted => Ok(()),
+            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
+                self.log_trust_check_failure(msg);
+                Err(RoutingError::UntrustedMessage)
+            }
+        }
     }
 }
 

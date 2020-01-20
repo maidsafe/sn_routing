@@ -18,8 +18,8 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
-        OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
-        MIN_AGE_COUNTER,
+        OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, TrustStatus,
+        MIN_AGE, MIN_AGE_COUNTER,
     },
     error::RoutingError,
     event::{Connected, Event},
@@ -714,24 +714,30 @@ impl Elder {
             msg.routing_message()
         );
 
-        let dst = msg.message_dst();
-        let signed_msg = msg.signed_routing_message();
-        if self.in_location(dst) {
-            self.check_signed_message_trust(signed_msg)?;
+        if self.in_location(msg.message_dst()) {
+            let signed_msg = msg.signed_routing_message();
+            let handle = self.check_signed_message_trust(signed_msg)?;
             self.check_signed_message_integrity(signed_msg)?;
-            self.update_our_knowledge(signed_msg);
 
-            if dst.is_multiple() {
-                // Broadcast to the rest of the section.
-                if let Err(error) = self.send_signed_message(&msg) {
-                    debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
-                }
+            if handle {
+                self.update_our_knowledge(signed_msg);
+                self.routing_msg_queue.push_back(signed_msg.clone());
             }
-            // if addressed to us, then we just queue it and return
-            self.routing_msg_queue
-                .push_back(msg.into_signed_routing_message());
-        } else if let Err(error) = self.send_signed_message(&msg) {
-            debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
+
+            if !msg.message_dst().is_multiple() {
+                // Message is only for us and we already handled it.
+                return Ok(());
+            }
+        }
+
+        // Relay closer to the destination or broadcast to the rest of our section.
+        if let Err(error) = self.send_signed_message(&msg) {
+            debug!(
+                "{} Failed to send {:?}: {:?}",
+                self,
+                msg.signed_routing_message(),
+                error
+            );
         }
 
         Ok(())
@@ -748,7 +754,7 @@ impl Elder {
         );
 
         if self.in_location(&signed_msg.routing_message().dst)
-            && signed_msg.check_trust(&self.chain)
+            && signed_msg.check_trust(&self.chain).is_trusted()
         {
             // If message still for us and we still trust it, then it must not be stale.
             self.check_signed_message_integrity(&signed_msg)?;
@@ -757,6 +763,22 @@ impl Elder {
         }
 
         Ok(())
+    }
+
+    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<bool, RoutingError> {
+        match msg.check_trust(&self.chain) {
+            TrustStatus::Trusted => Ok(true),
+            TrustStatus::ProofTooNew if msg.routing_message().dst.is_multiple() => {
+                // Proof is too new which can only happen if we've been already demoted but are
+                // lagging behind (or the sender is faulty/malicious). We can't handle the
+                // message ourselves but the other elders likely can.
+                Ok(false)
+            }
+            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
+                self.log_trust_check_failure(msg);
+                Err(RoutingError::UntrustedMessage)
+            }
+        }
     }
 
     fn dispatch_routing_message(

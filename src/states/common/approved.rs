@@ -11,11 +11,12 @@ use crate::{
     chain::{
         AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
         OnlinePayload, PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
+        TrustStatus,
     },
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MemberKnowledge, SignedRoutingMessage},
+    messages::{DirectMessage, MemberKnowledge},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -25,7 +26,7 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use rand::Rng;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt::Debug};
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -522,16 +523,12 @@ pub trait Approved: Base {
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
-        if !self.chain().check_trust(details.proof()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Untrusted {:?} Proof: {:?} --- [{:?}]",
-                self,
-                details,
-                details.proof(),
-                self.chain().get_their_keys_info().format(", ")
-            );
-            return false;
+        match self.chain().check_trust(details.proof()) {
+            TrustStatus::Trusted => (),
+            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
+                self.log_trust_check_failure(details);
+                return false;
+            }
         }
 
         if !details.verify() {
@@ -545,21 +542,6 @@ pub trait Approved: Base {
         }
 
         true
-    }
-
-    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        if msg.check_trust(self.chain()) {
-            Ok(())
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Untrusted {:?} --- [{:?}]",
-                self,
-                msg,
-                self.chain().get_their_keys_info().format(", ")
-            );
-            Err(RoutingError::UntrustedMessage)
-        }
     }
 
     fn send_member_knowledge(&mut self) {
@@ -583,6 +565,16 @@ pub trait Approved: Base {
                 DirectMessage::MemberKnowledge(payload),
             )
         }
+    }
+
+    fn log_trust_check_failure<T: Debug>(&self, msg: &T) {
+        log_or_panic!(
+            LogLevel::Error,
+            "{} - Untrusted {:?} --- [{:?}]",
+            self,
+            msg,
+            self.chain().get_their_keys_info().format(", ")
+        )
     }
 }
 

@@ -14,6 +14,7 @@ pub use self::direct::{
 use crate::{
     chain::{
         Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,
+        TrustStatus,
     },
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
@@ -327,13 +328,13 @@ impl SignedRoutingMessage {
     }
 
     /// Checks if the message can be trusted according to the Chain
-    pub fn check_trust(&self, chain: &Chain) -> bool {
+    pub fn check_trust(&self, chain: &Chain) -> TrustStatus {
         match self.security_metadata {
             SecurityMetadata::Full(ref security_metadata) => {
                 chain.check_trust(security_metadata.proof_chain())
             }
-            SecurityMetadata::None | SecurityMetadata::Single(_) => true,
-            SecurityMetadata::Partial(_) => false,
+            SecurityMetadata::None | SecurityMetadata::Single(_) => TrustStatus::Trusted,
+            SecurityMetadata::Partial(_) => TrustStatus::ProofInvalid,
         }
     }
 

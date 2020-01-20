@@ -83,8 +83,8 @@ impl fmt::Debug for SignedRelocateDetails {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SignedRelocateDetails {{ content: {:?}, .. }}",
-            self.content
+            "SignedRelocateDetails {{ content: {:?}, proof: {:?}, .. }}",
+            self.content, self.proof,
         )
     }
 }
