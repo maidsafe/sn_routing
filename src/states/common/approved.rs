@@ -11,7 +11,6 @@ use crate::{
     chain::{
         AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
         OnlinePayload, PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
-        TrustStatus,
     },
     error::RoutingError,
     event::Event,
@@ -523,25 +522,13 @@ pub trait Approved: Base {
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
-        let public_key = match self.chain().check_trust(details.proof()) {
-            TrustStatus::Trusted(Some(key)) => key,
-            TrustStatus::Trusted(None) | TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
-                self.log_trust_check_failure(details);
-                return false;
+        match details.verify(self.chain().get_their_keys_info()) {
+            Ok(()) => true,
+            Err(error) => {
+                self.log_verify_failure(details, &error);
+                false
             }
-        };
-
-        if !details.verify(public_key) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Invalid signature of {:?}",
-                self,
-                details
-            );
-            return false;
         }
-
-        true
     }
 
     fn send_member_knowledge(&mut self) {
@@ -567,12 +554,13 @@ pub trait Approved: Base {
         }
     }
 
-    fn log_trust_check_failure<T: Debug>(&self, msg: &T) {
+    fn log_verify_failure<T: Debug>(&self, msg: &T, error: &RoutingError) {
         log_or_panic!(
             LogLevel::Error,
-            "{} - Untrusted {:?} --- [{:?}]",
+            "{} - Verification failed: {:?} - {:?} --- [{:?}]",
             self,
             msg,
+            error,
             self.chain().get_their_keys_info().format(", ")
         )
     }

@@ -606,7 +606,7 @@ impl SectionProofChain {
             .all_key_infos()
             .any(|proof_key_info| known_key_infos.contains(proof_key_info))
         {
-            return TrustStatus::Trusted(Some(self.last_public_key_info().key()));
+            return TrustStatus::Trusted(self.last_public_key_info().key());
         }
 
         let max_known_version = match known_key_infos
@@ -710,7 +710,7 @@ impl SectionKeyInfo {
 #[derive(Debug)]
 pub enum TrustStatus<'a> {
     // Message is trusted. Contains the latest section public key.
-    Trusted(Option<&'a bls::PublicKey>),
+    Trusted(&'a bls::PublicKey),
     // Message is untrusted because the proof is invalid.
     ProofInvalid,
     // Message trust cannot be determined because the proof starts at version that is newer than

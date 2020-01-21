@@ -9,7 +9,9 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    chain::{AccumulatingEvent, IntoAccumulatingEvent, SectionProofChain},
+    chain::{
+        AccumulatingEvent, IntoAccumulatingEvent, SectionKeyInfo, SectionProofChain, TrustStatus,
+    },
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
@@ -66,15 +68,24 @@ impl SignedRelocateDetails {
         &self.content
     }
 
-    pub fn proof(&self) -> &SectionProofChain {
-        &self.proof
-    }
+    pub fn verify<'a, I>(&self, their_key_infos: I) -> Result<(), RoutingError>
+    where
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+    {
+        let public_key = match self.proof.check_trust(their_key_infos) {
+            TrustStatus::Trusted(key) => key,
+            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
+                return Err(RoutingError::UntrustedMessage);
+            }
+        };
 
-    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
-    pub fn verify(&self, public_key: &bls::PublicKey) -> bool {
-        serialize(&self.content)
-            .map(|bytes| public_key.verify(&self.signature, bytes))
-            .unwrap_or(false)
+        let bytes = serialize(&self.content)?;
+
+        if public_key.verify(&self.signature, bytes) {
+            Ok(())
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
     }
 }
 

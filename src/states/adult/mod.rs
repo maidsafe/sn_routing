@@ -17,14 +17,15 @@ use super::{
 use crate::{
     chain::{
         Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
-        SectionKeyInfo, SendAckMessagePayload, TrustStatus,
+        SectionKeyInfo, SendAckMessagePayload,
     },
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent,
+        SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -425,15 +426,15 @@ impl Adult {
     }
 
     fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        let public_key = match msg.check_trust(&self.chain) {
-            TrustStatus::Trusted(key) => key,
-            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
-                self.log_trust_check_failure(msg);
-                return Err(RoutingError::UntrustedMessage);
-            }
+        let result = match msg.verify(self.chain.get_their_keys_info()) {
+            Ok(VerifyStatus::Full) => Ok(()),
+            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
+            Err(error) => Err(error),
         };
-
-        self.check_signed_message_integrity(msg, public_key)
+        result.map_err(|error| {
+            self.log_verify_failure(msg, &error);
+            error
+        })
     }
 }
 

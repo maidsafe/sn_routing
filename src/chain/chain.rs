@@ -8,7 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache, TrustStatus},
+    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
     MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
     SectionProofChain,
@@ -866,11 +866,6 @@ impl Chain {
     /// Return the keys we know
     pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.state.get_their_keys_info()
-    }
-
-    /// Check whether we trust the given proof chain.
-    pub fn check_trust<'a>(&self, proof_chain: &'a SectionProofChain) -> TrustStatus<'a> {
-        proof_chain.check_trust(self.state.get_their_keys_info())
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.

@@ -18,8 +18,8 @@ use crate::{
     chain::{
         delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
-        OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, TrustStatus,
-        MIN_AGE, MIN_AGE_COUNTER,
+        OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
+        MIN_AGE_COUNTER,
     },
     error::RoutingError,
     event::{Connected, Event},
@@ -27,7 +27,7 @@ use crate::{
     location::Location,
     messages::{
         BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MemberKnowledge,
-        MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage,
+        MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -717,7 +717,7 @@ impl Elder {
         if self.in_location(msg.message_dst()) {
             let signed_msg = msg.signed_routing_message();
             let handle = self.verify_signed_message(signed_msg).map_err(|error| {
-                self.log_trust_check_failure(signed_msg);
+                self.log_verify_failure(signed_msg, &error);
                 error
             })?;
 
@@ -773,24 +773,16 @@ impl Elder {
     }
 
     fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<bool, RoutingError> {
-        let public_key = match msg.check_trust(&self.chain) {
-            TrustStatus::Trusted(key) => Some(key),
-            TrustStatus::ProofTooNew if msg.routing_message().dst.is_multiple() => {
+        match msg.verify(self.chain.get_their_keys_info()) {
+            Ok(VerifyStatus::Full) => Ok(true),
+            Ok(VerifyStatus::ProofTooNew) if msg.routing_message().dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are
                 // lagging behind (or the sender is faulty/malicious). We can't handle the
                 // message ourselves but the other elders likely can.
-                None
+                Ok(false)
             }
-            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
-                return Err(RoutingError::UntrustedMessage);
-            }
-        };
-
-        if let Some(public_key) = public_key {
-            self.check_signed_message_integrity(msg, public_key)?;
-            Ok(true)
-        } else {
-            Ok(false)
+            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
+            Err(error) => Err(error),
         }
     }
 
