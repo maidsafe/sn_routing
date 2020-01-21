@@ -29,7 +29,7 @@ pub enum RoutingError {
     #[error(display = "The node is not in a state to handle the action.")]
     InvalidState,
     #[error(display = "Bincode error.")]
-    Bincode(ErrorKind),
+    Bincode(Box<ErrorKind>),
     #[error(display = "Peer not found.")]
     PeerNotFound(XorName),
     #[error(display = "Invalid Source.")]
@@ -48,12 +48,4 @@ pub enum RoutingError {
     InvalidElderDkgResult,
     #[error(display = "Error while trying to receive a message from a mpsc channel.")]
     MpscRecvError(mpsc::RecvError),
-}
-
-// TODO dirvine, we need to complete the error story in our code. Here I am unboxing and that will
-// work, but is not the best.
-impl From<Box<ErrorKind>> for RoutingError {
-    fn from(error: Box<ErrorKind>) -> RoutingError {
-        RoutingError::Bincode(*error)
-    }
 }
