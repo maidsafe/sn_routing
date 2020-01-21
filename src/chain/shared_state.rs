@@ -513,6 +513,14 @@ impl SectionProofBlock {
             false
         }
     }
+
+    pub fn prefix(&self) -> &Prefix<XorName> {
+        self.key_info.prefix()
+    }
+
+    pub fn version(&self) -> u64 {
+        self.key_info.version()
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
@@ -534,7 +542,9 @@ impl SectionProofChain {
     }
 
     pub fn push(&mut self, block: SectionProofBlock) {
-        self.blocks.push(block);
+        if self.validate_next_block(&block) {
+            self.blocks.push(block);
+        }
     }
 
     pub fn validate(&self) -> bool {
@@ -582,6 +592,43 @@ impl SectionProofChain {
             genesis_key_info,
             blocks,
         }
+    }
+
+    fn validate_next_block(&self, block: &SectionProofBlock) -> bool {
+        let last = self.last_public_key_info();
+        if block.version() != last.version() + 1 {
+            log_or_panic!(
+                LogLevel::Error,
+                "Invalid next block version - not successor (last: {}, next: {})",
+                last.version(),
+                block.version()
+            );
+            return false;
+        }
+
+        if !block.prefix().is_compatible(last.prefix()) {
+            log_or_panic!(
+                LogLevel::Error,
+                "Invalid next block prefix - not compatible (last: {:?}, next: {:?})",
+                last.prefix(),
+                block.prefix()
+            );
+            return false;
+        }
+
+        if block.prefix() != last.prefix()
+            && block.prefix().bit_count() != last.prefix().bit_count() + 1
+        {
+            log_or_panic!(
+                LogLevel::Error,
+                "Invalid next block prefix - differs by more than one bit (last: {:?}, next: {:?})",
+                last.prefix(),
+                block.prefix()
+            );
+            return false;
+        }
+
+        true
     }
 }
 
