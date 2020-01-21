@@ -8,7 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
+    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache, TrustStatus},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
     MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
     SectionProofChain,
@@ -868,44 +868,9 @@ impl Chain {
         self.state.get_their_keys_info()
     }
 
-    /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
-    /// for a prefix compatible with proof_chain prefix.
+    /// Check whether we trust the given proof chain.
     pub fn check_trust(&self, proof_chain: &SectionProofChain) -> TrustStatus {
-        let last_prefix = proof_chain.last_public_key_info().prefix();
-        let known_key_infos: BTreeSet<_> = self
-            .state
-            .get_their_keys_info()
-            .filter(|&(pfx, _)| last_prefix.is_compatible(pfx))
-            .map(|(_, info)| info)
-            .collect();
-
-        if proof_chain
-            .all_key_infos()
-            .any(|proof_key_info| known_key_infos.contains(proof_key_info))
-        {
-            return TrustStatus::Trusted;
-        }
-
-        let max_known_version = match known_key_infos
-            .iter()
-            .map(|known_key_info| known_key_info.version())
-            .max()
-        {
-            Some(version) => version,
-            None => return TrustStatus::ProofInvalid,
-        };
-
-        let min_proof_version = proof_chain
-            .all_key_infos()
-            .map(|proof_key_info| proof_key_info.version())
-            .min()
-            .expect("empty proof");
-
-        if min_proof_version > max_known_version {
-            TrustStatus::ProofTooNew
-        } else {
-            TrustStatus::ProofInvalid
-        }
+        proof_chain.check_trust(self.state.get_their_keys_info())
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
@@ -1821,27 +1786,6 @@ impl EldersChangeBuilder {
                 .difference(&new_neighbour)
                 .cloned()
                 .collect(),
-        }
-    }
-}
-
-// Result of a message trust check.
-#[derive(Debug)]
-pub enum TrustStatus {
-    // Message is trusted.
-    Trusted,
-    // Message is untrusted because the proof is invalid.
-    ProofInvalid,
-    // Message trust cannot be determined because the proof starts at version that is newer than
-    // our latest one.
-    ProofTooNew,
-}
-
-impl TrustStatus {
-    pub fn is_trusted(&self) -> bool {
-        match self {
-            Self::Trusted => true,
-            _ => false,
         }
     }
 }

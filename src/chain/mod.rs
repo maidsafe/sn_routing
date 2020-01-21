@@ -19,9 +19,7 @@ mod proof;
 mod shared_state;
 
 pub use self::{
-    chain::{
-        delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare, TrustStatus,
-    },
+    chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
     chain_accumulator::AccumulatingProof,
     config::NetworkParams,
     elders_info::{quorum_count, EldersInfo},
@@ -31,7 +29,7 @@ pub use self::{
         IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
-    shared_state::{SectionKeyInfo, SectionProofChain},
+    shared_state::{SectionKeyInfo, SectionProofChain, TrustStatus},
 };
 use crate::PublicId;
 use std::{

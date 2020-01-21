@@ -18,7 +18,7 @@ use bincode::{deserialize, serialize};
 use itertools::Itertools;
 use log::LogLevel;
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -594,6 +594,47 @@ impl SectionProofChain {
         }
     }
 
+    // Verify this proof chain against the given key infos.
+    pub fn check_trust<'a, I>(&self, their_key_infos: I) -> TrustStatus
+    where
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+    {
+        let last_prefix = self.last_public_key_info().prefix();
+        let known_key_infos: BTreeSet<_> = their_key_infos
+            .into_iter()
+            .filter(|&(pfx, _)| last_prefix.is_compatible(pfx))
+            .map(|(_, info)| info)
+            .collect();
+
+        if self
+            .all_key_infos()
+            .any(|proof_key_info| known_key_infos.contains(proof_key_info))
+        {
+            return TrustStatus::Trusted;
+        }
+
+        let max_known_version = match known_key_infos
+            .iter()
+            .map(|known_key_info| known_key_info.version())
+            .max()
+        {
+            Some(version) => version,
+            None => return TrustStatus::ProofInvalid,
+        };
+
+        let min_proof_version = self
+            .all_key_infos()
+            .map(|proof_key_info| proof_key_info.version())
+            .min()
+            .expect("empty proof");
+
+        if min_proof_version > max_known_version {
+            TrustStatus::ProofTooNew
+        } else {
+            TrustStatus::ProofInvalid
+        }
+    }
+
     fn validate_next_block(&self, block: &SectionProofBlock) -> bool {
         let last = self.last_public_key_info();
         if block.version() != last.version() + 1 {
@@ -670,6 +711,27 @@ impl SectionKeyInfo {
 
     pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
         Ok(serialize(&self)?)
+    }
+}
+
+// Result of a message trust check.
+#[derive(Debug)]
+pub enum TrustStatus {
+    // Message is trusted.
+    Trusted,
+    // Message is untrusted because the proof is invalid.
+    ProofInvalid,
+    // Message trust cannot be determined because the proof starts at version that is newer than
+    // our latest one.
+    ProofTooNew,
+}
+
+impl TrustStatus {
+    pub fn is_trusted(&self) -> bool {
+        match self {
+            Self::Trusted => true,
+            _ => false,
+        }
     }
 }
 
