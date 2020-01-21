@@ -9,9 +9,8 @@
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
-    section_proof_chain_from_elders_info, ConnectionInfo, FullId, Location, Message,
-    MessageContent, NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare,
-    SignedRoutingMessage, XorName,
+    section_proof_chain_for_test, ConnectionInfo, FullId, Location, Message, MessageContent,
+    NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare, SignedRoutingMessage, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -52,6 +51,7 @@ fn message_with_invalid_security(fail_type: FailType) {
         safe_section_size,
     });
     env.expect_panic();
+    let mut rng = env.new_rng();
 
     let mut nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
 
@@ -62,7 +62,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     let our_prefix = get_prefix(&nodes[our_node_pos]);
 
     let fake_full = FullId::gen(&mut env.new_rng());
-    let bls_keys = generate_bls_threshold_secret_key(&mut env.new_rng(), 1);
+    let bls_keys = generate_bls_threshold_secret_key(&mut rng, 1);
     let bls_secret_key_share = SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
 
     let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
@@ -72,12 +72,12 @@ fn message_with_invalid_security(fail_type: FailType) {
         P2pNode::new(*fake_full.public_id(), connection_info),
     ))
     .collect();
-    let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001,));
+    let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001));
 
     let routing_msg = RoutingMessage {
         src: Location::Section(our_prefix.name()),
         dst: Location::PrefixSection(their_prefix),
-        content: MessageContent::NeighbourInfo(new_info.clone()),
+        content: MessageContent::NeighbourInfo(new_info),
     };
 
     let message = {
@@ -86,7 +86,8 @@ fn message_with_invalid_security(fail_type: FailType) {
                 .inner
                 .prove(&Location::PrefixSection(their_prefix))),
             FailType::UntrustedProofValidSig => {
-                section_proof_chain_from_elders_info(&new_info, bls_keys.public_keys().public_key())
+                let invalid_prefix = our_prefix;
+                section_proof_chain_for_test(0, invalid_prefix, bls_keys.public_keys().public_key())
             }
         };
         let pk_set = bls_keys.public_keys();
@@ -110,13 +111,13 @@ fn message_with_invalid_security(fail_type: FailType) {
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "FailedSignature")]
 fn message_with_invalid_signature() {
     message_with_invalid_security(FailType::TrustedProofInvalidSig);
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "UntrustedMessage")]
 fn message_with_invalid_proof() {
     message_with_invalid_security(FailType::UntrustedProofValidSig);
 }
