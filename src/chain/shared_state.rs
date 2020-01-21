@@ -565,10 +565,6 @@ impl SectionProofChain {
             .unwrap_or(&self.genesis_key_info)
     }
 
-    pub fn last_public_key(&self) -> &bls::PublicKey {
-        self.last_public_key_info().key()
-    }
-
     pub fn all_key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
         iter::once(&self.genesis_key_info).chain(self.blocks.iter().map(|block| block.key_info()))
     }
@@ -595,9 +591,9 @@ impl SectionProofChain {
     }
 
     // Verify this proof chain against the given key infos.
-    pub fn check_trust<'a, I>(&self, their_key_infos: I) -> TrustStatus
+    pub fn check_trust<'a, 'b, I>(&'a self, their_key_infos: I) -> TrustStatus<'a>
     where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+        I: IntoIterator<Item = (&'b Prefix<XorName>, &'b SectionKeyInfo)>,
     {
         let last_prefix = self.last_public_key_info().prefix();
         let known_key_infos: BTreeSet<_> = their_key_infos
@@ -610,7 +606,7 @@ impl SectionProofChain {
             .all_key_infos()
             .any(|proof_key_info| known_key_infos.contains(proof_key_info))
         {
-            return TrustStatus::Trusted;
+            return TrustStatus::Trusted(Some(self.last_public_key_info().key()));
         }
 
         let max_known_version = match known_key_infos
@@ -712,23 +708,14 @@ impl SectionKeyInfo {
 
 // Result of a message trust check.
 #[derive(Debug)]
-pub enum TrustStatus {
-    // Message is trusted.
-    Trusted,
+pub enum TrustStatus<'a> {
+    // Message is trusted. Contains the latest section public key.
+    Trusted(Option<&'a bls::PublicKey>),
     // Message is untrusted because the proof is invalid.
     ProofInvalid,
     // Message trust cannot be determined because the proof starts at version that is newer than
     // our latest one.
     ProofTooNew,
-}
-
-impl TrustStatus {
-    pub fn is_trusted(&self) -> bool {
-        match self {
-            Self::Trusted => true,
-            _ => false,
-        }
-    }
 }
 
 #[cfg(test)]

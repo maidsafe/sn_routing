@@ -70,11 +70,10 @@ impl SignedRelocateDetails {
         &self.proof
     }
 
-    // TODO: remove this `allow(unused)` when the Relocate signature issue is solved.
-    #[allow(unused)]
-    pub fn verify(&self) -> bool {
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub fn verify(&self, public_key: &bls::PublicKey) -> bool {
         serialize(&self.content)
-            .map(|bytes| self.proof.last_public_key().verify(&self.signature, bytes))
+            .map(|bytes| public_key.verify(&self.signature, bytes))
             .unwrap_or(false)
     }
 }

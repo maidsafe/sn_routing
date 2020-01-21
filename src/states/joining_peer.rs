@@ -318,7 +318,7 @@ impl Base for JoiningPeer {
         );
 
         if self.in_location(&msg.routing_message().dst) {
-            self.check_signed_message_integrity(&msg)?;
+            // TODO: verify the message
             self.dispatch_routing_message(msg, outbox)
         } else {
             self.routing_msg_backlog.push(msg);

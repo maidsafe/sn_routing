@@ -716,8 +716,10 @@ impl Elder {
 
         if self.in_location(msg.message_dst()) {
             let signed_msg = msg.signed_routing_message();
-            let handle = self.check_signed_message_trust(signed_msg)?;
-            self.check_signed_message_integrity(signed_msg)?;
+            let handle = self.verify_signed_message(signed_msg).map_err(|error| {
+                self.log_trust_check_failure(signed_msg);
+                error
+            })?;
 
             if handle {
                 self.update_our_knowledge(signed_msg);
@@ -753,11 +755,16 @@ impl Elder {
             signed_msg.routing_message()
         );
 
-        if self.in_location(&signed_msg.routing_message().dst)
-            && signed_msg.check_trust(&self.chain).is_trusted()
-        {
+        if self.in_location(&signed_msg.routing_message().dst) {
+            if !self
+                .verify_signed_message(&signed_msg)
+                .map(|trusted| trusted)
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+
             // If message still for us and we still trust it, then it must not be stale.
-            self.check_signed_message_integrity(&signed_msg)?;
             self.update_our_knowledge(&signed_msg);
             self.routing_msg_queue.push_back(signed_msg);
         }
@@ -765,19 +772,25 @@ impl Elder {
         Ok(())
     }
 
-    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<bool, RoutingError> {
-        match msg.check_trust(&self.chain) {
-            TrustStatus::Trusted => Ok(true),
+    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<bool, RoutingError> {
+        let public_key = match msg.check_trust(&self.chain) {
+            TrustStatus::Trusted(key) => Some(key),
             TrustStatus::ProofTooNew if msg.routing_message().dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are
                 // lagging behind (or the sender is faulty/malicious). We can't handle the
                 // message ourselves but the other elders likely can.
-                Ok(false)
+                None
             }
             TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
-                self.log_trust_check_failure(msg);
-                Err(RoutingError::UntrustedMessage)
+                return Err(RoutingError::UntrustedMessage);
             }
+        };
+
+        if let Some(public_key) = public_key {
+            self.check_signed_message_integrity(msg, public_key)?;
+            Ok(true)
+        } else {
+            Ok(false)
         }
     }
 

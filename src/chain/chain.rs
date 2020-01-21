@@ -869,7 +869,7 @@ impl Chain {
     }
 
     /// Check whether we trust the given proof chain.
-    pub fn check_trust(&self, proof_chain: &SectionProofChain) -> TrustStatus {
+    pub fn check_trust<'a>(&self, proof_chain: &'a SectionProofChain) -> TrustStatus<'a> {
         proof_chain.check_trust(self.state.get_their_keys_info())
     }
 

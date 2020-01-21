@@ -431,8 +431,9 @@ pub trait Base: Display {
     fn check_signed_message_integrity(
         &self,
         msg: &SignedRoutingMessage,
+        public_key: Option<&bls::PublicKey>,
     ) -> Result<(), RoutingError> {
-        msg.check_integrity().map_err(|err| {
+        msg.check_integrity(public_key).map_err(|err| {
             log_or_panic!(
                 LogLevel::Error,
                 "{} Invalid integrity of {:?}: {:?}",

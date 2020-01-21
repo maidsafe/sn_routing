@@ -160,8 +160,9 @@ pub struct FullSecurityMetadata {
 }
 
 impl FullSecurityMetadata {
-    pub fn verify_sig(&self, bytes: &[u8]) -> bool {
-        self.proof.last_public_key().verify(&self.signature, bytes)
+    #[cfg_attr(feature = "mock_base", allow(clippy::trivially_copy_pass_by_ref))]
+    pub fn verify_sig(&self, public_key: &bls::PublicKey, bytes: &[u8]) -> bool {
+        public_key.verify(&self.signature, bytes)
     }
 
     pub fn last_public_key_info(&self) -> &SectionKeyInfo {
@@ -295,7 +296,7 @@ impl SignedRoutingMessage {
     }
 
     /// Confirms the signatures.
-    pub fn check_integrity(&self) -> Result<()> {
+    pub fn check_integrity(&self, public_key: Option<&bls::PublicKey>) -> Result<()> {
         match self.security_metadata {
             SecurityMetadata::None | SecurityMetadata::Partial(_) => {
                 Err(RoutingError::FailedSignature)
@@ -315,8 +316,10 @@ impl SignedRoutingMessage {
                 Ok(())
             }
             SecurityMetadata::Full(ref security_metadata) => {
+                let public_key = public_key.ok_or(RoutingError::InvalidMessage)?;
+
                 let signed_bytes = serialize(&self.content)?;
-                if !security_metadata.verify_sig(&signed_bytes) {
+                if !security_metadata.verify_sig(public_key, &signed_bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
                 if !security_metadata.validate_proof() {
@@ -328,12 +331,12 @@ impl SignedRoutingMessage {
     }
 
     /// Checks if the message can be trusted according to the Chain
-    pub fn check_trust(&self, chain: &Chain) -> TrustStatus {
+    pub fn check_trust<'a>(&'a self, chain: &Chain) -> TrustStatus<'a> {
         match self.security_metadata {
             SecurityMetadata::Full(ref security_metadata) => {
                 chain.check_trust(security_metadata.proof_chain())
             }
-            SecurityMetadata::None | SecurityMetadata::Single(_) => TrustStatus::Trusted,
+            SecurityMetadata::None | SecurityMetadata::Single(_) => TrustStatus::Trusted(None),
             SecurityMetadata::Partial(_) => TrustStatus::ProofInvalid,
         }
     }
@@ -559,6 +562,7 @@ mod tests {
         let mut rng = rng::new();
         let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
         let pk_set = sk_set.public_keys();
+        let pk = pk_set.public_key();
 
         let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
         let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
@@ -573,14 +577,14 @@ mod tests {
             proof.clone(),
         ));
         assert!(!signed_msg_0.check_fully_signed());
-        assert!(signed_msg_0.check_integrity().is_err());
+        assert!(signed_msg_0.check_integrity(Some(&pk)).is_err());
 
         let signed_msg_1 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_1, pk_set, proof));
         signed_msg_0.add_signature_shares(signed_msg_1);
         assert!(signed_msg_0.check_fully_signed());
 
         signed_msg_0.combine_signatures();
-        unwrap!(signed_msg_0.check_integrity());
+        unwrap!(signed_msg_0.check_integrity(Some(&pk)));
     }
 
     #[test]
@@ -588,6 +592,7 @@ mod tests {
         let mut rng = rng::new();
         let sk_set = generate_bls_threshold_secret_key(&mut rng, 4);
         let pk_set = sk_set.public_keys();
+        let pk = pk_set.public_key();
 
         let sk_share_0 = SectionKeyShare::new_with_position(0, sk_set.secret_key_share(0));
         let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
@@ -618,7 +623,7 @@ mod tests {
         // There is enough signature shares in total, but not enough valid ones, so the message is
         // not fully signed.
         assert!(!signed_msg_0.check_fully_signed());
-        assert!(signed_msg_0.check_integrity().is_err());
+        assert!(signed_msg_0.check_integrity(Some(&pk)).is_err());
 
         // Another valid signature
         let signed_msg_2 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_2, pk_set, proof));
@@ -628,7 +633,7 @@ mod tests {
         assert!(signed_msg_0.check_fully_signed());
 
         signed_msg_0.combine_signatures();
-        unwrap!(signed_msg_0.check_integrity());
+        unwrap!(signed_msg_0.check_integrity(Some(&pk)));
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {

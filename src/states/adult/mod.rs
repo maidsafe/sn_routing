@@ -409,11 +409,9 @@ impl Adult {
 
         if self.in_location(msg.message_dst()) {
             let signed_msg = msg.signed_routing_message();
-            self.check_signed_message_integrity(signed_msg)?;
-
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    self.check_signed_message_trust(signed_msg)?;
+                    self.verify_signed_message(signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
                 _ => {
@@ -426,14 +424,16 @@ impl Adult {
         Ok(Transition::Stay)
     }
 
-    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        match msg.check_trust(&self.chain) {
-            TrustStatus::Trusted => Ok(()),
+    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+        let public_key = match msg.check_trust(&self.chain) {
+            TrustStatus::Trusted(key) => key,
             TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
                 self.log_trust_check_failure(msg);
-                Err(RoutingError::UntrustedMessage)
+                return Err(RoutingError::UntrustedMessage);
             }
-        }
+        };
+
+        self.check_signed_message_integrity(msg, public_key)
     }
 }
 

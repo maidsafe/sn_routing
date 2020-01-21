@@ -523,15 +523,15 @@ pub trait Approved: Base {
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
-        match self.chain().check_trust(details.proof()) {
-            TrustStatus::Trusted => (),
-            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
+        let public_key = match self.chain().check_trust(details.proof()) {
+            TrustStatus::Trusted(Some(key)) => key,
+            TrustStatus::Trusted(None) | TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
                 self.log_trust_check_failure(details);
                 return false;
             }
-        }
+        };
 
-        if !details.verify() {
+        if !details.verify(public_key) {
             log_or_panic!(
                 LogLevel::Error,
                 "{} - Invalid signature of {:?}",
