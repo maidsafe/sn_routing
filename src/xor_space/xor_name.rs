@@ -270,7 +270,7 @@ impl AsRef<XorName> for XorName {
 mod tests {
     use super::*;
     use crate::unwrap;
-    use maidsafe_utilities::serialisation::{deserialise, serialise};
+    use bincode::{deserialize, serialize};
     use rand;
     use std::cmp::Ordering;
 
@@ -281,9 +281,9 @@ mod tests {
     fn serialisation_xor_name() {
         let mut rng = rand::thread_rng();
         let obj_before: XorName = rng.gen();
-        let data = unwrap!(serialise(&obj_before));
+        let data = unwrap!(serialize(&obj_before));
         assert_eq!(data.len(), XOR_NAME_LEN);
-        let obj_after: XorName = unwrap!(deserialise(&data));
+        let obj_after: XorName = unwrap!(deserialize(&data));
         assert_eq!(obj_before, obj_after);
     }
 

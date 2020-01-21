@@ -23,9 +23,9 @@ use crate::{
     xor_space::Xorable,
     ConnectionInfo, Prefix, XorName,
 };
+use bincode::serialize;
 use itertools::Itertools;
 use log::LogLevel;
-use maidsafe_utilities::serialisation::serialise;
 use serde::Serialize;
 use std::{
     cmp::Ordering,
@@ -1194,7 +1194,7 @@ impl Chain {
         signed_payload: &S,
         proofs: AccumulatingProof,
     ) -> Option<bls::Signature> {
-        let signed_bytes = serialise(signed_payload)
+        let signed_bytes = serialize(signed_payload)
             .map_err(|err| {
                 log_or_panic!(
                     LogLevel::Error,
@@ -2070,7 +2070,7 @@ mod tests {
             evt => panic!("unexpected {:?}", evt),
         };
         let public_key = bls_secrets.public_keys().public_key();
-        let signed_bytes = unwrap!(serialise(&relocate_details));
+        let signed_bytes = unwrap!(serialize(&relocate_details));
         assert_eq!(
             accumulated_event
                 .signature
