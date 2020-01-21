@@ -177,12 +177,13 @@ pub trait Approved: Base {
         );
 
         let log_ident = self.log_ident();
-        match self
+        if self
             .parsec_map_mut()
             .handle_response(msg_version, par_response, pub_id, &log_ident)
         {
-            Ok(_) => self.parsec_poll(outbox),
-            Err(_) => Ok(Transition::Stay),
+            self.parsec_poll(outbox)
+        } else {
+            Ok(Transition::Stay)
         }
     }
 

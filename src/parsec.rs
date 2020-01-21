@@ -8,7 +8,6 @@
 
 #[cfg(feature = "mock")]
 use crate::crypto;
-use crate::error::RoutingError;
 #[cfg(feature = "mock")]
 use crate::mock::parsec as inner;
 #[cfg(feature = "mock")]
@@ -120,10 +119,10 @@ impl ParsecMap {
         log_ident: &LogIdent,
     ) -> (Option<DirectMessage>, bool) {
         // Increase the size before fetching the parsec to satisfy the borrow checker
-        let ser_size;
-        match bincode::serialized_size(&request) {
-            Ok(size) => ser_size = size,
-            Err(_) => return (None, false),
+        let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
+            size
+        } else {
+            return (None, false);
         };
         self.count_size(ser_size, msg_version, log_ident);
 
@@ -152,29 +151,26 @@ impl ParsecMap {
         response: Response,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> Result<(), RoutingError> {
+    ) -> bool {
         // Increase the size before fetching the parsec to satisfy the borrow checker
-        self.count_size(
-            bincode::serialized_size::<Response>(&response)?,
-            msg_version,
-            log_ident,
-        );
+        let ser_size = if let Ok(size) = bincode::serialized_size(&response) {
+            size
+        } else {
+            return false;
+        };
+        self.count_size(ser_size, msg_version, log_ident);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
-            return Err(RoutingError::InvalidMessage);
+            return false;
         };
 
         if let Err(err) = parsec.handle_response(&pub_id, response) {
             debug!("{} - Error handling parsec response: {:?}", log_ident, err);
         }
 
-        if self.last_version() == msg_version {
-            Ok(())
-        } else {
-            Err(RoutingError::InvalidMessage)
-        }
+        self.last_version() == msg_version
     }
 
     pub fn create_gossip(
