@@ -714,7 +714,20 @@ impl Elder {
             msg.routing_message()
         );
 
-        if self.in_location(msg.message_dst()) {
+        let in_location = self.in_location(msg.message_dst());
+        if !in_location || msg.message_dst().is_multiple() {
+            // Relay closer to the destination or broadcast to the rest of our section.
+            if let Err(error) = self.send_signed_message(&msg) {
+                debug!(
+                    "{} Failed to send {:?}: {:?}",
+                    self,
+                    msg.signed_routing_message(),
+                    error
+                );
+            }
+        }
+
+        if in_location {
             let signed_msg = msg.signed_routing_message();
             let handle = self.verify_signed_message(signed_msg).map_err(|error| {
                 self.log_verify_failure(signed_msg, &error);
@@ -723,23 +736,9 @@ impl Elder {
 
             if handle {
                 self.update_our_knowledge(signed_msg);
-                self.routing_msg_queue.push_back(signed_msg.clone());
+                self.routing_msg_queue
+                    .push_back(msg.into_signed_routing_message());
             }
-
-            if !msg.message_dst().is_multiple() {
-                // Message is only for us and we already handled it.
-                return Ok(());
-            }
-        }
-
-        // Relay closer to the destination or broadcast to the rest of our section.
-        if let Err(error) = self.send_signed_message(&msg) {
-            debug!(
-                "{} Failed to send {:?}: {:?}",
-                self,
-                msg.signed_routing_message(),
-                error
-            );
         }
 
         Ok(())
