@@ -13,8 +13,8 @@ use crate::{
     id::{P2pNode, PublicId},
     Prefix, XorName, QUORUM_DENOMINATOR, QUORUM_NUMERATOR,
 };
+use bincode::serialize;
 use itertools::Itertools;
-use maidsafe_utilities::serialisation;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     cmp,
@@ -160,7 +160,7 @@ impl EldersInfo {
     ) -> Result<Self, RoutingError> {
         let hash = {
             let fields = (&members, version, &prefix, &prev_hash);
-            crypto::sha3_256(&serialisation::serialise(&fields)?)
+            crypto::sha3_256(&serialize(&fields)?)
         };
         Ok(Self {
             members,

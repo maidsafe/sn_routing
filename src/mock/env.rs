@@ -168,7 +168,6 @@ mod tests {
         parsec::{Request, Response},
         rng, unwrap, Location,
     };
-    use maidsafe_utilities::serialisation;
     use rand::Rng;
     use serde::Serialize;
 
@@ -178,7 +177,7 @@ mod tests {
         let full_id = FullId::gen(&mut rng);
 
         fn serialise<T: Serialize>(msg: &T) -> Vec<u8> {
-            unwrap!(serialisation::serialise(&msg))
+            unwrap!(bincode::serialize(&msg))
         }
 
         let make_message =
@@ -191,8 +190,8 @@ mod tests {
             let repr = Vec::<u64>::new();
 
             (
-                unwrap!(serialisation::deserialise(&serialise(&repr))),
-                unwrap!(serialisation::deserialise(&serialise(&repr))),
+                unwrap!(bincode::deserialize(&serialise(&repr))),
+                unwrap!(bincode::deserialize(&serialise(&repr))),
             )
         };
 

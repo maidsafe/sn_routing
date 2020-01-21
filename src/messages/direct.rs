@@ -17,7 +17,7 @@ use crate::{
     xor_space::XorName,
     ConnectionInfo,
 };
-use maidsafe_utilities::serialisation::serialise;
+use bincode::serialize;
 use std::{
     fmt::{self, Debug, Formatter},
     hash::{Hash, Hasher},
@@ -133,12 +133,12 @@ impl Hash for DirectMessage {
             ParsecRequest(version, request) => {
                 version.hash(state);
                 // Fake hash via serialisation
-                serialise(&request).ok().hash(state)
+                serialize(&request).ok().hash(state)
             }
             ParsecResponse(version, response) => {
                 version.hash(state);
                 // Fake hash via serialisation
-                serialise(&response).ok().hash(state)
+                serialize(&response).ok().hash(state)
             }
             Relocate(details) => details.hash(state),
         }
@@ -155,7 +155,7 @@ pub struct SignedDirectMessage {
 impl SignedDirectMessage {
     /// Create new `DirectMessage` with `content` and signed by `src_full_id`.
     pub fn new(content: DirectMessage, src_full_id: &FullId) -> Result<Self, RoutingError> {
-        let serialised = serialise(&content)?;
+        let serialised = serialize(&content)?;
         let signature = src_full_id.sign(&serialised);
 
         Ok(Self {
@@ -167,7 +167,7 @@ impl SignedDirectMessage {
 
     /// Verify the message signature.
     pub fn verify(&self) -> Result<(), RoutingError> {
-        let serialised = serialise(&self.content)?;
+        let serialised = serialize(&self.content)?;
 
         if self.src_id.verify(&serialised, &self.signature) {
             Ok(())

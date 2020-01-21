@@ -20,7 +20,6 @@ use crate::{
     utils::LogIdent,
 };
 use log::LogLevel;
-use maidsafe_utilities::serialisation;
 #[cfg(not(feature = "mock"))]
 use parsec as inner;
 #[cfg(feature = "mock")]
@@ -120,11 +119,12 @@ impl ParsecMap {
         log_ident: &LogIdent,
     ) -> (Option<DirectMessage>, bool) {
         // Increase the size before fetching the parsec to satisfy the borrow checker
-        self.count_size(
-            serialisation::serialised_size(&request),
-            msg_version,
-            log_ident,
-        );
+        let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
+            size
+        } else {
+            return (None, false);
+        };
+        self.count_size(ser_size, msg_version, log_ident);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
@@ -153,11 +153,12 @@ impl ParsecMap {
         log_ident: &LogIdent,
     ) -> bool {
         // Increase the size before fetching the parsec to satisfy the borrow checker
-        self.count_size(
-            serialisation::serialised_size(&response),
-            msg_version,
-            log_ident,
-        );
+        let ser_size = if let Ok(size) = bincode::serialized_size(&response) {
+            size
+        } else {
+            return false;
+        };
+        self.count_size(ser_size, msg_version, log_ident);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
@@ -374,7 +375,7 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
     #[cfg(feature = "mock")]
     let hash = {
         let fields = (gen_pfx_info.first_info.hash(), gen_pfx_info.parsec_version);
-        crypto::sha3_256(&unwrap!(serialisation::serialise(&fields)))
+        crypto::sha3_256(&unwrap!(bincode::serialize(&fields)))
     };
 
     if gen_pfx_info.first_info.is_member(full_id.public_id()) {
@@ -543,7 +544,7 @@ mod tests {
         pub_id: &id::PublicId,
         log_ident: &LogIdent,
     ) {
-        let msg_size = serialisation::serialised_size(&msg);
+        let msg_size = unwrap!(bincode::serialized_size(&msg));
         let msg_size_limit = PARSEC_SIZE_LIMIT / msg_size;
 
         // Handle msg_size_limit msgs which should trigger pruning needed on the next

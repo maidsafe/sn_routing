@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{quic_p2p, xor_space::XorName};
+use bincode::ErrorKind;
 use err_derive::Error;
-use maidsafe_utilities::serialisation;
 use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
@@ -28,8 +28,8 @@ pub enum RoutingError {
     Network(quic_p2p::Error),
     #[error(display = "The node is not in a state to handle the action.")]
     InvalidState,
-    #[error(display = "Serialisation Error.")]
-    SerialisationError(serialisation::SerialisationError),
+    #[error(display = "Bincode error.")]
+    Bincode(Box<ErrorKind>),
     #[error(display = "Peer not found.")]
     PeerNotFound(XorName),
     #[error(display = "Invalid Source.")]
