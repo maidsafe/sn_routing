@@ -622,11 +622,7 @@ impl SectionProofChain {
             None => return TrustStatus::ProofInvalid,
         };
 
-        let min_proof_version = self
-            .all_key_infos()
-            .map(|proof_key_info| proof_key_info.version())
-            .min()
-            .expect("empty proof");
+        let min_proof_version = self.genesis_key_info.version();
 
         if min_proof_version > max_known_version {
             TrustStatus::ProofTooNew
