@@ -502,10 +502,6 @@ impl SectionProofBlock {
         &self.key_info
     }
 
-    pub fn key(&self) -> &bls::PublicKey {
-        self.key_info.key()
-    }
-
     pub fn verify_with_pk(&self, pk: bls::PublicKey) -> bool {
         if let Ok(to_verify) = self.key_info.serialise_for_signature() {
             pk.verify(&self.sig, to_verify)
@@ -542,18 +538,27 @@ impl SectionProofChain {
     }
 
     pub fn push(&mut self, block: SectionProofBlock) {
-        if self.validate_next_block(&block) {
-            self.blocks.push(block);
+        if !self.validate_next_block(self.last_public_key_info(), &block) {
+            log_or_panic!(
+                LogLevel::Error,
+                "Invalid next block: {:?} -> {:?}",
+                self.last_public_key_info(),
+                block
+            );
+            return;
         }
+
+        self.blocks.push(block)
     }
 
     pub fn validate(&self) -> bool {
-        let mut current_pk = *self.genesis_key_info.key();
+        let mut current = &self.genesis_key_info;
         for block in &self.blocks {
-            if !block.verify_with_pk(current_pk) {
+            if !self.validate_next_block(current, block) {
                 return false;
             }
-            current_pk = *block.key();
+
+            current = block.key_info();
         }
         true
     }
@@ -627,37 +632,18 @@ impl SectionProofChain {
         }
     }
 
-    fn validate_next_block(&self, block: &SectionProofBlock) -> bool {
-        let last = self.last_public_key_info();
-        if block.version() != last.version() + 1 {
-            log_or_panic!(
-                LogLevel::Error,
-                "Invalid next block version - not successor (last: {}, next: {})",
-                last.version(),
-                block.version()
-            );
+    fn validate_next_block(&self, last: &SectionKeyInfo, next: &SectionProofBlock) -> bool {
+        if next.version() != last.version() + 1 {
             return false;
         }
 
-        if !block.prefix().is_compatible(last.prefix()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "Invalid next block prefix - not compatible (last: {:?}, next: {:?})",
-                last.prefix(),
-                block.prefix()
-            );
-            return false;
-        }
-
-        if block.prefix() != last.prefix()
-            && block.prefix().bit_count() != last.prefix().bit_count() + 1
+        if !next.prefix().is_compatible(last.prefix())
+            || next.prefix().bit_count() > last.prefix().bit_count() + 1
         {
-            log_or_panic!(
-                LogLevel::Error,
-                "Invalid next block prefix - differs by more than one bit (last: {:?}, next: {:?})",
-                last.prefix(),
-                block.prefix()
-            );
+            return false;
+        }
+
+        if !next.verify_with_pk(*last.key()) {
             return false;
         }
 
