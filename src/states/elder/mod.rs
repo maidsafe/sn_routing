@@ -27,7 +27,7 @@ use crate::{
     location::Location,
     messages::{
         BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MemberKnowledge,
-        MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage,
+        MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -714,24 +714,31 @@ impl Elder {
             msg.routing_message()
         );
 
-        let dst = msg.message_dst();
-        let signed_msg = msg.signed_routing_message();
-        if self.in_location(dst) {
-            self.check_signed_message_trust(signed_msg)?;
-            self.check_signed_message_integrity(signed_msg)?;
-            self.update_our_knowledge(signed_msg);
-
-            if dst.is_multiple() {
-                // Broadcast to the rest of the section.
-                if let Err(error) = self.send_signed_message(&msg) {
-                    debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
-                }
+        let in_location = self.in_location(msg.message_dst());
+        if !in_location || msg.message_dst().is_multiple() {
+            // Relay closer to the destination or broadcast to the rest of our section.
+            if let Err(error) = self.send_signed_message(&msg) {
+                debug!(
+                    "{} Failed to send {:?}: {:?}",
+                    self,
+                    msg.signed_routing_message(),
+                    error
+                );
             }
-            // if addressed to us, then we just queue it and return
-            self.routing_msg_queue
-                .push_back(msg.into_signed_routing_message());
-        } else if let Err(error) = self.send_signed_message(&msg) {
-            debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
+        }
+
+        if in_location {
+            let signed_msg = msg.signed_routing_message();
+            let handle = self.verify_signed_message(signed_msg).map_err(|error| {
+                self.log_verify_failure(signed_msg, &error);
+                error
+            })?;
+
+            if handle {
+                self.update_our_knowledge(signed_msg);
+                self.routing_msg_queue
+                    .push_back(msg.into_signed_routing_message());
+            }
         }
 
         Ok(())
@@ -747,16 +754,35 @@ impl Elder {
             signed_msg.routing_message()
         );
 
-        if self.in_location(&signed_msg.routing_message().dst)
-            && signed_msg.check_trust(&self.chain)
-        {
+        if self.in_location(&signed_msg.routing_message().dst) {
+            if !self
+                .verify_signed_message(&signed_msg)
+                .map(|trusted| trusted)
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+
             // If message still for us and we still trust it, then it must not be stale.
-            self.check_signed_message_integrity(&signed_msg)?;
             self.update_our_knowledge(&signed_msg);
             self.routing_msg_queue.push_back(signed_msg);
         }
 
         Ok(())
+    }
+
+    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<bool, RoutingError> {
+        match msg.verify(self.chain.get_their_keys_info()) {
+            Ok(VerifyStatus::Full) => Ok(true),
+            Ok(VerifyStatus::ProofTooNew) if msg.routing_message().dst.is_multiple() => {
+                // Proof is too new which can only happen if we've been already demoted but are
+                // lagging behind (or the sender is faulty/malicious). We can't handle the
+                // message ourselves but the other elders likely can.
+                Ok(false)
+            }
+            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
+            Err(error) => Err(error),
+        }
     }
 
     fn dispatch_routing_message(

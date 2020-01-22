@@ -14,7 +14,6 @@ use crate::{
     location::Location,
     messages::{
         DirectMessage, HopMessageWithBytes, Message, MessageWithBytes, SignedDirectMessage,
-        SignedRoutingMessage,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -28,7 +27,6 @@ use crate::{
     ConnectionInfo, NetworkEvent,
 };
 use bytes::Bytes;
-use log::LogLevel;
 use std::{fmt::Display, net::SocketAddr, slice};
 
 // Trait for all states.
@@ -426,22 +424,6 @@ pub trait Base: Display {
         self.network_service_mut()
             .service_mut()
             .send(client, msg, token);
-    }
-
-    fn check_signed_message_integrity(
-        &self,
-        msg: &SignedRoutingMessage,
-    ) -> Result<(), RoutingError> {
-        msg.check_integrity().map_err(|err| {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} Invalid integrity of {:?}: {:?}",
-                self,
-                msg,
-                err,
-            );
-            err
-        })
     }
 }
 

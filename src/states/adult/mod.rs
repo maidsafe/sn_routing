@@ -24,7 +24,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent, SignedRoutingMessage,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent,
+        SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -409,11 +410,9 @@ impl Adult {
 
         if self.in_location(msg.message_dst()) {
             let signed_msg = msg.signed_routing_message();
-            self.check_signed_message_integrity(signed_msg)?;
-
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    self.check_signed_message_trust(signed_msg)?;
+                    self.verify_signed_message(signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
                 _ => {
@@ -426,34 +425,16 @@ impl Adult {
         Ok(Transition::Stay)
     }
 
-    fn handle_backlogged_filtered_signed_message(
-        &mut self,
-        signed_msg: SignedRoutingMessage,
-    ) -> Result<Transition, RoutingError> {
-        trace!(
-            "{} - Handle backlogged signed message: {:?}",
-            self,
-            signed_msg.routing_message()
-        );
-
-        match &signed_msg.routing_message().content {
-            MessageContent::GenesisUpdate(info) => {
-                if signed_msg.check_trust(&self.chain) {
-                    self.handle_genesis_update(info.clone())
-                } else {
-                    trace!("{} - Untrusted GenesisUpdate({:?}) - ignoring", self, info);
-                    Ok(Transition::Stay)
-                }
-            }
-            _ => {
-                trace!(
-                    "{} - Unhandled routing message {:?} - ignoring",
-                    self,
-                    signed_msg.routing_message()
-                );
-                Ok(Transition::Stay)
-            }
-        }
+    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+        let result = match msg.verify(self.chain.get_their_keys_info()) {
+            Ok(VerifyStatus::Full) => Ok(()),
+            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
+            Err(error) => Err(error),
+        };
+        result.map_err(|error| {
+            self.log_verify_failure(msg, &error);
+            error
+        })
     }
 }
 
@@ -527,7 +508,15 @@ impl Base for Adult {
 
         for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
-                match self.handle_backlogged_filtered_signed_message(msg) {
+                let msg = match HopMessageWithBytes::new(msg) {
+                    Ok(msg) => msg,
+                    Err(err) => {
+                        error!("{} - Failed to make message {:?}", self, err);
+                        continue;
+                    }
+                };
+
+                match self.handle_filtered_signed_message(msg) {
                     Ok(new_transition) => transition = new_transition,
                     Err(err) => debug!("{} - {:?}", self, err),
                 }

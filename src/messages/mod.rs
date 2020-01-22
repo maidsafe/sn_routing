@@ -13,7 +13,7 @@ pub use self::direct::{
 };
 use crate::{
     chain::{
-        Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,
+        EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain, TrustStatus,
     },
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
@@ -159,20 +159,34 @@ pub struct FullSecurityMetadata {
 }
 
 impl FullSecurityMetadata {
-    pub fn verify_sig(&self, bytes: &[u8]) -> bool {
-        self.proof.last_public_key().verify(&self.signature, bytes)
-    }
-
     pub fn last_public_key_info(&self) -> &SectionKeyInfo {
         self.proof.last_public_key_info()
     }
 
-    pub fn validate_proof(&self) -> bool {
-        self.proof.validate()
-    }
+    pub fn verify<'a, I>(
+        &self,
+        content: &RoutingMessage,
+        their_key_infos: I,
+    ) -> Result<VerifyStatus, RoutingError>
+    where
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+    {
+        if !self.proof.validate() {
+            return Err(RoutingError::InvalidProvingSection);
+        }
 
-    pub fn proof_chain(&self) -> &SectionProofChain {
-        &self.proof
+        let public_key = match self.proof.check_trust(their_key_infos) {
+            TrustStatus::Trusted(key) => key,
+            TrustStatus::ProofTooNew => return Ok(VerifyStatus::ProofTooNew),
+            TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
+        };
+
+        let signed_bytes = serialize(content)?;
+        if !public_key.verify(&self.signature, &signed_bytes) {
+            return Err(RoutingError::FailedSignature);
+        }
+
+        Ok(VerifyStatus::Full)
     }
 }
 
@@ -195,8 +209,18 @@ pub struct SingleSrcSecurityMetadata {
 }
 
 impl SingleSrcSecurityMetadata {
-    pub fn verify_sig(&self, bytes: &[u8]) -> bool {
-        self.public_id.verify(bytes, &self.signature)
+    pub fn verify(&self, content: &RoutingMessage) -> Result<VerifyStatus, RoutingError> {
+        if content.src.single_signing_name() != Some(self.public_id.name()) {
+            // Signature is not from the source node.
+            return Err(RoutingError::InvalidMessage);
+        }
+
+        let signed_bytes = serialize(content)?;
+        if !self.public_id.verify(&signed_bytes, &self.signature) {
+            return Err(RoutingError::FailedSignature);
+        }
+
+        Ok(VerifyStatus::Full)
     }
 }
 
@@ -293,47 +317,19 @@ impl SignedRoutingMessage {
         }
     }
 
-    /// Confirms the signatures.
-    pub fn check_integrity(&self) -> Result<()> {
-        match self.security_metadata {
+    /// Verify this message is properly signed and trusted.
+    pub fn verify<'a, I>(&self, their_key_infos: I) -> Result<VerifyStatus, RoutingError>
+    where
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+    {
+        match &self.security_metadata {
             SecurityMetadata::None | SecurityMetadata::Partial(_) => {
                 Err(RoutingError::FailedSignature)
             }
-            SecurityMetadata::Single(ref security_metadata) => {
-                if self.content.src.single_signing_name()
-                    != Some(security_metadata.public_id.name())
-                {
-                    // Signature is not from the source node.
-                    return Err(RoutingError::InvalidMessage);
-                }
-
-                let signed_bytes = serialize(&self.content)?;
-                if !security_metadata.verify_sig(&signed_bytes) {
-                    return Err(RoutingError::FailedSignature);
-                }
-                Ok(())
+            SecurityMetadata::Single(security_metadata) => security_metadata.verify(&self.content),
+            SecurityMetadata::Full(security_metadata) => {
+                security_metadata.verify(&self.content, their_key_infos)
             }
-            SecurityMetadata::Full(ref security_metadata) => {
-                let signed_bytes = serialize(&self.content)?;
-                if !security_metadata.verify_sig(&signed_bytes) {
-                    return Err(RoutingError::FailedSignature);
-                }
-                if !security_metadata.validate_proof() {
-                    return Err(RoutingError::InvalidProvingSection);
-                }
-                Ok(())
-            }
-        }
-    }
-
-    /// Checks if the message can be trusted according to the Chain
-    pub fn check_trust(&self, chain: &Chain) -> bool {
-        match self.security_metadata {
-            SecurityMetadata::Full(ref security_metadata) => {
-                chain.check_trust(security_metadata.proof_chain())
-            }
-            SecurityMetadata::None | SecurityMetadata::Single(_) => true,
-            SecurityMetadata::Partial(_) => false,
         }
     }
 
@@ -541,6 +537,15 @@ impl Debug for MessageContent {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
+pub enum VerifyStatus {
+    // The message has been fully verified.
+    Full,
+    // The message trust and integrity cannot be verified because it's proof is too new. It should
+    // be relayed to other nodes who might be able to verify it.
+    ProofTooNew,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -551,7 +556,7 @@ mod tests {
         unwrap, Prefix,
     };
     use rand::{self, Rng};
-    use std::iter;
+    use std::{collections::BTreeMap, iter};
 
     #[test]
     fn combine_signatures() {
@@ -564,6 +569,7 @@ mod tests {
 
         let msg = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
+        let their_key_infos = make_their_key_infos(&pk_set);
 
         let mut signed_msg_0 = unwrap!(SignedRoutingMessage::new(
             msg.clone(),
@@ -572,14 +578,17 @@ mod tests {
             proof.clone(),
         ));
         assert!(!signed_msg_0.check_fully_signed());
-        assert!(signed_msg_0.check_integrity().is_err());
+        assert!(signed_msg_0.verify(&their_key_infos).is_err());
 
         let signed_msg_1 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_1, pk_set, proof));
         signed_msg_0.add_signature_shares(signed_msg_1);
         assert!(signed_msg_0.check_fully_signed());
 
         signed_msg_0.combine_signatures();
-        unwrap!(signed_msg_0.check_integrity());
+        assert_eq!(
+            unwrap!(signed_msg_0.verify(&their_key_infos)),
+            VerifyStatus::Full
+        );
     }
 
     #[test]
@@ -594,6 +603,7 @@ mod tests {
 
         let msg = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
+        let their_key_infos = make_their_key_infos(&pk_set);
 
         // Message with valid signature
         let mut signed_msg_0 = unwrap!(SignedRoutingMessage::new(
@@ -617,7 +627,7 @@ mod tests {
         // There is enough signature shares in total, but not enough valid ones, so the message is
         // not fully signed.
         assert!(!signed_msg_0.check_fully_signed());
-        assert!(signed_msg_0.check_integrity().is_err());
+        assert!(signed_msg_0.verify(&their_key_infos).is_err());
 
         // Another valid signature
         let signed_msg_2 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_2, pk_set, proof));
@@ -627,14 +637,27 @@ mod tests {
         assert!(signed_msg_0.check_fully_signed());
 
         signed_msg_0.combine_signatures();
-        unwrap!(signed_msg_0.check_integrity());
+        assert_eq!(
+            unwrap!(signed_msg_0.verify(&their_key_infos)),
+            VerifyStatus::Full
+        );
+    }
+
+    fn make_section_key_info(pk_set: &bls::PublicKeySet) -> SectionKeyInfo {
+        let version = 0u64;
+        let prefix = Prefix::default();
+        SectionKeyInfo::new(version, prefix, pk_set.public_key())
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
-        let version = 0u64;
-        let prefix = Prefix::default();
-        let section_key_info = SectionKeyInfo::new(version, prefix, pk_set.public_key());
-        SectionProofChain::from_genesis(section_key_info)
+        SectionProofChain::from_genesis(make_section_key_info(pk_set))
+    }
+
+    fn make_their_key_infos(
+        pk_set: &bls::PublicKeySet,
+    ) -> BTreeMap<Prefix<XorName>, SectionKeyInfo> {
+        let key_info = make_section_key_info(pk_set);
+        iter::once((*key_info.prefix(), key_info)).collect()
     }
 
     fn gen_message(rng: &mut MainRng) -> RoutingMessage {

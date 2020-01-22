@@ -15,7 +15,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MemberKnowledge, SignedRoutingMessage},
+    messages::{DirectMessage, MemberKnowledge},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -25,7 +25,7 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use rand::Rng;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt::Debug};
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -522,43 +522,12 @@ pub trait Approved: Base {
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
-        if !self.chain().check_trust(details.proof()) {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Untrusted {:?} Proof: {:?} --- [{:?}]",
-                self,
-                details,
-                details.proof(),
-                self.chain().get_their_keys_info().format(", ")
-            );
-            return false;
-        }
-
-        if !details.verify() {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Invalid signature of {:?}",
-                self,
-                details
-            );
-            return false;
-        }
-
-        true
-    }
-
-    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        if msg.check_trust(self.chain()) {
-            Ok(())
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Untrusted {:?} --- [{:?}]",
-                self,
-                msg,
-                self.chain().get_their_keys_info().format(", ")
-            );
-            Err(RoutingError::UntrustedMessage)
+        match details.verify(self.chain().get_their_keys_info()) {
+            Ok(()) => true,
+            Err(error) => {
+                self.log_verify_failure(details, &error);
+                false
+            }
         }
     }
 
@@ -583,6 +552,17 @@ pub trait Approved: Base {
                 DirectMessage::MemberKnowledge(payload),
             )
         }
+    }
+
+    fn log_verify_failure<T: Debug>(&self, msg: &T, error: &RoutingError) {
+        log_or_panic!(
+            LogLevel::Error,
+            "{} - Verification failed: {:?} - {:?} --- [{:?}]",
+            self,
+            msg,
+            error,
+            self.chain().get_their_keys_info().format(", ")
+        )
     }
 }
 

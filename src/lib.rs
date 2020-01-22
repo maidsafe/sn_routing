@@ -105,8 +105,8 @@ pub mod rng;
 #[cfg(feature = "mock_base")]
 pub use self::{
     chain::{
-        delivery_group_size, elders_info_for_test, quorum_count,
-        section_proof_chain_from_elders_info, NetworkParams, SectionKeyShare, MIN_AGE,
+        delivery_group_size, elders_info_for_test, quorum_count, section_proof_chain_for_test,
+        NetworkParams, SectionKeyShare, MIN_AGE,
     },
     location::Location,
     messages::{Message, MessageContent, RoutingMessage, SignedRoutingMessage},

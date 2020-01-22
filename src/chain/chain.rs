@@ -868,21 +868,6 @@ impl Chain {
         self.state.get_their_keys_info()
     }
 
-    /// Returns `true` if the `proof_chain` contains a key we have in `their_keys` and that key is
-    /// for a prefix compatible with proof_chain prefix.
-    pub fn check_trust(&self, proof_chain: &SectionProofChain) -> bool {
-        let last_prefix = proof_chain.last_public_key_info().prefix();
-        let filtered_keys: BTreeSet<_> = self
-            .state
-            .get_their_keys_info()
-            .filter(|&(pfx, _)| last_prefix.is_compatible(pfx))
-            .map(|(_, info)| info)
-            .collect();
-        proof_chain
-            .all_key_infos()
-            .any(|key_info| filtered_keys.contains(key_info))
-    }
-
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
     /// Ignore votes we may have produced as Parsec will filter for us.
     pub fn is_new(&self, elders_info: &EldersInfo) -> bool {

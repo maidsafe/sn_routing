@@ -9,7 +9,9 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    chain::{AccumulatingEvent, IntoAccumulatingEvent, SectionProofChain},
+    chain::{
+        AccumulatingEvent, IntoAccumulatingEvent, SectionKeyInfo, SectionProofChain, TrustStatus,
+    },
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
@@ -66,16 +68,24 @@ impl SignedRelocateDetails {
         &self.content
     }
 
-    pub fn proof(&self) -> &SectionProofChain {
-        &self.proof
-    }
+    pub fn verify<'a, I>(&self, their_key_infos: I) -> Result<(), RoutingError>
+    where
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+    {
+        let public_key = match self.proof.check_trust(their_key_infos) {
+            TrustStatus::Trusted(key) => key,
+            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
+                return Err(RoutingError::UntrustedMessage);
+            }
+        };
 
-    // TODO: remove this `allow(unused)` when the Relocate signature issue is solved.
-    #[allow(unused)]
-    pub fn verify(&self) -> bool {
-        serialize(&self.content)
-            .map(|bytes| self.proof.last_public_key().verify(&self.signature, bytes))
-            .unwrap_or(false)
+        let bytes = serialize(&self.content)?;
+
+        if public_key.verify(&self.signature, bytes) {
+            Ok(())
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
     }
 }
 
@@ -83,8 +93,8 @@ impl fmt::Debug for SignedRelocateDetails {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SignedRelocateDetails {{ content: {:?}, .. }}",
-            self.content
+            "SignedRelocateDetails {{ content: {:?}, proof: {:?}, .. }}",
+            self.content, self.proof,
         )
     }
 }

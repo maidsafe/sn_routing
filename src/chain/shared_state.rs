@@ -18,7 +18,7 @@ use bincode::{deserialize, serialize};
 use itertools::Itertools;
 use log::LogLevel;
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
     iter, mem,
 };
@@ -502,16 +502,20 @@ impl SectionProofBlock {
         &self.key_info
     }
 
-    pub fn key(&self) -> &bls::PublicKey {
-        self.key_info.key()
-    }
-
     pub fn verify_with_pk(&self, pk: bls::PublicKey) -> bool {
         if let Ok(to_verify) = self.key_info.serialise_for_signature() {
             pk.verify(&self.sig, to_verify)
         } else {
             false
         }
+    }
+
+    pub fn prefix(&self) -> &Prefix<XorName> {
+        self.key_info.prefix()
+    }
+
+    pub fn version(&self) -> u64 {
+        self.key_info.version()
     }
 }
 
@@ -534,16 +538,27 @@ impl SectionProofChain {
     }
 
     pub fn push(&mut self, block: SectionProofBlock) {
-        self.blocks.push(block);
+        if !self.validate_next_block(self.last_public_key_info(), &block) {
+            log_or_panic!(
+                LogLevel::Error,
+                "Invalid next block: {:?} -> {:?}",
+                self.last_public_key_info(),
+                block
+            );
+            return;
+        }
+
+        self.blocks.push(block)
     }
 
     pub fn validate(&self) -> bool {
-        let mut current_pk = *self.genesis_key_info.key();
+        let mut current = &self.genesis_key_info;
         for block in &self.blocks {
-            if !block.verify_with_pk(current_pk) {
+            if !self.validate_next_block(current, block) {
                 return false;
             }
-            current_pk = *block.key();
+
+            current = block.key_info();
         }
         true
     }
@@ -553,10 +568,6 @@ impl SectionProofChain {
             .last()
             .map(|block| block.key_info())
             .unwrap_or(&self.genesis_key_info)
-    }
-
-    pub fn last_public_key(&self) -> &bls::PublicKey {
-        self.last_public_key_info().key()
     }
 
     pub fn all_key_infos(&self) -> impl DoubleEndedIterator<Item = &SectionKeyInfo> {
@@ -582,6 +593,61 @@ impl SectionProofChain {
             genesis_key_info,
             blocks,
         }
+    }
+
+    // Verify this proof chain against the given key infos.
+    pub fn check_trust<'a, 'b, I>(&'a self, their_key_infos: I) -> TrustStatus<'a>
+    where
+        I: IntoIterator<Item = (&'b Prefix<XorName>, &'b SectionKeyInfo)>,
+    {
+        let last_prefix = self.last_public_key_info().prefix();
+        let known_key_infos: BTreeSet<_> = their_key_infos
+            .into_iter()
+            .filter(|&(pfx, _)| last_prefix.is_compatible(pfx))
+            .map(|(_, info)| info)
+            .collect();
+
+        if self
+            .all_key_infos()
+            .any(|proof_key_info| known_key_infos.contains(proof_key_info))
+        {
+            return TrustStatus::Trusted(self.last_public_key_info().key());
+        }
+
+        let max_known_version = match known_key_infos
+            .iter()
+            .map(|known_key_info| known_key_info.version())
+            .max()
+        {
+            Some(version) => version,
+            None => return TrustStatus::ProofInvalid,
+        };
+
+        let min_proof_version = self.genesis_key_info.version();
+
+        if min_proof_version > max_known_version {
+            TrustStatus::ProofTooNew
+        } else {
+            TrustStatus::ProofInvalid
+        }
+    }
+
+    fn validate_next_block(&self, last: &SectionKeyInfo, next: &SectionProofBlock) -> bool {
+        if next.version() != last.version() + 1 {
+            return false;
+        }
+
+        if !next.prefix().is_compatible(last.prefix())
+            || next.prefix().bit_count() > last.prefix().bit_count() + 1
+        {
+            return false;
+        }
+
+        if !next.verify_with_pk(*last.key()) {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -624,6 +690,18 @@ impl SectionKeyInfo {
     pub fn serialise_for_signature(&self) -> Result<Vec<u8>, RoutingError> {
         Ok(serialize(&self)?)
     }
+}
+
+// Result of a message trust check.
+#[derive(Debug)]
+pub enum TrustStatus<'a> {
+    // Message is trusted. Contains the latest section public key.
+    Trusted(&'a bls::PublicKey),
+    // Message is untrusted because the proof is invalid.
+    ProofInvalid,
+    // Message trust cannot be determined because the proof starts at version that is newer than
+    // our latest one.
+    ProofTooNew,
 }
 
 #[cfg(test)]
