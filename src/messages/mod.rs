@@ -26,7 +26,7 @@ use crate::{
 use bincode::serialize;
 use bytes::Bytes;
 use log::LogLevel;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -310,29 +310,8 @@ pub struct PartialSignedRoutingMessage {
 
 impl<'de> Deserialize<'de> for PartialSignedRoutingMessage {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> std::result::Result<Self, D::Error> {
-        struct PeekVisitor;
-
-        impl<'de> de::Visitor<'de> for PeekVisitor {
-            type Value = PartialSignedRoutingMessage;
-
-            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                formatter.write_str("expecting to find SignedRoutingMessage and getting field of PeakedSignedRoutingMessageInfo")
-            }
-
-            fn visit_seq<V>(
-                self,
-                mut seq: V,
-            ) -> std::result::Result<PartialSignedRoutingMessage, V::Error>
-            where
-                V: de::SeqAccess<'de>,
-            {
-                let dst = seq
-                    .next_element()?
-                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
-                Ok(PartialSignedRoutingMessage { dst })
-            }
-        }
-        deserialiser.deserialize_tuple(1, PeekVisitor)
+        let dst: Location = Deserialize::deserialize(deserialiser)?;
+        Ok(PartialSignedRoutingMessage { dst })
     }
 }
 
@@ -760,18 +739,29 @@ mod tests {
         let full_id = FullId::gen(&mut rng);
         let msg = gen_message(&mut rng);
 
-        let signed_msg = unwrap!(SignedRoutingMessage::single_source(msg, &full_id,));
+        let signed_msg_org = unwrap!(SignedRoutingMessage::single_source(msg, &full_id,));
 
-        let msg = unwrap!(HopMessageWithBytes::new(signed_msg, &LogIdent::new("node")));
+        let msg = unwrap!(HopMessageWithBytes::new(
+            signed_msg_org.clone(),
+            &LogIdent::new("node")
+        ));
         let bytes = msg.full_message_bytes();
-        let partial_content = unwrap!(bincode::deserialize::<PartialMessage>(bytes));
-        let partial_msg_head = unwrap!(bincode::deserialize::<PartialMessage>(&bytes[0..40]));
+        let full_msg = unwrap!(from_network_bytes(bytes));
+        let partial_msg = unwrap!(partial_from_network_bytes(bytes));
+        let partial_msg_head = unwrap!(partial_from_network_bytes(&bytes.slice(0, 40)));
 
-        let expected = PartialMessage::Hop(PartialSignedRoutingMessage {
-            dst: *msg.message_dst(),
+        let expected_partial = PartialMessage::Hop(PartialSignedRoutingMessage {
+            dst: signed_msg_org.routing_message().dst,
         });
-        assert_eq!(partial_content, expected);
-        assert_eq!(partial_msg_head, expected);
+        let signed_msg = if let Message::Hop(signed_msg) = full_msg {
+            Some(signed_msg)
+        } else {
+            None
+        };
+
+        assert_eq!(partial_msg, expected_partial);
+        assert_eq!(partial_msg_head, expected_partial);
+        assert_eq!(signed_msg, Some(signed_msg_org))
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
@@ -788,10 +778,9 @@ mod tests {
     fn gen_message(rng: &mut MainRng) -> RoutingMessage {
         use rand::distributions::Standard;
 
-        let name = rng.gen();
         RoutingMessage {
-            src: Location::Section(name),
-            dst: Location::Section(name),
+            src: Location::Section(rng.gen()),
+            dst: Location::Section(rng.gen()),
             content: MessageContent::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }
