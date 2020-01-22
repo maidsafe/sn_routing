@@ -400,7 +400,7 @@ impl Adult {
 
     fn handle_filtered_signed_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        mut msg: HopMessageWithBytes,
     ) -> Result<Transition, RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
@@ -409,14 +409,14 @@ impl Adult {
         );
 
         if self.in_location(msg.message_dst()) {
-            let signed_msg = msg.signed_routing_message();
+            let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    self.verify_signed_message(signed_msg)?;
+                    self.verify_signed_message(&signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
                 _ => {
-                    self.routing_msg_backlog.push(signed_msg.clone());
+                    self.routing_msg_backlog.push(signed_msg);
                 }
             }
         }

@@ -297,7 +297,7 @@ impl Base for JoiningPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        mut msg: HopMessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
@@ -309,19 +309,18 @@ impl Base for JoiningPeer {
             return Ok(Transition::Stay);
         }
 
-        let msg = msg.into_signed_routing_message();
-
         trace!(
             "{} - Handle signed message: {:?}",
             self,
-            msg.routing_message()
+            msg.full_message_crypto_hash()
         );
 
-        if self.in_location(&msg.routing_message().dst) {
+        let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
+        if self.in_location(&signed_msg.routing_message().dst) {
             // TODO: verify the message
-            self.dispatch_routing_message(msg, outbox)
+            self.dispatch_routing_message(signed_msg, outbox)
         } else {
-            self.routing_msg_backlog.push(msg);
+            self.routing_msg_backlog.push(signed_msg);
             Ok(Transition::Stay)
         }
     }

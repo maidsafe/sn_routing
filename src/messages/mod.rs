@@ -19,13 +19,14 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::Location,
-    states::common::{from_network_bytes, to_network_bytes},
+    states::common::{from_network_bytes, peek_from_network_bytes, to_network_bytes},
     utils::LogIdent,
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
 use bytes::Bytes;
 use log::LogLevel;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
@@ -44,6 +45,15 @@ pub enum Message {
     Hop(SignedRoutingMessage),
 }
 
+#[derive(Debug, Eq, PartialEq, Hash, Deserialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum MessagePeek {
+    /// A message sent between two nodes directly
+    Direct(SignedDirectMessage),
+    /// A message sent across the network (in transit)
+    Hop(PeekedSignedRoutingMessageInfo),
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum MessageWithBytes {
     Hop(HopMessageWithBytes),
@@ -51,10 +61,19 @@ pub enum MessageWithBytes {
 }
 
 impl MessageWithBytes {
-    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
-        match from_network_bytes(&bytes)? {
-            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes::new_from_parts(msg, bytes))),
-            Message::Direct(msg) => Ok(Self::Direct(msg, bytes)),
+    pub fn peek_from_bytes(bytes: Bytes) -> Result<Self> {
+        match peek_from_network_bytes(&bytes)? {
+            MessagePeek::Hop(msg_peek) => Ok(Self::Hop(HopMessageWithBytes::new_from_parts(
+                None, msg_peek, bytes,
+            ))),
+            MessagePeek::Direct(msg) => Ok(Self::Direct(msg, bytes)),
+        }
+    }
+
+    pub fn full_hop_msg_from_bytes(bytes: &Bytes) -> Result<SignedRoutingMessage> {
+        match from_network_bytes(bytes)? {
+            Message::Hop(msg) => Ok(msg),
+            Message::Direct(_msg) => Err(RoutingError::InvalidMessage),
         }
     }
 }
@@ -63,7 +82,9 @@ impl MessageWithBytes {
 #[derive(Eq, PartialEq, Clone)]
 pub struct HopMessageWithBytes {
     /// Wrapped signed message.
-    content: SignedRoutingMessage,
+    full_content: Option<SignedRoutingMessage>,
+    /// Peeked SignedRoutingMessage infos
+    peek_msg: PeekedSignedRoutingMessageInfo,
     /// Serialized Message as received or sent to quic_p2p.
     full_message_bytes: Bytes,
     /// Crypto hash of the full message.
@@ -72,44 +93,53 @@ pub struct HopMessageWithBytes {
 
 impl HopMessageWithBytes {
     /// Serialize message and keep both SignedRoutingMessage and Bytes.
-    pub fn new(content: SignedRoutingMessage, log_ident: &LogIdent) -> Result<Self> {
-        let message = Message::Hop(content);
+    pub fn new(full_content: SignedRoutingMessage, log_ident: &LogIdent) -> Result<Self> {
+        let message = Message::Hop(full_content);
         let full_message_bytes = to_network_bytes(&message)?;
 
-        let content = if let Message::Hop(content) = message {
-            content
+        let full_content = if let Message::Hop(full_content) = message {
+            full_content
         } else {
             unreachable!("Created as Hop can only match Hop.")
         };
 
-        let message = Self::new_from_parts(content, full_message_bytes);
+        let peek_msg = PeekedSignedRoutingMessageInfo {
+            dst: full_content.routing_message().dst,
+        };
+        let message = Self::new_from_parts(Some(full_content), peek_msg, full_message_bytes);
 
         trace!(
             "{} Creating message hash({:?}) {:?}",
             log_ident,
             message.full_message_crypto_hash,
-            message.content.routing_message(),
+            message
+                .full_content
+                .as_ref()
+                .expect("New HopMessageWithBytes need full_content")
+                .routing_message(),
         );
 
         Ok(message)
     }
 
-    fn new_from_parts(content: SignedRoutingMessage, full_message_bytes: Bytes) -> Self {
+    fn new_from_parts(
+        full_content: Option<SignedRoutingMessage>,
+        peek_msg: PeekedSignedRoutingMessageInfo,
+        full_message_bytes: Bytes,
+    ) -> Self {
         let full_message_crypto_hash = crypto::sha3_256(&full_message_bytes);
 
         Self {
-            content,
+            full_content,
+            peek_msg,
             full_message_bytes,
             full_message_crypto_hash,
         }
     }
 
-    pub fn signed_routing_message(&self) -> &SignedRoutingMessage {
-        &self.content
-    }
-
-    pub fn into_signed_routing_message(self) -> SignedRoutingMessage {
-        self.content
+    pub fn take_or_deserialize_signed_routing_message(&mut self) -> Result<SignedRoutingMessage> {
+        self.take_signed_routing_message()
+            .map_or_else(|| self.deserialize_signed_routing_message(), Ok)
     }
 
     pub fn full_message_bytes(&self) -> &Bytes {
@@ -121,7 +151,15 @@ impl HopMessageWithBytes {
     }
 
     pub fn message_dst(&self) -> &Location {
-        &self.content.routing_message().dst
+        &self.peek_msg.dst
+    }
+
+    fn take_signed_routing_message(&mut self) -> Option<SignedRoutingMessage> {
+        self.full_content.take()
+    }
+
+    fn deserialize_signed_routing_message(&self) -> Result<SignedRoutingMessage> {
+        MessageWithBytes::full_hop_msg_from_bytes(self.full_message_bytes())
     }
 }
 
@@ -261,12 +299,75 @@ impl Debug for SecurityMetadata {
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+pub struct PeekedSignedRoutingMessageInfo {
+    /// Destination location
+    pub dst: Location,
+}
+
+impl<'de> Deserialize<'de> for PeekedSignedRoutingMessageInfo {
+    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> ::std::result::Result<Self, D::Error> {
+        struct PeekVisitor;
+
+        impl<'de> de::Visitor<'de> for PeekVisitor {
+            type Value = PeekedSignedRoutingMessageInfo;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("expecting to find SignedRoutingMessage and getting field of PeakedSignedRoutingMessageInfo")
+            }
+
+            fn visit_seq<V>(
+                self,
+                mut seq: V,
+            ) -> ::std::result::Result<PeekedSignedRoutingMessageInfo, V::Error>
+            where
+                V: de::SeqAccess<'de>,
+            {
+                let dst = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                Ok(PeekedSignedRoutingMessageInfo { dst })
+            }
+        }
+        deserialiser.deserialize_tuple(1, PeekVisitor)
+    }
+}
+
+/// Wrapper around a routing message, signed by the originator of the message.
+/// Serialized as simple tupple to ease partial deserialization.
+#[derive(Eq, PartialEq, Clone, Hash)]
 pub struct SignedRoutingMessage {
     /// A request or response type message.
     content: RoutingMessage,
     /// Optional metadata for verifying the sender
     security_metadata: SecurityMetadata,
+}
+
+impl Serialize for SignedRoutingMessage {
+    fn serialize<S: Serializer>(&self, serialiser: S) -> ::std::result::Result<S::Ok, S::Error> {
+        (
+            &self.content.dst,
+            &self.content.src,
+            &self.content.content,
+            &self.security_metadata,
+        )
+            .serialize(serialiser)
+    }
+}
+
+impl<'de> Deserialize<'de> for SignedRoutingMessage {
+    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> ::std::result::Result<Self, D::Error> {
+        let (dst, src, content, security_metadata): (
+            Location,
+            Location,
+            MessageContent,
+            SecurityMetadata,
+        ) = Deserialize::deserialize(deserialiser)?;
+        Ok(Self {
+            content: RoutingMessage { dst, src, content },
+            security_metadata,
+        })
+    }
 }
 
 impl SignedRoutingMessage {
@@ -653,6 +754,26 @@ mod tests {
         let version = 0u64;
         let prefix = Prefix::default();
         SectionKeyInfo::new(version, prefix, pk_set.public_key())
+    }
+
+    #[test]
+    fn serialise_and_peek_at_hop_message() {
+        let mut rng = rng::new();
+        let full_id = FullId::gen(&mut rng);
+        let msg = gen_message(&mut rng);
+
+        let signed_msg = unwrap!(SignedRoutingMessage::single_source(msg, &full_id,));
+
+        let msg = unwrap!(HopMessageWithBytes::new(signed_msg, &LogIdent::new("node")));
+        let bytes = msg.full_message_bytes();
+        let peek_msg = unwrap!(bincode::deserialize::<MessagePeek>(bytes));
+        let peek_msg_head = unwrap!(bincode::deserialize::<MessagePeek>(&bytes[0..40]));
+
+        let expected = MessagePeek::Hop(PeekedSignedRoutingMessageInfo {
+            dst: *msg.message_dst(),
+        });
+        assert_eq!(peek_msg, expected);
+        assert_eq!(peek_msg_head, expected);
     }
 
     fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {

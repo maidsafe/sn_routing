@@ -706,7 +706,7 @@ impl Elder {
 
     fn handle_filtered_signed_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        mut msg: HopMessageWithBytes,
     ) -> Result<(), RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
@@ -728,16 +728,15 @@ impl Elder {
         }
 
         if in_location {
-            let signed_msg = msg.signed_routing_message();
-            let handle = self.verify_signed_message(signed_msg).map_err(|error| {
-                self.log_verify_failure(signed_msg, &error);
+            let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
+            let handle = self.verify_signed_message(&signed_msg).map_err(|error| {
+                self.log_verify_failure(&signed_msg, &error);
                 error
             })?;
 
             if handle {
-                self.update_our_knowledge(signed_msg);
-                self.routing_msg_queue
-                    .push_back(msg.into_signed_routing_message());
+                self.update_our_knowledge(&signed_msg);
+                self.routing_msg_queue.push_back(signed_msg);
             }
         }
 
