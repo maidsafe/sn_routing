@@ -596,9 +596,9 @@ impl SectionProofChain {
     }
 
     // Verify this proof chain against the given key infos.
-    pub fn check_trust<'a, 'b, I>(&'a self, their_key_infos: I) -> TrustStatus<'a>
+    pub fn check_trust<'a, I>(&'a self, their_key_infos: I) -> TrustStatus<'a>
     where
-        I: IntoIterator<Item = (&'b Prefix<XorName>, &'b SectionKeyInfo)>,
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
         let last_prefix = self.last_public_key_info().prefix();
         let known_key_infos: BTreeSet<_> = their_key_infos

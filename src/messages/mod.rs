@@ -211,7 +211,7 @@ impl FullSecurityMetadata {
     }
 
     pub fn verify<'a, I>(
-        &self,
+        &'a self,
         content: &RoutingMessage,
         their_key_infos: I,
     ) -> Result<VerifyStatus, RoutingError>
@@ -395,7 +395,7 @@ impl SignedRoutingMessage {
     }
 
     /// Verify this message is properly signed and trusted.
-    pub fn verify<'a, I>(&self, their_key_infos: I) -> Result<VerifyStatus, RoutingError>
+    pub fn verify<'a, I>(&'a self, their_key_infos: I) -> Result<VerifyStatus, RoutingError>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {

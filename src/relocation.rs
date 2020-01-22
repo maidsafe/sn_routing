@@ -68,7 +68,7 @@ impl SignedRelocateDetails {
         &self.content
     }
 
-    pub fn verify<'a, I>(&self, their_key_infos: I) -> Result<(), RoutingError>
+    pub fn verify<'a, I>(&'a self, their_key_infos: I) -> Result<(), RoutingError>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
