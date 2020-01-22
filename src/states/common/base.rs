@@ -263,9 +263,12 @@ pub trait Base: Display {
         message: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        message.inner().dst().le
-        match message {
-            Message::Hop(msg) => self.handle_hop_message(msg, outbox),
+        match message.inner() {
+            MessageContent::AckMessage(..)
+            | MessageContent::NeighbourInfo(..)
+            | MessageContent::UserMessage(..)
+            | MessageContent::NodeApproval(..)
+            | MessageContent::GenesisUpdate(..) => self.handle_hop_message(msg, outbox),
             Message::Direct(msg, _) => {
                 let (msg, public_id) = msg.open()?;
                 let connection_info =
