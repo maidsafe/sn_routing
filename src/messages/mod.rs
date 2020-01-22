@@ -302,17 +302,10 @@ impl Debug for SecurityMetadata {
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Debug, Eq, PartialEq, Clone, Hash)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash, Deserialize)]
 pub struct PartialSignedRoutingMessage {
     /// Destination location
     pub dst: Location,
-}
-
-impl<'de> Deserialize<'de> for PartialSignedRoutingMessage {
-    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> std::result::Result<Self, D::Error> {
-        let dst: Location = Deserialize::deserialize(deserialiser)?;
-        Ok(PartialSignedRoutingMessage { dst })
-    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
