@@ -89,7 +89,7 @@ impl AdultUnderTest {
                 }
             }));
         msg.combine_signatures();
-        unwrap!(HopMessageWithBytes::new(msg))
+        unwrap!(HopMessageWithBytes::new(msg, &LogIdent::new("node")))
     }
 
     fn perform_elders_change(&mut self) {

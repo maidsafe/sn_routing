@@ -20,6 +20,7 @@ use crate::{
     id::{FullId, PublicId},
     location::Location,
     states::common::{from_network_bytes, to_network_bytes},
+    utils::LogIdent,
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
@@ -71,7 +72,7 @@ pub struct HopMessageWithBytes {
 
 impl HopMessageWithBytes {
     /// Serialize message and keep both SignedRoutingMessage and Bytes.
-    pub fn new(content: SignedRoutingMessage) -> Result<Self> {
+    pub fn new(content: SignedRoutingMessage, log_ident: &LogIdent) -> Result<Self> {
         let message = Message::Hop(content);
         let full_message_bytes = to_network_bytes(&message)?;
 
@@ -81,7 +82,16 @@ impl HopMessageWithBytes {
             unreachable!("Created as Hop can only match Hop.")
         };
 
-        Ok(Self::new_from_parts(content, full_message_bytes))
+        let message = Self::new_from_parts(content, full_message_bytes);
+
+        trace!(
+            "{} Creating message hash({:?}) {:?}",
+            log_ident,
+            message.full_message_crypto_hash,
+            message.content.routing_message(),
+        );
+
+        Ok(message)
     }
 
     fn new_from_parts(content: SignedRoutingMessage, full_message_bytes: Bytes) -> Self {
@@ -100,10 +110,6 @@ impl HopMessageWithBytes {
 
     pub fn into_signed_routing_message(self) -> SignedRoutingMessage {
         self.content
-    }
-
-    pub fn routing_message(&self) -> &RoutingMessage {
-        self.content.routing_message()
     }
 
     pub fn full_message_bytes(&self) -> &Bytes {

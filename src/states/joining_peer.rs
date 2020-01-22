@@ -304,7 +304,7 @@ impl Base for JoiningPeer {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                msg.routing_message()
+                msg.full_message_crypto_hash()
             );
             return Ok(Transition::Stay);
         }

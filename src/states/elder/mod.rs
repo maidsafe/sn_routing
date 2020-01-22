@@ -558,7 +558,7 @@ impl Elder {
     // them but possibly did not receive them already.
     fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
         for (_, msg) in mem::replace(&mut self.pending_voted_msgs, Default::default()) {
-            let msg = match HopMessageWithBytes::new(msg) {
+            let msg = match HopMessageWithBytes::new(msg, &self.log_ident()) {
                 Ok(msg) => msg,
                 Err(err) => {
                     error!("Failed to make message {:?}", err);
@@ -566,11 +566,11 @@ impl Elder {
                 }
             };
             match self.send_signed_message(&msg) {
-                Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
+                Ok(()) => trace!("{} - Resend {:?}", self, msg.full_message_crypto_hash()),
                 Err(error) => debug!(
                     "{} - Failed to resend {:?}: {:?}",
                     self,
-                    msg.routing_message(),
+                    msg.full_message_crypto_hash(),
                     error
                 ),
             }
@@ -683,7 +683,7 @@ impl Elder {
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
-            let signed_msg = HopMessageWithBytes::new(signed_msg)?;
+            let signed_msg = HopMessageWithBytes::new(signed_msg, &self.log_ident())?;
             self.handle_signed_message(signed_msg)?;
         }
         Ok(())
@@ -696,7 +696,7 @@ impl Elder {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                msg.routing_message()
+                msg.full_message_crypto_hash()
             );
             return Ok(());
         }
@@ -711,7 +711,7 @@ impl Elder {
         trace!(
             "{} - Handle signed message: {:?}",
             self,
-            msg.routing_message()
+            msg.full_message_crypto_hash()
         );
 
         let in_location = self.in_location(msg.message_dst());
@@ -721,7 +721,7 @@ impl Elder {
                 debug!(
                     "{} Failed to send {:?}: {:?}",
                     self,
-                    msg.signed_routing_message(),
+                    msg.full_message_crypto_hash(),
                     error
                 );
             }
@@ -1176,8 +1176,8 @@ impl Elder {
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
             let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
-            let msg = HopMessageWithBytes::new(msg)?;
-            if self.in_location(&msg.routing_message().dst) {
+            let msg = HopMessageWithBytes::new(msg, &self.log_ident())?;
+            if self.in_location(msg.message_dst()) {
                 self.handle_signed_message(msg)?;
             } else {
                 self.send_signed_message(&msg)?;
@@ -1193,8 +1193,8 @@ impl Elder {
         ) {
             if target == *self.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
-                    let msg = HopMessageWithBytes::new(msg)?;
-                    if self.in_location(&msg.routing_message().dst) {
+                    let msg = HopMessageWithBytes::new(msg, &self.log_ident())?;
+                    if self.in_location(msg.message_dst()) {
                         self.handle_signed_message(msg)?;
                     } else {
                         self.send_signed_message(&msg)?;
@@ -1247,7 +1247,7 @@ impl Elder {
         trace!(
             "{}: Sending message {:?} via targets {:?}",
             self,
-            msg.signed_routing_message(),
+            msg.full_message_crypto_hash(),
             target_p2p_nodes
         );
 
