@@ -154,6 +154,15 @@ impl HopMessageWithBytes {
         &self.partial_content.dst
     }
 
+    pub fn matching_routing_message_bytes(
+        &self,
+        signed_msg: &SignedRoutingMessage,
+    ) -> Result<Bytes> {
+        let start = 4;
+        let end = start + bincode::serialized_size(signed_msg.routing_message())? as usize;
+        Ok(self.full_message_bytes.slice(start, end))
+    }
+
     fn take_signed_routing_message(&mut self) -> Option<SignedRoutingMessage> {
         self.full_content.take()
     }
@@ -212,7 +221,7 @@ impl FullSecurityMetadata {
 
     pub fn verify<'a, I>(
         &self,
-        content: &RoutingMessage,
+        content: &[u8],
         their_key_infos: I,
     ) -> Result<VerifyStatus, RoutingError>
     where
@@ -228,8 +237,7 @@ impl FullSecurityMetadata {
             TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
         };
 
-        let signed_bytes = serialize(content)?;
-        if !public_key.verify(&self.signature, &signed_bytes) {
+        if !public_key.verify(&self.signature, content) {
             return Err(RoutingError::FailedSignature);
         }
 
@@ -256,14 +264,17 @@ pub struct SingleSrcSecurityMetadata {
 }
 
 impl SingleSrcSecurityMetadata {
-    pub fn verify(&self, content: &RoutingMessage) -> Result<VerifyStatus, RoutingError> {
-        if content.src.single_signing_name() != Some(self.public_id.name()) {
+    pub fn verify(
+        &self,
+        content: &[u8],
+        single_signing_name: Option<&XorName>,
+    ) -> Result<VerifyStatus, RoutingError> {
+        if single_signing_name != Some(self.public_id.name()) {
             // Signature is not from the source node.
             return Err(RoutingError::InvalidMessage);
         }
 
-        let signed_bytes = serialize(content)?;
-        if !self.public_id.verify(&signed_bytes, &self.signature) {
+        if !self.public_id.verify(content, &self.signature) {
             return Err(RoutingError::FailedSignature);
         }
 
@@ -333,6 +344,7 @@ impl Serialize for SignedRoutingMessage {
 impl<'de> Deserialize<'de> for SignedRoutingMessage {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> std::result::Result<Self, D::Error> {
         let (dst, src, content, security_metadata) = Deserialize::deserialize(deserialiser)?;
+
         Ok(Self {
             content: RoutingMessage { src, dst, content },
             security_metadata,
@@ -395,7 +407,11 @@ impl SignedRoutingMessage {
     }
 
     /// Verify this message is properly signed and trusted.
-    pub fn verify<'a, I>(&self, their_key_infos: I) -> Result<VerifyStatus, RoutingError>
+    pub fn verify<'a, I>(
+        &self,
+        content: &[u8],
+        their_key_infos: I,
+    ) -> Result<VerifyStatus, RoutingError>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
@@ -403,9 +419,11 @@ impl SignedRoutingMessage {
             SecurityMetadata::None | SecurityMetadata::Partial(_) => {
                 Err(RoutingError::FailedSignature)
             }
-            SecurityMetadata::Single(security_metadata) => security_metadata.verify(&self.content),
+            SecurityMetadata::Single(security_metadata) => {
+                security_metadata.verify(content, self.content.src.single_signing_name())
+            }
             SecurityMetadata::Full(security_metadata) => {
-                security_metadata.verify(&self.content, their_key_infos)
+                security_metadata.verify(content, their_key_infos)
             }
         }
     }
@@ -548,10 +566,10 @@ impl SignedRoutingMessage {
 /// A routing message with source and destination locations.
 #[derive(Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
-    /// Source location
-    pub src: Location,
     /// Destination location
     pub dst: Location,
+    /// Source location
+    pub src: Location,
     /// The message content
     pub content: MessageContent,
 }
@@ -645,6 +663,7 @@ mod tests {
         let sk_share_1 = SectionKeyShare::new_with_position(1, sk_set.secret_key_share(1));
 
         let msg = gen_message(&mut rng);
+        let signed_bytes = unwrap!(serialize(&msg));
         let proof = make_proof_chain(&pk_set);
         let their_key_infos = make_their_key_infos(&pk_set);
 
@@ -655,7 +674,9 @@ mod tests {
             proof.clone(),
         ));
         assert!(!signed_msg_0.check_fully_signed());
-        assert!(signed_msg_0.verify(&their_key_infos).is_err());
+        assert!(signed_msg_0
+            .verify(&signed_bytes, &their_key_infos)
+            .is_err());
 
         let signed_msg_1 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_1, pk_set, proof));
         signed_msg_0.add_signature_shares(signed_msg_1);
@@ -663,7 +684,7 @@ mod tests {
 
         signed_msg_0.combine_signatures();
         assert_eq!(
-            unwrap!(signed_msg_0.verify(&their_key_infos)),
+            unwrap!(signed_msg_0.verify(&signed_bytes, &their_key_infos)),
             VerifyStatus::Full
         );
     }
@@ -679,6 +700,7 @@ mod tests {
         let sk_share_2 = SectionKeyShare::new_with_position(2, sk_set.secret_key_share(2));
 
         let msg = gen_message(&mut rng);
+        let signed_bytes = unwrap!(serialize(&msg));
         let proof = make_proof_chain(&pk_set);
         let their_key_infos = make_their_key_infos(&pk_set);
 
@@ -704,7 +726,9 @@ mod tests {
         // There is enough signature shares in total, but not enough valid ones, so the message is
         // not fully signed.
         assert!(!signed_msg_0.check_fully_signed());
-        assert!(signed_msg_0.verify(&their_key_infos).is_err());
+        assert!(signed_msg_0
+            .verify(&signed_bytes, &their_key_infos)
+            .is_err());
 
         // Another valid signature
         let signed_msg_2 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_2, pk_set, proof));
@@ -715,7 +739,7 @@ mod tests {
 
         signed_msg_0.combine_signatures();
         assert_eq!(
-            unwrap!(signed_msg_0.verify(&their_key_infos)),
+            unwrap!(signed_msg_0.verify(&signed_bytes, &their_key_infos)),
             VerifyStatus::Full
         );
     }

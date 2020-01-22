@@ -729,10 +729,13 @@ impl Elder {
 
         if in_location {
             let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
-            let handle = self.verify_signed_message(&signed_msg).map_err(|error| {
-                self.log_verify_failure(&signed_msg, &error);
-                error
-            })?;
+            let signed_bytes = msg.matching_routing_message_bytes(&signed_msg)?;
+            let handle = self
+                .verify_signed_message(&signed_msg, &signed_bytes)
+                .map_err(|error| {
+                    self.log_verify_failure(&signed_msg, &error);
+                    error
+                })?;
 
             if handle {
                 self.update_our_knowledge(&signed_msg);
@@ -754,8 +757,9 @@ impl Elder {
         );
 
         if self.in_location(&signed_msg.routing_message().dst) {
+            let signed_bytes = bincode::serialize(signed_msg.routing_message())?;
             if !self
-                .verify_signed_message(&signed_msg)
+                .verify_signed_message(&signed_msg, &signed_bytes)
                 .map(|trusted| trusted)
                 .unwrap_or(false)
             {
@@ -770,8 +774,12 @@ impl Elder {
         Ok(())
     }
 
-    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<bool, RoutingError> {
-        match msg.verify(self.chain.get_their_keys_info()) {
+    fn verify_signed_message(
+        &self,
+        msg: &SignedRoutingMessage,
+        signed_bytes: &[u8],
+    ) -> Result<bool, RoutingError> {
+        match msg.verify(signed_bytes, self.chain.get_their_keys_info()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::ProofTooNew) if msg.routing_message().dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are

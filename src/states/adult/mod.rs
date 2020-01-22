@@ -412,7 +412,8 @@ impl Adult {
             let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    self.verify_signed_message(&signed_msg)?;
+                    let signed_bytes = msg.matching_routing_message_bytes(&signed_msg)?;
+                    self.verify_signed_message(&signed_msg, &signed_bytes)?;
                     return self.handle_genesis_update(info.clone());
                 }
                 _ => {
@@ -425,8 +426,12 @@ impl Adult {
         Ok(Transition::Stay)
     }
 
-    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        let result = match msg.verify(self.chain.get_their_keys_info()) {
+    fn verify_signed_message(
+        &self,
+        msg: &SignedRoutingMessage,
+        signed_bytes: &[u8],
+    ) -> Result<(), RoutingError> {
+        let result = match msg.verify(signed_bytes, self.chain.get_their_keys_info()) {
             Ok(VerifyStatus::Full) => Ok(()),
             Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
             Err(error) => Err(error),
