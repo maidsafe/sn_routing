@@ -426,15 +426,12 @@ impl Adult {
     }
 
     fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        let result = match msg.verify(self.chain.get_their_keys_info()) {
-            Ok(VerifyStatus::Full) => Ok(()),
-            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
-            Err(error) => Err(error),
-        };
-        result.map_err(|error| {
-            self.log_verify_failure(msg, &error);
-            error
-        })
+        msg.verify(self.chain.get_their_key_infos())
+            .and_then(VerifyStatus::require_full)
+            .map_err(|error| {
+                self.log_verify_failure(msg, &error, self.chain.get_their_key_infos());
+                error
+            })
     }
 }
 

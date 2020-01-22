@@ -8,6 +8,7 @@
 
 use crate::{
     action::Action,
+    chain::SectionKeyInfo,
     error::RoutingError,
     event::Client,
     id::{FullId, P2pNode, PublicId},
@@ -24,11 +25,17 @@ use crate::{
     state_machine::Transition,
     timer::Timer,
     utils::LogIdent,
-    xor_space::XorName,
+    xor_space::{Prefix, XorName},
     ConnectionInfo, NetworkEvent,
 };
 use bytes::Bytes;
-use std::{fmt::Display, net::SocketAddr, slice};
+use itertools::Itertools;
+use log::LogLevel;
+use std::{
+    fmt::{Debug, Display},
+    net::SocketAddr,
+    slice,
+};
 
 // Trait for all states.
 pub trait Base: Display {
@@ -425,6 +432,21 @@ pub trait Base: Display {
         self.network_service_mut()
             .service_mut()
             .send(client, msg, token);
+    }
+
+    fn log_verify_failure<'a, T, I>(&self, msg: &T, error: &RoutingError, their_key_infos: I)
+    where
+        T: Debug,
+        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+    {
+        log_or_panic!(
+            LogLevel::Error,
+            "{} - Verification failed: {:?} - {:?} --- [{:?}]",
+            self,
+            msg,
+            error,
+            their_key_infos.into_iter().format(", ")
+        )
     }
 }
 

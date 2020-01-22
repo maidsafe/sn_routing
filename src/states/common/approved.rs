@@ -25,7 +25,7 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use rand::Rng;
-use std::{collections::BTreeSet, fmt::Debug};
+use std::collections::BTreeSet;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -522,10 +522,10 @@ pub trait Approved: Base {
     }
 
     fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
-        match details.verify(self.chain().get_their_keys_info()) {
+        match details.verify(self.chain().get_their_key_infos()) {
             Ok(()) => true,
             Err(error) => {
-                self.log_verify_failure(details, &error);
+                self.log_verify_failure(details, &error, self.chain().get_their_key_infos());
                 false
             }
         }
@@ -552,17 +552,6 @@ pub trait Approved: Base {
                 DirectMessage::MemberKnowledge(payload),
             )
         }
-    }
-
-    fn log_verify_failure<T: Debug>(&self, msg: &T, error: &RoutingError) {
-        log_or_panic!(
-            LogLevel::Error,
-            "{} - Verification failed: {:?} - {:?} --- [{:?}]",
-            self,
-            msg,
-            error,
-            self.chain().get_their_keys_info().format(", ")
-        )
     }
 }
 

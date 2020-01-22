@@ -32,6 +32,9 @@ pub struct RelocateDetails {
     /// Relocation destination - the node will be relocated to a section whose prefix matches this
     /// name.
     pub destination: XorName,
+    /// The `SectionKeyInfo` of the destination section used by the relocated node to verify
+    /// messages.
+    pub destination_key_info: SectionKeyInfo,
     /// The age the node will have post-relocation.
     pub age: u8,
 }
@@ -80,7 +83,6 @@ impl SignedRelocateDetails {
         };
 
         let bytes = serialize(&self.content)?;
-
         if public_key.verify(&self.signature, bytes) {
             Ok(())
         } else {
