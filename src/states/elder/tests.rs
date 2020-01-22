@@ -173,6 +173,7 @@ impl ElderUnderTest {
             iter::once(AccumulatingEvent::Online(OnlinePayload {
                 p2p_node,
                 age: MIN_AGE,
+                their_knowledge: None,
             })),
         );
     }

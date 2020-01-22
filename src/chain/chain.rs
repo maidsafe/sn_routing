@@ -397,6 +397,12 @@ impl Chain {
         let relocating_state = self.state.create_relocating_state();
         let mut details_to_add = Vec::new();
 
+        struct PartialRelocateDetails {
+            pub_id: PublicId,
+            destination: XorName,
+            age: u8,
+        }
+
         for (name, member_info) in self.state.our_joined_members_mut() {
             if member_info.p2p_node.public_id() == trigger_node {
                 continue;
@@ -418,7 +424,7 @@ impl Chain {
             }
 
             member_info.state = relocating_state;
-            details_to_add.push(RelocateDetails {
+            details_to_add.push(PartialRelocateDetails {
                 pub_id: *member_info.p2p_node.public_id(),
                 destination,
                 age: member_info.age() + 1,
@@ -429,7 +435,17 @@ impl Chain {
 
         for details in details_to_add {
             trace!("{} - Change state to Relocating {}", self, details.pub_id);
-            self.state.relocate_queue.push_front(details)
+
+            let destination_key_info = self
+                .latest_compatible_their_key_info(&details.destination)
+                .clone();
+            let details = RelocateDetails {
+                pub_id: details.pub_id,
+                destination: details.destination,
+                destination_key_info,
+                age: details.age,
+            };
+            self.state.relocate_queue.push_front(details);
         }
     }
 
@@ -864,8 +880,18 @@ impl Chain {
     }
 
     /// Return the keys we know
-    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
-        self.state.get_their_keys_info()
+    pub fn get_their_key_infos(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
+        self.state.get_their_key_infos()
+    }
+
+    /// Returns the latest key info whose prefix is compatible with the given name.
+    pub fn latest_compatible_their_key_info(&self, name: &XorName) -> &SectionKeyInfo {
+        self.state
+            .get_their_key_infos()
+            .filter(|(prefix, _)| prefix.matches(name))
+            .map(|(_, info)| info)
+            .max_by_key(|info| info.version())
+            .unwrap_or_else(|| self.state.our_history.first_key_info())
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
@@ -2013,6 +2039,9 @@ mod tests {
         let relocate_details = RelocateDetails {
             pub_id: *chain.our_id(),
             destination: *chain.our_id().name(),
+            destination_key_info: chain
+                .latest_compatible_their_key_info(chain.our_id().name())
+                .clone(),
             age: 0,
         };
         let elder_size = chain.our_info().len();

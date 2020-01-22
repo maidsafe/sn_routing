@@ -80,8 +80,12 @@ impl EventSigPayload {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct OnlinePayload {
+    // Identifier of the joining node.
     pub p2p_node: P2pNode,
+    // The age the node should have after joining.
     pub age: u8,
+    // The version of the destination section that the joining node knows, if any.
+    pub their_knowledge: Option<u64>,
 }
 
 /// Routing Network events

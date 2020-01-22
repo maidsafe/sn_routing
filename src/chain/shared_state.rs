@@ -73,7 +73,7 @@ impl SharedState {
     ) -> Self {
         let pk_info = SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
         let our_history = SectionProofChain::from_genesis(pk_info);
-        let their_key_info = our_history.last_public_key_info();
+        let their_key_info = our_history.last_key_info();
         let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
 
         let our_members = elders_info
@@ -291,7 +291,7 @@ impl SharedState {
         self.our_history.push(proof_block);
         self.our_infos.push(elders_info);
 
-        let key_info = self.our_history.last_public_key_info().clone();
+        let key_info = self.our_history.last_key_info().clone();
         self.update_their_keys(&key_info);
     }
 
@@ -382,7 +382,7 @@ impl SharedState {
     }
 
     /// Returns the reference to their_keys and any recent keys we still hold.
-    pub fn get_their_keys_info(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
+    pub fn get_their_key_infos(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
         self.their_keys
             .iter()
             .chain(self.their_recent_keys.iter().map(|(p, k)| (p, k)))
@@ -559,7 +559,7 @@ impl SectionProofSlice {
         )
     }
 
-    pub fn last_new_public_key_info(&self) -> Option<&SectionKeyInfo> {
+    pub fn last_new_key_info(&self) -> Option<&SectionKeyInfo> {
         self.blocks.last().map(|block| block.key_info())
     }
 
@@ -647,11 +647,11 @@ impl SectionProofChain {
     }
 
     pub fn push(&mut self, block: SectionProofBlock) {
-        if !validate_next_block(self.last_public_key_info(), &block) {
+        if !validate_next_block(self.last_key_info(), &block) {
             log_or_panic!(
                 LogLevel::Error,
                 "Invalid next block: {:?} -> {:?}",
-                self.last_public_key_info(),
+                self.last_key_info(),
                 block
             );
             return;
@@ -673,7 +673,11 @@ impl SectionProofChain {
         true
     }
 
-    pub fn last_public_key_info(&self) -> &SectionKeyInfo {
+    pub fn first_key_info(&self) -> &SectionKeyInfo {
+        &self.genesis_key_info
+    }
+
+    pub fn last_key_info(&self) -> &SectionKeyInfo {
         self.blocks
             .last()
             .map(|block| block.key_info())
@@ -863,7 +867,7 @@ mod test {
         // Assert
         //
         let actual_keys = state
-            .get_their_keys_info()
+            .get_their_key_infos()
             .map(|(p, info)| {
                 (
                     *p,

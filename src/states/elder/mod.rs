@@ -615,7 +615,8 @@ impl Elder {
             let dst = Location::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
 
-            if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
+            if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }, None)
+            {
                 debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
             }
         });
@@ -730,7 +731,7 @@ impl Elder {
         if in_location {
             let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             let handle = self.verify_signed_message(&signed_msg).map_err(|error| {
-                self.log_verify_failure(&signed_msg, &error);
+                self.log_verify_failure(&signed_msg, &error, self.chain.get_their_key_infos());
                 error
             })?;
 
@@ -771,7 +772,7 @@ impl Elder {
     }
 
     fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<bool, RoutingError> {
-        match msg.verify(self.chain.get_their_keys_info()) {
+        match msg.verify(self.chain.get_their_key_infos()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::ProofTooNew) if msg.routing_message().dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are
@@ -862,7 +863,7 @@ impl Elder {
     }
 
     fn vote_send_section_info_ack(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys = self.chain.get_their_keys_info().any(|(_, info)| {
+        let has_their_keys = self.chain.get_their_key_infos().any(|(_, info)| {
             *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
         });
 
@@ -874,7 +875,12 @@ impl Elder {
     // Send NodeApproval to the current candidate which promotes them to Adult and allows them to
     // passively participate in parsec consensus (that is, they can receive gossip and poll
     // consensused blocks out of parsec, but they can't vote yet)
-    fn handle_candidate_approval(&mut self, p2p_node: P2pNode, _outbox: &mut dyn EventBox) {
+    fn handle_candidate_approval(
+        &mut self,
+        p2p_node: P2pNode,
+        their_knowledge: Option<u64>,
+        _outbox: &mut dyn EventBox,
+    ) {
         info!(
             "{} Our section with {:?} has approved candidate {}.",
             self,
@@ -909,7 +915,10 @@ impl Elder {
 
         let src = Location::PrefixSection(*trimmed_info.first_info.prefix());
         let content = MessageContent::NodeApproval(trimmed_info);
-        if let Err(error) = self.send_routing_message(RoutingMessage { src, dst, content }) {
+
+        if let Err(error) =
+            self.send_routing_message(RoutingMessage { src, dst, content }, their_knowledge)
+        {
             debug!(
                 "{} Failed sending NodeApproval to {}: {:?}",
                 self, pub_id, error
@@ -1006,7 +1015,7 @@ impl Elder {
         }
 
         // This joining node is being relocated to us.
-        let age = if let Some(payload) = join_request.relocate_payload {
+        let (age, their_knowledge) = if let Some(payload) = join_request.relocate_payload {
             if !payload.verify_identity(&pub_id) {
                 debug!(
                     "{} - Ignoring relocation JoinRequest from {} - invalid signature.",
@@ -1033,16 +1042,23 @@ impl Elder {
                 return;
             }
 
-            details.content().age
+            (
+                details.content().age,
+                Some(details.content().destination_key_info.version()),
+            )
         } else {
-            MIN_AGE
+            (MIN_AGE, None)
         };
 
         self.send_direct_message(
             p2p_node.connection_info(),
             DirectMessage::ConnectionResponse,
         );
-        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
+        self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
+            p2p_node,
+            age,
+            their_knowledge,
+        }))
     }
 
     fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
@@ -1054,7 +1070,7 @@ impl Elder {
 
         let new_key_info = self
             .chain
-            .get_their_keys_info()
+            .get_their_key_infos()
             .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
             .map_or(false, |(_, info)| info.version() < key_info.version());
 
@@ -1161,7 +1177,15 @@ impl Elder {
     // Constructs a signed message, finds the nodes responsible for accumulation, and either sends
     // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+    //
+    // If `node_knowledge_override` is set and the destination is a single node, it will be used as
+    // the starting index of the proof. Otherwise the index is calculated using the knowledge
+    // stored in the shared state.
+    fn send_routing_message(
+        &mut self,
+        routing_msg: RoutingMessage,
+        node_knowledge_override: Option<u64>,
+    ) -> Result<(), RoutingError> {
         if !self.in_location(&routing_msg.src) {
             log_or_panic!(
                 LogLevel::Error,
@@ -1184,7 +1208,7 @@ impl Elder {
             return Ok(());
         }
 
-        let signed_msg = self.to_signed_routing_message(routing_msg, None)?;
+        let signed_msg = self.to_signed_routing_message(routing_msg, node_knowledge_override)?;
 
         for target in Iterator::flatten(
             self.get_signature_targets(&signed_msg.routing_message().src)
@@ -1422,11 +1446,14 @@ impl Base for Elder {
         dst: Location,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message(RoutingMessage {
-            src,
-            dst,
-            content: MessageContent::UserMessage(content),
-        })
+        self.send_routing_message(
+            RoutingMessage {
+                src,
+                dst,
+                content: MessageContent::UserMessage(content),
+            },
+            None,
+        )
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
@@ -1630,7 +1657,7 @@ impl Approved for Elder {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
-        self.handle_candidate_approval(payload.p2p_node, outbox);
+        self.handle_candidate_approval(payload.p2p_node, payload.their_knowledge, outbox);
         self.print_rt_size();
         Ok(())
     }
@@ -1826,7 +1853,7 @@ impl Approved for Elder {
             ack_version: ack_payload.ack_version,
         };
 
-        self.send_routing_message(RoutingMessage { src, dst, content })
+        self.send_routing_message(RoutingMessage { src, dst, content }, None)
     }
 
     fn handle_relocate_prepare_event(

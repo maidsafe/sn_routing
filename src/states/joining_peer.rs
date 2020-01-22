@@ -12,14 +12,14 @@ use super::{
     common::Base,
 };
 use crate::{
-    chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
+    chain::{EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
     error::RoutingError,
     event::{Connected, Event},
     id::{FullId, P2pNode},
     location::Location,
     messages::{
         BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MessageContent,
-        RoutingMessage, SignedRoutingMessage,
+        RoutingMessage, SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -29,10 +29,12 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     state_machine::{State, Transition},
     timer::Timer,
+    xor_space::{Prefix, XorName},
 };
 use log::LogLevel;
 use std::{
     fmt::{self, Display, Formatter},
+    iter,
     time::Duration,
 };
 
@@ -187,6 +189,21 @@ impl JoiningPeer {
         Transition::IntoAdult { gen_pfx_info }
     }
 
+    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+        if let JoinType::Relocate(payload) = &self.join_type {
+            let key_info = &payload.details.content().destination_key_info;
+            msg.verify(as_iter(key_info))
+                .and_then(VerifyStatus::require_full)
+                .map_err(|error| {
+                    self.log_verify_failure(msg, &error, as_iter(key_info));
+                    error
+                })
+        } else {
+            // We don't have the root key info so we can't verify the message.
+            Ok(())
+        }
+    }
+
     #[cfg(feature = "mock_base")]
     pub fn process_timers(&mut self) {
         self.timer.process_timers()
@@ -317,7 +334,7 @@ impl Base for JoiningPeer {
 
         let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
         if self.in_location(&signed_msg.routing_message().dst) {
-            // TODO: verify the message
+            self.verify_signed_message(&signed_msg)?;
             self.dispatch_routing_message(signed_msg, outbox)
         } else {
             self.routing_msg_backlog.push(signed_msg);
@@ -338,4 +355,8 @@ enum JoinType {
     First { timeout_token: u64 },
     // Node being relocated.
     Relocate(RelocatePayload),
+}
+
+fn as_iter(key_info: &SectionKeyInfo) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
+    iter::once((key_info.prefix(), key_info))
 }

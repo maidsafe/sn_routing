@@ -206,8 +206,8 @@ pub struct FullSecurityMetadata {
 }
 
 impl FullSecurityMetadata {
-    pub fn last_new_public_key_info(&self) -> Option<&SectionKeyInfo> {
-        self.proof.last_new_public_key_info()
+    pub fn last_new_key_info(&self) -> Option<&SectionKeyInfo> {
+        self.proof.last_new_key_info()
     }
 
     pub fn verify<'a, I>(
@@ -225,11 +225,11 @@ impl FullSecurityMetadata {
         };
 
         let signed_bytes = serialize(content)?;
-        if !public_key.verify(&self.signature, &signed_bytes) {
-            return Err(RoutingError::FailedSignature);
+        if public_key.verify(&self.signature, &signed_bytes) {
+            Ok(VerifyStatus::Full)
+        } else {
+            Err(RoutingError::FailedSignature)
         }
-
-        Ok(VerifyStatus::Full)
     }
 }
 
@@ -390,7 +390,7 @@ impl SignedRoutingMessage {
         }
     }
 
-    /// Verify this message is properly signed and trusted.
+    /// Verifies this message is properly signed and trusted.
     pub fn verify<'a, I>(&'a self, their_key_infos: I) -> Result<VerifyStatus, RoutingError>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
@@ -412,9 +412,7 @@ impl SignedRoutingMessage {
             SecurityMetadata::None | SecurityMetadata::Partial(_) | SecurityMetadata::Single(_) => {
                 None
             }
-            SecurityMetadata::Full(ref security_metadata) => {
-                security_metadata.last_new_public_key_info()
-            }
+            SecurityMetadata::Full(ref security_metadata) => security_metadata.last_new_key_info(),
         }
     }
 
@@ -617,6 +615,15 @@ pub enum VerifyStatus {
     // The message trust and integrity cannot be verified because it's proof is too new. It should
     // be relayed to other nodes who might be able to verify it.
     ProofTooNew,
+}
+
+impl VerifyStatus {
+    pub fn require_full(self) -> Result<(), RoutingError> {
+        match self {
+            Self::Full => Ok(()),
+            Self::ProofTooNew => Err(RoutingError::UntrustedMessage),
+        }
+    }
 }
 
 #[cfg(test)]
