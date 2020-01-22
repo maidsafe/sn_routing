@@ -12,10 +12,7 @@ use crate::{
     event::Client,
     id::{FullId, P2pNode, PublicId},
     location::Location,
-    messages::{
-        DirectMessage, HopMessageWithBytes, Message, MessageWithBytes, SignedDirectMessage,
-        SignedRoutingMessage,
-    },
+    messages::{Message, MessageContent},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -57,14 +54,14 @@ pub trait Base: Display {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: MessageContent,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        msg: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
 
@@ -248,7 +245,7 @@ pub trait Base: Display {
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = MessageWithBytes::from_bytes(bytes)
+        let result = Message::from_network_bytes(&bytes)
             .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
 
         match result {
@@ -263,12 +260,13 @@ pub trait Base: Display {
     fn handle_new_deserialised_message(
         &mut self,
         src_addr: SocketAddr,
-        message: MessageWithBytes,
+        message: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
+        message.inner().dst().le
         match message {
-            MessageWithBytes::Hop(msg) => self.handle_hop_message(msg, outbox),
-            MessageWithBytes::Direct(msg, _) => {
+            Message::Hop(msg) => self.handle_hop_message(msg, outbox),
+            Message::Direct(msg, _) => {
                 let (msg, public_id) = msg.open()?;
                 let connection_info =
                     if let Some(connection_info) = self.peer_map().get_connection_info(&src_addr) {
@@ -349,7 +347,7 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: DirectMessage) {
+    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: MessageContent) {
         let message = if let Ok(message) = self.to_signed_direct_message(content) {
             message
         } else {
@@ -400,8 +398,8 @@ pub trait Base: Display {
             .send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
-    fn to_signed_direct_message(&self, content: DirectMessage) -> Result<Message, RoutingError> {
-        SignedDirectMessage::new(content, self.full_id())
+    fn to_signed_direct_message(&self, content: MessageContent) -> Result<Message, RoutingError> {
+        MessageContent::SignedDirectMessage::new(content, self.full_id())
             .map(Message::Direct)
             .map_err(|err| {
                 error!("{} - Failed to create SignedDirectMessage: {:?}", self, err);
@@ -429,10 +427,7 @@ pub trait Base: Display {
             .send(client, msg, token);
     }
 
-    fn check_signed_message_integrity(
-        &self,
-        msg: &SignedRoutingMessage,
-    ) -> Result<(), RoutingError> {
+    fn check_signed_message_integrity(&self, msg: &Message) -> Result<(), RoutingError> {
         msg.check_integrity().map_err(|err| {
             log_or_panic!(
                 LogLevel::Error,

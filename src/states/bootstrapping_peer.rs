@@ -13,7 +13,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode},
     location::Location,
-    messages::{BootstrapResponse, DirectMessage, HopMessageWithBytes},
+    messages::{BootstrapResponse, Message, MessageContent},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -124,7 +124,7 @@ impl BootstrappingPeer {
         let _ = self.timeout_tokens.insert(token, dst.peer_addr);
 
         let destination = self.get_destination();
-        self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
+        self.send_direct_message(&dst, MessageContent::BootstrapRequest(destination));
         self.peer_map_mut().connect(dst);
     }
 
@@ -277,7 +277,7 @@ impl Base for BootstrappingPeer {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: MessageContent,
         p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
@@ -292,14 +292,14 @@ impl Base for BootstrappingPeer {
         }
 
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+            MessageContent::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 info!(
                     "{} - Joining a section {:?} (given by {:?})",
                     self, info, p2p_node
                 );
                 self.join_section(info)
             }
-            DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
+            MessageContent::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(
                     "{} - Bootstrapping redirected to another set of peers: {:?}",
                     self, new_conn_infos
@@ -321,7 +321,7 @@ impl Base for BootstrappingPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        msg: Message,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         trace!(

@@ -6,257 +6,53 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod direct;
+pub(crate) mod security_metadata;
 
-pub use self::direct::{
-    BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage,
-};
 use crate::{
     chain::{
         Chain, EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain,
     },
-    crypto::{self, signing::Signature, Digest256},
+    crypto::{self, Digest256},
     error::{Result, RoutingError},
-    id::{FullId, PublicId},
+    id::FullId,
     location::Location,
-    states::common::{from_network_bytes, to_network_bytes},
+    parsec,
+    relocation::{RelocatePayload, SignedRelocateDetails},
     xor_space::{Prefix, XorName},
+    ConnectionInfo,
 };
 use bytes::Bytes;
 use log::LogLevel;
-use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
+use security_metadata::{
+    FullSecurityMetadata, PartialSecurityMetadata, SecurityMetadata, SingleSrcSecurityMetadata,
+};
 use std::{
     collections::BTreeSet,
     fmt::{self, Debug, Formatter},
+    hash::{Hash, Hasher},
     mem,
 };
 
-/// Wrapper of all messages.
-///
-/// This is the only type allowed to be sent / received on the network.
-#[derive(Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum Message {
-    /// A message sent between two nodes directly
-    Direct(SignedDirectMessage),
-    /// A message sent across the network (in transit)
-    Hop(HopMessage),
-}
-
-#[allow(clippy::large_enum_variant)]
-pub enum MessageWithBytes {
-    Hop(HopMessageWithBytes),
-    Direct(SignedDirectMessage, Bytes),
-}
-
-impl MessageWithBytes {
-    pub fn from_bytes(bytes: Bytes) -> Result<Self> {
-        match from_network_bytes(&bytes)? {
-            Message::Hop(msg) => Ok(Self::Hop(HopMessageWithBytes {
-                content: msg.content,
-                full_message_bytes: bytes,
-            })),
-            Message::Direct(msg) => Ok(Self::Direct(msg, bytes)),
-        }
-    }
-}
-
-/// An individual hop message that represents a part of the route of a message in transit.
-///
-/// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
-/// The `signature` is from the node that sends this directly to a node in its routing table. To
-/// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
-#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct HopMessage {
-    /// Wrapped signed message.
-    pub content: SignedRoutingMessage,
-}
-
-impl HopMessage {
-    /// Wrap `content` for transmission to the next hop and sign it.
-    pub fn new(content: SignedRoutingMessage) -> Result<Self> {
-        Ok(Self { content })
-    }
-}
-
-#[derive(Eq, PartialEq, Clone)]
-pub struct HopMessageWithBytes {
-    /// Wrapped signed message.
-    content: SignedRoutingMessage,
-    /// Serialized Message as received or sent to quic_p2p.
-    full_message_bytes: Bytes,
-}
-
-impl HopMessageWithBytes {
-    /// Serialize message and keep both SignedRoutingMessage and Bytes.
-    pub fn new(content: SignedRoutingMessage) -> Result<Self> {
-        let hop_msg = HopMessage::new(content)?;
-        let message = Message::Hop(hop_msg);
-        let full_message_bytes = to_network_bytes(&message)?;
-
-        let content = if let Message::Hop(hop_msg) = message {
-            hop_msg.content
-        } else {
-            unreachable!("Created as Hop can only match Hop.")
-        };
-
-        Ok(Self {
-            content,
-            full_message_bytes,
-        })
-    }
-
-    pub fn signed_routing_message(&self) -> &SignedRoutingMessage {
-        &self.content
-    }
-
-    pub fn into_signed_routing_message(self) -> SignedRoutingMessage {
-        self.content
-    }
-
-    pub fn routing_message(&self) -> &RoutingMessage {
-        self.content.routing_message()
-    }
-
-    pub fn full_message_bytes(&self) -> &Bytes {
-        &self.full_message_bytes
-    }
-
-    pub fn message_dst(&self) -> &Location {
-        &self.content.routing_message().dst
-    }
-}
-
-/// Metadata needed for verification of the sender.
-/// Contain shares of the section signature before combining into a BLS signature
-/// and into a FullSecurityMetadata.
+/// A valid (signed) message
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct PartialSecurityMetadata {
-    proof: SectionProofChain,
-    shares: BTreeSet<(usize, bls::SignatureShare)>,
-    pk_set: bls::PublicKeySet,
+pub struct Message {
+    /// unsigned message
+    pub inner: Inner,
+    ///sig : Message is only valid if signed
+    pub sig: SecurityMetadata,
 }
 
-impl PartialSecurityMetadata {
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<(usize, bls::SignatureShare)> {
-        let key_set = &self.pk_set;
-        self.shares
-            .iter()
-            .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, &signed_bytes))
-            .map(|(idx, sig)| (*idx, sig.clone()))
-            .collect()
-    }
-}
-
-impl Debug for PartialSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "PartialSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
-            self.proof.blocks_len(),
-            self.proof
-        )
-    }
-}
-
-/// Metadata needed for verification of the sender.
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct FullSecurityMetadata {
-    proof: SectionProofChain,
-    signature: bls::Signature,
-}
-
-impl FullSecurityMetadata {
-    pub fn verify_sig(&self, bytes: &[u8]) -> bool {
-        self.proof.last_public_key().verify(&self.signature, bytes)
-    }
-
-    pub fn last_public_key_info(&self) -> &SectionKeyInfo {
-        self.proof.last_public_key_info()
-    }
-
-    pub fn validate_proof(&self) -> bool {
-        self.proof.validate()
-    }
-
-    pub fn proof_chain(&self) -> &SectionProofChain {
-        &self.proof
-    }
-}
-
-impl Debug for FullSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "FullSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
-            self.proof.blocks_len(),
-            self.proof
-        )
-    }
-}
-
-/// Metadata needed for verification of the single node sender.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SingleSrcSecurityMetadata {
-    public_id: PublicId,
-    signature: Signature,
-}
-
-impl SingleSrcSecurityMetadata {
-    pub fn verify_sig(&self, bytes: &[u8]) -> bool {
-        self.public_id.verify(bytes, &self.signature)
-    }
-}
-
-impl Debug for SingleSrcSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SingleSrcSecurityMetadata {{ public_id: {:?}, .. }}",
-            self.public_id
-        )
-    }
-}
-
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum SecurityMetadata {
-    None,
-    Partial(PartialSecurityMetadata),
-    Full(FullSecurityMetadata),
-    Single(SingleSrcSecurityMetadata),
-}
-
-impl Debug for SecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match &self {
-            Self::None => write!(formatter, "None"),
-            Self::Partial(pmd) => write!(formatter, "{:?}", pmd),
-            Self::Full(smd) => write!(formatter, "{:?}", smd),
-            Self::Single(smd) => write!(formatter, "{:?}", smd),
-        }
-    }
-}
-
-/// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SignedRoutingMessage {
-    /// A request or response type message.
-    content: RoutingMessage,
-    /// Optional metadata for verifying the sender
-    security_metadata: SecurityMetadata,
-}
-
-impl SignedRoutingMessage {
-    /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
-    pub fn new(
-        content: RoutingMessage,
+impl Message {
+    /// Network message as sent over wire
+    pub fn new_section_message(
+        inner: Inner,
         section_share: &SectionKeyShare,
         pk_set: bls::PublicKeySet,
         proof: SectionProofChain,
     ) -> Result<Self> {
         let mut signatures = BTreeSet::new();
-        let sig = section_share.key.sign(&serialise(&content)?);
+        let sig = section_share.key.sign(&serialise(&inner)?);
         let _ = signatures.insert((section_share.index, sig));
         let partial_metadata = PartialSecurityMetadata {
             shares: signatures,
@@ -264,65 +60,66 @@ impl SignedRoutingMessage {
             proof,
         };
         Ok(Self {
-            content,
-            security_metadata: SecurityMetadata::Partial(partial_metadata),
+            inner,
+            sig: SecurityMetadata::Partial(partial_metadata),
         })
     }
 
-    /// Creates a `SignedRoutingMessage` security metadata from a single source
-    pub fn single_source(content: RoutingMessage, full_id: &FullId) -> Result<Self> {
+    pub fn hash(&self) -> Result<Digest256> {
+        let serialised_msg = serialise(self)?;
+        Ok(crypto::sha3_256(&serialised_msg))
+    }
+
+    /// Creates a `Message` security metadata from a single source
+    pub fn new_single_source_mesage(inner: Inner, full_id: &FullId) -> Result<Self> {
         let single_metadata = SingleSrcSecurityMetadata {
             public_id: *full_id.public_id(),
-            signature: full_id.sign(&serialise(&content)?),
+            signature: full_id.sign(&serialise(&inner)?),
         };
 
         Ok(Self {
-            content,
-            security_metadata: SecurityMetadata::Single(single_metadata),
+            inner,
+            sig: SecurityMetadata::Single(single_metadata),
         })
     }
-
     /// Creates a `SignedRoutingMessage` without security metadata
     #[cfg(all(test, feature = "mock_base"))]
     pub fn insecure(content: RoutingMessage) -> Self {
         Self {
-            content,
-            security_metadata: SecurityMetadata::None,
+            inner,
+            sig: SecurityMetadata::None,
         }
     }
 
     /// Creates a `SignedRoutingMessage` from content and security metadata.
     /// Note: this function does not verify the metadata matches the content. Need to call
     /// `check_integrity` for that.
-    pub fn from_parts(content: RoutingMessage, security_metadata: SecurityMetadata) -> Self {
-        Self {
-            content,
-            security_metadata,
-        }
+    pub fn from_parts(inner: Inner, sig: SecurityMetadata) -> Self {
+        Self { inner, sig }
     }
 
     /// Confirms the signatures.
     pub fn check_integrity(&self) -> Result<()> {
-        match self.security_metadata {
+        match self.sig {
             SecurityMetadata::None | SecurityMetadata::Partial(_) => {
                 Err(RoutingError::FailedSignature)
             }
             SecurityMetadata::Single(ref security_metadata) => {
-                if self.content.src.single_signing_name()
-                    != Some(security_metadata.public_id.name())
+                if self.inner.src.single_signing_name()
+                    != Some(security_metadata.public_id().name())
                 {
                     // Signature is not from the source node.
                     return Err(RoutingError::InvalidMessage);
                 }
 
-                let signed_bytes = serialise(&self.content)?;
+                let signed_bytes = serialise(&self.inner)?;
                 if !security_metadata.verify_sig(&signed_bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
                 Ok(())
             }
             SecurityMetadata::Full(ref security_metadata) => {
-                let signed_bytes = serialise(&self.content)?;
+                let signed_bytes = serialise(&self.inner)?;
                 if !security_metadata.verify_sig(&signed_bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
@@ -336,7 +133,7 @@ impl SignedRoutingMessage {
 
     /// Checks if the message can be trusted according to the Chain
     pub fn check_trust(&self, chain: &Chain) -> bool {
-        match self.security_metadata {
+        match self.sig {
             SecurityMetadata::Full(ref security_metadata) => {
                 chain.check_trust(security_metadata.proof_chain())
             }
@@ -347,7 +144,7 @@ impl SignedRoutingMessage {
 
     /// Returns the security metadata validating the message.
     pub fn source_section_key_info(&self) -> Option<&SectionKeyInfo> {
-        match self.security_metadata {
+        match self.sig {
             SecurityMetadata::None | SecurityMetadata::Partial(_) | SecurityMetadata::Single(_) => {
                 None
             }
@@ -359,27 +156,27 @@ impl SignedRoutingMessage {
 
     /// Adds all signatures from the given message, without validating them.
     pub fn add_signature_shares(&mut self, mut msg: Self) {
-        if self.content.src.is_multiple() {
+        if self.inner.src.is_multiple() {
             if let (
                 SecurityMetadata::Partial(self_partial),
                 SecurityMetadata::Partial(other_partial),
-            ) = (&mut self.security_metadata, &mut msg.security_metadata)
+            ) = (&mut self.sig, &mut msg.sig)
             {
-                self_partial.shares.append(&mut other_partial.shares);
+                self_partial.shares().append(&mut other_partial.shares());
             }
         }
     }
 
     /// Combines the signatures into a single BLS signature
     pub fn combine_signatures(&mut self) {
-        match mem::replace(&mut self.security_metadata, SecurityMetadata::None) {
+        match mem::replace(&mut self.sig, SecurityMetadata::None) {
             SecurityMetadata::Partial(partial) => {
                 if let Ok(full_sig) = partial
-                    .pk_set
-                    .combine_signatures(partial.shares.iter().map(|(key, sig)| (*key, sig)))
+                    .pk_set()
+                    .combine_signatures(partial.shares().iter().map(|(key, sig)| (*key, sig)))
                 {
-                    self.security_metadata = SecurityMetadata::Full(FullSecurityMetadata {
-                        proof: partial.proof,
+                    self.sig = SecurityMetadata::Full(FullSecurityMetadata {
+                        proof: partial.proof(),
                         signature: full_sig,
                     });
                 } else {
@@ -388,8 +185,8 @@ impl SignedRoutingMessage {
                         "Combining signatures failed on {:?}! Part Shares: {:?}, Part Set: {:?}, \
                          Partial: {:?}",
                         self,
-                        partial.shares,
-                        partial.pk_set,
+                        partial.shares(),
+                        partial.pk_set(),
                         partial,
                     );
                 }
@@ -406,13 +203,13 @@ impl SignedRoutingMessage {
     }
 
     /// Returns the content and the security metadata.
-    pub fn into_parts(self) -> (RoutingMessage, SecurityMetadata) {
-        (self.content, self.security_metadata)
+    pub fn into_parts(self) -> (Inner, SecurityMetadata) {
+        (self.inner, self.sig)
     }
 
     /// The routing message that was signed.
-    pub fn routing_message(&self) -> &RoutingMessage {
-        &self.content
+    pub fn inner(&self) -> &Inner {
+        &self.inner
     }
 
     /// Returns whether there are enough signatures from the sender.
@@ -426,7 +223,7 @@ impl SignedRoutingMessage {
         // may have been sent from another node, and we cannot trust that that node correctly
         // controlled which signatures were added.
 
-        let invalid_signatures = match self.security_metadata {
+        let invalid_signatures = match self.sig {
             // unfortunately, `match`es had to be split because of the borrow checker;
             // the three cases below can return early as they have nothing left to do
             SecurityMetadata::None | SecurityMetadata::Single(_) => {
@@ -437,7 +234,7 @@ impl SignedRoutingMessage {
             }
             // this is the only case in which we actually have to do further checks
             SecurityMetadata::Partial(ref mut partial) => {
-                let signed_bytes = match serialise(&self.content) {
+                let signed_bytes = match serialise(&self.inner) {
                     Ok(serialised) => serialised,
                     Err(error) => {
                         warn!("Failed to serialise {:?}: {:?}", self, error);
@@ -447,7 +244,7 @@ impl SignedRoutingMessage {
 
                 let invalid_signatures = partial.find_invalid_sigs(&signed_bytes);
                 for invalid_signature in &invalid_signatures {
-                    let _ = partial.shares.remove(invalid_signature);
+                    let _ = partial.shares().remove(invalid_signature);
                 }
                 invalid_signatures
             }
@@ -463,11 +260,21 @@ impl SignedRoutingMessage {
     // Returns true if there are enough signatures (note that this method does not verify the
     // signatures, it only counts them).
     fn has_enough_sigs(&self) -> bool {
-        match &self.security_metadata {
-            SecurityMetadata::None => !self.content.src.is_multiple(),
-            SecurityMetadata::Partial(partial) => partial.shares.len() > partial.pk_set.threshold(),
+        match &self.sig {
+            SecurityMetadata::None => !self.inner.src.is_multiple(),
+            SecurityMetadata::Partial(partial) => {
+                partial.shares().len() > partial.pk_set().threshold()
+            }
             SecurityMetadata::Full(_) | SecurityMetadata::Single(_) => true,
         }
+    }
+
+    pub(crate) fn to_network_bytes(&self) -> Result<Bytes, RoutingError> {
+        Ok(Bytes::from(serialise(&self)?))
+    }
+
+    pub(crate) fn from_network_bytes(data: &Bytes) -> Result<Self, RoutingError> {
+        deserialise(&data[..]).map_err(RoutingError::SerialisationError)
     }
 
     #[cfg(all(test, feature = "mock"))]
@@ -480,9 +287,9 @@ impl SignedRoutingMessage {
     }
 }
 
-/// A routing message with source and destination locations.
-#[derive(Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
-pub struct RoutingMessage {
+/// A message content with source and destination locations.
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
+pub struct Inner {
     /// Source location
     pub src: Location,
     /// Destination location
@@ -491,16 +298,35 @@ pub struct RoutingMessage {
     pub content: MessageContent,
 }
 
-impl RoutingMessage {
-    /// Returns the message hash
+impl Inner {
+    /// construct a new message
+    pub fn new(src: Location, dst: Location, content: MessageContent) -> Self {
+        Self { src, dst, content }
+    }
+    pub(crate) fn variant(&self) -> MessageContent {
+        self.content
+    }
+    pub(crate) fn src(&self) -> Location {
+        self.src
+    }
+    pub(crate) fn dst(&self) -> Location {
+        self.dst
+    }
+    /// Returns
     pub fn hash(&self) -> Result<Digest256> {
         let serialised_msg = serialise(self)?;
         Ok(crypto::sha3_256(&serialised_msg))
     }
+    pub(crate) fn to_network_bytes(&self) -> Result<Bytes, RoutingError> {
+        Ok(Bytes::from(serialise(&self)?))
+    }
+
+    pub(crate) fn from_network_bytes(data: &Bytes) -> Result<Self, RoutingError> {
+        deserialise(&data[..]).map_err(RoutingError::SerialisationError)
+    }
 }
 
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
+#[derive(Eq, PartialEq, Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 /// Content
 pub enum MessageContent {
@@ -521,24 +347,77 @@ pub enum MessageContent {
     },
     /// Update sent to Adults and Infants by Elders
     GenesisUpdate(GenesisPfxInfo),
+    /// Sent from members of a section or group message's source location to the first hop. The
+    /// message will only be relayed once enough signatures have been accumulated.
+    MessageSignature(Box<Message>),
+    /// Sent from a newly connected peer to the bootstrap node to request connection infos of
+    /// members of the section matching the given name.
+    BootstrapRequest(XorName),
+    /// Sent from the bootstrap node to a peer in response to `BootstrapRequest`. It can either
+    /// accept the peer into the section, or redirect it to another set of bootstrap peers
+    BootstrapResponse(BootstrapResponse),
+    /// Sent from a bootstrapping peer to the section that responded with a
+    /// `BootstrapResponse::Join` to its `BootstrapRequest`.
+    JoinRequest(Box<JoinRequest>),
+    /// Sent from members of a section to a joining node in response to `ConnectionRequest`
+    ConnectionResponse,
+    /// Sent from Adults and Infants to Elders. Updates Elders about the sender's knowledge of its
+    /// own section.
+    MemberKnowledge(MemberKnowledge),
+    /// Parsec request message
+    ParsecRequest(u64, parsec::Request),
+    /// Parsec response message
+    ParsecResponse(u64, parsec::Response),
+    /// Send from a section to the node being relocated.
+    Relocate(Box<SignedRelocateDetails>),
 }
 
-impl Debug for HopMessage {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "HopMessage {{ content: {:?}, signature: .. }}",
-            self.content
-        )
+/// Response to a BootstrapRequest
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
+pub enum BootstrapResponse {
+    /// This response means that the new peer is clear to join the section. The connection infos of
+    /// the section elders and the section prefix are provided.
+    Join(EldersInfo),
+    /// The new peer should retry bootstrapping with another section. The set of connection infos
+    /// of the members of that section is provided.
+    Rebootstrap(Vec<ConnectionInfo>),
+}
+
+/// Request to join a section
+#[derive(Eq, Clone, PartialEq, Serialize, Deserialize, Hash)]
+pub struct JoinRequest {
+    /// The section version to join
+    pub elders_version: u64,
+    /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
+    pub relocate_payload: Option<RelocatePayload>,
+}
+
+/// Node's knowledge about its own section.
+#[derive(Default, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
+pub struct MemberKnowledge {
+    pub elders_version: u64,
+    pub parsec_version: u64,
+}
+
+impl MemberKnowledge {
+    pub fn update(&mut self, other: MemberKnowledge) {
+        self.elders_version = self.elders_version.max(other.elders_version);
+        self.parsec_version = self.parsec_version.max(other.parsec_version);
     }
 }
 
-impl Debug for SignedRoutingMessage {
+impl Debug for Inner {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "Inner Message  content: {:?}", self)
+    }
+}
+
+impl Debug for Message {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SignedRoutingMessage {{ content: {:?}, security_metadata: {:?} }}",
-            self.content, self.security_metadata
+            "Message  content: {:?}, security_metadata: {:?}",
+            self.inner, self.sig
         )
     }
 }
@@ -555,6 +434,61 @@ impl Debug for MessageContent {
                 ack_version,
             } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
             GenesisUpdate(info) => write!(formatter, "GenesisUpdate({:?})", info),
+            MessageSignature(msg) => write!(formatter, "MessageSignature({:?})", msg),
+            BootstrapRequest(name) => write!(formatter, "BootstrapRequest({})", name),
+            BootstrapResponse(response) => write!(formatter, "BootstrapResponse({:?})", response),
+            JoinRequest(join_request) => write!(
+                formatter,
+                "JoinRequest({}, {:?})",
+                join_request.elders_version,
+                join_request
+                    .relocate_payload
+                    .as_ref()
+                    .map(|payload| payload.details.content())
+            ),
+            ConnectionResponse => write!(formatter, "ConnectionResponse"),
+            ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
+            ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
+            MemberKnowledge(payload) => write!(formatter, "{:?}", payload),
+            Relocate(payload) => write!(formatter, "Relocate({:?})", payload.content()),
+        }
+    }
+}
+// Note: we need explicit impl here, because `parsec::Request` and `parsec::Response` don't
+// implement `Hash`.
+// We don't need explicit `PartialEq` impl, because `parsec::Request/Response` do implement it.
+// So it's OK to silence this clippy lint:
+#[allow(clippy::derive_hash_xor_eq)]
+impl Hash for MessageContent {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
+        use self::MessageContent::*;
+        match self {
+            NeighbourInfo(info) => info.hash(state),
+            UserMessage(content) => content.hash(state),
+            NodeApproval(gen_info) => gen_info.hash(state),
+            AckMessage {
+                src_prefix,
+                ack_version,
+            } => self.hash(state),
+            GenesisUpdate(info) => info.hash(state),
+            MessageSignature(msg) => msg.hash(state),
+            BootstrapRequest(name) => name.hash(state),
+            BootstrapResponse(response) => response.hash(state),
+            JoinRequest(join_request) => join_request.hash(state),
+            ConnectionResponse => (),
+            MemberKnowledge(payload) => payload.hash(state),
+            ParsecRequest(version, request) => {
+                version.hash(state);
+                // Fake hash via serialisation
+                serialise(&request).ok().hash(state)
+            }
+            ParsecResponse(version, response) => {
+                version.hash(state);
+                // Fake hash via serialisation
+                serialise(&response).ok().hash(state)
+            }
+            Relocate(details) => details.hash(state),
         }
     }
 }
@@ -583,7 +517,7 @@ mod tests {
         let msg = gen_message(&mut rng);
         let proof = make_proof_chain(&pk_set);
 
-        let mut signed_msg_0 = unwrap!(SignedRoutingMessage::new(
+        let mut signed_msg_0 = unwrap!(Message::new_section_message(
             msg.clone(),
             &sk_share_0,
             pk_set.clone(),
@@ -592,7 +526,12 @@ mod tests {
         assert!(!signed_msg_0.check_fully_signed());
         assert!(signed_msg_0.check_integrity().is_err());
 
-        let signed_msg_1 = unwrap!(SignedRoutingMessage::new(msg, &sk_share_1, pk_set, proof));
+        let signed_msg_1 = unwrap!(Message::new_Section_message(
+            msg,
+            &sk_share_1,
+            pk_set,
+            proof
+        ));
         signed_msg_0.add_signature_shares(signed_msg_1);
         assert!(signed_msg_0.check_fully_signed());
 
@@ -614,7 +553,7 @@ mod tests {
         let proof = make_proof_chain(&pk_set);
 
         // Message with valid signature
-        let mut signed_msg_0 = unwrap!(SignedRoutingMessage::new(
+        let mut signed_msg_0 = unwrap!(Message::new_Section_message(
             msg.clone(),
             &sk_share_0,
             pk_set.clone(),
@@ -628,7 +567,7 @@ mod tests {
             proof: proof.clone(),
             shares: iter::once((1, invalid_signature_share)).collect(),
         });
-        let signed_msg_1 = SignedRoutingMessage::from_parts(msg.clone(), metadata);
+        let signed_msg_1 = Message::from_parts(msg.clone(), metadata);
 
         signed_msg_0.add_signature_shares(signed_msg_1);
 

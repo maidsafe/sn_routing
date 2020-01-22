@@ -17,10 +17,7 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode},
     location::Location,
-    messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MessageContent,
-        RoutingMessage, SignedRoutingMessage,
-    },
+    messages::{BootstrapResponse, Inner, JoinRequest, Message, MessageContent},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -53,8 +50,8 @@ pub struct JoiningPeerDetails {
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
-    routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    routing_msg_backlog: Vec<Message>,
+    direct_msg_backlog: Vec<(P2pNode, MessageContent)>,
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
@@ -148,20 +145,20 @@ impl JoiningPeer {
 
             self.send_direct_message(
                 dst.connection_info(),
-                DirectMessage::JoinRequest(Box::new(join_request)),
+                MessageContent::JoinRequest(Box::new(join_request)),
             );
         }
     }
 
     fn dispatch_routing_message(
         &mut self,
-        msg: SignedRoutingMessage,
+        msg: Message,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let (msg, metadata) = msg.into_parts();
 
         match msg {
-            RoutingMessage {
+            Inner {
                 content: MessageContent::NodeApproval(gen_info),
                 src: Location::PrefixSection(_),
                 dst: Location::Node { .. },
@@ -172,7 +169,7 @@ impl JoiningPeer {
                     self, msg
                 );
                 self.routing_msg_backlog
-                    .push(SignedRoutingMessage::from_parts(msg, metadata));
+                    .push(Message::from_parts(msg, metadata));
                 Ok(Transition::Stay)
             }
         }
@@ -255,12 +252,12 @@ impl Base for JoiningPeer {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: MessageContent,
         p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+            MessageContent::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 if info.version() > self.elders_info.version() {
                     if info.prefix().matches(self.name()) {
                         info!(
@@ -280,7 +277,8 @@ impl Base for JoiningPeer {
                     }
                 }
             }
-            DirectMessage::ConnectionResponse | DirectMessage::BootstrapResponse(_) => (),
+            ConnectionResponse => (),
+            MessageContent::BootstrapResponse(BootstrapResponse::Rebootstrap(_)) => (),
             _ => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
@@ -297,20 +295,20 @@ impl Base for JoiningPeer {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        msg: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                msg.routing_message()
+                msg.inner()
             );
             return Ok(Transition::Stay);
         }
 
-        let msg = msg.into_signed_routing_message();
-        if self.in_location(&msg.routing_message().dst) {
+        let msg = msg;
+        if self.in_location(&msg.inner().dst) {
             self.check_signed_message_integrity(&msg)?;
             self.dispatch_routing_message(msg, outbox)
         } else {

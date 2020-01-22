@@ -15,7 +15,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MemberKnowledge, SignedRoutingMessage},
+    messages::{MemberKnowledge, Message, MessageContent},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -547,7 +547,7 @@ pub trait Approved: Base {
         true
     }
 
-    fn check_signed_message_trust(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
+    fn check_signed_message_trust(&self, msg: &Message) -> Result<(), RoutingError> {
         if msg.check_trust(self.chain()) {
             Ok(())
         } else {
@@ -580,7 +580,7 @@ pub trait Approved: Base {
         for recipient in recipients {
             self.send_direct_message(
                 recipient.connection_info(),
-                DirectMessage::MemberKnowledge(payload),
+                MessageContent::MemberKnowledge(payload),
             )
         }
     }

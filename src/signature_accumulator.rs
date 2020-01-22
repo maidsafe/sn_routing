@@ -8,7 +8,7 @@
 
 use crate::{
     crypto::Digest256,
-    messages::SignedRoutingMessage,
+    messages::Message,
     time::{Duration, Instant},
 };
 use itertools::Itertools;
@@ -20,15 +20,15 @@ pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    msgs: HashMap<Digest256, (Option<SignedRoutingMessage>, Instant)>,
+    msgs: HashMap<Digest256, (Option<Message>, Instant)>,
 }
 
 impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
-    pub fn add_proof(&mut self, msg: SignedRoutingMessage) -> Option<SignedRoutingMessage> {
+    pub fn add_proof(&mut self, msg: Message) -> Option<Message> {
         self.remove_expired();
-        let hash = msg.routing_message().hash().ok()?;
+        let hash = msg.inner().hash().ok()?;
         if let Some(&mut (ref mut existing_msg, _)) = self.msgs.get_mut(&hash) {
             if let Some(existing_msg) = existing_msg {
                 existing_msg.add_signature_shares(msg);
@@ -56,7 +56,7 @@ impl SignatureAccumulator {
         }
     }
 
-    fn remove_if_complete(&mut self, hash: &Digest256) -> Option<SignedRoutingMessage> {
+    fn remove_if_complete(&mut self, hash: &Digest256) -> Option<Message> {
         self.msgs.get_mut(hash).and_then(|&mut (ref mut msg, _)| {
             if msg.as_mut().map_or(false, |msg| msg.check_fully_signed()) {
                 msg.take().map(|mut msg| {

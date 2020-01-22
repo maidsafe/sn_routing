@@ -14,6 +14,11 @@ use std::fmt::{self, Debug, Formatter};
 /// `Node` is single-node location (i.e. no verification of messages from
 /// additional sources needed). It's name is the `Authority::key` other
 /// locations require agreement by a quorum of `Elders`.
+// FIXME (di) - This should be `Src` and `Dst` types where `Src` can be prefix or node and dst can be
+// section or node and no more. Dst section cannot fail, dst node cna fail.
+// src node canot fail, src prefix can fail and we return last known key in that case. The sender
+// must then give us a new chain to prove the message.
+// src::prefix MUST BE SIGNED BY BLS all others ed25519
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 pub enum Location {
     /// A single section whose prefix matches the given name

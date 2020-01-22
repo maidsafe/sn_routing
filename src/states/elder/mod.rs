@@ -26,8 +26,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MemberKnowledge,
-        MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage,
+        security_metadata::SecurityMetadata, BootstrapResponse, Inner, JoinRequest,
+        MemberKnowledge, Message, MessageContent,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -91,9 +91,9 @@ pub struct ElderDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub routing_msg_queue: VecDeque<SignedRoutingMessage>,
-    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub routing_msg_queue: VecDeque<Message>,
+    pub routing_msg_backlog: Vec<Message>,
+    pub direct_msg_backlog: Vec<(P2pNode, MessageContent)>,
     pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -104,11 +104,11 @@ pub struct ElderDetails {
 pub struct Elder {
     network_service: NetworkService,
     full_id: FullId,
-    // The queue of routing messages addressed to us. These do not themselves need forwarding,
+    // The queue of messages addressed to us. These do not themselves need forwarding,
     // although they may wrap a message which needs forwarding.
-    routing_msg_queue: VecDeque<SignedRoutingMessage>,
-    routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    routing_msg_queue: VecDeque<Message>,
+    routing_msg_backlog: Vec<Message>,
+    direct_msg_backlog: Vec<(P2pNode, Message)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     timer: Timer,
@@ -120,7 +120,7 @@ pub struct Elder {
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     // Messages we received but not accumulated yet, so may need to re-swarm.
-    pending_voted_msgs: BTreeMap<PendingMessageKey, SignedRoutingMessage>,
+    pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
     /// The knowledge of the non-elder members about our section.
     members_knowledge: BTreeMap<XorName, MemberKnowledge>,
     rng: MainRng,
@@ -337,7 +337,7 @@ impl Elder {
 
     fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
         while let Some(msg) = self.routing_msg_queue.pop_front() {
-            if self.in_location(&msg.routing_message().dst) {
+            if self.in_location(&msg.inner().dst) {
                 match self.dispatch_routing_message(msg, outbox) {
                     Ok(Transition::Stay) => (),
                     Ok(transition) => return transition,
@@ -408,7 +408,7 @@ impl Elder {
     }
 
     fn establish_connection(&mut self, node: &P2pNode) {
-        self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
+        self.send_direct_message(node.connection_info(), MessageContent::ConnectionResponse);
     }
 
     fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
@@ -549,7 +549,7 @@ impl Elder {
             );
             self.send_direct_message(
                 p2p_node.connection_info(),
-                DirectMessage::BootstrapResponse(BootstrapResponse::Join(response_section)),
+                MessageContent::BootstrapResponse(BootstrapResponse::Join(response_section)),
             );
         }
     }
@@ -558,13 +558,6 @@ impl Elder {
     // them but possibly did not receive them already.
     fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
         for (_, msg) in mem::replace(&mut self.pending_voted_msgs, Default::default()) {
-            let msg = match HopMessageWithBytes::new(msg) {
-                Ok(msg) => msg,
-                Err(err) => {
-                    error!("Failed to make message {:?}", err);
-                    continue;
-                }
-            };
             match self.send_signed_message(&msg) {
                 Ok(()) => trace!("{} - Resend {:?}", self, msg.routing_message()),
                 Err(error) => debug!(
@@ -615,7 +608,7 @@ impl Elder {
             let dst = Location::PrefixSection(*pfx);
             let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
 
-            if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }) {
+            if let Err(err) = self.send_routing_message(Message { src, dst, content }) {
                 debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
             }
         });
@@ -633,18 +626,18 @@ impl Elder {
 
             self.send_direct_message(
                 recipient.connection_info(),
-                DirectMessage::MessageSignature(Box::new(msg)),
+                MessageContent::MessageSignature(Box::new(msg)),
             );
         }
     }
 
-    fn create_genesis_updates(&self) -> Vec<(P2pNode, SignedRoutingMessage)> {
+    fn create_genesis_updates(&self) -> Vec<(P2pNode, Message)> {
         let src = Location::PrefixSection(*self.our_prefix());
         self.chain
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
-                let msg = RoutingMessage {
+                let msg = Inner {
                     src,
                     dst: Location::Node(*recipient.name()),
                     content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
@@ -671,7 +664,7 @@ impl Elder {
     /// message, handles it.
     fn handle_message_signature(
         &mut self,
-        msg: SignedRoutingMessage,
+        msg: Message,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {
@@ -683,20 +676,20 @@ impl Elder {
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
-            let signed_msg = HopMessageWithBytes::new(signed_msg)?;
             self.handle_signed_message(signed_msg)?;
         }
+        // not enough signatures, so ignore! TODO - check this is really what we want.
         Ok(())
     }
 
     // If the message is for us, verify it then, handle the enclosed routing message and swarm it
     // to the rest of our section when destination is targeting multiple; if not, forward it.
-    fn handle_signed_message(&mut self, msg: HopMessageWithBytes) -> Result<(), RoutingError> {
+    fn handle_signed_message(&mut self, msg: Message) -> Result<(), RoutingError> {
         if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                msg.routing_message()
+                msg.inner(),
             );
             return Ok(());
         }
@@ -704,22 +697,15 @@ impl Elder {
         self.handle_filtered_signed_message(msg)
     }
 
-    fn handle_filtered_signed_message(
-        &mut self,
-        msg: HopMessageWithBytes,
-    ) -> Result<(), RoutingError> {
-        trace!(
-            "{} - Handle signed message: {:?}",
-            self,
-            msg.routing_message()
-        );
+    fn handle_filtered_signed_message(&mut self, msg: Message) -> Result<(), RoutingError> {
+        trace!("{} - Handle signed message: {:?}", self, msg.inner());
 
-        let dst = msg.message_dst();
-        let signed_msg = msg.signed_routing_message();
-        if self.in_location(dst) {
-            self.check_signed_message_trust(signed_msg)?;
-            self.check_signed_message_integrity(signed_msg)?;
-            self.update_our_knowledge(signed_msg);
+        let dst = msg.inner().dst;
+        let signed_msg = msg;
+        if self.in_location(&dst) {
+            self.check_signed_message_trust(&signed_msg)?;
+            self.check_signed_message_integrity(&signed_msg)?;
+            self.update_our_knowledge(&signed_msg);
 
             if dst.is_multiple() {
                 // Broadcast to the rest of the section.
@@ -728,8 +714,7 @@ impl Elder {
                 }
             }
             // if addressed to us, then we just queue it and return
-            self.routing_msg_queue
-                .push_back(msg.into_signed_routing_message());
+            self.routing_msg_queue.push_back(msg.inner());
         } else if let Err(error) = self.send_signed_message(&msg) {
             debug!("{} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
@@ -739,17 +724,15 @@ impl Elder {
 
     fn handle_backloged_filtered_signed_message(
         &mut self,
-        signed_msg: SignedRoutingMessage,
+        signed_msg: Message,
     ) -> Result<(), RoutingError> {
         trace!(
             "{} - Handle backlogged signed message: {:?}",
             self,
-            signed_msg.routing_message()
+            signed_msg.inner()
         );
 
-        if self.in_location(&signed_msg.routing_message().dst)
-            && signed_msg.check_trust(&self.chain)
-        {
+        if self.in_location(&signed_msg.inner().dst) && signed_msg.check_trust(&self.chain) {
             // If message still for us and we still trust it, then it must not be stale.
             self.check_signed_message_integrity(&signed_msg)?;
             self.update_our_knowledge(&signed_msg);
@@ -761,7 +744,7 @@ impl Elder {
 
     fn dispatch_routing_message(
         &mut self,
-        signed_msg: SignedRoutingMessage,
+        signed_msg: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         use crate::messages::MessageContent::*;
@@ -802,11 +785,10 @@ impl Elder {
                     "{} Unhandled routing message {:?} from {:?} to {:?}, adding to backlog",
                     self, content, src, dst
                 );
-                self.routing_msg_backlog
-                    .push(SignedRoutingMessage::from_parts(
-                        RoutingMessage { content, src, dst },
-                        security_metadata,
-                    ));
+                self.routing_msg_backlog.push(Message::from_parts(
+                    Inner::new(src, dst, content),
+                    security_metadata,
+                ));
                 Ok(Transition::Stay)
             }
             (content, src, dst) => {
@@ -869,7 +851,7 @@ impl Elder {
             );
             self.send_direct_message(
                 p2p_node.connection_info(),
-                DirectMessage::ConnectionResponse,
+                MessageContent::ConnectionResponse,
             );
         };
 
@@ -884,7 +866,7 @@ impl Elder {
 
         let src = Location::PrefixSection(*trimmed_info.first_info.prefix());
         let content = MessageContent::NodeApproval(trimmed_info);
-        if let Err(error) = self.send_routing_message(RoutingMessage { src, dst, content }) {
+        if let Err(error) = self.send_routing_message(Inner::new(src, dst, content)) {
             debug!(
                 "{} Failed sending NodeApproval to {}: {:?}",
                 self, pub_id, error
@@ -935,7 +917,7 @@ impl Elder {
         };
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::BootstrapResponse(response),
+            MessageContent::BootstrapResponse(response),
         );
     }
 
@@ -1015,12 +997,12 @@ impl Elder {
 
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::ConnectionResponse,
+            MessageContent::ConnectionResponse,
         );
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload { p2p_node, age }))
     }
 
-    fn update_our_knowledge(&mut self, signed_msg: &SignedRoutingMessage) {
+    fn update_our_knowledge(&mut self, signed_msg: &Message) {
         let key_info = if let Some(key_info) = signed_msg.source_section_key_info() {
             key_info
         } else {
@@ -1053,12 +1035,8 @@ impl Elder {
                     prefix: *elders_info.prefix(),
                 })
                 .or_insert_with(|| {
-                    SignedRoutingMessage::from_parts(
-                        RoutingMessage {
-                            src,
-                            dst,
-                            content: MessageContent::NeighbourInfo(elders_info.clone()),
-                        },
+                    Message::from_parts(
+                        Inner::new(src, dst, MessageContent::NeighbourInfo(elders_info.clone())),
                         security_metadata,
                     )
                 });
@@ -1136,7 +1114,7 @@ impl Elder {
     // Constructs a signed message, finds the nodes responsible for accumulation, and either sends
     // these nodes a signature or tries to accumulate signatures for this message (on success, the
     // accumulator handles or forwards the message).
-    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+    fn send_routing_message(&mut self, routing_msg: Message) -> Result<(), RoutingError> {
         if !self.in_location(&routing_msg.src) {
             log_or_panic!(
                 LogLevel::Error,
@@ -1149,9 +1127,8 @@ impl Elder {
 
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if !routing_msg.src.is_multiple() {
-            let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
-            let msg = HopMessageWithBytes::new(msg)?;
-            if self.in_location(&msg.routing_message().dst) {
+            let msg = Message::single_source(routing_msg, &self.full_id)?;
+            if self.in_location(&msg.inner().dst()) {
                 self.handle_signed_message(msg)?;
             } else {
                 self.send_signed_message(&msg)?;
@@ -1167,7 +1144,7 @@ impl Elder {
         ) {
             if target == *self.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
-                    let msg = HopMessageWithBytes::new(msg)?;
+                    let msg = Message::new(msg)?;
                     if self.in_location(&msg.routing_message().dst) {
                         self.handle_signed_message(msg)?;
                     } else {
@@ -1184,7 +1161,7 @@ impl Elder {
                 let conn_info = p2p_node.connection_info().clone();
                 self.send_direct_message(
                     &conn_info,
-                    DirectMessage::MessageSignature(Box::new(signed_msg.clone())),
+                    MessageContent::MessageSignature(Box::new(signed_msg.clone())),
                 );
             } else {
                 error!(
@@ -1201,7 +1178,7 @@ impl Elder {
 
     // Send signed_msg on route. Hop is the name of the peer we received this from, or our name if
     // we are the first sender or the proxy for a client or joining node.
-    fn send_signed_message(&mut self, msg: &HopMessageWithBytes) -> Result<(), RoutingError> {
+    fn send_signed_message(&mut self, msg: &Message) -> Result<(), RoutingError> {
         let dst = msg.message_dst();
 
         // If the message is to a single node and we have the connection info for this node, don't
@@ -1314,14 +1291,14 @@ impl Elder {
     // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
     fn to_signed_routing_message(
         &self,
-        msg: RoutingMessage,
+        msg: Inner,
         node_knowledge_override: Option<u64>,
-    ) -> Result<SignedRoutingMessage, RoutingError> {
+    ) -> Result<Message, RoutingError> {
         let proof = self.chain.prove(&msg.dst, node_knowledge_override);
         let pk_set = self.our_section_bls_keys().clone();
         let secret_key = self.chain.our_section_bls_secret_key_share()?;
 
-        SignedRoutingMessage::new(msg, secret_key, pk_set, proof)
+        Message::new_section_message(msg, secret_key, pk_set, proof)
     }
 }
 
@@ -1397,11 +1374,7 @@ impl Base for Elder {
         dst: Location,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        self.send_routing_message(RoutingMessage {
-            src,
-            dst,
-            content: MessageContent::UserMessage(content),
-        })
+        self.send_routing_message(Inner::new(src, dst, MessageContent::UserMessage(content)))
     }
 
     fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
@@ -1465,30 +1438,32 @@ impl Base for Elder {
     // Deconstruct a `DirectMessage` and handle or forward as appropriate.
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: MessageContent,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectMessage::*;
-
         let pub_id = *p2p_node.public_id();
 
-        match msg {
-            MessageSignature(msg) => self.handle_message_signature(*msg, pub_id)?,
-            BootstrapRequest(name) => self.handle_bootstrap_request(p2p_node, name),
+        match msg.content() {
+            MessageContent::MessageSignature(msg) => self.handle_message_signature(*msg, pub_id)?,
+            MessageContent::BootstrapRequest(name) => self.handle_bootstrap_request(p2p_node, name),
             ConnectionResponse => self.handle_connection_response(pub_id, outbox),
-            JoinRequest(join_request) => self.handle_join_request(p2p_node, *join_request),
-            MemberKnowledge(payload) => self.handle_member_knowledge(p2p_node, payload),
-            ParsecRequest(version, par_request) => {
+            MessageContent::JoinRequest(join_request) => {
+                self.handle_join_request(p2p_node, *join_request)
+            }
+            MessageContent::MemberKnowledge(payload) => {
+                self.handle_member_knowledge(p2p_node, payload)
+            }
+            MessageContent::ParsecRequest(version, par_request) => {
                 return self.handle_parsec_request(version, par_request, p2p_node, outbox);
             }
-            ParsecResponse(version, par_response) => {
+            MessageContent::ParsecResponse(version, par_response) => {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
-            BootstrapResponse(_) => {
+            MessageContent::BootstrapResponse(_) => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
-            msg @ Relocate(_) => {
+            MessageContent::Relocate(_) => {
                 debug!(
                     "{} Unhandled Elder direct message from {}, adding to backlog: {:?}",
                     self,
@@ -1503,7 +1478,7 @@ impl Base for Elder {
 
     fn handle_hop_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        msg: Message,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         self.handle_signed_message(msg)?;
@@ -1659,7 +1634,7 @@ impl Approved for Elder {
             .get_member_connection_info(&details.pub_id)
             .cloned()
         {
-            let message = DirectMessage::Relocate(Box::new(SignedRelocateDetails::new(
+            let message = MessageContent::Relocate(Box::new(SignedRelocateDetails::new(
                 details, proof, signature,
             )));
             self.send_direct_message(&conn_info, message);
@@ -1801,7 +1776,7 @@ impl Approved for Elder {
             ack_version: ack_payload.ack_version,
         };
 
-        self.send_routing_message(RoutingMessage { src, dst, content })
+        self.send_routing_message(Inner::new(src, dst, content))
     }
 
     fn handle_relocate_prepare_event(
