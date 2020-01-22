@@ -11,5 +11,5 @@ mod base;
 
 pub use self::{
     approved::Approved,
-    base::{from_network_bytes, peek_from_network_bytes, to_network_bytes, Base},
+    base::{from_network_bytes, partial_from_network_bytes, to_network_bytes, Base},
 };

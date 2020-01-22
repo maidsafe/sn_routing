@@ -13,7 +13,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        DirectMessage, HopMessageWithBytes, Message, MessagePeek, MessageWithBytes,
+        DirectMessage, HopMessageWithBytes, Message, MessageWithBytes, PartialMessage,
         SignedDirectMessage,
     },
     network_service::NetworkService,
@@ -246,7 +246,7 @@ pub trait Base: Display {
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = MessageWithBytes::peek_from_bytes(bytes)
+        let result = MessageWithBytes::partial_from_bytes(bytes)
             .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
 
         match result {
@@ -436,6 +436,6 @@ pub fn from_network_bytes(data: &Bytes) -> Result<Message, RoutingError> {
     Ok(bincode::deserialize(&data[..])?)
 }
 
-pub fn peek_from_network_bytes(data: &Bytes) -> Result<MessagePeek, RoutingError> {
+pub fn partial_from_network_bytes(data: &Bytes) -> Result<PartialMessage, RoutingError> {
     Ok(bincode::deserialize(&data[..])?)
 }
