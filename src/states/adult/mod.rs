@@ -333,7 +333,7 @@ impl Adult {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
             self,
-            msg.signed_routing_message(),
+            msg.full_message_crypto_hash(),
             self.chain.our_elders().format(", ")
         );
 
@@ -373,7 +373,7 @@ impl Adult {
         }
 
         if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
-            let signed_msg = HopMessageWithBytes::new(signed_msg)?;
+            let signed_msg = HopMessageWithBytes::new(signed_msg, &self.log_ident())?;
             self.handle_signed_message(signed_msg)
         } else {
             Ok(Transition::Stay)
@@ -390,7 +390,7 @@ impl Adult {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                msg.routing_message()
+                msg.full_message_crypto_hash()
             );
             return Ok(Transition::Stay);
         }
@@ -400,23 +400,23 @@ impl Adult {
 
     fn handle_filtered_signed_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        mut msg: HopMessageWithBytes,
     ) -> Result<Transition, RoutingError> {
         trace!(
             "{} - Handle signed message: {:?}",
             self,
-            msg.routing_message()
+            msg.full_message_crypto_hash()
         );
 
         if self.in_location(msg.message_dst()) {
-            let signed_msg = msg.signed_routing_message();
+            let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             match &signed_msg.routing_message().content {
                 MessageContent::GenesisUpdate(info) => {
-                    self.verify_signed_message(signed_msg)?;
+                    self.verify_signed_message(&signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
                 _ => {
-                    self.routing_msg_backlog.push(signed_msg.clone());
+                    self.routing_msg_backlog.push(signed_msg);
                 }
             }
         }
@@ -508,7 +508,7 @@ impl Base for Adult {
 
         for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
             if let Transition::Stay = &transition {
-                let msg = match HopMessageWithBytes::new(msg) {
+                let msg = match HopMessageWithBytes::new(msg, &self.log_ident()) {
                     Ok(msg) => msg,
                     Err(err) => {
                         error!("{} - Failed to make message {:?}", self, err);

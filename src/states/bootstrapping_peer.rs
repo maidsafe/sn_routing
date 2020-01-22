@@ -327,7 +327,7 @@ impl Base for BootstrappingPeer {
         trace!(
             "{} - Unhandled hop message: {:?}",
             self,
-            msg.signed_routing_message()
+            msg.full_message_crypto_hash()
         );
         Ok(Transition::Stay)
     }
