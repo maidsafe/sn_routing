@@ -10,7 +10,7 @@
 
 use crate::{
     chain::{
-        AccumulatingEvent, IntoAccumulatingEvent, SectionKeyInfo, SectionProofChain, TrustStatus,
+        AccumulatingEvent, IntoAccumulatingEvent, SectionKeyInfo, SectionProofSlice, TrustStatus,
     },
     crypto::{self, signing::Signature},
     error::RoutingError,
@@ -47,14 +47,14 @@ impl IntoAccumulatingEvent for RelocateDetails {
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedRelocateDetails {
     content: RelocateDetails,
-    proof: SectionProofChain,
+    proof: SectionProofSlice,
     signature: bls::Signature,
 }
 
 impl SignedRelocateDetails {
     pub fn new(
         content: RelocateDetails,
-        proof: SectionProofChain,
+        proof: SectionProofSlice,
         signature: bls::Signature,
     ) -> Self {
         Self {

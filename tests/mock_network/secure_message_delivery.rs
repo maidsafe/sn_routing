@@ -9,7 +9,7 @@
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
-    section_proof_chain_for_test, ConnectionInfo, FullId, Location, Message, MessageContent,
+    section_proof_slice_for_test, ConnectionInfo, FullId, Location, Message, MessageContent,
     NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare, SignedRoutingMessage, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
@@ -87,7 +87,7 @@ fn message_with_invalid_security(fail_type: FailType) {
                 .prove(&Location::PrefixSection(their_prefix))),
             FailType::UntrustedProofValidSig => {
                 let invalid_prefix = our_prefix;
-                section_proof_chain_for_test(0, invalid_prefix, bls_keys.public_keys().public_key())
+                section_proof_slice_for_test(0, invalid_prefix, bls_keys.public_keys().public_key())
             }
         };
         let pk_set = bls_keys.public_keys();

@@ -29,7 +29,7 @@ pub use self::{
         IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
-    shared_state::{SectionKeyInfo, SectionProofChain, TrustStatus},
+    shared_state::{SectionKeyInfo, SectionProofSlice, TrustStatus},
 };
 use crate::PublicId;
 use std::{
@@ -69,12 +69,12 @@ impl Debug for GenesisPfxInfo {
 
 #[cfg(feature = "mock_base")]
 /// Test helper to create arbitrary proof.
-pub fn section_proof_chain_for_test(
+pub fn section_proof_slice_for_test(
     version: u64,
     prefix: Prefix<XorName>,
     key: bls::PublicKey,
-) -> SectionProofChain {
-    SectionProofChain::from_genesis(SectionKeyInfo::new(version, prefix, key))
+) -> SectionProofSlice {
+    SectionProofSlice::from_genesis(SectionKeyInfo::new(version, prefix, key))
 }
 
 #[cfg(feature = "mock_base")]

@@ -31,7 +31,7 @@ use std::{net::SocketAddr, sync::mpsc};
 #[cfg(feature = "mock_base")]
 use {
     crate::{
-        chain::{Chain, SectionProofChain},
+        chain::{Chain, SectionProofSlice},
         Prefix,
     },
     std::{
@@ -491,9 +491,9 @@ impl Node {
         self.machine.current().is_connected(socket_addr)
     }
 
-    /// Provide a SectionProofChain that proves the given signature to the section with a given
+    /// Provide a SectionProofSlice that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(&self, target: &Location) -> Option<SectionProofChain> {
+    pub fn prove(&self, target: &Location) -> Option<SectionProofSlice> {
         self.chain().map(|chain| chain.prove(target, None))
     }
 
