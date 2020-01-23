@@ -11,7 +11,7 @@ use super::{
     shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
     MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
-    SectionProofChain,
+    SectionProofSlice,
 };
 use crate::{
     error::RoutingError,
@@ -891,7 +891,7 @@ impl Chain {
             && self.is_new(elders_info)
     }
 
-    /// Provide a SectionProofChain that proves the given signature to the given destination
+    /// Provide a SectionProofSlice that proves the given signature to the given destination
     /// location.
     /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
     /// `Location::Node` instead of the stored knowledge. Has no effect for other location types.
@@ -899,7 +899,7 @@ impl Chain {
         &self,
         target: &Location,
         node_knowledge_override: Option<u64>,
-    ) -> SectionProofChain {
+    ) -> SectionProofSlice {
         let first_index = match (target, node_knowledge_override) {
             (Location::Node(_), Some(knowledge)) => knowledge,
             _ => self.state.proving_index(target),

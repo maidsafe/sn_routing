@@ -15,7 +15,7 @@
 
 use super::{super::test_utils, *};
 use crate::{
-    chain::{SectionKeyInfo, SectionProofChain},
+    chain::{SectionKeyInfo, SectionProofSlice},
     generate_bls_threshold_secret_key,
     messages::DirectMessage,
     rng::{self, MainRng},
@@ -558,22 +558,22 @@ fn send_genesis_update() {
     verify_proof_chain_does_not_contain(proof_chain, orig_elders_version);
 }
 
-fn verify_proof_chain_contains(proof_chain: &SectionProofChain, expected_version: u64) {
+fn verify_proof_chain_contains(proof_chain: &SectionProofSlice, expected_version: u64) {
     assert!(
         proof_chain
-            .all_key_infos()
-            .any(|key_info| key_info.version() == expected_version),
+            .all_prefix_version()
+            .any(|(_, version)| version == expected_version),
         "{:?} doesn't contain expected version {}",
         proof_chain,
         expected_version,
     );
 }
 
-fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofChain, unexpected_version: u64) {
+fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofSlice, unexpected_version: u64) {
     assert!(
         proof_chain
-            .all_key_infos()
-            .all(|key_info| key_info.version() != unexpected_version),
+            .all_prefix_version()
+            .all(|(_, version)| version != unexpected_version),
         "{:?} contains unexpected version {}",
         proof_chain,
         unexpected_version,

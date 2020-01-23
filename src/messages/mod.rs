@@ -13,7 +13,7 @@ pub use self::direct::{
 };
 use crate::{
     chain::{
-        EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofChain, TrustStatus,
+        EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice, TrustStatus,
     },
     crypto::{self, signing::Signature, Digest256},
     error::{Result, RoutingError},
@@ -171,7 +171,7 @@ impl HopMessageWithBytes {
 /// and into a FullSecurityMetadata.
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct PartialSecurityMetadata {
-    proof: SectionProofChain,
+    proof: SectionProofSlice,
     shares: BTreeSet<(usize, bls::SignatureShare)>,
     pk_set: bls::PublicKeySet,
 }
@@ -201,27 +201,23 @@ impl Debug for PartialSecurityMetadata {
 /// Metadata needed for verification of the sender.
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 pub struct FullSecurityMetadata {
-    proof: SectionProofChain,
+    proof: SectionProofSlice,
     signature: bls::Signature,
 }
 
 impl FullSecurityMetadata {
-    pub fn last_public_key_info(&self) -> &SectionKeyInfo {
-        self.proof.last_public_key_info()
+    pub fn last_new_public_key_info(&self) -> Option<&SectionKeyInfo> {
+        self.proof.last_new_public_key_info()
     }
 
     pub fn verify<'a, I>(
-        &self,
+        &'a self,
         content: &RoutingMessage,
         their_key_infos: I,
     ) -> Result<VerifyStatus, RoutingError>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
-        if !self.proof.validate() {
-            return Err(RoutingError::InvalidProvingSection);
-        }
-
         let public_key = match self.proof.check_trust(their_key_infos) {
             TrustStatus::Trusted(key) => key,
             TrustStatus::ProofTooNew => return Ok(VerifyStatus::ProofTooNew),
@@ -346,7 +342,7 @@ impl SignedRoutingMessage {
         content: RoutingMessage,
         section_share: &SectionKeyShare,
         pk_set: bls::PublicKeySet,
-        proof: SectionProofChain,
+        proof: SectionProofSlice,
     ) -> Result<Self> {
         let mut signatures = BTreeSet::new();
         let sig = section_share.key.sign(&serialize(&content)?);
@@ -395,7 +391,7 @@ impl SignedRoutingMessage {
     }
 
     /// Verify this message is properly signed and trusted.
-    pub fn verify<'a, I>(&self, their_key_infos: I) -> Result<VerifyStatus, RoutingError>
+    pub fn verify<'a, I>(&'a self, their_key_infos: I) -> Result<VerifyStatus, RoutingError>
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
@@ -417,7 +413,7 @@ impl SignedRoutingMessage {
                 None
             }
             SecurityMetadata::Full(ref security_metadata) => {
-                Some(security_metadata.last_public_key_info())
+                security_metadata.last_new_public_key_info()
             }
         }
     }
@@ -536,7 +532,7 @@ impl SignedRoutingMessage {
     }
 
     #[cfg(all(test, feature = "mock"))]
-    pub(crate) fn proof_chain(&self) -> Option<&SectionProofChain> {
+    pub(crate) fn proof_chain(&self) -> Option<&SectionProofSlice> {
         match &self.security_metadata {
             SecurityMetadata::Full(md) => Some(&md.proof),
             SecurityMetadata::Partial(md) => Some(&md.proof),
@@ -757,8 +753,8 @@ mod tests {
         assert_eq!(signed_msg, Some(signed_msg_org))
     }
 
-    fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofChain {
-        SectionProofChain::from_genesis(make_section_key_info(pk_set))
+    fn make_proof_chain(pk_set: &bls::PublicKeySet) -> SectionProofSlice {
+        SectionProofSlice::from_genesis(make_section_key_info(pk_set))
     }
 
     fn make_their_key_infos(
