@@ -13,13 +13,13 @@ use super::{
 };
 use crate::{
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
-    error::RoutingError,
+    error::{Result, RoutingError},
     event::{Connected, Event},
-    id::{FullId, P2pNode},
+    id::FullId,
     location::{DstLocation, SrcLocation},
     messages::{
-        BootstrapResponse, HopMessageWithBytes, JoinRequest, QueuedMessage, RoutingMessage,
-        SignedRoutingMessage, Variant, VerifyStatus,
+        BootstrapResponse, JoinRequest, Message, MessageWithBytes, QueuedMessage, Variant,
+        VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -30,6 +30,7 @@ use crate::{
     state_machine::{State, Transition},
     timer::Timer,
     xor_space::{Prefix, XorName},
+    ConnectionInfo,
 };
 use log::LogLevel;
 use std::{
@@ -54,7 +55,7 @@ pub struct JoiningPeerDetails {
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
     network_service: NetworkService,
-    routing_msg_filter: RoutingMessageFilter,
+    msg_filter: RoutingMessageFilter,
     msg_backlog: Vec<QueuedMessage>,
     full_id: FullId,
     timer: Timer,
@@ -76,7 +77,7 @@ impl JoiningPeer {
 
         let mut joining_peer = Self {
             network_service: details.network_service,
-            routing_msg_filter: RoutingMessageFilter::new(),
+            msg_filter: RoutingMessageFilter::new(),
             msg_backlog: vec![],
             full_id: details.full_id,
             timer: details.timer,
@@ -101,7 +102,7 @@ impl JoiningPeer {
             full_id: self.full_id,
             gen_pfx_info,
             msg_backlog: self.msg_backlog,
-            routing_msg_filter: self.routing_msg_filter,
+            msg_filter: self.msg_filter,
             sig_accumulator: Default::default(),
             timer: self.timer,
             rng: self.rng,
@@ -152,31 +153,6 @@ impl JoiningPeer {
         }
     }
 
-    fn dispatch_routing_message(
-        &mut self,
-        msg: SignedRoutingMessage,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
-        let (msg, metadata) = msg.into_parts();
-
-        match msg {
-            RoutingMessage {
-                content: Variant::NodeApproval(gen_info),
-                src: SrcLocation::Section(_),
-                dst: DstLocation::Node { .. },
-            } => Ok(self.handle_node_approval(*gen_info)),
-            _ => {
-                debug!(
-                    "{} - Unhandled routing message, adding to backlog: {:?}",
-                    self, msg
-                );
-                self.msg_backlog
-                    .push(SignedRoutingMessage::from_parts(msg, metadata).into_queued());
-                Ok(Transition::Stay)
-            }
-        }
-    }
-
     fn handle_node_approval(&mut self, gen_pfx_info: GenesisPfxInfo) -> Transition {
         info!(
             "{} - This node has been approved to join the network at {:?}!",
@@ -184,22 +160,6 @@ impl JoiningPeer {
             gen_pfx_info.latest_info.prefix(),
         );
         Transition::IntoAdult { gen_pfx_info }
-    }
-
-    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        if let JoinType::Relocate(payload) = &self.join_type {
-            let details = payload.relocate_details();
-            let key_info = &details.destination_key_info;
-            msg.verify(as_iter(key_info))
-                .and_then(VerifyStatus::require_full)
-                .map_err(|error| {
-                    self.log_verify_failure(msg, &error, as_iter(key_info));
-                    error
-                })
-        } else {
-            // We don't have the root key info so we can't verify the message.
-            Ok(())
-        }
     }
 
     #[cfg(feature = "mock_base")]
@@ -222,7 +182,11 @@ impl Base for JoiningPeer {
     }
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
-        dst.is_single() && dst.name() == *self.full_id.public_id().name()
+        match dst {
+            DstLocation::Node(name) => name == self.name(),
+            DstLocation::Section(_) | DstLocation::Prefix(_) => false,
+            DstLocation::Direct => true,
+        }
     }
 
     fn peer_map(&self) -> &PeerMap {
@@ -268,14 +232,16 @@ impl Base for JoiningPeer {
         }
     }
 
-    fn handle_direct_message(
+    fn handle_message(
         &mut self,
-        msg: Variant,
-        p2p_node: P2pNode,
+        sender: Option<ConnectionInfo>,
+        msg: Message,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        match msg {
+        match msg.variant {
             Variant::BootstrapResponse(BootstrapResponse::Join(info)) => {
+                let p2p_node = msg.src.to_sender_node(sender)?;
+
                 if info.version() > self.elders_info.version() {
                     if info.prefix().matches(self.name()) {
                         info!(
@@ -295,49 +261,56 @@ impl Base for JoiningPeer {
                     }
                 }
             }
+            Variant::NodeApproval(gen_info) => {
+                // Ensure src and dst are what we expect.
+                let _ = msg.src.as_section();
+                let _ = msg.dst.as_node();
+
+                return Ok(self.handle_node_approval(*gen_info));
+            }
             Variant::ConnectionResponse | Variant::BootstrapResponse(_) => (),
-            _ => {
-                debug!(
-                    "{} Unhandled direct message from {}, adding to backlog: {:?}",
-                    self,
-                    p2p_node.public_id(),
-                    msg
-                );
-                self.msg_backlog.push(QueuedMessage::Direct(p2p_node, msg));
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::AckMessage { .. }
+            | Variant::GenesisUpdate(_)
+            | Variant::Relocate(_)
+            | Variant::MessageSignature(_)
+            | Variant::BootstrapRequest(_)
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge(_)
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..) => {
+                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg,);
+                self.msg_backlog.push(msg.into_queued(sender));
             }
         }
 
         Ok(Transition::Stay)
     }
 
-    fn handle_hop_message(
-        &mut self,
-        mut msg: HopMessageWithBytes,
-        outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
-        if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
-            trace!(
-                "{} Known message: {:?} - not handling further",
-                self,
-                msg.full_message_crypto_hash()
-            );
-            return Ok(Transition::Stay);
+    fn filter_incoming_message(&mut self, msg: &MessageWithBytes) -> bool {
+        self.msg_filter.filter_incoming(msg).is_new()
+    }
+
+    fn relay_message(&mut self, mut msg: MessageWithBytes) -> Result<()> {
+        self.msg_backlog
+            .push(msg.take_or_deserialize_message()?.into_queued(None));
+        Ok(())
+    }
+
+    fn verify_message(&self, msg: &Message) -> Result<bool> {
+        if let JoinType::Relocate(payload) = &self.join_type {
+            let details = payload.relocate_details();
+            let key_info = &details.destination_key_info;
+            msg.verify(as_iter(key_info))
+                .and_then(VerifyStatus::require_full)
+                .map_err(|error| {
+                    self.log_verify_failure(msg, &error, as_iter(key_info));
+                    error
+                })?;
         }
 
-        trace!(
-            "{} - Handle signed message: {:?}",
-            self,
-            msg.full_message_crypto_hash()
-        );
-
-        let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
-        if self.in_dst_location(&signed_msg.routing_message().dst) {
-            self.verify_signed_message(&signed_msg)?;
-            self.dispatch_routing_message(signed_msg, outbox)
-        } else {
-            self.msg_backlog.push(signed_msg.into_queued());
-            Ok(Transition::Stay)
-        }
+        Ok(true)
     }
 }
 

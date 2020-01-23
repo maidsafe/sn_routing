@@ -19,13 +19,13 @@ use crate::{
         Chain, EldersChange, EldersInfo, GenesisPfxInfo, NetworkParams, OnlinePayload,
         SectionKeyInfo, SendAckMessagePayload,
     },
-    error::RoutingError,
+    error::{Result, RoutingError},
     event::Event,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
     messages::{
-        AccumulatingMessage, BootstrapResponse, HopMessageWithBytes, QueuedMessage,
-        SignedRoutingMessage, Variant, VerifyStatus,
+        AccumulatingMessage, BootstrapResponse, Message, MessageWithBytes, QueuedMessage, Variant,
+        VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -61,7 +61,7 @@ pub struct AdultDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_backlog: Vec<QueuedMessage>,
     pub sig_accumulator: SignatureAccumulator,
-    pub routing_msg_filter: RoutingMessageFilter,
+    pub msg_filter: RoutingMessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
     pub rng: MainRng,
@@ -73,12 +73,12 @@ pub struct Adult {
     event_backlog: Vec<Event>,
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
-    /// Messages addressed to us that we cannot handle until we are established.
+    /// Messages addressed to us that we cannot handle until we are promoted.
     msg_backlog: Vec<QueuedMessage>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     knowledge_timer_token: u64,
-    routing_msg_filter: RoutingMessageFilter,
+    msg_filter: RoutingMessageFilter,
     timer: Timer,
     rng: MainRng,
 }
@@ -114,7 +114,7 @@ impl Adult {
             msg_backlog: details.msg_backlog,
             sig_accumulator: details.sig_accumulator,
             parsec_map,
-            routing_msg_filter: details.routing_msg_filter,
+            msg_filter: details.msg_filter,
             timer: details.timer,
             knowledge_timer_token,
             rng: details.rng,
@@ -175,13 +175,13 @@ impl Adult {
             event_backlog: self.event_backlog,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            routing_msg_queue: Default::default(),
+            msg_queue: Default::default(),
             msg_backlog: self.msg_backlog,
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
-            routing_msg_filter: RoutingMessageFilter::new(),
+            msg_filter: RoutingMessageFilter::new(),
             timer: self.timer,
             rng: self.rng,
         };
@@ -194,8 +194,8 @@ impl Adult {
             chain: self.chain,
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            routing_msg_filter: self.routing_msg_filter,
-            routing_msg_queue: VecDeque::new(),
+            msg_filter: self.msg_filter,
+            msg_queue: VecDeque::new(),
             msg_backlog: self.msg_backlog,
             network_service: self.network_service,
             network_rx: None,
@@ -217,7 +217,7 @@ impl Adult {
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
             knowledge_timer_token,
-            routing_msg_filter: state.routing_msg_filter,
+            msg_filter: state.msg_filter,
             timer,
             rng: rng::new(),
         }
@@ -287,10 +287,11 @@ impl Adult {
             );
             BootstrapResponse::Rebootstrap(conn_infos)
         };
+
         self.send_direct_message(
             p2p_node.connection_info(),
             Variant::BootstrapResponse(response),
-        );
+        )
     }
 
     fn handle_genesis_update(
@@ -321,118 +322,52 @@ impl Adult {
         Ok(Transition::Stay)
     }
 
-    // Send signed_msg to our elders so they can route it properly.
-    fn send_signed_message_to_elders(
-        &mut self,
-        msg: HopMessageWithBytes,
-    ) -> Result<(), RoutingError> {
-        trace!(
-            "{}: Forwarding message {:?} via elder targets {:?}",
-            self,
-            msg.full_message_crypto_hash(),
-            self.chain.our_elders().format(", ")
-        );
-
-        let routing_msg_filter = &mut self.routing_msg_filter;
-        let targets: Vec<_> = self
-            .chain
-            .our_elders()
-            .filter(|p2p_node| {
-                routing_msg_filter
-                    .filter_outgoing(&msg, p2p_node.public_id())
-                    .is_new()
-            })
-            .map(|node| node.connection_info().clone())
-            .collect();
-
-        let cheap_bytes_clone = msg.full_message_bytes().clone();
-        self.send_message_to_targets(&targets, targets.len(), cheap_bytes_clone);
-
-        // we've seen this message - don't handle it again if someone else sends it to us
-        let _ = self.routing_msg_filter.filter_incoming(&msg);
-
-        Ok(())
-    }
-
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
     /// message, handles it.
     fn handle_message_signature(
         &mut self,
         msg: AccumulatingMessage,
-        pub_id: PublicId,
+        src: PublicId,
+        outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        if !self.chain.is_peer_elder(&pub_id) {
+        if !self.chain.is_peer_elder(&src) {
             debug!(
                 "{} - Received message signature from not known elder (still use it) {}, {:?}",
-                self, pub_id, msg
+                self, src, msg
             );
         }
 
-        if let Some(signed_msg) = self.sig_accumulator.add_proof(msg) {
-            let signed_msg = HopMessageWithBytes::new(signed_msg, &self.log_ident())?;
-            self.handle_signed_message(signed_msg)
+        if let Some(msg) = self.sig_accumulator.add_proof(msg, &self.log_ident()) {
+            self.handle_accumulated_message(msg, outbox)
         } else {
             Ok(Transition::Stay)
         }
     }
 
-    // If the message is for us, verify it then, handle the enclosed routing message and swarm it
-    // to the rest of our section when destination is targeting multiple; if not, forward it.
-    fn handle_signed_message(
+    fn handle_accumulated_message(
         &mut self,
-        msg: HopMessageWithBytes,
-    ) -> Result<Transition, RoutingError> {
-        if !self.routing_msg_filter.filter_incoming(&msg).is_new() {
+        msg: MessageWithBytes,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition> {
+        if !self.filter_incoming_message(&msg) {
             trace!(
                 "{} Known message: {:?} - not handling further",
                 self,
-                msg.full_message_crypto_hash()
+                msg.full_crypto_hash()
             );
+
             return Ok(Transition::Stay);
         }
 
-        self.handle_filtered_signed_message(msg)
-    }
-
-    fn handle_filtered_signed_message(
-        &mut self,
-        mut msg: HopMessageWithBytes,
-    ) -> Result<Transition, RoutingError> {
-        trace!(
-            "{} - Handle signed message: {:?}",
-            self,
-            msg.full_message_crypto_hash()
-        );
-
-        if self.in_dst_location(msg.message_dst()) {
-            let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
-            match &signed_msg.routing_message().content {
-                Variant::GenesisUpdate(info) => {
-                    self.verify_signed_message(&signed_msg)?;
-                    return self.handle_genesis_update((**info).clone());
-                }
-                Variant::Relocate(_) => {
-                    self.verify_signed_message(&signed_msg)?;
-                    let signed_relocate = SignedRelocateDetails::new(signed_msg.clone())?;
-                    return self.handle_relocate(signed_relocate);
-                }
-                _ => {
-                    self.msg_backlog.push(signed_msg.into_queued());
-                }
-            }
+        if self.should_relay_message(msg.message_dst()) {
+            self.relay_message(msg.clone())?;
         }
 
-        self.send_signed_message_to_elders(msg)?;
-        Ok(Transition::Stay)
-    }
-
-    fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
-        msg.verify(self.chain.get_their_key_infos())
-            .and_then(VerifyStatus::require_full)
-            .map_err(|error| {
-                self.log_verify_failure(msg, &error, self.chain.get_their_key_infos());
-                error
-            })
+        if let Some(msg) = self.preprocess_message(msg)? {
+            self.handle_message(None, msg, outbox)
+        } else {
+            Ok(Transition::Stay)
+        }
     }
 }
 
@@ -493,31 +428,16 @@ impl Base for Adult {
 
         let mut transition = Transition::Stay;
 
-        for msg in mem::take(&mut self.msg_backlog) {
+        for QueuedMessage { sender, message } in
+            mem::replace(&mut self.msg_backlog, Default::default())
+        {
             if let Transition::Stay = &transition {
-                let result = match msg {
-                    QueuedMessage::Hop(msg) => {
-                        let msg = match HopMessageWithBytes::new(msg, &self.log_ident()) {
-                            Ok(msg) => msg,
-                            Err(err) => {
-                                error!("{} - Failed to make message {:?}", self, err);
-                                continue;
-                            }
-                        };
-
-                        self.handle_filtered_signed_message(msg)
-                    }
-                    QueuedMessage::Direct(sender, msg) => {
-                        self.handle_direct_message(msg, sender, outbox)
-                    }
-                };
-
-                match result {
+                match self.handle_message(sender, message, outbox) {
                     Ok(new_transition) => transition = new_transition,
                     Err(err) => debug!("{} - {:?}", self, err),
                 }
             } else {
-                self.msg_backlog.push(msg);
+                self.msg_backlog.push(message.into_queued(sender));
             }
         }
 
@@ -539,63 +459,127 @@ impl Base for Adult {
         Transition::Stay
     }
 
-    fn handle_direct_message(
+    fn handle_message(
         &mut self,
-        msg: Variant,
-        p2p_node: P2pNode,
+        sender: Option<ConnectionInfo>,
+        msg: Message,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
-        use crate::messages::Variant::*;
-        match msg {
-            MessageSignature(msg) => self.handle_message_signature(*msg, *p2p_node.public_id()),
-            ParsecRequest(version, par_request) => {
-                self.handle_parsec_request(version, par_request, p2p_node, outbox)
+    ) -> Result<Transition> {
+        trace!("{} - Handle message {:?}", self, msg);
+
+        match msg.variant {
+            Variant::GenesisUpdate(info) => self.handle_genesis_update(*info),
+            Variant::Relocate(_) => {
+                let signed_relocate = SignedRelocateDetails::new(msg)?;
+                self.handle_relocate(signed_relocate)
             }
-            ParsecResponse(version, par_response) => {
-                self.handle_parsec_response(version, par_response, *p2p_node.public_id(), outbox)
+            Variant::MessageSignature(accumulating_msg) => {
+                self.handle_message_signature(*accumulating_msg, *msg.src.as_node()?, outbox)
             }
-            BootstrapRequest(name) => {
-                self.handle_bootstrap_request(p2p_node, name);
+            Variant::ParsecRequest(version, request) => self.handle_parsec_request(
+                version,
+                request,
+                msg.src.to_sender_node(sender)?,
+                outbox,
+            ),
+            Variant::ParsecResponse(version, response) => {
+                self.handle_parsec_response(version, response, *msg.src.as_node()?, outbox)
+            }
+            Variant::BootstrapRequest(name) => {
+                self.handle_bootstrap_request(msg.src.to_sender_node(sender)?, name);
                 Ok(Transition::Stay)
             }
-            ConnectionResponse => {
-                debug!("{} - Received connection response from {}", self, p2p_node);
-                Ok(Transition::Stay)
-            }
-            JoinRequest(_) | MemberKnowledge { .. } => {
+            Variant::ConnectionResponse => {
                 debug!(
-                    "{} Unhandled direct message from {}, adding to backlog: {:?}",
+                    "{} - Received connection response from {}",
                     self,
-                    p2p_node.public_id(),
-                    msg
+                    msg.src.to_sender_node(sender)?
                 );
-                self.msg_backlog.push(QueuedMessage::Direct(p2p_node, msg));
                 Ok(Transition::Stay)
             }
-            NeighbourInfo(_)
-            | UserMessage(_)
-            | NodeApproval(_)
-            | AckMessage { .. }
-            | GenesisUpdate(_)
-            | Relocate(_)
-            | BootstrapResponse(_) => {
-                debug!(
-                    "{} Unhandled direct message from {}, discard: {:?}",
-                    self,
-                    p2p_node.public_id(),
-                    msg
-                );
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::NodeApproval(_)
+            | Variant::AckMessage { .. }
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge(_) => {
+                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
+                self.msg_backlog.push(msg.into_queued(sender));
+                Ok(Transition::Stay)
+            }
+            Variant::BootstrapResponse(_) => {
+                debug!("{} Unhandled message, discarding: {:?}", self, msg);
                 Ok(Transition::Stay)
             }
         }
     }
 
-    fn handle_hop_message(
-        &mut self,
-        msg: HopMessageWithBytes,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
-        self.handle_signed_message(msg)
+    fn filter_incoming_message(&mut self, message: &MessageWithBytes) -> bool {
+        self.msg_filter.filter_incoming(message).is_new()
+    }
+
+    fn should_verify_message(&self, msg: &Message) -> bool {
+        // As Adult, we only verify the messages that we know how to process ourselves.
+        // We still handle the other messages, but only by relaying and/or backlogging them.
+        match msg.variant {
+            Variant::GenesisUpdate(_)
+            | Variant::Relocate(_)
+            | Variant::MessageSignature(_)
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..)
+            | Variant::BootstrapRequest(_)
+            | Variant::ConnectionResponse => true,
+
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::NodeApproval(_)
+            | Variant::AckMessage { .. }
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge(_)
+            | Variant::BootstrapResponse(_) => false,
+        }
+    }
+
+    fn verify_message(&self, msg: &Message) -> Result<bool> {
+        let result = match msg.verify(self.chain.get_their_key_infos()) {
+            Ok(VerifyStatus::Full) => Ok(true),
+            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
+            Err(error) => Err(error),
+        };
+        result.map_err(|error| {
+            self.log_verify_failure(msg, &error, self.chain.get_their_key_infos());
+            error
+        })
+    }
+
+    fn relay_message(&mut self, msg: MessageWithBytes) -> Result<()> {
+        // Send message to our elders so they can route it properly.
+        trace!(
+            "{}: Forwarding message {:?} via elder targets {:?}",
+            self,
+            msg.full_crypto_hash(),
+            self.chain.our_elders().format(", ")
+        );
+
+        let msg_filter = &mut self.msg_filter;
+        let targets: Vec<_> = self
+            .chain
+            .our_elders()
+            .filter(|p2p_node| {
+                msg_filter
+                    .filter_outgoing(&msg, p2p_node.public_id())
+                    .is_new()
+            })
+            .map(|node| node.connection_info().clone())
+            .collect();
+
+        let cheap_bytes_clone = msg.full_bytes().clone();
+        self.send_message_to_targets(&targets, targets.len(), cheap_bytes_clone);
+
+        // we've seen this message - don't handle it again if someone else sends it to us
+        let _ = self.msg_filter.filter_incoming(&msg);
+
+        Ok(())
     }
 }
 

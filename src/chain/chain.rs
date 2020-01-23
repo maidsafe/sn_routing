@@ -1455,7 +1455,7 @@ impl Chain {
                 }
                 self.candidates(target_name)?
             }
-            DstLocation::PrefixSection(ref prefix) => {
+            DstLocation::Prefix(ref prefix) => {
                 if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
                 {
                     // only route the message when we have all the targets in our chain -
@@ -1489,6 +1489,7 @@ impl Chain {
                 }
                 self.candidates(&prefix.lower_bound())?
             }
+            DstLocation::Direct => return Err(RoutingError::CannotRoute),
         };
 
         Ok((best_section, dg_size))
@@ -1537,8 +1538,8 @@ impl Chain {
     /// Returns whether we are a part of the given source.
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
         match src {
-            SrcLocation::Node(name) => self.our_id().name() == name,
-            SrcLocation::Section(prefix) => self.our_prefix().is_compatible(prefix),
+            SrcLocation::Node(id) => self.our_id().name() == id.name(),
+            SrcLocation::Section(prefix) => prefix.matches(self.our_id().name()),
         }
     }
 
@@ -1547,7 +1548,8 @@ impl Chain {
         match dst {
             DstLocation::Node(name) => self.our_id().name() == name,
             DstLocation::Section(name) => self.our_prefix().matches(name),
-            DstLocation::PrefixSection(prefix) => self.our_prefix().is_compatible(prefix),
+            DstLocation::Prefix(prefix) => self.our_prefix().is_compatible(prefix),
+            DstLocation::Direct => true,
         }
     }
 

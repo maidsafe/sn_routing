@@ -6,14 +6,19 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::xor_space::{Prefix, XorName};
+use crate::{
+    error::{Result, RoutingError},
+    id::PublicId,
+    xor_space::{Prefix, XorName},
+};
 
-/// Source location
-#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash, Debug)]
+/// Message source location.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum SrcLocation {
-    /// A single node with the given name.
-    Node(XorName),
-    /// A single section with the given prefix.
+    /// A single node with the given public id.
+    Node(PublicId),
+    /// A section with the given prefix.
     Section(Prefix<XorName>),
 }
 
@@ -30,34 +35,27 @@ impl SrcLocation {
     pub fn is_multiple(&self) -> bool {
         !self.is_single()
     }
-
-    /// provide the name mathching a single node's public key
-    pub(crate) fn single_signing_name(&self) -> Option<&XorName> {
-        match self {
-            Self::Node(name) => Some(name),
-            Self::Section(_) => None,
-        }
-    }
 }
 
-/// Destination location
-#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash, Debug)]
+/// Message destination location.
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum DstLocation {
-    /// A single section whose prefix matches the given name
-    Section(XorName),
-    /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
-    /// the routing table or only a part of a `Section`
-    PrefixSection(Prefix<XorName>),
-    /// A single node
+    /// Destination is a single node with the given name.
     Node(XorName),
+    /// Destination are the nodes of the section whose prefix matches the given name.
+    Section(XorName),
+    /// Destination are the nodes whose name is matched by the given prefix.
+    Prefix(Prefix<XorName>),
+    /// Destination is the node at the `ConnectionInfo` the message is directly sent to.
+    Direct,
 }
 
 impl DstLocation {
     /// Returns `true` if the location is a single node, and `false` otherwise.
     pub fn is_single(&self) -> bool {
         match self {
-            Self::Section(_) | Self::PrefixSection(_) => false,
-            Self::Node(_) => true,
+            Self::Node(_) | Self::Direct => true,
+            Self::Section(_) | Self::Prefix(_) => false,
         }
     }
 
@@ -66,19 +64,36 @@ impl DstLocation {
         !self.is_single()
     }
 
-    /// Returns the name of location.
-    pub fn name(&self) -> XorName {
+    /// Returns if the location is compatible with that prefix
+    pub fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
         match self {
-            Self::Section(name) | Self::Node(name) => *name,
-            Self::PrefixSection(prefix) => prefix.lower_bound(),
+            Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
+            Self::Prefix(prefix) => other_prefix.is_compatible(prefix),
+            Self::Direct => false,
         }
     }
 
-    /// Returns if the location is compatible with that prefix
-    pub(crate) fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
+    /// If this location is `Node`, returns its name, otherwise error.
+    pub fn as_node(&self) -> Result<&XorName> {
         match self {
-            Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
-            Self::PrefixSection(prefix) => other_prefix.is_compatible(prefix),
+            Self::Node(name) => Ok(name),
+            Self::Section(_) | Self::Prefix(_) | Self::Direct => Err(RoutingError::BadLocation),
+        }
+    }
+
+    /// If this location is `Section`, returns its name, otherwise error.
+    pub fn as_section(&self) -> Result<&XorName> {
+        match self {
+            Self::Section(name) => Ok(name),
+            Self::Node(_) | Self::Prefix(_) | Self::Direct => Err(RoutingError::BadLocation),
+        }
+    }
+
+    /// If this location is `Prefix`, returns it, otherwise error.
+    pub fn as_prefix(&self) -> Result<&Prefix<XorName>> {
+        match self {
+            Self::Prefix(prefix) => Ok(prefix),
+            Self::Node(_) | Self::Section(_) | Self::Direct => Err(RoutingError::BadLocation),
         }
     }
 }

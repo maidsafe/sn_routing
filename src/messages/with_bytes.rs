@@ -6,175 +6,121 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    Message, PartialMessage, PartialSignedRoutingMessage, SignedDirectMessage, SignedRoutingMessage,
-};
+use super::{DstLocation, Message, PartialMessage};
 use crate::{
     crypto::{self, Digest256},
-    error::{Result, RoutingError},
-    location::DstLocation,
-    states::common::{from_network_bytes, partial_from_network_bytes, to_network_bytes},
+    error::Result,
     utils::LogIdent,
 };
+use bincode::{deserialize, serialize};
 use bytes::Bytes;
 
-#[allow(clippy::large_enum_variant)]
-pub enum MessageWithBytes {
-    Hop(HopMessageWithBytes),
-    Direct(SignedDirectMessage, Bytes),
+/// Message in both its serialized and unserialized forms.
+#[derive(Eq, PartialEq, Clone)]
+pub struct MessageWithBytes {
+    /// Wrapped message.
+    full_content: Option<Message>,
+    /// Partial message (just the destination location)
+    partial_content: PartialMessage,
+    /// Serialized full message as received or sent to quic_p2p.
+    full_bytes: Bytes,
+    /// Crypto hash of the full message.
+    full_crypto_hash: Digest256,
 }
 
 impl MessageWithBytes {
-    pub fn partial_from_bytes(bytes: Bytes) -> Result<Self> {
-        match partial_from_network_bytes(&bytes)? {
-            PartialMessage::Hop(msg_partial) => Ok(Self::Hop(HopMessageWithBytes::new_from_parts(
-                None,
-                msg_partial,
-                bytes,
-            ))),
-            PartialMessage::Direct(msg) => Ok(Self::Direct(msg, bytes)),
-        }
-    }
-}
-
-/// An individual hop message that will be relayed to its destination.
-#[derive(Eq, PartialEq, Clone)]
-pub struct HopMessageWithBytes {
-    /// Wrapped signed message.
-    full_content: Option<SignedRoutingMessage>,
-    /// Partial SignedRoutingMessage infos
-    partial_content: PartialSignedRoutingMessage,
-    /// Serialized Message as received or sent to quic_p2p.
-    full_message_bytes: Bytes,
-    /// Crypto hash of the full message.
-    full_message_crypto_hash: Digest256,
-}
-
-impl HopMessageWithBytes {
     /// Serialize message and keep both SignedRoutingMessage and Bytes.
-    pub fn new(full_content: SignedRoutingMessage, log_ident: &LogIdent) -> Result<Self> {
-        let hop_msg_result = {
-            let (full_content, full_message_bytes) = {
-                let full_message = Message::Hop(full_content);
-                let full_message_bytes = to_network_bytes(&full_message)?;
-
-                if let Message::Hop(full_content) = full_message {
-                    (full_content, full_message_bytes)
-                } else {
-                    unreachable!("Created as Hop can only match Hop.")
-                }
-            };
-
-            let partial_content = PartialSignedRoutingMessage {
-                dst: full_content.routing_message().dst,
-            };
-
-            Self::new_from_parts(Some(full_content), partial_content, full_message_bytes)
-        };
+    pub fn new(full_content: Message, log_ident: &LogIdent) -> Result<Self> {
+        let full_bytes = serialize(&full_content)?.into();
+        let partial_content = full_content.to_partial();
+        let result = Self::new_from_parts(Some(full_content), partial_content, full_bytes);
 
         trace!(
             "{} Creating message hash({:?}) {:?}",
             log_ident,
-            hop_msg_result.full_message_crypto_hash,
-            hop_msg_result
+            result.full_crypto_hash,
+            result
                 .full_content
                 .as_ref()
-                .expect("New HopMessageWithBytes need full_content")
-                .routing_message(),
+                .expect("New MessageWithBytes need full_content")
         );
 
-        Ok(hop_msg_result)
+        Ok(result)
     }
 
+    pub fn partial_from_bytes(bytes: Bytes) -> Result<Self> {
+        let partial_content: PartialMessage = deserialize(&bytes[..])?;
+        Ok(Self::new_from_parts(None, partial_content, bytes))
+    }
+
+    // Precondition: `full_bytes == serialize(&full_content)`
     fn new_from_parts(
-        full_content: Option<SignedRoutingMessage>,
-        partial_content: PartialSignedRoutingMessage,
-        full_message_bytes: Bytes,
+        full_content: Option<Message>,
+        partial_content: PartialMessage,
+        full_bytes: Bytes,
     ) -> Self {
-        let full_message_crypto_hash = crypto::sha3_256(&full_message_bytes);
+        let full_crypto_hash = crypto::sha3_256(&full_bytes);
 
         Self {
             full_content,
             partial_content,
-            full_message_bytes,
-            full_message_crypto_hash,
+            full_bytes,
+            full_crypto_hash,
         }
     }
 
-    pub fn take_or_deserialize_signed_routing_message(&mut self) -> Result<SignedRoutingMessage> {
-        self.take_signed_routing_message()
-            .map_or_else(|| self.deserialize_signed_routing_message(), Ok)
+    pub fn take_or_deserialize_message(&mut self) -> Result<Message> {
+        self.take_message()
+            .map_or_else(|| self.deserialize_message(), Ok)
     }
 
-    pub fn full_message_bytes(&self) -> &Bytes {
-        &self.full_message_bytes
+    pub fn full_bytes(&self) -> &Bytes {
+        &self.full_bytes
     }
 
-    pub fn full_message_crypto_hash(&self) -> &Digest256 {
-        &self.full_message_crypto_hash
+    pub fn full_crypto_hash(&self) -> &Digest256 {
+        &self.full_crypto_hash
     }
 
     pub fn message_dst(&self) -> &DstLocation {
         &self.partial_content.dst
     }
 
-    fn take_signed_routing_message(&mut self) -> Option<SignedRoutingMessage> {
+    fn take_message(&mut self) -> Option<Message> {
         self.full_content.take()
     }
 
-    fn deserialize_signed_routing_message(&self) -> Result<SignedRoutingMessage> {
-        match from_network_bytes(&self.full_message_bytes)? {
-            Message::Hop(msg) => Ok(msg),
-            Message::Direct(_msg) => Err(RoutingError::InvalidMessage),
-        }
+    fn deserialize_message(&self) -> Result<Message> {
+        Ok(deserialize(&self.full_bytes[..])?)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        super::{RoutingMessage, Variant},
-        *,
-    };
-    use crate::{
-        id::FullId,
-        location::SrcLocation,
-        rng::{self},
-        unwrap,
-    };
-    use rand::{self, distributions::Standard, Rng};
+    use super::{super::Variant, *};
+    use crate::{id::FullId, rng, unwrap};
+    use rand::{distributions::Standard, Rng};
 
     #[test]
-    fn serialise_and_partial_at_hop_message() {
+    fn serialise_and_partial_at_message() {
         let mut rng = rng::new();
         let full_id = FullId::gen(&mut rng);
-        let msg = RoutingMessage {
-            src: SrcLocation::Node(*full_id.public_id().name()),
-            dst: DstLocation::Section(rng.gen()),
-            content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
-        };
-        let signed_msg_org = unwrap!(SignedRoutingMessage::single_source(msg, &full_id));
 
-        let msg = unwrap!(HopMessageWithBytes::new(
-            signed_msg_org.clone(),
-            &LogIdent::new("node")
-        ));
-        let bytes = msg.full_message_bytes();
-        let full_msg = unwrap!(from_network_bytes(bytes));
-        let partial_msg = unwrap!(partial_from_network_bytes(bytes));
-        let partial_msg_head = unwrap!(partial_from_network_bytes(&bytes.slice(0, 40)));
+        let dst = DstLocation::Section(rng.gen());
+        let variant = Variant::UserMessage(rng.sample_iter(Standard).take(6).collect());
+        let msg = unwrap!(Message::single_src(&full_id, dst, variant));
 
-        let expected_partial = PartialMessage::Hop(PartialSignedRoutingMessage {
-            dst: signed_msg_org.routing_message().dst,
-        });
-        let signed_msg = if let Message::Hop(signed_msg) = full_msg {
-            Some(signed_msg)
-        } else {
-            None
-        };
+        let msg_with_bytes = unwrap!(MessageWithBytes::new(msg.clone(), &LogIdent::new("node")));
+        let bytes = msg_with_bytes.full_bytes();
+
+        let full_msg: Message = unwrap!(deserialize(&bytes[..]));
+        let partial_msg: PartialMessage = unwrap!(deserialize(&bytes[..]));
+        let partial_msg_head: PartialMessage = unwrap!(deserialize(&bytes.slice(0, 40)));
+
+        let expected_partial = PartialMessage { dst: msg.dst };
 
         assert_eq!(partial_msg, expected_partial);
         assert_eq!(partial_msg_head, expected_partial);
-        assert_eq!(signed_msg, Some(signed_msg_org))
+        assert_eq!(full_msg, msg);
     }
 }

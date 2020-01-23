@@ -539,10 +539,6 @@ impl SectionProofSlice {
         }
     }
 
-    pub fn blocks_len(&self) -> usize {
-        self.blocks.len()
-    }
-
     pub fn last_prefix_version(&self) -> (&Prefix<XorName>, u64) {
         self.blocks
             .last()

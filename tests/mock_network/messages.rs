@@ -26,7 +26,7 @@ fn send() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = SrcLocation::Node(nodes[sender_index].name());
+    let src = SrcLocation::Node(nodes[sender_index].id());
     let dst = DstLocation::Section(rng.gen());
     let content = gen_vec(&mut rng, 1024);
     assert!(nodes[sender_index]
@@ -53,7 +53,7 @@ fn send() {
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::MessageReceived not received"),
+                _ => panic!("{} - Event::MessageReceived not received", node.inner),
             }
         }
     }
@@ -74,7 +74,7 @@ fn send_and_receive() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = SrcLocation::Node(nodes[sender_index].name());
+    let src = SrcLocation::Node(nodes[sender_index].id());
     let dst = DstLocation::Section(rng.gen());
 
     let req_content = gen_vec(&mut rng, 10);
@@ -100,7 +100,7 @@ fn send_and_receive() {
                     if req_content == content {
                         let res_src = SrcLocation::Section(*node.our_prefix());
                         let res_dst = match src {
-                            SrcLocation::Node(name) => DstLocation::Node(name),
+                            SrcLocation::Node(id) => DstLocation::Node(*id.name()),
                             _ => panic!("Unexpected src location: {:?}", src),
                         };
 

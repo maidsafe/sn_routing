@@ -17,7 +17,7 @@ use crate::{
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 /// Message variant
 pub enum Variant {
     /// Inform neighbours about our new section.
@@ -25,12 +25,13 @@ pub enum Variant {
     /// User-facing message
     UserMessage(Vec<u8>),
     /// Approves the joining node as a routing node.
-    ///
-    /// Sent from Group Y to the joining node.
+    /// Section X -> Node joining X
     NodeApproval(Box<GenesisPfxInfo>),
-    /// Acknowledgement of a consensused section info.
+    /// Acknowledgement that the src section knows that the dst section is at the specified
+    /// version.
+    /// Section X -> Section Y
     AckMessage {
-        /// The prefix of our section when we acknowledge their EldersInfo of version ack_version.
+        /// The prefix of our section when we acknowledge their version.
         src_prefix: Prefix<XorName>,
         /// The version acknowledged.
         ack_version: u64,
@@ -39,7 +40,7 @@ pub enum Variant {
     GenesisUpdate(Box<GenesisPfxInfo>),
     /// Send from a section to the node being relocated.
     Relocate(Box<RelocateDetails>),
-    /// Sent from members of a section or group message's source location to the first hop. The
+    /// Sent from members of a section message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(Box<AccumulatingMessage>),
     /// Sent from a newly connected peer to the bootstrap node to request connection infos of

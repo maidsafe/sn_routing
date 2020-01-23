@@ -621,7 +621,7 @@ impl Expectations {
                 sent_count >= quorum_count(elder_size),
                 "sent_count: {}. elder_size: {}",
                 sent_count,
-                elder_size
+                elder_size,
             );
         } else {
             assert_eq!(sent_count, 1);
@@ -662,11 +662,11 @@ impl Expectations {
             .sections
             .iter_mut()
             .map(|(dst, section)| {
-                let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.in_dst_location(dst);
+                let in_dst_location = |n: &&TestNode| n.inner.is_elder() && n.in_dst_location(dst);
                 let old_section = section.clone();
                 let new_section: HashSet<_> = nodes
                     .iter()
-                    .filter(is_recipient)
+                    .filter(in_dst_location)
                     .map(TestNode::name)
                     .collect();
                 section.extend(new_section.clone());
@@ -707,13 +707,11 @@ impl Expectations {
                             *section_msgs_received.entry(key).or_insert(0usize) += 1;
                         }
                     } else {
+                        let expected_dst = DstLocation::Node(orig_name);
                         assert_eq!(
-                            orig_name,
-                            dst.name(),
+                            expected_dst, dst,
                             "Receiver does not match destination {}: {:?}, {:?}",
-                            node.inner,
-                            orig_name,
-                            dst.name()
+                            node.inner, expected_dst, dst,
                         );
                         assert!(
                             self.messages.remove(&key),
@@ -772,10 +770,11 @@ fn setup_expectations<R: Rng>(
     let prefix: Prefix<XorName> = unwrap!(current_sections(nodes).choose(rng));
     let section_name = prefix.substituted_in(rng.gen());
 
-    let src_n0 = SrcLocation::Node(nodes[index0].name());
+    let src_n0 = SrcLocation::Node(nodes[index0].id());
+    let src_s0 = SrcLocation::Section(prefix);
+
     let dst_n0 = DstLocation::Node(nodes[index0].name());
     let dst_n1 = DstLocation::Node(nodes[index1].name());
-    let src_s0 = SrcLocation::Section(prefix);
     let dst_s0 = DstLocation::Section(section_name);
     // this makes sure we have two different sections if there exists more than one
     let dst_s1 = DstLocation::Section(!section_name);

@@ -13,6 +13,7 @@ use std::{
     hash::{Hash, Hasher},
     ops::RangeInclusive,
 };
+
 #[cfg(test)]
 use {super::XorName, std::str::FromStr};
 

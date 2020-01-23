@@ -8,8 +8,9 @@
 
 use crate::{
     crypto::Digest256,
-    messages::{AccumulatingMessage, SignedRoutingMessage},
+    messages::{AccumulatingMessage, Message, MessageWithBytes},
     time::{Duration, Instant},
+    utils::LogIdent,
 };
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -25,8 +26,12 @@ pub struct SignatureAccumulator {
 
 impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
-    /// `SignedMessage`. Returns the message, if it has enough signatures now.
-    pub fn add_proof(&mut self, msg: AccumulatingMessage) -> Option<SignedRoutingMessage> {
+    /// `Message`. Returns the message, if it has enough signatures now.
+    pub fn add_proof(
+        &mut self,
+        msg: AccumulatingMessage,
+        log_ident: &LogIdent,
+    ) -> Option<MessageWithBytes> {
         self.remove_expired();
         let hash = msg.crypto_hash().ok()?;
         if let Some((existing_msg, _)) = self.msgs.get_mut(&hash) {
@@ -36,7 +41,15 @@ impl SignatureAccumulator {
         } else {
             let _ = self.msgs.insert(hash, (Some(msg), Instant::now()));
         }
-        self.remove_if_complete(&hash)
+
+        let msg = self.remove_if_complete(&hash)?;
+        match MessageWithBytes::new(msg, log_ident) {
+            Ok(msg) => Some(msg),
+            Err(error) => {
+                error!("{} - Failed to make message: {:?}", log_ident, error);
+                None
+            }
+        }
     }
 
     fn remove_expired(&mut self) {
@@ -56,7 +69,7 @@ impl SignatureAccumulator {
         }
     }
 
-    fn remove_if_complete(&mut self, hash: &Digest256) -> Option<SignedRoutingMessage> {
+    fn remove_if_complete(&mut self, hash: &Digest256) -> Option<Message> {
         self.msgs.get_mut(hash).and_then(|(msg, _)| {
             if msg.as_mut().map_or(false, |msg| msg.check_fully_signed()) {
                 msg.take().and_then(|msg| msg.combine_signatures())
@@ -75,7 +88,7 @@ mod tests {
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
         id::{FullId, P2pNode},
         location::{DstLocation, SrcLocation},
-        messages::{RoutingMessage, SignedDirectMessage, Variant},
+        messages::{Message, PlainMessage, Variant},
         parsec::generate_bls_threshold_secret_key,
         rng, unwrap, ConnectionInfo, Prefix, XorName,
     };
@@ -85,7 +98,7 @@ mod tests {
 
     struct MessageAndSignatures {
         signed_msg: AccumulatingMessage,
-        signature_msgs: Vec<SignedDirectMessage>,
+        signature_msgs: Vec<Message>,
     }
 
     impl MessageAndSignatures {
@@ -95,10 +108,10 @@ mod tests {
             secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
             pk_set: &bls::PublicKeySet,
         ) -> Self {
-            let content = RoutingMessage {
-                src: SrcLocation::Node(rand::random()),
+            let content = PlainMessage {
+                src: Prefix::default(),
                 dst: DstLocation::Section(rand::random()),
-                content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
+                variant: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
             };
 
             let msg_sender_secret_bls = unwrap!(secret_bls_ids.values().next());
@@ -118,14 +131,15 @@ mod tests {
 
             let signature_msgs = other_ids
                 .map(|(id, bls_id)| {
-                    unwrap!(SignedDirectMessage::new(
+                    unwrap!(Message::single_src(
+                        id,
+                        DstLocation::Direct,
                         Variant::MessageSignature(Box::new(unwrap!(AccumulatingMessage::new(
                             content.clone(),
                             bls_id,
                             pk_set.clone(),
                             proof.clone(),
-                        )))),
-                        id
+                        ))))
                     ))
                 })
                 .collect();
@@ -190,11 +204,12 @@ mod tests {
 
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
+        let log_ident = LogIdent::new("Node");
 
         // Add each message with the section list added - none should accumulate.
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             let signed_msg = msg_and_sigs.signed_msg.clone();
-            let result = sig_accumulator.add_proof(signed_msg);
+            let result = sig_accumulator.add_proof(signed_msg, &log_ident);
             assert!(result.is_none());
         });
         let expected_msgs_count = env.msgs_and_sigs.len();
@@ -206,18 +221,25 @@ mod tests {
             for signature_msg in msg_and_sigs.signature_msgs {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
-                let result = match signature_msg.content() {
-                    Variant::MessageSignature(msg) => sig_accumulator.add_proof((**msg).clone()),
+                let result = match signature_msg.variant {
+                    Variant::MessageSignature(msg) => sig_accumulator.add_proof(*msg, &log_ident),
                     unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
-                if let Some(returned_msg) = result {
+                if let Some(mut returned_msg) = result {
+                    let returned_msg = unwrap!(returned_msg.take_or_deserialize_message());
+
                     // the message hash is not being removed upon accumulation, only when it
                     // expires
                     assert_eq!(sig_accumulator.msgs.len(), old_num_msgs);
                     assert_eq!(
-                        msg_and_sigs.signed_msg.content,
-                        *returned_msg.routing_message()
+                        SrcLocation::Section(msg_and_sigs.signed_msg.content.src),
+                        returned_msg.src.location()
+                    );
+                    assert_eq!(msg_and_sigs.signed_msg.content.dst, returned_msg.dst);
+                    assert_eq!(
+                        msg_and_sigs.signed_msg.content.variant,
+                        returned_msg.variant
                     );
                     count += 1;
                 }

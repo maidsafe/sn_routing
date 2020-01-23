@@ -25,6 +25,7 @@ use std::{
 ///    2. `Action::Terminate` indicates to `Core` that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion `Core` will send `Event::Terminated`.
+#[allow(clippy::large_enum_variant)]
 pub enum Action {
     SendMessage {
         src: SrcLocation,

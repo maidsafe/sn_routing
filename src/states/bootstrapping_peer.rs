@@ -9,11 +9,11 @@
 use super::{common::Base, joining_peer::JoiningPeerDetails};
 use crate::{
     chain::{EldersInfo, NetworkParams},
-    error::RoutingError,
+    error::{Result, RoutingError},
     event::Event,
-    id::{FullId, P2pNode},
+    id::FullId,
     location::{DstLocation, SrcLocation},
-    messages::{BootstrapResponse, HopMessageWithBytes, Variant},
+    messages::{BootstrapResponse, Message, MessageWithBytes, Variant},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -99,7 +99,7 @@ impl BootstrappingPeer {
         elders_info: EldersInfo,
         relocate_payload: Option<RelocatePayload>,
         _outbox: &mut dyn EventBox,
-    ) -> Result<State, RoutingError> {
+    ) -> Result<State> {
         let details = JoiningPeerDetails {
             network_service: self.network_service,
             full_id: self.full_id,
@@ -124,6 +124,7 @@ impl BootstrappingPeer {
         let _ = self.timeout_tokens.insert(token, dst.peer_addr);
 
         let destination = self.get_destination();
+
         self.send_direct_message(&dst, Variant::BootstrapRequest(destination));
         self.peer_map_mut().connect(dst);
     }
@@ -207,8 +208,11 @@ impl Base for BootstrappingPeer {
         &self.full_id
     }
 
-    fn in_dst_location(&self, _: &DstLocation) -> bool {
-        false
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        match dst {
+            DstLocation::Direct => true,
+            _ => false,
+        }
     }
 
     fn peer_map(&self) -> &PeerMap {
@@ -279,23 +283,25 @@ impl Base for BootstrappingPeer {
         Transition::Stay
     }
 
-    fn handle_direct_message(
+    fn handle_message(
         &mut self,
-        msg: Variant,
-        p2p_node: P2pNode,
+        sender: Option<ConnectionInfo>,
+        msg: Message,
         _: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<Transition> {
+        let p2p_node = msg.src.to_sender_node(sender)?;
+
         // Ignore messages from peers we didn't send `BootstrapRequest` to.
         if !self.pending_requests.contains(p2p_node.peer_addr()) {
             debug!(
-                "{} - Ignoring direct message from unexpected peer: {}: {:?}",
-                self, p2p_node, msg
+                "{} - Ignoring message from unexpected peer: {}: {:?}",
+                self, p2p_node, msg,
             );
             self.disconnect(p2p_node.peer_addr());
             return Ok(Transition::Stay);
         }
 
-        match msg {
+        match msg.variant {
             Variant::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 info!(
                     "{} - Joining a section {:?} (given by {:?})",
@@ -312,28 +318,22 @@ impl Base for BootstrappingPeer {
                 Ok(Transition::Stay)
             }
             _ => {
-                debug!(
-                    "{} - Unhandled direct message from {}: {:?}",
-                    self,
-                    p2p_node.public_id(),
-                    msg
-                );
+                debug!("{} - Unhandled message {:?}", self, msg);
                 Ok(Transition::Stay)
             }
         }
     }
 
-    fn handle_hop_message(
-        &mut self,
-        msg: HopMessageWithBytes,
-        _: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
-        trace!(
-            "{} - Unhandled hop message: {:?}",
-            self,
-            msg.full_message_crypto_hash()
-        );
-        Ok(Transition::Stay)
+    fn filter_incoming_message(&mut self, _message: &MessageWithBytes) -> bool {
+        true
+    }
+
+    fn verify_message(&self, _message: &Message) -> Result<bool> {
+        Ok(true)
+    }
+
+    fn relay_message(&mut self, _message: MessageWithBytes) -> Result<()> {
+        Ok(())
     }
 }
 
@@ -353,7 +353,6 @@ mod tests {
         mock::Environment,
         quic_p2p::{Builder, Peer},
         state_machine::StateMachine,
-        states::common::from_network_bytes,
         unwrap, NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;
@@ -424,17 +423,11 @@ mod tests {
         if let NetworkEvent::NewMessage { peer_addr, msg } = unwrap!(event_rx.try_recv()) {
             assert_eq!(peer_addr, node_b_endpoint);
 
-            let ok = match unwrap!(from_network_bytes(&msg)) {
-                Message::Direct(msg) => match *msg.content() {
-                    Variant::BootstrapRequest(_) => true,
-                    _ => false,
-                },
-                _ => false,
+            let message: Message = unwrap!(bincode::deserialize(&msg[..]));
+            match message.variant {
+                Variant::BootstrapRequest(_) => (),
+                _ => panic!("Should have received a `BootstrapRequest`."),
             };
-
-            if !ok {
-                panic!("Should have received a `BootstrapRequest`.");
-            }
         } else {
             panic!("Should have received `NewMessage` event.");
         }

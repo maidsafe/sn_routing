@@ -7,12 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{super::test_utils, *};
-use crate::{
-    location::{DstLocation, SrcLocation},
-    messages::RoutingMessage,
-    parsec::generate_bls_threshold_secret_key,
-    unwrap,
-};
+use crate::{messages::PlainMessage, parsec::generate_bls_threshold_secret_key, unwrap};
 use mock_quic_p2p::Network;
 use std::collections::BTreeMap;
 
@@ -63,11 +58,11 @@ impl AdultUnderTest {
         )
     }
 
-    fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> HopMessageWithBytes {
-        let msg = RoutingMessage {
-            src: SrcLocation::Section(Prefix::default()),
+    fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> Message {
+        let content = PlainMessage {
+            src: Prefix::default(),
             dst: DstLocation::Node(*self.adult.name()),
-            content: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
+            variant: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
         };
 
         let msg = unwrap!(self
@@ -77,10 +72,10 @@ impl AdultUnderTest {
             .map(|chain| {
                 let secret_key = unwrap!(chain.our_section_bls_secret_key_share());
                 let public_key_set = chain.our_section_bls_keys().clone();
-                let proof = chain.prove(&msg.dst, None);
+                let proof = chain.prove(&content.dst, None);
 
                 unwrap!(AccumulatingMessage::new(
-                    msg.clone(),
+                    content.clone(),
                     secret_key,
                     public_key_set,
                     proof
@@ -93,13 +88,21 @@ impl AdultUnderTest {
                     Some(acc)
                 }
             }));
-        let msg = unwrap!(msg.combine_signatures());
-        unwrap!(HopMessageWithBytes::new(msg, &LogIdent::new("node")))
+        unwrap!(msg.combine_signatures())
     }
 
     fn perform_elders_change(&mut self) {
         let prev_elders_info = unwrap!(self.elders.values().next()).our_info();
         self.elders = create_elders(&mut self.rng, &self.network, Some(prev_elders_info));
+    }
+
+    fn handle_message(&mut self, msg: Message) -> Result<()> {
+        let msg = unwrap!(MessageWithBytes::new(msg, &self.adult.log_ident()));
+        let sender = dummy_socket_addr();
+        let _ = self
+            .adult
+            .handle_new_deserialised_message(sender, msg, &mut ())?;
+        Ok(())
     }
 }
 
@@ -155,13 +158,17 @@ fn new_adult_state(
         gen_pfx_info,
         msg_backlog: Vec::new(),
         sig_accumulator: Default::default(),
-        routing_msg_filter: Default::default(),
+        msg_filter: Default::default(),
         timer: test_utils::create_timer(),
         network_cfg: NETWORK_PARAMS,
         rng: rng::new_from(rng),
     };
 
     unwrap!(Adult::new(details, Default::default(), &mut ()))
+}
+
+fn dummy_socket_addr() -> SocketAddr {
+    ([1, 2, 3, 4], 5555).into()
 }
 
 #[test]
@@ -211,7 +218,7 @@ fn genesis_update_message_successful_trust_check() {
     let gen_pfx_info = adult_test.gen_pfx_info(1);
     let msg = adult_test.genesis_update_message(gen_pfx_info);
 
-    let _ = unwrap!(adult_test.adult.handle_signed_message(msg));
+    unwrap!(adult_test.handle_message(msg));
     assert_eq!(adult_test.adult.parsec_map.last_version(), 1);
 }
 
@@ -223,5 +230,5 @@ fn genesis_update_message_failed_trust_check_proof_too_new() {
 
     let gen_pfx_info = adult_test.gen_pfx_info(1);
     let msg = adult_test.genesis_update_message(gen_pfx_info);
-    let _ = adult_test.adult.handle_signed_message(msg);
+    let _ = adult_test.handle_message(msg);
 }
