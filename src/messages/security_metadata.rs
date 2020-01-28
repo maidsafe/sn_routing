@@ -20,12 +20,12 @@ use std::fmt::{self, Debug, Formatter};
 
 /// Metadata needed for verification of the sender.
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct FullSecurityMetadata {
+pub struct SectionSecurityMetadata {
     pub proof: SectionProofSlice,
     pub signature: bls::Signature,
 }
 
-impl FullSecurityMetadata {
+impl SectionSecurityMetadata {
     pub fn last_new_key_info(&self) -> Option<&SectionKeyInfo> {
         self.proof.last_new_key_info()
     }
@@ -53,11 +53,11 @@ impl FullSecurityMetadata {
     }
 }
 
-impl Debug for FullSecurityMetadata {
+impl Debug for SectionSecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "FullSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
+            "SectionSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
             self.proof.blocks_len(),
             self.proof
         )
@@ -66,12 +66,12 @@ impl Debug for FullSecurityMetadata {
 
 /// Metadata needed for verification of the single node sender.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SingleSrcSecurityMetadata {
+pub struct NodeSecurityMetadata {
     pub public_id: PublicId,
     pub signature: Signature,
 }
 
-impl SingleSrcSecurityMetadata {
+impl NodeSecurityMetadata {
     pub fn verify(&self, content: &RoutingMessage) -> Result<VerifyStatus, RoutingError> {
         if content.src.single_signing_name() != Some(self.public_id.name()) {
             // Signature is not from the source node.
@@ -87,11 +87,11 @@ impl SingleSrcSecurityMetadata {
     }
 }
 
-impl Debug for SingleSrcSecurityMetadata {
+impl Debug for NodeSecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SingleSrcSecurityMetadata {{ public_id: {:?}, .. }}",
+            "NodeSecurityMetadata {{ public_id: {:?}, .. }}",
             self.public_id
         )
     }
@@ -100,15 +100,15 @@ impl Debug for SingleSrcSecurityMetadata {
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
-    Full(FullSecurityMetadata),
-    Single(SingleSrcSecurityMetadata),
+    Section(SectionSecurityMetadata),
+    Node(NodeSecurityMetadata),
 }
 
 impl Debug for SecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match &self {
-            Self::Full(smd) => write!(formatter, "{:?}", smd),
-            Self::Single(smd) => write!(formatter, "{:?}", smd),
+            Self::Section(smd) => write!(formatter, "{:?}", smd),
+            Self::Node(smd) => write!(formatter, "{:?}", smd),
         }
     }
 }

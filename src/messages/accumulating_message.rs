@@ -7,7 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    security_metadata::FullSecurityMetadata, RoutingMessage, SecurityMetadata, SignedRoutingMessage,
+    security_metadata::SectionSecurityMetadata, RoutingMessage, SecurityMetadata,
+    SignedRoutingMessage,
 };
 use crate::{
     chain::{SectionKeyShare, SectionProofSlice},
@@ -106,7 +107,7 @@ impl AccumulatingMessage {
             }
         };
 
-        let security_metadata = SecurityMetadata::Full(FullSecurityMetadata {
+        let security_metadata = SecurityMetadata::Section(SectionSecurityMetadata {
             proof: self.proof,
             signature,
         });

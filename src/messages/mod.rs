@@ -12,7 +12,7 @@ mod security_metadata;
 mod variant;
 mod with_bytes;
 
-use self::security_metadata::SingleSrcSecurityMetadata;
+use self::security_metadata::NodeSecurityMetadata;
 pub use self::{
     accumulating_message::AccumulatingMessage,
     direct::SignedDirectMessage,
@@ -94,14 +94,14 @@ impl<'de> Deserialize<'de> for SignedRoutingMessage {
 impl SignedRoutingMessage {
     /// Creates a `SignedRoutingMessage` security metadata from a single source
     pub fn single_source(content: RoutingMessage, full_id: &FullId) -> Result<Self> {
-        let single_metadata = SingleSrcSecurityMetadata {
+        let single_metadata = NodeSecurityMetadata {
             public_id: *full_id.public_id(),
             signature: full_id.sign(&serialize(&content)?),
         };
 
         Ok(Self {
             content,
-            security_metadata: SecurityMetadata::Single(single_metadata),
+            security_metadata: SecurityMetadata::Node(single_metadata),
         })
     }
 
@@ -121,8 +121,8 @@ impl SignedRoutingMessage {
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
         match &self.security_metadata {
-            SecurityMetadata::Single(security_metadata) => security_metadata.verify(&self.content),
-            SecurityMetadata::Full(security_metadata) => {
+            SecurityMetadata::Node(security_metadata) => security_metadata.verify(&self.content),
+            SecurityMetadata::Section(security_metadata) => {
                 security_metadata.verify(&self.content, their_key_infos)
             }
         }
@@ -131,8 +131,10 @@ impl SignedRoutingMessage {
     /// Returns the security metadata validating the message.
     pub fn source_section_key_info(&self) -> Option<&SectionKeyInfo> {
         match self.security_metadata {
-            SecurityMetadata::Single(_) => None,
-            SecurityMetadata::Full(ref security_metadata) => security_metadata.last_new_key_info(),
+            SecurityMetadata::Node(_) => None,
+            SecurityMetadata::Section(ref security_metadata) => {
+                security_metadata.last_new_key_info()
+            }
         }
     }
 
