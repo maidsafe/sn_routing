@@ -14,7 +14,6 @@ use crate::{
     relocation::RelocateDetails,
     Prefix, XorName,
 };
-use bincode::serialize;
 use hex_fmt::HexFmt;
 use serde::Serialize;
 use std::{
@@ -51,19 +50,6 @@ pub struct EventSigPayload {
 }
 
 impl EventSigPayload {
-    pub fn new<T: Serialize>(
-        key_share: &bls::SecretKeyShare,
-        payload: &T,
-    ) -> Result<Self, RoutingError> {
-        let sig_share = key_share.sign(&serialize(&payload)?[..]);
-        let pub_key_share = key_share.public_key_share();
-
-        Ok(Self {
-            pub_key_share,
-            sig_share,
-        })
-    }
-
     pub fn new_for_section_key_info(
         key_share: &bls::SecretKeyShare,
         section_key_info: &SectionKeyInfo,
@@ -210,7 +196,6 @@ impl Debug for NetworkEvent {
 pub struct AccumulatedEvent {
     pub content: AccumulatingEvent,
     pub elders_change: EldersChange,
-    pub signature: Option<bls::Signature>,
 }
 
 impl AccumulatedEvent {
@@ -218,12 +203,7 @@ impl AccumulatedEvent {
         Self {
             content,
             elders_change: EldersChange::default(),
-            signature: None,
         }
-    }
-
-    pub fn with_signature(self, signature: Option<bls::Signature>) -> Self {
-        Self { signature, ..self }
     }
 
     pub fn with_elders_change(self, elders_change: EldersChange) -> Self {

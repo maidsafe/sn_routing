@@ -233,21 +233,24 @@ impl Adult {
         self.chain.our_prefix()
     }
 
-    fn handle_relocate(&mut self, details: SignedRelocateDetails) -> Transition {
-        if details.content().pub_id != *self.id() {
+    fn handle_relocate(
+        &mut self,
+        signed_msg: SignedRelocateDetails,
+    ) -> Result<Transition, RoutingError> {
+        if signed_msg.relocate_details().pub_id != *self.id() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
-            return Transition::Stay;
+            return Ok(Transition::Stay);
         }
 
         debug!(
             "{} - Received Relocate message to join the section at {}.",
             self,
-            details.content().destination
+            signed_msg.relocate_details().destination
         );
 
-        if !self.check_signed_relocation_details(&details) {
-            return Transition::Stay;
+        if !self.check_signed_relocation_details(&signed_msg) {
+            return Ok(Transition::Stay);
         }
 
         let conn_infos: Vec<_> = self
@@ -258,10 +261,10 @@ impl Adult {
 
         self.network_service_mut().remove_and_disconnect_all();
 
-        Transition::Relocate {
-            details,
+        Ok(Transition::Relocate {
+            details: signed_msg,
             conn_infos,
-        }
+        })
     }
 
     // Since we are an adult we should only give info about our section elders and they would
@@ -415,6 +418,11 @@ impl Adult {
                     self.verify_signed_message(&signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
+                MessageContent::Relocate(_) => {
+                    self.verify_signed_message(&signed_msg)?;
+                    let signed_relocate = SignedRelocateDetails::new(signed_msg.clone())?;
+                    return self.handle_relocate(signed_relocate);
+                }
                 _ => {
                     self.routing_msg_backlog.push(signed_msg);
                 }
@@ -563,7 +571,6 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            Relocate(details) => Ok(self.handle_relocate(*details)),
             msg @ BootstrapResponse(_) => {
                 debug!(
                     "{} Unhandled direct message from {}, discard: {:?}",
@@ -654,10 +661,10 @@ impl Approved for Adult {
     fn handle_member_relocated(
         &mut self,
         _details: RelocateDetails,
-        _signature: bls::Signature,
         _node_knowledge: u64,
         _outbox: &mut dyn EventBox,
-    ) {
+    ) -> Result<(), RoutingError> {
+        Ok(())
     }
 
     fn handle_dkg_result_event(
@@ -696,8 +703,7 @@ impl Approved for Adult {
         _payload: RelocateDetails,
         _count_down: i32,
         _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        Ok(())
+    ) {
     }
 
     fn handle_their_key_info_event(

@@ -191,7 +191,8 @@ impl JoiningPeer {
 
     fn verify_signed_message(&self, msg: &SignedRoutingMessage) -> Result<(), RoutingError> {
         if let JoinType::Relocate(payload) = &self.join_type {
-            let key_info = &payload.details.content().destination_key_info;
+            let details = payload.relocate_details();
+            let key_info = &details.destination_key_info;
             msg.verify(as_iter(key_info))
                 .and_then(VerifyStatus::require_full)
                 .map_err(|error| {

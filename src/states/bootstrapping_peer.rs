@@ -131,8 +131,12 @@ impl BootstrappingPeer {
     // If we are relocating, request bootstrap to the section matching the name given to us
     // by our section. Otherwise request bootstrap to the section matching our current name.
     fn get_destination(&self) -> XorName {
-        if let Some(details) = self.relocate_details.as_ref() {
-            details.content().destination
+        if let Some(details) = self
+            .relocate_details
+            .as_ref()
+            .map(|msg| msg.relocate_details())
+        {
+            details.destination
         } else {
             *self.name()
         }

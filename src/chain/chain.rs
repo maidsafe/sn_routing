@@ -21,7 +21,7 @@ use crate::{
     relocation::{self, RelocateDetails},
     utils::LogIdent,
     xor_space::Xorable,
-    ConnectionInfo, Prefix, XorName,
+    Prefix, XorName,
 };
 use bincode::serialize;
 use itertools::Itertools;
@@ -310,13 +310,8 @@ impl Chain {
             AccumulatingEvent::AckMessage(ref ack_payload) => {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
-            AccumulatingEvent::Relocate(ref relocate_details) => {
+            AccumulatingEvent::Relocate(_) => {
                 self.relocation_in_progress = false;
-                let signature = Some(
-                    self.check_and_combine_signatures(relocate_details, proofs)
-                        .ok_or(RoutingError::InvalidRelocation)?,
-                );
-                return Ok(Some(AccumulatedEvent::new(event).with_signature(signature)));
             }
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
@@ -706,14 +701,6 @@ impl Chain {
             .unwrap_or(false)
     }
 
-    /// Returns the `ConnectioInfo` for a member of our section.
-    pub fn get_member_connection_info(&self, pub_id: &PublicId) -> Option<&ConnectionInfo> {
-        self.state
-            .our_members
-            .get(pub_id.name())
-            .map(|member_info| member_info.p2p_node.connection_info())
-    }
-
     /// Returns a section member `P2pNode`
     pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state
@@ -926,12 +913,19 @@ impl Chain {
         target: &Location,
         node_knowledge_override: Option<u64>,
     ) -> SectionProofSlice {
-        let first_index = match (target, node_knowledge_override) {
+        let first_index = self.knowledge_index(target, node_knowledge_override);
+        self.state.our_history.slice_from(first_index as usize)
+    }
+
+    /// Provide a start index of a SectionProofSlice that proves the given signature to the given
+    /// destination location.
+    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
+    /// `Location::Node` instead of the stored knowledge. Has no effect for other location types.
+    pub fn knowledge_index(&self, target: &Location, node_knowledge_override: Option<u64>) -> u64 {
+        match (target, node_knowledge_override) {
             (Location::Node(_), Some(knowledge)) => knowledge,
             _ => self.state.proving_index(target),
-        };
-
-        self.state.our_history.slice_from(first_index as usize)
+        }
     }
 
     /// Check which nodes are unresponsive.
@@ -1814,7 +1808,7 @@ impl EldersChangeBuilder {
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{quorum_count, EldersInfo, EventSigPayload, GenesisPfxInfo, MIN_AGE_COUNTER},
+        super::{EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER},
         *,
     };
     use crate::{
@@ -2014,83 +2008,5 @@ mod tests {
             assert!(chain.validate_our_history());
             check_infos_for_duplication(&chain);
         }
-    }
-
-    #[test]
-    fn filter_invalid_relocation_signatures_succeed() {
-        let elder_size: usize = 7;
-        let acceptable_malicious_bls_count = (elder_size - 1) / 3;
-        filter_invalid_relocation_signatures(acceptable_malicious_bls_count);
-    }
-
-    #[test]
-    #[should_panic]
-    fn filter_invalid_relocation_signatures_fail() {
-        let elder_size: usize = 7;
-        let acceptable_malicious_bls_count = (elder_size - 1) / 3;
-        filter_invalid_relocation_signatures(acceptable_malicious_bls_count + 1);
-    }
-
-    fn filter_invalid_relocation_signatures(malicious_bls_count: usize) {
-        // Arrange
-        //
-        let mut rng = rng::new();
-        let (mut chain, full_ids, bls_secrets) = gen_00_chain(&mut rng);
-        let relocate_details = RelocateDetails {
-            pub_id: *chain.our_id(),
-            destination: *chain.our_id().name(),
-            destination_key_info: chain
-                .latest_compatible_their_key_info(chain.our_id().name())
-                .clone(),
-            age: 0,
-        };
-        let elder_size = chain.our_info().len();
-        let quorum_count = quorum_count(elder_size);
-        let fake_signed_bytes: Vec<u8> = Vec::new();
-        let opaque_infos = chain
-            .our_info()
-            .member_ids()
-            .take(quorum_count)
-            .map(|id| unwrap!(full_ids.get(id)))
-            .map(|full_id| unwrap!(Proof::new(full_id, &fake_signed_bytes)))
-            .enumerate()
-            .map(|(idx, proof)| {
-                let key_idx = if idx < malicious_bls_count {
-                    // Use last key that won't match the given index to create
-                    // invalid BLS signatures for malicious nodes.
-                    elder_size - 1
-                } else {
-                    idx
-                };
-                let secret_key = bls_secrets.secret_key_share(key_idx);
-                let signature = unwrap!(EventSigPayload::new(&secret_key, &relocate_details));
-                (signature, proof)
-            })
-            .collect_vec();
-
-        // Act
-        //
-        for (signature, proof) in opaque_infos {
-            let acc_event = AccumulatingEvent::Relocate(relocate_details.clone());
-            let event = acc_event.into_network_event_with(Some(signature));
-            unwrap!(chain.handle_opaque_event(&event, proof));
-        }
-        let chain_accumulated = chain.poll_accumulated();
-
-        // Assert
-        //
-        let accumulated_event = match chain_accumulated {
-            Ok(Some(PollAccumulated::AccumulatedEvent(event))) => event,
-            evt => panic!("unexpected {:?}", evt),
-        };
-        let public_key = bls_secrets.public_keys().public_key();
-        let signed_bytes = unwrap!(serialize(&relocate_details));
-        assert_eq!(
-            accumulated_event
-                .signature
-                .as_ref()
-                .map(|sig| public_key.verify(sig, &signed_bytes)),
-            Some(true)
-        );
     }
 }
