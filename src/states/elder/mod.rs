@@ -1023,15 +1023,7 @@ impl Elder {
                 return;
             }
 
-            let details = if let Some(details) = payload.relocate_details() {
-                details
-            } else {
-                debug!(
-                    "{} - Ignoring relocation JoinRequest from {} - invalid payload.",
-                    self, pub_id
-                );
-                return;
-            };
+            let details = payload.relocate_details();
 
             if !self.our_prefix().matches(&details.destination) {
                 debug!(
@@ -1045,7 +1037,7 @@ impl Elder {
                 return;
             }
 
-            if !self.check_signed_relocation_details(&*payload.details) {
+            if !self.check_signed_relocation_details(&payload.details) {
                 return;
             }
 
@@ -1676,7 +1668,7 @@ impl Approved for Elder {
 
         let src = Location::Section(self.our_prefix().name());
         let dst = Location::Node(*details.pub_id.name());
-        let content = MessageContent::Relocate(details);
+        let content = MessageContent::Relocate(Box::new(details));
 
         self.send_routing_message(RoutingMessage { src, dst, content }, Some(knowledge_index))
     }

@@ -581,8 +581,8 @@ pub enum MessageContent {
     },
     /// Update sent to Adults and Infants by Elders
     GenesisUpdate(GenesisPfxInfo),
-    /// Send from a section to the node being relocated.
-    Relocate(RelocateDetails),
+    /// Send to a node being relocated from its own section.
+    Relocate(Box<RelocateDetails>),
 }
 
 impl Debug for SignedRoutingMessage {

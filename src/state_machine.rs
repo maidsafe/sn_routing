@@ -11,11 +11,10 @@ use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     error::RoutingError,
     id::{P2pNode, PublicId},
-    messages::SignedRoutingMessage,
     network_service::{NetworkBuilder, NetworkService},
     outbox::EventBox,
     pause::PausedState,
-    relocation::RelocatePayload,
+    relocation::{RelocatePayload, SignedRelocateDetails},
     states::{common::Base, Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
     xor_space::{Prefix, XorName},
@@ -302,7 +301,7 @@ pub enum Transition {
     // Node getting relocated.
     Relocate {
         conn_infos: Vec<ConnectionInfo>,
-        details: SignedRoutingMessage,
+        details: SignedRelocateDetails,
     },
     // `JoiningPeer` state transitioning to `Adult`.
     IntoAdult {

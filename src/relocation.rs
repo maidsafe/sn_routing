@@ -17,6 +17,7 @@ use crate::{
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 use bincode::serialize;
+use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "mock_base")]
 pub use self::overrides::Overrides;
@@ -43,17 +44,64 @@ impl IntoAccumulatingEvent for RelocateDetails {
     }
 }
 
+/// SignedRoutingMessage with Relocate message content.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct SignedRelocateDetails {
+    /// Signed message whose content is MessageContent::Relocate
+    signed_msg: SignedRoutingMessage,
+}
+
+impl SignedRelocateDetails {
+    pub fn new(signed_msg: SignedRoutingMessage) -> Result<Self, RoutingError> {
+        if let MessageContent::Relocate(_) = &signed_msg.routing_message().content {
+            Ok(Self { signed_msg })
+        } else {
+            Err(RoutingError::InvalidMessage)
+        }
+    }
+
+    pub fn relocate_details(&self) -> &RelocateDetails {
+        if let MessageContent::Relocate(details) = &self.signed_msg.routing_message().content {
+            details
+        } else {
+            panic!("SignedRelocateDetails always contain MessageContent::Relocate")
+        }
+    }
+
+    pub fn signed_msg(&self) -> &SignedRoutingMessage {
+        &self.signed_msg
+    }
+}
+
+impl Serialize for SignedRelocateDetails {
+    fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
+        self.signed_msg.serialize(serialiser)
+    }
+}
+
+impl<'de> Deserialize<'de> for SignedRelocateDetails {
+    fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
+        let signed_msg = Deserialize::deserialize(deserialiser)?;
+        Self::new(signed_msg).map_err(|err| {
+            D::Error::custom(format!(
+                "failed to construct SignedRelocateDetails: {:?}",
+                err
+            ))
+        })
+    }
+}
+
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct RelocatePayload {
     /// The Relocate Signed message.
-    pub details: Box<SignedRoutingMessage>,
+    pub details: SignedRelocateDetails,
     /// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.
     pub signature_of_new_id_with_old_id: Signature,
 }
 
 impl RelocatePayload {
     pub fn new(
-        details: SignedRoutingMessage,
+        details: SignedRelocateDetails,
         new_pub_id: &PublicId,
         old_full_id: &FullId,
     ) -> Result<Self, RoutingError> {
@@ -61,7 +109,7 @@ impl RelocatePayload {
         let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
 
         Ok(Self {
-            details: Box::new(details),
+            details,
             signature_of_new_id_with_old_id,
         })
     }
@@ -72,23 +120,14 @@ impl RelocatePayload {
             Err(_) => return false,
         };
 
-        let details = if let Some(details) = self.relocate_details() {
-            details
-        } else {
-            return false;
-        };
-
-        details
+        self.details
+            .relocate_details()
             .pub_id
             .verify(&new_id_serialised, &self.signature_of_new_id_with_old_id)
     }
 
-    pub fn relocate_details(&self) -> Option<&RelocateDetails> {
-        if let MessageContent::Relocate(details) = &self.details.routing_message().content {
-            Some(details)
-        } else {
-            None
-        }
+    pub fn relocate_details(&self) -> &RelocateDetails {
+        self.details.relocate_details()
     }
 }
 

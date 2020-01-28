@@ -99,7 +99,7 @@ impl Debug for DirectMessage {
                 join_request
                     .relocate_payload
                     .as_ref()
-                    .and_then(|payload| payload.relocate_details()),
+                    .map(|payload| payload.relocate_details()),
             ),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),

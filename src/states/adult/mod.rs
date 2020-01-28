@@ -32,7 +32,7 @@ use crate::{
     parsec::{DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    relocation::RelocateDetails,
+    relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
@@ -152,7 +152,7 @@ impl Adult {
     pub fn relocate(
         self,
         conn_infos: Vec<ConnectionInfo>,
-        details: SignedRoutingMessage,
+        details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
             BootstrappingPeerDetails {
@@ -235,10 +235,9 @@ impl Adult {
 
     fn handle_relocate(
         &mut self,
-        signed_msg: &SignedRoutingMessage,
-        details: &RelocateDetails,
+        signed_msg: SignedRelocateDetails,
     ) -> Result<Transition, RoutingError> {
-        if details.pub_id != *self.id() {
+        if signed_msg.relocate_details().pub_id != *self.id() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
             return Ok(Transition::Stay);
@@ -246,10 +245,11 @@ impl Adult {
 
         debug!(
             "{} - Received Relocate message to join the section at {}.",
-            self, details.destination
+            self,
+            signed_msg.relocate_details().destination
         );
 
-        if !self.check_signed_relocation_details(signed_msg) {
+        if !self.check_signed_relocation_details(&signed_msg) {
             return Ok(Transition::Stay);
         }
 
@@ -262,7 +262,7 @@ impl Adult {
         self.network_service_mut().remove_and_disconnect_all();
 
         Ok(Transition::Relocate {
-            details: signed_msg.clone(),
+            details: signed_msg,
             conn_infos,
         })
     }
@@ -418,9 +418,10 @@ impl Adult {
                     self.verify_signed_message(&signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
-                MessageContent::Relocate(details) => {
+                MessageContent::Relocate(_) => {
                     self.verify_signed_message(&signed_msg)?;
-                    return self.handle_relocate(&signed_msg, details);
+                    let signed_relocate = SignedRelocateDetails::new(signed_msg.clone())?;
+                    return self.handle_relocate(signed_relocate);
                 }
                 _ => {
                     self.routing_msg_backlog.push(signed_msg);

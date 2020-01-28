@@ -15,10 +15,10 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MemberKnowledge, SignedRoutingMessage, VerifyStatus},
+    messages::{DirectMessage, MemberKnowledge, VerifyStatus},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
-    relocation::RelocateDetails,
+    relocation::{RelocateDetails, SignedRelocateDetails},
     state_machine::Transition,
     xor_space::{Prefix, XorName},
 };
@@ -498,11 +498,16 @@ pub trait Approved: Base {
         Ok(())
     }
 
-    fn check_signed_relocation_details(&self, msg: &SignedRoutingMessage) -> bool {
-        msg.verify(self.chain().get_their_key_infos())
+    fn check_signed_relocation_details(&self, msg: &SignedRelocateDetails) -> bool {
+        msg.signed_msg()
+            .verify(self.chain().get_their_key_infos())
             .and_then(VerifyStatus::require_full)
             .map_err(|error| {
-                self.log_verify_failure(msg, &error, self.chain().get_their_key_infos());
+                self.log_verify_failure(
+                    msg.signed_msg(),
+                    &error,
+                    self.chain().get_their_key_infos(),
+                );
                 error
             })
             .is_ok()
