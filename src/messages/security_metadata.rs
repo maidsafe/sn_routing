@@ -18,18 +18,20 @@ use bincode::serialize;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug, Formatter};
 
-/// Metadata needed for verification of the sender.
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SectionSecurityMetadata {
-    pub proof: SectionProofSlice,
-    pub signature: bls::Signature,
+#[allow(clippy::large_enum_variant)]
+pub enum SecurityMetadata {
+    Section {
+        proof: SectionProofSlice,
+        signature: bls::Signature,
+    },
+    Node {
+        public_id: PublicId,
+        signature: Signature,
+    },
 }
 
-impl SectionSecurityMetadata {
-    pub fn last_new_key_info(&self) -> Option<&SectionKeyInfo> {
-        self.proof.last_new_key_info()
-    }
-
+impl SecurityMetadata {
     pub fn verify<'a, I>(
         &'a self,
         content: &RoutingMessage,
@@ -38,77 +40,58 @@ impl SectionSecurityMetadata {
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
-        let public_key = match self.proof.check_trust(their_key_infos) {
-            TrustStatus::Trusted(key) => key,
-            TrustStatus::ProofTooNew => return Ok(VerifyStatus::ProofTooNew),
-            TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
-        };
+        match self {
+            Self::Node {
+                public_id,
+                signature,
+            } => {
+                if content.src.single_signing_name() != Some(public_id.name()) {
+                    // Signature is not from the source node.
+                    return Err(RoutingError::InvalidMessage);
+                }
 
-        let signed_bytes = serialize(content)?;
-        if public_key.verify(&self.signature, &signed_bytes) {
-            Ok(VerifyStatus::Full)
-        } else {
-            Err(RoutingError::FailedSignature)
-        }
-    }
-}
+                let signed_bytes = serialize(content)?;
+                if !public_id.verify(&signed_bytes, signature) {
+                    return Err(RoutingError::FailedSignature);
+                }
+            }
+            Self::Section { proof, signature } => {
+                let public_key = match proof.check_trust(their_key_infos) {
+                    TrustStatus::Trusted(key) => key,
+                    TrustStatus::ProofTooNew => return Ok(VerifyStatus::ProofTooNew),
+                    TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
+                };
 
-impl Debug for SectionSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SectionSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
-            self.proof.blocks_len(),
-            self.proof
-        )
-    }
-}
-
-/// Metadata needed for verification of the single node sender.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct NodeSecurityMetadata {
-    pub public_id: PublicId,
-    pub signature: Signature,
-}
-
-impl NodeSecurityMetadata {
-    pub fn verify(&self, content: &RoutingMessage) -> Result<VerifyStatus, RoutingError> {
-        if content.src.single_signing_name() != Some(self.public_id.name()) {
-            // Signature is not from the source node.
-            return Err(RoutingError::InvalidMessage);
-        }
-
-        let signed_bytes = serialize(content)?;
-        if !self.public_id.verify(&signed_bytes, &self.signature) {
-            return Err(RoutingError::FailedSignature);
+                let signed_bytes = serialize(content)?;
+                if !public_key.verify(signature, &signed_bytes) {
+                    return Err(RoutingError::FailedSignature);
+                }
+            }
         }
 
         Ok(VerifyStatus::Full)
     }
-}
 
-impl Debug for NodeSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "NodeSecurityMetadata {{ public_id: {:?}, .. }}",
-            self.public_id
-        )
+    pub fn last_new_key_info(&self) -> Option<&SectionKeyInfo> {
+        match self {
+            Self::Section { proof, .. } => proof.last_new_key_info(),
+            Self::Node { .. } => None,
+        }
     }
-}
-
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum SecurityMetadata {
-    Section(SectionSecurityMetadata),
-    Node(NodeSecurityMetadata),
 }
 
 impl Debug for SecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match &self {
-            Self::Section(smd) => write!(formatter, "{:?}", smd),
-            Self::Node(smd) => write!(formatter, "{:?}", smd),
+        match self {
+            Self::Section { proof, .. } => write!(
+                formatter,
+                "Section {{ proof.blocks_len: {}, proof: {:?}, .. }}",
+                proof.blocks_len(),
+                proof
+            ),
+            Self::Node { public_id, .. } => {
+                write!(formatter, "Node {{ public_id: {:?}, .. }}", public_id)
+            }
         }
     }
 }

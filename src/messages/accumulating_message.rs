@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    security_metadata::SectionSecurityMetadata, RoutingMessage, SecurityMetadata,
-    SignedRoutingMessage,
-};
+use super::{RoutingMessage, SecurityMetadata, SignedRoutingMessage};
 use crate::{
     chain::{SectionKeyShare, SectionProofSlice},
     crypto::{self, Digest256},
@@ -107,10 +104,10 @@ impl AccumulatingMessage {
             }
         };
 
-        let security_metadata = SecurityMetadata::Section(SectionSecurityMetadata {
+        let security_metadata = SecurityMetadata::Section {
             proof: self.proof,
             signature,
-        });
+        };
 
         Some(SignedRoutingMessage::from_parts(
             self.content,
