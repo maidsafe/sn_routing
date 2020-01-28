@@ -18,14 +18,11 @@ use crate::{
     ConnectionInfo,
 };
 use bincode::serialize;
-use std::{
-    fmt::{self, Debug, Formatter},
-    hash::{Hash, Hasher},
-    mem,
-};
+use serde::Serialize;
+use std::fmt::{self, Debug, Formatter};
 
 /// Body of DirectVariant
-#[derive(Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum DirectVariant {
     /// Sent from members of a section or group message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
@@ -105,38 +102,6 @@ impl Debug for DirectVariant {
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             MemberKnowledge(payload) => write!(formatter, "{:?}", payload),
-        }
-    }
-}
-
-// Note: we need explicit impl here, because `parsec::Request` and `parsec::Response` don't
-// implement `Hash`.
-// We don't need explicit `PartialEq` impl, because `parsec::Request/Response` do implement it.
-// So it's OK to silence this clippy lint:
-#[allow(clippy::derive_hash_xor_eq)]
-impl Hash for DirectVariant {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        use self::DirectVariant::*;
-
-        mem::discriminant(self).hash(state);
-
-        match self {
-            MessageSignature(msg) => msg.hash(state),
-            BootstrapRequest(name) => name.hash(state),
-            BootstrapResponse(response) => response.hash(state),
-            JoinRequest(join_request) => join_request.hash(state),
-            ConnectionResponse => (),
-            MemberKnowledge(payload) => payload.hash(state),
-            ParsecRequest(version, request) => {
-                version.hash(state);
-                // Fake hash via serialisation
-                serialize(&request).ok().hash(state)
-            }
-            ParsecResponse(version, response) => {
-                version.hash(state);
-                // Fake hash via serialisation
-                serialize(&response).ok().hash(state)
-            }
         }
     }
 }

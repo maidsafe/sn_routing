@@ -485,7 +485,7 @@ impl Debug for PeerId {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize, Debug)]
 struct Payload(usize);
 
 impl NetworkEvent for Payload {}
