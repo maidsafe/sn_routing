@@ -15,10 +15,10 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MemberKnowledge},
+    messages::{DirectMessage, MemberKnowledge, SignedRoutingMessage, VerifyStatus},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
-    relocation::{RelocateDetails, SignedRelocateDetails},
+    relocation::RelocateDetails,
     state_machine::Transition,
     xor_space::{Prefix, XorName},
 };
@@ -64,10 +64,9 @@ pub trait Approved: Base {
     fn handle_member_relocated(
         &mut self,
         payload: RelocateDetails,
-        signature: bls::Signature,
         node_knowledge: u64,
         outbox: &mut dyn EventBox,
-    );
+    ) -> Result<(), RoutingError>;
 
     /// Handles a completed DKG.
     fn handle_dkg_result_event(
@@ -107,7 +106,7 @@ pub trait Approved: Base {
         payload: RelocateDetails,
         count_down: i32,
         outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError>;
+    );
 
     /// Handle an accumulated `User` event
     fn handle_user_event(
@@ -394,11 +393,9 @@ pub trait Approved: Base {
                 self.handle_send_ack_message_event(payload)?
             }
             AccumulatingEvent::ParsecPrune => self.handle_prune_event()?,
-            AccumulatingEvent::Relocate(payload) => {
-                self.invoke_handle_relocate_event(payload, event.signature, outbox)?
-            }
+            AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(payload, outbox)?,
             AccumulatingEvent::RelocatePrepare(pub_id, count) => {
-                self.handle_relocate_prepare_event(pub_id, count, outbox)?
+                self.handle_relocate_prepare_event(pub_id, count, outbox);
             }
             AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
         }
@@ -472,29 +469,9 @@ pub trait Approved: Base {
         Ok(())
     }
 
-    fn invoke_handle_relocate_event(
-        &mut self,
-        details: RelocateDetails,
-        signature: Option<bls::Signature>,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if let Some(signature) = signature {
-            self.handle_relocate_event(details, signature, outbox)
-        } else {
-            log_or_panic!(
-                LogLevel::Error,
-                "{} - Unsigned Relocate event {:?}",
-                self,
-                details
-            );
-            Err(RoutingError::FailedSignature)
-        }
-    }
-
     fn handle_relocate_event(
         &mut self,
         details: RelocateDetails,
-        signature: bls::Signature,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain().can_remove_member(&details.pub_id) {
@@ -504,7 +481,7 @@ pub trait Approved: Base {
 
             match self.chain_mut().remove_member(&details.pub_id) {
                 MemberState::Relocating { node_knowledge } => {
-                    self.handle_member_relocated(details, signature, node_knowledge, outbox);
+                    self.handle_member_relocated(details, node_knowledge, outbox)?;
                 }
                 state => {
                     log_or_panic!(
@@ -521,14 +498,14 @@ pub trait Approved: Base {
         Ok(())
     }
 
-    fn check_signed_relocation_details(&self, details: &SignedRelocateDetails) -> bool {
-        match details.verify(self.chain().get_their_key_infos()) {
-            Ok(()) => true,
-            Err(error) => {
-                self.log_verify_failure(details, &error, self.chain().get_their_key_infos());
-                false
-            }
-        }
+    fn check_signed_relocation_details(&self, msg: &SignedRoutingMessage) -> bool {
+        msg.verify(self.chain().get_their_key_infos())
+            .and_then(VerifyStatus::require_full)
+            .map_err(|error| {
+                self.log_verify_failure(msg, &error, self.chain().get_their_key_infos());
+                error
+            })
+            .is_ok()
     }
 
     fn send_member_knowledge(&mut self) {

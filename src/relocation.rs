@@ -9,16 +9,14 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    chain::{
-        AccumulatingEvent, IntoAccumulatingEvent, SectionKeyInfo, SectionProofSlice, TrustStatus,
-    },
+    chain::{AccumulatingEvent, IntoAccumulatingEvent, SectionKeyInfo},
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
+    messages::{MessageContent, SignedRoutingMessage},
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 use bincode::serialize;
-use std::fmt;
 
 #[cfg(feature = "mock_base")]
 pub use self::overrides::Overrides;
@@ -45,72 +43,17 @@ impl IntoAccumulatingEvent for RelocateDetails {
     }
 }
 
-/// Relocation details that are signed so the destination section can prove the relocation is
-/// genuine.
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct SignedRelocateDetails {
-    content: RelocateDetails,
-    proof: SectionProofSlice,
-    signature: bls::Signature,
-}
-
-impl SignedRelocateDetails {
-    pub fn new(
-        content: RelocateDetails,
-        proof: SectionProofSlice,
-        signature: bls::Signature,
-    ) -> Self {
-        Self {
-            content,
-            proof,
-            signature,
-        }
-    }
-
-    pub fn content(&self) -> &RelocateDetails {
-        &self.content
-    }
-
-    pub fn verify<'a, I>(&'a self, their_key_infos: I) -> Result<(), RoutingError>
-    where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
-    {
-        let public_key = match self.proof.check_trust(their_key_infos) {
-            TrustStatus::Trusted(key) => key,
-            TrustStatus::ProofTooNew | TrustStatus::ProofInvalid => {
-                return Err(RoutingError::UntrustedMessage);
-            }
-        };
-
-        let bytes = serialize(&self.content)?;
-        if public_key.verify(&self.signature, bytes) {
-            Ok(())
-        } else {
-            Err(RoutingError::FailedSignature)
-        }
-    }
-}
-
-impl fmt::Debug for SignedRelocateDetails {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SignedRelocateDetails {{ content: {:?}, proof: {:?}, .. }}",
-            self.content, self.proof,
-        )
-    }
-}
-
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub struct RelocatePayload {
-    pub details: SignedRelocateDetails,
+    /// The Relocate Signed message.
+    pub details: Box<SignedRoutingMessage>,
     /// The new id (`PublicId`) of the node signed using its old id, to prove the node identity.
     pub signature_of_new_id_with_old_id: Signature,
 }
 
 impl RelocatePayload {
     pub fn new(
-        details: SignedRelocateDetails,
+        details: SignedRoutingMessage,
         new_pub_id: &PublicId,
         old_full_id: &FullId,
     ) -> Result<Self, RoutingError> {
@@ -118,7 +61,7 @@ impl RelocatePayload {
         let signature_of_new_id_with_old_id = old_full_id.sign(&new_id_serialised);
 
         Ok(Self {
-            details,
+            details: Box::new(details),
             signature_of_new_id_with_old_id,
         })
     }
@@ -129,10 +72,23 @@ impl RelocatePayload {
             Err(_) => return false,
         };
 
-        self.details
-            .content()
+        let details = if let Some(details) = self.relocate_details() {
+            details
+        } else {
+            return false;
+        };
+
+        details
             .pub_id
             .verify(&new_id_serialised, &self.signature_of_new_id_with_old_id)
+    }
+
+    pub fn relocate_details(&self) -> Option<&RelocateDetails> {
+        if let MessageContent::Relocate(details) = &self.details.routing_message().content {
+            Some(details)
+        } else {
+            None
+        }
     }
 }
 

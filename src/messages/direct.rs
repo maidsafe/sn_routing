@@ -13,7 +13,7 @@ use crate::{
     id::{FullId, PublicId},
     messages::SignedRoutingMessage,
     parsec,
-    relocation::{RelocatePayload, SignedRelocateDetails},
+    relocation::RelocatePayload,
     xor_space::XorName,
     ConnectionInfo,
 };
@@ -49,8 +49,6 @@ pub enum DirectMessage {
     ParsecRequest(u64, parsec::Request),
     /// Parsec response message
     ParsecResponse(u64, parsec::Response),
-    /// Send from a section to the node being relocated.
-    Relocate(Box<SignedRelocateDetails>),
 }
 
 /// Response to a BootstrapRequest
@@ -101,13 +99,12 @@ impl Debug for DirectMessage {
                 join_request
                     .relocate_payload
                     .as_ref()
-                    .map(|payload| payload.details.content())
+                    .and_then(|payload| payload.relocate_details()),
             ),
             ConnectionResponse => write!(formatter, "ConnectionResponse"),
             ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
             ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
             MemberKnowledge(payload) => write!(formatter, "{:?}", payload),
-            Relocate(payload) => write!(formatter, "Relocate({:?})", payload.content()),
         }
     }
 }
@@ -140,7 +137,6 @@ impl Hash for DirectMessage {
                 // Fake hash via serialisation
                 serialize(&response).ok().hash(state)
             }
-            Relocate(details) => details.hash(state),
         }
     }
 }

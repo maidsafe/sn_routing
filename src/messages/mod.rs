@@ -19,6 +19,7 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::Location,
+    relocation::RelocateDetails,
     states::common::{from_network_bytes, partial_from_network_bytes, to_network_bytes},
     utils::LogIdent,
     xor_space::{Prefix, XorName},
@@ -580,6 +581,8 @@ pub enum MessageContent {
     },
     /// Update sent to Adults and Infants by Elders
     GenesisUpdate(GenesisPfxInfo),
+    /// Send from a section to the node being relocated.
+    Relocate(RelocateDetails),
 }
 
 impl Debug for SignedRoutingMessage {
@@ -604,6 +607,7 @@ impl Debug for MessageContent {
                 ack_version,
             } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
             GenesisUpdate(info) => write!(formatter, "GenesisUpdate({:?})", info),
+            Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
         }
     }
 }

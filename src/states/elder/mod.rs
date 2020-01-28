@@ -34,7 +34,7 @@ use crate::{
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     peer_map::PeerMap,
-    relocation::{RelocateDetails, SignedRelocateDetails},
+    relocation::RelocateDetails,
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
@@ -46,7 +46,6 @@ use crate::{
 };
 use itertools::Itertools;
 use log::LogLevel;
-use serde::Serialize;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
@@ -823,7 +822,7 @@ impl Elder {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
             }
-            (content @ GenesisUpdate(_), src, dst) => {
+            (content @ GenesisUpdate(_), src, dst) | (content @ Relocate(_), src, dst) => {
                 debug!(
                     "{} Unhandled routing message {:?} from {:?} to {:?}, adding to backlog",
                     self, content, src, dst
@@ -1024,28 +1023,33 @@ impl Elder {
                 return;
             }
 
-            let details = payload.details;
+            let details = if let Some(details) = payload.relocate_details() {
+                details
+            } else {
+                debug!(
+                    "{} - Ignoring relocation JoinRequest from {} - invalid payload.",
+                    self, pub_id
+                );
+                return;
+            };
 
-            if !self.our_prefix().matches(&details.content().destination) {
+            if !self.our_prefix().matches(&details.destination) {
                 debug!(
                     "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                      our prefix {:?}.",
                     self,
                     pub_id,
-                    details.content().destination,
+                    details.destination,
                     self.our_prefix()
                 );
                 return;
             }
 
-            if !self.check_signed_relocation_details(&details) {
+            if !self.check_signed_relocation_details(&*payload.details) {
                 return;
             }
 
-            (
-                details.content().age,
-                Some(details.content().destination_key_info.version()),
-            )
+            (details.age, Some(details.destination_key_info.version()))
         } else {
             (MIN_AGE, None)
         };
@@ -1126,8 +1130,8 @@ impl Elder {
         self.vote_for_network_event(event.into_network_event())
     }
 
-    fn vote_for_relocate(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        self.vote_for_signed_event(details)
+    fn vote_for_relocate(&mut self, details: RelocateDetails) {
+        self.vote_for_network_event(details.into_accumulating_event().into_network_event())
     }
 
     fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
@@ -1149,22 +1153,6 @@ impl Elder {
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
         let event = acc_event.into_network_event_with(Some(signature_payload));
-        self.vote_for_network_event(event);
-        Ok(())
-    }
-
-    fn vote_for_signed_event<T: IntoAccumulatingEvent + Serialize>(
-        &mut self,
-        payload: T,
-    ) -> Result<(), RoutingError> {
-        let signature_payload = EventSigPayload::new(
-            &self.chain.our_section_bls_secret_key_share()?.key,
-            &payload,
-        )?;
-
-        let event = payload
-            .into_accumulating_event()
-            .into_network_event_with(Some(signature_payload));
         self.vote_for_network_event(event);
         Ok(())
     }
@@ -1540,15 +1528,6 @@ impl Base for Elder {
             BootstrapResponse(_) => {
                 debug!("{} Unhandled direct message: {:?}", self, msg);
             }
-            msg @ Relocate(_) => {
-                debug!(
-                    "{} Unhandled Elder direct message from {}, adding to backlog: {:?}",
-                    self,
-                    p2p_node.public_id(),
-                    msg
-                );
-                self.direct_msg_backlog.push((p2p_node, msg));
-            }
         }
         Ok(Transition::Stay)
     }
@@ -1674,15 +1653,14 @@ impl Approved for Elder {
     fn handle_member_relocated(
         &mut self,
         details: RelocateDetails,
-        signature: bls::Signature,
         node_knowledge: u64,
         _outbox: &mut dyn EventBox,
-    ) {
+    ) -> Result<(), RoutingError> {
         let _ = self.members_knowledge.remove(details.pub_id.name());
 
         if &details.pub_id == self.id() {
             // Do not send the message to ourselves.
-            return;
+            return Ok(());
         }
 
         // We need proof that is valid for both the relocating node and the target section. To
@@ -1690,32 +1668,17 @@ impl Approved for Elder {
         // section and then take the longer of the two. This works because the longer proof is a
         // superset of the shorter one. We need to do this because in rare cases, the relocating
         // node might be lagging behind the target section in the knowledge of the source section.
-        let proof = {
-            let proof_for_source = self.chain.prove(
-                &Location::Node(*details.pub_id.name()),
-                Some(node_knowledge),
-            );
-            let proof_for_target = self
-                .chain
-                .prove(&Location::Section(details.destination), None);
+        let knowledge_index = cmp::min(
+            node_knowledge,
+            self.chain
+                .knowledge_index(&Location::Section(details.destination), None),
+        );
 
-            if proof_for_source.blocks_len() > proof_for_target.blocks_len() {
-                proof_for_source
-            } else {
-                proof_for_target
-            }
-        };
+        let src = Location::Section(self.our_prefix().name());
+        let dst = Location::Node(*details.pub_id.name());
+        let content = MessageContent::Relocate(details);
 
-        if let Some(conn_info) = self
-            .chain
-            .get_member_connection_info(&details.pub_id)
-            .cloned()
-        {
-            let message = DirectMessage::Relocate(Box::new(SignedRelocateDetails::new(
-                details, proof, signature,
-            )));
-            self.send_direct_message(&conn_info, message);
-        }
+        self.send_routing_message(RoutingMessage { src, dst, content }, Some(knowledge_index))
     }
 
     fn handle_dkg_result_event(
@@ -1861,13 +1824,12 @@ impl Approved for Elder {
         payload: RelocateDetails,
         count_down: i32,
         _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
+    ) {
         if count_down > 0 {
             self.vote_for_relocate_prepare(payload, count_down - 1);
         } else {
-            self.vote_for_relocate(payload)?;
+            self.vote_for_relocate(payload);
         }
-        Ok(())
     }
 }
 

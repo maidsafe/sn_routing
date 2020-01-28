@@ -13,11 +13,13 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode},
     location::Location,
-    messages::{BootstrapResponse, DirectMessage, HopMessageWithBytes},
+    messages::{
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent, SignedRoutingMessage,
+    },
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
-    relocation::{RelocatePayload, SignedRelocateDetails},
+    relocation::RelocatePayload,
     rng::MainRng,
     state_machine::{State, Transition},
     states::JoiningPeer,
@@ -51,7 +53,7 @@ pub struct BootstrappingPeer {
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
-    relocate_details: Option<SignedRelocateDetails>,
+    relocate_details: Option<SignedRoutingMessage>,
     network_cfg: NetworkParams,
 }
 
@@ -74,7 +76,7 @@ impl BootstrappingPeer {
     pub fn relocate(
         details: BootstrappingPeerDetails,
         conn_infos: Vec<ConnectionInfo>,
-        relocate_details: SignedRelocateDetails,
+        relocate_details: SignedRoutingMessage,
     ) -> Self {
         let mut node = Self {
             network_service: details.network_service,
@@ -131,8 +133,12 @@ impl BootstrappingPeer {
     // If we are relocating, request bootstrap to the section matching the name given to us
     // by our section. Otherwise request bootstrap to the section matching our current name.
     fn get_destination(&self) -> XorName {
-        if let Some(details) = self.relocate_details.as_ref() {
-            details.content().destination
+        if let Some(MessageContent::Relocate(details)) = self
+            .relocate_details
+            .as_ref()
+            .map(|msg| &msg.routing_message().content)
+        {
+            details.destination
         } else {
             *self.name()
         }
