@@ -79,7 +79,7 @@ mod tests {
         id::{FullId, P2pNode},
         location::Location,
         messages::{
-            DirectMessage, RoutingMessage, RoutingVariant, SignedDirectMessage,
+            DirectVariant, RoutingMessage, RoutingVariant, SignedDirectMessage,
             SignedRoutingMessage,
         },
         parsec::generate_bls_threshold_secret_key,
@@ -127,7 +127,7 @@ mod tests {
             let signature_msgs = other_ids
                 .map(|(id, bls_id)| {
                     unwrap!(SignedDirectMessage::new(
-                        DirectMessage::MessageSignature(Box::new(unwrap!(
+                        DirectVariant::MessageSignature(Box::new(unwrap!(
                             SignedRoutingMessage::new(
                                 routing_msg.clone(),
                                 bls_id,
@@ -217,7 +217,7 @@ mod tests {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
                 let result = match signature_msg.content() {
-                    DirectMessage::MessageSignature(msg) => sig_accumulator.add_proof(*msg.clone()),
+                    DirectVariant::MessageSignature(msg) => sig_accumulator.add_proof(*msg.clone()),
                     unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 

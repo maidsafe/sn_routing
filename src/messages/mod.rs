@@ -15,7 +15,7 @@ use self::security_metadata::{
     FullSecurityMetadata, PartialSecurityMetadata, SingleSrcSecurityMetadata,
 };
 pub use self::{
-    direct::{BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage},
+    direct::{BootstrapResponse, DirectVariant, JoinRequest, MemberKnowledge, SignedDirectMessage},
     security_metadata::SecurityMetadata,
     variant::RoutingVariant,
     with_bytes::{HopMessageWithBytes, MessageWithBytes},

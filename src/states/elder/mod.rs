@@ -26,7 +26,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MemberKnowledge,
+        BootstrapResponse, DirectVariant, HopMessageWithBytes, JoinRequest, MemberKnowledge,
         RoutingMessage, RoutingVariant, SecurityMetadata, SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
@@ -92,7 +92,7 @@ pub struct ElderDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_queue: VecDeque<SignedRoutingMessage>,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
     pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -107,7 +107,7 @@ pub struct Elder {
     // although they may wrap a message which needs forwarding.
     routing_msg_queue: VecDeque<SignedRoutingMessage>,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     timer: Timer,
@@ -407,7 +407,7 @@ impl Elder {
     }
 
     fn establish_connection(&mut self, node: &P2pNode) {
-        self.send_direct_message(node.connection_info(), DirectMessage::ConnectionResponse);
+        self.send_direct_message(node.connection_info(), DirectVariant::ConnectionResponse);
     }
 
     fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
@@ -548,7 +548,7 @@ impl Elder {
             );
             self.send_direct_message(
                 p2p_node.connection_info(),
-                DirectMessage::BootstrapResponse(BootstrapResponse::Join(response_section)),
+                DirectVariant::BootstrapResponse(BootstrapResponse::Join(response_section)),
             );
         }
     }
@@ -633,7 +633,7 @@ impl Elder {
 
             self.send_direct_message(
                 recipient.connection_info(),
-                DirectMessage::MessageSignature(Box::new(msg)),
+                DirectVariant::MessageSignature(Box::new(msg)),
             );
         }
     }
@@ -899,7 +899,7 @@ impl Elder {
             );
             self.send_direct_message(
                 p2p_node.connection_info(),
-                DirectMessage::ConnectionResponse,
+                DirectVariant::ConnectionResponse,
             );
         };
 
@@ -968,7 +968,7 @@ impl Elder {
         };
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::BootstrapResponse(response),
+            DirectVariant::BootstrapResponse(response),
         );
     }
 
@@ -1048,7 +1048,7 @@ impl Elder {
 
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::ConnectionResponse,
+            DirectVariant::ConnectionResponse,
         );
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
             p2p_node,
@@ -1213,7 +1213,7 @@ impl Elder {
                 let conn_info = p2p_node.connection_info().clone();
                 self.send_direct_message(
                     &conn_info,
-                    DirectMessage::MessageSignature(Box::new(signed_msg.clone())),
+                    DirectVariant::MessageSignature(Box::new(signed_msg.clone())),
                 );
             } else {
                 error!(
@@ -1494,14 +1494,14 @@ impl Base for Elder {
         self.handle_routing_messages(outbox)
     }
 
-    // Deconstruct a `DirectMessage` and handle or forward as appropriate.
+    // Deconstruct a `DirectVariant` and handle or forward as appropriate.
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: DirectVariant,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectMessage::*;
+        use crate::messages::DirectVariant::*;
 
         let pub_id = *p2p_node.public_id();
 

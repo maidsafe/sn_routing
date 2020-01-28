@@ -24,7 +24,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, RoutingVariant,
+        BootstrapResponse, DirectVariant, HopMessageWithBytes, RoutingVariant,
         SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
@@ -60,7 +60,7 @@ pub struct AdultDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
     pub sig_accumulator: SignatureAccumulator,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -76,7 +76,7 @@ pub struct Adult {
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
     routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     knowledge_timer_token: u64,
@@ -295,7 +295,7 @@ impl Adult {
         };
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::BootstrapResponse(response),
+            DirectVariant::BootstrapResponse(response),
         );
     }
 
@@ -550,11 +550,11 @@ impl Base for Adult {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: DirectVariant,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectMessage::*;
+        use crate::messages::DirectVariant::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(*msg, *p2p_node.public_id()),
             ParsecRequest(version, par_request) => {

@@ -162,7 +162,7 @@ mod tests {
     use crate::{
         id::FullId,
         messages::{
-            DirectMessage, MemberKnowledge, Message, RoutingMessage, RoutingVariant,
+            DirectVariant, MemberKnowledge, Message, RoutingMessage, RoutingVariant,
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
@@ -199,12 +199,12 @@ mod tests {
         let (req, rsp) = (Request::new(), Response::new());
 
         let msgs = [
-            make_message(DirectMessage::MemberKnowledge(MemberKnowledge {
+            make_message(DirectVariant::MemberKnowledge(MemberKnowledge {
                 elders_version: 23,
                 parsec_version: 24,
             })),
-            make_message(DirectMessage::ParsecRequest(42, req)),
-            make_message(DirectMessage::ParsecResponse(1337, rsp)),
+            make_message(DirectVariant::ParsecRequest(42, req)),
+            make_message(DirectVariant::ParsecResponse(1337, rsp)),
         ];
         for msg in &msgs {
             assert!(is_periodic_message(&Bytes::from(serialise(msg))));
@@ -212,8 +212,8 @@ mod tests {
 
         // No other direct message types contain a Parsec request or response.
         let msgs = [
-            make_message(DirectMessage::BootstrapRequest(rng.gen())),
-            make_message(DirectMessage::ConnectionResponse),
+            make_message(DirectVariant::BootstrapRequest(rng.gen())),
+            make_message(DirectVariant::ConnectionResponse),
         ];
         for msg in &msgs {
             assert!(!is_periodic_message(&Bytes::from(serialise(msg))));

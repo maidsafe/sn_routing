@@ -24,9 +24,9 @@ use std::{
     mem,
 };
 
-/// Direct message content.
+/// Body of DirectVariant
 #[derive(Eq, PartialEq, Serialize, Deserialize)]
-pub enum DirectMessage {
+pub enum DirectVariant {
     /// Sent from members of a section or group message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(Box<SignedRoutingMessage>),
@@ -85,9 +85,9 @@ impl MemberKnowledge {
     }
 }
 
-impl Debug for DirectMessage {
+impl Debug for DirectVariant {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        use self::DirectMessage::*;
+        use self::DirectVariant::*;
         match self {
             MessageSignature(msg) => write!(formatter, "MessageSignature({:?})", msg),
             BootstrapRequest(name) => write!(formatter, "BootstrapRequest({})", name),
@@ -114,9 +114,9 @@ impl Debug for DirectMessage {
 // We don't need explicit `PartialEq` impl, because `parsec::Request/Response` do implement it.
 // So it's OK to silence this clippy lint:
 #[allow(clippy::derive_hash_xor_eq)]
-impl Hash for DirectMessage {
+impl Hash for DirectVariant {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        use self::DirectMessage::*;
+        use self::DirectVariant::*;
 
         mem::discriminant(self).hash(state);
 
@@ -143,14 +143,14 @@ impl Hash for DirectMessage {
 
 #[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedDirectMessage {
-    content: DirectMessage,
+    content: DirectVariant,
     src_id: PublicId,
     signature: Signature,
 }
 
 impl SignedDirectMessage {
-    /// Create new `DirectMessage` with `content` and signed by `src_full_id`.
-    pub fn new(content: DirectMessage, src_full_id: &FullId) -> Result<Self, RoutingError> {
+    /// Create new `DirectVariant` with `content` and signed by `src_full_id`.
+    pub fn new(content: DirectVariant, src_full_id: &FullId) -> Result<Self, RoutingError> {
         let serialised = serialize(&content)?;
         let signature = src_full_id.sign(&serialised);
 
@@ -174,14 +174,14 @@ impl SignedDirectMessage {
 
     /// Verify the message signature and return its content and the sender id.
     /// Consume the message in the process.
-    pub fn open(self) -> Result<(DirectMessage, PublicId), RoutingError> {
+    pub fn open(self) -> Result<(DirectVariant, PublicId), RoutingError> {
         self.verify()?;
         Ok((self.content, self.src_id))
     }
 
     /// Content of the message.
     #[cfg(all(test, feature = "mock_base"))]
-    pub fn content(&self) -> &DirectMessage {
+    pub fn content(&self) -> &DirectVariant {
         &self.content
     }
 }

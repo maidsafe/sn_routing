@@ -18,7 +18,7 @@ use crate::{
     id::{FullId, P2pNode},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, RoutingMessage,
+        BootstrapResponse, DirectVariant, HopMessageWithBytes, JoinRequest, RoutingMessage,
         RoutingVariant, SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
@@ -56,7 +56,7 @@ pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
@@ -150,7 +150,7 @@ impl JoiningPeer {
 
             self.send_direct_message(
                 dst.connection_info(),
-                DirectMessage::JoinRequest(Box::new(join_request)),
+                DirectVariant::JoinRequest(Box::new(join_request)),
             );
         }
     }
@@ -273,12 +273,12 @@ impl Base for JoiningPeer {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: DirectVariant,
         p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+            DirectVariant::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 if info.version() > self.elders_info.version() {
                     if info.prefix().matches(self.name()) {
                         info!(
@@ -298,7 +298,7 @@ impl Base for JoiningPeer {
                     }
                 }
             }
-            DirectMessage::ConnectionResponse | DirectMessage::BootstrapResponse(_) => (),
+            DirectVariant::ConnectionResponse | DirectVariant::BootstrapResponse(_) => (),
             _ => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",

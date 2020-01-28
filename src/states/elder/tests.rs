@@ -17,7 +17,7 @@ use super::{super::test_utils, *};
 use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
     generate_bls_threshold_secret_key,
-    messages::DirectMessage,
+    messages::DirectVariant,
     rng::{self, MainRng},
     state_machine::Transition,
     unwrap, utils, ELDER_SIZE,
@@ -154,7 +154,7 @@ impl ElderUnderTest {
         let parsec = self.elder.parsec_map_mut();
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
-        let message = DirectMessage::ParsecRequest(parsec_version, request);
+        let message = DirectVariant::ParsecRequest(parsec_version, request);
         self.handle_direct_message((message, P2pNode::new(other_pub_id, connection_info)))
     }
 
@@ -331,7 +331,7 @@ impl ElderUnderTest {
             .is_peer_our_elder(self.candidate.public_id())
     }
 
-    fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {
+    fn handle_direct_message(&mut self, msg: (DirectVariant, P2pNode)) -> Result<(), RoutingError> {
         let _ = self.elder.handle_direct_message(msg.0, msg.1, &mut ())?;
         Ok(())
     }
