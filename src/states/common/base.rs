@@ -14,8 +14,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        DirectVariant, HopMessageWithBytes, Message, MessageWithBytes, PartialMessage,
-        SignedDirectMessage,
+        HopMessageWithBytes, Message, MessageWithBytes, PartialMessage, SignedDirectMessage,
+        Variant,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -62,7 +62,7 @@ pub trait Base: Display {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectVariant,
+        msg: Variant,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
@@ -354,7 +354,7 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: DirectVariant) {
+    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: Variant) {
         let message = if let Ok(message) = self.to_signed_direct_message(content) {
             message
         } else {
@@ -405,7 +405,7 @@ pub trait Base: Display {
             .send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
-    fn to_signed_direct_message(&self, content: DirectVariant) -> Result<Message, RoutingError> {
+    fn to_signed_direct_message(&self, content: Variant) -> Result<Message, RoutingError> {
         SignedDirectMessage::new(content, self.full_id())
             .map(Message::Direct)
             .map_err(|err| {

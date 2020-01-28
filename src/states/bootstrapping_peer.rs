@@ -13,7 +13,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode},
     location::Location,
-    messages::{BootstrapResponse, DirectVariant, HopMessageWithBytes},
+    messages::{BootstrapResponse, HopMessageWithBytes, Variant},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -124,7 +124,7 @@ impl BootstrappingPeer {
         let _ = self.timeout_tokens.insert(token, dst.peer_addr);
 
         let destination = self.get_destination();
-        self.send_direct_message(&dst, DirectVariant::BootstrapRequest(destination));
+        self.send_direct_message(&dst, Variant::BootstrapRequest(destination));
         self.peer_map_mut().connect(dst);
     }
 
@@ -281,7 +281,7 @@ impl Base for BootstrappingPeer {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectVariant,
+        msg: Variant,
         p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
@@ -296,14 +296,14 @@ impl Base for BootstrappingPeer {
         }
 
         match msg {
-            DirectVariant::BootstrapResponse(BootstrapResponse::Join(info)) => {
+            Variant::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 info!(
                     "{} - Joining a section {:?} (given by {:?})",
                     self, info, p2p_node
                 );
                 self.join_section(info)
             }
-            DirectVariant::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
+            Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(
                     "{} - Bootstrapping redirected to another set of peers: {:?}",
                     self, new_conn_infos
@@ -426,7 +426,7 @@ mod tests {
 
             let ok = match unwrap!(from_network_bytes(&msg)) {
                 Message::Direct(msg) => match *msg.content() {
-                    DirectVariant::BootstrapRequest(_) => true,
+                    Variant::BootstrapRequest(_) => true,
                     _ => false,
                 },
                 _ => false,

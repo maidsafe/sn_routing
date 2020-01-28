@@ -142,11 +142,11 @@ impl DerefMut for Environment {
 // Periodically sent messages start with these bytes when serialised.
 const PERIODIC_MSG_TAGS: &[&[u8]] = &[
     // MemberKnowledge
-    &[0, 0, 0, 0, 5, 0, 0, 0],
+    &[0, 0, 0, 0, 11, 0, 0, 0],
     // ParsecRequest
-    &[0, 0, 0, 0, 6, 0, 0, 0],
+    &[0, 0, 0, 0, 12, 0, 0, 0],
     // ParsecResponse
-    &[0, 0, 0, 0, 7, 0, 0, 0],
+    &[0, 0, 0, 0, 13, 0, 0, 0],
 ];
 
 // Returns `true` if this message is sent periodically (on timer tick).
@@ -162,8 +162,8 @@ mod tests {
     use crate::{
         id::FullId,
         messages::{
-            DirectVariant, MemberKnowledge, Message, RoutingMessage, RoutingVariant,
-            SignedDirectMessage, SignedRoutingMessage,
+            MemberKnowledge, Message, RoutingMessage, SignedDirectMessage, SignedRoutingMessage,
+            Variant,
         },
         parsec::{Request, Response},
         rng, unwrap, Location,
@@ -199,12 +199,12 @@ mod tests {
         let (req, rsp) = (Request::new(), Response::new());
 
         let msgs = [
-            make_message(DirectVariant::MemberKnowledge(MemberKnowledge {
+            make_message(Variant::MemberKnowledge(MemberKnowledge {
                 elders_version: 23,
                 parsec_version: 24,
             })),
-            make_message(DirectVariant::ParsecRequest(42, req)),
-            make_message(DirectVariant::ParsecResponse(1337, rsp)),
+            make_message(Variant::ParsecRequest(42, req)),
+            make_message(Variant::ParsecResponse(1337, rsp)),
         ];
         for msg in &msgs {
             assert!(is_periodic_message(&Bytes::from(serialise(msg))));
@@ -212,8 +212,8 @@ mod tests {
 
         // No other direct message types contain a Parsec request or response.
         let msgs = [
-            make_message(DirectVariant::BootstrapRequest(rng.gen())),
-            make_message(DirectVariant::ConnectionResponse),
+            make_message(Variant::BootstrapRequest(rng.gen())),
+            make_message(Variant::ConnectionResponse),
         ];
         for msg in &msgs {
             assert!(!is_periodic_message(&Bytes::from(serialise(msg))));
@@ -223,11 +223,7 @@ mod tests {
         let msg = RoutingMessage {
             src: Location::Section(rand::random()),
             dst: Location::Section(rand::random()),
-            content: RoutingVariant::UserMessage(vec![
-                rand::random(),
-                rand::random(),
-                rand::random(),
-            ]),
+            content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
         };
         let msg = SignedRoutingMessage::insecure(msg);
         let msg = Message::Hop(msg);

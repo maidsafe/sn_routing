@@ -133,7 +133,7 @@ impl HopMessageWithBytes {
 #[cfg(test)]
 mod tests {
     use super::{
-        super::{RoutingMessage, RoutingVariant},
+        super::{RoutingMessage, Variant},
         *,
     };
     use crate::{
@@ -180,7 +180,7 @@ mod tests {
         RoutingMessage {
             src: Location::Section(rng.gen()),
             dst: Location::Section(rng.gen()),
-            content: RoutingVariant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
+            content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }
 }

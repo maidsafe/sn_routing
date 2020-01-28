@@ -78,10 +78,7 @@ mod tests {
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
         id::{FullId, P2pNode},
         location::Location,
-        messages::{
-            DirectVariant, RoutingMessage, RoutingVariant, SignedDirectMessage,
-            SignedRoutingMessage,
-        },
+        messages::{RoutingMessage, SignedDirectMessage, SignedRoutingMessage, Variant},
         parsec::generate_bls_threshold_secret_key,
         rng, unwrap, ConnectionInfo, Prefix, XorName,
     };
@@ -104,11 +101,7 @@ mod tests {
             let routing_msg = RoutingMessage {
                 src: Location::Section(rand::random()),
                 dst: Location::Section(rand::random()),
-                content: RoutingVariant::UserMessage(vec![
-                    rand::random(),
-                    rand::random(),
-                    rand::random(),
-                ]),
+                content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
             };
 
             let msg_sender_secret_bls = unwrap!(secret_bls_ids.values().next());
@@ -127,14 +120,12 @@ mod tests {
             let signature_msgs = other_ids
                 .map(|(id, bls_id)| {
                     unwrap!(SignedDirectMessage::new(
-                        DirectVariant::MessageSignature(Box::new(unwrap!(
-                            SignedRoutingMessage::new(
-                                routing_msg.clone(),
-                                bls_id,
-                                pk_set.clone(),
-                                proof.clone(),
-                            )
-                        ))),
+                        Variant::MessageSignature(Box::new(unwrap!(SignedRoutingMessage::new(
+                            routing_msg.clone(),
+                            bls_id,
+                            pk_set.clone(),
+                            proof.clone(),
+                        )))),
                         id,
                     ))
                 })
@@ -217,7 +208,7 @@ mod tests {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
                 let result = match signature_msg.content() {
-                    DirectVariant::MessageSignature(msg) => sig_accumulator.add_proof(*msg.clone()),
+                    Variant::MessageSignature(msg) => sig_accumulator.add_proof(*msg.clone()),
                     unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 

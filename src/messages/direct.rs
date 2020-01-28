@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::DirectVariant;
+use super::Variant;
 use crate::{
     crypto::signing::Signature,
     error::RoutingError,
@@ -18,14 +18,14 @@ use std::fmt::{self, Debug, Formatter};
 
 #[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct SignedDirectMessage {
-    content: DirectVariant,
+    content: Variant,
     src_id: PublicId,
     signature: Signature,
 }
 
 impl SignedDirectMessage {
-    /// Create new `DirectVariant` with `content` and signed by `src_full_id`.
-    pub fn new(content: DirectVariant, src_full_id: &FullId) -> Result<Self, RoutingError> {
+    /// Create new `SignedDirectMessage` with `content` and signed by `src_full_id`.
+    pub fn new(content: Variant, src_full_id: &FullId) -> Result<Self, RoutingError> {
         let serialised = serialize(&content)?;
         let signature = src_full_id.sign(&serialised);
 
@@ -49,14 +49,14 @@ impl SignedDirectMessage {
 
     /// Verify the message signature and return its content and the sender id.
     /// Consume the message in the process.
-    pub fn open(self) -> Result<(DirectVariant, PublicId), RoutingError> {
+    pub fn open(self) -> Result<(Variant, PublicId), RoutingError> {
         self.verify()?;
         Ok((self.content, self.src_id))
     }
 
     /// Content of the message.
     #[cfg(all(test, feature = "mock_base"))]
-    pub fn content(&self) -> &DirectVariant {
+    pub fn content(&self) -> &Variant {
         &self.content
     }
 }

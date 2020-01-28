@@ -17,8 +17,7 @@ use self::security_metadata::{
 pub use self::{
     direct::SignedDirectMessage,
     security_metadata::SecurityMetadata,
-    variant::RoutingVariant,
-    variant::{BootstrapResponse, DirectVariant, JoinRequest, MemberKnowledge},
+    variant::{BootstrapResponse, JoinRequest, MemberKnowledge, Variant},
     with_bytes::{HopMessageWithBytes, MessageWithBytes},
 };
 use crate::{
@@ -309,7 +308,7 @@ pub struct RoutingMessage {
     /// Destination location
     pub dst: Location,
     /// The message content
-    pub content: RoutingVariant,
+    pub content: Variant,
 }
 
 impl RoutingMessage {
@@ -468,7 +467,7 @@ mod tests {
         RoutingMessage {
             src: Location::Section(rng.gen()),
             dst: Location::Section(rng.gen()),
-            content: RoutingVariant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
+            content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }
 }

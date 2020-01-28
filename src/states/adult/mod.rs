@@ -24,8 +24,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectVariant, HopMessageWithBytes, RoutingVariant,
-        SignedRoutingMessage, VerifyStatus,
+        BootstrapResponse, HopMessageWithBytes, SignedRoutingMessage, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -60,7 +59,7 @@ pub struct AdultDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
+    pub direct_msg_backlog: Vec<(P2pNode, Variant)>,
     pub sig_accumulator: SignatureAccumulator,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -76,7 +75,7 @@ pub struct Adult {
     gen_pfx_info: GenesisPfxInfo,
     /// Routing messages addressed to us that we cannot handle until we are established.
     routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
+    direct_msg_backlog: Vec<(P2pNode, Variant)>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     knowledge_timer_token: u64,
@@ -295,7 +294,7 @@ impl Adult {
         };
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectVariant::BootstrapResponse(response),
+            Variant::BootstrapResponse(response),
         );
     }
 
@@ -414,11 +413,11 @@ impl Adult {
         if self.in_location(msg.message_dst()) {
             let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             match &signed_msg.routing_message().content {
-                RoutingVariant::GenesisUpdate(info) => {
+                Variant::GenesisUpdate(info) => {
                     self.verify_signed_message(&signed_msg)?;
-                    return self.handle_genesis_update(info.clone());
+                    return self.handle_genesis_update((**info).clone());
                 }
-                RoutingVariant::Relocate(_) => {
+                Variant::Relocate(_) => {
                     self.verify_signed_message(&signed_msg)?;
                     let signed_relocate = SignedRelocateDetails::new(signed_msg.clone())?;
                     return self.handle_relocate(signed_relocate);
@@ -550,11 +549,11 @@ impl Base for Adult {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectVariant,
+        msg: Variant,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectVariant::*;
+        use crate::messages::Variant::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(*msg, *p2p_node.public_id()),
             ParsecRequest(version, par_request) => {
@@ -571,16 +570,7 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            msg @ BootstrapResponse(_) => {
-                debug!(
-                    "{} Unhandled direct message from {}, discard: {:?}",
-                    self,
-                    p2p_node.public_id(),
-                    msg
-                );
-                Ok(Transition::Stay)
-            }
-            msg @ JoinRequest(_) | msg @ MemberKnowledge { .. } => {
+            JoinRequest(_) | MemberKnowledge { .. } => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
                     self,
@@ -588,6 +578,21 @@ impl Base for Adult {
                     msg
                 );
                 self.direct_msg_backlog.push((p2p_node, msg));
+                Ok(Transition::Stay)
+            }
+            NeighbourInfo(_)
+            | UserMessage(_)
+            | NodeApproval(_)
+            | AckMessage { .. }
+            | GenesisUpdate(_)
+            | Relocate(_)
+            | BootstrapResponse(_) => {
+                debug!(
+                    "{} Unhandled direct message from {}, discard: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
+                );
                 Ok(Transition::Stay)
             }
         }

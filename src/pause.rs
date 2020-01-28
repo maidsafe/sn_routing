@@ -9,7 +9,7 @@
 use crate::{
     chain::{Chain, GenesisPfxInfo},
     id::{FullId, P2pNode},
-    messages::{DirectVariant, SignedRoutingMessage},
+    messages::{SignedRoutingMessage, Variant},
     network_service::NetworkService,
     parsec::ParsecMap,
     routing_message_filter::RoutingMessageFilter,
@@ -34,7 +34,7 @@ pub struct PausedState {
     pub(super) routing_msg_filter: RoutingMessageFilter,
     pub(super) routing_msg_queue: VecDeque<SignedRoutingMessage>,
     pub(super) routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub(super) direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
+    pub(super) direct_msg_backlog: Vec<(P2pNode, Variant)>,
     // TODO: instead of storing both network_service and network_rx, store only the network config.
     pub(super) network_service: NetworkService,
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,

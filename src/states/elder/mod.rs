@@ -26,8 +26,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectVariant, HopMessageWithBytes, JoinRequest, MemberKnowledge,
-        RoutingMessage, RoutingVariant, SecurityMetadata, SignedRoutingMessage, VerifyStatus,
+        BootstrapResponse, HopMessageWithBytes, JoinRequest, MemberKnowledge, RoutingMessage,
+        SecurityMetadata, SignedRoutingMessage, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -92,7 +92,7 @@ pub struct ElderDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_queue: VecDeque<SignedRoutingMessage>,
     pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
+    pub direct_msg_backlog: Vec<(P2pNode, Variant)>,
     pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -107,7 +107,7 @@ pub struct Elder {
     // although they may wrap a message which needs forwarding.
     routing_msg_queue: VecDeque<SignedRoutingMessage>,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
+    direct_msg_backlog: Vec<(P2pNode, Variant)>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     timer: Timer,
@@ -407,7 +407,7 @@ impl Elder {
     }
 
     fn establish_connection(&mut self, node: &P2pNode) {
-        self.send_direct_message(node.connection_info(), DirectVariant::ConnectionResponse);
+        self.send_direct_message(node.connection_info(), Variant::ConnectionResponse);
     }
 
     fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
@@ -548,7 +548,7 @@ impl Elder {
             );
             self.send_direct_message(
                 p2p_node.connection_info(),
-                DirectVariant::BootstrapResponse(BootstrapResponse::Join(response_section)),
+                Variant::BootstrapResponse(BootstrapResponse::Join(response_section)),
             );
         }
     }
@@ -612,7 +612,7 @@ impl Elder {
         self.chain.other_prefixes().iter().for_each(|pfx| {
             let src = Location::Section(self.our_prefix().name());
             let dst = Location::PrefixSection(*pfx);
-            let content = RoutingVariant::NeighbourInfo(self.chain.our_info().clone());
+            let content = Variant::NeighbourInfo(self.chain.our_info().clone());
 
             if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }, None)
             {
@@ -633,7 +633,7 @@ impl Elder {
 
             self.send_direct_message(
                 recipient.connection_info(),
-                DirectVariant::MessageSignature(Box::new(msg)),
+                Variant::MessageSignature(Box::new(msg)),
             );
         }
     }
@@ -647,7 +647,7 @@ impl Elder {
                 let msg = RoutingMessage {
                     src,
                     dst: Location::Node(*recipient.name()),
-                    content: RoutingVariant::GenesisUpdate(self.gen_pfx_info.clone()),
+                    content: Variant::GenesisUpdate(Box::new(self.gen_pfx_info.clone())),
                 };
 
                 let version = self
@@ -789,7 +789,7 @@ impl Elder {
         signed_msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::RoutingVariant::*;
+        use crate::messages::Variant::*;
 
         let (msg, security_metadata) = signed_msg.into_parts();
 
@@ -897,10 +897,7 @@ impl Elder {
                 self,
                 p2p_node
             );
-            self.send_direct_message(
-                p2p_node.connection_info(),
-                DirectVariant::ConnectionResponse,
-            );
+            self.send_direct_message(p2p_node.connection_info(), Variant::ConnectionResponse);
         };
 
         let trimmed_info = GenesisPfxInfo {
@@ -913,7 +910,7 @@ impl Elder {
         };
 
         let src = Location::PrefixSection(*trimmed_info.first_info.prefix());
-        let content = RoutingVariant::NodeApproval(trimmed_info);
+        let content = Variant::NodeApproval(Box::new(trimmed_info));
 
         if let Err(error) =
             self.send_routing_message(RoutingMessage { src, dst, content }, their_knowledge)
@@ -968,7 +965,7 @@ impl Elder {
         };
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectVariant::BootstrapResponse(response),
+            Variant::BootstrapResponse(response),
         );
     }
 
@@ -1046,10 +1043,7 @@ impl Elder {
             (MIN_AGE, None)
         };
 
-        self.send_direct_message(
-            p2p_node.connection_info(),
-            DirectVariant::ConnectionResponse,
-        );
+        self.send_direct_message(p2p_node.connection_info(), Variant::ConnectionResponse);
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
             p2p_node,
             age,
@@ -1094,7 +1088,7 @@ impl Elder {
                         RoutingMessage {
                             src,
                             dst,
-                            content: RoutingVariant::NeighbourInfo(elders_info.clone()),
+                            content: Variant::NeighbourInfo(elders_info.clone()),
                         },
                         security_metadata,
                     )
@@ -1213,7 +1207,7 @@ impl Elder {
                 let conn_info = p2p_node.connection_info().clone();
                 self.send_direct_message(
                     &conn_info,
-                    DirectVariant::MessageSignature(Box::new(signed_msg.clone())),
+                    Variant::MessageSignature(Box::new(signed_msg.clone())),
                 );
             } else {
                 error!(
@@ -1430,7 +1424,7 @@ impl Base for Elder {
             RoutingMessage {
                 src,
                 dst,
-                content: RoutingVariant::UserMessage(content),
+                content: Variant::UserMessage(content),
             },
             None,
         )
@@ -1494,14 +1488,14 @@ impl Base for Elder {
         self.handle_routing_messages(outbox)
     }
 
-    // Deconstruct a `DirectVariant` and handle or forward as appropriate.
+    // Deconstruct a `Variant` and handle or forward as appropriate.
     fn handle_direct_message(
         &mut self,
-        msg: DirectVariant,
+        msg: Variant,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectVariant::*;
+        use crate::messages::Variant::*;
 
         let pub_id = *p2p_node.public_id();
 
@@ -1517,8 +1511,19 @@ impl Base for Elder {
             ParsecResponse(version, par_response) => {
                 return self.handle_parsec_response(version, par_response, pub_id, outbox);
             }
-            BootstrapResponse(_) => {
-                debug!("{} Unhandled direct message: {:?}", self, msg);
+            NeighbourInfo(_)
+            | UserMessage(_)
+            | NodeApproval(_)
+            | AckMessage { .. }
+            | GenesisUpdate(_)
+            | Relocate(_)
+            | BootstrapResponse(_) => {
+                trace!(
+                    "{} Unhandled direct message from {}, ignoring: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
+                );
             }
         }
         Ok(Transition::Stay)
@@ -1668,7 +1673,7 @@ impl Approved for Elder {
 
         let src = Location::Section(self.our_prefix().name());
         let dst = Location::Node(*details.pub_id.name());
-        let content = RoutingVariant::Relocate(Box::new(details));
+        let content = Variant::Relocate(Box::new(details));
 
         self.send_routing_message(RoutingMessage { src, dst, content }, Some(knowledge_index))
     }
@@ -1803,7 +1808,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         let src = Location::Section(self.our_prefix().name());
         let dst = Location::Section(ack_payload.ack_prefix.name());
-        let content = RoutingVariant::AckMessage {
+        let content = Variant::AckMessage {
             src_prefix: *self.our_prefix(),
             ack_version: ack_payload.ack_version,
         };

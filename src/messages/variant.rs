@@ -17,11 +17,9 @@ use crate::{
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-/// Body of RoutingMessage
-pub enum RoutingVariant {
+#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize, Debug)]
+/// Message variant
+pub enum Variant {
     /// Inform neighbours about our new section.
     NeighbourInfo(EldersInfo),
     /// User-facing message
@@ -29,7 +27,7 @@ pub enum RoutingVariant {
     /// Approves the joining node as a routing node.
     ///
     /// Sent from Group Y to the joining node.
-    NodeApproval(GenesisPfxInfo),
+    NodeApproval(Box<GenesisPfxInfo>),
     /// Acknowledgement of a consensused section info.
     AckMessage {
         /// The prefix of our section when we acknowledge their EldersInfo of version ack_version.
@@ -38,14 +36,9 @@ pub enum RoutingVariant {
         ack_version: u64,
     },
     /// Update sent to Adults and Infants by Elders
-    GenesisUpdate(GenesisPfxInfo),
-    /// Send to a node being relocated from its own section.
+    GenesisUpdate(Box<GenesisPfxInfo>),
+    /// Send from a section to the node being relocated.
     Relocate(Box<RelocateDetails>),
-}
-
-/// Body of DirectVariant
-#[derive(Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum DirectVariant {
     /// Sent from members of a section or group message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
     MessageSignature(Box<SignedRoutingMessage>),
@@ -71,7 +64,7 @@ pub enum DirectVariant {
 }
 
 /// Response to a BootstrapRequest
-#[derive(Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Hash)]
 pub enum BootstrapResponse {
     /// This response means that the new peer is clear to join the section. The connection infos of
     /// the section elders and the section prefix are provided.
@@ -82,12 +75,28 @@ pub enum BootstrapResponse {
 }
 
 /// Request to join a section
-#[derive(Eq, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct JoinRequest {
     /// The section version to join
     pub elders_version: u64,
     /// If the peer is being relocated, contains `RelocatePayload`. Otherwise contains `None`.
     pub relocate_payload: Option<RelocatePayload>,
+}
+
+impl Debug for JoinRequest {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("JoinRequest")
+            .field("elders_version", &self.elders_version)
+            .field(
+                "relocate_payload",
+                &self
+                    .relocate_payload
+                    .as_ref()
+                    .map(|payload| payload.relocate_details()),
+            )
+            .finish()
+    }
 }
 
 /// Node's knowledge about its own section.
@@ -104,43 +113,3 @@ impl MemberKnowledge {
     }
 }
 
-impl Debug for RoutingVariant {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        use self::RoutingVariant::*;
-        match self {
-            NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
-            UserMessage(content) => write!(formatter, "UserMessage({:?})", content,),
-            NodeApproval(gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
-            AckMessage {
-                src_prefix,
-                ack_version,
-            } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
-            GenesisUpdate(info) => write!(formatter, "GenesisUpdate({:?})", info),
-            Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
-        }
-    }
-}
-
-impl Debug for DirectVariant {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        use self::DirectVariant::*;
-        match self {
-            MessageSignature(msg) => write!(formatter, "MessageSignature({:?})", msg),
-            BootstrapRequest(name) => write!(formatter, "BootstrapRequest({})", name),
-            BootstrapResponse(response) => write!(formatter, "BootstrapResponse({:?})", response),
-            JoinRequest(join_request) => write!(
-                formatter,
-                "JoinRequest({}, {:?})",
-                join_request.elders_version,
-                join_request
-                    .relocate_payload
-                    .as_ref()
-                    .map(|payload| payload.relocate_details())
-            ),
-            ConnectionResponse => write!(formatter, "ConnectionResponse"),
-            ParsecRequest(v, _) => write!(formatter, "ParsecRequest({}, _)", v),
-            ParsecResponse(v, _) => write!(formatter, "ParsecResponse({}, _)", v),
-            MemberKnowledge(payload) => write!(formatter, "{:?}", payload),
-        }
-    }
-}

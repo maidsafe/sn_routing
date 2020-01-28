@@ -18,8 +18,8 @@ use crate::{
     id::{FullId, P2pNode},
     location::Location,
     messages::{
-        BootstrapResponse, DirectVariant, HopMessageWithBytes, JoinRequest, RoutingMessage,
-        RoutingVariant, SignedRoutingMessage, VerifyStatus,
+        BootstrapResponse, HopMessageWithBytes, JoinRequest, RoutingMessage, SignedRoutingMessage,
+        Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -56,7 +56,7 @@ pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
     routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectVariant)>,
+    direct_msg_backlog: Vec<(P2pNode, Variant)>,
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
@@ -150,7 +150,7 @@ impl JoiningPeer {
 
             self.send_direct_message(
                 dst.connection_info(),
-                DirectVariant::JoinRequest(Box::new(join_request)),
+                Variant::JoinRequest(Box::new(join_request)),
             );
         }
     }
@@ -164,10 +164,10 @@ impl JoiningPeer {
 
         match msg {
             RoutingMessage {
-                content: RoutingVariant::NodeApproval(gen_info),
+                content: Variant::NodeApproval(gen_info),
                 src: Location::PrefixSection(_),
                 dst: Location::Node { .. },
-            } => Ok(self.handle_node_approval(gen_info)),
+            } => Ok(self.handle_node_approval(*gen_info)),
             _ => {
                 debug!(
                     "{} - Unhandled routing message, adding to backlog: {:?}",
@@ -273,12 +273,12 @@ impl Base for JoiningPeer {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectVariant,
+        msg: Variant,
         p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectVariant::BootstrapResponse(BootstrapResponse::Join(info)) => {
+            Variant::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 if info.version() > self.elders_info.version() {
                     if info.prefix().matches(self.name()) {
                         info!(
@@ -298,7 +298,7 @@ impl Base for JoiningPeer {
                     }
                 }
             }
-            DirectVariant::ConnectionResponse | DirectVariant::BootstrapResponse(_) => (),
+            Variant::ConnectionResponse | Variant::BootstrapResponse(_) => (),
             _ => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
