@@ -20,7 +20,7 @@ use std::fmt::{self, Debug, Formatter};
 
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum SecurityMetadata {
+pub enum SrcAuthority {
     Section {
         proof: SectionProofSlice,
         signature: bls::Signature,
@@ -31,7 +31,7 @@ pub enum SecurityMetadata {
     },
 }
 
-impl SecurityMetadata {
+impl SrcAuthority {
     pub fn verify<'a, I>(
         &'a self,
         content: &RoutingMessage,
@@ -80,7 +80,7 @@ impl SecurityMetadata {
     }
 }
 
-impl Debug for SecurityMetadata {
+impl Debug for SrcAuthority {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
             Self::Section { proof, .. } => write!(

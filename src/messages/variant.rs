@@ -112,4 +112,3 @@ impl MemberKnowledge {
         self.parsec_version = self.parsec_version.max(other.parsec_version);
     }
 }
-

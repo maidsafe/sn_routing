@@ -8,14 +8,14 @@
 
 mod accumulating_message;
 mod direct;
-mod security_metadata;
+mod src_authority;
 mod variant;
 mod with_bytes;
 
 pub use self::{
     accumulating_message::AccumulatingMessage,
     direct::SignedDirectMessage,
-    security_metadata::SecurityMetadata,
+    src_authority::SrcAuthority,
     variant::{BootstrapResponse, JoinRequest, MemberKnowledge, Variant},
     with_bytes::{HopMessageWithBytes, MessageWithBytes},
 };
@@ -64,8 +64,8 @@ pub struct PartialSignedRoutingMessage {
 pub struct SignedRoutingMessage {
     /// A request or response type message.
     content: RoutingMessage,
-    /// Optional metadata for verifying the sender
-    security_metadata: SecurityMetadata,
+    /// Source authority.
+    src_authority: SrcAuthority,
 }
 
 impl Serialize for SignedRoutingMessage {
@@ -74,7 +74,7 @@ impl Serialize for SignedRoutingMessage {
             &self.content.dst,
             &self.content.src,
             &self.content.content,
-            &self.security_metadata,
+            &self.src_authority,
         )
             .serialize(serialiser)
     }
@@ -82,10 +82,10 @@ impl Serialize for SignedRoutingMessage {
 
 impl<'de> Deserialize<'de> for SignedRoutingMessage {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> std::result::Result<Self, D::Error> {
-        let (dst, src, content, security_metadata) = Deserialize::deserialize(deserialiser)?;
+        let (dst, src, content, src_authority) = Deserialize::deserialize(deserialiser)?;
         Ok(Self {
             content: RoutingMessage { src, dst, content },
-            security_metadata,
+            src_authority,
         })
     }
 }
@@ -93,24 +93,24 @@ impl<'de> Deserialize<'de> for SignedRoutingMessage {
 impl SignedRoutingMessage {
     /// Creates a `SignedRoutingMessage` security metadata from a single source
     pub fn single_source(content: RoutingMessage, full_id: &FullId) -> Result<Self> {
-        let security_metadata = SecurityMetadata::Node {
+        let src_authority = SrcAuthority::Node {
             public_id: *full_id.public_id(),
             signature: full_id.sign(&serialize(&content)?),
         };
 
         Ok(Self {
             content,
-            security_metadata,
+            src_authority,
         })
     }
 
     /// Creates a `SignedRoutingMessage` from content and security metadata.
     /// Note: this function does not verify the metadata matches the content. Need to call
     /// `check_integrity` for that.
-    pub fn from_parts(content: RoutingMessage, security_metadata: SecurityMetadata) -> Self {
+    pub fn from_parts(content: RoutingMessage, src_authority: SrcAuthority) -> Self {
         Self {
             content,
-            security_metadata,
+            src_authority,
         }
     }
 
@@ -119,18 +119,17 @@ impl SignedRoutingMessage {
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
-        self.security_metadata
-            .verify(&self.content, their_key_infos)
+        self.src_authority.verify(&self.content, their_key_infos)
     }
 
     /// Returns the security metadata validating the message.
     pub fn source_section_key_info(&self) -> Option<&SectionKeyInfo> {
-        self.security_metadata.last_new_key_info()
+        self.src_authority.last_new_key_info()
     }
 
     /// Returns the content and the security metadata.
-    pub fn into_parts(self) -> (RoutingMessage, SecurityMetadata) {
-        (self.content, self.security_metadata)
+    pub fn into_parts(self) -> (RoutingMessage, SrcAuthority) {
+        (self.content, self.src_authority)
     }
 
     /// The routing message that was signed.
@@ -158,8 +157,8 @@ impl Debug for SignedRoutingMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "SignedRoutingMessage {{ content: {:?}, security_metadata: {:?} }}",
-            self.content, self.security_metadata
+            "SignedRoutingMessage {{ content: {:?}, src_authority: {:?} }}",
+            self.content, self.src_authority
         )
     }
 }

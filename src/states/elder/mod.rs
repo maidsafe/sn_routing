@@ -27,8 +27,7 @@ use crate::{
     location::Location,
     messages::{
         AccumulatingMessage, BootstrapResponse, HopMessageWithBytes, JoinRequest, MemberKnowledge,
-        QueuedMessage, RoutingMessage, SecurityMetadata, SignedRoutingMessage, Variant,
-        VerifyStatus,
+        QueuedMessage, RoutingMessage, SignedRoutingMessage, SrcAuthority, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -785,7 +784,7 @@ impl Elder {
     ) -> Result<Transition, RoutingError> {
         use crate::messages::Variant::*;
 
-        let (msg, security_metadata) = signed_msg.into_parts();
+        let (msg, src_authority) = signed_msg.into_parts();
 
         match msg.content {
             UserMessage { .. } => (),
@@ -798,7 +797,7 @@ impl Elder {
                 src @ Location::Section(_),
                 dst @ Location::PrefixSection(_),
             ) => {
-                self.handle_neighbour_info(elders_info, src, dst, security_metadata)?;
+                self.handle_neighbour_info(elders_info, src, dst, src_authority)?;
                 Ok(Transition::Stay)
             }
             (UserMessage(content), src, dst) => {
@@ -824,7 +823,7 @@ impl Elder {
                 self.msg_backlog.push(
                     SignedRoutingMessage::from_parts(
                         RoutingMessage { content, src, dst },
-                        security_metadata,
+                        src_authority,
                     )
                     .into_queued(),
                 );
@@ -1070,7 +1069,7 @@ impl Elder {
         elders_info: EldersInfo,
         src: Location,
         dst: Location,
-        security_metadata: SecurityMetadata,
+        src_authority: SrcAuthority,
     ) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
             let _ = self
@@ -1086,7 +1085,7 @@ impl Elder {
                             dst,
                             content: Variant::NeighbourInfo(elders_info.clone()),
                         },
-                        security_metadata,
+                        src_authority,
                     )
                 });
 
