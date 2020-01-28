@@ -15,9 +15,10 @@ use self::security_metadata::{
     FullSecurityMetadata, PartialSecurityMetadata, SingleSrcSecurityMetadata,
 };
 pub use self::{
-    direct::{BootstrapResponse, DirectVariant, JoinRequest, MemberKnowledge, SignedDirectMessage},
+    direct::SignedDirectMessage,
     security_metadata::SecurityMetadata,
     variant::RoutingVariant,
+    variant::{BootstrapResponse, DirectVariant, JoinRequest, MemberKnowledge},
     with_bytes::{HopMessageWithBytes, MessageWithBytes},
 };
 use crate::{
