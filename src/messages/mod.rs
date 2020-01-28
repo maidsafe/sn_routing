@@ -6,6 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod content;
 mod direct;
 mod security_metadata;
 mod with_bytes;
@@ -14,17 +15,17 @@ use self::security_metadata::{
     FullSecurityMetadata, PartialSecurityMetadata, SingleSrcSecurityMetadata,
 };
 pub use self::{
+    content::MessageContent,
     direct::{BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage},
     security_metadata::SecurityMetadata,
     with_bytes::{HopMessageWithBytes, MessageWithBytes},
 };
 use crate::{
-    chain::{EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
+    chain::{SectionKeyInfo, SectionKeyShare, SectionProofSlice},
     crypto::{self, Digest256},
     error::{Result, RoutingError},
     id::FullId,
     location::Location,
-    relocation::RelocateDetails,
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
@@ -318,32 +319,6 @@ impl RoutingMessage {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-/// Content
-pub enum MessageContent {
-    /// Inform neighbours about our new section.
-    NeighbourInfo(EldersInfo),
-    /// User-facing message
-    UserMessage(Vec<u8>),
-    /// Approves the joining node as a routing node.
-    ///
-    /// Sent from Group Y to the joining node.
-    NodeApproval(GenesisPfxInfo),
-    /// Acknowledgement of a consensused section info.
-    AckMessage {
-        /// The prefix of our section when we acknowledge their EldersInfo of version ack_version.
-        src_prefix: Prefix<XorName>,
-        /// The version acknowledged.
-        ack_version: u64,
-    },
-    /// Update sent to Adults and Infants by Elders
-    GenesisUpdate(GenesisPfxInfo),
-    /// Send to a node being relocated from its own section.
-    Relocate(Box<RelocateDetails>),
-}
-
 impl Debug for SignedRoutingMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
@@ -351,23 +326,6 @@ impl Debug for SignedRoutingMessage {
             "SignedRoutingMessage {{ content: {:?}, security_metadata: {:?} }}",
             self.content, self.security_metadata
         )
-    }
-}
-
-impl Debug for MessageContent {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        use self::MessageContent::*;
-        match self {
-            NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
-            UserMessage(content) => write!(formatter, "UserMessage({:?})", content,),
-            NodeApproval(gen_info) => write!(formatter, "NodeApproval({:?})", gen_info),
-            AckMessage {
-                src_prefix,
-                ack_version,
-            } => write!(formatter, "AckMessage({:?}, {})", src_prefix, ack_version),
-            GenesisUpdate(info) => write!(formatter, "GenesisUpdate({:?})", info),
-            Relocate(payload) => write!(formatter, "Relocate({:?})", payload),
-        }
     }
 }
 
