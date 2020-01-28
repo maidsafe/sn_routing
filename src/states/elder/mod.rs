@@ -24,7 +24,7 @@ use crate::{
     error::RoutingError,
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     messages::{
         AccumulatingMessage, BootstrapResponse, HopMessageWithBytes, JoinRequest, MemberKnowledge,
         QueuedMessage, RoutingMessage, SignedRoutingMessage, SrcAuthority, Variant, VerifyStatus,
@@ -329,7 +329,7 @@ impl Elder {
 
     fn handle_routing_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
         while let Some(msg) = self.routing_msg_queue.pop_front() {
-            if self.in_location(&msg.routing_message().dst) {
+            if self.in_dst_location(&msg.routing_message().dst) {
                 match self.dispatch_routing_message(msg, outbox) {
                     Ok(Transition::Stay) => (),
                     Ok(transition) => return transition,
@@ -603,8 +603,8 @@ impl Elder {
 
     fn send_neighbour_infos(&mut self) {
         self.chain.other_prefixes().iter().for_each(|pfx| {
-            let src = Location::Section(self.our_prefix().name());
-            let dst = Location::PrefixSection(*pfx);
+            let src = SrcLocation::Section(self.our_prefix().name());
+            let dst = DstLocation::PrefixSection(*pfx);
             let content = Variant::NeighbourInfo(self.chain.our_info().clone());
 
             if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }, None)
@@ -632,14 +632,14 @@ impl Elder {
     }
 
     fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        let src = Location::PrefixSection(*self.our_prefix());
+        let src = SrcLocation::PrefixSection(*self.our_prefix());
         self.chain
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
                 let msg = RoutingMessage {
                     src,
-                    dst: Location::Node(*recipient.name()),
+                    dst: DstLocation::Node(*recipient.name()),
                     content: Variant::GenesisUpdate(Box::new(self.gen_pfx_info.clone())),
                 };
 
@@ -707,7 +707,7 @@ impl Elder {
             msg.full_message_crypto_hash()
         );
 
-        let in_location = self.in_location(msg.message_dst());
+        let in_location = self.in_dst_location(msg.message_dst());
         if !in_location || msg.message_dst().is_multiple() {
             // Relay closer to the destination or broadcast to the rest of our section.
             if let Err(error) = self.send_signed_message(&msg) {
@@ -746,7 +746,7 @@ impl Elder {
             signed_msg.routing_message()
         );
 
-        if self.in_location(&signed_msg.routing_message().dst) {
+        if self.in_dst_location(&signed_msg.routing_message().dst) {
             if !self
                 .verify_signed_message(&signed_msg)
                 .map(|trusted| trusted)
@@ -794,8 +794,8 @@ impl Elder {
         match (msg.content, msg.src, msg.dst) {
             (
                 NeighbourInfo(elders_info),
-                src @ Location::Section(_),
-                dst @ Location::PrefixSection(_),
+                src @ SrcLocation::Section(_),
+                dst @ DstLocation::PrefixSection(_),
             ) => {
                 self.handle_neighbour_info(elders_info, src, dst, src_authority)?;
                 Ok(Transition::Stay)
@@ -809,8 +809,8 @@ impl Elder {
                     src_prefix,
                     ack_version,
                 },
-                Location::Section(src),
-                Location::Section(dst),
+                SrcLocation::Section(src),
+                DstLocation::Section(dst),
             ) => {
                 self.handle_ack_message(src_prefix, ack_version, src, dst)?;
                 Ok(Transition::Stay)
@@ -883,7 +883,7 @@ impl Elder {
         );
 
         let pub_id = *p2p_node.public_id();
-        let dst = Location::Node(*pub_id.name());
+        let dst = DstLocation::Node(*pub_id.name());
 
         // Make sure we are connected to the candidate
         if !self.peer_map().has(p2p_node.peer_addr()) {
@@ -904,7 +904,7 @@ impl Elder {
             parsec_version: self.gen_pfx_info.parsec_version,
         };
 
-        let src = Location::PrefixSection(*trimmed_info.first_info.prefix());
+        let src = SrcLocation::PrefixSection(*trimmed_info.first_info.prefix());
         let content = Variant::NodeApproval(Box::new(trimmed_info));
 
         if let Err(error) =
@@ -1067,8 +1067,8 @@ impl Elder {
     fn handle_neighbour_info(
         &mut self,
         elders_info: EldersInfo,
-        src: Location,
-        dst: Location,
+        src: SrcLocation,
+        dst: DstLocation,
         src_authority: SrcAuthority,
     ) -> Result<(), RoutingError> {
         if self.chain.is_new_neighbour(&elders_info) {
@@ -1155,7 +1155,7 @@ impl Elder {
         routing_msg: RoutingMessage,
         node_knowledge_override: Option<u64>,
     ) -> Result<(), RoutingError> {
-        if !self.in_location(&routing_msg.src) {
+        if !self.in_src_location(&routing_msg.src) {
             log_or_panic!(
                 LogLevel::Error,
                 "{} Not part of the source location. Not sending message {:?}.",
@@ -1169,7 +1169,7 @@ impl Elder {
         if !routing_msg.src.is_multiple() {
             let msg = SignedRoutingMessage::single_source(routing_msg, &self.full_id)?;
             let msg = HopMessageWithBytes::new(msg, &self.log_ident())?;
-            if self.in_location(msg.message_dst()) {
+            if self.in_dst_location(msg.message_dst()) {
                 self.handle_signed_message(msg)?;
             } else {
                 self.send_signed_message(&msg)?;
@@ -1187,7 +1187,7 @@ impl Elder {
             if target == *self.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
                     let msg = HopMessageWithBytes::new(msg, &self.log_ident())?;
-                    if self.in_location(msg.message_dst()) {
+                    if self.in_dst_location(msg.message_dst()) {
                         self.handle_signed_message(msg)?;
                     } else {
                         self.send_signed_message(&msg)?;
@@ -1223,7 +1223,7 @@ impl Elder {
 
         // If the message is to a single node and we have the connection info for this node, don't
         // go through the routing table
-        let single_target = if let Location::Node(node_name) = dst {
+        let single_target = if let DstLocation::Node(node_name) = dst {
             self.chain.get_p2p_node(node_name)
         } else {
             None
@@ -1269,22 +1269,22 @@ impl Elder {
     /// Returns the set of peers that are responsible for collecting signatures to verify a message;
     /// this may contain us or only other nodes. If our signature is not required, this returns
     /// `None`.
-    fn get_signature_targets(&self, src: &Location) -> Option<BTreeSet<XorName>> {
+    fn get_signature_targets(&self, src: &SrcLocation) -> Option<BTreeSet<XorName>> {
         let list: Vec<XorName> = match *src {
-            Location::Section(_) => self
+            SrcLocation::Section(_) => self
                 .chain
                 .our_elders()
                 .map(|p2p_node| p2p_node.name())
                 .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            Location::PrefixSection(pfx) => self
+            SrcLocation::PrefixSection(pfx) => self
                 .chain
                 .all_sections()
                 .flat_map(|(_, si)| si.member_names())
                 .filter(|name| pfx.matches(name))
                 .copied()
                 .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            Location::Node(_) => {
+            SrcLocation::Node(_) => {
                 let mut result = BTreeSet::new();
                 let _ = result.insert(*self.name());
                 return Some(result);
@@ -1301,7 +1301,7 @@ impl Elder {
 
     /// Returns a list of target IDs for a message sent via route.
     /// Name in exclude will be excluded from the result.
-    fn get_targets(&self, dst: &Location) -> Result<(Vec<P2pNode>, usize), RoutingError> {
+    fn get_targets(&self, dst: &DstLocation) -> Result<(Vec<P2pNode>, usize), RoutingError> {
         let (targets, dg_size) = self.chain.targets(dst)?;
         Ok((targets.into_iter().cloned().collect(), dg_size))
     }
@@ -1340,6 +1340,10 @@ impl Elder {
 
         AccumulatingMessage::new(msg, secret_key, pk_set, proof)
     }
+
+    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
+        self.chain.in_src_location(src)
+    }
 }
 
 impl Base for Elder {
@@ -1355,8 +1359,8 @@ impl Base for Elder {
         &self.full_id
     }
 
-    fn in_location(&self, auth: &Location) -> bool {
-        self.chain.in_location(auth)
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        self.chain.in_dst_location(dst)
     }
 
     fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
@@ -1411,8 +1415,8 @@ impl Base for Elder {
 
     fn handle_send_message(
         &mut self,
-        src: Location,
-        dst: Location,
+        src: SrcLocation,
+        dst: DstLocation,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         self.send_routing_message(
@@ -1663,11 +1667,11 @@ impl Approved for Elder {
         let knowledge_index = cmp::min(
             node_knowledge,
             self.chain
-                .knowledge_index(&Location::Section(details.destination), None),
+                .knowledge_index(&DstLocation::Section(details.destination), None),
         );
 
-        let src = Location::Section(self.our_prefix().name());
-        let dst = Location::Node(*details.pub_id.name());
+        let src = SrcLocation::Section(self.our_prefix().name());
+        let dst = DstLocation::Node(*details.pub_id.name());
         let content = Variant::Relocate(Box::new(details));
 
         self.send_routing_message(RoutingMessage { src, dst, content }, Some(knowledge_index))
@@ -1801,8 +1805,8 @@ impl Approved for Elder {
         &mut self,
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError> {
-        let src = Location::Section(self.our_prefix().name());
-        let dst = Location::Section(ack_payload.ack_prefix.name());
+        let src = SrcLocation::Section(self.our_prefix().name());
+        let dst = DstLocation::Section(ack_payload.ack_prefix.name());
         let content = Variant::AckMessage {
             src_prefix: *self.our_prefix(),
             ack_version: ack_payload.ack_version,

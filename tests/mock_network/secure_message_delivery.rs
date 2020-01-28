@@ -9,8 +9,9 @@
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
-    section_proof_slice_for_test, AccumulatingMessage, ConnectionInfo, FullId, Location, Message,
-    NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare, Variant, XorName,
+    section_proof_slice_for_test, AccumulatingMessage, ConnectionInfo, DstLocation, FullId,
+    Message, NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare, SrcLocation, Variant,
+    XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -75,8 +76,8 @@ fn message_with_invalid_security(fail_type: FailType) {
     let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001));
 
     let routing_msg = RoutingMessage {
-        src: Location::Section(our_prefix.name()),
-        dst: Location::PrefixSection(their_prefix),
+        src: SrcLocation::Section(our_prefix.name()),
+        dst: DstLocation::PrefixSection(their_prefix),
         content: Variant::NeighbourInfo(new_info),
     };
 
@@ -84,7 +85,7 @@ fn message_with_invalid_security(fail_type: FailType) {
         let proof = match fail_type {
             FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos]
                 .inner
-                .prove(&Location::PrefixSection(their_prefix))),
+                .prove(&DstLocation::PrefixSection(their_prefix))),
             FailType::UntrustedProofValidSig => {
                 let invalid_prefix = our_prefix;
                 section_proof_slice_for_test(0, invalid_prefix, bls_keys.public_keys().public_key())

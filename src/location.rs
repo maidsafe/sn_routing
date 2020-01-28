@@ -7,15 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::xor_space::{Prefix, XorName};
-use std::fmt::{self, Debug, Formatter};
 
-/// A `Location` is a source or destination of a message.
-///
-/// `Node` is single-node location (i.e. no verification of messages from
-/// additional sources needed). It's name is the `Authority::key` other
-/// locations require agreement by a quorum of `Elders`.
-#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
-pub enum Location {
+/// Source location
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash, Debug)]
+pub enum SrcLocation {
     /// A single section whose prefix matches the given name
     Section(XorName),
     /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
@@ -25,12 +20,12 @@ pub enum Location {
     Node(XorName),
 }
 
-impl Location {
-    /// Returns `true` if the location consists of multiple nodes, otherwise `false`.
-    pub fn is_multiple(&self) -> bool {
+impl SrcLocation {
+    /// Returns the name of location.
+    pub fn name(&self) -> XorName {
         match self {
-            Self::Section(_) | Self::PrefixSection(_) => true,
-            Self::Node(_) => false,
+            Self::Section(name) | Self::Node(name) => *name,
+            Self::PrefixSection(prefix) => prefix.lower_bound(),
         }
     }
 
@@ -42,6 +37,46 @@ impl Location {
         }
     }
 
+    /// Returns `true` if the location consists of multiple nodes, otherwise `false`.
+    pub fn is_multiple(&self) -> bool {
+        !self.is_single()
+    }
+
+    /// provide the name mathching a single node's public key
+    pub(crate) fn single_signing_name(&self) -> Option<&XorName> {
+        match *self {
+            Self::Section(_) | Self::PrefixSection(_) => None,
+            Self::Node(ref name) => Some(name),
+        }
+    }
+}
+
+/// Destination location
+#[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash, Debug)]
+pub enum DstLocation {
+    /// A single section whose prefix matches the given name
+    Section(XorName),
+    /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
+    /// the routing table or only a part of a `Section`
+    PrefixSection(Prefix<XorName>),
+    /// A single node
+    Node(XorName),
+}
+
+impl DstLocation {
+    /// Returns `true` if the location is a single node, and `false` otherwise.
+    pub fn is_single(&self) -> bool {
+        match self {
+            Self::Section(_) | Self::PrefixSection(_) => false,
+            Self::Node(_) => true,
+        }
+    }
+
+    /// Returns `true` if the location consists of multiple nodes, otherwise `false`.
+    pub fn is_multiple(&self) -> bool {
+        !self.is_single()
+    }
+
     /// Returns the name of location.
     pub fn name(&self) -> XorName {
         match self {
@@ -51,32 +86,10 @@ impl Location {
     }
 
     /// Returns if the location is compatible with that prefix
-    pub fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
+    pub(crate) fn is_compatible(&self, other_prefix: &Prefix<XorName>) -> bool {
         match self {
             Self::Section(name) | Self::Node(name) => other_prefix.matches(name),
             Self::PrefixSection(prefix) => other_prefix.is_compatible(prefix),
-        }
-    }
-}
-
-impl Location {
-    /// provide the name mathching a single node's public key
-    pub fn single_signing_name(&self) -> Option<&XorName> {
-        match *self {
-            Self::Section(_) | Self::PrefixSection(_) => None,
-            Self::Node(ref name) => Some(name),
-        }
-    }
-}
-
-impl Debug for Location {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            Self::Section(ref name) => write!(formatter, "Section(name: {})", name),
-            Self::PrefixSection(ref prefix) => {
-                write!(formatter, "PrefixSection(prefix: {:?})", prefix)
-            }
-            Self::Node(ref name) => write!(formatter, "Node(name: {})", name),
         }
     }
 }

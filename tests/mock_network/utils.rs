@@ -16,8 +16,8 @@ use rand::{
 use routing::{
     event::{Connected, Event},
     mock::Environment,
-    test_consts, Builder, EventStream, FullId, Location, NetworkConfig, Node, PausedState, Prefix,
-    PublicId, RelocationOverrides, XorName, Xorable,
+    test_consts, Builder, DstLocation, EventStream, FullId, NetworkConfig, Node, PausedState,
+    Prefix, PublicId, RelocationOverrides, SrcLocation, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -125,8 +125,12 @@ impl TestNode {
         unwrap!(self.inner.our_prefix(), "{}", self.inner)
     }
 
-    pub fn is_recipient(&self, dst: &Location) -> bool {
-        self.inner.in_location(dst)
+    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
+        self.inner.in_src_location(src)
+    }
+
+    pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        self.inner.in_dst_location(dst)
     }
 
     pub fn env(&self) -> &Environment {

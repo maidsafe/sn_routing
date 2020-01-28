@@ -9,7 +9,8 @@
 use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_all};
 use rand::Rng;
 use routing::{
-    event::Event, mock::Environment, quorum_count, EventStream, Location, NetworkParams,
+    event::Event, mock::Environment, quorum_count, DstLocation, EventStream, NetworkParams,
+    SrcLocation,
 };
 
 #[test]
@@ -25,8 +26,8 @@ fn send() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = Location::Node(nodes[sender_index].name());
-    let dst = Location::Section(rng.gen());
+    let src = SrcLocation::Node(nodes[sender_index].name());
+    let dst = DstLocation::Section(rng.gen());
     let content = gen_vec(&mut rng, 1024);
     assert!(nodes[sender_index]
         .inner
@@ -38,7 +39,7 @@ fn send() {
     let mut message_received_count = 0;
     for node in nodes
         .iter_mut()
-        .filter(|n| n.inner.is_elder() && n.is_recipient(&dst))
+        .filter(|n| n.inner.is_elder() && n.in_dst_location(&dst))
     {
         loop {
             match node.try_next_ev() {
@@ -73,8 +74,8 @@ fn send_and_receive() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = Location::Node(nodes[sender_index].name());
-    let dst = Location::Section(rng.gen());
+    let src = SrcLocation::Node(nodes[sender_index].name());
+    let dst = DstLocation::Section(rng.gen());
 
     let req_content = gen_vec(&mut rng, 10);
     let res_content = gen_vec(&mut rng, 11);
@@ -90,14 +91,26 @@ fn send_and_receive() {
 
     for node in nodes
         .iter_mut()
-        .filter(|n| n.inner.is_elder() && n.is_recipient(&dst))
+        .filter(|n| n.inner.is_elder() && n.in_dst_location(&dst))
     {
         loop {
             match node.try_next_ev() {
-                Ok(Event::MessageReceived { content, src, dst }) => {
+                Ok(Event::MessageReceived { content, src, .. }) => {
                     request_received_count += 1;
                     if req_content == content {
-                        if let Err(err) = node.inner.send_message(dst, src, res_content.clone()) {
+                        let res_src = match dst {
+                            DstLocation::Section(name) => SrcLocation::Section(name),
+                            _ => panic!("Unexpected dst location: {:?}", dst),
+                        };
+                        let res_dst = match src {
+                            SrcLocation::Node(name) => DstLocation::Node(name),
+                            _ => panic!("Unexpected src location: {:?}", src),
+                        };
+
+                        if let Err(err) =
+                            node.inner
+                                .send_message(res_src, res_dst, res_content.clone())
+                        {
                             trace!("Failed to send message: {:?}", err);
                         }
                         break;

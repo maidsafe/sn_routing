@@ -11,7 +11,7 @@ use super::{
     MemberState, MIN_AGE_COUNTER,
 };
 use crate::{
-    error::RoutingError, id::PublicId, location::Location, relocation::RelocateDetails,
+    error::RoutingError, id::PublicId, location::DstLocation, relocation::RelocateDetails,
     utils::LogIdent, Prefix, XorName,
 };
 use bincode::{deserialize, serialize};
@@ -395,8 +395,8 @@ impl SharedState {
     }
 
     /// Returns the index of the public key in our_history that will be trusted by the target
-    /// Location
-    pub fn proving_index(&self, target: &Location) -> u64 {
+    /// location
+    pub fn proving_index(&self, target: &DstLocation) -> u64 {
         let (prefix, &index) = if let Some(pair) = self
             .their_knowledge
             .iter()
@@ -973,7 +973,7 @@ mod test {
         for (dst_name_prefix_str, expected_index) in expected_proving_indices {
             let dst_name_prefix: Prefix<_> = unwrap!(dst_name_prefix_str.parse());
             let dst_name = dst_name_prefix.substituted_in(rng.gen());
-            let dst = Location::Section(dst_name);
+            let dst = DstLocation::Section(dst_name);
 
             assert_eq!(state.proving_index(&dst), expected_index);
         }

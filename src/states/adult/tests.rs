@@ -7,7 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{super::test_utils, *};
-use crate::{messages::RoutingMessage, parsec::generate_bls_threshold_secret_key, unwrap};
+use crate::{
+    location::{DstLocation, SrcLocation},
+    messages::RoutingMessage,
+    parsec::generate_bls_threshold_secret_key,
+    unwrap,
+};
 use mock_quic_p2p::Network;
 use std::collections::BTreeMap;
 
@@ -60,8 +65,8 @@ impl AdultUnderTest {
 
     fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> HopMessageWithBytes {
         let msg = RoutingMessage {
-            src: Location::PrefixSection(Prefix::default()),
-            dst: Location::Node(*self.adult.name()),
+            src: SrcLocation::PrefixSection(Prefix::default()),
+            dst: DstLocation::Node(*self.adult.name()),
             content: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
         };
 

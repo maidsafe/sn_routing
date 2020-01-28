@@ -150,7 +150,7 @@ mod tests {
     use super::{super::Variant, *};
     use crate::{
         chain::SectionKeyInfo,
-        location::Location,
+        location::{DstLocation, SrcLocation},
         messages::VerifyStatus,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
@@ -269,8 +269,8 @@ mod tests {
         use rand::distributions::Standard;
 
         RoutingMessage {
-            src: Location::Section(rng.gen()),
-            dst: Location::Section(rng.gen()),
+            src: SrcLocation::Section(rng.gen()),
+            dst: DstLocation::Section(rng.gen()),
             content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }

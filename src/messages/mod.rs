@@ -23,7 +23,7 @@ use crate::{
     chain::SectionKeyInfo,
     error::{Result, RoutingError},
     id::{FullId, P2pNode},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
@@ -55,7 +55,7 @@ pub enum PartialMessage {
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Deserialize)]
 pub struct PartialSignedRoutingMessage {
     /// Destination location
-    pub dst: Location,
+    pub dst: DstLocation,
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
@@ -146,9 +146,9 @@ impl SignedRoutingMessage {
 #[derive(Eq, PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct RoutingMessage {
     /// Source location
-    pub src: Location,
+    pub src: SrcLocation,
     /// Destination location
-    pub dst: Location,
+    pub dst: DstLocation,
     /// The message content
     pub content: Variant,
 }

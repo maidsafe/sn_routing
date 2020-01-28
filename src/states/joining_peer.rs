@@ -16,7 +16,7 @@ use crate::{
     error::RoutingError,
     event::{Connected, Event},
     id::{FullId, P2pNode},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     messages::{
         BootstrapResponse, HopMessageWithBytes, JoinRequest, QueuedMessage, RoutingMessage,
         SignedRoutingMessage, Variant, VerifyStatus,
@@ -162,8 +162,8 @@ impl JoiningPeer {
         match msg {
             RoutingMessage {
                 content: Variant::NodeApproval(gen_info),
-                src: Location::PrefixSection(_),
-                dst: Location::Node { .. },
+                src: SrcLocation::PrefixSection(_),
+                dst: DstLocation::Node { .. },
             } => Ok(self.handle_node_approval(*gen_info)),
             _ => {
                 debug!(
@@ -221,7 +221,7 @@ impl Base for JoiningPeer {
         &self.full_id
     }
 
-    fn in_location(&self, dst: &Location) -> bool {
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
         dst.is_single() && dst.name() == *self.full_id.public_id().name()
     }
 
@@ -243,8 +243,8 @@ impl Base for JoiningPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Location,
-        _: Location,
+        _: SrcLocation,
+        _: DstLocation,
         _: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not joined.", self);
@@ -331,7 +331,7 @@ impl Base for JoiningPeer {
         );
 
         let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
-        if self.in_location(&signed_msg.routing_message().dst) {
+        if self.in_dst_location(&signed_msg.routing_message().dst) {
             self.verify_signed_message(&signed_msg)?;
             self.dispatch_routing_message(signed_msg, outbox)
         } else {

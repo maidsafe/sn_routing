@@ -166,7 +166,7 @@ mod tests {
             Variant,
         },
         parsec::{Request, Response},
-        rng, unwrap, Location,
+        rng, unwrap, DstLocation, SrcLocation,
     };
     use rand::Rng;
     use serde::Serialize;
@@ -221,8 +221,8 @@ mod tests {
 
         // A hop message never contains a Parsec message.
         let msg = RoutingMessage {
-            src: Location::Section(rand::random()),
-            dst: Location::Section(rand::random()),
+            src: SrcLocation::Section(rand::random()),
+            dst: DstLocation::Section(rand::random()),
             content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
         };
         let msg = unwrap!(SignedRoutingMessage::single_source(msg, &full_id));

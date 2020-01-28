@@ -12,7 +12,7 @@ use super::{
 use crate::{
     crypto::{self, Digest256},
     error::{Result, RoutingError},
-    location::Location,
+    location::DstLocation,
     states::common::{from_network_bytes, partial_from_network_bytes, to_network_bytes},
     utils::LogIdent,
 };
@@ -114,7 +114,7 @@ impl HopMessageWithBytes {
         &self.full_message_crypto_hash
     }
 
-    pub fn message_dst(&self) -> &Location {
+    pub fn message_dst(&self) -> &DstLocation {
         &self.partial_content.dst
     }
 
@@ -138,6 +138,7 @@ mod tests {
     };
     use crate::{
         id::FullId,
+        location::SrcLocation,
         rng::{self, MainRng},
         unwrap,
     };
@@ -178,8 +179,8 @@ mod tests {
         use rand::distributions::Standard;
 
         RoutingMessage {
-            src: Location::Section(rng.gen()),
-            dst: Location::Section(rng.gen()),
+            src: SrcLocation::Section(rng.gen()),
+            dst: DstLocation::Section(rng.gen()),
             content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }

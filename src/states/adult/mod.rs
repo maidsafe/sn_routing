@@ -22,7 +22,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
-    location::Location,
+    location::DstLocation,
     messages::{
         AccumulatingMessage, BootstrapResponse, HopMessageWithBytes, QueuedMessage,
         SignedRoutingMessage, Variant, VerifyStatus,
@@ -404,7 +404,7 @@ impl Adult {
             msg.full_message_crypto_hash()
         );
 
-        if self.in_location(msg.message_dst()) {
+        if self.in_dst_location(msg.message_dst()) {
             let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             match &signed_msg.routing_message().content {
                 Variant::GenesisUpdate(info) => {
@@ -468,8 +468,8 @@ impl Base for Adult {
         &self.full_id
     }
 
-    fn in_location(&self, auth: &Location) -> bool {
-        self.chain.in_location(auth)
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        self.chain.in_dst_location(dst)
     }
 
     fn peer_map(&self) -> &PeerMap {

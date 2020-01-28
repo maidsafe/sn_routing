@@ -74,7 +74,7 @@ mod tests {
     use crate::{
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
         id::{FullId, P2pNode},
-        location::Location,
+        location::{DstLocation, SrcLocation},
         messages::{RoutingMessage, SignedDirectMessage, Variant},
         parsec::generate_bls_threshold_secret_key,
         rng, unwrap, ConnectionInfo, Prefix, XorName,
@@ -96,8 +96,8 @@ mod tests {
             pk_set: &bls::PublicKeySet,
         ) -> Self {
             let content = RoutingMessage {
-                src: Location::Node(rand::random()),
-                dst: Location::Section(rand::random()),
+                src: SrcLocation::Node(rand::random()),
+                dst: DstLocation::Section(rand::random()),
                 content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
             };
 

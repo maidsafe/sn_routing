@@ -12,7 +12,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     messages::{BootstrapResponse, HopMessageWithBytes, Variant},
     network_service::NetworkService,
     outbox::EventBox,
@@ -207,7 +207,7 @@ impl Base for BootstrappingPeer {
         &self.full_id
     }
 
-    fn in_location(&self, _: &Location) -> bool {
+    fn in_dst_location(&self, _: &DstLocation) -> bool {
         false
     }
 
@@ -229,8 +229,8 @@ impl Base for BootstrappingPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Location,
-        _: Location,
+        _: SrcLocation,
+        _: DstLocation,
         _: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not bootstrapped.", self);

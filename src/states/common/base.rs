@@ -12,7 +12,7 @@ use crate::{
     error::RoutingError,
     event::Client,
     id::{FullId, P2pNode, PublicId},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     messages::{
         HopMessageWithBytes, Message, MessageWithBytes, PartialMessage, SignedDirectMessage,
         Variant,
@@ -42,7 +42,7 @@ pub trait Base: Display {
     fn network_service(&self) -> &NetworkService;
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
-    fn in_location(&self, auth: &Location) -> bool;
+    fn in_dst_location(&self, dst: &DstLocation) -> bool;
     fn peer_map(&self) -> &PeerMap;
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
@@ -114,8 +114,8 @@ pub trait Base: Display {
 
     fn handle_send_message(
         &mut self,
-        _src: Location,
-        _dst: Location,
+        _src: SrcLocation,
+        _dst: DstLocation,
         _content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);

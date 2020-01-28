@@ -13,7 +13,7 @@ use crate::{
     event::Event,
     event_stream::{EventStepper, EventStream},
     id::{FullId, P2pNode, PublicId},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::{OurType, Token},
@@ -149,7 +149,7 @@ impl Builder {
 /// A node is a part of the network that can route messages and be a member of a section or group
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
-/// role, and can be any [`Location`](enum.Location.html).
+/// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Node {
     user_event_tx: mpmc::Sender<Event>,
     user_event_rx: mpmc::Receiver<Event>,
@@ -240,8 +240,8 @@ impl Node {
     /// Send a message.
     pub fn send_message(
         &mut self,
-        src: Location,
-        dst: Location,
+        src: SrcLocation,
+        dst: DstLocation,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         // Make sure the state machine has processed any outstanding network events.
@@ -493,13 +493,18 @@ impl Node {
 
     /// Provide a SectionProofSlice that proves the given signature to the section with a given
     /// prefix
-    pub fn prove(&self, target: &Location) -> Option<SectionProofSlice> {
+    pub fn prove(&self, target: &DstLocation) -> Option<SectionProofSlice> {
         self.chain().map(|chain| chain.prove(target, None))
     }
 
     /// Checks whether the given location represents self.
-    pub fn in_location(&self, auth: &Location) -> bool {
-        self.machine.current().in_location(auth)
+    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
+        self.machine.current().in_src_location(src)
+    }
+
+    /// Checks whether the given location represents self.
+    pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        self.machine.current().in_dst_location(dst)
     }
 
     /// Returns the age counter of the given node if it is member of the same section as this node,
