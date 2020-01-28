@@ -7,19 +7,22 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod direct;
+mod security_metadata;
 mod with_bytes;
 
+use self::security_metadata::{
+    FullSecurityMetadata, PartialSecurityMetadata, SingleSrcSecurityMetadata,
+};
 pub use self::{
     direct::{BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage},
+    security_metadata::SecurityMetadata,
     with_bytes::{HopMessageWithBytes, MessageWithBytes},
 };
 use crate::{
-    chain::{
-        EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice, TrustStatus,
-    },
-    crypto::{self, signing::Signature, Digest256},
+    chain::{EldersInfo, GenesisPfxInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
+    crypto::{self, Digest256},
     error::{Result, RoutingError},
-    id::{FullId, PublicId},
+    id::FullId,
     location::Location,
     relocation::RelocateDetails,
     xor_space::{Prefix, XorName},
@@ -52,137 +55,6 @@ pub enum PartialMessage {
     Direct(SignedDirectMessage),
     /// A message sent across the network (in transit)
     Hop(PartialSignedRoutingMessage),
-}
-
-/// Metadata needed for verification of the sender.
-/// Contain shares of the section signature before combining into a BLS signature
-/// and into a FullSecurityMetadata.
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct PartialSecurityMetadata {
-    proof: SectionProofSlice,
-    shares: BTreeSet<(usize, bls::SignatureShare)>,
-    pk_set: bls::PublicKeySet,
-}
-
-impl PartialSecurityMetadata {
-    fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<(usize, bls::SignatureShare)> {
-        let key_set = &self.pk_set;
-        self.shares
-            .iter()
-            .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, &signed_bytes))
-            .map(|(idx, sig)| (*idx, sig.clone()))
-            .collect()
-    }
-}
-
-impl Debug for PartialSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "PartialSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
-            self.proof.blocks_len(),
-            self.proof
-        )
-    }
-}
-
-/// Metadata needed for verification of the sender.
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct FullSecurityMetadata {
-    proof: SectionProofSlice,
-    signature: bls::Signature,
-}
-
-impl FullSecurityMetadata {
-    pub fn last_new_key_info(&self) -> Option<&SectionKeyInfo> {
-        self.proof.last_new_key_info()
-    }
-
-    pub fn verify<'a, I>(
-        &'a self,
-        content: &RoutingMessage,
-        their_key_infos: I,
-    ) -> Result<VerifyStatus, RoutingError>
-    where
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
-    {
-        let public_key = match self.proof.check_trust(their_key_infos) {
-            TrustStatus::Trusted(key) => key,
-            TrustStatus::ProofTooNew => return Ok(VerifyStatus::ProofTooNew),
-            TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
-        };
-
-        let signed_bytes = serialize(content)?;
-        if public_key.verify(&self.signature, &signed_bytes) {
-            Ok(VerifyStatus::Full)
-        } else {
-            Err(RoutingError::FailedSignature)
-        }
-    }
-}
-
-impl Debug for FullSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "FullSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
-            self.proof.blocks_len(),
-            self.proof
-        )
-    }
-}
-
-/// Metadata needed for verification of the single node sender.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct SingleSrcSecurityMetadata {
-    public_id: PublicId,
-    signature: Signature,
-}
-
-impl SingleSrcSecurityMetadata {
-    pub fn verify(&self, content: &RoutingMessage) -> Result<VerifyStatus, RoutingError> {
-        if content.src.single_signing_name() != Some(self.public_id.name()) {
-            // Signature is not from the source node.
-            return Err(RoutingError::InvalidMessage);
-        }
-
-        let signed_bytes = serialize(content)?;
-        if !self.public_id.verify(&signed_bytes, &self.signature) {
-            return Err(RoutingError::FailedSignature);
-        }
-
-        Ok(VerifyStatus::Full)
-    }
-}
-
-impl Debug for SingleSrcSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "SingleSrcSecurityMetadata {{ public_id: {:?}, .. }}",
-            self.public_id
-        )
-    }
-}
-
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum SecurityMetadata {
-    None,
-    Partial(PartialSecurityMetadata),
-    Full(FullSecurityMetadata),
-    Single(SingleSrcSecurityMetadata),
-}
-
-impl Debug for SecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match &self {
-            Self::None => write!(formatter, "None"),
-            Self::Partial(pmd) => write!(formatter, "{:?}", pmd),
-            Self::Full(smd) => write!(formatter, "{:?}", smd),
-            Self::Single(smd) => write!(formatter, "{:?}", smd),
-        }
-    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
