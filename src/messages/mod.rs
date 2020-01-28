@@ -24,7 +24,7 @@ use crate::{
     chain::{SectionKeyInfo, SectionKeyShare, SectionProofSlice},
     crypto::{self, Digest256},
     error::{Result, RoutingError},
-    id::FullId,
+    id::{FullId, P2pNode},
     location::Location,
     xor_space::{Prefix, XorName},
 };
@@ -298,6 +298,10 @@ impl SignedRoutingMessage {
             SecurityMetadata::Single(_) | SecurityMetadata::None => None,
         }
     }
+
+    pub(crate) fn into_queued(self) -> QueuedMessage {
+        QueuedMessage::Hop(self)
+    }
 }
 
 /// A routing message with source and destination locations.
@@ -345,6 +349,11 @@ impl VerifyStatus {
             Self::ProofTooNew => Err(RoutingError::UntrustedMessage),
         }
     }
+}
+
+pub enum QueuedMessage {
+    Hop(SignedRoutingMessage),
+    Direct(P2pNode, Variant),
 }
 
 #[cfg(test)]

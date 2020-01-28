@@ -18,8 +18,8 @@ use crate::{
     id::{FullId, P2pNode},
     location::Location,
     messages::{
-        BootstrapResponse, HopMessageWithBytes, JoinRequest, RoutingMessage, SignedRoutingMessage,
-        Variant, VerifyStatus,
+        BootstrapResponse, HopMessageWithBytes, JoinRequest, QueuedMessage, RoutingMessage,
+        SignedRoutingMessage, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -55,8 +55,7 @@ pub struct JoiningPeerDetails {
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
-    routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, Variant)>,
+    msg_backlog: Vec<QueuedMessage>,
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
@@ -78,8 +77,7 @@ impl JoiningPeer {
         let mut joining_peer = Self {
             network_service: details.network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
-            routing_msg_backlog: vec![],
-            direct_msg_backlog: vec![],
+            msg_backlog: vec![],
             full_id: details.full_id,
             timer: details.timer,
             rng: details.rng,
@@ -102,8 +100,7 @@ impl JoiningPeer {
             event_backlog: vec![],
             full_id: self.full_id,
             gen_pfx_info,
-            routing_msg_backlog: self.routing_msg_backlog,
-            direct_msg_backlog: self.direct_msg_backlog,
+            msg_backlog: self.msg_backlog,
             routing_msg_filter: self.routing_msg_filter,
             sig_accumulator: Default::default(),
             timer: self.timer,
@@ -173,8 +170,8 @@ impl JoiningPeer {
                     "{} - Unhandled routing message, adding to backlog: {:?}",
                     self, msg
                 );
-                self.routing_msg_backlog
-                    .push(SignedRoutingMessage::from_parts(msg, metadata));
+                self.msg_backlog
+                    .push(SignedRoutingMessage::from_parts(msg, metadata).into_queued());
                 Ok(Transition::Stay)
             }
         }
@@ -306,7 +303,7 @@ impl Base for JoiningPeer {
                     p2p_node.public_id(),
                     msg
                 );
-                self.direct_msg_backlog.push((p2p_node, msg));
+                self.msg_backlog.push(QueuedMessage::Direct(p2p_node, msg));
             }
         }
 
@@ -338,7 +335,7 @@ impl Base for JoiningPeer {
             self.verify_signed_message(&signed_msg)?;
             self.dispatch_routing_message(signed_msg, outbox)
         } else {
-            self.routing_msg_backlog.push(signed_msg);
+            self.msg_backlog.push(signed_msg.into_queued());
             Ok(Transition::Stay)
         }
     }

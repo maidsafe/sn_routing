@@ -26,8 +26,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, HopMessageWithBytes, JoinRequest, MemberKnowledge, RoutingMessage,
-        SecurityMetadata, SignedRoutingMessage, Variant, VerifyStatus,
+        BootstrapResponse, HopMessageWithBytes, JoinRequest, MemberKnowledge, QueuedMessage,
+        RoutingMessage, SecurityMetadata, SignedRoutingMessage, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -91,8 +91,7 @@ pub struct ElderDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub routing_msg_queue: VecDeque<SignedRoutingMessage>,
-    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, Variant)>,
+    pub msg_backlog: Vec<QueuedMessage>,
     pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
     pub routing_msg_filter: RoutingMessageFilter,
@@ -106,8 +105,7 @@ pub struct Elder {
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
     // although they may wrap a message which needs forwarding.
     routing_msg_queue: VecDeque<SignedRoutingMessage>,
-    routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, Variant)>,
+    msg_backlog: Vec<QueuedMessage>,
     routing_msg_filter: RoutingMessageFilter,
     sig_accumulator: SignatureAccumulator,
     timer: Timer,
@@ -163,8 +161,7 @@ impl Elder {
             full_id,
             gen_pfx_info,
             routing_msg_queue: Default::default(),
-            routing_msg_backlog: Default::default(),
-            direct_msg_backlog: Default::default(),
+            msg_backlog: Default::default(),
             sig_accumulator: Default::default(),
             parsec_map,
             routing_msg_filter: RoutingMessageFilter::new(),
@@ -201,8 +198,7 @@ impl Elder {
         let details = AdultDetails {
             network_service: self.network_service,
             event_backlog: Vec::new(),
-            direct_msg_backlog: self.direct_msg_backlog,
-            routing_msg_backlog: self.routing_msg_backlog,
+            msg_backlog: self.msg_backlog,
             full_id: self.full_id,
             gen_pfx_info,
             sig_accumulator: self.sig_accumulator,
@@ -221,8 +217,7 @@ impl Elder {
             gen_pfx_info: self.gen_pfx_info,
             routing_msg_filter: self.routing_msg_filter,
             routing_msg_queue: self.routing_msg_queue,
-            routing_msg_backlog: self.routing_msg_backlog,
-            direct_msg_backlog: self.direct_msg_backlog,
+            msg_backlog: self.msg_backlog,
             network_service: self.network_service,
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
@@ -238,8 +233,7 @@ impl Elder {
             full_id: state.full_id,
             gen_pfx_info: state.gen_pfx_info,
             routing_msg_queue: state.routing_msg_queue,
-            routing_msg_backlog: state.routing_msg_backlog,
-            direct_msg_backlog: state.direct_msg_backlog,
+            msg_backlog: state.msg_backlog,
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
             routing_msg_filter: state.routing_msg_filter,
@@ -268,8 +262,7 @@ impl Elder {
             network_service: details.network_service,
             full_id: details.full_id.clone(),
             routing_msg_queue: details.routing_msg_queue,
-            routing_msg_backlog: details.routing_msg_backlog,
-            direct_msg_backlog: details.direct_msg_backlog,
+            msg_backlog: details.msg_backlog,
             routing_msg_filter: details.routing_msg_filter,
             sig_accumulator: details.sig_accumulator,
             timer,
@@ -827,11 +820,13 @@ impl Elder {
                     "{} Unhandled routing message {:?} from {:?} to {:?}, adding to backlog",
                     self, content, src, dst
                 );
-                self.routing_msg_backlog
-                    .push(SignedRoutingMessage::from_parts(
+                self.msg_backlog.push(
+                    SignedRoutingMessage::from_parts(
                         RoutingMessage { content, src, dst },
                         security_metadata,
-                    ));
+                    )
+                    .into_queued(),
+                );
                 Ok(Transition::Stay)
             }
             (content, src, dst) => {
@@ -1392,22 +1387,23 @@ impl Base for Elder {
         debug!("{} - State change to Elder finished.", self);
 
         let mut transition = Transition::Stay;
-        for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
+        for msg in mem::take(&mut self.msg_backlog) {
             if let Transition::Stay = &transition {
-                match self.handle_direct_message(msg, pub_id, outbox) {
+                let result = match msg {
+                    QueuedMessage::Hop(msg) => self
+                        .handle_backloged_filtered_signed_message(msg)
+                        .map(|_| Transition::Stay),
+                    QueuedMessage::Direct(sender, msg) => {
+                        self.handle_direct_message(msg, sender, outbox)
+                    }
+                };
+
+                match result {
                     Ok(new_transition) => transition = new_transition,
                     Err(err) => debug!("{} - {:?}", self, err),
                 }
             } else {
-                self.direct_msg_backlog.push((pub_id, msg));
-            }
-        }
-
-        if let Transition::Stay = &transition {
-            for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
-                if let Err(err) = self.handle_backloged_filtered_signed_message(msg) {
-                    debug!("{} - {:?}", self, err);
-                }
+                self.msg_backlog.push(msg);
             }
         }
 
