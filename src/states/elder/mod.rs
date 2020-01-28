@@ -26,8 +26,9 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, HopMessageWithBytes, JoinRequest, MemberKnowledge, QueuedMessage,
-        RoutingMessage, SecurityMetadata, SignedRoutingMessage, Variant, VerifyStatus,
+        AccumulatingMessage, BootstrapResponse, HopMessageWithBytes, JoinRequest, MemberKnowledge,
+        QueuedMessage, RoutingMessage, SecurityMetadata, SignedRoutingMessage, Variant,
+        VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -631,7 +632,7 @@ impl Elder {
         }
     }
 
-    fn create_genesis_updates(&self) -> Vec<(P2pNode, SignedRoutingMessage)> {
+    fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
         let src = Location::PrefixSection(*self.our_prefix());
         self.chain
             .adults_and_infants_p2p_nodes()
@@ -649,7 +650,7 @@ impl Elder {
                     .map(|knowledge| knowledge.elders_version)
                     .unwrap_or(0);
 
-                match self.to_signed_routing_message(msg, Some(version)) {
+                match self.to_accumulating_message(msg, Some(version)) {
                     Ok(msg) => Some((recipient, msg)),
                     Err(error) => {
                         error!("{} - Failed to create signed message: {:?}", self, error);
@@ -664,7 +665,7 @@ impl Elder {
     /// message, handles it.
     fn handle_message_signature(
         &mut self,
-        msg: SignedRoutingMessage,
+        msg: AccumulatingMessage,
         pub_id: PublicId,
     ) -> Result<(), RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {
@@ -1177,14 +1178,15 @@ impl Elder {
             return Ok(());
         }
 
-        let signed_msg = self.to_signed_routing_message(routing_msg, node_knowledge_override)?;
+        let accumulating_msg =
+            self.to_accumulating_message(routing_msg, node_knowledge_override)?;
 
         for target in Iterator::flatten(
-            self.get_signature_targets(&signed_msg.routing_message().src)
+            self.get_signature_targets(&accumulating_msg.content.src)
                 .into_iter(),
         ) {
             if target == *self.name() {
-                if let Some(msg) = self.sig_accumulator.add_proof(signed_msg.clone()) {
+                if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
                     let msg = HopMessageWithBytes::new(msg, &self.log_ident())?;
                     if self.in_location(msg.message_dst()) {
                         self.handle_signed_message(msg)?;
@@ -1196,20 +1198,18 @@ impl Elder {
                 trace!(
                     "{} Sending a signature for message {:?} to {:?}",
                     self,
-                    signed_msg.routing_message(),
+                    accumulating_msg.content,
                     target
                 );
                 let conn_info = p2p_node.connection_info().clone();
                 self.send_direct_message(
                     &conn_info,
-                    Variant::MessageSignature(Box::new(signed_msg.clone())),
+                    Variant::MessageSignature(Box::new(accumulating_msg.clone())),
                 );
             } else {
                 error!(
                     "{} Failed to resolve signature target {:?} for message {:?}",
-                    self,
-                    target,
-                    signed_msg.routing_message()
+                    self, target, accumulating_msg.content,
                 );
             }
         }
@@ -1330,16 +1330,16 @@ impl Elder {
     }
 
     // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
-    fn to_signed_routing_message(
+    fn to_accumulating_message(
         &self,
         msg: RoutingMessage,
         node_knowledge_override: Option<u64>,
-    ) -> Result<SignedRoutingMessage, RoutingError> {
+    ) -> Result<AccumulatingMessage, RoutingError> {
         let proof = self.chain.prove(&msg.dst, node_knowledge_override);
         let pk_set = self.our_section_bls_keys().clone();
         let secret_key = self.chain.our_section_bls_secret_key_share()?;
 
-        SignedRoutingMessage::new(msg, secret_key, pk_set, proof)
+        AccumulatingMessage::new(msg, secret_key, pk_set, proof)
     }
 }
 

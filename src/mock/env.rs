@@ -225,7 +225,7 @@ mod tests {
             dst: Location::Section(rand::random()),
             content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
         };
-        let msg = SignedRoutingMessage::insecure(msg);
+        let msg = unwrap!(SignedRoutingMessage::single_source(msg, &full_id));
         let msg = Message::Hop(msg);
         assert!(!is_periodic_message(&Bytes::from(serialise(&msg))));
     }

@@ -24,8 +24,8 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, HopMessageWithBytes, QueuedMessage, SignedRoutingMessage, Variant,
-        VerifyStatus,
+        AccumulatingMessage, BootstrapResponse, HopMessageWithBytes, QueuedMessage,
+        SignedRoutingMessage, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -358,7 +358,7 @@ impl Adult {
     /// message, handles it.
     fn handle_message_signature(
         &mut self,
-        msg: SignedRoutingMessage,
+        msg: AccumulatingMessage,
         pub_id: PublicId,
     ) -> Result<Transition, RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {

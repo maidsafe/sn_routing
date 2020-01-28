@@ -65,7 +65,7 @@ impl AdultUnderTest {
             content: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
         };
 
-        let mut msg = unwrap!(self
+        let msg = unwrap!(self
             .elders
             .values()
             .take(2)
@@ -74,7 +74,7 @@ impl AdultUnderTest {
                 let public_key_set = chain.our_section_bls_keys().clone();
                 let proof = chain.prove(&msg.dst, None);
 
-                unwrap!(SignedRoutingMessage::new(
+                unwrap!(AccumulatingMessage::new(
                     msg.clone(),
                     secret_key,
                     public_key_set,
@@ -88,7 +88,7 @@ impl AdultUnderTest {
                     Some(acc)
                 }
             }));
-        msg.combine_signatures();
+        let msg = unwrap!(msg.combine_signatures());
         unwrap!(HopMessageWithBytes::new(msg, &LogIdent::new("node")))
     }
 

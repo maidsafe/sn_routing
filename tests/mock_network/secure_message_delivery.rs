@@ -9,8 +9,8 @@
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
-    section_proof_slice_for_test, ConnectionInfo, FullId, Location, Message, NetworkParams,
-    P2pNode, Prefix, RoutingMessage, SectionKeyShare, SignedRoutingMessage, Variant, XorName,
+    section_proof_slice_for_test, AccumulatingMessage, ConnectionInfo, FullId, Location, Message,
+    NetworkParams, P2pNode, Prefix, RoutingMessage, SectionKeyShare, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -92,14 +92,13 @@ fn message_with_invalid_security(fail_type: FailType) {
         };
         let pk_set = bls_keys.public_keys();
 
-        let mut signed_msg = unwrap!(SignedRoutingMessage::new(
+        let msg = unwrap!(AccumulatingMessage::new(
             routing_msg,
             &bls_secret_key_share,
             pk_set,
             proof
         ));
-        signed_msg.combine_signatures();
-        Message::Hop(signed_msg)
+        Message::Hop(unwrap!(msg.combine_signatures()))
     };
 
     // Act/Assert:

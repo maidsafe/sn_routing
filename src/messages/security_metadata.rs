@@ -16,42 +16,7 @@ use crate::{
 };
 use bincode::serialize;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeSet,
-    fmt::{self, Debug, Formatter},
-};
-
-/// Metadata needed for verification of the sender.
-/// Contain shares of the section signature before combining into a BLS signature
-/// and into a FullSecurityMetadata.
-#[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
-pub struct PartialSecurityMetadata {
-    pub proof: SectionProofSlice,
-    pub shares: BTreeSet<(usize, bls::SignatureShare)>,
-    pub pk_set: bls::PublicKeySet,
-}
-
-impl PartialSecurityMetadata {
-    pub fn find_invalid_sigs(&self, signed_bytes: &[u8]) -> Vec<(usize, bls::SignatureShare)> {
-        let key_set = &self.pk_set;
-        self.shares
-            .iter()
-            .filter(|&(idx, sig)| !key_set.public_key_share(idx).verify(sig, &signed_bytes))
-            .map(|(idx, sig)| (*idx, sig.clone()))
-            .collect()
-    }
-}
-
-impl Debug for PartialSecurityMetadata {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "PartialSecurityMetadata {{ proof.blocks_len: {}, proof: {:?}, .. }}",
-            self.proof.blocks_len(),
-            self.proof
-        )
-    }
-}
+use std::fmt::{self, Debug, Formatter};
 
 /// Metadata needed for verification of the sender.
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
@@ -135,8 +100,6 @@ impl Debug for SingleSrcSecurityMetadata {
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum SecurityMetadata {
-    None,
-    Partial(PartialSecurityMetadata),
     Full(FullSecurityMetadata),
     Single(SingleSrcSecurityMetadata),
 }
@@ -144,8 +107,6 @@ pub enum SecurityMetadata {
 impl Debug for SecurityMetadata {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match &self {
-            Self::None => write!(formatter, "None"),
-            Self::Partial(pmd) => write!(formatter, "{:?}", pmd),
             Self::Full(smd) => write!(formatter, "{:?}", smd),
             Self::Single(smd) => write!(formatter, "{:?}", smd),
         }

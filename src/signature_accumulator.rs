@@ -8,7 +8,7 @@
 
 use crate::{
     crypto::Digest256,
-    messages::SignedRoutingMessage,
+    messages::{AccumulatingMessage, SignedRoutingMessage},
     time::{Duration, Instant},
 };
 use itertools::Itertools;
@@ -20,16 +20,16 @@ pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    msgs: HashMap<Digest256, (Option<SignedRoutingMessage>, Instant)>,
+    msgs: HashMap<Digest256, (Option<AccumulatingMessage>, Instant)>,
 }
 
 impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `SignedMessage`. Returns the message, if it has enough signatures now.
-    pub fn add_proof(&mut self, msg: SignedRoutingMessage) -> Option<SignedRoutingMessage> {
+    pub fn add_proof(&mut self, msg: AccumulatingMessage) -> Option<SignedRoutingMessage> {
         self.remove_expired();
-        let hash = msg.routing_message().hash().ok()?;
-        if let Some(&mut (ref mut existing_msg, _)) = self.msgs.get_mut(&hash) {
+        let hash = msg.crypto_hash().ok()?;
+        if let Some((existing_msg, _)) = self.msgs.get_mut(&hash) {
             if let Some(existing_msg) = existing_msg {
                 existing_msg.add_signature_shares(msg);
             }
@@ -57,12 +57,9 @@ impl SignatureAccumulator {
     }
 
     fn remove_if_complete(&mut self, hash: &Digest256) -> Option<SignedRoutingMessage> {
-        self.msgs.get_mut(hash).and_then(|&mut (ref mut msg, _)| {
+        self.msgs.get_mut(hash).and_then(|(msg, _)| {
             if msg.as_mut().map_or(false, |msg| msg.check_fully_signed()) {
-                msg.take().map(|mut msg| {
-                    msg.combine_signatures();
-                    msg
-                })
+                msg.take().and_then(|msg| msg.combine_signatures())
             } else {
                 None
             }
@@ -78,7 +75,7 @@ mod tests {
         chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
         id::{FullId, P2pNode},
         location::Location,
-        messages::{RoutingMessage, SignedDirectMessage, SignedRoutingMessage, Variant},
+        messages::{RoutingMessage, SignedDirectMessage, Variant},
         parsec::generate_bls_threshold_secret_key,
         rng, unwrap, ConnectionInfo, Prefix, XorName,
     };
@@ -87,7 +84,7 @@ mod tests {
     use std::{collections::BTreeMap, net::SocketAddr};
 
     struct MessageAndSignatures {
-        signed_msg: SignedRoutingMessage,
+        signed_msg: AccumulatingMessage,
         signature_msgs: Vec<SignedDirectMessage>,
     }
 
@@ -98,8 +95,8 @@ mod tests {
             secret_bls_ids: &BTreeMap<XorName, SectionKeyShare>,
             pk_set: &bls::PublicKeySet,
         ) -> Self {
-            let routing_msg = RoutingMessage {
-                src: Location::Section(rand::random()),
+            let content = RoutingMessage {
+                src: Location::Node(rand::random()),
                 dst: Location::Section(rand::random()),
                 content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
             };
@@ -111,22 +108,24 @@ mod tests {
             let elders_info = unwrap!(EldersInfo::new(all_nodes.clone(), prefix, None));
             let key_info = SectionKeyInfo::from_elders_info(&elders_info, pk_set.public_key());
             let proof = SectionProofSlice::from_genesis(key_info);
-            let signed_msg = unwrap!(SignedRoutingMessage::new(
-                routing_msg.clone(),
+
+            let signed_msg = unwrap!(AccumulatingMessage::new(
+                content.clone(),
                 msg_sender_secret_bls,
                 pk_set.clone(),
                 proof.clone(),
             ));
+
             let signature_msgs = other_ids
                 .map(|(id, bls_id)| {
                     unwrap!(SignedDirectMessage::new(
-                        Variant::MessageSignature(Box::new(unwrap!(SignedRoutingMessage::new(
-                            routing_msg.clone(),
+                        Variant::MessageSignature(Box::new(unwrap!(AccumulatingMessage::new(
+                            content.clone(),
                             bls_id,
                             pk_set.clone(),
                             proof.clone(),
                         )))),
-                        id,
+                        id
                     ))
                 })
                 .collect();
@@ -203,28 +202,27 @@ mod tests {
 
         // Add each message's signatures - each should accumulate once quorum has been reached.
         let mut count = 0;
-        env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
-            msg_and_sigs.signature_msgs.iter().foreach(|signature_msg| {
+        for msg_and_sigs in env.msgs_and_sigs {
+            for signature_msg in msg_and_sigs.signature_msgs {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
                 let result = match signature_msg.content() {
-                    Variant::MessageSignature(msg) => sig_accumulator.add_proof(*msg.clone()),
+                    Variant::MessageSignature(msg) => sig_accumulator.add_proof((**msg).clone()),
                     unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
-                if let Some(mut returned_msg) = result {
+                if let Some(returned_msg) = result {
                     // the message hash is not being removed upon accumulation, only when it
                     // expires
                     assert_eq!(sig_accumulator.msgs.len(), old_num_msgs);
                     assert_eq!(
-                        msg_and_sigs.signed_msg.routing_message(),
-                        returned_msg.routing_message()
+                        msg_and_sigs.signed_msg.content,
+                        *returned_msg.routing_message()
                     );
-                    assert!(returned_msg.check_fully_signed());
                     count += 1;
                 }
-            });
-        });
+            }
+        }
 
         assert_eq!(count, expected_msgs_count);
 

@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::SignedRoutingMessage;
+use super::AccumulatingMessage;
 use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     parsec,
@@ -41,7 +41,7 @@ pub enum Variant {
     Relocate(Box<RelocateDetails>),
     /// Sent from members of a section or group message's source location to the first hop. The
     /// message will only be relayed once enough signatures have been accumulated.
-    MessageSignature(Box<SignedRoutingMessage>),
+    MessageSignature(Box<AccumulatingMessage>),
     /// Sent from a newly connected peer to the bootstrap node to request connection infos of
     /// members of the section matching the given name.
     BootstrapRequest(XorName),

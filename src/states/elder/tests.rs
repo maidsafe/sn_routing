@@ -538,8 +538,8 @@ fn send_genesis_update() {
     let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
     assert_eq!(message.0, adult1);
 
-    let proof_chain = unwrap!(message.1.proof_chain());
-    verify_proof_chain_contains(proof_chain, orig_elders_version);
+    let proof = &message.1.proof;
+    verify_proof_chain_contains(proof, orig_elders_version);
 
     // Receive MemberKnowledge from the adult
     elder_test.elder.handle_member_knowledge(
@@ -553,9 +553,9 @@ fn send_genesis_update() {
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
     // contain the previous version.
     let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
-    let proof_chain = unwrap!(message.1.proof_chain());
-    verify_proof_chain_contains(proof_chain, elder_test.elders_info.version());
-    verify_proof_chain_does_not_contain(proof_chain, orig_elders_version);
+    let proof = &message.1.proof;
+    verify_proof_chain_contains(proof, elder_test.elders_info.version());
+    verify_proof_chain_does_not_contain(proof, orig_elders_version);
 }
 
 fn verify_proof_chain_contains(proof_chain: &SectionProofSlice, expected_version: u64) {
