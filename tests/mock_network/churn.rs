@@ -11,7 +11,10 @@ use super::{
     gen_elder_index, gen_range, gen_vec, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use itertools::Itertools;
-use rand::{seq::SliceRandom, Rng};
+use rand::{
+    seq::{IteratorRandom, SliceRandom},
+    Rng,
+};
 use routing::{
     event::Event,
     mock::Environment,
@@ -766,11 +769,13 @@ fn setup_expectations<R: Rng>(
     let index0 = gen_elder_index(rng, nodes);
     let index1 = gen_elder_index(rng, nodes);
 
+    let prefix: Prefix<XorName> = unwrap!(current_sections(nodes).choose(rng));
+    let section_name = prefix.substituted_in(rng.gen());
+
     let src_n0 = SrcLocation::Node(nodes[index0].name());
     let dst_n0 = DstLocation::Node(nodes[index0].name());
     let dst_n1 = DstLocation::Node(nodes[index1].name());
-    let section_name = rng.gen();
-    let src_s0 = SrcLocation::Section(section_name);
+    let src_s0 = SrcLocation::Section(prefix);
     let dst_s0 = DstLocation::Section(section_name);
     // this makes sure we have two different sections if there exists more than one
     let dst_s1 = DstLocation::Section(!section_name);

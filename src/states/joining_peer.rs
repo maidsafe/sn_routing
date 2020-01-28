@@ -162,7 +162,7 @@ impl JoiningPeer {
         match msg {
             RoutingMessage {
                 content: Variant::NodeApproval(gen_info),
-                src: SrcLocation::PrefixSection(_),
+                src: SrcLocation::Section(_),
                 dst: DstLocation::Node { .. },
             } => Ok(self.handle_node_approval(*gen_info)),
             _ => {

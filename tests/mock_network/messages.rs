@@ -98,10 +98,7 @@ fn send_and_receive() {
                 Ok(Event::MessageReceived { content, src, .. }) => {
                     request_received_count += 1;
                     if req_content == content {
-                        let res_src = match dst {
-                            DstLocation::Section(name) => SrcLocation::Section(name),
-                            _ => panic!("Unexpected dst location: {:?}", dst),
-                        };
+                        let res_src = SrcLocation::Section(*node.our_prefix());
                         let res_dst = match src {
                             SrcLocation::Node(name) => DstLocation::Node(name),
                             _ => panic!("Unexpected src location: {:?}", src),

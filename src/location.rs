@@ -11,29 +11,18 @@ use crate::xor_space::{Prefix, XorName};
 /// Source location
 #[derive(Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash, Debug)]
 pub enum SrcLocation {
-    /// A single section whose prefix matches the given name
-    Section(XorName),
-    /// A set of nodes with names sharing a common prefix - may span multiple `Section`s present in
-    /// the routing table or only a part of a `Section`
-    PrefixSection(Prefix<XorName>),
-    /// A single node
+    /// A single node with the given name.
     Node(XorName),
+    /// A single section with the given prefix.
+    Section(Prefix<XorName>),
 }
 
 impl SrcLocation {
-    /// Returns the name of location.
-    pub fn name(&self) -> XorName {
-        match self {
-            Self::Section(name) | Self::Node(name) => *name,
-            Self::PrefixSection(prefix) => prefix.lower_bound(),
-        }
-    }
-
     /// Returns `true` if the location is a single node, and `false` otherwise.
     pub fn is_single(&self) -> bool {
         match self {
-            Self::Section(_) | Self::PrefixSection(_) => false,
             Self::Node(_) => true,
+            Self::Section(_) => false,
         }
     }
 
@@ -44,9 +33,9 @@ impl SrcLocation {
 
     /// provide the name mathching a single node's public key
     pub(crate) fn single_signing_name(&self) -> Option<&XorName> {
-        match *self {
-            Self::Section(_) | Self::PrefixSection(_) => None,
-            Self::Node(ref name) => Some(name),
+        match self {
+            Self::Node(name) => Some(name),
+            Self::Section(_) => None,
         }
     }
 }

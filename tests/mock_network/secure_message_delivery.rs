@@ -76,7 +76,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001));
 
     let routing_msg = RoutingMessage {
-        src: SrcLocation::Section(our_prefix.name()),
+        src: SrcLocation::Section(our_prefix),
         dst: DstLocation::PrefixSection(their_prefix),
         content: Variant::NeighbourInfo(new_info),
     };

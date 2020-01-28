@@ -269,9 +269,13 @@ mod tests {
         use rand::distributions::Standard;
 
         RoutingMessage {
-            src: SrcLocation::Section(rng.gen()),
+            src: SrcLocation::Section(gen_prefix(rng)),
             dst: DstLocation::Section(rng.gen()),
             content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
+    }
+
+    fn gen_prefix(rng: &mut MainRng) -> Prefix<XorName> {
+        Prefix::new(rng.gen_range(0, 4), rng.gen())
     }
 }

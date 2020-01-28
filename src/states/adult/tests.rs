@@ -65,7 +65,7 @@ impl AdultUnderTest {
 
     fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> HopMessageWithBytes {
         let msg = RoutingMessage {
-            src: SrcLocation::PrefixSection(Prefix::default()),
+            src: SrcLocation::Section(Prefix::default()),
             dst: DstLocation::Node(*self.adult.name()),
             content: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
         };

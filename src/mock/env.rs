@@ -221,7 +221,7 @@ mod tests {
 
         // A hop message never contains a Parsec message.
         let msg = RoutingMessage {
-            src: SrcLocation::Section(rand::random()),
+            src: SrcLocation::Node(rand::random()),
             dst: DstLocation::Section(rand::random()),
             content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
         };

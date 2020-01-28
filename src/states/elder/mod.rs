@@ -603,7 +603,7 @@ impl Elder {
 
     fn send_neighbour_infos(&mut self) {
         self.chain.other_prefixes().iter().for_each(|pfx| {
-            let src = SrcLocation::Section(self.our_prefix().name());
+            let src = SrcLocation::Section(*self.our_prefix());
             let dst = DstLocation::PrefixSection(*pfx);
             let content = Variant::NeighbourInfo(self.chain.our_info().clone());
 
@@ -632,7 +632,7 @@ impl Elder {
     }
 
     fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        let src = SrcLocation::PrefixSection(*self.our_prefix());
+        let src = SrcLocation::Section(*self.our_prefix());
         self.chain
             .adults_and_infants_p2p_nodes()
             .cloned()
@@ -843,7 +843,7 @@ impl Elder {
         &mut self,
         src_prefix: Prefix<XorName>,
         ack_version: u64,
-        _src: XorName,
+        _src: Prefix<XorName>,
         dst: XorName,
     ) -> Result<(), RoutingError> {
         // Prefix doesn't need to match, as we may get an ack for the section where we were before
@@ -904,7 +904,7 @@ impl Elder {
             parsec_version: self.gen_pfx_info.parsec_version,
         };
 
-        let src = SrcLocation::PrefixSection(*trimmed_info.first_info.prefix());
+        let src = SrcLocation::Section(*trimmed_info.first_info.prefix());
         let content = Variant::NodeApproval(Box::new(trimmed_info));
 
         if let Err(error) =
@@ -1271,19 +1271,13 @@ impl Elder {
     /// `None`.
     fn get_signature_targets(&self, src: &SrcLocation) -> Option<BTreeSet<XorName>> {
         let list: Vec<XorName> = match *src {
-            SrcLocation::Section(_) => self
-                .chain
-                .our_elders()
-                .map(|p2p_node| p2p_node.name())
-                .copied()
-                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
-            SrcLocation::PrefixSection(pfx) => self
+            SrcLocation::Section(pfx) => self
                 .chain
                 .all_sections()
                 .flat_map(|(_, si)| si.member_names())
                 .filter(|name| pfx.matches(name))
                 .copied()
-                .sorted_by(|lhs, rhs| src.name().cmp_distance(lhs, rhs)),
+                .sorted_by(|lhs, rhs| pfx.name().cmp_distance(lhs, rhs)),
             SrcLocation::Node(_) => {
                 let mut result = BTreeSet::new();
                 let _ = result.insert(*self.name());
@@ -1670,7 +1664,7 @@ impl Approved for Elder {
                 .knowledge_index(&DstLocation::Section(details.destination), None),
         );
 
-        let src = SrcLocation::Section(self.our_prefix().name());
+        let src = SrcLocation::Section(*self.our_prefix());
         let dst = DstLocation::Node(*details.pub_id.name());
         let content = Variant::Relocate(Box::new(details));
 
@@ -1805,7 +1799,7 @@ impl Approved for Elder {
         &mut self,
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError> {
-        let src = SrcLocation::Section(self.our_prefix().name());
+        let src = SrcLocation::Section(*self.our_prefix());
         let dst = DstLocation::Section(ack_payload.ack_prefix.name());
         let content = Variant::AckMessage {
             src_prefix: *self.our_prefix(),

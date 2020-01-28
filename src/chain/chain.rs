@@ -1538,8 +1538,7 @@ impl Chain {
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
         match src {
             SrcLocation::Node(name) => self.our_id().name() == name,
-            SrcLocation::Section(name) => self.our_prefix().matches(name),
-            SrcLocation::PrefixSection(prefix) => self.our_prefix().is_compatible(prefix),
+            SrcLocation::Section(prefix) => self.our_prefix().is_compatible(prefix),
         }
     }
 

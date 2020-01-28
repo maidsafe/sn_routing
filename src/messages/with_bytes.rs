@@ -139,18 +139,21 @@ mod tests {
     use crate::{
         id::FullId,
         location::SrcLocation,
-        rng::{self, MainRng},
+        rng::{self},
         unwrap,
     };
-    use rand::{self, Rng};
+    use rand::{self, distributions::Standard, Rng};
 
     #[test]
     fn serialise_and_partial_at_hop_message() {
         let mut rng = rng::new();
         let full_id = FullId::gen(&mut rng);
-        let msg = gen_message(&mut rng);
-
-        let signed_msg_org = unwrap!(SignedRoutingMessage::single_source(msg, &full_id,));
+        let msg = RoutingMessage {
+            src: SrcLocation::Node(*full_id.public_id().name()),
+            dst: DstLocation::Section(rng.gen()),
+            content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
+        };
+        let signed_msg_org = unwrap!(SignedRoutingMessage::single_source(msg, &full_id));
 
         let msg = unwrap!(HopMessageWithBytes::new(
             signed_msg_org.clone(),
@@ -173,15 +176,5 @@ mod tests {
         assert_eq!(partial_msg, expected_partial);
         assert_eq!(partial_msg_head, expected_partial);
         assert_eq!(signed_msg, Some(signed_msg_org))
-    }
-
-    fn gen_message(rng: &mut MainRng) -> RoutingMessage {
-        use rand::distributions::Standard;
-
-        RoutingMessage {
-            src: SrcLocation::Section(rng.gen()),
-            dst: DstLocation::Section(rng.gen()),
-            content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
-        }
     }
 }
