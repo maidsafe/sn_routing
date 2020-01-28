@@ -18,8 +18,8 @@ use crate::{
     id::{FullId, P2pNode},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MessageContent,
-        RoutingMessage, SignedRoutingMessage, VerifyStatus,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, RoutingMessage,
+        RoutingVariant, SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -164,7 +164,7 @@ impl JoiningPeer {
 
         match msg {
             RoutingMessage {
-                content: MessageContent::NodeApproval(gen_info),
+                content: RoutingVariant::NodeApproval(gen_info),
                 src: Location::PrefixSection(_),
                 dst: Location::Node { .. },
             } => Ok(self.handle_node_approval(gen_info)),

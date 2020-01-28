@@ -24,7 +24,7 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::Location,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent,
+        BootstrapResponse, DirectMessage, HopMessageWithBytes, RoutingVariant,
         SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
@@ -414,11 +414,11 @@ impl Adult {
         if self.in_location(msg.message_dst()) {
             let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             match &signed_msg.routing_message().content {
-                MessageContent::GenesisUpdate(info) => {
+                RoutingVariant::GenesisUpdate(info) => {
                     self.verify_signed_message(&signed_msg)?;
                     return self.handle_genesis_update(info.clone());
                 }
-                MessageContent::Relocate(_) => {
+                RoutingVariant::Relocate(_) => {
                     self.verify_signed_message(&signed_msg)?;
                     let signed_relocate = SignedRelocateDetails::new(signed_msg.clone())?;
                     return self.handle_relocate(signed_relocate);

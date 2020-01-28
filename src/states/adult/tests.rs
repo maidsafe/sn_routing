@@ -62,7 +62,7 @@ impl AdultUnderTest {
         let msg = RoutingMessage {
             src: Location::PrefixSection(Prefix::default()),
             dst: Location::Node(*self.adult.name()),
-            content: MessageContent::GenesisUpdate(gen_pfx_info),
+            content: RoutingVariant::GenesisUpdate(gen_pfx_info),
         };
 
         let mut msg = unwrap!(self

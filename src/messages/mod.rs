@@ -6,18 +6,18 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod content;
 mod direct;
 mod security_metadata;
+mod variant;
 mod with_bytes;
 
 use self::security_metadata::{
     FullSecurityMetadata, PartialSecurityMetadata, SingleSrcSecurityMetadata,
 };
 pub use self::{
-    content::MessageContent,
     direct::{BootstrapResponse, DirectMessage, JoinRequest, MemberKnowledge, SignedDirectMessage},
     security_metadata::SecurityMetadata,
+    variant::RoutingVariant,
     with_bytes::{HopMessageWithBytes, MessageWithBytes},
 };
 use crate::{
@@ -308,7 +308,7 @@ pub struct RoutingMessage {
     /// Destination location
     pub dst: Location,
     /// The message content
-    pub content: MessageContent,
+    pub content: RoutingVariant,
 }
 
 impl RoutingMessage {
@@ -467,7 +467,7 @@ mod tests {
         RoutingMessage {
             src: Location::Section(rng.gen()),
             dst: Location::Section(rng.gen()),
-            content: MessageContent::UserMessage(rng.sample_iter(Standard).take(6).collect()),
+            content: RoutingVariant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }
 }

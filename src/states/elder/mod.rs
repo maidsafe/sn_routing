@@ -27,7 +27,7 @@ use crate::{
     location::Location,
     messages::{
         BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MemberKnowledge,
-        MessageContent, RoutingMessage, SecurityMetadata, SignedRoutingMessage, VerifyStatus,
+        RoutingMessage, RoutingVariant, SecurityMetadata, SignedRoutingMessage, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -612,7 +612,7 @@ impl Elder {
         self.chain.other_prefixes().iter().for_each(|pfx| {
             let src = Location::Section(self.our_prefix().name());
             let dst = Location::PrefixSection(*pfx);
-            let content = MessageContent::NeighbourInfo(self.chain.our_info().clone());
+            let content = RoutingVariant::NeighbourInfo(self.chain.our_info().clone());
 
             if let Err(err) = self.send_routing_message(RoutingMessage { src, dst, content }, None)
             {
@@ -647,7 +647,7 @@ impl Elder {
                 let msg = RoutingMessage {
                     src,
                     dst: Location::Node(*recipient.name()),
-                    content: MessageContent::GenesisUpdate(self.gen_pfx_info.clone()),
+                    content: RoutingVariant::GenesisUpdate(self.gen_pfx_info.clone()),
                 };
 
                 let version = self
@@ -789,7 +789,7 @@ impl Elder {
         signed_msg: SignedRoutingMessage,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::MessageContent::*;
+        use crate::messages::RoutingVariant::*;
 
         let (msg, security_metadata) = signed_msg.into_parts();
 
@@ -913,7 +913,7 @@ impl Elder {
         };
 
         let src = Location::PrefixSection(*trimmed_info.first_info.prefix());
-        let content = MessageContent::NodeApproval(trimmed_info);
+        let content = RoutingVariant::NodeApproval(trimmed_info);
 
         if let Err(error) =
             self.send_routing_message(RoutingMessage { src, dst, content }, their_knowledge)
@@ -1094,7 +1094,7 @@ impl Elder {
                         RoutingMessage {
                             src,
                             dst,
-                            content: MessageContent::NeighbourInfo(elders_info.clone()),
+                            content: RoutingVariant::NeighbourInfo(elders_info.clone()),
                         },
                         security_metadata,
                     )
@@ -1430,7 +1430,7 @@ impl Base for Elder {
             RoutingMessage {
                 src,
                 dst,
-                content: MessageContent::UserMessage(content),
+                content: RoutingVariant::UserMessage(content),
             },
             None,
         )
@@ -1668,7 +1668,7 @@ impl Approved for Elder {
 
         let src = Location::Section(self.our_prefix().name());
         let dst = Location::Node(*details.pub_id.name());
-        let content = MessageContent::Relocate(Box::new(details));
+        let content = RoutingVariant::Relocate(Box::new(details));
 
         self.send_routing_message(RoutingMessage { src, dst, content }, Some(knowledge_index))
     }
@@ -1803,7 +1803,7 @@ impl Approved for Elder {
     ) -> Result<(), RoutingError> {
         let src = Location::Section(self.our_prefix().name());
         let dst = Location::Section(ack_payload.ack_prefix.name());
-        let content = MessageContent::AckMessage {
+        let content = RoutingVariant::AckMessage {
             src_prefix: *self.our_prefix(),
             ack_version: ack_payload.ack_version,
         };

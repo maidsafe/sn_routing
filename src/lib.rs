@@ -109,7 +109,7 @@ pub use self::{
         NetworkParams, SectionKeyShare, MIN_AGE,
     },
     location::Location,
-    messages::{Message, MessageContent, RoutingMessage, SignedRoutingMessage},
+    messages::{Message, RoutingMessage, RoutingVariant, SignedRoutingMessage},
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
     xor_space::Xorable,

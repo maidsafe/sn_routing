@@ -79,7 +79,7 @@ mod tests {
         id::{FullId, P2pNode},
         location::Location,
         messages::{
-            DirectMessage, MessageContent, RoutingMessage, SignedDirectMessage,
+            DirectMessage, RoutingMessage, RoutingVariant, SignedDirectMessage,
             SignedRoutingMessage,
         },
         parsec::generate_bls_threshold_secret_key,
@@ -104,7 +104,7 @@ mod tests {
             let routing_msg = RoutingMessage {
                 src: Location::Section(rand::random()),
                 dst: Location::Section(rand::random()),
-                content: MessageContent::UserMessage(vec![
+                content: RoutingVariant::UserMessage(vec![
                     rand::random(),
                     rand::random(),
                     rand::random(),

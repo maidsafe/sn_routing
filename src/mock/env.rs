@@ -162,7 +162,7 @@ mod tests {
     use crate::{
         id::FullId,
         messages::{
-            DirectMessage, MemberKnowledge, Message, MessageContent, RoutingMessage,
+            DirectMessage, MemberKnowledge, Message, RoutingMessage, RoutingVariant,
             SignedDirectMessage, SignedRoutingMessage,
         },
         parsec::{Request, Response},
@@ -223,7 +223,7 @@ mod tests {
         let msg = RoutingMessage {
             src: Location::Section(rand::random()),
             dst: Location::Section(rand::random()),
-            content: MessageContent::UserMessage(vec![
+            content: RoutingVariant::UserMessage(vec![
                 rand::random(),
                 rand::random(),
                 rand::random(),

@@ -16,8 +16,8 @@ use std::fmt::{self, Debug, Formatter};
 #[derive(Eq, PartialEq, Clone, Hash, Serialize, Deserialize)]
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
-/// Content
-pub enum MessageContent {
+/// Body of RoutingMessage
+pub enum RoutingVariant {
     /// Inform neighbours about our new section.
     NeighbourInfo(EldersInfo),
     /// User-facing message
@@ -39,9 +39,9 @@ pub enum MessageContent {
     Relocate(Box<RelocateDetails>),
 }
 
-impl Debug for MessageContent {
+impl Debug for RoutingVariant {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        use self::MessageContent::*;
+        use self::RoutingVariant::*;
         match self {
             NeighbourInfo(info) => write!(formatter, "NeighbourInfo({:?})", info),
             UserMessage(content) => write!(formatter, "UserMessage({:?})", content,),
