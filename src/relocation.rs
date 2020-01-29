@@ -13,7 +13,7 @@ use crate::{
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
-    messages::{MessageContent, SignedRoutingMessage},
+    messages::{SignedRoutingMessage, Variant},
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 use bincode::serialize;
@@ -47,13 +47,13 @@ impl IntoAccumulatingEvent for RelocateDetails {
 /// SignedRoutingMessage with Relocate message content.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct SignedRelocateDetails {
-    /// Signed message whose content is MessageContent::Relocate
+    /// Signed message whose content is RoutingVariant::Relocate
     signed_msg: SignedRoutingMessage,
 }
 
 impl SignedRelocateDetails {
     pub fn new(signed_msg: SignedRoutingMessage) -> Result<Self, RoutingError> {
-        if let MessageContent::Relocate(_) = &signed_msg.routing_message().content {
+        if let Variant::Relocate(_) = &signed_msg.routing_message().content {
             Ok(Self { signed_msg })
         } else {
             Err(RoutingError::InvalidMessage)
@@ -61,10 +61,10 @@ impl SignedRelocateDetails {
     }
 
     pub fn relocate_details(&self) -> &RelocateDetails {
-        if let MessageContent::Relocate(details) = &self.signed_msg.routing_message().content {
-            details
+        if let Variant::Relocate(details) = &self.signed_msg.routing_message().content {
+            &**details
         } else {
-            panic!("SignedRelocateDetails always contain MessageContent::Relocate")
+            panic!("SignedRelocateDetails always contain RoutingVariant::Relocate")
         }
     }
 
@@ -91,7 +91,7 @@ impl<'de> Deserialize<'de> for SignedRelocateDetails {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct RelocatePayload {
     /// The Relocate Signed message.
     pub details: SignedRelocateDetails,

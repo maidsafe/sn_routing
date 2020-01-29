@@ -6,7 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{error::RoutingError, location::Location};
+use crate::{
+    error::RoutingError,
+    location::{DstLocation, SrcLocation},
+};
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
@@ -24,8 +27,8 @@ use std::{
 ///       After completion `Core` will send `Event::Terminated`.
 pub enum Action {
     SendMessage {
-        src: Location,
-        dst: Location,
+        src: SrcLocation,
+        dst: DstLocation,
         content: Vec<u8>,
         result_tx: Sender<Result<(), RoutingError>>,
     },

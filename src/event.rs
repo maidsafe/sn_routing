@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    location::Location,
+    location::{DstLocation, SrcLocation},
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
@@ -87,9 +87,9 @@ pub enum Event {
         /// The content of the message.
         content: Vec<u8>,
         /// The source location that sent the message.
-        src: Location,
+        src: SrcLocation,
         /// The destination location that receives the message.
-        dst: Location,
+        dst: DstLocation,
     },
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),

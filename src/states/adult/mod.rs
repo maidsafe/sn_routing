@@ -22,10 +22,10 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
-    location::Location,
+    location::DstLocation,
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, MessageContent,
-        SignedRoutingMessage, VerifyStatus,
+        AccumulatingMessage, BootstrapResponse, HopMessageWithBytes, QueuedMessage,
+        SignedRoutingMessage, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -59,8 +59,7 @@ pub struct AdultDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub routing_msg_backlog: Vec<SignedRoutingMessage>,
-    pub direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    pub msg_backlog: Vec<QueuedMessage>,
     pub sig_accumulator: SignatureAccumulator,
     pub routing_msg_filter: RoutingMessageFilter,
     pub timer: Timer,
@@ -74,9 +73,8 @@ pub struct Adult {
     event_backlog: Vec<Event>,
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
-    /// Routing messages addressed to us that we cannot handle until we are established.
-    routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    /// Messages addressed to us that we cannot handle until we are established.
+    msg_backlog: Vec<QueuedMessage>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     knowledge_timer_token: u64,
@@ -113,8 +111,7 @@ impl Adult {
             event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
-            routing_msg_backlog: details.routing_msg_backlog,
-            direct_msg_backlog: details.direct_msg_backlog,
+            msg_backlog: details.msg_backlog,
             sig_accumulator: details.sig_accumulator,
             parsec_map,
             routing_msg_filter: details.routing_msg_filter,
@@ -179,8 +176,7 @@ impl Adult {
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             routing_msg_queue: Default::default(),
-            routing_msg_backlog: self.routing_msg_backlog,
-            direct_msg_backlog: self.direct_msg_backlog,
+            msg_backlog: self.msg_backlog,
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
             // we reset the message filter so that the node can correctly process some messages as
@@ -200,8 +196,7 @@ impl Adult {
             gen_pfx_info: self.gen_pfx_info,
             routing_msg_filter: self.routing_msg_filter,
             routing_msg_queue: VecDeque::new(),
-            routing_msg_backlog: self.routing_msg_backlog,
-            direct_msg_backlog: self.direct_msg_backlog,
+            msg_backlog: self.msg_backlog,
             network_service: self.network_service,
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
@@ -218,8 +213,7 @@ impl Adult {
             event_backlog: Vec::new(),
             full_id: state.full_id,
             gen_pfx_info: state.gen_pfx_info,
-            routing_msg_backlog: state.routing_msg_backlog,
-            direct_msg_backlog: state.direct_msg_backlog,
+            msg_backlog: state.msg_backlog,
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
             knowledge_timer_token,
@@ -295,7 +289,7 @@ impl Adult {
         };
         self.send_direct_message(
             p2p_node.connection_info(),
-            DirectMessage::BootstrapResponse(response),
+            Variant::BootstrapResponse(response),
         );
     }
 
@@ -322,8 +316,7 @@ impl Adult {
         // We were not promoted during the last section change, so we are not going to need these
         // messages anymore. This also prevents the messages from becoming stale (fail the trust
         // check) when they are eventually taken from the backlog and swarmed to other nodes.
-        self.routing_msg_backlog.clear();
-        self.direct_msg_backlog.clear();
+        self.msg_backlog.clear();
 
         Ok(Transition::Stay)
     }
@@ -365,7 +358,7 @@ impl Adult {
     /// message, handles it.
     fn handle_message_signature(
         &mut self,
-        msg: SignedRoutingMessage,
+        msg: AccumulatingMessage,
         pub_id: PublicId,
     ) -> Result<Transition, RoutingError> {
         if !self.chain.is_peer_elder(&pub_id) {
@@ -411,20 +404,20 @@ impl Adult {
             msg.full_message_crypto_hash()
         );
 
-        if self.in_location(msg.message_dst()) {
+        if self.in_dst_location(msg.message_dst()) {
             let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
             match &signed_msg.routing_message().content {
-                MessageContent::GenesisUpdate(info) => {
+                Variant::GenesisUpdate(info) => {
                     self.verify_signed_message(&signed_msg)?;
-                    return self.handle_genesis_update(info.clone());
+                    return self.handle_genesis_update((**info).clone());
                 }
-                MessageContent::Relocate(_) => {
+                Variant::Relocate(_) => {
                     self.verify_signed_message(&signed_msg)?;
                     let signed_relocate = SignedRelocateDetails::new(signed_msg.clone())?;
                     return self.handle_relocate(signed_relocate);
                 }
                 _ => {
-                    self.routing_msg_backlog.push(signed_msg);
+                    self.msg_backlog.push(signed_msg.into_queued());
                 }
             }
         }
@@ -475,8 +468,8 @@ impl Base for Adult {
         &self.full_id
     }
 
-    fn in_location(&self, auth: &Location) -> bool {
-        self.chain.in_location(auth)
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        self.chain.in_dst_location(dst)
     }
 
     fn peer_map(&self) -> &PeerMap {
@@ -500,33 +493,31 @@ impl Base for Adult {
 
         let mut transition = Transition::Stay;
 
-        for (pub_id, msg) in mem::replace(&mut self.direct_msg_backlog, Default::default()) {
+        for msg in mem::take(&mut self.msg_backlog) {
             if let Transition::Stay = &transition {
-                match self.handle_direct_message(msg, pub_id, outbox) {
-                    Ok(new_transition) => transition = new_transition,
-                    Err(err) => debug!("{} - {:?}", self, err),
-                }
-            } else {
-                self.direct_msg_backlog.push((pub_id, msg));
-            }
-        }
+                let result = match msg {
+                    QueuedMessage::Hop(msg) => {
+                        let msg = match HopMessageWithBytes::new(msg, &self.log_ident()) {
+                            Ok(msg) => msg,
+                            Err(err) => {
+                                error!("{} - Failed to make message {:?}", self, err);
+                                continue;
+                            }
+                        };
 
-        for msg in mem::replace(&mut self.routing_msg_backlog, Default::default()) {
-            if let Transition::Stay = &transition {
-                let msg = match HopMessageWithBytes::new(msg, &self.log_ident()) {
-                    Ok(msg) => msg,
-                    Err(err) => {
-                        error!("{} - Failed to make message {:?}", self, err);
-                        continue;
+                        self.handle_filtered_signed_message(msg)
+                    }
+                    QueuedMessage::Direct(sender, msg) => {
+                        self.handle_direct_message(msg, sender, outbox)
                     }
                 };
 
-                match self.handle_filtered_signed_message(msg) {
+                match result {
                     Ok(new_transition) => transition = new_transition,
                     Err(err) => debug!("{} - {:?}", self, err),
                 }
             } else {
-                self.routing_msg_backlog.push(msg);
+                self.msg_backlog.push(msg);
             }
         }
 
@@ -550,11 +541,11 @@ impl Base for Adult {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: Variant,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        use crate::messages::DirectMessage::*;
+        use crate::messages::Variant::*;
         match msg {
             MessageSignature(msg) => self.handle_message_signature(*msg, *p2p_node.public_id()),
             ParsecRequest(version, par_request) => {
@@ -571,23 +562,29 @@ impl Base for Adult {
                 debug!("{} - Received connection response from {}", self, p2p_node);
                 Ok(Transition::Stay)
             }
-            msg @ BootstrapResponse(_) => {
-                debug!(
-                    "{} Unhandled direct message from {}, discard: {:?}",
-                    self,
-                    p2p_node.public_id(),
-                    msg
-                );
-                Ok(Transition::Stay)
-            }
-            msg @ JoinRequest(_) | msg @ MemberKnowledge { .. } => {
+            JoinRequest(_) | MemberKnowledge { .. } => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
                     self,
                     p2p_node.public_id(),
                     msg
                 );
-                self.direct_msg_backlog.push((p2p_node, msg));
+                self.msg_backlog.push(QueuedMessage::Direct(p2p_node, msg));
+                Ok(Transition::Stay)
+            }
+            NeighbourInfo(_)
+            | UserMessage(_)
+            | NodeApproval(_)
+            | AckMessage { .. }
+            | GenesisUpdate(_)
+            | Relocate(_)
+            | BootstrapResponse(_) => {
+                debug!(
+                    "{} Unhandled direct message from {}, discard: {:?}",
+                    self,
+                    p2p_node.public_id(),
+                    msg
+                );
                 Ok(Transition::Stay)
             }
         }

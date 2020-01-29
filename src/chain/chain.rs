@@ -16,7 +16,7 @@ use super::{
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
     utils::LogIdent,
@@ -907,10 +907,10 @@ impl Chain {
     /// Provide a SectionProofSlice that proves the given signature to the given destination
     /// location.
     /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
-    /// `Location::Node` instead of the stored knowledge. Has no effect for other location types.
+    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
     pub fn prove(
         &self,
-        target: &Location,
+        target: &DstLocation,
         node_knowledge_override: Option<u64>,
     ) -> SectionProofSlice {
         let first_index = self.knowledge_index(target, node_knowledge_override);
@@ -920,10 +920,14 @@ impl Chain {
     /// Provide a start index of a SectionProofSlice that proves the given signature to the given
     /// destination location.
     /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
-    /// `Location::Node` instead of the stored knowledge. Has no effect for other location types.
-    pub fn knowledge_index(&self, target: &Location, node_knowledge_override: Option<u64>) -> u64 {
+    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
+    pub fn knowledge_index(
+        &self,
+        target: &DstLocation,
+        node_knowledge_override: Option<u64>,
+    ) -> u64 {
         match (target, node_knowledge_override) {
-            (Location::Node(_), Some(knowledge)) => knowledge,
+            (DstLocation::Node(_), Some(knowledge)) => knowledge,
             _ => self.state.proving_index(target),
         }
     }
@@ -1401,17 +1405,17 @@ impl Chain {
         result
     }
 
-    /// Returns a set of nodes to which a message for the given `Location` could be sent
+    /// Returns a set of nodes to which a message for the given `DstLocation` could be sent
     /// onwards, sorted by priority, along with the number of targets the message should be sent to.
     /// If the total number of targets returned is larger than this number, the spare targets can
     /// be used if the message can't be delivered to some of the initial ones.
     ///
-    /// * If the destination is an `Location::Section`:
+    /// * If the destination is an `DstLocation::Section`:
     ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
     ///       the destination), returns all other members of our section; otherwise
     ///     - returns the `N/3` closest members to the target
     ///
-    /// * If the destination is an `Location::PrefixSection`:
+    /// * If the destination is an `DstLocation::PrefixSection`:
     ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
     ///       RT, returns all members in these prefixes except ourself; otherwise
     ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
@@ -1423,9 +1427,9 @@ impl Chain {
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(&self, dst: &Location) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
+    pub fn targets(&self, dst: &DstLocation) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
         let (best_section, dg_size) = match *dst {
-            Location::Node(ref target_name) => {
+            DstLocation::Node(ref target_name) => {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
                 }
@@ -1434,7 +1438,7 @@ impl Chain {
                 }
                 self.candidates(target_name)?
             }
-            Location::Section(ref target_name) => {
+            DstLocation::Section(ref target_name) => {
                 let (prefix, section) = self.closest_section_info(*target_name);
                 if prefix == self.our_prefix() || prefix.is_neighbour(self.our_prefix()) {
                     // Exclude our name since we don't need to send to ourself
@@ -1451,7 +1455,7 @@ impl Chain {
                 }
                 self.candidates(target_name)?
             }
-            Location::PrefixSection(ref prefix) => {
+            DstLocation::PrefixSection(ref prefix) => {
                 if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
                 {
                     // only route the message when we have all the targets in our chain -
@@ -1530,12 +1534,20 @@ impl Chain {
         }
     }
 
-    /// Returns whether we are a part of the given location.
-    pub fn in_location(&self, auth: &Location) -> bool {
-        match *auth {
-            Location::Node(ref name) => self.our_id().name() == name,
-            Location::Section(ref name) => self.our_prefix().matches(name),
-            Location::PrefixSection(ref prefix) => self.our_prefix().is_compatible(prefix),
+    /// Returns whether we are a part of the given source.
+    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
+        match src {
+            SrcLocation::Node(name) => self.our_id().name() == name,
+            SrcLocation::Section(prefix) => self.our_prefix().is_compatible(prefix),
+        }
+    }
+
+    /// Returns whether we are a part of the given destination.
+    pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
+        match dst {
+            DstLocation::Node(name) => self.our_id().name() == name,
+            DstLocation::Section(name) => self.our_prefix().matches(name),
+            DstLocation::PrefixSection(prefix) => self.our_prefix().is_compatible(prefix),
         }
     }
 

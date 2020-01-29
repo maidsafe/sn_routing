@@ -11,14 +11,18 @@ use super::{
     gen_elder_index, gen_range, gen_vec, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use itertools::Itertools;
-use rand::{seq::SliceRandom, Rng};
+use rand::{
+    seq::{IteratorRandom, SliceRandom},
+    Rng,
+};
 use routing::{
     event::Event,
     mock::Environment,
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    EventStream, FullId, Location, NetworkConfig, NetworkParams, Prefix, XorName, Xorable,
+    DstLocation, EventStream, FullId, NetworkConfig, NetworkParams, Prefix, SrcLocation, XorName,
+    Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -570,8 +574,8 @@ fn poll_after_churn(
 #[derive(Eq, PartialEq, Hash, Debug)]
 struct MessageKey {
     content: Vec<u8>,
-    src: Location,
-    dst: Location,
+    src: SrcLocation,
+    dst: DstLocation,
 }
 
 /// A set of expectations: Which nodes, groups and sections are supposed to receive a message.
@@ -579,7 +583,7 @@ struct Expectations {
     /// The message expected to be received.
     messages: HashSet<MessageKey>,
     /// The section or section members of receiving groups or sections, at the time of sending.
-    sections: HashMap<Location, HashSet<XorName>>,
+    sections: HashMap<DstLocation, HashSet<XorName>>,
     /// Helper to build the map of new names to old names by which we can track even relocated
     /// nodes.
     relocation_map_builder: RelocationMapBuilder,
@@ -599,15 +603,15 @@ impl Expectations {
     fn send_and_expect(
         &mut self,
         content: &[u8],
-        src: Location,
-        dst: Location,
+        src: SrcLocation,
+        dst: DstLocation,
         nodes: &mut [TestNode],
         elder_size: usize,
     ) {
         let mut sent_count = 0;
         for node in nodes
             .iter_mut()
-            .filter(|node| node.inner.is_elder() && node.is_recipient(&src))
+            .filter(|node| node.inner.is_elder() && node.in_src_location(&src))
         {
             unwrap!(node.inner.send_message(src, dst, content.to_vec()));
             sent_count += 1;
@@ -634,9 +638,9 @@ impl Expectations {
     }
 
     /// Adds the expectation that the nodes belonging to `dst` receive the message.
-    fn expect(&mut self, nodes: &mut [TestNode], dst: Location, key: MessageKey) {
+    fn expect(&mut self, nodes: &mut [TestNode], dst: DstLocation, key: MessageKey) {
         if dst.is_multiple() && !self.sections.contains_key(&dst) {
-            let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.is_recipient(&dst);
+            let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.in_dst_location(&dst);
             let section = nodes
                 .iter()
                 .filter(is_recipient)
@@ -658,7 +662,7 @@ impl Expectations {
             .sections
             .iter_mut()
             .map(|(dst, section)| {
-                let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.is_recipient(dst);
+                let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.in_dst_location(dst);
                 let old_section = section.clone();
                 let new_section: HashSet<_> = nodes
                     .iter()
@@ -686,7 +690,7 @@ impl Expectations {
                     if dst.is_multiple() {
                         let checker = |entry: &HashSet<XorName>| entry.contains(&orig_name);
                         if !self.sections.get(&key.dst).map_or(false, checker) {
-                            if let Location::Section(_) = dst {
+                            if let DstLocation::Section(_) = dst {
                                 trace!(
                                     "Unexpected message for node {}: {:?} / {:?}",
                                     orig_name,
@@ -723,7 +727,7 @@ impl Expectations {
         }
 
         for key in self.messages {
-            if let Location::Node(dst_name) = key.dst {
+            if let DstLocation::Node(dst_name) = key.dst {
                 // Verify that if the message destination is a single node, then that node either
                 // received it, or if not it's only because it got dropped, relocated or demoted.
                 if let Some(node) = nodes.iter().find(|node| node.name() == dst_name) {
@@ -761,35 +765,35 @@ fn setup_expectations<R: Rng>(
 ) -> Expectations {
     // Create random content and pick random sending and receiving nodes.
     let content = gen_vec(rng, 100);
+
     let index0 = gen_elder_index(rng, nodes);
     let index1 = gen_elder_index(rng, nodes);
-    let auth_n0 = Location::Node(nodes[index0].name());
-    let auth_n1 = Location::Node(nodes[index1].name());
-    let auth_g0 = Location::Section(rng.gen());
-    let auth_g1 = Location::Section(rng.gen());
-    let section_name: XorName = rng.gen();
-    let auth_s0 = Location::Section(section_name);
+
+    let prefix: Prefix<XorName> = unwrap!(current_sections(nodes).choose(rng));
+    let section_name = prefix.substituted_in(rng.gen());
+
+    let src_n0 = SrcLocation::Node(nodes[index0].name());
+    let dst_n0 = DstLocation::Node(nodes[index0].name());
+    let dst_n1 = DstLocation::Node(nodes[index1].name());
+    let src_s0 = SrcLocation::Section(prefix);
+    let dst_s0 = DstLocation::Section(section_name);
     // this makes sure we have two different sections if there exists more than one
-    let auth_s1 = Location::Section(!section_name);
+    let dst_s1 = DstLocation::Section(!section_name);
 
     let mut expectations = Expectations::new(nodes);
 
-    // Test messages from a node to itself, another node, a group and a section...
-    expectations.send_and_expect(&content, auth_n0, auth_n0, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_n0, auth_n1, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_n0, auth_g0, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_n0, auth_s0, nodes, elder_size);
-    // ... and from a section to itself, another section, a group and a node...
-    expectations.send_and_expect(&content, auth_g0, auth_g0, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_g0, auth_g1, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_g0, auth_s0, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_g0, auth_n0, nodes, elder_size);
-    // ... and from a section to itself, another section, a group and a node...
-    expectations.send_and_expect(&content, auth_s0, auth_s0, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_s0, auth_s1, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_s0, auth_g0, nodes, elder_size);
-    expectations.send_and_expect(&content, auth_s0, auth_n0, nodes, elder_size);
-
+    // Node to itself
+    expectations.send_and_expect(&content, src_n0, dst_n0, nodes, elder_size);
+    // Node to another node
+    expectations.send_and_expect(&content, src_n0, dst_n1, nodes, elder_size);
+    // Node to section
+    expectations.send_and_expect(&content, src_n0, dst_s0, nodes, elder_size);
+    // Section to itself
+    expectations.send_and_expect(&content, src_s0, dst_s0, nodes, elder_size);
+    // Section to another section
+    expectations.send_and_expect(&content, src_s0, dst_s1, nodes, elder_size);
+    // Section to node
+    expectations.send_and_expect(&content, src_s0, dst_n0, nodes, elder_size);
     expectations
 }
 

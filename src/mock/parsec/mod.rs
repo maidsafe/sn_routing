@@ -334,7 +334,7 @@ where
 
 // Contains an additional `u8` so that the size is > 0. This is needed when counting sizes to
 // determine parsec graph pruning.
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Default)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug, Default)]
 pub struct Request<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>, u8);
 
 impl<T: NetworkEvent, P: PublicId> Request<T, P> {
@@ -343,7 +343,7 @@ impl<T: NetworkEvent, P: PublicId> Request<T, P> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, Debug, Default)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug, Default)]
 pub struct Response<T: NetworkEvent, P: PublicId>(PhantomData<(T, P)>, u8);
 
 impl<T: NetworkEvent, P: PublicId> Response<T, P> {

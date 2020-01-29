@@ -15,7 +15,7 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{DirectMessage, MemberKnowledge, VerifyStatus},
+    messages::{MemberKnowledge, Variant, VerifyStatus},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -531,7 +531,7 @@ pub trait Approved: Base {
         for recipient in recipients {
             self.send_direct_message(
                 recipient.connection_info(),
-                DirectMessage::MemberKnowledge(payload),
+                Variant::MemberKnowledge(payload),
             )
         }
     }

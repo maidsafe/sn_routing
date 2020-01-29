@@ -16,10 +16,10 @@ use crate::{
     error::RoutingError,
     event::{Connected, Event},
     id::{FullId, P2pNode},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     messages::{
-        BootstrapResponse, DirectMessage, HopMessageWithBytes, JoinRequest, MessageContent,
-        RoutingMessage, SignedRoutingMessage, VerifyStatus,
+        BootstrapResponse, HopMessageWithBytes, JoinRequest, QueuedMessage, RoutingMessage,
+        SignedRoutingMessage, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -55,8 +55,7 @@ pub struct JoiningPeerDetails {
 pub struct JoiningPeer {
     network_service: NetworkService,
     routing_msg_filter: RoutingMessageFilter,
-    routing_msg_backlog: Vec<SignedRoutingMessage>,
-    direct_msg_backlog: Vec<(P2pNode, DirectMessage)>,
+    msg_backlog: Vec<QueuedMessage>,
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
@@ -78,8 +77,7 @@ impl JoiningPeer {
         let mut joining_peer = Self {
             network_service: details.network_service,
             routing_msg_filter: RoutingMessageFilter::new(),
-            routing_msg_backlog: vec![],
-            direct_msg_backlog: vec![],
+            msg_backlog: vec![],
             full_id: details.full_id,
             timer: details.timer,
             rng: details.rng,
@@ -102,8 +100,7 @@ impl JoiningPeer {
             event_backlog: vec![],
             full_id: self.full_id,
             gen_pfx_info,
-            routing_msg_backlog: self.routing_msg_backlog,
-            direct_msg_backlog: self.direct_msg_backlog,
+            msg_backlog: self.msg_backlog,
             routing_msg_filter: self.routing_msg_filter,
             sig_accumulator: Default::default(),
             timer: self.timer,
@@ -150,7 +147,7 @@ impl JoiningPeer {
 
             self.send_direct_message(
                 dst.connection_info(),
-                DirectMessage::JoinRequest(Box::new(join_request)),
+                Variant::JoinRequest(Box::new(join_request)),
             );
         }
     }
@@ -164,17 +161,17 @@ impl JoiningPeer {
 
         match msg {
             RoutingMessage {
-                content: MessageContent::NodeApproval(gen_info),
-                src: Location::PrefixSection(_),
-                dst: Location::Node { .. },
-            } => Ok(self.handle_node_approval(gen_info)),
+                content: Variant::NodeApproval(gen_info),
+                src: SrcLocation::Section(_),
+                dst: DstLocation::Node { .. },
+            } => Ok(self.handle_node_approval(*gen_info)),
             _ => {
                 debug!(
                     "{} - Unhandled routing message, adding to backlog: {:?}",
                     self, msg
                 );
-                self.routing_msg_backlog
-                    .push(SignedRoutingMessage::from_parts(msg, metadata));
+                self.msg_backlog
+                    .push(SignedRoutingMessage::from_parts(msg, metadata).into_queued());
                 Ok(Transition::Stay)
             }
         }
@@ -224,7 +221,7 @@ impl Base for JoiningPeer {
         &self.full_id
     }
 
-    fn in_location(&self, dst: &Location) -> bool {
+    fn in_dst_location(&self, dst: &DstLocation) -> bool {
         dst.is_single() && dst.name() == *self.full_id.public_id().name()
     }
 
@@ -246,8 +243,8 @@ impl Base for JoiningPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Location,
-        _: Location,
+        _: SrcLocation,
+        _: DstLocation,
         _: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not joined.", self);
@@ -273,12 +270,12 @@ impl Base for JoiningPeer {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: Variant,
         p2p_node: P2pNode,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+            Variant::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 if info.version() > self.elders_info.version() {
                     if info.prefix().matches(self.name()) {
                         info!(
@@ -298,7 +295,7 @@ impl Base for JoiningPeer {
                     }
                 }
             }
-            DirectMessage::ConnectionResponse | DirectMessage::BootstrapResponse(_) => (),
+            Variant::ConnectionResponse | Variant::BootstrapResponse(_) => (),
             _ => {
                 debug!(
                     "{} Unhandled direct message from {}, adding to backlog: {:?}",
@@ -306,7 +303,7 @@ impl Base for JoiningPeer {
                     p2p_node.public_id(),
                     msg
                 );
-                self.direct_msg_backlog.push((p2p_node, msg));
+                self.msg_backlog.push(QueuedMessage::Direct(p2p_node, msg));
             }
         }
 
@@ -334,11 +331,11 @@ impl Base for JoiningPeer {
         );
 
         let signed_msg = msg.take_or_deserialize_signed_routing_message()?;
-        if self.in_location(&signed_msg.routing_message().dst) {
+        if self.in_dst_location(&signed_msg.routing_message().dst) {
             self.verify_signed_message(&signed_msg)?;
             self.dispatch_routing_message(signed_msg, outbox)
         } else {
-            self.routing_msg_backlog.push(signed_msg);
+            self.msg_backlog.push(signed_msg.into_queued());
             Ok(Transition::Stay)
         }
     }

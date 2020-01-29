@@ -12,8 +12,8 @@ use crate::{
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode},
-    location::Location,
-    messages::{BootstrapResponse, DirectMessage, HopMessageWithBytes},
+    location::{DstLocation, SrcLocation},
+    messages::{BootstrapResponse, HopMessageWithBytes, Variant},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -124,7 +124,7 @@ impl BootstrappingPeer {
         let _ = self.timeout_tokens.insert(token, dst.peer_addr);
 
         let destination = self.get_destination();
-        self.send_direct_message(&dst, DirectMessage::BootstrapRequest(destination));
+        self.send_direct_message(&dst, Variant::BootstrapRequest(destination));
         self.peer_map_mut().connect(dst);
     }
 
@@ -207,7 +207,7 @@ impl Base for BootstrappingPeer {
         &self.full_id
     }
 
-    fn in_location(&self, _: &Location) -> bool {
+    fn in_dst_location(&self, _: &DstLocation) -> bool {
         false
     }
 
@@ -229,8 +229,8 @@ impl Base for BootstrappingPeer {
 
     fn handle_send_message(
         &mut self,
-        _: Location,
-        _: Location,
+        _: SrcLocation,
+        _: DstLocation,
         _: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - not bootstrapped.", self);
@@ -281,7 +281,7 @@ impl Base for BootstrappingPeer {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: Variant,
         p2p_node: P2pNode,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
@@ -296,14 +296,14 @@ impl Base for BootstrappingPeer {
         }
 
         match msg {
-            DirectMessage::BootstrapResponse(BootstrapResponse::Join(info)) => {
+            Variant::BootstrapResponse(BootstrapResponse::Join(info)) => {
                 info!(
                     "{} - Joining a section {:?} (given by {:?})",
                     self, info, p2p_node
                 );
                 self.join_section(info)
             }
-            DirectMessage::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
+            Variant::BootstrapResponse(BootstrapResponse::Rebootstrap(new_conn_infos)) => {
                 info!(
                     "{} - Bootstrapping redirected to another set of peers: {:?}",
                     self, new_conn_infos
@@ -426,7 +426,7 @@ mod tests {
 
             let ok = match unwrap!(from_network_bytes(&msg)) {
                 Message::Direct(msg) => match *msg.content() {
-                    DirectMessage::BootstrapRequest(_) => true,
+                    Variant::BootstrapRequest(_) => true,
                     _ => false,
                 },
                 _ => false,

@@ -7,7 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{super::test_utils, *};
-use crate::{messages::RoutingMessage, parsec::generate_bls_threshold_secret_key, unwrap};
+use crate::{
+    location::{DstLocation, SrcLocation},
+    messages::RoutingMessage,
+    parsec::generate_bls_threshold_secret_key,
+    unwrap,
+};
 use mock_quic_p2p::Network;
 use std::collections::BTreeMap;
 
@@ -60,12 +65,12 @@ impl AdultUnderTest {
 
     fn genesis_update_message(&self, gen_pfx_info: GenesisPfxInfo) -> HopMessageWithBytes {
         let msg = RoutingMessage {
-            src: Location::PrefixSection(Prefix::default()),
-            dst: Location::Node(*self.adult.name()),
-            content: MessageContent::GenesisUpdate(gen_pfx_info),
+            src: SrcLocation::Section(Prefix::default()),
+            dst: DstLocation::Node(*self.adult.name()),
+            content: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
         };
 
-        let mut msg = unwrap!(self
+        let msg = unwrap!(self
             .elders
             .values()
             .take(2)
@@ -74,7 +79,7 @@ impl AdultUnderTest {
                 let public_key_set = chain.our_section_bls_keys().clone();
                 let proof = chain.prove(&msg.dst, None);
 
-                unwrap!(SignedRoutingMessage::new(
+                unwrap!(AccumulatingMessage::new(
                     msg.clone(),
                     secret_key,
                     public_key_set,
@@ -88,7 +93,7 @@ impl AdultUnderTest {
                     Some(acc)
                 }
             }));
-        msg.combine_signatures();
+        let msg = unwrap!(msg.combine_signatures());
         unwrap!(HopMessageWithBytes::new(msg, &LogIdent::new("node")))
     }
 
@@ -148,8 +153,7 @@ fn new_adult_state(
         event_backlog: Vec::new(),
         full_id,
         gen_pfx_info,
-        routing_msg_backlog: Vec::new(),
-        direct_msg_backlog: Vec::new(),
+        msg_backlog: Vec::new(),
         sig_accumulator: Default::default(),
         routing_msg_filter: Default::default(),
         timer: test_utils::create_timer(),

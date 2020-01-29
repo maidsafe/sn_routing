@@ -12,10 +12,10 @@ use crate::{
     error::RoutingError,
     event::Client,
     id::{FullId, P2pNode, PublicId},
-    location::Location,
+    location::{DstLocation, SrcLocation},
     messages::{
-        DirectMessage, HopMessageWithBytes, Message, MessageWithBytes, PartialMessage,
-        SignedDirectMessage,
+        HopMessageWithBytes, Message, MessageWithBytes, PartialMessage, SignedDirectMessage,
+        Variant,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -42,7 +42,7 @@ pub trait Base: Display {
     fn network_service(&self) -> &NetworkService;
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
-    fn in_location(&self, auth: &Location) -> bool;
+    fn in_dst_location(&self, dst: &DstLocation) -> bool;
     fn peer_map(&self) -> &PeerMap;
     fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
@@ -62,7 +62,7 @@ pub trait Base: Display {
 
     fn handle_direct_message(
         &mut self,
-        msg: DirectMessage,
+        msg: Variant,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
@@ -114,8 +114,8 @@ pub trait Base: Display {
 
     fn handle_send_message(
         &mut self,
-        _src: Location,
-        _dst: Location,
+        _src: SrcLocation,
+        _dst: DstLocation,
         _content: Vec<u8>,
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);
@@ -354,7 +354,7 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: DirectMessage) {
+    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: Variant) {
         let message = if let Ok(message) = self.to_signed_direct_message(content) {
             message
         } else {
@@ -405,7 +405,7 @@ pub trait Base: Display {
             .send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
-    fn to_signed_direct_message(&self, content: DirectMessage) -> Result<Message, RoutingError> {
+    fn to_signed_direct_message(&self, content: Variant) -> Result<Message, RoutingError> {
         SignedDirectMessage::new(content, self.full_id())
             .map(Message::Direct)
             .map_err(|err| {

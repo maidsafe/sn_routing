@@ -15,7 +15,7 @@ use crate::unwrap;
 use crate::{
     chain::{self, GenesisPfxInfo},
     id::{self, FullId},
-    messages::DirectMessage,
+    messages::Variant,
     rng::{self, MainRng, RngCompat},
     utils::LogIdent,
 };
@@ -117,7 +117,7 @@ impl ParsecMap {
         request: Request,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> (Option<DirectMessage>, bool) {
+    ) -> (Option<Variant>, bool) {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
             size
@@ -134,7 +134,7 @@ impl ParsecMap {
 
         let response = parsec
             .handle_request(&pub_id, request)
-            .map(|response| DirectMessage::ParsecResponse(msg_version, response))
+            .map(|response| Variant::ParsecResponse(msg_version, response))
             .map_err(|err| {
                 debug!("{} - Error handling parsec request: {:?}", log_ident, err);
                 err
@@ -177,13 +177,13 @@ impl ParsecMap {
         &mut self,
         version: u64,
         target: &id::PublicId,
-    ) -> Result<DirectMessage, CreateGossipError> {
+    ) -> Result<Variant, CreateGossipError> {
         let request = self
             .map
             .get_mut(&version)
             .ok_or(CreateGossipError::MissingVersion)?
             .create_gossip(target)?;
-        Ok(DirectMessage::ParsecRequest(version, request))
+        Ok(Variant::ParsecRequest(version, request))
     }
 
     pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &LogIdent) {

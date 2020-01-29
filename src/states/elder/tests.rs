@@ -17,7 +17,7 @@ use super::{super::test_utils, *};
 use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
     generate_bls_threshold_secret_key,
-    messages::DirectMessage,
+    messages::Variant,
     rng::{self, MainRng},
     state_machine::Transition,
     unwrap, utils, ELDER_SIZE,
@@ -154,7 +154,7 @@ impl ElderUnderTest {
         let parsec = self.elder.parsec_map_mut();
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
-        let message = DirectMessage::ParsecRequest(parsec_version, request);
+        let message = Variant::ParsecRequest(parsec_version, request);
         self.handle_direct_message((message, P2pNode::new(other_pub_id, connection_info)))
     }
 
@@ -331,7 +331,7 @@ impl ElderUnderTest {
             .is_peer_our_elder(self.candidate.public_id())
     }
 
-    fn handle_direct_message(&mut self, msg: (DirectMessage, P2pNode)) -> Result<(), RoutingError> {
+    fn handle_direct_message(&mut self, msg: (Variant, P2pNode)) -> Result<(), RoutingError> {
         let _ = self.elder.handle_direct_message(msg.0, msg.1, &mut ())?;
         Ok(())
     }
@@ -400,8 +400,7 @@ fn new_elder_state(
         full_id,
         gen_pfx_info,
         routing_msg_queue: Default::default(),
-        routing_msg_backlog: Default::default(),
-        direct_msg_backlog: Default::default(),
+        msg_backlog: Default::default(),
         sig_accumulator: Default::default(),
         parsec_map,
         routing_msg_filter: RoutingMessageFilter::new(),
@@ -539,8 +538,8 @@ fn send_genesis_update() {
     let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
     assert_eq!(message.0, adult1);
 
-    let proof_chain = unwrap!(message.1.proof_chain());
-    verify_proof_chain_contains(proof_chain, orig_elders_version);
+    let proof = &message.1.proof;
+    verify_proof_chain_contains(proof, orig_elders_version);
 
     // Receive MemberKnowledge from the adult
     elder_test.elder.handle_member_knowledge(
@@ -554,9 +553,9 @@ fn send_genesis_update() {
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
     // contain the previous version.
     let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
-    let proof_chain = unwrap!(message.1.proof_chain());
-    verify_proof_chain_contains(proof_chain, elder_test.elders_info.version());
-    verify_proof_chain_does_not_contain(proof_chain, orig_elders_version);
+    let proof = &message.1.proof;
+    verify_proof_chain_contains(proof, elder_test.elders_info.version());
+    verify_proof_chain_does_not_contain(proof, orig_elders_version);
 }
 
 fn verify_proof_chain_contains(proof_chain: &SectionProofSlice, expected_version: u64) {
