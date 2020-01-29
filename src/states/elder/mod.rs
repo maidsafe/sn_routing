@@ -1132,30 +1132,24 @@ impl Elder {
         let accumulating_msg =
             self.to_accumulating_message(dst, variant, node_knowledge_override)?;
 
-        for target in self.get_signature_targets() {
-            if target == *self.name() {
+        for target in self.get_signature_targets(&dst) {
+            if target.name() == self.name() {
                 if let Some(msg) = self
                     .sig_accumulator
                     .add_proof(accumulating_msg.clone(), &log_ident)
                 {
                     self.handle_accumulated_message(msg)?;
                 }
-            } else if let Some(p2p_node) = self.chain.get_p2p_node(&target) {
+            } else {
                 trace!(
                     "{} Sending a signature for {:?} to {:?}",
                     self,
                     accumulating_msg.content,
                     target
                 );
-                let conn_info = p2p_node.connection_info().clone();
                 self.send_direct_message(
-                    &conn_info,
+                    target.connection_info(),
                     Variant::MessageSignature(Box::new(accumulating_msg.clone())),
-                );
-            } else {
-                error!(
-                    "{} Failed to resolve signature target {:?} for message {:?}",
-                    self, target, accumulating_msg
                 );
             }
         }
@@ -1215,20 +1209,29 @@ impl Elder {
     /// Returns the set of peers that are responsible for collecting signatures to verify a message;
     /// this may contain us or only other nodes. If our signature is not required, this returns
     /// `None`.
-    fn get_signature_targets(&self) -> Vec<XorName> {
+    fn get_signature_targets(&self, dst: &DstLocation) -> Vec<P2pNode> {
+        let dst_name = match dst {
+            DstLocation::Node(name) => *name,
+            DstLocation::Section(name) => *name,
+            DstLocation::Prefix(prefix) => prefix.name(),
+            DstLocation::Direct => {
+                log_or_panic!(
+                    LogLevel::Error,
+                    "{} - Invalid destination for signature targets: {:?}",
+                    self,
+                    dst
+                );
+                return vec![];
+            }
+        };
+
         let mut list = self
             .chain
             .our_elders()
-            .map(|p2p_node| p2p_node.name())
-            .copied()
-            .sorted_by(|lhs, rhs| self.our_prefix().name().cmp_distance(lhs, rhs));
-
-        if list.contains(self.name()) {
-            list.truncate(delivery_group_size(list.len()));
-            list
-        } else {
-            Vec::new()
-        }
+            .cloned()
+            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+        list.truncate(delivery_group_size(list.len()));
+        list
     }
 
     /// Returns a list of target IDs for a message sent via route.
