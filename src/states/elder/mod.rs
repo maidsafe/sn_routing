@@ -792,7 +792,6 @@ impl Elder {
             }
             Variant::BootstrapResponse(_) | Variant::NodeApproval(_) => {
                 debug!("{} Unhandled message, ignoring: {:?}", self, msg);
-                return Err(RoutingError::BadLocation);
             }
         }
 
