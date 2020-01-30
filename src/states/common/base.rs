@@ -58,10 +58,9 @@ pub trait Base: Display {
     }
 
     fn filter_incoming_message(&mut self, msg: &MessageWithBytes) -> bool;
-
-    fn verify_message(&self, msg: &Message) -> Result<bool>;
-
     fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()>;
+    fn should_handle_message(&self, _msg: &Message) -> bool;
+    fn verify_message(&self, msg: &Message) -> Result<bool>;
 
     fn handle_message(
         &mut self,
@@ -69,6 +68,8 @@ pub trait Base: Display {
         message: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition>;
+
+    fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, message: Message);
 
     fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
         match action {
@@ -290,14 +291,20 @@ pub trait Base: Display {
     fn handle_filtered_message(
         &mut self,
         sender: Option<ConnectionInfo>,
-        msg: MessageWithBytes,
+        mut msg: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
         self.try_relay_message(&msg)?;
 
-        if let Some(msg) = self.preprocess_message(msg)? {
+        if !self.in_dst_location(msg.message_dst()) {
+            return Ok(Transition::Stay);
+        }
+
+        let msg = msg.take_or_deserialize_message()?;
+        if self.should_handle_message(&msg) && self.verify_message(&msg)? {
             self.handle_message(sender, msg, outbox)
         } else {
+            self.unhandled_message(sender, msg);
             Ok(Transition::Stay)
         }
     }
@@ -308,23 +315,6 @@ pub trait Base: Display {
             self.relay_message(msg)
         } else {
             Ok(())
-        }
-    }
-
-    fn should_verify_message(&self, _msg: &Message) -> bool {
-        true
-    }
-
-    fn preprocess_message(&self, mut msg: MessageWithBytes) -> Result<Option<Message>> {
-        if !self.in_dst_location(msg.message_dst()) {
-            return Ok(None);
-        }
-
-        let msg = msg.take_or_deserialize_message()?;
-        if !self.should_verify_message(&msg) || self.verify_message(&msg)? {
-            Ok(Some(msg))
-        } else {
-            Ok(None)
         }
     }
 

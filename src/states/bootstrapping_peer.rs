@@ -13,7 +13,7 @@ use crate::{
     event::Event,
     id::FullId,
     location::{DstLocation, SrcLocation},
-    messages::{BootstrapResponse, Message, MessageWithBytes, Variant},
+    messages::{BootstrapResponse, Message, MessageWithBytes, Variant, VerifyStatus},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -28,6 +28,7 @@ use crate::{
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display, Formatter},
+    iter,
     net::SocketAddr,
     time::Duration,
 };
@@ -317,18 +318,40 @@ impl Base for BootstrappingPeer {
                 self.reconnect_to_new_section(new_conn_infos);
                 Ok(Transition::Stay)
             }
-            _ => {
-                debug!("{} - Unhandled message {:?}", self, msg);
-                Ok(Transition::Stay)
-            }
+            _ => unreachable!(),
         }
+    }
+
+    fn unhandled_message(&mut self, _sender: Option<ConnectionInfo>, msg: Message) {
+        debug!("{} - Unhandled message {:?}", self, msg);
     }
 
     fn filter_incoming_message(&mut self, _message: &MessageWithBytes) -> bool {
         true
     }
 
-    fn verify_message(&self, _message: &Message) -> Result<bool> {
+    fn should_handle_message(&self, msg: &Message) -> bool {
+        match msg.variant {
+            Variant::BootstrapResponse(_) => true,
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::NodeApproval(_)
+            | Variant::AckMessage { .. }
+            | Variant::GenesisUpdate(_)
+            | Variant::Relocate(_)
+            | Variant::MessageSignature(_)
+            | Variant::BootstrapRequest(_)
+            | Variant::JoinRequest(_)
+            | Variant::ConnectionResponse
+            | Variant::MemberKnowledge { .. }
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..) => false,
+        }
+    }
+
+    fn verify_message(&self, msg: &Message) -> Result<bool> {
+        msg.verify(iter::empty())
+            .and_then(VerifyStatus::require_full)?;
         Ok(true)
     }
 

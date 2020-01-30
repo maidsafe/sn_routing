@@ -35,7 +35,6 @@ use crate::{
 use log::LogLevel;
 use std::{
     fmt::{self, Display, Formatter},
-    iter,
     time::Duration,
 };
 
@@ -162,6 +161,21 @@ impl JoiningPeer {
         Transition::IntoAdult { gen_pfx_info }
     }
 
+    fn verify_message_full(
+        &self,
+        msg: &Message,
+        key_info: Option<&SectionKeyInfo>,
+    ) -> Result<bool> {
+        msg.verify(as_iter(key_info))
+            .and_then(VerifyStatus::require_full)
+            .map_err(|error| {
+                self.log_verify_failure(msg, &error, as_iter(key_info));
+                error
+            })?;
+
+        Ok(true)
+    }
+
     #[cfg(feature = "mock_base")]
     pub fn process_timers(&mut self) {
         self.timer.process_timers()
@@ -268,7 +282,27 @@ impl Base for JoiningPeer {
 
                 return Ok(self.handle_node_approval(*gen_info));
             }
+            _ => unreachable!(),
+        }
+
+        Ok(Transition::Stay)
+    }
+
+    fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, msg: Message) {
+        match msg.variant {
             Variant::ConnectionResponse | Variant::BootstrapResponse(_) => (),
+            _ => {
+                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg,);
+                self.msg_backlog.push(msg.into_queued(sender));
+            }
+        }
+    }
+
+    fn should_handle_message(&self, msg: &Message) -> bool {
+        match msg.variant {
+            Variant::BootstrapResponse(BootstrapResponse::Join(_)) | Variant::NodeApproval(_) => {
+                true
+            }
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::AckMessage { .. }
@@ -276,16 +310,13 @@ impl Base for JoiningPeer {
             | Variant::Relocate(_)
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
+            | Variant::BootstrapResponse(_)
             | Variant::JoinRequest(_)
-            | Variant::MemberKnowledge(_)
+            | Variant::ConnectionResponse
+            | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..) => {
-                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg,);
-                self.msg_backlog.push(msg.into_queued(sender));
-            }
+            | Variant::ParsecResponse(..) => false,
         }
-
-        Ok(Transition::Stay)
     }
 
     fn filter_incoming_message(&mut self, msg: &MessageWithBytes) -> bool {
@@ -299,18 +330,22 @@ impl Base for JoiningPeer {
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
-        if let JoinType::Relocate(payload) = &self.join_type {
-            let details = payload.relocate_details();
-            let key_info = &details.destination_key_info;
-            msg.verify(as_iter(key_info))
-                .and_then(VerifyStatus::require_full)
-                .map_err(|error| {
-                    self.log_verify_failure(msg, &error, as_iter(key_info));
-                    error
-                })?;
+        match (&msg.variant, &self.join_type) {
+            (Variant::NodeApproval(_), JoinType::Relocate(payload)) => {
+                let details = payload.relocate_details();
+                let key_info = &details.destination_key_info;
+                self.verify_message_full(msg, Some(key_info))
+            }
+            (Variant::NodeApproval(_), JoinType::First { .. }) => {
+                // We don't have any trusted keys to verify this message, but we still need to
+                // handle it.
+                Ok(true)
+            }
+            (Variant::BootstrapResponse(BootstrapResponse::Join(_)), _) => {
+                self.verify_message_full(msg, None)
+            }
+            _ => unreachable!(),
         }
-
-        Ok(true)
     }
 }
 
@@ -328,6 +363,10 @@ enum JoinType {
     Relocate(RelocatePayload),
 }
 
-fn as_iter(key_info: &SectionKeyInfo) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
-    iter::once((key_info.prefix(), key_info))
+fn as_iter(
+    key_info: Option<&SectionKeyInfo>,
+) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
+    key_info
+        .into_iter()
+        .map(|key_info| (key_info.prefix(), key_info))
 }

@@ -483,19 +483,18 @@ impl Base for Adult {
                 );
                 Ok(Transition::Stay)
             }
-            Variant::NeighbourInfo(_)
-            | Variant::UserMessage(_)
-            | Variant::NodeApproval(_)
-            | Variant::AckMessage { .. }
-            | Variant::JoinRequest(_)
-            | Variant::MemberKnowledge(_) => {
-                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
-                self.msg_backlog.push(msg.into_queued(sender));
-                Ok(Transition::Stay)
-            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, msg: Message) {
+        match msg.variant {
             Variant::BootstrapResponse(_) => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
-                Ok(Transition::Stay)
+            }
+            _ => {
+                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
+                self.msg_backlog.push(msg.into_queued(sender));
             }
         }
     }
@@ -504,9 +503,7 @@ impl Base for Adult {
         self.msg_filter.filter_incoming(message).is_new()
     }
 
-    fn should_verify_message(&self, msg: &Message) -> bool {
-        // As Adult, we only verify the messages that we know how to process ourselves.
-        // We still handle the other messages, but only by relaying and/or backlogging them.
+    fn should_handle_message(&self, msg: &Message) -> bool {
         match msg.variant {
             Variant::GenesisUpdate(_)
             | Variant::Relocate(_)

@@ -674,7 +674,7 @@ impl Elder {
         Ok(Transition::Stay)
     }
 
-    fn handle_accumulated_message(&mut self, msg: MessageWithBytes) -> Result<()> {
+    fn handle_accumulated_message(&mut self, mut msg: MessageWithBytes) -> Result<()> {
         // FIXME: this is almost the same as `Base::try_handle__message` - find a way
         // to avoid the duplication.
 
@@ -690,7 +690,12 @@ impl Elder {
 
         self.try_relay_message(&msg)?;
 
-        if let Some(msg) = self.preprocess_message(msg)? {
+        if !self.in_dst_location(msg.message_dst()) {
+            return Ok(());
+        }
+
+        let msg = msg.take_or_deserialize_message()?;
+        if self.verify_message(&msg)? {
             self.msg_queue.push_back(msg.into_queued(None));
         }
 
@@ -1434,12 +1439,20 @@ impl Base for Elder {
         Ok(Transition::Stay)
     }
 
+    fn unhandled_message(&mut self, _sender: Option<ConnectionInfo>, _msg: Message) {
+        unreachable!()
+    }
+
     fn filter_incoming_message(&mut self, message: &MessageWithBytes) -> bool {
         self.msg_filter.filter_incoming(message).is_new()
     }
 
     fn relay_message(&mut self, message: &MessageWithBytes) -> Result<()> {
         self.send_signed_message(message)
+    }
+
+    fn should_handle_message(&self, _msg: &Message) -> bool {
+        true
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {
