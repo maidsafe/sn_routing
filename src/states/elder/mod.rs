@@ -731,8 +731,8 @@ impl Elder {
         match msg.variant {
             Variant::NeighbourInfo(elders_info) => {
                 // Ensure the src and dst are what we expect.
-                let _ = msg.src.as_section()?;
-                let _ = msg.dst.as_prefix()?;
+                let _: &Prefix<_> = msg.src.as_section()?;
+                let _: &Prefix<_> = msg.dst.as_prefix()?;
 
                 self.handle_neighbour_info(elders_info, msg.src, msg.dst)?;
             }

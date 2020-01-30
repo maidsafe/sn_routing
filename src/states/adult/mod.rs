@@ -450,8 +450,12 @@ impl Base for Adult {
         trace!("{} - Handle message {:?}", self, msg);
 
         match msg.variant {
-            Variant::GenesisUpdate(info) => self.handle_genesis_update(*info),
+            Variant::GenesisUpdate(info) => {
+                let _: &Prefix<_> = msg.src.as_section()?;
+                self.handle_genesis_update(*info)
+            }
             Variant::Relocate(_) => {
+                let _: &Prefix<_> = msg.src.as_section()?;
                 let signed_relocate = SignedRelocateDetails::new(msg)?;
                 self.handle_relocate(signed_relocate)
             }

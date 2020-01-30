@@ -263,8 +263,8 @@ impl Base for JoiningPeer {
             }
             Variant::NodeApproval(gen_info) => {
                 // Ensure src and dst are what we expect.
-                let _ = msg.src.as_section();
-                let _ = msg.dst.as_node();
+                let _: &Prefix<_> = msg.src.as_section()?;
+                let _: &XorName = msg.dst.as_node()?;
 
                 return Ok(self.handle_node_approval(*gen_info));
             }
