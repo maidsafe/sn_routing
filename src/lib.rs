@@ -80,7 +80,6 @@ mod macros;
 // ############################################################################
 pub use self::{
     error::RoutingError,
-    event_stream::EventStream,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     node::{Builder, Node},
@@ -134,7 +133,6 @@ pub use self::mock::parsec::init_mock;
 mod action;
 mod chain;
 mod error;
-mod event_stream;
 mod id;
 mod location;
 mod message_filter;

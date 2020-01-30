@@ -11,7 +11,6 @@ use crate::{
     chain::NetworkParams,
     error::RoutingError,
     event::Event,
-    event_stream::{EventStepper, EventStream},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     outbox::EventBox,
@@ -98,6 +97,7 @@ impl Builder {
 
         let node = Node {
             user_event_tx,
+            #[cfg(feature = "mock_base")]
             user_event_rx: user_event_rx.clone(),
             interface_result_tx,
             interface_result_rx,
@@ -152,6 +152,7 @@ impl Builder {
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Node {
     user_event_tx: mpmc::Sender<Event>,
+    #[cfg(feature = "mock_base")]
     user_event_rx: mpmc::Receiver<Event>,
     interface_result_tx: mpsc::Sender<Result<(), RoutingError>>,
     interface_result_rx: mpsc::Receiver<Result<(), RoutingError>>,
@@ -185,6 +186,7 @@ impl Node {
             interface_result_tx,
             interface_result_rx,
             user_event_tx,
+            #[cfg(feature = "mock_base")]
             user_event_rx: user_event_rx.clone(),
             machine,
         };
@@ -244,9 +246,6 @@ impl Node {
         dst: DstLocation,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        // Make sure the state machine has processed any outstanding network events.
-        let _ = self.poll();
-
         let action = Action::SendMessage {
             src,
             dst,
@@ -264,9 +263,6 @@ impl Node {
         msg: Bytes,
         token: Token,
     ) -> Result<(), RoutingError> {
-        // Make sure the state machine has processed any outstanding network events.
-        let _ = self.poll();
-
         let action = Action::SendMessageToClient {
             peer_addr,
             msg,
@@ -279,9 +275,6 @@ impl Node {
 
     /// Disconnect form a client peer.
     pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), RoutingError> {
-        // Make sure the state machine has processed any outstanding network events.
-        let _ = self.poll();
-
         let action = Action::DisconnectClient {
             peer_addr,
             result_tx: self.interface_result_tx.clone(),
@@ -320,7 +313,7 @@ impl Node {
     ///
     /// [`Node::register`]: #method.register
     /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
-    pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<(), mpmc::RecvError> {
+    pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<bool, mpmc::RecvError> {
         self.machine.step(op_index, &mut self.user_event_tx)
     }
 
@@ -330,28 +323,13 @@ impl Node {
     }
 }
 
-impl EventStepper for Node {
-    type Item = Event;
-
-    fn produce_events(&mut self) -> Result<(), mpmc::RecvError> {
-        let mut sel = mpmc::Select::new();
-        self.register(&mut sel);
-
-        let op_index = sel.ready();
-        self.machine.step(op_index, &mut self.user_event_tx)
-    }
-
-    fn try_produce_events(&mut self) -> Result<(), mpmc::TryRecvError> {
-        self.machine.try_step(&mut self.user_event_tx)
-    }
-
-    fn pop_item(&mut self) -> Option<Event> {
-        self.user_event_rx.try_recv().ok()
-    }
-}
-
 #[cfg(feature = "mock_base")]
 impl Node {
+    /// Retrieve the next available user event from this node's queue.
+    pub fn try_recv_event(&self) -> Option<Event> {
+        self.user_event_rx.try_recv().ok()
+    }
+
     /// Returns the chain for this node.
     fn chain(&self) -> Option<&Chain> {
         self.machine.current().chain()

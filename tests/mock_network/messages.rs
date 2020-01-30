@@ -9,8 +9,7 @@
 use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_all};
 use rand::Rng;
 use routing::{
-    event::Event, mock::Environment, quorum_count, DstLocation, EventStream, NetworkParams,
-    SrcLocation,
+    event::Event, mock::Environment, quorum_count, DstLocation, NetworkParams, SrcLocation,
 };
 
 #[test]
@@ -42,8 +41,8 @@ fn send() {
         .filter(|n| n.inner.is_elder() && n.in_dst_location(&dst))
     {
         loop {
-            match node.try_next_ev() {
-                Ok(Event::MessageReceived {
+            match node.try_recv_event() {
+                Some(Event::MessageReceived {
                     content: ref req_content,
                     ..
                 }) => {
@@ -52,7 +51,7 @@ fn send() {
                         break;
                     }
                 }
-                Ok(_) => (),
+                Some(_) => (),
                 _ => panic!("{} - Event::MessageReceived not received", node.inner),
             }
         }
@@ -94,8 +93,8 @@ fn send_and_receive() {
         .filter(|n| n.inner.is_elder() && n.in_dst_location(&dst))
     {
         loop {
-            match node.try_next_ev() {
-                Ok(Event::MessageReceived { content, src, .. }) => {
+            match node.try_recv_event() {
+                Some(Event::MessageReceived { content, src, .. }) => {
                     request_received_count += 1;
                     if req_content == content {
                         let res_src = SrcLocation::Section(*node.our_prefix());
@@ -113,7 +112,7 @@ fn send_and_receive() {
                         break;
                     }
                 }
-                Ok(_) => (),
+                Some(_) => (),
                 _ => panic!("Event::MessageReceived not received"),
             }
         }
@@ -126,14 +125,14 @@ fn send_and_receive() {
     let mut response_received_count = 0;
 
     loop {
-        match nodes[sender_index].inner.try_next_ev() {
-            Ok(Event::MessageReceived { content, .. }) => {
+        match nodes[sender_index].try_recv_event() {
+            Some(Event::MessageReceived { content, .. }) => {
                 response_received_count += 1;
                 if res_content == content {
                     break;
                 }
             }
-            Ok(_) => (),
+            Some(_) => (),
             _ => panic!("Event::MessageReceived not received"),
         }
     }

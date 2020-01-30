@@ -481,6 +481,15 @@ mod tests {
         unwrap!(machine.step(op_index, outbox));
 
         // Exhaust any remaining step
-        while machine.try_step(outbox).is_ok() {}
+        loop {
+            let mut sel = mpmc::Select::new();
+            machine.register(&mut sel);
+
+            if let Ok(op_index) = sel.try_ready() {
+                unwrap!(machine.step(op_index, outbox));
+            } else {
+                break;
+            }
+        }
     }
 }

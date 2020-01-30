@@ -69,8 +69,8 @@ extern crate unwrap;
 macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
         loop {
-            match $node.inner.try_next_ev() {
-                Ok($pattern) => break,
+            match $node.try_recv_event() {
+                Some($pattern) => break,
                 other => panic!(
                     "Expected Ok({}) at {}, got {:?}",
                     stringify!($pattern),
@@ -91,9 +91,9 @@ macro_rules! expect_any_event {
     };
     ($node:expr, $pattern:pat if $guard:expr) => {
         loop {
-            match $node.inner.try_next_ev() {
-                Ok($pattern) if $guard => break,
-                Ok(_) => (),
+            match $node.try_recv_event() {
+                Some($pattern) if $guard => break,
+                Some(_) => (),
                 other => panic!(
                     "Expected Ok({}) at {}, got {:?}",
                     stringify!($pattern),
@@ -109,24 +109,23 @@ macro_rules! expect_any_event {
 /// (ignores ticks). If no pattern given, expects that no event (except ticks) were raised.
 macro_rules! expect_no_event {
     ($node:expr) => {{
-        match $node.inner.try_next_ev() {
-            Err(crossbeam_channel::TryRecvError::Empty) => (),
-            other => panic!("Expected no event at {}, got {:?}", $node.name(), other),
+        match $node.try_recv_event() {
+            None => (),
+            Some(event) => panic!("Expected no event at {}, got {:?}", $node.name(), event),
         }
     }};
 
     ($node:expr, $pattern:pat) => {
         loop {
-            match $node.inner.try_next_ev() {
-                Ok(event @ $pattern) => panic!(
+            match $node.try_recv_event() {
+                Some(event @ $pattern) => panic!(
                     "Expected no event matching {} at {}, got {:?}",
                     stringify!($pattern),
                     $node.name(),
                     event
                 ),
-                Ok(_) => (),
-                Err(crossbeam_channel::TryRecvError::Empty) => break,
-                Err(error) => panic!("Unexpected error {:?}", error),
+                Some(_) => (),
+                None => break,
             }
         }
     };

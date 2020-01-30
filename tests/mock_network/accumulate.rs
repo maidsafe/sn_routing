@@ -9,8 +9,7 @@
 use super::{create_connected_nodes, gen_bytes, poll_all, sort_nodes_by_distance_to, TestNode};
 use rand::Rng;
 use routing::{
-    event::Event, mock::Environment, DstLocation, EventStream, NetworkParams, Prefix, SrcLocation,
-    XorName,
+    event::Event, mock::Environment, DstLocation, NetworkParams, Prefix, SrcLocation, XorName,
 };
 
 #[test]

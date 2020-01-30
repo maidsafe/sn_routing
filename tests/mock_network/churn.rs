@@ -21,8 +21,7 @@ use routing::{
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    DstLocation, EventStream, FullId, NetworkConfig, NetworkParams, Prefix, SrcLocation, XorName,
-    Xorable,
+    DstLocation, FullId, NetworkConfig, NetworkParams, Prefix, SrcLocation, XorName, Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -470,12 +469,12 @@ fn check_added_indices(nodes: &mut [TestNode], new_indices: BTreeSet<usize>) -> 
         let node = &mut nodes[index];
 
         loop {
-            match node.inner.try_next_ev() {
-                Err(_) => {
+            match node.try_recv_event() {
+                None => {
                     failed.push(node.name());
                     break;
                 }
-                Ok(Event::Connected(_)) => {
+                Some(Event::Connected(_)) => {
                     assert!(added.insert(node.name()));
                     break;
                 }
@@ -683,7 +682,7 @@ impl Expectations {
             let curr_name = node.name();
             let orig_name = new_to_old_map.get(&curr_name).copied().unwrap_or(curr_name);
 
-            while let Ok(event) = node.try_next_ev() {
+            while let Some(event) = node.try_recv_event() {
                 if let Event::MessageReceived { content, src, dst } = event {
                     let key = MessageKey { content, src, dst };
 
