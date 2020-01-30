@@ -159,7 +159,7 @@ pub struct PlainMessage {
 
 impl PlainMessage {
     fn serialize_for_signing(&self) -> Result<Vec<u8>> {
-        super::serialize_for_signing(&self.dst, &self.variant)
+        super::serialize_for_section_signing(&self.dst, &self.variant)
     }
 }
 

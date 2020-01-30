@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::VerifyStatus;
+use super::{Variant, VerifyStatus};
 use crate::{
     chain::{SectionKeyInfo, SectionProofSlice, TrustStatus},
     crypto::signing::Signature as SimpleSignature,
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
-    location::SrcLocation,
+    location::{DstLocation, SrcLocation},
     xor_space::{Prefix, XorName},
     ConnectionInfo,
 };
@@ -60,7 +60,8 @@ impl SrcAuthority {
 
     pub fn verify<'a, I>(
         &'a self,
-        serialized_content: &[u8],
+        dst: &DstLocation,
+        variant: &Variant,
         their_key_infos: I,
     ) -> Result<VerifyStatus>
     where
@@ -71,7 +72,8 @@ impl SrcAuthority {
                 public_id,
                 signature,
             } => {
-                if !public_id.verify(serialized_content, signature) {
+                let bytes = super::serialize_for_node_signing(public_id, dst, variant)?;
+                if !public_id.verify(&bytes, signature) {
                     return Err(RoutingError::FailedSignature);
                 }
             }
@@ -84,7 +86,8 @@ impl SrcAuthority {
                     TrustStatus::ProofInvalid => return Err(RoutingError::UntrustedMessage),
                 };
 
-                if !public_key.verify(signature, serialized_content) {
+                let bytes = super::serialize_for_section_signing(dst, variant)?;
+                if !public_key.verify(signature, &bytes) {
                     return Err(RoutingError::FailedSignature);
                 }
             }

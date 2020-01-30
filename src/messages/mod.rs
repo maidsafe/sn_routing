@@ -20,7 +20,7 @@ pub use self::{
 use crate::{
     chain::SectionKeyInfo,
     error::{Result, RoutingError},
-    id::FullId,
+    id::{FullId, PublicId},
     location::DstLocation,
     xor_space::{Prefix, XorName},
     ConnectionInfo,
@@ -66,7 +66,7 @@ impl Message {
 
     /// Creates a message from single node.
     pub(crate) fn single_src(src: &FullId, dst: DstLocation, variant: Variant) -> Result<Self> {
-        let serialized = bincode::serialize(&(&dst, &variant))?;
+        let serialized = serialize_for_node_signing(src.public_id(), &dst, &variant)?;
         let signature = src.sign(&serialized);
 
         Ok(Self {
@@ -84,8 +84,7 @@ impl Message {
     where
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
-        let bytes = serialize_for_signing(&self.dst, &self.variant)?;
-        self.src.verify(&bytes, their_key_infos)
+        self.src.verify(&self.dst, &self.variant, their_key_infos)
     }
 
     /// Returns the latest section key from the message proof.
@@ -142,6 +141,14 @@ pub struct QueuedMessage {
     pub sender: Option<ConnectionInfo>,
 }
 
-fn serialize_for_signing(dst: &DstLocation, variant: &Variant) -> Result<Vec<u8>> {
+fn serialize_for_section_signing(dst: &DstLocation, variant: &Variant) -> Result<Vec<u8>> {
     Ok(bincode::serialize(&(dst, variant))?)
+}
+
+fn serialize_for_node_signing(
+    src: &PublicId,
+    dst: &DstLocation,
+    variant: &Variant,
+) -> Result<Vec<u8>> {
+    Ok(bincode::serialize(&(src, dst, variant))?)
 }
