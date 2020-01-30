@@ -1483,7 +1483,7 @@ impl Elder {
         dg_size: usize,
         message: Message,
     ) -> Result<(), RoutingError> {
-        let message = bincode::serialize(&message)?.into();
+        let message = message.to_bytes()?;
         self.send_message_to_targets(dst_targets, dg_size, message);
         Ok(())
     }

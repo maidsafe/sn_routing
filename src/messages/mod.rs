@@ -25,7 +25,7 @@ use crate::{
     xor_space::{Prefix, XorName},
     ConnectionInfo,
 };
-use bincode::serialize;
+use bytes::Bytes;
 use std::fmt::{self, Debug, Formatter};
 
 /// Message sent over the network.
@@ -46,10 +46,27 @@ pub struct PartialMessage {
     pub dst: DstLocation,
 }
 
+impl PartialMessage {
+    /// Deserialize the message.
+    pub fn from_bytes(bytes: &Bytes) -> Result<Self> {
+        Ok(bincode::deserialize(&bytes[..])?)
+    }
+}
+
 impl Message {
+    /// Deserialize the message.
+    pub(crate) fn from_bytes(bytes: &Bytes) -> Result<Self> {
+        Ok(bincode::deserialize(&bytes[..])?)
+    }
+
+    /// Serialize the message.
+    pub(crate) fn to_bytes(&self) -> Result<Bytes> {
+        Ok(bincode::serialize(self)?.into())
+    }
+
     /// Creates a message from single node.
     pub(crate) fn single_src(src: &FullId, dst: DstLocation, variant: Variant) -> Result<Self> {
-        let serialized = serialize(&(&dst, &variant))?;
+        let serialized = bincode::serialize(&(&dst, &variant))?;
         let signature = src.sign(&serialized);
 
         Ok(Self {
@@ -126,5 +143,5 @@ pub struct QueuedMessage {
 }
 
 fn serialize_for_signing(dst: &DstLocation, variant: &Variant) -> Result<Vec<u8>> {
-    Ok(serialize(&(dst, variant))?)
+    Ok(bincode::serialize(&(dst, variant))?)
 }

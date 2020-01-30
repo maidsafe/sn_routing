@@ -12,7 +12,6 @@ use crate::{
     error::Result,
     utils::LogIdent,
 };
-use bincode::{deserialize, serialize};
 use bytes::Bytes;
 
 /// Message in both its serialized and unserialized forms.
@@ -31,7 +30,7 @@ pub struct MessageWithBytes {
 impl MessageWithBytes {
     /// Serialize message and keep both SignedRoutingMessage and Bytes.
     pub fn new(full_content: Message, log_ident: &LogIdent) -> Result<Self> {
-        let full_bytes = serialize(&full_content)?.into();
+        let full_bytes = full_content.to_bytes()?;
         let partial_content = full_content.to_partial();
         let result = Self::new_from_parts(Some(full_content), partial_content, full_bytes);
 
@@ -49,7 +48,7 @@ impl MessageWithBytes {
     }
 
     pub fn partial_from_bytes(bytes: Bytes) -> Result<Self> {
-        let partial_content: PartialMessage = deserialize(&bytes[..])?;
+        let partial_content = PartialMessage::from_bytes(&bytes)?;
         Ok(Self::new_from_parts(None, partial_content, bytes))
     }
 
@@ -91,7 +90,7 @@ impl MessageWithBytes {
     }
 
     fn deserialize_message(&self) -> Result<Message> {
-        Ok(deserialize(&self.full_bytes[..])?)
+        Message::from_bytes(&self.full_bytes)
     }
 }
 
@@ -113,9 +112,9 @@ mod tests {
         let msg_with_bytes = unwrap!(MessageWithBytes::new(msg.clone(), &LogIdent::new("node")));
         let bytes = msg_with_bytes.full_bytes();
 
-        let full_msg: Message = unwrap!(deserialize(&bytes[..]));
-        let partial_msg: PartialMessage = unwrap!(deserialize(&bytes[..]));
-        let partial_msg_head: PartialMessage = unwrap!(deserialize(&bytes.slice(0, 40)));
+        let full_msg = unwrap!(Message::from_bytes(bytes));
+        let partial_msg = unwrap!(PartialMessage::from_bytes(bytes));
+        let partial_msg_head = unwrap!(PartialMessage::from_bytes(&bytes.slice(0, 40)));
 
         let expected_partial = PartialMessage { dst: msg.dst };
 

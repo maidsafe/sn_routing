@@ -423,7 +423,7 @@ mod tests {
         if let NetworkEvent::NewMessage { peer_addr, msg } = unwrap!(event_rx.try_recv()) {
             assert_eq!(peer_addr, node_b_endpoint);
 
-            let message: Message = unwrap!(bincode::deserialize(&msg[..]));
+            let message = unwrap!(Message::from_bytes(&msg));
             match message.variant {
                 Variant::BootstrapRequest(_) => (),
                 _ => panic!("Should have received a `BootstrapRequest`."),

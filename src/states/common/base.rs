@@ -25,7 +25,6 @@ use crate::{
     xor_space::{Prefix, XorName},
     ConnectionInfo, NetworkEvent,
 };
-use bincode::serialize;
 use bytes::Bytes;
 use itertools::Itertools;
 use log::LogLevel;
@@ -383,8 +382,8 @@ pub trait Base: Display {
             }
         };
 
-        let bytes = match serialize(&message) {
-            Ok(bytes) => bytes.into(),
+        let bytes = match message.to_bytes() {
+            Ok(bytes) => bytes,
             Err(error) => {
                 error!(
                     "{} - Failed to serialize message {:?}: {:?}",
