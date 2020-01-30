@@ -250,8 +250,10 @@ pub trait Base: Display {
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = MessageWithBytes::partial_from_bytes(bytes)
-            .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
+        let result = MessageWithBytes::partial_from_bytes(bytes).and_then(|message| {
+            let sender = self.peer_map().get_connection_info(&src_addr).cloned();
+            self.try_handle_message(sender, message, outbox)
+        });
 
         match result {
             Ok(transition) => transition,
@@ -262,9 +264,9 @@ pub trait Base: Display {
         }
     }
 
-    fn handle_new_deserialised_message(
+    fn try_handle_message(
         &mut self,
-        src_addr: SocketAddr,
+        sender: Option<ConnectionInfo>,
         msg: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
@@ -278,21 +280,22 @@ pub trait Base: Display {
             return Ok(Transition::Stay);
         }
 
-        if self.should_relay_message(msg.message_dst()) {
-            // Relay closer to the destination or broadcast to the rest of our section.
-            self.relay_message(&msg)?;
-        }
+        self.try_relay_message(&msg)?;
 
         if let Some(msg) = self.preprocess_message(msg)? {
-            let sender = self.peer_map().get_connection_info(&src_addr).cloned();
             self.handle_message(sender, msg, outbox)
         } else {
             Ok(Transition::Stay)
         }
     }
 
-    fn should_relay_message(&self, dst: &DstLocation) -> bool {
-        !self.in_dst_location(dst) || dst.is_multiple()
+    fn try_relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
+        if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_multiple() {
+            // Relay closer to the destination or broadcast to the rest of our section.
+            self.relay_message(msg)
+        } else {
+            Ok(())
+        }
     }
 
     fn should_verify_message(&self, _msg: &Message) -> bool {

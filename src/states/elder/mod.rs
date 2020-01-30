@@ -675,7 +675,7 @@ impl Elder {
     }
 
     fn handle_accumulated_message(&mut self, msg: MessageWithBytes) -> Result<()> {
-        // FIXME: this is almost the same as `Base::handle_new_deserialized_message` - find a way
+        // FIXME: this is almost the same as `Base::try_handle__message` - find a way
         // to avoid the duplication.
 
         if !self.filter_incoming_message(&msg) {
@@ -688,9 +688,7 @@ impl Elder {
             return Ok(());
         }
 
-        if self.should_relay_message(msg.message_dst()) {
-            self.relay_message(&msg)?;
-        }
+        self.try_relay_message(&msg)?;
 
         if let Some(msg) = self.preprocess_message(msg)? {
             self.msg_queue.push_back(msg.into_queued(None));

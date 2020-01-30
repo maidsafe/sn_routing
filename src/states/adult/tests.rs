@@ -98,10 +98,7 @@ impl AdultUnderTest {
 
     fn handle_message(&mut self, msg: Message) -> Result<()> {
         let msg = unwrap!(MessageWithBytes::new(msg, &self.adult.log_ident()));
-        let sender = dummy_socket_addr();
-        let _ = self
-            .adult
-            .handle_new_deserialised_message(sender, msg, &mut ())?;
+        let _ = self.adult.try_handle_message(None, msg, &mut ())?;
         Ok(())
     }
 }
@@ -165,10 +162,6 @@ fn new_adult_state(
     };
 
     unwrap!(Adult::new(details, Default::default(), &mut ()))
-}
-
-fn dummy_socket_addr() -> SocketAddr {
-    ([1, 2, 3, 4], 5555).into()
 }
 
 #[test]

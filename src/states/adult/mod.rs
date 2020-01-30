@@ -338,33 +338,7 @@ impl Adult {
         }
 
         if let Some(msg) = self.sig_accumulator.add_proof(msg, &self.log_ident()) {
-            self.handle_accumulated_message(msg, outbox)
-        } else {
-            Ok(Transition::Stay)
-        }
-    }
-
-    fn handle_accumulated_message(
-        &mut self,
-        msg: MessageWithBytes,
-        outbox: &mut dyn EventBox,
-    ) -> Result<Transition> {
-        if !self.filter_incoming_message(&msg) {
-            trace!(
-                "{} Known message: {:?} - not handling further",
-                self,
-                msg.full_crypto_hash()
-            );
-
-            return Ok(Transition::Stay);
-        }
-
-        if self.should_relay_message(msg.message_dst()) {
-            self.relay_message(&msg)?;
-        }
-
-        if let Some(msg) = self.preprocess_message(msg)? {
-            self.handle_message(None, msg, outbox)
+            self.try_handle_message(None, msg, outbox)
         } else {
             Ok(Transition::Stay)
         }
@@ -541,15 +515,14 @@ impl Base for Adult {
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
-        let result = match msg.verify(self.chain.get_their_key_infos()) {
-            Ok(VerifyStatus::Full) => Ok(true),
-            Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
-            Err(error) => Err(error),
-        };
-        result.map_err(|error| {
-            self.log_verify_failure(msg, &error, self.chain.get_their_key_infos());
-            error
-        })
+        msg.verify(self.chain.get_their_key_infos())
+            .and_then(VerifyStatus::require_full)
+            .map_err(|error| {
+                self.log_verify_failure(msg, &error, self.chain.get_their_key_infos());
+                error
+            })?;
+
+        Ok(true)
     }
 
     fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
