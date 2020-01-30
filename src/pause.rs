@@ -9,7 +9,7 @@
 use crate::{
     chain::{Chain, GenesisPfxInfo},
     id::FullId,
-    messages::{QueuedMessage, SignedRoutingMessage},
+    messages::QueuedMessage,
     network_service::NetworkService,
     parsec::ParsecMap,
     routing_message_filter::RoutingMessageFilter,
@@ -31,8 +31,8 @@ pub struct PausedState {
     pub(super) chain: Chain,
     pub(super) full_id: FullId,
     pub(super) gen_pfx_info: GenesisPfxInfo,
-    pub(super) routing_msg_filter: RoutingMessageFilter,
-    pub(super) routing_msg_queue: VecDeque<SignedRoutingMessage>,
+    pub(super) msg_filter: RoutingMessageFilter,
+    pub(super) msg_queue: VecDeque<QueuedMessage>,
     pub(super) msg_backlog: Vec<QueuedMessage>,
     // TODO: instead of storing both network_service and network_rx, store only the network config.
     pub(super) network_service: NetworkService,

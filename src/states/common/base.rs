@@ -9,14 +9,11 @@
 use crate::{
     action::Action,
     chain::SectionKeyInfo,
-    error::RoutingError,
+    error::{Result, RoutingError},
     event::Client,
-    id::{FullId, P2pNode, PublicId},
+    id::{FullId, PublicId},
     location::{DstLocation, SrcLocation},
-    messages::{
-        HopMessageWithBytes, Message, MessageWithBytes, PartialMessage, SignedDirectMessage,
-        Variant,
-    },
+    messages::{Message, MessageWithBytes, Variant},
     network_service::NetworkService,
     outbox::EventBox,
     peer_map::PeerMap,
@@ -60,18 +57,19 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn handle_direct_message(
-        &mut self,
-        msg: Variant,
-        p2p_node: P2pNode,
-        outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError>;
+    fn filter_incoming_message(&mut self, msg: &MessageWithBytes) -> bool;
+    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()>;
+    fn should_handle_message(&self, _msg: &Message) -> bool;
+    fn verify_message(&self, msg: &Message) -> Result<bool>;
 
-    fn handle_hop_message(
+    fn handle_message(
         &mut self,
-        msg: HopMessageWithBytes,
+        sender: Option<ConnectionInfo>,
+        message: Message,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError>;
+    ) -> Result<Transition>;
+
+    fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, message: Message);
 
     fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
         match action {
@@ -104,7 +102,7 @@ pub trait Base: Display {
                 token,
                 result_tx,
             } => {
-                self.send_msg_to_client(peer_addr, msg, token);
+                self.send_message_to_client(peer_addr, msg, token);
                 let _ = result_tx.send(Ok(()));
             }
         }
@@ -253,43 +251,70 @@ pub trait Base: Display {
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = MessageWithBytes::partial_from_bytes(bytes)
-            .and_then(|message| self.handle_new_deserialised_message(src_addr, message, outbox));
+        let msg = match MessageWithBytes::partial_from_bytes(bytes) {
+            Ok(msg) => msg,
+            Err(error) => {
+                debug!("{} - Failed to deserialize message: {:?}", self, error);
+                return Transition::Stay;
+            }
+        };
 
-        match result {
+        let sender = self.peer_map().get_connection_info(&src_addr).cloned();
+        match self.try_handle_message(sender, msg, outbox) {
             Ok(transition) => transition,
-            Err(err) => {
-                debug!("{} - {:?}", self, err);
+            Err(error) => {
+                debug!("{} - Failed to handle message: {:?}", self, error);
                 Transition::Stay
             }
         }
     }
 
-    fn handle_new_deserialised_message(
+    fn try_handle_message(
         &mut self,
-        src_addr: SocketAddr,
-        message: MessageWithBytes,
+        sender: Option<ConnectionInfo>,
+        msg: MessageWithBytes,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
-        match message {
-            MessageWithBytes::Hop(msg) => self.handle_hop_message(msg, outbox),
-            MessageWithBytes::Direct(msg, _) => {
-                let (msg, public_id) = msg.open()?;
-                let connection_info =
-                    if let Some(connection_info) = self.peer_map().get_connection_info(&src_addr) {
-                        connection_info.clone()
-                    } else {
-                        trace!(
-                            "{} - Received direct message from unconnected peer {}: {:?}",
-                            self,
-                            public_id,
-                            msg
-                        );
-                        return Ok(Transition::Stay);
-                    };
+    ) -> Result<Transition> {
+        if !self.filter_incoming_message(&msg) {
+            trace!(
+                "{} - Known message {:?}, not handling further",
+                self,
+                msg.full_crypto_hash()
+            );
 
-                self.handle_direct_message(msg, P2pNode::new(public_id, connection_info), outbox)
-            }
+            return Ok(Transition::Stay);
+        }
+
+        self.handle_filtered_message(sender, msg, outbox)
+    }
+
+    fn handle_filtered_message(
+        &mut self,
+        sender: Option<ConnectionInfo>,
+        mut msg: MessageWithBytes,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition> {
+        self.try_relay_message(&msg)?;
+
+        if !self.in_dst_location(msg.message_dst()) {
+            return Ok(Transition::Stay);
+        }
+
+        let msg = msg.take_or_deserialize_message()?;
+        if self.should_handle_message(&msg) && self.verify_message(&msg)? {
+            self.handle_message(sender, msg, outbox)
+        } else {
+            self.unhandled_message(sender, msg);
+            Ok(Transition::Stay)
+        }
+    }
+
+    fn try_relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
+        if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_multiple() {
+            // Relay closer to the destination or broadcast to the rest of our section.
+            self.relay_message(msg)
+        } else {
+            Ok(())
         }
     }
 
@@ -337,7 +362,7 @@ pub trait Base: Display {
         self.full_id().public_id().name()
     }
 
-    fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
+    fn our_connection_info(&mut self) -> Result<ConnectionInfo> {
         self.network_service_mut()
             .service_mut()
             .our_connection_info()
@@ -354,28 +379,30 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message(&mut self, dst: &ConnectionInfo, content: Variant) {
-        let message = if let Ok(message) = self.to_signed_direct_message(content) {
-            message
-        } else {
-            return;
+    fn send_direct_message(&mut self, recipient: &ConnectionInfo, variant: Variant) {
+        let message = match Message::single_src(self.full_id(), DstLocation::Direct, variant) {
+            Ok(message) => message,
+            Err(error) => {
+                error!("{} - Failed to create message: {:?}", self, error);
+                return;
+            }
         };
 
-        let message = match to_network_bytes(&message) {
+        let bytes = match message.to_bytes() {
             Ok(bytes) => bytes,
             Err(error) => {
                 error!(
-                    "{} Failed to serialise message {:?}: {:?}",
+                    "{} - Failed to serialize message {:?}: {:?}",
                     self, message, error
                 );
                 return;
             }
         };
 
-        self.send_message(dst, message);
+        self.send_message_to_target(recipient, bytes)
     }
 
-    fn send_message(&mut self, dst: &ConnectionInfo, message: Bytes) {
+    fn send_message_to_target(&mut self, dst: &ConnectionInfo, message: Bytes) {
         self.send_message_to_targets(slice::from_ref(dst), 1, message);
     }
 
@@ -405,13 +432,11 @@ pub trait Base: Display {
             .send_message_to_initial_targets(conn_infos, dg_size, message);
     }
 
-    fn to_signed_direct_message(&self, content: Variant) -> Result<Message, RoutingError> {
-        SignedDirectMessage::new(content, self.full_id())
-            .map(Message::Direct)
-            .map_err(|err| {
-                error!("{} - Failed to create SignedDirectMessage: {:?}", self, err);
-                err
-            })
+    fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
+        let client = Peer::Client { peer_addr };
+        self.network_service_mut()
+            .service_mut()
+            .send(client, msg, token);
     }
 
     fn disconnect(&mut self, peer_addr: &SocketAddr) {
@@ -425,13 +450,6 @@ pub trait Base: Display {
         self.network_service_mut()
             .service_mut()
             .disconnect_from(peer_addr);
-    }
-
-    fn send_msg_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
-        let client = Peer::Client { peer_addr };
-        self.network_service_mut()
-            .service_mut()
-            .send(client, msg, token);
     }
 
     fn log_verify_failure<'a, T, I>(&self, msg: &T, error: &RoutingError, their_key_infos: I)
@@ -448,16 +466,4 @@ pub trait Base: Display {
             their_key_infos.into_iter().format(", ")
         )
     }
-}
-
-pub fn to_network_bytes(message: &Message) -> Result<Bytes, RoutingError> {
-    Ok(Bytes::from(bincode::serialize(message)?))
-}
-
-pub fn from_network_bytes(data: &Bytes) -> Result<Message, RoutingError> {
-    Ok(bincode::deserialize(&data[..])?)
-}
-
-pub fn partial_from_network_bytes(data: &Bytes) -> Result<PartialMessage, RoutingError> {
-    Ok(bincode::deserialize(&data[..])?)
 }

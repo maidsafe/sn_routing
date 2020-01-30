@@ -491,8 +491,7 @@ impl Node {
         self.machine.current().is_connected(socket_addr)
     }
 
-    /// Provide a SectionProofSlice that proves the given signature to the section with a given
-    /// prefix
+    /// Provide a SectionProofSlice that proves the given signature to the given destination.
     pub fn prove(&self, target: &DstLocation) -> Option<SectionProofSlice> {
         self.chain().map(|chain| chain.prove(target, None))
     }

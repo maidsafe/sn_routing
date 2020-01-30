@@ -148,14 +148,22 @@ impl ElderUnderTest {
     }
 
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
-        let other_pub_id = *self.other_ids[0].0.public_id();
+        let other_full_id = &self.other_ids[0].0;
         let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
         let connection_info = ConnectionInfo::from(addr);
         let parsec = self.elder.parsec_map_mut();
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
-        let message = Variant::ParsecRequest(parsec_version, request);
-        self.handle_direct_message((message, P2pNode::new(other_pub_id, connection_info)))
+        let message = unwrap!(Message::single_src(
+            other_full_id,
+            DstLocation::Direct,
+            Variant::ParsecRequest(parsec_version, request)
+        ));
+
+        let _ = self
+            .elder
+            .dispatch_message(Some(connection_info), message, &mut ())?;
+        Ok(())
     }
 
     fn n_vote_for_gossipped(
@@ -331,11 +339,6 @@ impl ElderUnderTest {
             .is_peer_our_elder(self.candidate.public_id())
     }
 
-    fn handle_direct_message(&mut self, msg: (Variant, P2pNode)) -> Result<(), RoutingError> {
-        let _ = self.elder.handle_direct_message(msg.0, msg.1, &mut ())?;
-        Ok(())
-    }
-
     fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
         match self.elder.handle_connected_to(conn_info, &mut ()) {
             Transition::Stay => (),
@@ -399,11 +402,11 @@ fn new_elder_state(
         event_backlog: Default::default(),
         full_id,
         gen_pfx_info,
-        routing_msg_queue: Default::default(),
+        msg_queue: Default::default(),
         msg_backlog: Default::default(),
         sig_accumulator: Default::default(),
         parsec_map,
-        routing_msg_filter: RoutingMessageFilter::new(),
+        msg_filter: RoutingMessageFilter::new(),
         timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };

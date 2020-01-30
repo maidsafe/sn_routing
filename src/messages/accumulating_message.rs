@@ -6,11 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{RoutingMessage, SignedRoutingMessage, SrcAuthority};
+use super::{DstLocation, Message, SrcAuthority, Variant};
 use crate::{
     chain::{SectionKeyShare, SectionProofSlice},
     crypto::{self, Digest256},
     error::Result,
+    xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
 use log::LogLevel;
@@ -22,7 +23,7 @@ use std::{collections::BTreeSet, mem};
 #[allow(missing_docs)]
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub struct AccumulatingMessage {
-    pub content: RoutingMessage,
+    pub content: PlainMessage,
     pub proof: SectionProofSlice,
     pub public_key_set: bls::PublicKeySet,
     pub signature_shares: BTreeSet<(usize, bls::SignatureShare)>,
@@ -31,12 +32,12 @@ pub struct AccumulatingMessage {
 impl AccumulatingMessage {
     /// Create new `AccumulatingMessage`
     pub fn new(
-        content: RoutingMessage,
+        content: PlainMessage,
         section_share: &SectionKeyShare,
         public_key_set: bls::PublicKeySet,
         proof: SectionProofSlice,
     ) -> Result<Self> {
-        let bytes = serialize(&content)?;
+        let bytes = content.serialize_for_signing()?;
         let mut signature_shares = BTreeSet::new();
         let sig_share = section_share.key.sign(&bytes);
         let _ = signature_shares.insert((section_share.index, sig_share));
@@ -65,7 +66,7 @@ impl AccumulatingMessage {
         // We also check (again) that all messages are from valid senders, because the message
         // may have been sent from another node, and we cannot trust that that node correctly
         // controlled which signatures were added.
-        let bytes = match serialize(&self.content) {
+        let bytes = match self.content.serialize_for_signing() {
             Ok(bytes) => bytes,
             Err(error) => {
                 warn!("Failed to serialise {:?}: {:?}", self, error);
@@ -82,7 +83,7 @@ impl AccumulatingMessage {
     }
 
     /// Combines the signature shares into a single signature and convert this into full `Message`
-    pub fn combine_signatures(self) -> Option<SignedRoutingMessage> {
+    pub fn combine_signatures(self) -> Option<Message> {
         let signature = match self.public_key_set.combine_signatures(
             self.signature_shares
                 .iter()
@@ -104,19 +105,19 @@ impl AccumulatingMessage {
             }
         };
 
-        let src_authority = SrcAuthority::Section {
-            proof: self.proof,
-            signature,
-        };
-
-        Some(SignedRoutingMessage::from_parts(
-            self.content,
-            src_authority,
-        ))
+        Some(Message {
+            src: SrcAuthority::Section {
+                prefix: self.content.src,
+                signature,
+                proof: self.proof,
+            },
+            dst: self.content.dst,
+            variant: self.content.variant,
+        })
     }
 
-    // Computes the cryptographuc hash of this message. Messages with identical `src`, `dst` and
-    // `variant` have the same hash, regardless of their signature shares and/or proof.
+    // Computes the cryptographuc hash of this message. Messages with identical `content` have the
+    // same hash, regardless of their signature shares and/or proof.
     pub(crate) fn crypto_hash(&self) -> Result<Digest256> {
         let bytes = serialize(&self.content)?;
         Ok(crypto::sha3_256(&bytes))
@@ -145,18 +146,32 @@ impl AccumulatingMessage {
     }
 }
 
+/// Section-source message without signature and proof.
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
+pub struct PlainMessage {
+    /// Prefix of the source section.
+    pub src: Prefix<XorName>,
+    /// Destination location.
+    pub dst: DstLocation,
+    /// Message body.
+    pub variant: Variant,
+}
+
+impl PlainMessage {
+    fn serialize_for_signing(&self) -> Result<Vec<u8>> {
+        super::serialize_for_section_signing(&self.dst, &self.variant)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{super::Variant, *};
+    use super::*;
     use crate::{
         chain::SectionKeyInfo,
-        location::{DstLocation, SrcLocation},
         messages::VerifyStatus,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        unwrap,
-        xor_space::XorName,
-        Prefix,
+        unwrap, Prefix,
     };
     use rand::{self, Rng};
     use std::{collections::BTreeMap, iter};
@@ -265,13 +280,13 @@ mod tests {
         iter::once((*key_info.prefix(), key_info)).collect()
     }
 
-    fn gen_message(rng: &mut MainRng) -> RoutingMessage {
+    fn gen_message(rng: &mut MainRng) -> PlainMessage {
         use rand::distributions::Standard;
 
-        RoutingMessage {
-            src: SrcLocation::Section(gen_prefix(rng)),
+        PlainMessage {
+            src: gen_prefix(rng),
             dst: DstLocation::Section(rng.gen()),
-            content: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
+            variant: Variant::UserMessage(rng.sample_iter(Standard).take(6).collect()),
         }
     }
 

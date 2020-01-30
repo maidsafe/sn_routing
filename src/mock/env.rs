@@ -10,6 +10,8 @@
 use crate::mock::parsec;
 use crate::{
     chain::NetworkParams,
+    location::DstLocation,
+    messages::SrcAuthority,
     quic_p2p::Network,
     rng::{self, MainRng, Seed, SeedPrinter},
     unwrap,
@@ -139,21 +141,31 @@ impl DerefMut for Environment {
     }
 }
 
-// Periodically sent messages start with these bytes when serialised.
-const PERIODIC_MSG_TAGS: &[&[u8]] = &[
-    // MemberKnowledge
-    &[0, 0, 0, 0, 11, 0, 0, 0],
-    // ParsecRequest
-    &[0, 0, 0, 0, 12, 0, 0, 0],
-    // ParsecResponse
-    &[0, 0, 0, 0, 13, 0, 0, 0],
+// Serialized enum discriminants of periodically sent messages.
+const PERIODIC_MSG_TAGS: &[u32] = &[
+    11, // MemberKnowledge
+    12, // ParsecRequest
+    13, // ParsecResponse
 ];
+
+// This struct mirrors `Message` but instead of the variant it contains only its discriminant.
+// This allows us to avoid potentially expensive deserialization when all we need is the
+// discriminant to be able to tell whether the message is periodic.
+#[derive(Deserialize)]
+struct PartialMessage {
+    // Note: make sure this matches the structure of `Message`.
+    _dst: DstLocation,
+    _src: SrcAuthority,
+    variant: u32,
+}
 
 // Returns `true` if this message is sent periodically (on timer tick).
 // Sending a periodic message doesn't set the `messages_sent` flag which is a hack/workaround to
 // avoid infinite poll loop.
 fn is_periodic_message(content: &Bytes) -> bool {
-    content.len() >= 8 && PERIODIC_MSG_TAGS.contains(&&content[..8])
+    bincode::deserialize(&content[..])
+        .map(|msg: PartialMessage| PERIODIC_MSG_TAGS.contains(&msg.variant))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -161,12 +173,10 @@ mod tests {
     use super::*;
     use crate::{
         id::FullId,
-        messages::{
-            MemberKnowledge, Message, RoutingMessage, SignedDirectMessage, SignedRoutingMessage,
-            Variant,
-        },
+        location::DstLocation,
+        messages::{MemberKnowledge, Message, Variant},
         parsec::{Request, Response},
-        rng, unwrap, DstLocation, SrcLocation,
+        rng, unwrap,
     };
     use rand::Rng;
     use serde::Serialize;
@@ -181,7 +191,7 @@ mod tests {
         }
 
         let make_message =
-            |content| Message::Direct(unwrap!(SignedDirectMessage::new(content, &full_id)));
+            |variant| unwrap!(Message::single_src(&full_id, DstLocation::Direct, variant));
 
         // Real parsec doesn't provide constructors for requests and responses, but they have the same
         // representation as a `Vec`.
@@ -210,7 +220,7 @@ mod tests {
             assert!(is_periodic_message(&Bytes::from(serialise(msg))));
         }
 
-        // No other direct message types contain a Parsec request or response.
+        // No other message types contain a Parsec request or response.
         let msgs = [
             make_message(Variant::BootstrapRequest(rng.gen())),
             make_message(Variant::ConnectionResponse),
@@ -219,14 +229,12 @@ mod tests {
             assert!(!is_periodic_message(&Bytes::from(serialise(msg))));
         }
 
-        // A hop message never contains a Parsec message.
-        let msg = RoutingMessage {
-            src: SrcLocation::Node(rand::random()),
-            dst: DstLocation::Section(rand::random()),
-            content: Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()]),
-        };
-        let msg = unwrap!(SignedRoutingMessage::single_source(msg, &full_id));
-        let msg = Message::Hop(msg);
+        // A user message never contains a Parsec message.
+        let msg = unwrap!(Message::single_src(
+            &full_id,
+            DstLocation::Section(rand::random()),
+            Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()])
+        ));
         assert!(!is_periodic_message(&Bytes::from(serialise(&msg))));
     }
 }
