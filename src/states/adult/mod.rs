@@ -406,7 +406,15 @@ impl Base for Adult {
             mem::replace(&mut self.msg_backlog, Default::default())
         {
             if let Transition::Stay = &transition {
-                match self.handle_message(sender, message, outbox) {
+                let msg = match MessageWithBytes::new(message, &self.log_ident()) {
+                    Ok(msg) => msg,
+                    Err(err) => {
+                        error!("{} - Failed to make message {:?}", self, err);
+                        continue;
+                    }
+                };
+
+                match self.handle_filtered_message(sender, msg, outbox) {
                     Ok(new_transition) => transition = new_transition,
                     Err(err) => debug!("{} - {:?}", self, err),
                 }

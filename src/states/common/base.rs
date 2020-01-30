@@ -250,15 +250,19 @@ pub trait Base: Display {
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let result = MessageWithBytes::partial_from_bytes(bytes).and_then(|message| {
-            let sender = self.peer_map().get_connection_info(&src_addr).cloned();
-            self.try_handle_message(sender, message, outbox)
-        });
+        let msg = match MessageWithBytes::partial_from_bytes(bytes) {
+            Ok(msg) => msg,
+            Err(error) => {
+                debug!("{} - Failed to deserialize message: {:?}", self, error);
+                return Transition::Stay;
+            }
+        };
 
-        match result {
+        let sender = self.peer_map().get_connection_info(&src_addr).cloned();
+        match self.try_handle_message(sender, msg, outbox) {
             Ok(transition) => transition,
-            Err(err) => {
-                debug!("{} - {:?}", self, err);
+            Err(error) => {
+                debug!("{} - Failed to handle message: {:?}", self, error);
                 Transition::Stay
             }
         }
@@ -272,7 +276,7 @@ pub trait Base: Display {
     ) -> Result<Transition> {
         if !self.filter_incoming_message(&msg) {
             trace!(
-                "{} Known message: {:?} - not handling further",
+                "{} - Known message {:?}, not handling further",
                 self,
                 msg.full_crypto_hash()
             );
@@ -280,6 +284,15 @@ pub trait Base: Display {
             return Ok(Transition::Stay);
         }
 
+        self.handle_filtered_message(sender, msg, outbox)
+    }
+
+    fn handle_filtered_message(
+        &mut self,
+        sender: Option<ConnectionInfo>,
+        msg: MessageWithBytes,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition> {
         self.try_relay_message(&msg)?;
 
         if let Some(msg) = self.preprocess_message(msg)? {
