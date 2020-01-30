@@ -202,10 +202,7 @@ pub fn poll_all(nodes: &mut [TestNode]) -> bool {
             handled_message = node.poll() || handled_message;
         }
 
-        // check if there were any outgoing messages which could be due to timeouts
-        // that were handled via cur iter poll.
-        let any_outgoing_messages = env.reset_message_sent();
-        if !handled_message && !any_outgoing_messages {
+        if !handled_message {
             return result;
         }
 
