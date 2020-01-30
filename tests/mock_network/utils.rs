@@ -72,6 +72,7 @@ impl DerefMut for Nodes {
 pub struct TestNode {
     pub inner: Node,
     env: Environment,
+    user_event_rx: mpmc::Receiver<Event>,
 }
 
 impl TestNode {
@@ -83,9 +84,11 @@ impl TestNode {
     }
 
     pub fn resume(env: &Environment, state: PausedState) -> Self {
+        let (inner, user_event_rx) = Node::resume(state);
         Self {
-            inner: Node::resume(state).0,
+            inner,
             env: env.clone(),
+            user_event_rx,
         }
     }
 
@@ -143,7 +146,7 @@ impl TestNode {
     }
 
     pub fn try_recv_event(&self) -> Option<Event> {
-        self.inner.try_recv_event()
+        self.user_event_rx.try_recv().ok()
     }
 }
 
@@ -183,7 +186,7 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let (inner, _node_rx) = self
+        let (inner, user_event_rx) = self
             .inner
             .network_cfg(self.env.network_cfg())
             .rng(&mut self.env.new_rng())
@@ -192,6 +195,7 @@ impl<'a> TestNodeBuilder<'a> {
         TestNode {
             inner,
             env: self.env.clone(),
+            user_event_rx,
         }
     }
 }

@@ -97,8 +97,6 @@ impl Builder {
 
         let node = Node {
             user_event_tx,
-            #[cfg(feature = "mock_base")]
-            user_event_rx: user_event_rx.clone(),
             interface_result_tx,
             interface_result_rx,
             machine,
@@ -152,8 +150,6 @@ impl Builder {
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Node {
     user_event_tx: mpmc::Sender<Event>,
-    #[cfg(feature = "mock_base")]
-    user_event_rx: mpmc::Receiver<Event>,
     interface_result_tx: mpsc::Sender<Result<(), RoutingError>>,
     interface_result_rx: mpsc::Receiver<Result<(), RoutingError>>,
     machine: StateMachine,
@@ -186,8 +182,6 @@ impl Node {
             interface_result_tx,
             interface_result_rx,
             user_event_tx,
-            #[cfg(feature = "mock_base")]
-            user_event_rx: user_event_rx.clone(),
             machine,
         };
 
@@ -325,11 +319,6 @@ impl Node {
 
 #[cfg(feature = "mock_base")]
 impl Node {
-    /// Retrieve the next available user event from this node's queue.
-    pub fn try_recv_event(&self) -> Option<Event> {
-        self.user_event_rx.try_recv().ok()
-    }
-
     /// Returns the chain for this node.
     fn chain(&self) -> Option<&Chain> {
         self.machine.current().chain()
