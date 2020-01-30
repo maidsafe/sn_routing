@@ -332,7 +332,7 @@ impl Base for BootstrappingPeer {
         Ok(true)
     }
 
-    fn relay_message(&mut self, _message: MessageWithBytes) -> Result<()> {
+    fn relay_message(&mut self, _message: &MessageWithBytes) -> Result<()> {
         Ok(())
     }
 }

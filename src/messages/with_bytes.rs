@@ -68,8 +68,16 @@ impl MessageWithBytes {
         }
     }
 
+    pub fn clone_or_deserialize_message(&self) -> Result<Message> {
+        self.full_content
+            .as_ref()
+            .cloned()
+            .map_or_else(|| self.deserialize_message(), Ok)
+    }
+
     pub fn take_or_deserialize_message(&mut self) -> Result<Message> {
-        self.take_message()
+        self.full_content
+            .take()
             .map_or_else(|| self.deserialize_message(), Ok)
     }
 
@@ -83,10 +91,6 @@ impl MessageWithBytes {
 
     pub fn message_dst(&self) -> &DstLocation {
         &self.partial_content.dst
-    }
-
-    fn take_message(&mut self) -> Option<Message> {
-        self.full_content.take()
     }
 
     fn deserialize_message(&self) -> Result<Message> {

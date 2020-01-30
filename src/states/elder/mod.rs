@@ -689,7 +689,7 @@ impl Elder {
         }
 
         if self.should_relay_message(msg.message_dst()) {
-            self.relay_message(msg.clone())?;
+            self.relay_message(&msg)?;
         }
 
         if let Some(msg) = self.preprocess_message(msg)? {
@@ -1440,8 +1440,8 @@ impl Base for Elder {
         self.msg_filter.filter_incoming(message).is_new()
     }
 
-    fn relay_message(&mut self, message: MessageWithBytes) -> Result<()> {
-        self.send_signed_message(&message)
+    fn relay_message(&mut self, message: &MessageWithBytes) -> Result<()> {
+        self.send_signed_message(message)
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {

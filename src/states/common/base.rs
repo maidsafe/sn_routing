@@ -61,7 +61,7 @@ pub trait Base: Display {
 
     fn verify_message(&self, msg: &Message) -> Result<bool>;
 
-    fn relay_message(&mut self, msg: MessageWithBytes) -> Result<()>;
+    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()>;
 
     fn handle_message(
         &mut self,
@@ -280,7 +280,7 @@ pub trait Base: Display {
 
         if self.should_relay_message(msg.message_dst()) {
             // Relay closer to the destination or broadcast to the rest of our section.
-            self.relay_message(msg.clone())?;
+            self.relay_message(&msg)?;
         }
 
         if let Some(msg) = self.preprocess_message(msg)? {

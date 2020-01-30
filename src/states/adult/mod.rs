@@ -360,7 +360,7 @@ impl Adult {
         }
 
         if self.should_relay_message(msg.message_dst()) {
-            self.relay_message(msg.clone())?;
+            self.relay_message(&msg)?;
         }
 
         if let Some(msg) = self.preprocess_message(msg)? {
@@ -552,7 +552,7 @@ impl Base for Adult {
         })
     }
 
-    fn relay_message(&mut self, msg: MessageWithBytes) -> Result<()> {
+    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
         // Send message to our elders so they can route it properly.
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
@@ -567,7 +567,7 @@ impl Base for Adult {
             .our_elders()
             .filter(|p2p_node| {
                 msg_filter
-                    .filter_outgoing(&msg, p2p_node.public_id())
+                    .filter_outgoing(msg, p2p_node.public_id())
                     .is_new()
             })
             .map(|node| node.connection_info().clone())
@@ -577,7 +577,7 @@ impl Base for Adult {
         self.send_message_to_targets(&targets, targets.len(), cheap_bytes_clone);
 
         // we've seen this message - don't handle it again if someone else sends it to us
-        let _ = self.msg_filter.filter_incoming(&msg);
+        let _ = self.msg_filter.filter_incoming(msg);
 
         Ok(())
     }

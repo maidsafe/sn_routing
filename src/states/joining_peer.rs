@@ -292,9 +292,9 @@ impl Base for JoiningPeer {
         self.msg_filter.filter_incoming(msg).is_new()
     }
 
-    fn relay_message(&mut self, mut msg: MessageWithBytes) -> Result<()> {
+    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
         self.msg_backlog
-            .push(msg.take_or_deserialize_message()?.into_queued(None));
+            .push(msg.clone_or_deserialize_message()?.into_queued(None));
         Ok(())
     }
 
