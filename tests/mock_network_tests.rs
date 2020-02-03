@@ -94,11 +94,10 @@ macro_rules! expect_any_event {
             match $node.try_recv_event() {
                 Some($pattern) if $guard => break,
                 Some(_) => (),
-                other => panic!(
-                    "Expected Ok({}) at {}, got {:?}",
+                None => panic!(
+                    "Expected Some({}) at {}, got None",
                     stringify!($pattern),
                     $node.name(),
-                    other
                 ),
             }
         }

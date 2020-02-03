@@ -527,7 +527,7 @@ impl StateMachine {
 
 impl Display for StateMachine {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "{:?}", self.state)
+        write!(formatter, "{}", self.state)
     }
 }
 

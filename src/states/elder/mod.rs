@@ -44,6 +44,7 @@ use crate::{
     xor_space::{Prefix, XorName, Xorable},
     ConnectionInfo,
 };
+use hex_fmt::HexFmt;
 use itertools::Itertools;
 use log::LogLevel;
 use std::{
@@ -555,11 +556,11 @@ impl Elder {
                 }
             };
             match self.send_signed_message(&msg) {
-                Ok(()) => trace!("{} - Resend {:?}", self, msg.full_crypto_hash()),
+                Ok(()) => trace!("{} - Resend {}", self, HexFmt(msg.full_crypto_hash())),
                 Err(error) => debug!(
-                    "{} - Failed to resend {:?}: {:?}",
+                    "{} - Failed to resend {}: {:?}",
                     self,
-                    msg.full_crypto_hash(),
+                    HexFmt(msg.full_crypto_hash()),
                     error
                 ),
             }
@@ -680,9 +681,9 @@ impl Elder {
 
         if !self.filter_incoming_message(&msg) {
             trace!(
-                "{} Known message: {:?} - not handling further",
+                "{} Known message: {} - not handling further",
                 self,
-                msg.full_crypto_hash()
+                HexFmt(msg.full_crypto_hash())
             );
 
             return Ok(());
@@ -1147,7 +1148,7 @@ impl Elder {
                     "{} Sending a signature for {:?} to {:?}",
                     self,
                     accumulating_msg.content,
-                    target
+                    target,
                 );
                 self.send_direct_message(
                     target.connection_info(),
@@ -1178,9 +1179,9 @@ impl Elder {
         };
 
         trace!(
-            "{}: Sending message {:?} via targets {:?}",
+            "{}: Sending message {} via targets {:?}",
             self,
-            msg.full_crypto_hash(),
+            HexFmt(msg.full_crypto_hash()),
             target_p2p_nodes
         );
 
