@@ -14,10 +14,11 @@ use crate::{
     xor_space::{Prefix, XorName},
     ConnectionInfo,
 };
+use hex_fmt::HexFmt;
 use serde::Serialize;
 use std::fmt::{self, Debug, Formatter};
 
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 /// Message variant
 pub enum Variant {
     /// Inform neighbours about our new section.
@@ -62,6 +63,34 @@ pub enum Variant {
     ParsecRequest(u64, parsec::Request),
     /// Parsec response message
     ParsecResponse(u64, parsec::Response),
+}
+
+impl Debug for Variant {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::NeighbourInfo(payload) => write!(f, "NeighbourInfo({:?})", payload),
+            Self::UserMessage(payload) => write!(f, "UserMessage({})", HexFmt(payload)),
+            Self::NodeApproval(payload) => write!(f, "NodeApproval({:?})", payload),
+            Self::AckMessage {
+                src_prefix,
+                ack_version,
+            } => f
+                .debug_struct("AckMessage")
+                .field("src_prefix", src_prefix)
+                .field("ack_version", ack_version)
+                .finish(),
+            Self::GenesisUpdate(payload) => write!(f, "GenesisUpdate({:?})", payload),
+            Self::Relocate(payload) => write!(f, "Relocate({:?})", payload),
+            Self::MessageSignature(payload) => write!(f, "MessageSignature({:?})", payload.content),
+            Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
+            Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
+            Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
+            Self::ConnectionResponse => write!(f, "ConnectionResponse"),
+            Self::MemberKnowledge(payload) => write!(f, "MemberKnowledge({:?})", payload),
+            Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
+            Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
+        }
+    }
 }
 
 /// Response to a BootstrapRequest

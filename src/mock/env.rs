@@ -10,20 +10,16 @@
 use crate::mock::parsec;
 use crate::{
     chain::NetworkParams,
-    location::DstLocation,
-    messages::SrcAuthority,
     quic_p2p::Network,
     rng::{self, MainRng, Seed, SeedPrinter},
     unwrap,
 };
-use bytes::Bytes;
 use maidsafe_utilities::log;
 use rand::SeedableRng;
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     env,
     ops::{Deref, DerefMut},
-    rc::Rc,
     sync::Once,
 };
 
@@ -34,7 +30,6 @@ pub struct Environment {
     rng: RefCell<MainRng>,
     network: Network,
     network_cfg: NetworkParams,
-    message_sent: Rc<Cell<bool>>,
     seed_printer: Option<SeedPrinter>,
 }
 
@@ -54,24 +49,12 @@ impl Environment {
         parsec::init_mock();
 
         let seed = Seed::default();
-
         let network = Network::new();
-        let message_sent = Rc::new(Cell::new(false));
-
-        network.set_message_sent_hook({
-            let message_sent = Rc::clone(&message_sent);
-            move |content| {
-                if !is_periodic_message(content) {
-                    message_sent.set(true)
-                }
-            }
-        });
 
         Self {
             rng: RefCell::new(MainRng::from_seed(seed)),
             network,
             network_cfg,
-            message_sent,
             seed_printer: Some(SeedPrinter::on_failure(seed)),
         }
     }
@@ -101,11 +84,6 @@ impl Environment {
         rng::new_from(&mut *self.rng.borrow_mut())
     }
 
-    /// Return whether sent any message since previous query and reset the flag.
-    pub fn reset_message_sent(&self) -> bool {
-        self.message_sent.replace(false)
-    }
-
     /// Call this in tests annotated with `#[should_panic]` to suppress printing the seed. Will
     /// instead print the seed if the panic does *not* happen.
     pub fn expect_panic(&mut self) {
@@ -121,7 +99,6 @@ impl Clone for Environment {
             rng: RefCell::new(self.new_rng()),
             network: self.network.clone(),
             network_cfg: self.network_cfg,
-            message_sent: Rc::clone(&self.message_sent),
             seed_printer: None,
         }
     }
@@ -138,103 +115,5 @@ impl Deref for Environment {
 impl DerefMut for Environment {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.network
-    }
-}
-
-// Serialized enum discriminants of periodically sent messages.
-const PERIODIC_MSG_TAGS: &[u32] = &[
-    11, // MemberKnowledge
-    12, // ParsecRequest
-    13, // ParsecResponse
-];
-
-// This struct mirrors `Message` but instead of the variant it contains only its discriminant.
-// This allows us to avoid potentially expensive deserialization when all we need is the
-// discriminant to be able to tell whether the message is periodic.
-#[derive(Deserialize)]
-struct PartialMessage {
-    // Note: make sure this matches the structure of `Message`.
-    _dst: DstLocation,
-    _src: SrcAuthority,
-    variant: u32,
-}
-
-// Returns `true` if this message is sent periodically (on timer tick).
-// Sending a periodic message doesn't set the `messages_sent` flag which is a hack/workaround to
-// avoid infinite poll loop.
-fn is_periodic_message(content: &Bytes) -> bool {
-    bincode::deserialize(&content[..])
-        .map(|msg: PartialMessage| PERIODIC_MSG_TAGS.contains(&msg.variant))
-        .unwrap_or(false)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        id::FullId,
-        location::DstLocation,
-        messages::{MemberKnowledge, Message, Variant},
-        parsec::{Request, Response},
-        rng, unwrap,
-    };
-    use rand::Rng;
-    use serde::Serialize;
-
-    #[test]
-    fn message_is_periodic() {
-        let mut rng = rng::new();
-        let full_id = FullId::gen(&mut rng);
-
-        fn serialise<T: Serialize>(msg: &T) -> Vec<u8> {
-            unwrap!(bincode::serialize(&msg))
-        }
-
-        let make_message =
-            |variant| unwrap!(Message::single_src(&full_id, DstLocation::Direct, variant));
-
-        // Real parsec doesn't provide constructors for requests and responses, but they have the same
-        // representation as a `Vec`.
-        #[cfg(not(feature = "mock"))]
-        let (req, rsp): (Request, Response) = {
-            let repr = Vec::<u64>::new();
-
-            (
-                unwrap!(bincode::deserialize(&serialise(&repr))),
-                unwrap!(bincode::deserialize(&serialise(&repr))),
-            )
-        };
-
-        #[cfg(feature = "mock")]
-        let (req, rsp) = (Request::new(), Response::new());
-
-        let msgs = [
-            make_message(Variant::MemberKnowledge(MemberKnowledge {
-                elders_version: 23,
-                parsec_version: 24,
-            })),
-            make_message(Variant::ParsecRequest(42, req)),
-            make_message(Variant::ParsecResponse(1337, rsp)),
-        ];
-        for msg in &msgs {
-            assert!(is_periodic_message(&Bytes::from(serialise(msg))));
-        }
-
-        // No other message types contain a Parsec request or response.
-        let msgs = [
-            make_message(Variant::BootstrapRequest(rng.gen())),
-            make_message(Variant::ConnectionResponse),
-        ];
-        for msg in &msgs {
-            assert!(!is_periodic_message(&Bytes::from(serialise(msg))));
-        }
-
-        // A user message never contains a Parsec message.
-        let msg = unwrap!(Message::single_src(
-            &full_id,
-            DstLocation::Section(rand::random()),
-            Variant::UserMessage(vec![rand::random(), rand::random(), rand::random()])
-        ));
-        assert!(!is_periodic_message(&Bytes::from(serialise(&msg))));
     }
 }

@@ -56,8 +56,6 @@ pub struct StateMachine {
     action_rx: mpmc::Receiver<Action>,
     action_rx_idx: usize,
     is_running: bool,
-    #[cfg(feature = "mock_base")]
-    events: Vec<EventType>,
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
@@ -68,25 +66,6 @@ pub enum State {
     Adult(Adult),
     Elder(Elder),
     Terminated,
-}
-
-#[cfg(feature = "mock_base")]
-enum EventType {
-    NetworkEvent(NetworkEvent),
-    Action(Box<Action>),
-}
-
-#[cfg(feature = "mock_base")]
-impl EventType {
-    fn is_not_a_timeout(&self) -> bool {
-        match *self {
-            Self::Action(ref action) => match **action {
-                Action::HandleTimeout(_) => false,
-                _ => true,
-            },
-            _ => true,
-        }
-    }
 }
 
 impl State {
@@ -379,8 +358,6 @@ impl StateMachine {
             action_rx,
             action_rx_idx: 0,
             is_running,
-            #[cfg(feature = "mock_base")]
-            events: Vec::new(),
         };
 
         (action_tx, machine)
@@ -417,8 +394,6 @@ impl StateMachine {
             action_rx,
             action_rx_idx: 0,
             is_running: true,
-            #[cfg(feature = "mock_base")]
-            events: Vec::new(),
         };
 
         info!("{} - Resume", machine.current());
@@ -511,26 +486,32 @@ impl StateMachine {
     /// channel index.
     ///
     /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
+    ///
+    /// The returned `bool` can be safely ignored by the consumers of this crate. It is for
+    /// internal uses only and will always be `true` unless compiled with `feature=mock_base`.
     pub fn step(
         &mut self,
         op_index: usize,
         outbox: &mut dyn EventBox,
-    ) -> Result<(), mpmc::RecvError> {
+    ) -> Result<bool, mpmc::RecvError> {
         if !self.is_running {
             return Err(mpmc::RecvError);
         }
         match op_index {
             idx if idx == self.network_rx_idx => {
                 let event = self.network_rx.recv()?;
-                self.handle_network_event(event, outbox)
+                self.handle_network_event(event, outbox);
+                Ok(true)
             }
             idx if idx == self.action_rx_idx => {
                 let action = self.action_rx.recv()?;
-                self.handle_action(action, outbox)
+
+                let status = is_busy(&action);
+                self.handle_action(action, outbox);
+                Ok(status)
             }
-            _idx => return Err(mpmc::RecvError),
-        };
-        Ok(())
+            _idx => Err(mpmc::RecvError),
+        }
     }
 
     /// Get reference to the current state.
@@ -544,117 +525,23 @@ impl StateMachine {
     }
 }
 
-#[cfg(not(feature = "mock_base"))]
-impl StateMachine {
-    /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected) or Err(Terminated).
-    pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
-        if self.is_running {
-            match self.network_rx.try_recv() {
-                Ok(event) => {
-                    self.handle_network_event(event, outbox);
-                    return Ok(());
-                }
-                Err(mpmc::TryRecvError::Empty) => (),
-                Err(error) => return Err(error),
-            }
-
-            let action = self.action_rx.try_recv()?;
-            self.handle_action(action, outbox);
-            Ok(())
-        } else {
-            Err(mpmc::TryRecvError::Disconnected)
-        }
+impl Display for StateMachine {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "{}", self.state)
     }
+}
+
+#[cfg(not(feature = "mock_base"))]
+fn is_busy(_: &Action) -> bool {
+    true
 }
 
 #[cfg(feature = "mock_base")]
-impl StateMachine {
-    // Handle an event from the list and send any events produced for higher layers.
-    fn handle_event_from_list(&mut self, outbox: &mut dyn EventBox) {
-        assert!(!self.events.is_empty());
-        let event = self.events.remove(0);
-        match event {
-            EventType::Action(action) => self.handle_action(*action, outbox),
-            EventType::NetworkEvent(event) => self.handle_network_event(event, outbox),
-        };
-    }
-
-    /// Query for a result, or yield: Err(NothingAvailable), Err(Disconnected).
-    pub fn try_step(&mut self, outbox: &mut dyn EventBox) -> Result<(), mpmc::TryRecvError> {
-        use itertools::Itertools;
-        use rand::seq::SliceRandom;
-        use std::iter;
-
-        if !self.is_running {
-            return Err(mpmc::TryRecvError::Disconnected);
-        }
-
-        let mut events = Vec::new();
-        let mut timed_out_events = Vec::new();
-        let mut received = true;
-
-        // Populate action_rx timeouts
-        self.state.process_timers();
-
-        while received {
-            received = false;
-
-            match self.network_rx.try_recv() {
-                Ok(event) => {
-                    received = true;
-                    events.push(EventType::NetworkEvent(event));
-                }
-                Err(mpmc::TryRecvError::Empty) => (),
-                Err(mpmc::TryRecvError::Disconnected) => {
-                    self.apply_transition(Transition::Terminate, outbox);
-                    return Ok(());
-                }
-            }
-
-            if let Ok(action) = self.action_rx.try_recv() {
-                received = true;
-                let queue = match &action {
-                    Action::HandleTimeout(_) => &mut timed_out_events,
-                    _ => &mut events,
-                };
-                queue.push(EventType::Action(Box::new(action)));
-            }
-        }
-
-        // Interleave timer events with routing or network events.
-        let mut positions = iter::repeat(true)
-            .take(timed_out_events.len())
-            .chain(iter::repeat(false).take(events.len()))
-            .collect_vec();
-
-        positions.shuffle(&mut self.state.rng());
-
-        let mut interleaved = positions
-            .iter()
-            .filter_map(|is_timed_out| {
-                if *is_timed_out {
-                    timed_out_events.pop()
-                } else {
-                    events.pop()
-                }
-            })
-            .collect_vec();
-        interleaved.reverse();
-        self.events.extend(interleaved);
-
-        if self.events.iter().any(EventType::is_not_a_timeout) {
-            self.handle_event_from_list(outbox);
-            return Ok(());
-        }
-        while !self.events.is_empty() {
-            self.handle_event_from_list(outbox);
-        }
-        Err(mpmc::TryRecvError::Empty)
-    }
-}
-
-impl Display for StateMachine {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "{:?}", self.state)
+fn is_busy(action: &Action) -> bool {
+    match action {
+        // Don't consider handling a timeout as being busy. This is a workaround to prevent
+        // infinite polling.
+        Action::HandleTimeout(_) => false,
+        _ => true,
     }
 }

@@ -13,6 +13,7 @@ use crate::{
     utils::LogIdent,
 };
 use bytes::Bytes;
+use hex_fmt::HexFmt;
 
 /// Message in both its serialized and unserialized forms.
 #[derive(Eq, PartialEq, Clone)]
@@ -35,9 +36,9 @@ impl MessageWithBytes {
         let result = Self::new_from_parts(Some(full_content), partial_content, full_bytes);
 
         trace!(
-            "{} Creating message hash({:?}) {:?}",
+            "{} Creating message hash({}) {:?}",
             log_ident,
-            result.full_crypto_hash,
+            HexFmt(result.full_crypto_hash),
             result
                 .full_content
                 .as_ref()

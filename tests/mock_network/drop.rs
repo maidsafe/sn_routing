@@ -10,7 +10,7 @@ use super::{
     create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
 use rand::Rng;
-use routing::{event::Event, mock::Environment, EventStream, NetworkParams};
+use routing::{event::Event, mock::Environment, NetworkParams};
 
 // Drop node at index and verify its own section detected it.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {

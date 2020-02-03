@@ -16,8 +16,8 @@ use rand::{
 use routing::{
     event::{Connected, Event},
     mock::Environment,
-    test_consts, Builder, DstLocation, EventStream, FullId, NetworkConfig, Node, PausedState,
-    Prefix, PublicId, RelocationOverrides, SrcLocation, XorName, Xorable,
+    test_consts, Builder, DstLocation, FullId, NetworkConfig, Node, PausedState, Prefix, PublicId,
+    RelocationOverrides, SrcLocation, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -69,25 +69,10 @@ impl DerefMut for Nodes {
 
 // -----  TestNode and builder  -----
 
-impl EventStream for TestNode {
-    type Item = Event;
-
-    fn next_ev(&mut self) -> Result<Event, mpmc::RecvError> {
-        self.inner.next_ev()
-    }
-
-    fn try_next_ev(&mut self) -> Result<Event, mpmc::TryRecvError> {
-        self.inner.try_next_ev()
-    }
-
-    fn poll(&mut self) -> bool {
-        self.inner.poll()
-    }
-}
-
 pub struct TestNode {
     pub inner: Node,
     env: Environment,
+    user_event_rx: mpmc::Receiver<Event>,
 }
 
 impl TestNode {
@@ -99,9 +84,11 @@ impl TestNode {
     }
 
     pub fn resume(env: &Environment, state: PausedState) -> Self {
+        let (inner, user_event_rx) = Node::resume(state);
         Self {
-            inner: Node::resume(state).0,
+            inner,
             env: env.clone(),
+            user_event_rx,
         }
     }
 
@@ -135,6 +122,36 @@ impl TestNode {
 
     pub fn env(&self) -> &Environment {
         &self.env
+    }
+
+    pub fn poll(&mut self) -> bool {
+        let mut result = false;
+
+        // Exhaust all the events/actions from the channels but return true only if at least one of
+        // those events/actions are considered as handled (that is there is at least one
+        // non-timeout).
+        loop {
+            let mut sel = mpmc::Select::new();
+            self.inner.register(&mut sel);
+
+            if let Ok(op_index) = sel.try_ready() {
+                if self
+                    .inner
+                    .handle_selected_operation(op_index)
+                    .unwrap_or(false)
+                {
+                    result = true;
+                }
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
+
+    pub fn try_recv_event(&self) -> Option<Event> {
+        self.user_event_rx.try_recv().ok()
     }
 }
 
@@ -174,7 +191,7 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let (inner, _node_rx) = self
+        let (inner, user_event_rx) = self
             .inner
             .network_cfg(self.env.network_cfg())
             .rng(&mut self.env.new_rng())
@@ -183,6 +200,7 @@ impl<'a> TestNodeBuilder<'a> {
         TestNode {
             inner,
             env: self.env.clone(),
+            user_event_rx,
         }
     }
 }
@@ -202,10 +220,7 @@ pub fn poll_all(nodes: &mut [TestNode]) -> bool {
             handled_message = node.poll() || handled_message;
         }
 
-        // check if there were any outgoing messages which could be due to timeouts
-        // that were handled via cur iter poll.
-        let any_outgoing_messages = env.reset_message_sent();
-        if !handled_message && !any_outgoing_messages {
+        if !handled_message {
             return result;
         }
 
@@ -332,7 +347,7 @@ pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: us
         .rev()
         .take(count)
         .filter_map(|(index, ref mut node)| {
-            while let Ok(event) = node.try_next_ev() {
+            while let Some(event) = node.try_recv_event() {
                 if let Event::Connected(_) = event {
                     return None;
                 }
@@ -370,7 +385,7 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
     for node in &mut nodes {
         expect_next_event!(node, Event::Connected(Connected::First));
 
-        while let Ok(event) = node.try_next_ev() {
+        while let Some(event) = node.try_recv_event() {
             match event {
                 Event::SectionSplit(..)
                 | Event::RestartRequired
@@ -509,7 +524,7 @@ fn add_nodes_to_prefixes(
 fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(&TestNode, Event)) {
     for node in nodes.iter_mut() {
         trace!("Start Check with {}", node.inner);
-        while let Ok(event) = node.try_next_ev() {
+        while let Some(event) = node.try_recv_event() {
             check_event(node, event)
         }
     }

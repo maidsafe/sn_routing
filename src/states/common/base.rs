@@ -26,6 +26,7 @@ use crate::{
     ConnectionInfo, NetworkEvent,
 };
 use bytes::Bytes;
+use hex_fmt::HexFmt;
 use itertools::Itertools;
 use log::LogLevel;
 use std::{
@@ -275,11 +276,17 @@ pub trait Base: Display {
         msg: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
+        trace!(
+            "{} - try handle message {:?}",
+            self,
+            HexFmt(msg.full_crypto_hash())
+        );
+
         if !self.filter_incoming_message(&msg) {
             trace!(
                 "{} - Known message {:?}, not handling further",
                 self,
-                msg.full_crypto_hash()
+                HexFmt(msg.full_crypto_hash())
             );
 
             return Ok(Transition::Stay);
