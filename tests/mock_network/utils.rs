@@ -125,24 +125,29 @@ impl TestNode {
     }
 
     pub fn poll(&mut self) -> bool {
-        let mut busy = false;
-        while self.poll_once() {
-            busy = true;
-        }
-        busy
-    }
+        let mut result = false;
 
-    fn poll_once(&mut self) -> bool {
-        let mut sel = mpmc::Select::new();
-        self.inner.register(&mut sel);
+        // Exhaust all the events/actions from the channels but return true only if at least one of
+        // those events/actions are considered as handled (that is there is at least one
+        // non-timeout).
+        loop {
+            let mut sel = mpmc::Select::new();
+            self.inner.register(&mut sel);
 
-        if let Ok(op_index) = sel.try_ready() {
-            self.inner
-                .handle_selected_operation(op_index)
-                .unwrap_or(false)
-        } else {
-            false
+            if let Ok(op_index) = sel.try_ready() {
+                if self
+                    .inner
+                    .handle_selected_operation(op_index)
+                    .unwrap_or(false)
+                {
+                    result = true;
+                }
+            } else {
+                break;
+            }
         }
+
+        result
     }
 
     pub fn try_recv_event(&self) -> Option<Event> {
