@@ -141,7 +141,6 @@ mod node;
 mod outbox;
 mod parsec;
 mod pause;
-mod peer_map;
 mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;

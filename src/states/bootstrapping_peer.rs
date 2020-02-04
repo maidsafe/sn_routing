@@ -16,7 +16,6 @@ use crate::{
     messages::{BootstrapResponse, Message, MessageWithBytes, Variant, VerifyStatus},
     network_service::NetworkService,
     outbox::EventBox,
-    peer_map::PeerMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
     rng::MainRng,
     state_machine::{State, Transition},
@@ -28,7 +27,7 @@ use crate::{
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display, Formatter},
-    iter, mem,
+    iter,
     net::SocketAddr,
     time::Duration,
 };
@@ -127,7 +126,6 @@ impl BootstrappingPeer {
         let destination = self.get_destination();
 
         self.send_direct_message(&dst, Variant::BootstrapRequest(destination));
-        self.peer_map_mut().connect(dst);
     }
 
     // If we are relocating, request bootstrap to the section matching the name given to us
@@ -179,8 +177,8 @@ impl BootstrappingPeer {
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
-        for addr in mem::take(&mut self.pending_requests) {
-            self.disconnect(&addr);
+        for addr in self.pending_requests.drain() {
+            self.network_service.disconnect(addr);
         }
 
         self.timeout_tokens.clear();
@@ -217,14 +215,6 @@ impl Base for BootstrappingPeer {
         }
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.network_service().peer_map
-    }
-
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.network_service_mut().peer_map
-    }
-
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
@@ -256,7 +246,7 @@ impl Base for BootstrappingPeer {
                 return Transition::Stay;
             }
 
-            self.disconnect(&peer_addr);
+            self.network_service.disconnect(peer_addr);
             self.request_failed()
         }
 
@@ -280,7 +270,6 @@ impl Base for BootstrappingPeer {
         _: &mut dyn EventBox,
     ) -> Transition {
         let _ = self.pending_requests.remove(&conn_info.peer_addr);
-        let _ = self.peer_map_mut().disconnect(conn_info.peer_addr);
         self.request_failed();
         Transition::Stay
     }
@@ -299,7 +288,7 @@ impl Base for BootstrappingPeer {
                 "{} - Ignoring message from unexpected peer: {}: {:?}",
                 self, p2p_node, msg,
             );
-            self.disconnect(p2p_node.peer_addr());
+            self.network_service.disconnect(*p2p_node.peer_addr());
             return Ok(Transition::Stay);
         }
 

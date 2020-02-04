@@ -33,7 +33,6 @@ use crate::{
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
-    peer_map::PeerMap,
     relocation::RelocateDetails,
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
@@ -373,7 +372,7 @@ impl Elder {
                     continue;
                 }
 
-                self.disconnect(p2p_node.peer_addr());
+                self.network_service.disconnect(*p2p_node.peer_addr());
             }
         }
     }
@@ -1264,14 +1263,6 @@ impl Base for Elder {
         conn_peers.sort_unstable();
         conn_peers.dedup();
         self.chain.closest_names(&name, count, &conn_peers)
-    }
-
-    fn peer_map(&self) -> &PeerMap {
-        &self.network_service().peer_map
-    }
-
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.network_service_mut().peer_map
     }
 
     fn timer(&mut self) -> &mut Timer {

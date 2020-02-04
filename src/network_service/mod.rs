@@ -9,7 +9,6 @@
 mod sending_targets_cache;
 
 use crate::{
-    peer_map::PeerMap,
     quic_p2p::{Builder, Peer, QuicP2p, QuicP2pError, Token},
     utils::LogIdent,
     ConnectionInfo, NetworkConfig, NetworkEvent,
@@ -26,7 +25,6 @@ pub struct NetworkService {
     quic_p2p: QuicP2p,
     cache: SendingTargetsCache,
     next_msg_token: Token,
-    pub peer_map: PeerMap,
 }
 
 impl NetworkService {
@@ -86,6 +84,10 @@ impl NetworkService {
     pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, QuicP2pError> {
         self.quic_p2p.our_connection_info()
     }
+
+    pub fn disconnect(&mut self, addr: SocketAddr) {
+        self.quic_p2p.disconnect_from(addr)
+    }
 }
 
 pub struct NetworkBuilder {
@@ -110,7 +112,6 @@ impl NetworkBuilder {
             quic_p2p: self.quic_p2p.build()?,
             cache: Default::default(),
             next_msg_token: 0,
-            peer_map: PeerMap::new(),
         })
     }
 }

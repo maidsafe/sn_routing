@@ -419,7 +419,7 @@ pub trait Approved: Base {
     fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
         if let Some(node) = self.chain().get_p2p_node(pub_id.name()) {
             let peer_addr = *node.peer_addr();
-            self.disconnect(&peer_addr);
+            self.network_service_mut().disconnect(peer_addr);
         } else {
             log_or_panic!(
                 LogLevel::Error,

@@ -31,7 +31,6 @@ use crate::{
     outbox::EventBox,
     parsec::{DkgResultWrapper, ParsecMap},
     pause::PausedState,
-    peer_map::PeerMap,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
@@ -254,13 +253,12 @@ impl Adult {
             .collect();
 
         // Disconnect from everyone we know.
-        let addrs: Vec<_> = self
+        for addr in self
             .chain
             .known_nodes()
             .map(|node| node.connection_info().peer_addr)
-            .collect();
-        for addr in addrs {
-            self.disconnect(&addr);
+        {
+            self.network_service.disconnect(addr);
         }
 
         Ok(Transition::Relocate {
@@ -387,14 +385,6 @@ impl Base for Adult {
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
         self.chain.in_dst_location(dst)
-    }
-
-    fn peer_map(&self) -> &PeerMap {
-        &self.network_service().peer_map
-    }
-
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.network_service_mut().peer_map
     }
 
     fn timer(&mut self) -> &mut Timer {

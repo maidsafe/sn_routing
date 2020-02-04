@@ -16,7 +16,6 @@ use crate::{
     messages::{Message, MessageWithBytes, Variant},
     network_service::NetworkService,
     outbox::EventBox,
-    peer_map::PeerMap,
     quic_p2p::{Peer, Token},
     rng::MainRng,
     state_machine::Transition,
@@ -41,8 +40,6 @@ pub trait Base: Display {
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
     fn in_dst_location(&self, dst: &DstLocation) -> bool;
-    fn peer_map(&self) -> &PeerMap;
-    fn peer_map_mut(&mut self) -> &mut PeerMap;
     fn timer(&mut self) -> &mut Timer;
     fn rng(&mut self) -> &mut MainRng;
 
@@ -93,7 +90,7 @@ pub trait Base: Display {
                 peer_addr,
                 result_tx,
             } => {
-                self.disconnect_from(peer_addr);
+                self.network_service_mut().disconnect(peer_addr);
                 let _ = result_tx.send(Ok(()));
             }
             Action::SendMessageToClient {
@@ -216,10 +213,9 @@ pub trait Base: Display {
 
     fn handle_connected_to(
         &mut self,
-        conn_info: ConnectionInfo,
+        _conn_info: ConnectionInfo,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        self.peer_map_mut().connect(conn_info);
         Transition::Stay
     }
 
@@ -229,8 +225,6 @@ pub trait Base: Display {
         outbox: &mut dyn EventBox,
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, conn_info.peer_addr);
-
-        let _ = self.peer_map_mut().disconnect(conn_info.peer_addr);
         self.handle_peer_lost(conn_info.peer_addr, outbox)
     }
 
@@ -435,19 +429,6 @@ pub trait Base: Display {
         self.network_service_mut()
             .service_mut()
             .send(client, msg, token);
-    }
-
-    fn disconnect(&mut self, peer_addr: &SocketAddr) {
-        if self.peer_map_mut().disconnect(*peer_addr).is_some() {
-            info!("{} - Disconnecting from {}", self, peer_addr);
-            self.disconnect_from(*peer_addr);
-        }
-    }
-
-    fn disconnect_from(&mut self, peer_addr: SocketAddr) {
-        self.network_service_mut()
-            .service_mut()
-            .disconnect_from(peer_addr);
     }
 
     fn log_verify_failure<'a, T, I>(&self, msg: &T, error: &RoutingError, their_key_infos: I)
