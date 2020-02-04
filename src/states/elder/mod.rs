@@ -1202,28 +1202,6 @@ impl Elder {
         Ok((targets.into_iter().cloned().collect(), dg_size))
     }
 
-    // Check whether we are connected to any elders. If this node loses all elder connections,
-    // it must be restarted.
-    fn check_elder_connections(&self, outbox: &mut dyn EventBox) -> bool {
-        let our_name = self.name();
-        if self
-            .our_elders()
-            .any(|node| node.name() != our_name && self.peer_map().has(node.peer_addr()))
-        {
-            true
-        } else {
-            debug!("{} - Lost all elder connections.", self);
-
-            // Except network startup, restart in other cases.
-            if self.chain.our_info().version() > 0 {
-                outbox.send_event(Event::RestartRequired);
-                false
-            } else {
-                true
-            }
-        }
-    }
-
     // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
     fn to_accumulating_message(
         &self,
@@ -1358,7 +1336,11 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, peer_addr: SocketAddr, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_peer_lost(
+        &mut self,
+        peer_addr: SocketAddr,
+        _outbox: &mut dyn EventBox,
+    ) -> Transition {
         debug!("{} - Lost peer {}", self, peer_addr);
 
         let pub_id = if let Some(node) = self.chain.find_p2p_node_from_addr(&peer_addr) {
@@ -1370,12 +1352,6 @@ impl Base for Elder {
             );
             return Transition::Stay;
         };
-
-        // If we lost an elder, check whether we still have sufficient number of remaining elder
-        // connections.
-        if self.chain.is_peer_our_elder(&pub_id) && !self.check_elder_connections(outbox) {
-            return Transition::Terminate;
-        }
 
         if self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));

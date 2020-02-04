@@ -9,8 +9,7 @@
 use super::{
     create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
 };
-use rand::Rng;
-use routing::{event::Event, mock::Environment, NetworkParams};
+use routing::{mock::Environment, NetworkParams};
 
 // Drop node at index and verify its own section detected it.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
@@ -36,26 +35,4 @@ fn node_drops() {
     // update their chain accordingly.
     poll_and_resend(&mut nodes);
     verify_invariant_for_all_nodes(&env, &mut nodes);
-}
-
-#[test]
-fn node_restart() {
-    // Idea of test: if a node disconnects from all other nodes, it should restart
-    // (with the exception of the first node which is special).
-    let elder_size = 5;
-    let safe_section_size = 5;
-    let env = Environment::new(NetworkParams {
-        elder_size,
-        safe_section_size,
-    });
-    let mut rng = env.new_rng();
-    let mut nodes = create_connected_nodes(&env, elder_size);
-
-    // Drop all but last node in random order:
-    while nodes.len() > 1 {
-        let index = rng.gen_range(0, nodes.len());
-        drop_node(&mut nodes, index);
-    }
-
-    expect_next_event!(nodes[0], Event::RestartRequired);
 }

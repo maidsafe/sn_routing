@@ -19,7 +19,6 @@ use crate::{
     generate_bls_threshold_secret_key,
     messages::Variant,
     rng::{self, MainRng},
-    state_machine::Transition,
     unwrap, utils, ELDER_SIZE,
 };
 use mock_quic_p2p::Network;
@@ -30,32 +29,11 @@ const ACCUMULATE_VOTE_COUNT: usize = 5;
 // Only one vote missing to reach accumulation.
 const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 4;
 
-struct JoiningNodeInfo {
-    full_id: FullId,
-    addr: SocketAddr,
-}
 struct DkgToSectionInfo {
     participants: BTreeSet<PublicId>,
     new_pk_set: bls::PublicKeySet,
     new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     new_elders_info: EldersInfo,
-}
-
-impl JoiningNodeInfo {
-    fn with_addr(rng: &mut MainRng, addr: &str) -> Self {
-        Self {
-            full_id: FullId::gen(rng),
-            addr: unwrap!(addr.parse()),
-        }
-    }
-
-    fn public_id(&self) -> &PublicId {
-        self.full_id.public_id()
-    }
-
-    fn connection_info(&self) -> ConnectionInfo {
-        ConnectionInfo::from(self.addr)
-    }
 }
 
 struct ElderUnderTest {
@@ -339,23 +317,6 @@ impl ElderUnderTest {
             .is_peer_our_elder(self.candidate.public_id())
     }
 
-    fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
-        match self.elder.handle_connected_to(conn_info, &mut ()) {
-            Transition::Stay => (),
-            _ => panic!("Unexpected transition"),
-        }
-    }
-
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
-        self.handle_connected_to(conn_info.clone());
-        self.elder
-            .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name());
-    }
-
-    fn is_connected(&self, peer_addr: &SocketAddr) -> bool {
-        self.elder.peer_map().has(peer_addr)
-    }
-
     fn gen_p2p_node(&mut self) -> P2pNode {
         gen_p2p_node(&mut self.rng, &self.network)
     }
@@ -494,30 +455,6 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
     assert!(!elder_test.has_unpolled_observations());
     assert!(!elder_test.is_candidate_member());
     assert!(!elder_test.is_candidate_elder());
-}
-
-#[test]
-fn accept_node_before_and_after_reaching_elder_size() {
-    // Set section size to one less than the desired number of the elders in a section. This makes
-    // us reject any bootstrapping nodes.
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
-    let node0 = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.0:5000");
-
-    // Bootstrap succeed even with too few elders.
-    elder_test.handle_bootstrap_request(*node0.public_id(), node0.connection_info());
-    assert!(elder_test.is_connected(&node0.connection_info().peer_addr));
-
-    let node1 = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.1:5000");
-
-    // Add new section member to reach elder_size.
-    let new_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg(&new_info);
-    elder_test.accumulate_section_info_if_vote(&new_info);
-
-    // Bootstrap succeeds.
-    elder_test.handle_bootstrap_request(*node1.public_id(), node1.connection_info());
-    assert!(elder_test.is_connected(&node1.connection_info().peer_addr));
 }
 
 #[test]

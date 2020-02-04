@@ -29,9 +29,4 @@ impl PeerMap {
     pub fn disconnect(&mut self, socket_addr: SocketAddr) -> Option<ConnectionInfo> {
         self.connections.remove(&socket_addr)
     }
-
-    // Returns `true` if we have the connection info for a given socket address.
-    pub fn has(&self, socket_addr: &SocketAddr) -> bool {
-        self.connections.contains_key(socket_addr)
-    }
 }
