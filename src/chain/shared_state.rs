@@ -802,7 +802,7 @@ mod test {
                     pub_id,
                     ConnectionInfo {
                         peer_addr: ([127, 0, 0, 1], 9000 + index).into(),
-                        peer_cert_der: vec![],
+                        peer_cert_der: Default::default(),
                     },
                 ),
             );

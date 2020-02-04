@@ -307,7 +307,7 @@ impl Ord for OrderedConnectionInfo {
     }
 }
 
-fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u32, u32, &Vec<u8>) {
+fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u32, u32, &[u8]) {
     match conn_info.peer_addr {
         SocketAddr::V4(addr) => (
             addr.ip().to_ipv6_compatible(),

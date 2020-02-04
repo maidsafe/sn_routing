@@ -7,13 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::ConnectionInfo;
-use fxhash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use fxhash::FxHashMap as HashMap;
 use std::net::SocketAddr;
 
 #[derive(Default)]
 pub struct PeerMap {
     connections: HashMap<SocketAddr, ConnectionInfo>,
-    clients: HashSet<SocketAddr>,
 }
 
 impl PeerMap {
@@ -36,28 +35,8 @@ impl PeerMap {
         self.connections.drain().map(|(_, conn_info)| conn_info)
     }
 
-    // Get connection info of the peer with the given socket address.
-    pub fn get_connection_info(&self, socket_addr: &SocketAddr) -> Option<&ConnectionInfo> {
-        self.connections.get(socket_addr)
-    }
-
     // Returns `true` if we have the connection info for a given socket address.
     pub fn has(&self, socket_addr: &SocketAddr) -> bool {
         self.connections.contains_key(socket_addr)
-    }
-
-    // Inserts a new client entry
-    pub fn insert_client(&mut self, peer_addr: SocketAddr) {
-        let _ = self.clients.insert(peer_addr);
-    }
-
-    // Inserts a new client entry
-    pub fn remove_client(&mut self, peer_addr: &SocketAddr) {
-        let _ = self.clients.remove(peer_addr);
-    }
-
-    // Return true if we know of that peer as a client
-    pub fn is_known_client(&self, peer_addr: &SocketAddr) -> bool {
-        self.clients.contains(peer_addr)
     }
 }

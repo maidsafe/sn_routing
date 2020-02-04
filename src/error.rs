@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{quic_p2p, xor_space::XorName};
+use crate::{quic_p2p::QuicP2pError, xor_space::XorName};
 use bincode::ErrorKind;
 use err_derive::Error;
 use std::sync::mpsc;
@@ -25,7 +25,7 @@ pub enum RoutingError {
     #[error(display = "Cannot route.")]
     CannotRoute,
     #[error(display = "Network layer error.")]
-    Network(quic_p2p::Error),
+    Network(QuicP2pError),
     #[error(display = "The node is not in a state to handle the action.")]
     InvalidState,
     #[error(display = "Bincode error.")]

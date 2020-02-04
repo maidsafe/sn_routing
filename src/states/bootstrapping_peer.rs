@@ -275,11 +275,11 @@ impl Base for BootstrappingPeer {
 
     fn handle_connection_failure(
         &mut self,
-        peer_addr: SocketAddr,
+        conn_info: ConnectionInfo,
         _: &mut dyn EventBox,
     ) -> Transition {
-        let _ = self.pending_requests.remove(&peer_addr);
-        let _ = self.peer_map_mut().disconnect(peer_addr);
+        let _ = self.pending_requests.remove(&conn_info.peer_addr);
+        let _ = self.peer_map_mut().disconnect(conn_info.peer_addr);
         self.request_failed();
         Transition::Stay
     }
@@ -443,8 +443,8 @@ mod tests {
 
         // Check the network service received the `BootstrapRequest`
         env.poll();
-        if let NetworkEvent::NewMessage { peer_addr, msg } = unwrap!(event_rx.try_recv()) {
-            assert_eq!(peer_addr, node_b_endpoint);
+        if let NetworkEvent::NewMessage { peer, msg } = unwrap!(event_rx.try_recv()) {
+            assert_eq!(peer.peer_addr(), node_b_endpoint);
 
             let message = unwrap!(Message::from_bytes(&msg));
             match message.variant {

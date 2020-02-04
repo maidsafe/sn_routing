@@ -1857,7 +1857,7 @@ mod tests {
                     let some_id = FullId::within_range(rng, &pfx.range_inclusive());
                     let connection_info = ConnectionInfo {
                         peer_addr: ([127, 0, 0, 1], 9999).into(),
-                        peer_cert_der: vec![],
+                        peer_cert_der: Default::default(),
                     };
                     let pub_id = *some_id.public_id();
                     let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));
@@ -1870,7 +1870,7 @@ mod tests {
                 let some_id = FullId::within_range(rng, &info.prefix().range_inclusive());
                 let connection_info = ConnectionInfo {
                     peer_addr: ([127, 0, 0, 1], 9999).into(),
-                    peer_cert_der: vec![],
+                    peer_cert_der: Default::default(),
                 };
                 let pub_id = *some_id.public_id();
                 let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));

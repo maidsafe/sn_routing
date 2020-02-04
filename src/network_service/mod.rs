@@ -10,7 +10,7 @@ mod sending_targets_cache;
 
 use crate::{
     peer_map::PeerMap,
-    quic_p2p::{Builder, Error, Peer, QuicP2p, Token},
+    quic_p2p::{Builder, Peer, QuicP2p, QuicP2pError, Token},
     utils::LogIdent,
     ConnectionInfo, NetworkConfig, NetworkEvent,
 };
@@ -83,7 +83,7 @@ impl NetworkService {
         }
     }
 
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, Error> {
+    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, QuicP2pError> {
         self.quic_p2p.our_connection_info()
     }
 
@@ -111,7 +111,7 @@ impl NetworkBuilder {
         }
     }
 
-    pub fn build(self) -> Result<NetworkService, Error> {
+    pub fn build(self) -> Result<NetworkService, QuicP2pError> {
         Ok(NetworkService {
             quic_p2p: self.quic_p2p.build()?,
             cache: Default::default(),
