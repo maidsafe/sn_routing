@@ -28,7 +28,7 @@ use crate::{
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display, Formatter},
-    iter,
+    iter, mem,
     net::SocketAddr,
     time::Duration,
 };
@@ -179,9 +179,10 @@ impl BootstrappingPeer {
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
-        self.network_service_mut().remove_and_disconnect_all();
+        for addr in mem::take(&mut self.pending_requests) {
+            self.disconnect(&addr);
+        }
 
-        self.pending_requests.clear();
         self.timeout_tokens.clear();
 
         for conn_info in new_conn_infos {

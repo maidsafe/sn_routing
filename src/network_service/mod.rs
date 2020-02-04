@@ -86,12 +86,6 @@ impl NetworkService {
     pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, QuicP2pError> {
         self.quic_p2p.our_connection_info()
     }
-
-    pub fn remove_and_disconnect_all(&mut self) {
-        for conn_info in self.peer_map.remove_all() {
-            self.quic_p2p.disconnect_from(conn_info.peer_addr);
-        }
-    }
 }
 
 pub struct NetworkBuilder {

@@ -253,7 +253,15 @@ impl Adult {
             .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
 
-        self.network_service_mut().remove_and_disconnect_all();
+        // Disconnect from everyone we know.
+        let addrs: Vec<_> = self
+            .chain
+            .known_nodes()
+            .map(|node| node.connection_info().peer_addr)
+            .collect();
+        for addr in addrs {
+            self.disconnect(&addr);
+        }
 
         Ok(Transition::Relocate {
             details: signed_msg,

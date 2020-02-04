@@ -239,7 +239,16 @@ impl Base for JoiningPeer {
 
         if join_token == token {
             debug!("{} - Timeout when trying to join a section.", self);
-            self.network_service_mut().remove_and_disconnect_all();
+
+            let addrs: Vec<_> = self
+                .elders_info
+                .member_nodes()
+                .map(|node| node.connection_info().peer_addr)
+                .collect();
+            for addr in addrs {
+                self.disconnect(&addr);
+            }
+
             Transition::Rebootstrap
         } else {
             Transition::Stay

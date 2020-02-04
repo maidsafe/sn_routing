@@ -30,11 +30,6 @@ impl PeerMap {
         self.connections.remove(&socket_addr)
     }
 
-    // Removes all peers. Returns an iterator over the connection infos of the removed peers.
-    pub fn remove_all<'a>(&'a mut self) -> impl Iterator<Item = ConnectionInfo> + 'a {
-        self.connections.drain().map(|(_, conn_info)| conn_info)
-    }
-
     // Returns `true` if we have the connection info for a given socket address.
     pub fn has(&self, socket_addr: &SocketAddr) -> bool {
         self.connections.contains_key(socket_addr)
