@@ -343,7 +343,6 @@ impl Base for BootstrappingPeer {
             | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::JoinRequest(_)
-            | Variant::ConnectionResponse
             | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..) => false,

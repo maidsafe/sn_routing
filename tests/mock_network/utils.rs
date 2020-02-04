@@ -804,33 +804,6 @@ pub fn verify_invariant_for_all_nodes(env: &Environment, nodes: &mut [TestNode])
     let elder_size = env.elder_size();
     verify_section_invariants_for_nodes(nodes, elder_size);
     verify_section_invariants_between_nodes(nodes);
-
-    let mut all_missing_peers = BTreeSet::<PublicId>::new();
-    for node in nodes.iter_mut() {
-        // Confirm elders from chain are connected according to PeerMap
-        let our_id = unwrap!(node.inner.id());
-        let missing_peers = node
-            .inner
-            .known_nodes()
-            .filter(|p2p_node| p2p_node.public_id() != &our_id)
-            .filter(|p2p_node| !node.inner.is_connected(p2p_node.peer_addr()))
-            .map(|p2p_node| p2p_node.public_id())
-            .cloned()
-            .collect_vec();
-        if !missing_peers.is_empty() {
-            error!(
-                "verify_invariant_for_all_nodes: node {}: missing: {:?}",
-                node.inner, &missing_peers
-            );
-            all_missing_peers.extend(missing_peers);
-        }
-    }
-
-    assert!(
-        all_missing_peers.is_empty(),
-        "verify_invariant_for_all_nodes - all_missing_peers: {:?}",
-        all_missing_peers
-    );
 }
 
 // Generate a vector of random T of the given length.

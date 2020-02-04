@@ -299,7 +299,7 @@ impl Base for JoiningPeer {
 
     fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, msg: Message) {
         match msg.variant {
-            Variant::ConnectionResponse | Variant::BootstrapResponse(_) => (),
+            Variant::BootstrapResponse(_) => (),
             _ => {
                 debug!("{} Unhandled message, adding to backlog: {:?}", self, msg,);
                 self.msg_backlog.push(msg.into_queued(sender));
@@ -321,7 +321,6 @@ impl Base for JoiningPeer {
             | Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)
             | Variant::JoinRequest(_)
-            | Variant::ConnectionResponse
             | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..) => false,

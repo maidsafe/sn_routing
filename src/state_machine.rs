@@ -27,8 +27,6 @@ use crate::{
     rng::MainRng,
 };
 use crossbeam_channel as mpmc;
-#[cfg(feature = "mock_base")]
-use std::net::SocketAddr;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     mem,
@@ -254,14 +252,6 @@ impl State {
         state_dispatch!(
             *self,
             ref state => state.in_dst_location(dst),
-            Terminated => false
-        )
-    }
-
-    pub fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
-        state_dispatch!(
-            self,
-            state => state.peer_map().has(socket_addr),
             Terminated => false
         )
     }

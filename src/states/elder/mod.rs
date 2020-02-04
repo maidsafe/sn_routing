@@ -376,29 +376,6 @@ impl Elder {
                 self.disconnect(p2p_node.peer_addr());
             }
         }
-
-        for p2p_node in &change.neighbour_added {
-            if !self.peer_map().has(p2p_node.peer_addr()) {
-                self.establish_connection(p2p_node)
-            }
-        }
-
-        let to_connect: Vec<_> = self
-            .chain
-            .our_joined_members()
-            .filter(|p2p_node| {
-                p2p_node.public_id() != self.id() && !self.peer_map().has(p2p_node.peer_addr())
-            })
-            .cloned()
-            .collect();
-
-        for p2p_node in to_connect {
-            self.establish_connection(&p2p_node)
-        }
-    }
-
-    fn establish_connection(&mut self, node: &P2pNode) {
-        self.send_direct_message(node.connection_info(), Variant::ConnectionResponse);
     }
 
     fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
@@ -770,9 +747,6 @@ impl Elder {
             Variant::BootstrapRequest(name) => {
                 self.handle_bootstrap_request(msg.src.to_sender_node(sender)?, name)
             }
-            Variant::ConnectionResponse => {
-                self.handle_connection_response(*msg.src.as_node()?, outbox)
-            }
             Variant::JoinRequest(join_request) => {
                 self.handle_join_request(msg.src.to_sender_node(sender)?, *join_request)
             }
@@ -848,16 +822,6 @@ impl Elder {
         let pub_id = *p2p_node.public_id();
         let dst = DstLocation::Node(*pub_id.name());
 
-        // Make sure we are connected to the candidate
-        if !self.peer_map().has(p2p_node.peer_addr()) {
-            trace!(
-                "{} - Not yet connected to {} - use p2p_node.",
-                self,
-                p2p_node
-            );
-            self.send_direct_message(p2p_node.connection_info(), Variant::ConnectionResponse);
-        };
-
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
             first_bls_keys: self.gen_pfx_info.first_bls_keys.clone(),
@@ -922,10 +886,6 @@ impl Elder {
             p2p_node.connection_info(),
             Variant::BootstrapResponse(response),
         );
-    }
-
-    fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
-        debug!("{} - Received connection response from {}", self, pub_id);
     }
 
     fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
@@ -998,7 +958,6 @@ impl Elder {
             (MIN_AGE, None)
         };
 
-        self.send_direct_message(p2p_node.connection_info(), Variant::ConnectionResponse);
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
             p2p_node,
             age,

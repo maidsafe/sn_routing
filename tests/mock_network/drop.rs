@@ -14,19 +14,11 @@ use routing::{event::Event, mock::Environment, NetworkParams};
 
 // Drop node at index and verify its own section detected it.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
-    let mut node = nodes.remove(index);
-    let close_names = node.close_names();
-    let endpoint = node.endpoint();
-
-    drop(node);
+    let _ = nodes.remove(index);
 
     // Using poll_all instead of poll_and_resend here to only let the other nodes realise the node
     // got disconnected, but not make more progress.
     let _ = poll_all(nodes);
-
-    for node in nodes.iter_mut().filter(|n| close_names.contains(&n.name())) {
-        assert!(!node.inner.is_connected(&endpoint));
-    }
 }
 
 #[test]

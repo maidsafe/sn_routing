@@ -483,14 +483,6 @@ impl Base for Adult {
                 self.handle_bootstrap_request(msg.src.to_sender_node(sender)?, name);
                 Ok(Transition::Stay)
             }
-            Variant::ConnectionResponse => {
-                debug!(
-                    "{} - Received connection response from {}",
-                    self,
-                    msg.src.to_sender_node(sender)?
-                );
-                Ok(Transition::Stay)
-            }
             _ => unreachable!(),
         }
     }
@@ -518,8 +510,7 @@ impl Base for Adult {
             | Variant::MessageSignature(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::BootstrapRequest(_)
-            | Variant::ConnectionResponse => true,
+            | Variant::BootstrapRequest(_) => true,
 
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)

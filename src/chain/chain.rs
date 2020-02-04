@@ -791,12 +791,6 @@ impl Chain {
         self.state.our_info().member_nodes()
     }
 
-    pub fn our_joined_members(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state
-            .our_joined_members()
-            .map(|(_, info)| &info.p2p_node)
-    }
-
     fn elders_and_adults(&self) -> impl Iterator<Item = &PublicId> {
         self.state
             .our_joined_members()
