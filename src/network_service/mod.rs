@@ -78,6 +78,11 @@ impl NetworkService {
             );
             self.quic_p2p
                 .send(Peer::Node { node_info: tgt }, msg, token);
+        } else {
+            error!(
+                "{} Resending of message ID {} failed too many times; giving up.",
+                log_ident, token
+            );
         }
     }
 

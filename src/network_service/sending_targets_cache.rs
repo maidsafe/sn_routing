@@ -8,7 +8,10 @@
 
 use crate::{quic_p2p::Token, ConnectionInfo};
 use log::LogLevel;
-use std::{collections::HashMap, net::SocketAddr};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    net::SocketAddr,
+};
 
 const MAX_RESENDS: u8 = 3;
 
@@ -18,25 +21,6 @@ enum TargetState {
     Sending(u8),
     /// the last sending attempt (if any) failed; in total, the stored number of attempts failed
     Failed(u8),
-    /// sending to this target succeeded
-    Sent,
-}
-
-impl TargetState {
-    pub fn is_complete(&self) -> bool {
-        match *self {
-            Self::Failed(x) => x > MAX_RESENDS,
-            Self::Sent => true,
-            Self::Sending(_) => false,
-        }
-    }
-
-    pub fn is_sending(&self) -> bool {
-        match *self {
-            Self::Failed(_) | Self::Sent => false,
-            Self::Sending(_) => true,
-        }
-    }
 }
 
 #[derive(Default)]
@@ -72,83 +56,78 @@ impl SendingTargetsCache {
         let _ = self.cache.insert(token, targets);
     }
 
-    fn target_states(&self, token: Token) -> impl Iterator<Item = &(ConnectionInfo, TargetState)> {
-        self.cache.get(&token).into_iter().flatten()
-    }
+    /// Mark the given target as failed and returns the next target to try to resend the message
+    /// to, if available.
+    ///
+    /// The next target will be selected from the Failed targets with the lowest number of failed
+    /// attempts so far, among the ones that failed at most MAX_RESENDS times. If there are
+    /// multiple possibilities, the one with the highest priority (earliest in the list) is taken.
+    /// Returns None if no such targets exist.
+    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> Option<ConnectionInfo> {
+        let mut entry = if let Entry::Occupied(entry) = self.cache.entry(token) {
+            entry
+        } else {
+            return None;
+        };
 
-    fn target_states_mut(
-        &mut self,
-        token: Token,
-    ) -> impl Iterator<Item = &mut (ConnectionInfo, TargetState)> {
-        self.cache.get_mut(&token).into_iter().flatten()
-    }
+        set_target_failed(entry.get_mut(), &target);
 
-    fn fail_target(&mut self, token: Token, target: SocketAddr) {
-        let _ = self
-            .target_states_mut(token)
-            .find(|(info, _state)| info.peer_addr == target)
-            .map(|(_info, state)| match *state {
-                TargetState::Failed(_) => {
-                    log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
-                }
-                TargetState::Sending(x) => {
-                    *state = TargetState::Failed(x + 1);
-                }
-                TargetState::Sent => {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "A target that should no longer fail - failed!"
-                    );
-                }
-            });
-    }
+        if entry.get().is_empty() {
+            let _ = entry.remove();
+            return None;
+        }
 
-    /// Finds a Failed target with the lowest number of failed attempts so far, among the ones that
-    /// failed at most MAX_RESENDS times. If there are multiple possibilities, the one with the
-    /// highest priority (earliest in the list) is taken. Returns None if no such targets exist.
-    fn take_next_target(&mut self, token: Token) -> Option<ConnectionInfo> {
-        self.target_states_mut(token)
-            .filter(|(_info, state)| !state.is_complete())
+        let (info, num, state) = entry
+            .get_mut()
+            .iter_mut()
             .filter_map(|(info, state)| match state {
                 TargetState::Failed(x) => Some((info, *x, state)),
-                _ => None,
+                TargetState::Sending(_) => None,
             })
-            .min_by_key(|(_info, num, _state)| *num)
-            .map(|(info, num, state)| {
-                *state = TargetState::Sending(num);
-                info
-            })
-            .cloned()
+            .min_by_key(|(_info, num, _state)| *num)?;
+        *state = TargetState::Sending(num);
+
+        Some(info.clone())
     }
 
-    fn should_drop(&self, token: Token) -> bool {
-        // Other methods maintain the invariant that exactly one of these is true:
-        // - some target is in the Sending state
-        // - we succeeded (no further sending needed)
-        // - we failed (no more targets available)
-        // So if none are sending, the handling of the message is finished and we can drop it
-        self.target_states(token)
-            .all(|(_info, state)| !state.is_sending())
-    }
-
-    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> Option<ConnectionInfo> {
-        self.fail_target(token, target);
-        let result = self.take_next_target(token);
-        if self.should_drop(token) {
-            let _ = self.cache.remove(&token);
-        }
-        result
-    }
-
+    /// Mark the given target as succeeded in sending the given message.
     pub fn target_succeeded(&mut self, token: Token, target: SocketAddr) {
-        let _ = self
-            .target_states_mut(token)
-            .find(|(info, _state)| info.peer_addr == target)
-            .map(|(_info, state)| {
-                *state = TargetState::Sent;
-            });
-        if self.should_drop(token) {
-            let _ = self.cache.remove(&token);
+        let mut entry = if let Entry::Occupied(entry) = self.cache.entry(token) {
+            entry
+        } else {
+            return;
+        };
+
+        entry.get_mut().retain(|(info, _)| info.peer_addr != target);
+
+        if entry.get().is_empty() {
+            let _ = entry.remove();
+        }
+    }
+}
+
+fn set_target_failed(targets: &mut Vec<(ConnectionInfo, TargetState)>, target: &SocketAddr) {
+    let (index, state) = if let Some((index, (_, state))) = targets
+        .iter_mut()
+        .enumerate()
+        .find(|(_, (info, _))| info.peer_addr == *target)
+    {
+        (index, state)
+    } else {
+        return;
+    };
+
+    match *state {
+        TargetState::Failed(_) => {
+            log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
+            let _ = targets.remove(index);
+        }
+        TargetState::Sending(x) => {
+            if x < MAX_RESENDS {
+                *state = TargetState::Failed(x + 1);
+            } else {
+                let _ = targets.remove(index);
+            }
         }
     }
 }
