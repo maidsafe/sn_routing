@@ -18,9 +18,11 @@ use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
     generate_bls_threshold_secret_key,
     messages::Variant,
+    quic_p2p,
     rng::{self, MainRng},
     unwrap, utils, ELDER_SIZE,
 };
+use crossbeam_channel::Receiver;
 use mock_quic_p2p::Network;
 use std::{iter, net::SocketAddr};
 
@@ -458,6 +460,26 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
 }
 
 #[test]
+fn handle_bootstrap() {
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE);
+    let mut new_node = JoiningPeer::new(&mut elder_test.rng);
+
+    let p2p_node = P2pNode::new(*new_node.public_id(), new_node.our_connection_info());
+    let dst_name = *new_node.public_id().name();
+
+    elder_test
+        .elder
+        .handle_bootstrap_request(p2p_node, dst_name);
+    elder_test.network.poll(&mut elder_test.rng);
+
+    let response = new_node.expect_bootstrap_response();
+    match response {
+        BootstrapResponse::Join(elders_info) => assert_eq!(elders_info, elder_test.elders_info),
+        BootstrapResponse::Rebootstrap(_) => panic!("Unexpected Rebootstrap response"),
+    }
+}
+
+#[test]
 fn send_genesis_update() {
     let mut elder_test = ElderUnderTest::new(ELDER_SIZE);
 
@@ -518,4 +540,48 @@ fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofSlice, unexpect
         proof_chain,
         unexpected_version,
     );
+}
+
+struct JoiningPeer {
+    network_service: quic_p2p::QuicP2p,
+    network_event_rx: Receiver<quic_p2p::Event>,
+    full_id: FullId,
+}
+
+impl JoiningPeer {
+    fn new(rng: &mut MainRng) -> Self {
+        let (network_event_tx, network_event_rx) = crossbeam_channel::unbounded();
+        let network_service = unwrap!(quic_p2p::Builder::new(network_event_tx).build());
+
+        Self {
+            network_service,
+            network_event_rx,
+            full_id: FullId::gen(rng),
+        }
+    }
+
+    fn our_connection_info(&mut self) -> ConnectionInfo {
+        unwrap!(self.network_service.our_connection_info())
+    }
+
+    fn public_id(&self) -> &PublicId {
+        self.full_id.public_id()
+    }
+
+    fn expect_bootstrap_response(&self) -> BootstrapResponse {
+        let response = self.recv_messages().find_map(|msg| match msg.variant {
+            Variant::BootstrapResponse(response) => Some(response),
+            _ => None,
+        });
+        unwrap!(response, "BootstrapResponse not received")
+    }
+
+    fn recv_messages<'a>(&'a self) -> impl Iterator<Item = Message> + 'a {
+        self.network_event_rx
+            .try_iter()
+            .filter_map(|event| match event {
+                quic_p2p::Event::NewMessage { msg, .. } => Some(unwrap!(Message::from_bytes(&msg))),
+                _ => None,
+            })
+    }
 }
