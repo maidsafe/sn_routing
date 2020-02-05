@@ -90,7 +90,7 @@ mod tests {
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         parsec::generate_bls_threshold_secret_key,
-        rng, unwrap, ConnectionInfo, Prefix, XorName,
+        rng, unwrap, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;
@@ -160,7 +160,6 @@ mod tests {
             let mut rng = rng::new();
 
             let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
-            let connection_info = ConnectionInfo::from(socket_addr);
 
             let keys = generate_bls_threshold_secret_key(&mut rng, 9);
             let full_ids: BTreeMap<_, _> = (0..9)
@@ -172,12 +171,7 @@ mod tests {
 
             let pub_ids: BTreeMap<_, _> = full_ids
                 .iter()
-                .map(|(name, full_id)| {
-                    (
-                        *name,
-                        P2pNode::new(*full_id.public_id(), connection_info.clone()),
-                    )
-                })
+                .map(|(name, full_id)| (*name, P2pNode::new(*full_id.public_id(), socket_addr)))
                 .collect();
 
             let secret_ids: BTreeMap<_, _> = pub_ids

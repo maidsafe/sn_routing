@@ -21,7 +21,7 @@ use crate::{
     timer::Timer,
     unwrap,
     xor_space::{Prefix, XorName},
-    ConnectionInfo, NetworkConfig,
+    NetworkConfig,
 };
 use crossbeam_channel as mpmc;
 use mock_quic_p2p::Network;
@@ -59,8 +59,7 @@ pub fn create_elders_info(
     let members_map: BTreeMap<_, _> = full_ids
         .iter()
         .map(|(name, full_id)| {
-            let connection_info = ConnectionInfo::from(network.gen_addr());
-            let node = P2pNode::new(*full_id.public_id(), connection_info);
+            let node = P2pNode::new(*full_id.public_id(), network.gen_addr());
             (*name, node)
         })
         .collect();

@@ -9,8 +9,8 @@
 use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
-    section_proof_slice_for_test, AccumulatingMessage, ConnectionInfo, DstLocation, FullId,
-    Message, NetworkParams, P2pNode, PlainMessage, Prefix, SectionKeyShare, Variant, XorName,
+    section_proof_slice_for_test, AccumulatingMessage, DstLocation, FullId, Message, NetworkParams,
+    P2pNode, PlainMessage, Prefix, SectionKeyShare, Variant, XorName,
 };
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
@@ -66,10 +66,9 @@ fn message_with_invalid_security(fail_type: FailType) {
     let bls_secret_key_share = SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
 
     let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
-    let connection_info = ConnectionInfo::from(socket_addr);
     let members: BTreeMap<_, _> = iter::once((
         *fake_full.public_id(),
-        P2pNode::new(*fake_full.public_id(), connection_info),
+        P2pNode::new(*fake_full.public_id(), socket_addr),
     ))
     .collect();
     let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001));

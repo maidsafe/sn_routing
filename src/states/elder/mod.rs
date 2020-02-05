@@ -41,7 +41,6 @@ use crate::{
     time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
-    ConnectionInfo,
 };
 use hex_fmt::HexFmt;
 use itertools::Itertools;
@@ -514,7 +513,7 @@ impl Elder {
                 response_section.version()
             );
             self.send_direct_message(
-                p2p_node.connection_info(),
+                p2p_node.peer_addr(),
                 Variant::BootstrapResponse(BootstrapResponse::Join(response_section)),
             );
         }
@@ -598,7 +597,7 @@ impl Elder {
             );
 
             self.send_direct_message(
-                recipient.connection_info(),
+                recipient.peer_addr(),
                 Variant::MessageSignature(Box::new(msg)),
             );
         }
@@ -681,7 +680,7 @@ impl Elder {
 
     fn handle_backlogged_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         msg: Message,
     ) -> Result<(), RoutingError> {
         trace!("{} - Handle backlogged message: {:?}", self, msg);
@@ -701,7 +700,7 @@ impl Elder {
 
     fn dispatch_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         msg: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
@@ -873,7 +872,7 @@ impl Elder {
         } else {
             let conn_infos: Vec<_> = self
                 .closest_known_elders_to(name)
-                .map(|p2p_node| p2p_node.connection_info().clone())
+                .map(|p2p_node| *p2p_node.peer_addr())
                 .collect();
             debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
@@ -881,10 +880,7 @@ impl Elder {
             );
             BootstrapResponse::Rebootstrap(conn_infos)
         };
-        self.send_direct_message(
-            p2p_node.connection_info(),
-            Variant::BootstrapResponse(response),
-        );
+        self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
     }
 
     fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
@@ -1109,7 +1105,7 @@ impl Elder {
                     target,
                 );
                 self.send_direct_message(
-                    target.connection_info(),
+                    target.peer_addr(),
                     Variant::MessageSignature(Box::new(accumulating_msg.clone())),
                 );
             }
@@ -1150,7 +1146,7 @@ impl Elder {
                     .filter_outgoing(msg, p2p_node.public_id())
                     .is_new()
             })
-            .map(|node| node.connection_info().clone())
+            .map(|node| *node.peer_addr())
             .collect();
 
         let cheap_bytes_clone = msg.full_bytes().clone();
@@ -1319,11 +1315,9 @@ impl Base for Elder {
         self.handle_messages(outbox)
     }
 
-    fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
+    fn handle_bootstrapped_to(&mut self, addr: SocketAddr) -> Transition {
         // A mature node doesn't need a bootstrap connection
-        self.network_service
-            .service_mut()
-            .disconnect_from(conn_info.peer_addr);
+        self.network_service.service_mut().disconnect_from(addr);
         Transition::Stay
     }
 
@@ -1357,7 +1351,7 @@ impl Base for Elder {
 
     fn handle_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         msg: Message,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
@@ -1366,7 +1360,7 @@ impl Base for Elder {
         Ok(Transition::Stay)
     }
 
-    fn unhandled_message(&mut self, _sender: Option<ConnectionInfo>, _msg: Message) {
+    fn unhandled_message(&mut self, _sender: Option<SocketAddr>, _msg: Message) {
         unreachable!()
     }
 
@@ -1417,7 +1411,7 @@ impl Elder {
 
     pub fn send_msg_to_targets(
         &mut self,
-        dst_targets: &[ConnectionInfo],
+        dst_targets: &[SocketAddr],
         dg_size: usize,
         message: Message,
     ) -> Result<(), RoutingError> {

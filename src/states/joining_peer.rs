@@ -29,11 +29,11 @@ use crate::{
     state_machine::{State, Transition},
     timer::Timer,
     xor_space::{Prefix, XorName},
-    ConnectionInfo,
 };
 use log::LogLevel;
 use std::{
     fmt::{self, Display, Formatter},
+    net::SocketAddr,
     time::Duration,
 };
 
@@ -145,7 +145,7 @@ impl JoiningPeer {
             };
 
             self.send_direct_message(
-                dst.connection_info(),
+                dst.peer_addr(),
                 Variant::JoinRequest(Box::new(join_request)),
             );
         }
@@ -234,7 +234,7 @@ impl Base for JoiningPeer {
             for addr in self
                 .elders_info
                 .member_nodes()
-                .map(|node| node.connection_info().peer_addr)
+                .map(|node| *node.peer_addr())
             {
                 self.network_service.disconnect(addr);
             }
@@ -247,7 +247,7 @@ impl Base for JoiningPeer {
 
     fn handle_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         msg: Message,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
@@ -287,7 +287,7 @@ impl Base for JoiningPeer {
         Ok(Transition::Stay)
     }
 
-    fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, msg: Message) {
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message) {
         match msg.variant {
             Variant::BootstrapResponse(_) => (),
             _ => {

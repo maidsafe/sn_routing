@@ -422,7 +422,6 @@ mod tests {
         rng::MainRng,
         unwrap,
         xor_space::{Prefix, XorName},
-        ConnectionInfo,
     };
     use serde::Serialize;
     use std::net::SocketAddr;
@@ -451,15 +450,9 @@ mod tests {
         version: u64,
     ) -> GenesisPfxInfo {
         let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
-        let connection_info = ConnectionInfo::from(socket_addr);
         let members = full_ids
             .iter()
-            .map(|id| {
-                (
-                    *id.public_id(),
-                    P2pNode::new(*id.public_id(), connection_info.clone()),
-                )
-            })
+            .map(|id| (*id.public_id(), P2pNode::new(*id.public_id(), socket_addr)))
             .collect();
         let elders_info = unwrap!(EldersInfo::new_for_test(
             members,

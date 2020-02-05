@@ -130,7 +130,6 @@ impl ElderUnderTest {
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
         let other_full_id = &self.other_ids[0].0;
         let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
-        let connection_info = ConnectionInfo::from(addr);
         let parsec = self.elder.parsec_map_mut();
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
@@ -140,9 +139,7 @@ impl ElderUnderTest {
             Variant::ParsecRequest(parsec_version, request)
         ));
 
-        let _ = self
-            .elder
-            .dispatch_message(Some(connection_info), message, &mut ())?;
+        let _ = self.elder.dispatch_message(Some(addr), message, &mut ())?;
         Ok(())
     }
 
@@ -378,10 +375,7 @@ fn new_elder_state(
 }
 
 fn gen_p2p_node(rng: &mut MainRng, network: &Network) -> P2pNode {
-    P2pNode::new(
-        *FullId::gen(rng).public_id(),
-        ConnectionInfo::from(network.gen_addr()),
-    )
+    P2pNode::new(*FullId::gen(rng).public_id(), network.gen_addr())
 }
 
 #[test]
@@ -560,7 +554,7 @@ impl JoiningPeer {
         }
     }
 
-    fn our_connection_info(&mut self) -> ConnectionInfo {
+    fn our_connection_info(&mut self) -> SocketAddr {
         unwrap!(self.network_service.our_connection_info())
     }
 

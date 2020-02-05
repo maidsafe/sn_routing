@@ -11,7 +11,7 @@ mod sending_targets_cache;
 use crate::{
     quic_p2p::{Builder, Peer, QuicP2p, QuicP2pError, Token},
     utils::LogIdent,
-    ConnectionInfo, NetworkConfig, NetworkEvent,
+    NetworkConfig, NetworkEvent,
 };
 use bytes::Bytes;
 use crossbeam_channel::Sender;
@@ -43,22 +43,16 @@ impl NetworkService {
 
     pub fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: &[ConnectionInfo],
+        conn_infos: &[SocketAddr],
         dg_size: usize,
         msg: Bytes,
     ) {
         let token = self.next_msg_token();
 
         // initially only send to dg_size targets
-        for conn_info in conn_infos.iter().take(dg_size) {
+        for addr in conn_infos.iter().take(dg_size) {
             // NetworkBytes is refcounted and cheap to clone.
-            self.quic_p2p.send(
-                Peer::Node {
-                    node_info: conn_info.clone(),
-                },
-                msg.clone(),
-                token,
-            );
+            self.quic_p2p.send(Peer::Node(*addr), msg.clone(), token);
         }
 
         self.cache.insert_message(token, conn_infos, dg_size);
@@ -76,12 +70,11 @@ impl NetworkService {
                 "{} Sending of message ID {} failed; resending...",
                 log_ident, token
             );
-            self.quic_p2p
-                .send(Peer::Node { node_info: tgt }, msg, token);
+            self.quic_p2p.send(Peer::Node(tgt), msg, token);
         }
     }
 
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, QuicP2pError> {
+    pub fn our_connection_info(&mut self) -> Result<SocketAddr, QuicP2pError> {
         self.quic_p2p.our_connection_info()
     }
 

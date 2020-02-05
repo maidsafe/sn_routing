@@ -18,7 +18,7 @@ use crate::{
     states::{common::Base, Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
     xor_space::{Prefix, XorName},
-    ConnectionInfo, NetworkConfig, NetworkEvent,
+    NetworkConfig, NetworkEvent,
 };
 #[cfg(feature = "mock_base")]
 use crate::{
@@ -30,6 +30,7 @@ use crossbeam_channel as mpmc;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     mem,
+    net::SocketAddr,
 };
 
 // Execute $expr on the current variant of $self. Execute $term_expr if the current variant is
@@ -144,7 +145,7 @@ impl State {
         }
     }
 
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
+    pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
         state_dispatch!(
             self,
             state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
@@ -280,7 +281,7 @@ pub enum Transition {
     Rebootstrap,
     // Node getting relocated.
     Relocate {
-        conn_infos: Vec<ConnectionInfo>,
+        conn_infos: Vec<SocketAddr>,
         details: SignedRelocateDetails,
     },
     // `JoiningPeer` state transitioning to `Adult`.

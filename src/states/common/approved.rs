@@ -151,7 +151,7 @@ pub trait Approved: Base {
                 msg_version,
                 p2p_node,
             );
-            self.send_direct_message(p2p_node.connection_info(), response);
+            self.send_direct_message(p2p_node.peer_addr(), response);
         }
 
         if poll {
@@ -229,7 +229,7 @@ pub trait Approved: Base {
                     version,
                     gossip_target,
                 );
-                self.send_direct_message(gossip_target.connection_info(), msg);
+                self.send_direct_message(gossip_target.peer_addr(), msg);
             }
             Err(error) => {
                 trace!(
@@ -529,10 +529,7 @@ pub trait Approved: Base {
         trace!("{} - Send {:?} to {:?}", self, payload, recipients);
 
         for recipient in recipients {
-            self.send_direct_message(
-                recipient.connection_info(),
-                Variant::MemberKnowledge(payload),
-            )
+            self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
         }
     }
 }

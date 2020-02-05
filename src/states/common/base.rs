@@ -22,7 +22,7 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
-    ConnectionInfo, NetworkEvent,
+    NetworkEvent,
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -62,12 +62,12 @@ pub trait Base: Display {
 
     fn handle_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         message: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition>;
 
-    fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, message: Message);
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, message: Message);
 
     fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
         match action {
@@ -140,33 +140,33 @@ pub trait Base: Display {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
             BootstrapFailure => self.handle_bootstrap_failure(outbox),
             ConnectedTo {
-                peer: Peer::Node { node_info },
-            } => self.handle_connected_to(node_info, outbox),
+                peer: Peer::Node(peer_addr),
+            } => self.handle_connected_to(peer_addr, outbox),
             ConnectedTo {
-                peer: Peer::Client { peer_addr },
+                peer: Peer::Client(peer_addr),
             } => {
                 let client_event = Client::Connected { peer_addr };
                 outbox.send_event(From::from(client_event));
                 Transition::Stay
             }
             ConnectionFailure { peer, .. } => match peer {
-                Peer::Client { peer_addr } => {
+                Peer::Client(peer_addr) => {
                     let client_event = Client::ConnectionFailure { peer_addr };
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 }
-                Peer::Node { node_info } => self.handle_connection_failure(node_info, outbox),
+                Peer::Node(peer_addr) => self.handle_connection_failure(peer_addr, outbox),
             },
             NewMessage { peer, msg } => match peer {
-                Peer::Client { peer_addr } => {
+                Peer::Client(peer_addr) => {
                     let client_event = Client::NewMessage { peer_addr, msg };
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 }
-                Peer::Node { node_info } => self.handle_new_message(node_info, msg, outbox),
+                Peer::Node(peer_addr) => self.handle_new_message(peer_addr, msg, outbox),
             },
             UnsentUserMessage { peer, msg, token } => match peer {
-                Peer::Client { peer_addr } => {
+                Peer::Client(peer_addr) => {
                     let client_event = Client::UnsentUserMsg {
                         peer_addr,
                         msg,
@@ -175,12 +175,10 @@ pub trait Base: Display {
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 }
-                Peer::Node { node_info } => {
-                    self.handle_unsent_message(node_info, msg, token, outbox)
-                }
+                Peer::Node(peer_addr) => self.handle_unsent_message(peer_addr, msg, token, outbox),
             },
             SentUserMessage { peer, msg, token } => match peer {
-                Peer::Client { peer_addr } => {
+                Peer::Client(peer_addr) => {
                     let client_event = Client::SentUserMsg {
                         peer_addr,
                         msg,
@@ -189,7 +187,7 @@ pub trait Base: Display {
                     outbox.send_event(client_event.into());
                     Transition::Stay
                 }
-                Peer::Node { node_info } => self.handle_sent_message(node_info, msg, token, outbox),
+                Peer::Node(peer_addr) => self.handle_sent_message(peer_addr, msg, token, outbox),
             },
             Finish => Transition::Terminate,
         };
@@ -201,7 +199,7 @@ pub trait Base: Display {
         }
     }
 
-    fn handle_bootstrapped_to(&mut self, _conn_info: ConnectionInfo) -> Transition {
+    fn handle_bootstrapped_to(&mut self, _addr: SocketAddr) -> Transition {
         debug!("{} - Unhandled network event: BootstrappedTo", self);
         Transition::Stay
     }
@@ -211,26 +209,22 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn handle_connected_to(
-        &mut self,
-        _conn_info: ConnectionInfo,
-        _outbox: &mut dyn EventBox,
-    ) -> Transition {
+    fn handle_connected_to(&mut self, _addr: SocketAddr, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
     fn handle_connection_failure(
         &mut self,
-        conn_info: ConnectionInfo,
+        addr: SocketAddr,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        trace!("{} - ConnectionFailure from {}", self, conn_info.peer_addr);
-        self.handle_peer_lost(conn_info.peer_addr, outbox)
+        trace!("{} - ConnectionFailure from {}", self, addr);
+        self.handle_peer_lost(addr, outbox)
     }
 
     fn handle_new_message(
         &mut self,
-        sender: ConnectionInfo,
+        sender: SocketAddr,
         bytes: Bytes,
         outbox: &mut dyn EventBox,
     ) -> Transition {
@@ -253,7 +247,7 @@ pub trait Base: Display {
 
     fn try_handle_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         msg: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
@@ -278,7 +272,7 @@ pub trait Base: Display {
 
     fn handle_filtered_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         mut msg: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
@@ -308,24 +302,20 @@ pub trait Base: Display {
 
     fn handle_unsent_message(
         &mut self,
-        conn_info: ConnectionInfo,
+        addr: SocketAddr,
         msg: Bytes,
         token: Token,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
         let log_ident = LogIdent::new(self);
-        self.network_service_mut().send_message_to_next_target(
-            msg,
-            token,
-            conn_info.peer_addr,
-            log_ident,
-        );
+        self.network_service_mut()
+            .send_message_to_next_target(msg, token, addr, log_ident);
         Transition::Stay
     }
 
     fn handle_sent_message(
         &mut self,
-        conn_info: ConnectionInfo,
+        addr: SocketAddr,
         _msg: Bytes,
         token: Token,
         _outbox: &mut dyn EventBox,
@@ -334,11 +324,11 @@ pub trait Base: Display {
             "{} Successfully sent message with ID {} to {:?}",
             self,
             token,
-            conn_info.peer_addr
+            addr
         );
         self.network_service_mut()
             .targets_cache_mut()
-            .target_succeeded(token, conn_info.peer_addr);
+            .target_succeeded(token, addr);
         Transition::Stay
     }
 
@@ -354,7 +344,7 @@ pub trait Base: Display {
         self.full_id().public_id().name()
     }
 
-    fn our_connection_info(&mut self) -> Result<ConnectionInfo> {
+    fn our_connection_info(&mut self) -> Result<SocketAddr> {
         self.network_service_mut()
             .service_mut()
             .our_connection_info()
@@ -371,7 +361,7 @@ pub trait Base: Display {
         None
     }
 
-    fn send_direct_message(&mut self, recipient: &ConnectionInfo, variant: Variant) {
+    fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {
         let message = match Message::single_src(self.full_id(), DstLocation::Direct, variant) {
             Ok(message) => message,
             Err(error) => {
@@ -394,13 +384,13 @@ pub trait Base: Display {
         self.send_message_to_target(recipient, bytes)
     }
 
-    fn send_message_to_target(&mut self, dst: &ConnectionInfo, message: Bytes) {
+    fn send_message_to_target(&mut self, dst: &SocketAddr, message: Bytes) {
         self.send_message_to_targets(slice::from_ref(dst), 1, message);
     }
 
     fn send_message_to_targets(
         &mut self,
-        conn_infos: &[ConnectionInfo],
+        conn_infos: &[SocketAddr],
         dg_size: usize,
         message: Bytes,
     ) {
@@ -416,7 +406,7 @@ pub trait Base: Display {
 
     fn send_message_to_initial_targets(
         &mut self,
-        conn_infos: &[ConnectionInfo],
+        conn_infos: &[SocketAddr],
         dg_size: usize,
         message: Bytes,
     ) {
@@ -425,7 +415,7 @@ pub trait Base: Display {
     }
 
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
-        let client = Peer::Client { peer_addr };
+        let client = Peer::Client(peer_addr);
         self.network_service_mut()
             .service_mut()
             .send(client, msg, token);

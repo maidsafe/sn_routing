@@ -93,7 +93,7 @@ impl TestNode {
     }
 
     pub fn endpoint(&mut self) -> SocketAddr {
-        unwrap!(self.inner.our_connection_info(), "{}", self.inner).peer_addr
+        unwrap!(self.inner.our_connection_info(), "{}", self.inner)
     }
 
     pub fn id(&self) -> PublicId {
