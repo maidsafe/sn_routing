@@ -465,11 +465,11 @@ mod tests {
         let mut sel = mpmc::Select::new();
         machine.register(&mut sel);
 
-        // Blocking step for the first one.
-        let op_index = sel.ready();
+        // Step for the first one.
+        let op_index = unwrap!(sel.try_ready());
         unwrap!(machine.step(op_index, outbox));
 
-        // Exhaust any remaining step
+        // Exhaust any remaining steps
         loop {
             let mut sel = mpmc::Select::new();
             machine.register(&mut sel);
