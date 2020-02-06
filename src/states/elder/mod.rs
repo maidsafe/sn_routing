@@ -1259,7 +1259,7 @@ impl Elder {
                 attempts: 1,
             });
 
-            debug!("{} - Lost peer (member of our section): {}", self, node);
+            debug!("{} - Lost peer {}", self, node);
         } else {
             // We already know this peer is lost.
             return;
@@ -1269,8 +1269,13 @@ impl Elder {
     }
 
     fn remove_lost_peer(&mut self, pub_id: &PublicId) {
-        if self.lost_peers.remove(pub_id).is_some() {
-            trace!("{} - Peer no longer lost: {}", self, pub_id)
+        if let Some(info) = self.lost_peers.remove(pub_id) {
+            trace!(
+                "{} - Lost peer {} at {} found",
+                self,
+                pub_id,
+                info.conn_info.peer_addr
+            )
         }
     }
 
@@ -1288,9 +1293,10 @@ impl Elder {
         };
 
         trace!(
-            "{} - Lost peer {} ping failed. Remaining attempts: {}",
+            "{} - Lost peer {} at {} ping failed. Remaining attempts: {}",
             log_ident,
             pub_id,
+            info.conn_info.peer_addr,
             LOST_PEER_ATTEMPTS - info.attempts,
         );
 
@@ -1422,10 +1428,7 @@ impl Base for Elder {
         if let Some(node) = node {
             self.add_lost_peer(node);
         } else {
-            debug!(
-                "{} - Lost peer (not member of our section): {}",
-                self, peer_addr
-            );
+            debug!("{} - Lost peer (not our member) {}", self, peer_addr);
         };
 
         Transition::Stay

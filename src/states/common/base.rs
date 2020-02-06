@@ -423,8 +423,9 @@ pub trait Base: Display {
         dg_size: usize,
         message: Bytes,
     ) {
+        let log_ident = self.log_ident();
         self.network_service_mut()
-            .send_message_to_initial_targets(conn_infos, dg_size, message);
+            .send_message_to_initial_targets(conn_infos, dg_size, message, log_ident);
     }
 
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {

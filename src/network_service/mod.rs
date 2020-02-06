@@ -8,6 +8,7 @@
 
 mod sending_targets_cache;
 
+use self::sending_targets_cache::{SendingTargetsCache, TargetFailed};
 use crate::{
     quic_p2p::{Builder, Peer, QuicP2p, QuicP2pError, Token},
     utils::LogIdent,
@@ -15,9 +16,8 @@ use crate::{
 };
 use bytes::Bytes;
 use crossbeam_channel::Sender;
+use itertools::Itertools;
 use std::net::SocketAddr;
-
-use sending_targets_cache::{SendingTargetsCache, TargetFailed};
 
 /// Struct that handles network operations: sending and receiving messages, as well as resending on
 /// failure.
@@ -46,8 +46,19 @@ impl NetworkService {
         conn_infos: &[ConnectionInfo],
         dg_size: usize,
         msg: Bytes,
+        log_ident: LogIdent,
     ) {
         let token = self.next_msg_token();
+        trace!(
+            "{} Sending message ID {} to {}",
+            log_ident,
+            token,
+            conn_infos
+                .iter()
+                .take(dg_size)
+                .map(|info| info.peer_addr)
+                .format(", ")
+        );
 
         // initially only send to dg_size targets
         for conn_info in conn_infos.iter().take(dg_size) {
@@ -76,16 +87,20 @@ impl NetworkService {
         let TargetFailed { next, lost } = self.cache.target_failed(token, failed_tgt);
 
         if let Some(tgt) = next {
-            info!(
-                "{} Sending of message ID {} failed; resending...",
-                log_ident, token
+            trace!(
+                "{} Sending of message ID {} to {} failed; resending to {}.",
+                log_ident,
+                token,
+                failed_tgt,
+                tgt.peer_addr,
             );
             self.quic_p2p
                 .send(Peer::Node { node_info: tgt }, msg, token);
         } else {
-            error!(
+            trace!(
                 "{} Resending of message ID {} failed too many times; giving up.",
-                log_ident, token
+                log_ident,
+                token
             );
         }
 
