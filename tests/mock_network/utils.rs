@@ -238,9 +238,6 @@ pub fn poll_and_resend(nodes: &mut [TestNode]) {
 pub struct PollOptions {
     /// If set, polling continues while this predicate returns true even if all nodes are idle.
     pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
-    /// If set and all nodes become idle, advances the time by this amount (in seconds) and polls
-    /// again one more time.
-    pub extra_advance: Option<u64>,
     /// If true and all nodes become idle, advances the time by the amount it takes for joining
     /// nodes to timeout and polls again one more time.
     pub fire_join_timeout: bool,
@@ -250,7 +247,6 @@ impl Default for PollOptions {
     fn default() -> Self {
         Self {
             continue_predicate: None,
-            extra_advance: None,
             fire_join_timeout: true,
         }
     }
@@ -297,13 +293,10 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
 
         if let Some(continue_predicate) = options.continue_predicate.as_ref() {
             if continue_predicate(nodes) {
+                // Advance time in case the predicate is timeout-triggered.
+                FakeClock::advance_time(test_consts::LOST_PEER_BASE_TIMEOUT.as_secs() * 1000 + 1);
                 continue;
             }
-        }
-
-        if let Some(step) = options.extra_advance.take() {
-            FakeClock::advance_time(step * 1000 + 1);
-            continue;
         }
 
         if options.fire_join_timeout {
