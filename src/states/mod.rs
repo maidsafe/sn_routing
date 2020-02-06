@@ -22,7 +22,11 @@ pub use self::{
 };
 
 #[cfg(feature = "mock_base")]
-pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT};
+pub use self::{
+    bootstrapping_peer::BOOTSTRAP_TIMEOUT,
+    elder::{LOST_PEER_ATTEMPTS, LOST_PEER_BASE_TIMEOUT},
+    joining_peer::JOIN_TIMEOUT,
+};
 
 // # The state machine
 //

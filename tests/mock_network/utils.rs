@@ -285,6 +285,9 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
             false
         }
     };
+
+    let mut cleanup_steps = 0u8;
+
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
@@ -313,6 +316,17 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
                     + 1,
             );
             options.fire_join_timeout = false;
+            continue;
+        }
+
+        if cleanup_steps < test_consts::LOST_PEER_ATTEMPTS {
+            // Give the nodes time to detect dropped peers.
+            FakeClock::advance_time(
+                (2_u32.pow(cleanup_steps as u32) * test_consts::LOST_PEER_BASE_TIMEOUT).as_secs()
+                    * 1000
+                    + 1,
+            );
+            cleanup_steps += 1;
             continue;
         }
 

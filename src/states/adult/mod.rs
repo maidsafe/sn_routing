@@ -473,13 +473,17 @@ impl Base for Adult {
                 self.handle_bootstrap_request(msg.src.to_sender_node(sender)?, name);
                 Ok(Transition::Stay)
             }
+            Variant::PingRequest => {
+                self.handle_ping_request(msg.src.to_sender_node(sender)?);
+                Ok(Transition::Stay)
+            }
             _ => unreachable!(),
         }
     }
 
     fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, msg: Message) {
         match msg.variant {
-            Variant::BootstrapResponse(_) => {
+            Variant::BootstrapResponse(_) | Variant::PingResponse => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
             }
             _ => {
@@ -500,7 +504,8 @@ impl Base for Adult {
             | Variant::MessageSignature(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::BootstrapRequest(_) => true,
+            | Variant::BootstrapRequest(_)
+            | Variant::PingRequest => true,
 
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
@@ -508,7 +513,8 @@ impl Base for Adult {
             | Variant::AckMessage { .. }
             | Variant::JoinRequest(_)
             | Variant::MemberKnowledge(_)
-            | Variant::BootstrapResponse(_) => false,
+            | Variant::BootstrapResponse(_)
+            | Variant::PingResponse => false,
         }
     }
 

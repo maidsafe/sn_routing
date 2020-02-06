@@ -48,7 +48,7 @@ use itertools::Itertools;
 use log::LogLevel;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet, VecDeque},
     fmt::{self, Display, Formatter},
     iter, mem,
     net::SocketAddr,
@@ -59,6 +59,11 @@ const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 /// Number of RelocatePrepare to consensus before actually relocating a node.
 /// This helps avoid relocated node receiving message they need to process from previous section.
 const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
+
+/// Time interval to wait for a ping response from a lost peer. Doubles after every attempt.
+pub const LOST_PEER_BASE_TIMEOUT: Duration = Duration::from_secs(5);
+/// How many times we try to ping a lost peer before declaring them gone.
+pub const LOST_PEER_ATTEMPTS: u8 = 5;
 
 struct CompleteParsecReset {
     /// The new genesis prefix info.
@@ -117,6 +122,8 @@ pub struct Elder {
     pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
     /// The knowledge of the non-elder members about our section.
     members_knowledge: BTreeMap<XorName, MemberKnowledge>,
+    /// Peers that went offline and we are trying to reconnect to them.
+    lost_peers: BTreeMap<PublicId, LostPeer>,
     rng: MainRng,
 }
 
@@ -271,6 +278,7 @@ impl Elder {
             dkg_cache: Default::default(),
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
+            lost_peers: Default::default(),
             rng: details.rng,
         }
     }
@@ -763,6 +771,8 @@ impl Elder {
             Variant::ParsecResponse(version, response) => {
                 return self.handle_parsec_response(version, response, *msg.src.as_node()?, outbox);
             }
+            Variant::PingRequest => self.handle_ping_request(msg.src.to_sender_node(sender)?),
+            Variant::PingResponse => (),
             Variant::GenesisUpdate(_) | Variant::Relocate(_) => {
                 debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
                 self.msg_backlog.push(msg.into_queued(sender));
@@ -1239,6 +1249,75 @@ impl Elder {
             Err(error) => Err(error),
         }
     }
+
+    // Mark the peer as lost and start attempts to reconnect to them.
+    fn add_lost_peer(&mut self, node: P2pNode) {
+        if let Entry::Vacant(entry) = self.lost_peers.entry(*node.public_id()) {
+            let _ = entry.insert(LostPeer {
+                conn_info: node.connection_info().clone(),
+                timer_token: self.timer.schedule(LOST_PEER_BASE_TIMEOUT),
+                attempts: 1,
+            });
+
+            debug!("{} - Lost peer (member of our section): {}", self, node);
+        } else {
+            // We already know this peer is lost.
+            return;
+        }
+
+        self.send_direct_message(node.connection_info(), Variant::PingRequest);
+    }
+
+    fn remove_lost_peer(&mut self, pub_id: &PublicId) {
+        if self.lost_peers.remove(pub_id).is_some() {
+            trace!("{} - Peer no longer lost: {}", self, pub_id)
+        }
+    }
+
+    fn handle_lost_peer_timeout(&mut self, token: u64) {
+        let log_ident = self.log_ident();
+
+        let (pub_id, info) = if let Some((pub_id, info)) = self
+            .lost_peers
+            .iter_mut()
+            .find(|(_, info)| info.timer_token == token)
+        {
+            (*pub_id, info)
+        } else {
+            return;
+        };
+
+        trace!(
+            "{} - Lost peer {} ping failed. Remaining attempts: {}",
+            log_ident,
+            pub_id,
+            LOST_PEER_ATTEMPTS - info.attempts,
+        );
+
+        if info.attempts >= LOST_PEER_ATTEMPTS {
+            // All attempts exhausted. The peer is gone.
+            let _ = self.lost_peers.remove(&pub_id);
+            self.handle_peer_gone(pub_id);
+            return;
+        }
+
+        // Wait twice as long as the last time.
+        info.timer_token = self
+            .timer
+            .schedule(2u32.pow(info.attempts as u32) * LOST_PEER_BASE_TIMEOUT);
+        info.attempts += 1;
+
+        let conn_info = info.conn_info.clone();
+        self.send_direct_message(&conn_info, Variant::PingRequest);
+    }
+
+    fn handle_peer_gone(&mut self, pub_id: PublicId) {
+        info!("{} - Peer {} is gone.", self, pub_id);
+
+        if self.chain.is_peer_our_member(&pub_id) {
+            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
+        }
+    }
 }
 
 impl Base for Elder {
@@ -1310,6 +1389,8 @@ impl Base for Elder {
 
             self.send_parsec_gossip(None);
             self.maintain_parsec();
+        } else {
+            self.handle_lost_peer_timeout(token);
         }
 
         Transition::Stay
@@ -1332,21 +1413,20 @@ impl Base for Elder {
         peer_addr: SocketAddr,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        debug!("{} - Lost peer {}", self, peer_addr);
+        let node = self
+            .chain
+            .our_active_members()
+            .find(|node| *node.peer_addr() == peer_addr)
+            .cloned();
 
-        let pub_id = if let Some(node) = self.chain.find_p2p_node_from_addr(&peer_addr) {
-            *node.public_id()
+        if let Some(node) = node {
+            self.add_lost_peer(node);
         } else {
-            info!(
-                "{} - Lost connection to a peer we don't know: {}",
+            debug!(
+                "{} - Lost peer (not member of our section): {}",
                 self, peer_addr
             );
-            return Transition::Stay;
         };
-
-        if self.chain.is_peer_our_member(&pub_id) {
-            self.vote_for_event(AccumulatingEvent::Offline(pub_id));
-        }
 
         Transition::Stay
     }
@@ -1361,6 +1441,10 @@ impl Base for Elder {
         msg: Message,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
+        if let Ok(id) = msg.src.as_node() {
+            self.remove_lost_peer(id)
+        }
+
         self.update_our_knowledge(&msg);
         self.msg_queue.push_back(msg.into_queued(sender));
         Ok(Transition::Stay)
@@ -1494,6 +1578,7 @@ impl Approved for Elder {
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.members_knowledge.remove(pub_id.name());
+        let _ = self.lost_peers.remove(&pub_id);
         Ok(())
     }
 
@@ -1504,6 +1589,7 @@ impl Approved for Elder {
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.members_knowledge.remove(details.pub_id.name());
+        let _ = self.lost_peers.remove(&details.pub_id);
 
         if &details.pub_id == self.id() {
             // Do not send the message to ourselves.
@@ -1697,4 +1783,10 @@ fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingErro
         );
         err
     })
+}
+
+struct LostPeer {
+    conn_info: ConnectionInfo,
+    timer_token: u64,
+    attempts: u8,
 }

@@ -535,6 +535,24 @@ pub trait Approved: Base {
             )
         }
     }
+
+    fn handle_ping_request(&mut self, sender: P2pNode) {
+        if !self.chain().is_peer_our_elder(sender.public_id()) {
+            trace!(
+                "{} - Received PingRequest from {} who is not our elder - ignoring",
+                self,
+                sender
+            );
+            return;
+        }
+
+        trace!(
+            "{} - Received PingRequest from {} - responding",
+            self,
+            sender
+        );
+        self.send_direct_message(sender.connection_info(), Variant::PingResponse)
+    }
 }
 
 #[allow(unused)]

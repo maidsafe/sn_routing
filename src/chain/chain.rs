@@ -32,7 +32,6 @@ use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug, Display, Formatter},
     iter, mem,
-    net::SocketAddr,
 };
 
 #[cfg(feature = "mock_base")]
@@ -750,11 +749,6 @@ impl Chain {
         self.neighbour_infos()
             .chain(iter::once(self.state.our_info()))
             .flat_map(EldersInfo::member_nodes)
-    }
-
-    pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
-        self.known_nodes()
-            .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
