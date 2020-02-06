@@ -17,7 +17,7 @@ use bytes::Bytes;
 use crossbeam_channel::Sender;
 use std::net::SocketAddr;
 
-use sending_targets_cache::SendingTargetsCache;
+use sending_targets_cache::{SendingTargetsCache, TargetFailed};
 
 /// Struct that handles network operations: sending and receiving messages, as well as resending on
 /// failure.
@@ -64,14 +64,18 @@ impl NetworkService {
         self.cache.insert_message(token, conn_infos, dg_size);
     }
 
+    /// Attempts to send the message to the next available target and returns whether the failed
+    /// target is lost.
     pub fn send_message_to_next_target(
         &mut self,
         msg: Bytes,
         token: Token,
         failed_tgt: SocketAddr,
         log_ident: LogIdent,
-    ) {
-        if let Some(tgt) = self.cache.target_failed(token, failed_tgt) {
+    ) -> bool {
+        let TargetFailed { next, lost } = self.cache.target_failed(token, failed_tgt);
+
+        if let Some(tgt) = next {
             info!(
                 "{} Sending of message ID {} failed; resending...",
                 log_ident, token
@@ -84,6 +88,8 @@ impl NetworkService {
                 log_ident, token
             );
         }
+
+        lost
     }
 
     pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, QuicP2pError> {

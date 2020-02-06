@@ -311,16 +311,19 @@ pub trait Base: Display {
         conn_info: ConnectionInfo,
         msg: Bytes,
         token: Token,
-        _outbox: &mut dyn EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Transition {
         let log_ident = LogIdent::new(self);
-        self.network_service_mut().send_message_to_next_target(
+        if self.network_service_mut().send_message_to_next_target(
             msg,
             token,
             conn_info.peer_addr,
             log_ident,
-        );
-        Transition::Stay
+        ) {
+            self.handle_peer_lost(conn_info.peer_addr, outbox)
+        } else {
+            Transition::Stay
+        }
     }
 
     fn handle_sent_message(

@@ -63,31 +63,25 @@ impl SendingTargetsCache {
     /// attempts so far, among the ones that failed at most MAX_RESENDS times. If there are
     /// multiple possibilities, the one with the highest priority (earliest in the list) is taken.
     /// Returns None if no such targets exist.
-    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> Option<ConnectionInfo> {
+    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> TargetFailed {
         let mut entry = if let Entry::Occupied(entry) = self.cache.entry(token) {
             entry
         } else {
-            return None;
+            return TargetFailed {
+                next: None,
+                lost: false,
+            };
         };
 
-        set_target_failed(entry.get_mut(), &target);
-
-        if entry.get().is_empty() {
+        let lost = set_target_failed(entry.get_mut(), &target);
+        let next = if entry.get().is_empty() {
             let _ = entry.remove();
-            return None;
-        }
+            None
+        } else {
+            find_next_target(entry.get_mut())
+        };
 
-        let (info, num, state) = entry
-            .get_mut()
-            .iter_mut()
-            .filter_map(|(info, state)| match state {
-                TargetState::Failed(x) => Some((info, *x, state)),
-                TargetState::Sending(_) => None,
-            })
-            .min_by_key(|(_info, num, _state)| *num)?;
-        *state = TargetState::Sending(num);
-
-        Some(info.clone())
+        TargetFailed { next, lost }
     }
 
     /// Mark the given target as succeeded in sending the given message.
@@ -106,7 +100,20 @@ impl SendingTargetsCache {
     }
 }
 
-fn set_target_failed(targets: &mut Vec<(ConnectionInfo, TargetState)>, target: &SocketAddr) {
+/// Info about failed target.
+pub struct TargetFailed {
+    /// Next target to try to resend the message to, if any.
+    pub next: Option<ConnectionInfo>,
+    /// Whether the failed target should be considered as lost - that is - whether it failed more
+    /// than maximum allowed number of times.
+    pub lost: bool,
+}
+
+// Marks the target as failed and returns whether it is lost.
+fn set_target_failed(
+    targets: &mut Vec<(ConnectionInfo, TargetState)>,
+    target: &SocketAddr,
+) -> bool {
     let (index, state) = if let Some((index, (_, state))) = targets
         .iter_mut()
         .enumerate()
@@ -114,20 +121,37 @@ fn set_target_failed(targets: &mut Vec<(ConnectionInfo, TargetState)>, target: &
     {
         (index, state)
     } else {
-        return;
+        return false;
     };
 
     match *state {
         TargetState::Failed(_) => {
             log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
             let _ = targets.remove(index);
+            true
         }
         TargetState::Sending(x) => {
             if x < MAX_RESENDS {
                 *state = TargetState::Failed(x + 1);
+                false
             } else {
                 let _ = targets.remove(index);
+                true
             }
         }
     }
+}
+
+fn find_next_target(targets: &mut [(ConnectionInfo, TargetState)]) -> Option<ConnectionInfo> {
+    let (info, num, state) = targets
+        .iter_mut()
+        .filter_map(|(info, state)| match state {
+            TargetState::Failed(x) => Some((info, *x, state)),
+            TargetState::Sending(_) => None,
+        })
+        .min_by_key(|(_info, num, _state)| *num)?;
+
+    *state = TargetState::Sending(num);
+
+    Some(info.clone())
 }
