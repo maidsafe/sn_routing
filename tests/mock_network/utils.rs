@@ -617,7 +617,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
 
     if !our_prefix.is_empty() {
         assert!(
-            our_section_elders.len() >= elder_size,
+            check_min_elder_size(our_section_elders.len(), elder_size),
             "{} Our section {:?} is below the minimum size!",
             node.inner,
             our_prefix,
@@ -656,16 +656,13 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
 
     if let Some(prefix) = neighbour_prefixes
         .iter()
-        .find(|prefix| node.inner.section_elders(prefix).len() < elder_size)
+        .find(|prefix| !check_min_elder_size(node.inner.section_elders(prefix).len(), elder_size))
     {
         panic!(
-            "{} A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), \
-             neighbour_prefixes: {:?}",
+            "{} A neighbour section is below the minimum size: size({:?}) = {}; neighbour_prefixes: {:?}",
             node.inner,
             prefix,
             node.inner.section_elders(prefix).len(),
-            our_name,
-            our_prefix,
             neighbour_prefixes,
         );
     }
@@ -811,6 +808,13 @@ pub fn verify_invariant_for_all_nodes(env: &Environment, nodes: &mut [TestNode])
     let elder_size = env.elder_size();
     verify_section_invariants_for_nodes(nodes, elder_size);
     verify_section_invariants_between_nodes(nodes);
+}
+
+// Check that the section has enough elders to be able to reach consensus.
+fn check_min_elder_size(num_section_elders: usize, elder_size: usize) -> bool {
+    // With the exception of network startup, we need more than 2/3 of `elder_size`, otherwise
+    // consensus would be impossible.
+    3 * num_section_elders > 2 * elder_size
 }
 
 // Generate a vector of random T of the given length.
