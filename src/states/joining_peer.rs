@@ -23,7 +23,6 @@ use crate::{
     },
     network_service::NetworkService,
     outbox::EventBox,
-    peer_map::PeerMap,
     relocation::RelocatePayload,
     rng::MainRng,
     routing_message_filter::RoutingMessageFilter,
@@ -203,14 +202,6 @@ impl Base for JoiningPeer {
         }
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.network_service().peer_map
-    }
-
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.network_service_mut().peer_map
-    }
-
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
@@ -239,7 +230,15 @@ impl Base for JoiningPeer {
 
         if join_token == token {
             debug!("{} - Timeout when trying to join a section.", self);
-            self.network_service_mut().remove_and_disconnect_all();
+
+            for addr in self
+                .elders_info
+                .member_nodes()
+                .map(|node| node.connection_info().peer_addr)
+            {
+                self.network_service.disconnect(addr);
+            }
+
             Transition::Rebootstrap
         } else {
             Transition::Stay
@@ -290,7 +289,7 @@ impl Base for JoiningPeer {
 
     fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, msg: Message) {
         match msg.variant {
-            Variant::ConnectionResponse | Variant::BootstrapResponse(_) => (),
+            Variant::BootstrapResponse(_) => (),
             _ => {
                 debug!("{} Unhandled message, adding to backlog: {:?}", self, msg,);
                 self.msg_backlog.push(msg.into_queued(sender));
@@ -312,7 +311,6 @@ impl Base for JoiningPeer {
             | Variant::BootstrapRequest(_)
             | Variant::BootstrapResponse(_)
             | Variant::JoinRequest(_)
-            | Variant::ConnectionResponse
             | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..) => false,

@@ -18,10 +18,11 @@ use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
     generate_bls_threshold_secret_key,
     messages::Variant,
+    quic_p2p,
     rng::{self, MainRng},
-    state_machine::Transition,
     unwrap, utils, ELDER_SIZE,
 };
+use crossbeam_channel::Receiver;
 use mock_quic_p2p::Network;
 use std::{iter, net::SocketAddr};
 
@@ -30,32 +31,11 @@ const ACCUMULATE_VOTE_COUNT: usize = 5;
 // Only one vote missing to reach accumulation.
 const NOT_ACCUMULATE_ALONE_VOTE_COUNT: usize = 4;
 
-struct JoiningNodeInfo {
-    full_id: FullId,
-    addr: SocketAddr,
-}
 struct DkgToSectionInfo {
     participants: BTreeSet<PublicId>,
     new_pk_set: bls::PublicKeySet,
     new_other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     new_elders_info: EldersInfo,
-}
-
-impl JoiningNodeInfo {
-    fn with_addr(rng: &mut MainRng, addr: &str) -> Self {
-        Self {
-            full_id: FullId::gen(rng),
-            addr: unwrap!(addr.parse()),
-        }
-    }
-
-    fn public_id(&self) -> &PublicId {
-        self.full_id.public_id()
-    }
-
-    fn connection_info(&self) -> ConnectionInfo {
-        ConnectionInfo::from(self.addr)
-    }
 }
 
 struct ElderUnderTest {
@@ -339,23 +319,6 @@ impl ElderUnderTest {
             .is_peer_our_elder(self.candidate.public_id())
     }
 
-    fn handle_connected_to(&mut self, conn_info: ConnectionInfo) {
-        match self.elder.handle_connected_to(conn_info, &mut ()) {
-            Transition::Stay => (),
-            _ => panic!("Unexpected transition"),
-        }
-    }
-
-    fn handle_bootstrap_request(&mut self, pub_id: PublicId, conn_info: ConnectionInfo) {
-        self.handle_connected_to(conn_info.clone());
-        self.elder
-            .handle_bootstrap_request(P2pNode::new(pub_id, conn_info), *pub_id.name());
-    }
-
-    fn is_connected(&self, peer_addr: &SocketAddr) -> bool {
-        self.elder.peer_map().has(peer_addr)
-    }
-
     fn gen_p2p_node(&mut self) -> P2pNode {
         gen_p2p_node(&mut self.rng, &self.network)
     }
@@ -497,27 +460,23 @@ fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_f
 }
 
 #[test]
-fn accept_node_before_and_after_reaching_elder_size() {
-    // Set section size to one less than the desired number of the elders in a section. This makes
-    // us reject any bootstrapping nodes.
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
-    let node0 = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.0:5000");
+fn handle_bootstrap() {
+    let mut elder_test = ElderUnderTest::new(ELDER_SIZE);
+    let mut new_node = JoiningPeer::new(&mut elder_test.rng);
 
-    // Bootstrap succeed even with too few elders.
-    elder_test.handle_bootstrap_request(*node0.public_id(), node0.connection_info());
-    assert!(elder_test.is_connected(&node0.connection_info().peer_addr));
+    let p2p_node = P2pNode::new(*new_node.public_id(), new_node.our_connection_info());
+    let dst_name = *new_node.public_id().name();
 
-    let node1 = JoiningNodeInfo::with_addr(&mut elder_test.rng, "198.51.100.1:5000");
+    elder_test
+        .elder
+        .handle_bootstrap_request(p2p_node, dst_name);
+    elder_test.network.poll(&mut elder_test.rng);
 
-    // Add new section member to reach elder_size.
-    let new_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg(&new_info);
-    elder_test.accumulate_section_info_if_vote(&new_info);
-
-    // Bootstrap succeeds.
-    elder_test.handle_bootstrap_request(*node1.public_id(), node1.connection_info());
-    assert!(elder_test.is_connected(&node1.connection_info().peer_addr));
+    let response = new_node.expect_bootstrap_response();
+    match response {
+        BootstrapResponse::Join(elders_info) => assert_eq!(elders_info, elder_test.elders_info),
+        BootstrapResponse::Rebootstrap(_) => panic!("Unexpected Rebootstrap response"),
+    }
 }
 
 #[test]
@@ -581,4 +540,48 @@ fn verify_proof_chain_does_not_contain(proof_chain: &SectionProofSlice, unexpect
         proof_chain,
         unexpected_version,
     );
+}
+
+struct JoiningPeer {
+    network_service: quic_p2p::QuicP2p,
+    network_event_rx: Receiver<quic_p2p::Event>,
+    full_id: FullId,
+}
+
+impl JoiningPeer {
+    fn new(rng: &mut MainRng) -> Self {
+        let (network_event_tx, network_event_rx) = crossbeam_channel::unbounded();
+        let network_service = unwrap!(quic_p2p::Builder::new(network_event_tx).build());
+
+        Self {
+            network_service,
+            network_event_rx,
+            full_id: FullId::gen(rng),
+        }
+    }
+
+    fn our_connection_info(&mut self) -> ConnectionInfo {
+        unwrap!(self.network_service.our_connection_info())
+    }
+
+    fn public_id(&self) -> &PublicId {
+        self.full_id.public_id()
+    }
+
+    fn expect_bootstrap_response(&self) -> BootstrapResponse {
+        let response = self.recv_messages().find_map(|msg| match msg.variant {
+            Variant::BootstrapResponse(response) => Some(response),
+            _ => None,
+        });
+        unwrap!(response, "BootstrapResponse not received")
+    }
+
+    fn recv_messages<'a>(&'a self) -> impl Iterator<Item = Message> + 'a {
+        self.network_event_rx
+            .try_iter()
+            .filter_map(|event| match event {
+                quic_p2p::Event::NewMessage { msg, .. } => Some(unwrap!(Message::from_bytes(&msg))),
+                _ => None,
+            })
+    }
 }

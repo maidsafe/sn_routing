@@ -453,11 +453,6 @@ impl Node {
         self.machine.current().unpolled_observations_string()
     }
 
-    /// Indicates if this node has the connection info to the given peer.
-    pub fn is_connected(&self, socket_addr: &SocketAddr) -> bool {
-        self.machine.current().is_connected(socket_addr)
-    }
-
     /// Provide a SectionProofSlice that proves the given signature to the given destination.
     pub fn prove(&self, target: &DstLocation) -> Option<SectionProofSlice> {
         self.chain().map(|chain| chain.prove(target, None))

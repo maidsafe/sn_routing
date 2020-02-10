@@ -31,7 +31,6 @@ use crate::{
     outbox::EventBox,
     parsec::{DkgResultWrapper, ParsecMap},
     pause::PausedState,
-    peer_map::PeerMap,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
@@ -253,7 +252,14 @@ impl Adult {
             .map(|p2p_node| p2p_node.connection_info().clone())
             .collect();
 
-        self.network_service_mut().remove_and_disconnect_all();
+        // Disconnect from everyone we know.
+        for addr in self
+            .chain
+            .known_nodes()
+            .map(|node| node.connection_info().peer_addr)
+        {
+            self.network_service.disconnect(addr);
+        }
 
         Ok(Transition::Relocate {
             details: signed_msg,
@@ -381,14 +387,6 @@ impl Base for Adult {
         self.chain.in_dst_location(dst)
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.network_service().peer_map
-    }
-
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.network_service_mut().peer_map
-    }
-
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
@@ -475,14 +473,6 @@ impl Base for Adult {
                 self.handle_bootstrap_request(msg.src.to_sender_node(sender)?, name);
                 Ok(Transition::Stay)
             }
-            Variant::ConnectionResponse => {
-                debug!(
-                    "{} - Received connection response from {}",
-                    self,
-                    msg.src.to_sender_node(sender)?
-                );
-                Ok(Transition::Stay)
-            }
             _ => unreachable!(),
         }
     }
@@ -510,8 +500,7 @@ impl Base for Adult {
             | Variant::MessageSignature(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::BootstrapRequest(_)
-            | Variant::ConnectionResponse => true,
+            | Variant::BootstrapRequest(_) => true,
 
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)

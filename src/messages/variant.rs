@@ -53,9 +53,6 @@ pub enum Variant {
     /// Sent from a bootstrapping peer to the section that responded with a
     /// `BootstrapResponse::Join` to its `BootstrapRequest`.
     JoinRequest(Box<JoinRequest>),
-    /// Sent from members of a section to a joining node in response to `ConnectionRequest`
-    /// (which is a routing message)
-    ConnectionResponse,
     /// Sent from Adults and Infants to Elders. Updates Elders about the sender's knowledge of its
     /// own section.
     MemberKnowledge(MemberKnowledge),
@@ -85,7 +82,6 @@ impl Debug for Variant {
             Self::BootstrapRequest(payload) => write!(f, "BootstrapRequest({})", payload),
             Self::BootstrapResponse(payload) => write!(f, "BootstrapResponse({:?})", payload),
             Self::JoinRequest(payload) => write!(f, "JoinRequest({:?})", payload),
-            Self::ConnectionResponse => write!(f, "ConnectionResponse"),
             Self::MemberKnowledge(payload) => write!(f, "MemberKnowledge({:?})", payload),
             Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
             Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),

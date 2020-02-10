@@ -33,7 +33,6 @@ use crate::{
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
-    peer_map::PeerMap,
     relocation::RelocateDetails,
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
@@ -373,32 +372,9 @@ impl Elder {
                     continue;
                 }
 
-                self.disconnect(p2p_node.peer_addr());
+                self.network_service.disconnect(*p2p_node.peer_addr());
             }
         }
-
-        for p2p_node in &change.neighbour_added {
-            if !self.peer_map().has(p2p_node.peer_addr()) {
-                self.establish_connection(p2p_node)
-            }
-        }
-
-        let to_connect: Vec<_> = self
-            .chain
-            .our_joined_members()
-            .filter(|p2p_node| {
-                p2p_node.public_id() != self.id() && !self.peer_map().has(p2p_node.peer_addr())
-            })
-            .cloned()
-            .collect();
-
-        for p2p_node in to_connect {
-            self.establish_connection(&p2p_node)
-        }
-    }
-
-    fn establish_connection(&mut self, node: &P2pNode) {
-        self.send_direct_message(node.connection_info(), Variant::ConnectionResponse);
     }
 
     fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
@@ -770,9 +746,6 @@ impl Elder {
             Variant::BootstrapRequest(name) => {
                 self.handle_bootstrap_request(msg.src.to_sender_node(sender)?, name)
             }
-            Variant::ConnectionResponse => {
-                self.handle_connection_response(*msg.src.as_node()?, outbox)
-            }
             Variant::JoinRequest(join_request) => {
                 self.handle_join_request(msg.src.to_sender_node(sender)?, *join_request)
             }
@@ -848,16 +821,6 @@ impl Elder {
         let pub_id = *p2p_node.public_id();
         let dst = DstLocation::Node(*pub_id.name());
 
-        // Make sure we are connected to the candidate
-        if !self.peer_map().has(p2p_node.peer_addr()) {
-            trace!(
-                "{} - Not yet connected to {} - use p2p_node.",
-                self,
-                p2p_node
-            );
-            self.send_direct_message(p2p_node.connection_info(), Variant::ConnectionResponse);
-        };
-
         let trimmed_info = GenesisPfxInfo {
             first_info: self.gen_pfx_info.first_info.clone(),
             first_bls_keys: self.gen_pfx_info.first_bls_keys.clone(),
@@ -922,10 +885,6 @@ impl Elder {
             p2p_node.connection_info(),
             Variant::BootstrapResponse(response),
         );
-    }
-
-    fn handle_connection_response(&mut self, pub_id: PublicId, _: &mut dyn EventBox) {
-        debug!("{} - Received connection response from {}", self, pub_id);
     }
 
     fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
@@ -998,7 +957,6 @@ impl Elder {
             (MIN_AGE, None)
         };
 
-        self.send_direct_message(p2p_node.connection_info(), Variant::ConnectionResponse);
         self.vote_for_event(AccumulatingEvent::Online(OnlinePayload {
             p2p_node,
             age,
@@ -1243,28 +1201,6 @@ impl Elder {
         Ok((targets.into_iter().cloned().collect(), dg_size))
     }
 
-    // Check whether we are connected to any elders. If this node loses all elder connections,
-    // it must be restarted.
-    fn check_elder_connections(&self, outbox: &mut dyn EventBox) -> bool {
-        let our_name = self.name();
-        if self
-            .our_elders()
-            .any(|node| node.name() != our_name && self.peer_map().has(node.peer_addr()))
-        {
-            true
-        } else {
-            debug!("{} - Lost all elder connections.", self);
-
-            // Except network startup, restart in other cases.
-            if self.chain.our_info().version() > 0 {
-                outbox.send_event(Event::RestartRequired);
-                false
-            } else {
-                true
-            }
-        }
-    }
-
     // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
     fn to_accumulating_message(
         &self,
@@ -1329,14 +1265,6 @@ impl Base for Elder {
         self.chain.closest_names(&name, count, &conn_peers)
     }
 
-    fn peer_map(&self) -> &PeerMap {
-        &self.network_service().peer_map
-    }
-
-    fn peer_map_mut(&mut self) -> &mut PeerMap {
-        &mut self.network_service_mut().peer_map
-    }
-
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
     }
@@ -1399,7 +1327,11 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn handle_peer_lost(&mut self, peer_addr: SocketAddr, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_peer_lost(
+        &mut self,
+        peer_addr: SocketAddr,
+        _outbox: &mut dyn EventBox,
+    ) -> Transition {
         debug!("{} - Lost peer {}", self, peer_addr);
 
         let pub_id = if let Some(node) = self.chain.find_p2p_node_from_addr(&peer_addr) {
@@ -1411,12 +1343,6 @@ impl Base for Elder {
             );
             return Transition::Stay;
         };
-
-        // If we lost an elder, check whether we still have sufficient number of remaining elder
-        // connections.
-        if self.chain.is_peer_our_elder(&pub_id) && !self.check_elder_connections(outbox) {
-            return Transition::Terminate;
-        }
 
         if self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
