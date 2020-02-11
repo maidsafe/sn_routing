@@ -39,7 +39,6 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
-    time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
     ConnectionInfo,
@@ -55,8 +54,6 @@ use std::{
     net::SocketAddr,
 };
 
-/// Time after which an Elder should send a new Gossip.
-const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 /// Number of RelocatePrepare to consensus before actually relocating a node.
 /// This helps avoid relocated node receiving message they need to process from previous section.
 const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
@@ -109,7 +106,6 @@ pub struct Elder {
     timer: Timer,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
-    gossip_timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
     // DKG cache
@@ -254,7 +250,6 @@ impl Elder {
 
     fn new(details: ElderDetails) -> Self {
         let timer = details.timer;
-        let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
 
         Self {
             network_service: details.network_service,
@@ -266,7 +261,6 @@ impl Elder {
             timer,
             parsec_map: details.parsec_map,
             gen_pfx_info: details.gen_pfx_info,
-            gossip_timer_token,
             chain: details.chain,
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
@@ -353,7 +347,7 @@ impl Elder {
                 .update(payload);
         }
 
-        self.send_parsec_gossip(Some((payload.parsec_version, p2p_node)))
+        self.gossip(Some((payload.parsec_version, p2p_node)))
     }
 
     // Connect to all elders from our section or neighbour sections that we are not yet connected
@@ -1054,13 +1048,6 @@ impl Elder {
         Ok(())
     }
 
-    fn maintain_parsec(&mut self) {
-        if self.parsec_map.needs_pruning() {
-            self.vote_for_event(AccumulatingEvent::ParsecPrune);
-            self.parsec_map_mut().set_pruning_voted_for();
-        }
-    }
-
     fn vote_for_event(&mut self, event: AccumulatingEvent) {
         self.vote_for_network_event(event.into_network_event())
     }
@@ -1094,7 +1081,10 @@ impl Elder {
 
     fn vote_for_network_event(&mut self, event: NetworkEvent) {
         trace!("{} Vote for Event {:?}", self, event);
-        self.parsec_map.vote_for(event, &self.log_ident())
+        self.parsec_map.vote_for(event, &self.log_ident());
+
+        // Gossip to a randomly chosen node
+        self.gossip(None);
     }
 
     // Constructs a message, finds the nodes responsible for accumulation, and either sends
@@ -1303,6 +1293,15 @@ impl Elder {
             Err(error) => Err(error),
         }
     }
+
+    fn gossip(&mut self, target: Option<(u64, P2pNode)>) {
+        // If we're the only node then invoke parsec_poll directly
+        //if self.chain.our_info().len() == 1 {
+        //    let _ = self.parsec_poll(outbox);
+        //}
+
+        self.send_parsec_gossip(target);
+    }
 }
 
 impl Base for Elder {
@@ -1369,22 +1368,6 @@ impl Base for Elder {
         }
 
         self.send_routing_message(src, dst, Variant::UserMessage(content), None)
-    }
-
-    fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
-        if self.gossip_timer_token == token {
-            self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-
-            // If we're the only node then invoke parsec_poll directly
-            if self.chain.our_info().len() == 1 {
-                let _ = self.parsec_poll(outbox);
-            }
-
-            self.send_parsec_gossip(None);
-            self.maintain_parsec();
-        }
-
-        Transition::Stay
     }
 
     fn finish_handle_action(&mut self, outbox: &mut dyn EventBox) -> Transition {

@@ -37,6 +37,19 @@ pub trait Approved: Base {
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
 
+    /// Prune PARSEC map if needed
+    fn maintain_parsec(&mut self) {
+        if self.parsec_map().needs_pruning() {
+            let log_ident = &self.log_ident();
+            // Same as impl of: Elder::vote_for_event(AccumulatingEvent::ParsecPrune);
+            let event = AccumulatingEvent::ParsecPrune;
+            trace!("{} Vote for Event {:?}", self, event);
+            let parsec_map_mut = self.parsec_map_mut();
+            parsec_map_mut.vote_for(event.into_network_event(), log_ident);
+            parsec_map_mut.set_pruning_voted_for();
+        }
+    }
+
     /// Handles an accumulated relocation trigger
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError>;
 
@@ -154,6 +167,9 @@ pub trait Approved: Base {
             self.send_direct_message(p2p_node.connection_info(), response);
         }
 
+        // Gossip to a randomly chosen node
+        self.send_parsec_gossip(None);
+
         if poll {
             self.parsec_poll(outbox)
         } else {
@@ -176,10 +192,14 @@ pub trait Approved: Base {
         );
 
         let log_ident = self.log_ident();
-        if self
-            .parsec_map_mut()
-            .handle_response(msg_version, par_response, pub_id, &log_ident)
-        {
+        let response =
+            self.parsec_map_mut()
+                .handle_response(msg_version, par_response, pub_id, &log_ident);
+
+        // Gossip to a randomly chosen node
+        self.send_parsec_gossip(None);
+
+        if response {
             self.parsec_poll(outbox)
         } else {
             Ok(Transition::Stay)
@@ -241,6 +261,9 @@ pub trait Approved: Base {
                 );
             }
         }
+
+        // Prune Parsec if necessary
+        self.maintain_parsec();
     }
 
     fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
