@@ -158,7 +158,7 @@ impl Default for Params {
         Self {
             network: NetworkParams {
                 elder_size: 4,
-                safe_section_size: 4,
+                safe_section_size: 5,
             },
             initial_prefix_lens: vec![],
             message_schedule: MessageSchedule::AfterChurn,
