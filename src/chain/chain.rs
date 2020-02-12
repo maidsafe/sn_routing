@@ -1825,7 +1825,6 @@ mod tests {
         rng::{self, MainRng},
         unwrap,
         xor_space::{Prefix, XorName},
-        ConnectionInfo,
     };
     use rand::{seq::SliceRandom, Rng};
     use std::{
@@ -1849,12 +1848,9 @@ mod tests {
                 let mut members = BTreeMap::new();
                 for _ in 0..n {
                     let some_id = FullId::within_range(rng, &pfx.range_inclusive());
-                    let connection_info = ConnectionInfo {
-                        peer_addr: ([127, 0, 0, 1], 9999).into(),
-                        peer_cert_der: Default::default(),
-                    };
+                    let peer_addr = ([127, 0, 0, 1], 9999).into();
                     let pub_id = *some_id.public_id();
-                    let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));
+                    let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
                 (EldersInfo::new(members, pfx, None).unwrap(), full_ids)
@@ -1862,12 +1858,9 @@ mod tests {
             SecInfoGen::Add(info) => {
                 let mut members = info.member_map().clone();
                 let some_id = FullId::within_range(rng, &info.prefix().range_inclusive());
-                let connection_info = ConnectionInfo {
-                    peer_addr: ([127, 0, 0, 1], 9999).into(),
-                    peer_cert_der: Default::default(),
-                };
+                let peer_addr = ([127, 0, 0, 1], 9999).into();
                 let pub_id = *some_id.public_id();
-                let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, connection_info));
+                let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
                 let mut full_ids = HashMap::new();
                 let _ = full_ids.insert(pub_id, some_id);
                 (

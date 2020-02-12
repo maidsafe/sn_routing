@@ -20,7 +20,7 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, BootstrappingPeerDetails},
     xor_space::XorName,
-    ConnectionInfo, NetworkConfig,
+    NetworkConfig,
 };
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
@@ -312,7 +312,7 @@ impl Node {
     }
 
     /// Returns connection info of this node.
-    pub fn our_connection_info(&mut self) -> Result<ConnectionInfo, RoutingError> {
+    pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
         self.machine.current_mut().our_connection_info()
     }
 }

@@ -22,7 +22,6 @@ use crate::{
     states::JoiningPeer,
     timer::Timer,
     xor_space::{Prefix, XorName},
-    ConnectionInfo,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -73,7 +72,7 @@ impl BootstrappingPeer {
     /// Create `BootstrappingPeer` for a node that is being relocated into another sections.
     pub fn relocate(
         details: BootstrappingPeerDetails,
-        conn_infos: Vec<ConnectionInfo>,
+        conn_infos: Vec<SocketAddr>,
         relocate_details: SignedRelocateDetails,
     ) -> Self {
         let mut node = Self {
@@ -113,15 +112,15 @@ impl BootstrappingPeer {
         Ok(State::JoiningPeer(JoiningPeer::new(details)))
     }
 
-    fn send_bootstrap_request(&mut self, dst: ConnectionInfo) {
-        if !self.pending_requests.insert(dst.peer_addr) {
+    fn send_bootstrap_request(&mut self, dst: SocketAddr) {
+        if !self.pending_requests.insert(dst) {
             return;
         }
 
-        debug!("{} Sending BootstrapRequest to {}.", self, dst.peer_addr);
+        debug!("{} Sending BootstrapRequest to {}.", self, dst);
 
         let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
-        let _ = self.timeout_tokens.insert(token, dst.peer_addr);
+        let _ = self.timeout_tokens.insert(token, dst);
 
         let destination = self.get_destination();
 
@@ -176,7 +175,7 @@ impl BootstrappingPeer {
         })
     }
 
-    fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<ConnectionInfo>) {
+    fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<SocketAddr>) {
         for addr in self.pending_requests.drain() {
             self.network_service.disconnect(addr);
         }
@@ -253,7 +252,7 @@ impl Base for BootstrappingPeer {
         Transition::Stay
     }
 
-    fn handle_bootstrapped_to(&mut self, conn_info: ConnectionInfo) -> Transition {
+    fn handle_bootstrapped_to(&mut self, conn_info: SocketAddr) -> Transition {
         self.send_bootstrap_request(conn_info);
         Transition::Stay
     }
@@ -264,19 +263,15 @@ impl Base for BootstrappingPeer {
         Transition::Terminate
     }
 
-    fn handle_connection_failure(
-        &mut self,
-        conn_info: ConnectionInfo,
-        _: &mut dyn EventBox,
-    ) -> Transition {
-        let _ = self.pending_requests.remove(&conn_info.peer_addr);
+    fn handle_connection_failure(&mut self, addr: SocketAddr, _: &mut dyn EventBox) -> Transition {
+        let _ = self.pending_requests.remove(&addr);
         self.request_failed();
         Transition::Stay
     }
 
     fn handle_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         msg: Message,
         _: &mut dyn EventBox,
     ) -> Result<Transition> {
@@ -312,7 +307,7 @@ impl Base for BootstrappingPeer {
         }
     }
 
-    fn unhandled_message(&mut self, _sender: Option<ConnectionInfo>, msg: Message) {
+    fn unhandled_message(&mut self, _sender: Option<SocketAddr>, msg: Message) {
         debug!("{} - Unhandled message {:?}", self, msg);
     }
 

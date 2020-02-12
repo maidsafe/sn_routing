@@ -23,10 +23,12 @@ use crate::{
     id::{FullId, PublicId},
     location::DstLocation,
     xor_space::{Prefix, XorName},
-    ConnectionInfo,
 };
 use bytes::Bytes;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    fmt::{self, Debug, Formatter},
+    net::SocketAddr,
+};
 
 /// Message sent over the network.
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -95,7 +97,7 @@ impl Message {
         }
     }
 
-    pub(crate) fn into_queued(self, sender: Option<ConnectionInfo>) -> QueuedMessage {
+    pub(crate) fn into_queued(self, sender: Option<SocketAddr>) -> QueuedMessage {
         QueuedMessage {
             message: self,
             sender,
@@ -138,7 +140,7 @@ impl VerifyStatus {
 
 pub struct QueuedMessage {
     pub message: Message,
-    pub sender: Option<ConnectionInfo>,
+    pub sender: Option<SocketAddr>,
 }
 
 fn serialize_for_section_signing(dst: &DstLocation, variant: &Variant) -> Result<Vec<u8>> {

@@ -40,7 +40,6 @@ use crate::{
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
-    ConnectionInfo,
 };
 use itertools::Itertools;
 use std::{
@@ -147,7 +146,7 @@ impl Adult {
 
     pub fn relocate(
         self,
-        conn_infos: Vec<ConnectionInfo>,
+        conn_infos: Vec<SocketAddr>,
         details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
         Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
@@ -249,15 +248,11 @@ impl Adult {
         let conn_infos: Vec<_> = self
             .chain
             .our_elders()
-            .map(|p2p_node| p2p_node.connection_info().clone())
+            .map(|p2p_node| *p2p_node.peer_addr())
             .collect();
 
         // Disconnect from everyone we know.
-        for addr in self
-            .chain
-            .known_nodes()
-            .map(|node| node.connection_info().peer_addr)
-        {
+        for addr in self.chain.known_nodes().map(|node| *node.peer_addr()) {
             self.network_service.disconnect(addr);
         }
 
@@ -285,7 +280,7 @@ impl Adult {
         } else {
             let conn_infos: Vec<_> = self
                 .closest_known_elders_to(&destination)
-                .map(|p2p_node| p2p_node.connection_info().clone())
+                .map(|p2p_node| *p2p_node.peer_addr())
                 .collect();
             debug!(
                 "{} - Sending BootstrapResponse::Rebootstrap to {}",
@@ -294,10 +289,7 @@ impl Adult {
             BootstrapResponse::Rebootstrap(conn_infos)
         };
 
-        self.send_direct_message(
-            p2p_node.connection_info(),
-            Variant::BootstrapResponse(response),
-        )
+        self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response))
     }
 
     fn handle_genesis_update(
@@ -441,7 +433,7 @@ impl Base for Adult {
 
     fn handle_message(
         &mut self,
-        sender: Option<ConnectionInfo>,
+        sender: Option<SocketAddr>,
         msg: Message,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
@@ -477,7 +469,7 @@ impl Base for Adult {
         }
     }
 
-    fn unhandled_message(&mut self, sender: Option<ConnectionInfo>, msg: Message) {
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message) {
         match msg.variant {
             Variant::BootstrapResponse(_) => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
@@ -541,7 +533,7 @@ impl Base for Adult {
                     .filter_outgoing(msg, p2p_node.public_id())
                     .is_new()
             })
-            .map(|node| node.connection_info().clone())
+            .map(|node| *node.peer_addr())
             .collect();
 
         let cheap_bytes_clone = msg.full_bytes().clone();

@@ -11,7 +11,6 @@ use crate::{
     parsec,
     rng::{self, MainRng, RngCompat},
     xor_space::XorName,
-    ConnectionInfo,
 };
 use bincode::{deserialize, serialize};
 use rand_crypto::Rng as _;
@@ -223,21 +222,16 @@ fn name_from_key(public_key: &signing::PublicKey) -> XorName {
 #[derive(Hash, PartialOrd, Ord, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct P2pNode {
     public_id: PublicId,
-    connection_info: OrderedConnectionInfo,
+    peer_addr: OrderedSocketAddr,
 }
 
 impl P2pNode {
     /// Creates a new `P2pNode` given a `PublicId` and a `ConnectionInfo`.
-    pub fn new(public_id: PublicId, connection_info: ConnectionInfo) -> Self {
+    pub fn new(public_id: PublicId, addr: SocketAddr) -> Self {
         Self {
             public_id,
-            connection_info: OrderedConnectionInfo(connection_info),
+            peer_addr: OrderedSocketAddr(addr),
         }
-    }
-
-    /// Creates a `ConnectionInfo` from the `P2pNode` instance.
-    pub fn into_connection_info(self) -> ConnectionInfo {
-        self.connection_info.0
     }
 
     /// Returns the `PublicId`.
@@ -250,14 +244,9 @@ impl P2pNode {
         self.public_id.name()
     }
 
-    /// Returns the `ConnectionInfo`.
-    pub fn connection_info(&self) -> &ConnectionInfo {
-        &self.connection_info.0
-    }
-
     /// Returns the `SocketAddr`.
     pub fn peer_addr(&self) -> &SocketAddr {
-        &self.connection_info.0.peer_addr
+        &self.peer_addr.0
     }
 }
 
@@ -267,7 +256,7 @@ impl Debug for P2pNode {
             formatter,
             "P2pNode({} at {})",
             self.public_id.name(),
-            self.connection_info.0.peer_addr,
+            self.peer_addr.0,
         )
     }
 }
@@ -279,50 +268,38 @@ impl Display for P2pNode {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-struct OrderedConnectionInfo(pub ConnectionInfo);
+struct OrderedSocketAddr(pub SocketAddr);
 
-impl Hash for OrderedConnectionInfo {
+impl Hash for OrderedSocketAddr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        deconstruct_connection_info(&self.0).hash(state);
+        deconstruct_socket_addr(&self.0).hash(state);
     }
 }
 
-impl PartialEq for OrderedConnectionInfo {
+impl PartialEq for OrderedSocketAddr {
     fn eq(&self, other: &Self) -> bool {
-        deconstruct_connection_info(&self.0).eq(&deconstruct_connection_info(&other.0))
+        deconstruct_socket_addr(&self.0).eq(&deconstruct_socket_addr(&other.0))
     }
 }
 
-impl Eq for OrderedConnectionInfo {}
+impl Eq for OrderedSocketAddr {}
 
-impl PartialOrd for OrderedConnectionInfo {
+impl PartialOrd for OrderedSocketAddr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for OrderedConnectionInfo {
+impl Ord for OrderedSocketAddr {
     fn cmp(&self, other: &Self) -> Ordering {
-        deconstruct_connection_info(&self.0).cmp(&deconstruct_connection_info(&other.0))
+        deconstruct_socket_addr(&self.0).cmp(&deconstruct_socket_addr(&other.0))
     }
 }
 
-fn deconstruct_connection_info(conn_info: &ConnectionInfo) -> (Ipv6Addr, u16, u32, u32, &[u8]) {
-    match conn_info.peer_addr {
-        SocketAddr::V4(addr) => (
-            addr.ip().to_ipv6_compatible(),
-            addr.port(),
-            0_u32,
-            0_u32,
-            &conn_info.peer_cert_der,
-        ),
-        SocketAddr::V6(addr) => (
-            *addr.ip(),
-            addr.port(),
-            addr.flowinfo(),
-            addr.scope_id(),
-            &conn_info.peer_cert_der,
-        ),
+fn deconstruct_socket_addr(addr: &SocketAddr) -> (Ipv6Addr, u16, u32, u32) {
+    match addr {
+        SocketAddr::V4(addr) => (addr.ip().to_ipv6_compatible(), addr.port(), 0_u32, 0_u32),
+        SocketAddr::V6(addr) => (*addr.ip(), addr.port(), addr.flowinfo(), addr.scope_id()),
     }
 }
 

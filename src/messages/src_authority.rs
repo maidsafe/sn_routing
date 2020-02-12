@@ -14,8 +14,8 @@ use crate::{
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     xor_space::{Prefix, XorName},
-    ConnectionInfo,
 };
+use std::net::SocketAddr;
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum SrcAuthority {
@@ -52,7 +52,7 @@ impl SrcAuthority {
         }
     }
 
-    pub fn to_sender_node(&self, sender: Option<ConnectionInfo>) -> Result<P2pNode> {
+    pub fn to_sender_node(&self, sender: Option<SocketAddr>) -> Result<P2pNode> {
         let pub_id = *self.as_node()?;
         let conn_info = sender.ok_or(RoutingError::InvalidSource)?;
         Ok(P2pNode::new(pub_id, conn_info))

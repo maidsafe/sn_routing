@@ -786,7 +786,7 @@ mod test {
         id::P2pNode,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        unwrap, ConnectionInfo, FullId, Prefix, XorName,
+        unwrap, FullId, Prefix, XorName,
     };
     use rand::Rng;
     use std::{collections::BTreeMap, str::FromStr};
@@ -798,13 +798,7 @@ mod test {
             let pub_id = *FullId::within_range(rng, &pfx.range_inclusive()).public_id();
             let _ = members.insert(
                 pub_id,
-                P2pNode::new(
-                    pub_id,
-                    ConnectionInfo {
-                        peer_addr: ([127, 0, 0, 1], 9000 + index).into(),
-                        peer_cert_der: Default::default(),
-                    },
-                ),
+                P2pNode::new(pub_id, ([127, 0, 0, 1], 9000 + index).into()),
             );
         });
         unwrap!(EldersInfo::new_for_test(members, pfx, version))

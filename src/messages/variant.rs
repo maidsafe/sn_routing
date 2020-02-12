@@ -12,11 +12,13 @@ use crate::{
     parsec,
     relocation::{RelocateDetails, RelocatePayload},
     xor_space::{Prefix, XorName},
-    ConnectionInfo,
 };
 use hex_fmt::HexFmt;
 use serde::Serialize;
-use std::fmt::{self, Debug, Formatter};
+use std::{
+    fmt::{self, Debug, Formatter},
+    net::SocketAddr,
+};
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 /// Message variant
@@ -97,7 +99,7 @@ pub enum BootstrapResponse {
     Join(EldersInfo),
     /// The new peer should retry bootstrapping with another section. The set of connection infos
     /// of the members of that section is provided.
-    Rebootstrap(Vec<ConnectionInfo>),
+    Rebootstrap(Vec<SocketAddr>),
 }
 
 /// Request to join a section

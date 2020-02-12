@@ -83,7 +83,7 @@ pub use self::{
     location::{DstLocation, SrcLocation},
     node::{Builder, Node},
     pause::PausedState,
-    quic_p2p::{Config as NetworkConfig, NodeInfo as ConnectionInfo},
+    quic_p2p::Config as NetworkConfig,
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 /// Routing events.
