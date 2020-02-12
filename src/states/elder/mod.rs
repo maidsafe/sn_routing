@@ -766,7 +766,7 @@ impl Elder {
                 debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
                 self.msg_backlog.push(msg.into_queued(sender));
             }
-            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) => {
+            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => {
                 debug!("{} Unhandled message, ignoring: {:?}", self, msg);
             }
         }
@@ -1318,6 +1318,29 @@ impl Base for Elder {
     fn handle_bootstrapped_to(&mut self, addr: SocketAddr) -> Transition {
         // A mature node doesn't need a bootstrap connection
         self.network_service.service_mut().disconnect_from(addr);
+        Transition::Stay
+    }
+
+    fn handle_connection_failure(
+        &mut self,
+        addr: SocketAddr,
+        _outbox: &mut dyn EventBox,
+    ) -> Transition {
+        let node = self
+            .chain
+            .our_active_members()
+            .find(|node| *node.peer_addr() == addr);
+
+        if let Some(node) = node {
+            trace!("{} - ConnectionFailure from member {}", self, node);
+
+            // Ping the peer to trigger lost peer detection.
+            let addr = *node.peer_addr();
+            self.send_direct_message(&addr, Variant::Ping);
+        } else {
+            trace!("{} - ConnectionFailure from non-member {}", self, addr);
+        }
+
         Transition::Stay
     }
 

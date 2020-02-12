@@ -329,7 +329,8 @@ impl Base for BootstrappingPeer {
             | Variant::JoinRequest(_)
             | Variant::MemberKnowledge { .. }
             | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..) => false,
+            | Variant::ParsecResponse(..)
+            | Variant::Ping => false,
         }
     }
 

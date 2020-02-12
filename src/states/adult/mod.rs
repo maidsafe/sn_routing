@@ -471,7 +471,7 @@ impl Base for Adult {
 
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message) {
         match msg.variant {
-            Variant::BootstrapResponse(_) => {
+            Variant::Ping | Variant::BootstrapResponse(_) => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
             }
             _ => {
@@ -500,7 +500,8 @@ impl Base for Adult {
             | Variant::AckMessage { .. }
             | Variant::JoinRequest(_)
             | Variant::MemberKnowledge(_)
-            | Variant::BootstrapResponse(_) => false,
+            | Variant::BootstrapResponse(_)
+            | Variant::Ping => false,
         }
     }
 
