@@ -281,6 +281,9 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
             false
         }
     };
+
+    let mut resend_attempts = 0;
+
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
@@ -306,6 +309,13 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
                     + 1,
             );
             options.fire_join_timeout = false;
+            continue;
+        }
+
+        // Give the nodes time to detect lost peers.
+        if resend_attempts < test_consts::RESEND_MAX_ATTEMPTS {
+            resend_attempts += 1;
+            FakeClock::advance_time(test_consts::RESEND_DELAY.as_secs() * 1000 + 1);
             continue;
         }
 

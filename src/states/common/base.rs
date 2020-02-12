@@ -34,7 +34,9 @@ use std::{
     slice,
 };
 
+/// Maximal number of resend attempts to the same target.
 pub const RESEND_MAX_ATTEMPTS: u8 = 3;
+/// Delay before attempting to resend a previously failed message.
 pub const RESEND_DELAY: Duration = Duration::from_secs(10);
 
 // Trait for all states.
