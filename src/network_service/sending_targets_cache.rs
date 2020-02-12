@@ -10,8 +10,6 @@ use crate::quic_p2p::Token;
 use log::LogLevel;
 use std::{collections::HashMap, net::SocketAddr};
 
-const MAX_RESENDS: u8 = 3;
-
 enum TargetState {
     /// we don't know whether the last send attempt succeeded or failed
     /// the stored number of attempts already failed before
@@ -23,14 +21,6 @@ enum TargetState {
 }
 
 impl TargetState {
-    pub fn is_complete(&self) -> bool {
-        match *self {
-            Self::Failed(x) => x > MAX_RESENDS,
-            Self::Sent => true,
-            Self::Sending(_) => false,
-        }
-    }
-
     pub fn is_sending(&self) -> bool {
         match *self {
             Self::Failed(_) | Self::Sent => false,
@@ -98,22 +88,24 @@ impl SendingTargetsCache {
             });
     }
 
-    /// Finds a Failed target with the lowest number of failed attempts so far, among the ones that
-    /// failed at most MAX_RESENDS times. If there are multiple possibilities, the one with the
-    /// highest priority (earliest in the list) is taken. Returns None if no such targets exist.
-    fn take_next_target(&mut self, token: Token) -> Option<SocketAddr> {
+    /// Finds a Failed target with the lowest number of failed attempts so far. If there are
+    /// multiple possibilities, the one with the highest priority (earliest in the list) is taken.
+    /// Returns None if no such targets exist.
+    fn take_next_target(&mut self, token: Token) -> Option<NextTarget> {
         self.target_states_mut(token)
-            .filter(|(_info, state)| !state.is_complete())
-            .filter_map(|(info, state)| match state {
-                TargetState::Failed(x) => Some((info, *x, state)),
-                _ => None,
+            .filter_map(|(addr, state)| match state {
+                TargetState::Failed(x) => Some((*addr, *x, state)),
+                TargetState::Sending(_) | TargetState::Sent => None,
             })
-            .min_by_key(|(_info, num, _state)| *num)
-            .map(|(info, num, state)| {
-                *state = TargetState::Sending(num);
-                info
+            .min_by_key(|(_addr, failed_attempts, _state)| *failed_attempts)
+            .map(|(addr, failed_attempts, state)| {
+                *state = TargetState::Sending(failed_attempts);
+
+                NextTarget {
+                    addr,
+                    failed_attempts,
+                }
             })
-            .cloned()
     }
 
     fn should_drop(&self, token: Token) -> bool {
@@ -126,13 +118,24 @@ impl SendingTargetsCache {
             .all(|(_info, state)| !state.is_sending())
     }
 
-    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> Option<SocketAddr> {
+    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> NextTarget {
         self.fail_target(token, target);
-        let result = self.take_next_target(token);
+        let next_target = match self.take_next_target(token) {
+            Some(next_target) => next_target,
+            None => {
+                log_or_panic!(LogLevel::Error, "Next target not found");
+                NextTarget {
+                    addr: target,
+                    failed_attempts: 1,
+                }
+            }
+        };
+
         if self.should_drop(token) {
             let _ = self.cache.remove(&token);
         }
-        result
+
+        next_target
     }
 
     pub fn target_succeeded(&mut self, token: Token, target: SocketAddr) {
@@ -146,4 +149,9 @@ impl SendingTargetsCache {
             let _ = self.cache.remove(&token);
         }
     }
+}
+
+pub struct NextTarget {
+    pub addr: SocketAddr,
+    pub failed_attempts: u8,
 }

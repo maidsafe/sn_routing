@@ -1261,8 +1261,8 @@ impl Base for Elder {
         self.chain.closest_names(&name, count, &conn_peers)
     }
 
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
+    fn timer(&self) -> &Timer {
+        &self.timer
     }
 
     fn rng(&mut self) -> &mut MainRng {
