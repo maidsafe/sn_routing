@@ -197,10 +197,10 @@ pub trait Base: Display {
     fn handle_connection_failure(
         &mut self,
         addr: SocketAddr,
-        outbox: &mut dyn EventBox,
+        _outbox: &mut dyn EventBox,
     ) -> Transition {
         trace!("{} - ConnectionFailure from {}", self, addr);
-        self.handle_peer_lost(addr, outbox)
+        Transition::Stay
     }
 
     fn handle_new_message(
@@ -286,7 +286,7 @@ pub trait Base: Display {
         addr: SocketAddr,
         msg: Bytes,
         msg_token: Token,
-        _outbox: &mut dyn EventBox,
+        outbox: &mut dyn EventBox,
     ) -> Transition {
         let next_target = self.network_service_mut().target_failed(msg_token, addr);
         match next_target.failed_attempts {
@@ -300,6 +300,7 @@ pub trait Base: Display {
                 );
                 self.network_service_mut()
                     .send_now(next_target.addr, msg, msg_token);
+                Transition::Stay
             }
             n if n < RESEND_MAX_ATTEMPTS => {
                 trace!(
@@ -317,6 +318,7 @@ pub trait Base: Display {
                     msg_token,
                     timer_token,
                 );
+                Transition::Stay
             }
             n => {
                 trace!(
@@ -326,10 +328,9 @@ pub trait Base: Display {
                     next_target.addr,
                     n,
                 );
+                self.handle_peer_lost(next_target.addr, outbox)
             }
         }
-
-        Transition::Stay
     }
 
     fn handle_sent_message(
