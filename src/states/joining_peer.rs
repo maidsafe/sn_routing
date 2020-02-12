@@ -202,8 +202,8 @@ impl Base for JoiningPeer {
         }
     }
 
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
+    fn timer(&self) -> &Timer {
+        &self.timer
     }
 
     fn rng(&mut self) -> &mut MainRng {

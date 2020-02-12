@@ -8,13 +8,14 @@
 
 mod sending_targets_cache;
 
+pub use sending_targets_cache::NextTarget;
+
 use crate::{
     quic_p2p::{Builder, EventSenders, Peer, QuicP2p, QuicP2pError, Token},
-    utils::LogIdent,
     NetworkConfig,
 };
 use bytes::Bytes;
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr};
 
 use sending_targets_cache::SendingTargetsCache;
 
@@ -24,6 +25,7 @@ pub struct NetworkService {
     quic_p2p: QuicP2p,
     cache: SendingTargetsCache,
     next_msg_token: Token,
+    scheduled_messages: HashMap<u64, ScheduledMessage>,
 }
 
 impl NetworkService {
@@ -45,32 +47,43 @@ impl NetworkService {
         conn_infos: &[SocketAddr],
         dg_size: usize,
         msg: Bytes,
-    ) {
+    ) -> Token {
         let token = self.next_msg_token();
 
         // initially only send to dg_size targets
         for addr in conn_infos.iter().take(dg_size) {
             // NetworkBytes is refcounted and cheap to clone.
-            self.quic_p2p.send(Peer::Node(*addr), msg.clone(), token);
+            self.send_now(*addr, msg.clone(), token);
         }
 
         self.cache.insert_message(token, conn_infos, dg_size);
+
+        token
     }
 
-    pub fn send_message_to_next_target(
+    pub fn target_failed(&mut self, token: Token, failed_tgt: SocketAddr) -> NextTarget {
+        self.cache.target_failed(token, failed_tgt)
+    }
+
+    pub fn send_now(&mut self, target: SocketAddr, content: Bytes, token: Token) {
+        self.quic_p2p.send(Peer::Node(target), content, token)
+    }
+
+    pub fn send_later(
         &mut self,
-        msg: Bytes,
+        target: SocketAddr,
+        content: Bytes,
         token: Token,
-        failed_tgt: SocketAddr,
-        log_ident: LogIdent,
+        timer_token: u64,
     ) {
-        if let Some(tgt) = self.cache.target_failed(token, failed_tgt) {
-            info!(
-                "{} Sending of message ID {} failed; resending...",
-                log_ident, token
-            );
-            self.quic_p2p.send(Peer::Node(tgt), msg, token);
-        }
+        let _ = self.scheduled_messages.insert(
+            timer_token,
+            ScheduledMessage {
+                content,
+                token,
+                target,
+            },
+        );
     }
 
     pub fn our_connection_info(&mut self) -> Result<SocketAddr, QuicP2pError> {
@@ -79,6 +92,16 @@ impl NetworkService {
 
     pub fn disconnect(&mut self, addr: SocketAddr) {
         self.quic_p2p.disconnect_from(addr)
+    }
+
+    pub fn handle_timeout(&mut self, timer_token: u64) -> bool {
+        if let Some(msg) = self.scheduled_messages.remove(&timer_token) {
+            self.quic_p2p
+                .send(Peer::Node(msg.target), msg.content, msg.token);
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -104,6 +127,13 @@ impl NetworkBuilder {
             quic_p2p: self.quic_p2p.build()?,
             cache: Default::default(),
             next_msg_token: 0,
+            scheduled_messages: Default::default(),
         })
     }
+}
+
+struct ScheduledMessage {
+    content: Bytes,
+    token: Token,
+    target: SocketAddr,
 }

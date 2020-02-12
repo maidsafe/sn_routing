@@ -18,6 +18,7 @@ use crate::{
     quic_p2p::{Peer, Token},
     rng::MainRng,
     state_machine::Transition,
+    time::Duration,
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
@@ -33,13 +34,16 @@ use std::{
     slice,
 };
 
+pub const RESEND_MAX_ATTEMPTS: u8 = 3;
+pub const RESEND_DELAY: Duration = Duration::from_secs(10);
+
 // Trait for all states.
 pub trait Base: Display {
     fn network_service(&self) -> &NetworkService;
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
     fn in_dst_location(&self, dst: &DstLocation) -> bool;
-    fn timer(&mut self) -> &mut Timer;
+    fn timer(&self) -> &Timer;
     fn rng(&mut self) -> &mut MainRng;
 
     fn log_ident(&self) -> LogIdent {
@@ -79,7 +83,7 @@ pub trait Base: Display {
                 let result = self.handle_send_message(src, dst, content);
                 let _ = result_tx.send(result);
             }
-            Action::HandleTimeout(token) => match self.handle_timeout(token, outbox) {
+            Action::HandleTimeout(token) => match self.invoke_handle_timeout(token, outbox) {
                 Transition::Stay => (),
                 transition => {
                     return transition;
@@ -114,6 +118,14 @@ pub trait Base: Display {
     ) -> Result<(), RoutingError> {
         warn!("{} - Cannot handle SendMessage - invalid state.", self);
         Err(RoutingError::InvalidState)
+    }
+
+    fn invoke_handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
+        if self.network_service_mut().handle_timeout(token) {
+            Transition::Stay
+        } else {
+            self.handle_timeout(token, outbox)
+        }
     }
 
     fn handle_timeout(&mut self, _token: u64, _outbox: &mut dyn EventBox) -> Transition {
@@ -273,12 +285,50 @@ pub trait Base: Display {
         &mut self,
         addr: SocketAddr,
         msg: Bytes,
-        token: Token,
+        msg_token: Token,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        let log_ident = LogIdent::new(self);
-        self.network_service_mut()
-            .send_message_to_next_target(msg, token, addr, log_ident);
+        let next_target = self.network_service_mut().target_failed(msg_token, addr);
+        match next_target.failed_attempts {
+            0 => {
+                trace!(
+                    "{} - Sending message ID {} to {} failed - resending to {} now",
+                    self,
+                    msg_token,
+                    addr,
+                    next_target.addr
+                );
+                self.network_service_mut()
+                    .send_now(next_target.addr, msg, msg_token);
+            }
+            n if n < RESEND_MAX_ATTEMPTS => {
+                trace!(
+                    "{} - Sending message ID {} to {} failed - resending to {} in {:?}",
+                    self,
+                    msg_token,
+                    addr,
+                    next_target.addr,
+                    RESEND_DELAY
+                );
+                let timer_token = self.timer().schedule(RESEND_DELAY);
+                self.network_service_mut().send_later(
+                    next_target.addr,
+                    msg,
+                    msg_token,
+                    timer_token,
+                );
+            }
+            n => {
+                trace!(
+                    "{} - Sending message ID {} to {} failed {} times - giving up.",
+                    self,
+                    msg_token,
+                    next_target.addr,
+                    n,
+                );
+            }
+        }
+
         Transition::Stay
     }
 
@@ -379,8 +429,15 @@ pub trait Base: Display {
         dg_size: usize,
         message: Bytes,
     ) {
-        self.network_service_mut()
+        let token = self
+            .network_service_mut()
             .send_message_to_initial_targets(conn_infos, dg_size, message);
+        trace!(
+            "{} Sending message ID {} to {:?}",
+            self,
+            token,
+            &conn_infos[..dg_size]
+        );
     }
 
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
