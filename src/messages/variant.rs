@@ -62,6 +62,8 @@ pub enum Variant {
     ParsecRequest(u64, parsec::Request),
     /// Parsec response message
     ParsecResponse(u64, parsec::Response),
+    /// Message sent to a disconnected peer to trigger lost peer detection.
+    Ping,
 }
 
 impl Debug for Variant {
@@ -87,6 +89,7 @@ impl Debug for Variant {
             Self::MemberKnowledge(payload) => write!(f, "MemberKnowledge({:?})", payload),
             Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
             Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
+            Self::Ping => write!(f, "Ping"),
         }
     }
 }
