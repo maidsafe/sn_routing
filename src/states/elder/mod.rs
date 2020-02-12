@@ -1326,15 +1326,11 @@ impl Base for Elder {
         peer_addr: SocketAddr,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        debug!("{} - Lost peer {}", self, peer_addr);
-
         let pub_id = if let Some(node) = self.chain.find_p2p_node_from_addr(&peer_addr) {
+            debug!("{} - Lost known peer {}", self, node);
             *node.public_id()
         } else {
-            info!(
-                "{} - Lost connection to a peer we don't know: {}",
-                self, peer_addr
-            );
+            trace!("{} - Lost unknown peer {}", self, peer_addr);
             return Transition::Stay;
         };
 
