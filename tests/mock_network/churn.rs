@@ -314,36 +314,22 @@ fn drop_random_nodes<R: Rng>(
         }
 
         let elder_size = unwrap!(node.inner.elder_size());
+        let safe_section_size = unwrap!(node.inner.safe_section_size());
+
         let section = unwrap!(sections.get_mut(node.our_prefix()));
 
-        // Don't drop any other node if an elder is already scheduled for drop.
-        if section.dropped_elder_count > 0 {
+        // Drop at most as many nodes as is the minimal number of non-elders in the section.
+        // This guarantees we never drop below `elder_size` even in case of split.
+        if section.dropped_count >= safe_section_size - elder_size {
             continue;
         }
 
         // Don't drop below elder_size nodes.
-        if section.all_remaining() <= elder_size {
+        if section.initial_count <= elder_size {
             continue;
         }
 
-        // If there already are other drops scheduled, make sure we remain with at least one
-        // more node above elder_size. This is because one of those other drops might trigger
-        // relocation of one of the existing elders and we wouldn't have anyone to replace it with
-        // otherwise.
-        if section.all_dropped() > 0 && section.all_remaining() <= elder_size + 1 {
-            continue;
-        }
-
-        if node.inner.is_elder() {
-            // Don't drop elder if a non-elder is already scheduled for drop.
-            if section.dropped_other_count > 0 {
-                continue;
-            }
-
-            section.dropped_elder_count += 1;
-        } else {
-            section.dropped_other_count += 1;
-        }
+        section.dropped_count += 1;
 
         dropped_indices.push(index);
     }
@@ -359,22 +345,8 @@ fn drop_random_nodes<R: Rng>(
 
 #[derive(Default)]
 struct SectionCounts {
-    initial_elder_count: usize,
-    initial_other_count: usize,
-    dropped_elder_count: usize,
-    dropped_other_count: usize,
-}
-
-impl SectionCounts {
-    fn all_remaining(&self) -> usize {
-        self.initial_elder_count + self.initial_other_count
-            - self.dropped_other_count
-            - self.dropped_elder_count
-    }
-
-    fn all_dropped(&self) -> usize {
-        self.dropped_elder_count + self.dropped_other_count
-    }
+    initial_count: usize,
+    dropped_count: usize,
 }
 
 // Count the number of elders and the number of non-elders for each section in the network.
@@ -383,12 +355,7 @@ fn count_nodes_by_section(nodes: &[TestNode]) -> HashMap<Prefix<XorName>, Sectio
 
     for node in nodes {
         let prefix = *node.our_prefix();
-        let counts = output.entry(prefix).or_default();
-        if node.inner.is_elder() {
-            counts.initial_elder_count += 1;
-        } else {
-            counts.initial_other_count += 1;
-        }
+        output.entry(prefix).or_default().initial_count += 1;
     }
 
     output
