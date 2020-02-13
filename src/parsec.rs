@@ -86,6 +86,7 @@ impl fmt::Display for ParsecSizeCounter {
 pub struct ParsecMap {
     map: BTreeMap<u64, Parsec>,
     size_counter: ParsecSizeCounter,
+    send_gossip: bool,
 }
 
 impl ParsecMap {
@@ -117,12 +118,12 @@ impl ParsecMap {
         request: Request,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> (Option<Variant>, bool) {
+    ) -> Option<Variant> {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
             size
         } else {
-            return (None, false);
+            return None;
         };
         self.count_size(ser_size, msg_version, log_ident);
 
@@ -138,20 +139,17 @@ impl ParsecMap {
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
-            return (None, false);
+            return None;
         };
 
-        let response = parsec
+        parsec
             .handle_request(&pub_id, request)
             .map(|response| Variant::ParsecResponse(msg_version, response))
             .map_err(|err| {
                 debug!("{} - Error handling parsec request: {:?}", log_ident, err);
                 err
             })
-            .ok();
-        let poll = self.last_version() == msg_version;
-
-        (response, poll)
+            .ok()
     }
 
     pub fn handle_response(
@@ -160,12 +158,12 @@ impl ParsecMap {
         response: Response,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> bool {
+    ) {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&response) {
             size
         } else {
-            return false;
+            return;
         };
         self.count_size(ser_size, msg_version, log_ident);
 
@@ -180,14 +178,12 @@ impl ParsecMap {
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
-            return false;
+            return;
         };
 
         if let Err(err) = parsec.handle_response(&pub_id, response) {
             debug!("{} - Error handling parsec response: {:?}", log_ident, err);
         }
-
-        self.last_version() == msg_version
     }
 
     pub fn create_gossip(
@@ -305,6 +301,18 @@ impl ParsecMap {
 
     pub fn set_pruning_voted_for(&mut self) {
         self.size_counter.set_pruning_voted_for();
+    }
+
+    // Set a flag to send gossip at the end of current input handling.
+    pub fn set_send_gossip(&mut self) {
+        self.send_gossip = true;
+    }
+
+    // Clear the send gossip flag and return whether it was set.
+    pub fn clear_send_gossip(&mut self) -> bool {
+        let prev = self.send_gossip;
+        self.send_gossip = false;
+        prev
     }
 
     fn count_size(&mut self, size: u64, msg_version: u64, log_ident: &LogIdent) {
@@ -543,7 +551,7 @@ mod tests {
             pub_id: &id::PublicId,
             log_ident: &LogIdent,
         ) {
-            let _ = parsec_map.handle_response(msg_version, self.clone(), *pub_id, log_ident);
+            parsec_map.handle_response(msg_version, self.clone(), *pub_id, log_ident)
         }
     }
 

@@ -12,7 +12,7 @@ use crate::{
         AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
         OnlinePayload, PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
-    error::RoutingError,
+    error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
     messages::{MemberKnowledge, Variant, VerifyStatus},
@@ -127,9 +127,9 @@ pub trait Approved: Base {
         par_request: parsec::Request,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<Transition> {
         let log_ident = self.log_ident();
-        let (response, poll) = self.parsec_map_mut().handle_request(
+        let response = self.parsec_map_mut().handle_request(
             msg_version,
             par_request,
             *p2p_node.public_id(),
@@ -146,7 +146,7 @@ pub trait Approved: Base {
             self.send_direct_message(p2p_node.peer_addr(), response);
         }
 
-        if poll {
+        if msg_version == self.parsec_map().last_version() {
             self.parsec_poll(outbox)
         } else {
             Ok(Transition::Stay)
@@ -159,12 +159,13 @@ pub trait Approved: Base {
         par_response: parsec::Response,
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<Transition> {
         let log_ident = self.log_ident();
-        if self
-            .parsec_map_mut()
-            .handle_response(msg_version, par_response, pub_id, &log_ident)
-        {
+        self.parsec_map_mut()
+            .handle_response(msg_version, par_response, pub_id, &log_ident);
+        self.schedule_parsec_gossip();
+
+        if msg_version == self.parsec_map().last_version() {
             self.parsec_poll(outbox)
         } else {
             Ok(Transition::Stay)
@@ -225,6 +226,20 @@ pub trait Approved: Base {
                     error
                 );
             }
+        }
+    }
+
+    // Schedules a parsec gossip to be sent to a random recipient. Can be called multiple times but
+    // will result only in one gossip sent.
+    fn schedule_parsec_gossip(&mut self) {
+        self.parsec_map_mut().set_send_gossip()
+    }
+
+    // Sends a parsec gossip to a random recipient if previously scheduled with
+    // `schedule_parsec_gossip`.
+    fn send_scheduled_parsec_gossip(&mut self) {
+        if self.parsec_map_mut().clear_send_gossip() {
+            self.send_parsec_gossip(None);
         }
     }
 
