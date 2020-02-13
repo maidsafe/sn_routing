@@ -1311,7 +1311,7 @@ impl Base for Elder {
         Transition::Stay
     }
 
-    fn finish_handle_action(&mut self, outbox: &mut dyn EventBox) -> Transition {
+    fn finish_handle_input(&mut self, outbox: &mut dyn EventBox) -> Transition {
         self.handle_messages(outbox)
     }
 
@@ -1362,10 +1362,6 @@ impl Base for Elder {
         }
 
         Transition::Stay
-    }
-
-    fn finish_handle_network_event(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        self.handle_messages(outbox)
     }
 
     fn handle_message(
