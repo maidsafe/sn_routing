@@ -126,6 +126,15 @@ impl ParsecMap {
         };
         self.count_size(ser_size, msg_version, log_ident);
 
+        trace!(
+            "{} - handle parsec request v{} from {} (size {}b, last: v{})",
+            log_ident,
+            msg_version,
+            pub_id,
+            ser_size,
+            self.last_version(),
+        );
+
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
@@ -159,6 +168,14 @@ impl ParsecMap {
             return false;
         };
         self.count_size(ser_size, msg_version, log_ident);
+
+        trace!(
+            "{} - handle parsec response v{} from {} (size {}b)",
+            log_ident,
+            msg_version,
+            pub_id,
+            ser_size,
+        );
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
