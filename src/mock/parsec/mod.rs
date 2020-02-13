@@ -188,6 +188,11 @@ where
     }
 
     pub fn poll(&mut self) -> Option<Block<T, S::PublicId>> {
+        // Make sure we only return blocks for which we reached consensus.
+        if self.first_unpolled >= self.first_unconsensused {
+            return None;
+        }
+
         state::with(self.section_hash, |state| {
             if let Some((block, holder)) = state
                 .get_block(self.first_unpolled)
