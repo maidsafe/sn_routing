@@ -17,7 +17,9 @@ use crate::{
     id::{self, FullId},
     messages::Variant,
     rng::{self, MainRng, RngCompat},
+    time::{Duration, Instant},
     utils::LogIdent,
+    xor_space::XorName,
 };
 use log::LogLevel;
 #[cfg(not(feature = "mock"))]
@@ -25,7 +27,7 @@ use parsec as inner;
 #[cfg(feature = "mock")]
 use std::collections::BTreeSet;
 use std::{
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{btree_map::Entry, BTreeMap, HashMap},
     fmt, mem,
 };
 
@@ -45,6 +47,10 @@ pub use inner::{DkgResult, DkgResultWrapper};
 // The maximum number of parsec instances to store.
 const MAX_PARSECS: usize = 10;
 
+// Time interval after sending a gossip to a peer during which we won't send another gossip unless
+// we receive a gossip from them first.
+const GOSSIP_LIMIT_INTERVAL: Duration = Duration::from_secs(2);
+
 // Limit in production
 #[cfg(not(feature = "mock_base"))]
 const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
@@ -53,7 +59,7 @@ const PARSEC_SIZE_LIMIT: u64 = 1_000_000_000;
 const PARSEC_SIZE_LIMIT: u64 = 20_000_000;
 // Limit for integration tests with mock-parsec
 #[cfg(feature = "mock")]
-const PARSEC_SIZE_LIMIT: u64 = 500;
+const PARSEC_SIZE_LIMIT: u64 = 10_000;
 
 // Keep track of size in case we need to prune.
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -82,11 +88,40 @@ impl fmt::Display for ParsecSizeCounter {
     }
 }
 
+// Keep track of in-flight requests to limit their number to prevent flooding the network.
+#[derive(Default)]
+struct GossipLimiter(HashMap<XorName, Instant>);
+
+impl GossipLimiter {
+    fn insert(&mut self, name: XorName) {
+        let _ = self.0.insert(name, Instant::now());
+        self.cleanup();
+    }
+
+    fn remove(&mut self, name: &XorName) {
+        let _ = self.0.remove(name);
+        self.cleanup();
+    }
+
+    fn contains(&self, name: &XorName) -> bool {
+        self.0
+            .get(name)
+            .map(|timestamp| timestamp.elapsed() < GOSSIP_LIMIT_INTERVAL)
+            .unwrap_or(false)
+    }
+
+    fn cleanup(&mut self) {
+        self.0
+            .retain(|_, timestamp| timestamp.elapsed() < GOSSIP_LIMIT_INTERVAL)
+    }
+}
+
 #[derive(Default)]
 pub struct ParsecMap {
     map: BTreeMap<u64, Parsec>,
     size_counter: ParsecSizeCounter,
     send_gossip: bool,
+    gossip_limiter: GossipLimiter,
 }
 
 impl ParsecMap {
@@ -142,14 +177,16 @@ impl ParsecMap {
             return None;
         };
 
-        parsec
+        match parsec
             .handle_request(&pub_id, request)
             .map(|response| Variant::ParsecResponse(msg_version, response))
-            .map_err(|err| {
+        {
+            Ok(response) => Some(response),
+            Err(err) => {
                 debug!("{} - Error handling parsec request: {:?}", log_ident, err);
-                err
-            })
-            .ok()
+                None
+            }
+        }
     }
 
     pub fn handle_response(
@@ -181,8 +218,9 @@ impl ParsecMap {
             return;
         };
 
-        if let Err(err) = parsec.handle_response(&pub_id, response) {
-            debug!("{} - Error handling parsec response: {:?}", log_ident, err);
+        match parsec.handle_response(&pub_id, response) {
+            Ok(()) => self.gossip_limiter.remove(pub_id.name()),
+            Err(err) => debug!("{} - Error handling parsec response: {:?}", log_ident, err),
         }
     }
 
@@ -196,6 +234,9 @@ impl ParsecMap {
             .get_mut(&version)
             .ok_or(CreateGossipError::MissingVersion)?
             .create_gossip(target)?;
+
+        self.gossip_limiter.insert(*target.name());
+
         Ok(Variant::ParsecRequest(version, request))
     }
 
@@ -247,8 +288,10 @@ impl ParsecMap {
         self.map
             .values()
             .last()
-            .map(|parsec| parsec.gossip_recipients().collect())
-            .unwrap_or_else(Vec::new)
+            .into_iter()
+            .flat_map(|parsec| parsec.gossip_recipients())
+            .filter(|recipient| !self.gossip_limiter.contains(recipient.name()))
+            .collect()
     }
 
     pub fn poll(&mut self) -> Option<Block> {
@@ -345,7 +388,7 @@ impl ParsecMap {
     }
 
     fn remove_old(&mut self) {
-        let parsec_map = mem::replace(&mut self.map, Default::default());
+        let parsec_map = mem::take(&mut self.map);
         self.map = parsec_map
             .into_iter()
             .rev()
@@ -403,7 +446,10 @@ fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> 
         crypto::sha3_256(&unwrap!(bincode::serialize(&fields)))
     };
 
-    if gen_pfx_info.first_info.is_member(full_id.public_id()) {
+    if gen_pfx_info
+        .first_info
+        .is_member(full_id.public_id().name())
+    {
         Parsec::from_genesis(
             #[cfg(feature = "mock")]
             hash,

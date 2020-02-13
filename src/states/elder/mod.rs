@@ -1587,7 +1587,7 @@ impl Approved for Elder {
         let elders_info = self.chain.our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
-        let is_member = elders_info.is_member(self.full_id.public_id());
+        let is_member = elders_info.is_member(self.full_id.public_id().name());
 
         info!("{} - handle SectionInfo: {:?}.", self, elders_info);
 

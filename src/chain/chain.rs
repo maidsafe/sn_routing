@@ -119,7 +119,7 @@ impl Chain {
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_elder = gen_info.first_info.is_member(&our_id);
+        let is_elder = gen_info.first_info.is_member(our_id.name());
         let secret_key_share = secret_key_share
             .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.first_info));
         Self {
@@ -721,7 +721,7 @@ impl Chain {
     pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.state
             .our_joined_members()
-            .filter(move |(_, info)| !self.state.our_info().is_member(info.p2p_node.public_id()))
+            .filter(move |(_, info)| !self.state.our_info().is_member(info.p2p_node.name()))
             .map(|(_, info)| &info.p2p_node)
     }
 
@@ -769,12 +769,13 @@ impl Chain {
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.our_info().is_member(pub_id)
+        self.state.our_info().is_member(pub_id.name())
     }
 
     /// Returns whether the given peer is elder in one of our neighbour sections.
     pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
-        self.neighbour_infos().any(|info| info.is_member(pub_id))
+        self.neighbour_infos()
+            .any(|info| info.is_member(pub_id.name()))
     }
 
     /// Returns whether the given peer is an active (not left) member of our section.
@@ -1125,7 +1126,7 @@ impl Chain {
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
-        let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
+        let is_new_elder = !self.is_elder && elders_info.is_member(self.our_id.name());
         let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
         let our_new_key = key_matching_first_elder_name(
             &elders_info,
@@ -1987,7 +1988,7 @@ mod tests {
         assert_eq!(
             chain
                 .get_section(&Prefix::from_str("00").unwrap())
-                .map(|info| info.is_member(&chain_id)),
+                .map(|info| info.is_member(chain_id.name())),
             Some(true)
         );
         assert_eq!(chain.get_section(&Prefix::from_str("").unwrap()), None);

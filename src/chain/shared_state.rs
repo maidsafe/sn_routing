@@ -264,7 +264,7 @@ impl SharedState {
     /// Returns the current persona corresponding to the given PublicId or `None` if such a member
     /// doesn't exist
     pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {
-        if self.our_info().is_member(pub_id) {
+        if self.our_info().is_member(pub_id.name()) {
             Some(MemberPersona::Elder)
         } else {
             self.our_members.get(pub_id.name()).map(|member| {

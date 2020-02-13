@@ -81,8 +81,8 @@ impl EldersInfo {
         &self.members
     }
 
-    pub fn is_member(&self, pub_id: &PublicId) -> bool {
-        self.members.contains_key(pub_id.name())
+    pub fn is_member(&self, name: &XorName) -> bool {
+        self.members.contains_key(name)
     }
 
     pub fn member_nodes(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
@@ -125,12 +125,12 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.is_member(id)).count() >= quorum_count(self.len())
+        proofs.ids().filter(|id| self.is_member(id.name())).count() >= quorum_count(self.len())
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.is_member(id)).count() == self.len()
+        proofs.ids().filter(|id| self.is_member(id.name())).count() == self.len()
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
