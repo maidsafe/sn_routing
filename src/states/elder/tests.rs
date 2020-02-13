@@ -544,7 +544,11 @@ struct JoiningPeer {
 
 impl JoiningPeer {
     fn new(rng: &mut MainRng) -> Self {
-        let (network_event_tx, network_event_rx) = crossbeam_channel::unbounded();
+        let (network_event_tx, network_event_rx) = {
+            let (node_tx, node_rx) = crossbeam_channel::unbounded();
+            let (client_tx, _) = crossbeam_channel::unbounded();
+            (quic_p2p::EventSenders { node_tx, client_tx }, node_rx)
+        };
         let network_service = unwrap!(quic_p2p::Builder::new(network_event_tx).build());
 
         Self {
