@@ -14,6 +14,7 @@ use crate::{
     network_service::{NetworkBuilder, NetworkService},
     outbox::EventBox,
     pause::PausedState,
+    quic_p2p::EventSenders,
     relocation::{RelocatePayload, SignedRelocateDetails},
     states::{common::Base, Adult, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
@@ -319,13 +320,17 @@ impl StateMachine {
     pub fn new<F>(
         init_state: F,
         network_config: NetworkConfig,
+        client_tx: mpmc::Sender<NetworkEvent>,
         outbox: &mut dyn EventBox,
     ) -> (mpmc::Sender<Action>, Self)
     where
         F: FnOnce(NetworkService, Timer, &mut dyn EventBox) -> State,
     {
         let (action_tx, action_rx) = mpmc::unbounded();
-        let (network_tx, network_rx) = mpmc::unbounded();
+        let (network_tx, network_rx) = {
+            let (node_tx, node_rx) = mpmc::unbounded();
+            (EventSenders { node_tx, client_tx }, node_rx)
+        };
 
         let network_service = match NetworkBuilder::new(network_tx)
             .with_config(network_config)

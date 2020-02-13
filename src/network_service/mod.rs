@@ -9,12 +9,11 @@
 mod sending_targets_cache;
 
 use crate::{
-    quic_p2p::{Builder, Peer, QuicP2p, QuicP2pError, Token},
+    quic_p2p::{Builder, EventSenders, Peer, QuicP2p, QuicP2pError, Token},
     utils::LogIdent,
-    NetworkConfig, NetworkEvent,
+    NetworkConfig,
 };
 use bytes::Bytes;
-use crossbeam_channel::Sender;
 use std::net::SocketAddr;
 
 use sending_targets_cache::SendingTargetsCache;
@@ -88,7 +87,7 @@ pub struct NetworkBuilder {
 }
 
 impl NetworkBuilder {
-    pub fn new(event_tx: Sender<NetworkEvent>) -> Self {
+    pub fn new(event_tx: EventSenders) -> Self {
         Self {
             quic_p2p: Builder::new(event_tx),
         }

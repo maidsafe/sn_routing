@@ -20,7 +20,7 @@ use crate::{
     state_machine::{State, StateMachine},
     states::{self, BootstrappingPeer, BootstrappingPeerDetails},
     xor_space::XorName,
-    NetworkConfig,
+    NetworkConfig, NetworkEvent,
 };
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
@@ -88,12 +88,13 @@ impl Builder {
     }
 
     /// Creates new `Node`.
-    pub fn create(self) -> (Node, mpmc::Receiver<Event>) {
+    pub fn create(self) -> (Node, mpmc::Receiver<Event>, mpmc::Receiver<NetworkEvent>) {
         // start the handler for routing without a restriction to become a full node
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
         let (mut user_event_tx, user_event_rx) = mpmc::unbounded();
+        let (client_tx, client_rx) = mpmc::unbounded();
 
-        let (_, machine) = self.make_state_machine(&mut user_event_tx);
+        let (_, machine) = self.make_state_machine(client_tx, &mut user_event_tx);
 
         let node = Node {
             user_event_tx,
@@ -102,10 +103,14 @@ impl Builder {
             machine,
         };
 
-        (node, user_event_rx)
+        (node, user_event_rx, client_rx)
     }
 
-    fn make_state_machine(self, outbox: &mut dyn EventBox) -> (mpmc::Sender<Action>, StateMachine) {
+    fn make_state_machine(
+        self,
+        client_tx: mpmc::Sender<NetworkEvent>,
+        outbox: &mut dyn EventBox,
+    ) -> (mpmc::Sender<Action>, StateMachine) {
         let mut rng = self.rng.unwrap_or_else(rng::new);
 
         let full_id = self.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
@@ -136,6 +141,7 @@ impl Builder {
                 }
             },
             network_config,
+            client_tx,
             outbox,
         )
     }

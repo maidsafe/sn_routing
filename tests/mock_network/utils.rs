@@ -191,7 +191,7 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(self) -> TestNode {
-        let (inner, user_event_rx) = self
+        let (inner, user_event_rx, _client_rx) = self
             .inner
             .network_cfg(self.env.network_cfg())
             .rng(&mut self.env.new_rng())
@@ -389,7 +389,6 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
             match event {
                 Event::SectionSplit(..)
                 | Event::RestartRequired
-                | Event::Client(..)
                 | Event::Connected(Connected::Relocate) => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
@@ -455,7 +454,7 @@ pub fn add_connected_nodes_until_split(
     );
 
     clear_all_event_queues(nodes, |node, event| match event {
-        Event::Client(..) | Event::SectionSplit(..) | Event::Connected(Connected::Relocate) => (),
+        Event::SectionSplit(..) | Event::Connected(Connected::Relocate) => (),
         event => panic!("Got unexpected event for {}: {:?}", node.inner, event),
     });
 

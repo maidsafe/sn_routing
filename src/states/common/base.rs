@@ -10,7 +10,6 @@ use crate::{
     action::Action,
     chain::SectionKeyInfo,
     error::{Result, RoutingError},
-    event::Client,
     id::{FullId, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{Message, MessageWithBytes, Variant},
@@ -139,54 +138,24 @@ pub trait Base: Display {
         let transition = match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
             BootstrapFailure => self.handle_bootstrap_failure(outbox),
-            ConnectedTo {
-                peer: Peer::Node(peer_addr),
-            } => self.handle_connected_to(peer_addr, outbox),
-            ConnectedTo {
-                peer: Peer::Client(peer_addr),
-            } => {
-                let client_event = Client::Connected { peer_addr };
-                outbox.send_event(From::from(client_event));
-                Transition::Stay
-            }
+            ConnectedTo { peer } => match peer {
+                Peer::Client(_) => Transition::Stay,
+                Peer::Node(peer_addr) => self.handle_connected_to(peer_addr, outbox),
+            },
             ConnectionFailure { peer, .. } => match peer {
-                Peer::Client(peer_addr) => {
-                    let client_event = Client::ConnectionFailure { peer_addr };
-                    outbox.send_event(client_event.into());
-                    Transition::Stay
-                }
+                Peer::Client(_) => Transition::Stay,
                 Peer::Node(peer_addr) => self.handle_connection_failure(peer_addr, outbox),
             },
             NewMessage { peer, msg } => match peer {
-                Peer::Client(peer_addr) => {
-                    let client_event = Client::NewMessage { peer_addr, msg };
-                    outbox.send_event(client_event.into());
-                    Transition::Stay
-                }
+                Peer::Client(_) => Transition::Stay,
                 Peer::Node(peer_addr) => self.handle_new_message(peer_addr, msg, outbox),
             },
             UnsentUserMessage { peer, msg, token } => match peer {
-                Peer::Client(peer_addr) => {
-                    let client_event = Client::UnsentUserMsg {
-                        peer_addr,
-                        msg,
-                        token,
-                    };
-                    outbox.send_event(client_event.into());
-                    Transition::Stay
-                }
+                Peer::Client(_) => Transition::Stay,
                 Peer::Node(peer_addr) => self.handle_unsent_message(peer_addr, msg, token, outbox),
             },
             SentUserMessage { peer, msg, token } => match peer {
-                Peer::Client(peer_addr) => {
-                    let client_event = Client::SentUserMsg {
-                        peer_addr,
-                        msg,
-                        token,
-                    };
-                    outbox.send_event(client_event.into());
-                    Transition::Stay
-                }
+                Peer::Client(_) => Transition::Stay,
                 Peer::Node(peer_addr) => self.handle_sent_message(peer_addr, msg, token, outbox),
             },
             Finish => Transition::Terminate,

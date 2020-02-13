@@ -84,6 +84,7 @@ pub use self::{
     node::{Builder, Node},
     pause::PausedState,
     quic_p2p::Config as NetworkConfig,
+    quic_p2p::Event as NetworkEvent,
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 /// Routing events.
@@ -175,7 +176,6 @@ const SAFE_SECTION_SIZE: usize = 100;
 /// Number of elders per section.
 const ELDER_SIZE: usize = 7;
 
-use self::quic_p2p::Event as NetworkEvent;
 #[cfg(any(test, feature = "mock_base"))]
 use unwrap::unwrap;
 

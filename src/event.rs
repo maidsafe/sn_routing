@@ -10,55 +10,8 @@ use crate::{
     location::{DstLocation, SrcLocation},
     xor_space::{Prefix, XorName},
 };
-use bytes::Bytes;
 use hex_fmt::HexFmt;
-use quic_p2p::Token;
-use std::{
-    fmt::{self, Debug, Formatter},
-    net::SocketAddr,
-};
-
-/// An Event raised by a `Client`
-///
-/// These are send transparently to the user library and not handled by routing
-#[derive(Clone, Eq, PartialEq)]
-pub enum Client {
-    /// Inform the user (library) that we are connected to a client
-    Connected {
-        /// Client's endpoint
-        peer_addr: SocketAddr,
-    },
-    /// Inform the user (library) that we are disconnected from a client
-    ConnectionFailure {
-        /// Client's endpoint
-        peer_addr: SocketAddr,
-    },
-    /// Inform the user (library) that we have a new message from a client
-    NewMessage {
-        /// Client's endpoint
-        peer_addr: SocketAddr,
-        /// Client's message
-        msg: Bytes,
-    },
-    /// Inform the user (library) that we couldn't send this message to a client
-    UnsentUserMsg {
-        /// Client's endpoint
-        peer_addr: SocketAddr,
-        /// Message we had tried to send to the client
-        msg: Bytes,
-        /// Token that we had used to identify this message
-        token: Token,
-    },
-    /// Inform the user (library) that we have successfully sent this message to a client
-    SentUserMsg {
-        /// Client's endpoint
-        peer_addr: SocketAddr,
-        /// Message we had tried to send to the client
-        msg: Bytes,
-        /// Token that we had used to identify this message
-        token: Token,
-    },
-}
+use std::fmt::{self, Debug, Formatter};
 
 /// An Event raised as node complete joining
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -80,8 +33,6 @@ pub enum Connected {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
-    /// Client events - to be sent to the user library and not handled in the routing library.
-    Client(Client),
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -103,18 +54,9 @@ pub enum Event {
     Consensus(Vec<u8>),
 }
 
-impl From<Client> for Event {
-    fn from(client_event: Client) -> Self {
-        Self::Client(client_event)
-    }
-}
-
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Self::Client(ref client_event) => {
-                write!(formatter, "Event::ClientEvent({:?})", client_event)
-            }
             Self::MessageReceived {
                 ref content,
                 ref src,
@@ -137,36 +79,6 @@ impl Debug for Event {
             Self::Consensus(ref payload) => {
                 write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
             }
-        }
-    }
-}
-
-impl Debug for Client {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
-            Self::Connected { peer_addr } => {
-                write!(formatter, "ClientEvent::Connected: {}", peer_addr)
-            }
-            Self::ConnectionFailure { peer_addr } => {
-                write!(formatter, "ClientEvent::ConnectionFailure: {}", peer_addr)
-            }
-            Self::NewMessage { peer_addr, .. } => {
-                write!(formatter, "ClientEvent::NewMessage: {}", peer_addr)
-            }
-            Self::UnsentUserMsg {
-                peer_addr, token, ..
-            } => write!(
-                formatter,
-                "ClientEvent::UnsentUserMsg: {} with Token: {}",
-                peer_addr, token
-            ),
-            Self::SentUserMsg {
-                peer_addr, token, ..
-            } => write!(
-                formatter,
-                "ClientEvent::SentUserMsg: {} with Token: {}",
-                peer_addr, token
-            ),
         }
     }
 }

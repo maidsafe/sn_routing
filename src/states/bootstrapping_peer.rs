@@ -358,7 +358,7 @@ mod tests {
         id::FullId,
         messages::Message,
         mock::Environment,
-        quic_p2p::{Builder, Peer},
+        quic_p2p::{Builder, EventSenders, Peer},
         state_machine::StateMachine,
         unwrap, NetworkConfig, NetworkEvent,
     };
@@ -379,7 +379,11 @@ mod tests {
         let mut rng = env.new_rng();
 
         // Start a bare-bones network service.
-        let (event_tx, event_rx) = mpmc::unbounded();
+        let (event_tx, (event_rx, _)) = {
+            let (node_tx, node_rx) = mpmc::unbounded();
+            let (client_tx, client_rx) = mpmc::unbounded();
+            (EventSenders { node_tx, client_tx }, (node_rx, client_rx))
+        };
         let node_a_endpoint = env.gen_addr();
         let config = NetworkConfig::node().with_endpoint(node_a_endpoint);
         let node_a_network_service = unwrap!(Builder::new(event_tx).with_config(config).build());
@@ -393,6 +397,7 @@ mod tests {
         let node_b_full_id = FullId::gen(&mut rng);
 
         let mut node_b_outbox = Vec::new();
+        let (node_b_client_tx, _) = mpmc::unbounded();
 
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
             move |network_service, timer, _outbox2| {
@@ -405,6 +410,7 @@ mod tests {
                 }))
             },
             config,
+            node_b_client_tx,
             &mut node_b_outbox,
         );
 
