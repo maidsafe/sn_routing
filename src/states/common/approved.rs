@@ -25,7 +25,7 @@ use crate::{
 use itertools::Itertools;
 use log::LogLevel;
 use rand::Rng;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, iter};
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -128,6 +128,16 @@ pub trait Approved: Base {
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
+        if msg_version > self.parsec_map().last_version() {
+            self.send_member_knowledge();
+
+            if !self.chain().is_peer_our_elder(p2p_node.public_id()) {
+                self.send_member_knowledge_to(iter::once(p2p_node));
+            }
+
+            return Ok(Transition::Stay);
+        }
+
         let log_ident = self.log_ident();
         let response = self.parsec_map_mut().handle_request(
             msg_version,
@@ -521,14 +531,20 @@ pub trait Approved: Base {
             .filter(|node| node.public_id() != self.id())
             .cloned()
             .collect_vec();
+        self.send_member_knowledge_to(recipients)
+    }
+
+    fn send_member_knowledge_to<I>(&mut self, recipients: I)
+    where
+        I: IntoIterator<Item = P2pNode>,
+    {
         let payload = MemberKnowledge {
             elders_version: self.chain().our_info().version(),
             parsec_version: self.parsec_map().last_version(),
         };
 
-        trace!("{} - Send {:?} to {:?}", self, payload, recipients);
-
         for recipient in recipients {
+            trace!("{} - Send {:?} to {:?}", self, payload, recipient);
             self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
         }
     }

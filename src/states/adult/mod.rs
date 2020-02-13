@@ -317,6 +317,8 @@ impl Adult {
         // check) when they are eventually taken from the backlog and swarmed to other nodes.
         self.msg_backlog.clear();
 
+        self.send_member_knowledge();
+
         Ok(Transition::Stay)
     }
 
