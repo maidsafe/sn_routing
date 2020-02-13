@@ -103,7 +103,7 @@ pub trait Base: Display {
             }
         }
 
-        self.finish_handle_action(outbox)
+        self.finish_handle_input(outbox)
     }
 
     fn handle_send_message(
@@ -128,7 +128,7 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn finish_handle_action(&mut self, _outbox: &mut dyn EventBox) -> Transition {
+    fn finish_handle_input(&mut self, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
@@ -170,7 +170,7 @@ pub trait Base: Display {
         };
 
         if let Transition::Stay = transition {
-            self.finish_handle_network_event(outbox)
+            self.finish_handle_input(outbox)
         } else {
             transition
         }
@@ -342,10 +342,6 @@ pub trait Base: Display {
         self.network_service_mut()
             .targets_cache_mut()
             .target_succeeded(token, addr);
-        Transition::Stay
-    }
-
-    fn finish_handle_network_event(&mut self, _outbox: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
