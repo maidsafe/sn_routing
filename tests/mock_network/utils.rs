@@ -22,9 +22,11 @@ use routing::{
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet},
+    convert::TryInto,
     iter,
     net::SocketAddr,
     ops::{Deref, DerefMut},
+    time::Duration,
 };
 
 // Maximum number of times to try and poll in a loop.  This is several orders higher than the
@@ -209,24 +211,45 @@ impl<'a> TestNodeBuilder<'a> {
 
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode]) -> bool {
-    assert!(!nodes.is_empty());
     let env = nodes[0].env().clone();
     let mut result = false;
-    for _ in 0..MAX_POLL_CALLS {
+
+    for i in 0..MAX_POLL_CALLS {
+        trace!("poll_all iteration {}", i);
+
         env.poll();
 
-        let mut handled_message = false;
+        let mut busy = false;
+
         for node in nodes.iter_mut() {
-            handled_message = node.poll() || handled_message;
+            let _ = node.poll();
+            busy = node.inner.is_busy() || busy;
         }
 
-        if !handled_message {
+        if busy {
+            result = true;
+        } else {
             return result;
         }
-
-        result = true;
     }
-    panic!("poll_all has been called {} times.", MAX_POLL_CALLS);
+
+    for node in nodes.iter().filter(|node| node.inner.is_busy()) {
+        let busy_string = node.inner.busy_string();
+        error!("Still busy: {}: {}", node.inner, busy_string);
+    }
+
+    if let Some(first_node_busy) = nodes.iter().find(|node| node.inner.is_busy()) {
+        let busy_string = first_node_busy.inner.busy_string();
+        panic!(
+            "poll_all has been called {} times. first busy: {} : {}",
+            MAX_POLL_CALLS, first_node_busy.inner, busy_string
+        );
+    }
+
+    panic!(
+        "poll_all has been called {} times. No busy nodes",
+        MAX_POLL_CALLS
+    );
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
@@ -238,16 +261,15 @@ pub fn poll_and_resend(nodes: &mut [TestNode]) {
 pub struct PollOptions {
     /// If set, polling continues while this predicate returns true even if all nodes are idle.
     pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
-    /// If true and all nodes become idle, advances the time by the amount it takes for joining
-    /// nodes to timeout and polls again one more time.
-    pub fire_join_timeout: bool,
+    /// Time step to advance after each poll round.
+    pub time_step: Duration,
 }
 
 impl Default for PollOptions {
     fn default() -> Self {
         Self {
             continue_predicate: None,
-            fire_join_timeout: true,
+            time_step: Duration::from_millis(10001),
         }
     }
 }
@@ -262,83 +284,42 @@ impl PollOptions {
             ..self
         }
     }
-
-    pub fn fire_join_timeout(self, fire_join_timeout: bool) -> Self {
-        Self {
-            fire_join_timeout,
-            ..self
-        }
-    }
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
-pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
-    let node_busy = |node: &TestNode| {
-        if node.inner.has_unpolled_observations() {
-            trace!("{} busy!", node.inner);
-            true
-        } else {
-            false
-        }
-    };
-
+pub fn poll_and_resend_with_options(nodes: &mut [TestNode], options: PollOptions) {
     let mut resend_attempts = 0;
 
-    for _ in 0..MAX_POLL_CALLS {
-        if poll_all(nodes) || nodes.iter().any(node_busy) {
-            // Advance time for next route/gossip iter.
-            FakeClock::advance_time(1001);
+    for i in 0..MAX_POLL_CALLS {
+        trace!("poll_and_resend iteration {}", i);
+
+        if poll_all(nodes) {
+            // Advance time to trigger scheduled timeouts.
+            advance_time(options.time_step);
             continue;
         }
 
         if let Some(continue_predicate) = options.continue_predicate.as_ref() {
             if continue_predicate(nodes) {
-                // Advance time in case the predicate is timeout-triggered.
-                FakeClock::advance_time(1001);
+                advance_time(options.time_step);
                 continue;
             }
         }
 
-        if options.fire_join_timeout {
-            // When all routes are polled, advance time to purge any pending re-connecting peers.
-            FakeClock::advance_time(
-                test_consts::BOOTSTRAP_TIMEOUT
-                    .max(test_consts::JOIN_TIMEOUT)
-                    .as_secs()
-                    * 1000
-                    + 1,
-            );
-            options.fire_join_timeout = false;
-            continue;
-        }
-
-        // Give the nodes time to detect lost peers.
         if resend_attempts < test_consts::RESEND_MAX_ATTEMPTS {
             resend_attempts += 1;
-            FakeClock::advance_time(test_consts::RESEND_DELAY.as_secs() * 1000 + 1);
+            advance_time(test_consts::RESEND_DELAY + Duration::from_millis(1));
             continue;
         }
 
         return;
     }
 
-    for node in nodes.iter().filter(|node| node_busy(node)) {
-        let unpolled_string = node.inner.unpolled_observations_string();
-        error!("Still busy: {}: {}", node.inner, unpolled_string);
-    }
+    panic!("poll_and_resend has been called {} times.", MAX_POLL_CALLS);
+}
 
-    if let Some(first_node_busy) = nodes.iter().find(|node| node_busy(node)) {
-        let unpolled_string = first_node_busy.inner.unpolled_observations_string();
-        panic!(
-            "poll_and_resend has been called {} times. first busy: {} : {}",
-            MAX_POLL_CALLS, first_node_busy.inner, unpolled_string
-        );
-    }
-
-    panic!(
-        "poll_and_resend has been called {} times. No busy nodes",
-        MAX_POLL_CALLS
-    );
+fn advance_time(duration: Duration) {
+    FakeClock::advance_time(duration.as_millis().try_into().expect("Time step too long"))
 }
 
 /// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those
@@ -893,12 +874,10 @@ fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pr
     let elder_size = env.elder_size();
     poll_and_resend_with_options(
         nodes,
-        PollOptions::default()
-            .continue_if(move |nodes| {
-                nodes.len() >= elder_size
-                    && nodes.iter().filter(|node| node.inner.is_elder()).count() < elder_size
-            })
-            .fire_join_timeout(false),
+        PollOptions::default().continue_if(move |nodes| {
+            nodes.len() >= elder_size
+                && nodes.iter().filter(|node| node.inner.is_elder()).count() < elder_size
+        }),
     );
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected(_));
     assert!(

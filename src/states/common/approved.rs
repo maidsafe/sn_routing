@@ -532,6 +532,16 @@ pub trait Approved: Base {
             self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
         }
     }
+
+    #[cfg(feature = "mock_base")]
+    fn has_unpolled_observations(&self) -> bool {
+        self.parsec_map().has_unpolled_observations()
+    }
+
+    #[cfg(feature = "mock_base")]
+    fn unpolled_observations_string(&self) -> String {
+        self.parsec_map().unpolled_observations_string()
+    }
 }
 
 #[allow(unused)]

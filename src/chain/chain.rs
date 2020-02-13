@@ -1695,6 +1695,11 @@ impl Chain {
             .get(name)
             .map(|member| member.age_counter_value())
     }
+
+    /// Returns whether there is at least one unaccumulated event in the chain accumulator.
+    pub fn has_unaccumulated_events(&self) -> bool {
+        self.chain_accumulator.incomplete_events().next().is_some()
+    }
 }
 
 #[cfg(test)]

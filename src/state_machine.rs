@@ -26,6 +26,7 @@ use crate::{
     chain::Chain,
     location::{DstLocation, SrcLocation},
     rng::MainRng,
+    states::common::Approved,
 };
 use crossbeam_channel as mpmc;
 use std::{
@@ -227,17 +228,20 @@ impl State {
         }
     }
 
-    pub fn has_unpolled_observations(&self) -> bool {
+    pub fn is_busy(&self) -> bool {
         match *self {
-            Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => false,
+            Self::Terminated => false,
+            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => true,
             Self::Adult(ref state) => state.has_unpolled_observations(),
             Self::Elder(ref state) => state.has_unpolled_observations(),
         }
     }
 
-    pub fn unpolled_observations_string(&self) -> String {
+    pub fn busy_string(&self) -> String {
         match *self {
-            Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => String::new(),
+            Self::Terminated => String::new(),
+            Self::BootstrappingPeer(_) => "bootstrapping".to_owned(),
+            Self::JoiningPeer(_) => "joining".to_owned(),
             Self::Adult(ref state) => state.unpolled_observations_string(),
             Self::Elder(ref state) => state.unpolled_observations_string(),
         }

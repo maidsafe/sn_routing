@@ -1412,17 +1412,6 @@ impl Elder {
         self.timer.process_timers()
     }
 
-    pub fn has_unpolled_observations(&self) -> bool {
-        if !self.chain.is_self_elder() {
-            return false;
-        }
-        self.parsec_map.has_unpolled_observations()
-    }
-
-    pub fn unpolled_observations_string(&self) -> String {
-        self.parsec_map.unpolled_observations_string()
-    }
-
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.chain.is_peer_our_elder(pub_id)
     }
@@ -1440,6 +1429,13 @@ impl Elder {
 
     pub fn parsec_last_version(&self) -> u64 {
         self.parsec_map.last_version()
+    }
+}
+
+#[cfg(feature = "mock")]
+impl Elder {
+    pub fn has_unpolled_observations(&self) -> bool {
+        self.parsec_map.has_unpolled_observations()
     }
 }
 

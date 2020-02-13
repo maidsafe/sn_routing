@@ -352,14 +352,6 @@ impl Adult {
     pub fn process_timers(&mut self) {
         self.timer.process_timers()
     }
-
-    pub fn has_unpolled_observations(&self) -> bool {
-        self.parsec_map.has_unpolled_observations()
-    }
-
-    pub fn unpolled_observations_string(&self) -> String {
-        self.parsec_map.unpolled_observations_string()
-    }
 }
 
 impl Base for Adult {

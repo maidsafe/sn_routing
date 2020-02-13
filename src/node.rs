@@ -449,14 +449,14 @@ impl Node {
         self.chain().map(|chain| chain.safe_section_size())
     }
 
-    /// Indicates if there are any pending observations in the parsec object
-    pub fn has_unpolled_observations(&self) -> bool {
-        self.machine.current().has_unpolled_observations()
+    /// Indicates whether this node is busy which means we should keep polling it make it progress.
+    pub fn is_busy(&self) -> bool {
+        self.machine.current().is_busy()
     }
 
-    /// Indicates if there are any pending observations in the parsec object
-    pub fn unpolled_observations_string(&self) -> String {
-        self.machine.current().unpolled_observations_string()
+    /// Reason for this node being busy.
+    pub fn busy_string(&self) -> String {
+        self.machine.current().busy_string()
     }
 
     /// Provide a SectionProofSlice that proves the given signature to the given destination.
