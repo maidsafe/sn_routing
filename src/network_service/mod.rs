@@ -8,7 +8,7 @@
 
 mod sending_targets_cache;
 
-pub use sending_targets_cache::NextTarget;
+pub use sending_targets_cache::{Resend, RESEND_DELAY, RESEND_MAX_ATTEMPTS};
 
 use crate::{
     quic_p2p::{Builder, EventSenders, Peer, QuicP2p, QuicP2pError, Token},
@@ -61,8 +61,8 @@ impl NetworkService {
         token
     }
 
-    pub fn target_failed(&mut self, token: Token, failed_tgt: SocketAddr) -> NextTarget {
-        self.cache.target_failed(token, failed_tgt)
+    pub fn target_failed(&mut self, msg_token: Token, failed_target: SocketAddr) -> Resend {
+        self.cache.target_failed(msg_token, failed_target)
     }
 
     pub fn send_now(&mut self, target: SocketAddr, content: Bytes, token: Token) {

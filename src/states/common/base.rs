@@ -13,12 +13,11 @@ use crate::{
     id::{FullId, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{Message, MessageWithBytes, Variant},
-    network_service::NetworkService,
+    network_service::{NetworkService, Resend},
     outbox::EventBox,
     quic_p2p::{Peer, Token},
     rng::MainRng,
     state_machine::Transition,
-    time::Duration,
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
@@ -33,11 +32,6 @@ use std::{
     net::SocketAddr,
     slice,
 };
-
-/// Maximal number of resend attempts to the same target.
-pub const RESEND_MAX_ATTEMPTS: u8 = 3;
-/// Delay before attempting to resend a previously failed message.
-pub const RESEND_DELAY: Duration = Duration::from_secs(10);
 
 // Trait for all states.
 pub trait Base: Display {
@@ -290,47 +284,44 @@ pub trait Base: Display {
         msg_token: Token,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        let next_target = self.network_service_mut().target_failed(msg_token, addr);
-        match next_target.failed_attempts {
-            0 => {
+        match self.network_service_mut().target_failed(msg_token, addr) {
+            Resend::Now(next_target) => {
                 trace!(
                     "{} - Sending message ID {} to {} failed - resending to {} now",
                     self,
                     msg_token,
                     addr,
-                    next_target.addr
+                    next_target
                 );
+
                 self.network_service_mut()
-                    .send_now(next_target.addr, msg, msg_token);
+                    .send_now(next_target, msg, msg_token);
                 Transition::Stay
             }
-            n if n < RESEND_MAX_ATTEMPTS => {
+            Resend::Later(next_target, delay) => {
                 trace!(
                     "{} - Sending message ID {} to {} failed - resending to {} in {:?}",
                     self,
                     msg_token,
                     addr,
-                    next_target.addr,
-                    RESEND_DELAY
+                    next_target,
+                    delay
                 );
-                let timer_token = self.timer().schedule(RESEND_DELAY);
-                self.network_service_mut().send_later(
-                    next_target.addr,
-                    msg,
-                    msg_token,
-                    timer_token,
-                );
+
+                let timer_token = self.timer().schedule(delay);
+                self.network_service_mut()
+                    .send_later(next_target, msg, msg_token, timer_token);
                 Transition::Stay
             }
-            n => {
+            Resend::Never => {
                 trace!(
-                    "{} - Sending message ID {} to {} failed {} times - giving up.",
+                    "{} - Sending message ID {} to {} failed too many times - giving up.",
                     self,
                     msg_token,
-                    next_target.addr,
-                    n,
+                    addr,
                 );
-                self.handle_peer_lost(next_target.addr, outbox)
+
+                self.handle_peer_lost(addr, outbox)
             }
         }
     }

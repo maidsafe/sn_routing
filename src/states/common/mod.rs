@@ -9,7 +9,4 @@
 mod approved;
 mod base;
 
-pub use self::{
-    approved::Approved,
-    base::{Base, RESEND_DELAY, RESEND_MAX_ATTEMPTS},
-};
+pub use self::{approved::Approved, base::Base};
