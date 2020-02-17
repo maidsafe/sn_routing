@@ -6,9 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::quic_p2p::Token;
+use crate::{quic_p2p::Token, time::Duration};
 use log::LogLevel;
 use std::{collections::HashMap, net::SocketAddr};
+
+/// Maximal number of resend attempts to the same target.
+pub const RESEND_MAX_ATTEMPTS: u8 = 3;
+/// Delay before attempting to resend a previously failed message.
+pub const RESEND_DELAY: Duration = Duration::from_secs(10);
 
 enum TargetState {
     /// we don't know whether the last send attempt succeeded or failed
@@ -69,10 +74,11 @@ impl SendingTargetsCache {
     }
 
     fn fail_target(&mut self, token: Token, target: SocketAddr) {
-        let _ = self
+        if let Some((_addr, state)) = self
             .target_states_mut(token)
             .find(|(addr, _state)| *addr == target)
-            .map(|(_addr, state)| match *state {
+        {
+            match *state {
                 TargetState::Failed(_) => {
                     log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
                 }
@@ -85,27 +91,32 @@ impl SendingTargetsCache {
                         "A target that should no longer fail - failed!"
                     );
                 }
-            });
+            }
+        }
     }
 
     /// Finds a Failed target with the lowest number of failed attempts so far. If there are
     /// multiple possibilities, the one with the highest priority (earliest in the list) is taken.
-    /// Returns None if no such targets exist.
-    fn take_next_target(&mut self, token: Token) -> Option<NextTarget> {
-        self.target_states_mut(token)
+    /// Returns `Never` if no such targets exist.
+    fn take_next_target(&mut self, token: Token) -> Resend {
+        if let Some((addr, failed_attempts, state)) = self
+            .target_states_mut(token)
             .filter_map(|(addr, state)| match state {
-                TargetState::Failed(x) => Some((*addr, *x, state)),
-                TargetState::Sending(_) | TargetState::Sent => None,
+                TargetState::Failed(x) if *x < RESEND_MAX_ATTEMPTS => Some((*addr, *x, state)),
+                TargetState::Failed(_) | TargetState::Sending(_) | TargetState::Sent => None,
             })
             .min_by_key(|(_addr, failed_attempts, _state)| *failed_attempts)
-            .map(|(addr, failed_attempts, state)| {
-                *state = TargetState::Sending(failed_attempts);
+        {
+            *state = TargetState::Sending(failed_attempts);
 
-                NextTarget {
-                    addr,
-                    failed_attempts,
-                }
-            })
+            if failed_attempts == 0 {
+                Resend::Now(addr)
+            } else {
+                Resend::Later(addr, RESEND_DELAY)
+            }
+        } else {
+            Resend::Never
+        }
     }
 
     fn should_drop(&self, token: Token) -> bool {
@@ -118,18 +129,10 @@ impl SendingTargetsCache {
             .all(|(_info, state)| !state.is_sending())
     }
 
-    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> NextTarget {
+    pub fn target_failed(&mut self, token: Token, target: SocketAddr) -> Resend {
         self.fail_target(token, target);
-        let next_target = match self.take_next_target(token) {
-            Some(next_target) => next_target,
-            None => {
-                log_or_panic!(LogLevel::Error, "Next target not found");
-                NextTarget {
-                    addr: target,
-                    failed_attempts: 1,
-                }
-            }
-        };
+
+        let next_target = self.take_next_target(token);
 
         if self.should_drop(token) {
             let _ = self.cache.remove(&token);
@@ -151,7 +154,12 @@ impl SendingTargetsCache {
     }
 }
 
-pub struct NextTarget {
-    pub addr: SocketAddr,
-    pub failed_attempts: u8,
+// How to resend a previously failed message.
+pub enum Resend {
+    // Resend it now to the given target.
+    Now(SocketAddr),
+    // Resend it to the given target after the given delay.
+    Later(SocketAddr, Duration),
+    // Don't resend - all attempts failed.
+    Never,
 }

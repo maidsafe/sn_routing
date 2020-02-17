@@ -119,7 +119,8 @@ pub use self::{
 pub mod test_consts {
     pub use crate::{
         chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-        states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT, RESEND_DELAY, RESEND_MAX_ATTEMPTS},
+        network_service::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
+        states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
     };
 }
 
