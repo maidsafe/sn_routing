@@ -430,7 +430,7 @@ pub trait Base: Display {
             "{} Sending message ID {} to {:?}",
             self,
             token,
-            &conn_infos[..dg_size]
+            &conn_infos[..dg_size.min(conn_infos.len())]
         );
     }
 
