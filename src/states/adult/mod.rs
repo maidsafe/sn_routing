@@ -36,7 +36,6 @@ use crate::{
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
-    time::Duration,
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
@@ -48,9 +47,6 @@ use std::{
     mem,
     net::SocketAddr,
 };
-
-// Send our knowledge in a similar speed as GOSSIP_TIMEOUT
-const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct AdultDetails {
     pub network_service: NetworkService,
@@ -75,7 +71,6 @@ pub struct Adult {
     msg_backlog: Vec<QueuedMessage>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
-    knowledge_timer_token: u64,
     msg_filter: RoutingMessageFilter,
     timer: Timer,
     rng: MainRng,
@@ -88,7 +83,6 @@ impl Adult {
         _outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *details.full_id.public_id();
-        let knowledge_timer_token = details.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         let parsec_map = parsec_map.with_init(
             &mut details.rng,
@@ -114,7 +108,6 @@ impl Adult {
             parsec_map,
             msg_filter: details.msg_filter,
             timer: details.timer,
-            knowledge_timer_token,
             rng: details.rng,
         };
 
@@ -203,8 +196,6 @@ impl Adult {
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
-        let knowledge_timer_token = timer.schedule(KNOWLEDGE_TIMEOUT);
-
         Self {
             chain: state.chain,
             network_service: state.network_service,
@@ -214,7 +205,6 @@ impl Adult {
             msg_backlog: state.msg_backlog,
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
-            knowledge_timer_token,
             msg_filter: state.msg_filter,
             timer,
             rng: rng::new(),
@@ -410,13 +400,7 @@ impl Base for Adult {
         transition
     }
 
-    fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        if self.knowledge_timer_token == token {
-            // TODO: send this only when the knowledge changes, not periodically.
-            self.send_member_knowledge();
-            self.knowledge_timer_token = self.timer.schedule(KNOWLEDGE_TIMEOUT);
-        }
-
+    fn handle_timeout(&mut self, _token: u64, _: &mut dyn EventBox) -> Transition {
         Transition::Stay
     }
 
