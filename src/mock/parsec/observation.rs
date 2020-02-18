@@ -61,14 +61,26 @@ impl<T: NetworkEvent, P: PublicId> Deref for ObservationHolder<T, P> {
 #[derive(Clone, Debug)]
 pub(super) struct ObservationState<P: PublicId> {
     votes: HashSet<Proof<P>>,
+    // Flag flag indicating whether this observation has been seen by at least one peer other than
+    // the creator. Only seen votes are considered when computing consensus.
+    // This makes mock parsec behave closer to the real one in the sense that an observation cannot
+    // reach consensus until it has been seen by other peers.
+    seen: bool,
     consensused: bool,
 }
 
 impl<P: PublicId> ObservationState<P> {
     pub fn new() -> Self {
         Self {
-            votes: HashSet::default(),
+            votes: Default::default(),
+            seen: false,
             consensused: false,
+        }
+    }
+
+    pub fn see(&mut self, our_id: &P) {
+        if self.votes.iter().any(|proof| proof.public_id() != our_id) {
+            self.seen = true;
         }
     }
 
@@ -87,6 +99,10 @@ impl<P: PublicId> ObservationState<P> {
         consensus_mode: ConsensusMode,
         observation: &Rc<Observation<T, P>>,
     ) -> Option<Block<T, P>> {
+        if peers.len() > 1 && !self.seen {
+            return None;
+        }
+
         if self.consensused {
             return None;
         }

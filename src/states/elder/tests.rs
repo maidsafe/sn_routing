@@ -80,7 +80,7 @@ impl ElderUnderTest {
 
         // Process initial unpolled event including genesis
         elder_test.n_vote_for_unconsensused_events(elder_test.other_ids.len());
-        unwrap!(elder_test.create_gossip());
+        unwrap!(elder_test.exchange_gossip());
         elder_test
     }
 
@@ -127,7 +127,8 @@ impl ElderUnderTest {
         }
     }
 
-    fn create_gossip(&mut self) -> Result<(), RoutingError> {
+    // Simulate receiving a gossip from other peer.
+    fn receive_gossip(&mut self) -> Result<(), RoutingError> {
         let other_full_id = &self.other_ids[0].0;
         let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
         let parsec = self.elder.parsec_map_mut();
@@ -143,13 +144,27 @@ impl ElderUnderTest {
         Ok(())
     }
 
+    // Simulate sending and receiving gossips to/from other peers.
+    fn exchange_gossip(&mut self) -> Result<()> {
+        // Receive gossip from other peer. This might result in us creating some votes.
+        self.receive_gossip()?;
+
+        // Mark those votes as seen by other peers which simulates them receiving gossip from us.
+        self.elder
+            .parsec_map()
+            .see_as(self.other_ids[0].0.public_id());
+
+        // Receive another gossip to reach consensus on those votes.
+        self.receive_gossip()
+    }
+
     fn n_vote_for_gossipped(
         &mut self,
         count: usize,
         events: impl IntoIterator<Item = AccumulatingEvent>,
     ) -> Result<(), RoutingError> {
         self.n_vote_for(count, events);
-        self.create_gossip()
+        self.exchange_gossip()
     }
 
     fn accumulate_online(&mut self, p2p_node: P2pNode) {
@@ -207,7 +222,7 @@ impl ElderUnderTest {
 
     fn accumulate_voted_unconsensused_events(&mut self) {
         self.n_vote_for_unconsensused_events(ACCUMULATE_VOTE_COUNT);
-        let _ = self.create_gossip();
+        let _ = self.exchange_gossip();
     }
 
     fn accumulate_offline(&mut self, offline_payload: PublicId) {

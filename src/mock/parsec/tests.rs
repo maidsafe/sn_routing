@@ -149,6 +149,7 @@ fn consensus_mode_single() {
     let mut bob = from_genesis(bob_id, &genesis_group, ConsensusMode::Single);
     unwrap!(bob.vote_for(Observation::OpaquePayload(Payload(1))));
 
+    exchange_gossip(&mut alice, &mut bob);
     exchange_gossip(&mut bob, &mut alice);
 
     let alice_blocks: Vec<_> = poll_all(&mut alice).collect();
@@ -168,6 +169,7 @@ fn consensus_mode_single() {
     unwrap!(alice.vote_for(Observation::OpaquePayload(Payload(2))));
     unwrap!(bob.vote_for(Observation::OpaquePayload(Payload(2))));
 
+    exchange_gossip(&mut alice, &mut bob);
     exchange_gossip(&mut bob, &mut alice);
 
     let alice_blocks: Vec<_> = poll_all(&mut alice).collect();

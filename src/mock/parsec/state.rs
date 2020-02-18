@@ -45,6 +45,15 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
         }
     }
 
+    // Mark all votes created by other peers as seen by `our_id`.
+    pub fn see(&mut self, our_id: &P) {
+        for holder in &self.unconsensused_observations {
+            if let Some(state) = self.observations.get_mut(holder) {
+                state.see(our_id)
+            }
+        }
+    }
+
     pub fn vote<S>(&mut self, our_id: &S, holder: ObservationHolder<T, P>)
     where
         S: SecretId<PublicId = P>,

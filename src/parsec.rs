@@ -250,6 +250,14 @@ impl ParsecMap {
         }
     }
 
+    // Simulate the given peer seeing votes created by other peers.
+    #[cfg(feature = "mock")]
+    pub fn see_as(&self, peer_id: &id::PublicId) {
+        if let Some(parsec) = self.map.values().last() {
+            parsec.see_as(peer_id)
+        }
+    }
+
     // Enable test to simulate other members voting
     #[cfg(feature = "mock")]
     pub fn vote_for_as(
@@ -257,7 +265,7 @@ impl ParsecMap {
         obs: Observation<chain::NetworkEvent, id::PublicId>,
         vote_id: &FullId,
     ) {
-        if let Some(ref mut parsec) = self.map.values_mut().last() {
+        if let Some(parsec) = self.map.values_mut().last() {
             parsec.vote_for_as(obs, vote_id)
         }
     }
@@ -269,7 +277,7 @@ impl ParsecMap {
         participants: BTreeSet<id::PublicId>,
         vote_id: &FullId,
     ) -> Option<DkgResult> {
-        if let Some(ref mut parsec) = self.map.values_mut().last() {
+        if let Some(parsec) = self.map.values_mut().last() {
             return Some(parsec.get_dkg_result_as(participants, vote_id));
         }
         None

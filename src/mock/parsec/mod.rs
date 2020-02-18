@@ -122,6 +122,12 @@ where
         Ok(())
     }
 
+    pub fn see_as(&self, peer_id: &S::PublicId) {
+        state::with(self.section_hash, |state: &mut SectionState<T, _>| {
+            state.see(peer_id)
+        })
+    }
+
     pub fn vote_for_as(&mut self, observation: Observation<T, S::PublicId>, vote_id: &S) {
         state::with(self.section_hash, |state| {
             let holder =
@@ -174,7 +180,7 @@ where
         _src: &S::PublicId,
         _req: Request<T, S::PublicId>,
     ) -> Result<Response<T, S::PublicId>, Error> {
-        state::with(self.section_hash, |state| self.compute_consensus(state));
+        self.handle_gossip();
         Ok(Response::new())
     }
 
@@ -183,8 +189,15 @@ where
         _src: &S::PublicId,
         _resp: Response<T, S::PublicId>,
     ) -> Result<(), Error> {
-        state::with(self.section_hash, |state| self.compute_consensus(state));
+        self.handle_gossip();
         Ok(())
+    }
+
+    fn handle_gossip(&mut self) {
+        state::with(self.section_hash, |state| {
+            state.see(self.our_id.public_id());
+            self.compute_consensus(state)
+        })
     }
 
     pub fn poll(&mut self) -> Option<Block<T, S::PublicId>> {
