@@ -226,6 +226,8 @@ pub fn poll_all(nodes: &mut [TestNode]) -> bool {
             busy = node.inner.is_busy() || busy;
         }
 
+        busy = env.message_sent() || busy;
+
         if busy {
             result = true;
         } else {
