@@ -24,6 +24,7 @@ use crate::{
 use log::LogLevel;
 #[cfg(not(feature = "mock"))]
 use parsec as inner;
+use serde::Serialize;
 #[cfg(feature = "mock")]
 use std::collections::BTreeSet;
 use std::{
@@ -154,20 +155,13 @@ impl ParsecMap {
         pub_id: id::PublicId,
         log_ident: &LogIdent,
     ) -> Option<Variant> {
-        // Increase the size before fetching the parsec to satisfy the borrow checker
-        let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
-            size
-        } else {
-            return None;
-        };
-        self.count_size(ser_size, msg_version, log_ident);
+        self.count_size(&request, msg_version, log_ident);
 
         trace!(
-            "{} - handle parsec request v{} from {} (size {}b, last: v{})",
+            "{} - handle parsec request v{} from {} (last: v{})",
             log_ident,
             msg_version,
             pub_id,
-            ser_size,
             self.last_version(),
         );
 
@@ -196,20 +190,13 @@ impl ParsecMap {
         pub_id: id::PublicId,
         log_ident: &LogIdent,
     ) {
-        // Increase the size before fetching the parsec to satisfy the borrow checker
-        let ser_size = if let Ok(size) = bincode::serialized_size(&response) {
-            size
-        } else {
-            return;
-        };
-        self.count_size(ser_size, msg_version, log_ident);
+        self.count_size(&response, msg_version, log_ident);
 
         trace!(
-            "{} - handle parsec response v{} from {} (size {}b)",
+            "{} - handle parsec response v{} from {}",
             log_ident,
             msg_version,
             pub_id,
-            ser_size,
         );
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
@@ -365,12 +352,25 @@ impl ParsecMap {
         prev
     }
 
-    fn count_size(&mut self, size: u64, msg_version: u64, log_ident: &LogIdent) {
+    fn count_size<T: Serialize>(&mut self, message: &T, msg_version: u64, log_ident: &LogIdent) {
         if self.last_version() == msg_version && self.map.contains_key(&msg_version) {
+            let size = match bincode::serialized_size(message) {
+                Ok(size) => size,
+                Err(err) => {
+                    error!(
+                        "{} - Failed to calculate serialized size: {:?}",
+                        log_ident, err
+                    );
+                    return;
+                }
+            };
+
             self.size_counter.increase_size(size);
+
             trace!(
-                "{} - Parsec size is now estimated to: {} / {}.",
+                "{} - Parsec size increased by {}. Now estimated to {} / {}.",
                 log_ident,
+                size,
                 self.size_counter,
                 PARSEC_SIZE_LIMIT,
             );
