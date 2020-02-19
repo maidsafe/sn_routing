@@ -187,30 +187,23 @@ pub trait Approved: Base {
             Some((v, p)) => (v, p),
             None => {
                 let version = self.parsec_map().last_version();
-                let recipients = self.parsec_map().gossip_recipients();
-                if recipients.is_empty() {
-                    trace!("{} Not sending gossip", self);
-                    // Parsec hasn't caught up with the event of us joining yet.
-                    return;
-                }
-
-                let p2p_recipients: Vec<_> = recipients
-                    .into_iter()
+                let mut recipients: Vec<_> = self
+                    .parsec_map()
+                    .gossip_recipients()
                     .filter_map(|pub_id| self.chain().get_member_p2p_node(pub_id.name()))
                     .cloned()
                     .collect();
-
-                if p2p_recipients.is_empty() {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "{} - Not connected to any gossip recipient.",
+                if recipients.is_empty() {
+                    trace!(
+                        "{} - not sending parsec request - no recipients available",
                         self
                     );
                     return;
-                }
+                };
 
-                let rand_index = self.rng().gen_range(0, p2p_recipients.len());
-                (version, p2p_recipients[rand_index].clone())
+                let index = self.rng().gen_range(0, recipients.len());
+
+                (version, recipients.swap_remove(index))
             }
         };
 

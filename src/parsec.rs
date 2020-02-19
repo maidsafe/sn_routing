@@ -292,14 +292,13 @@ impl ParsecMap {
         }
     }
 
-    pub fn gossip_recipients(&self) -> Vec<&id::PublicId> {
+    pub fn gossip_recipients(&self) -> impl Iterator<Item = &id::PublicId> {
         self.map
             .values()
             .last()
             .into_iter()
             .flat_map(|parsec| parsec.gossip_recipients())
-            .filter(|recipient| !self.gossip_limiter.contains(recipient.name()))
-            .collect()
+            .filter(move |recipient| !self.gossip_limiter.contains(recipient.name()))
     }
 
     pub fn poll(&mut self) -> Option<Block> {
