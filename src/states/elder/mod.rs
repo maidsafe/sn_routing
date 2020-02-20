@@ -1048,7 +1048,7 @@ impl Elder {
 
     fn vote_for_network_event(&mut self, event: NetworkEvent) {
         trace!("{} Vote for Event {:?}", self, event);
-        self.parsec_map.vote_for(event, &self.log_ident())
+        self.parsec_map.vote_for(event, &self.log_ident());
     }
 
     // Constructs a message, finds the nodes responsible for accumulation, and either sends
@@ -1295,24 +1295,38 @@ impl Base for Elder {
         self.send_routing_message(src, dst, Variant::UserMessage(content), None)
     }
 
-    fn handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_timeout(&mut self, token: u64, _outbox: &mut dyn EventBox) -> Transition {
         if self.gossip_timer_token == token {
             self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-
-            // If we're the only node then invoke parsec_poll directly
-            if self.chain.our_info().len() == 1 {
-                let _ = self.parsec_poll(outbox);
-            }
-
-            self.send_parsec_gossip(None);
-            self.maintain_parsec();
+            // The gossip is actually sent in `finish_handle_input`
         }
 
         Transition::Stay
     }
 
     fn finish_handle_input(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        self.handle_messages(outbox)
+        match self.handle_messages(outbox) {
+            Transition::Stay => (),
+            transition => return transition,
+        }
+
+        let transition = if self.chain.our_info().len() == 1 {
+            // If we're the only node then invoke parsec_poll directly
+            match self.parsec_poll(outbox) {
+                Ok(transition) => transition,
+                Err(error) => {
+                    error!("{} - Parsec poll failed: {:?}", self, error);
+                    Transition::Stay
+                }
+            }
+        } else {
+            Transition::Stay
+        };
+
+        self.maintain_parsec();
+        self.send_parsec_gossip(None);
+
+        transition
     }
 
     fn handle_bootstrapped_to(&mut self, addr: SocketAddr) -> Transition {
