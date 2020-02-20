@@ -12,7 +12,7 @@ use crate::{
         AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
         OnlinePayload, PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
-    error::RoutingError,
+    error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
     messages::{MemberKnowledge, Variant, VerifyStatus},
@@ -127,7 +127,7 @@ pub trait Approved: Base {
         par_request: parsec::Request,
         p2p_node: P2pNode,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<Transition> {
         trace!(
             "{} - handle parsec request v{} from {} (last: v{})",
             self,
@@ -137,7 +137,7 @@ pub trait Approved: Base {
         );
 
         let log_ident = self.log_ident();
-        let (response, poll) = self.parsec_map_mut().handle_request(
+        let response = self.parsec_map_mut().handle_request(
             msg_version,
             par_request,
             *p2p_node.public_id(),
@@ -154,7 +154,7 @@ pub trait Approved: Base {
             self.send_direct_message(p2p_node.peer_addr(), response);
         }
 
-        if poll {
+        if msg_version == self.parsec_map().last_version() {
             self.parsec_poll(outbox)
         } else {
             Ok(Transition::Stay)
@@ -167,7 +167,7 @@ pub trait Approved: Base {
         par_response: parsec::Response,
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<Transition> {
         trace!(
             "{} - handle parsec response v{} from {}",
             self,
@@ -176,10 +176,10 @@ pub trait Approved: Base {
         );
 
         let log_ident = self.log_ident();
-        if self
-            .parsec_map_mut()
-            .handle_response(msg_version, par_response, pub_id, &log_ident)
-        {
+        self.parsec_map_mut()
+            .handle_response(msg_version, par_response, pub_id, &log_ident);
+
+        if msg_version == self.parsec_map().last_version() {
             self.parsec_poll(outbox)
         } else {
             Ok(Transition::Stay)
@@ -190,6 +190,12 @@ pub trait Approved: Base {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
             None => {
+                // Only send random gossip if we made some change to our parsec (voted or received
+                // gossip).
+                if !self.parsec_map_mut().should_send_gossip() {
+                    return;
+                }
+
                 let version = self.parsec_map().last_version();
                 let recipients = self.parsec_map().gossip_recipients();
                 if recipients.is_empty() {

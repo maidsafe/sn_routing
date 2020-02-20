@@ -86,6 +86,7 @@ impl fmt::Display for ParsecSizeCounter {
 pub struct ParsecMap {
     map: BTreeMap<u64, Parsec>,
     size_counter: ParsecSizeCounter,
+    send_gossip: bool,
 }
 
 impl ParsecMap {
@@ -117,32 +118,34 @@ impl ParsecMap {
         request: Request,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> (Option<Variant>, bool) {
+    ) -> Option<Variant> {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
             size
         } else {
-            return (None, false);
+            return None;
         };
         self.count_size(ser_size, msg_version, log_ident);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
-            return (None, false);
+            return None;
         };
 
-        let response = parsec
-            .handle_request(&pub_id, request)
-            .map(|response| Variant::ParsecResponse(msg_version, response))
-            .map_err(|err| {
-                debug!("{} - Error handling parsec request: {:?}", log_ident, err);
-                err
-            })
-            .ok();
-        let poll = self.last_version() == msg_version;
+        match parsec.handle_request(&pub_id, request) {
+            Ok(response) => {
+                if msg_version == self.last_version() {
+                    self.send_gossip = true;
+                }
 
-        (response, poll)
+                Some(Variant::ParsecResponse(msg_version, response))
+            }
+            Err(err) => {
+                debug!("{} - Error handling parsec request: {:?}", log_ident, err);
+                None
+            }
+        }
     }
 
     pub fn handle_response(
@@ -151,26 +154,24 @@ impl ParsecMap {
         response: Response,
         pub_id: id::PublicId,
         log_ident: &LogIdent,
-    ) -> bool {
+    ) {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&response) {
             size
         } else {
-            return false;
+            return;
         };
         self.count_size(ser_size, msg_version, log_ident);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
         } else {
-            return false;
+            return;
         };
 
         if let Err(err) = parsec.handle_response(&pub_id, response) {
             debug!("{} - Error handling parsec response: {:?}", log_ident, err);
         }
-
-        self.last_version() == msg_version
     }
 
     pub fn create_gossip(
@@ -187,11 +188,14 @@ impl ParsecMap {
     }
 
     pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &LogIdent) {
-        if let Some(ref mut parsec) = self.map.values_mut().last() {
+        if let Some(parsec) = self.map.values_mut().last() {
             let obs = event.into_obs();
 
-            if let Err(err) = parsec.vote_for(obs) {
-                trace!("{} - Parsec vote error: {:?}", log_ident, err);
+            match parsec.vote_for(obs) {
+                Ok(()) => {
+                    self.send_gossip = true;
+                }
+                Err(err) => trace!("{} - Parsec vote error: {:?}", log_ident, err),
             }
         }
     }
@@ -288,6 +292,13 @@ impl ParsecMap {
 
     pub fn set_pruning_voted_for(&mut self) {
         self.size_counter.set_pruning_voted_for();
+    }
+
+    // Returns whether we should send parsec gossip now.
+    pub fn should_send_gossip(&mut self) -> bool {
+        let prev = self.send_gossip;
+        self.send_gossip = false;
+        prev
     }
 
     fn count_size(&mut self, size: u64, msg_version: u64, log_ident: &LogIdent) {
@@ -526,7 +537,7 @@ mod tests {
             pub_id: &id::PublicId,
             log_ident: &LogIdent,
         ) {
-            let _ = parsec_map.handle_response(msg_version, self.clone(), *pub_id, log_ident);
+            parsec_map.handle_response(msg_version, self.clone(), *pub_id, log_ident);
         }
     }
 
