@@ -22,9 +22,11 @@ use routing::{
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet},
+    convert::TryInto,
     iter,
     net::SocketAddr,
     ops::{Deref, DerefMut},
+    time::Duration,
 };
 
 // Maximum number of times to try and poll in a loop.  This is several orders higher than the
@@ -209,13 +211,14 @@ impl<'a> TestNodeBuilder<'a> {
 
 /// Process all events. Returns whether there were any events.
 pub fn poll_all(nodes: &mut [TestNode]) -> bool {
-    assert!(!nodes.is_empty());
     let env = nodes[0].env().clone();
     let mut result = false;
+
     for _ in 0..MAX_POLL_CALLS {
         env.poll();
 
         let mut handled_message = false;
+
         for node in nodes.iter_mut() {
             handled_message = node.poll() || handled_message;
         }
@@ -273,40 +276,30 @@ impl PollOptions {
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
-    let node_busy = |node: &TestNode| {
-        if node.inner.has_unpolled_observations() {
-            trace!("{} busy!", node.inner);
-            true
-        } else {
-            false
-        }
-    };
+    let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
 
     let mut resend_attempts = 0;
 
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
-            FakeClock::advance_time(1001);
+            advance_time(test_consts::GOSSIP_PERIOD + Duration::from_millis(1));
             continue;
         }
 
         if let Some(continue_predicate) = options.continue_predicate.as_ref() {
             if continue_predicate(nodes) {
                 // Advance time in case the predicate is timeout-triggered.
-                FakeClock::advance_time(1001);
+                advance_time(test_consts::GOSSIP_PERIOD + Duration::from_millis(1));
                 continue;
             }
         }
 
         if options.fire_join_timeout {
             // When all routes are polled, advance time to purge any pending re-connecting peers.
-            FakeClock::advance_time(
-                test_consts::BOOTSTRAP_TIMEOUT
-                    .max(test_consts::JOIN_TIMEOUT)
-                    .as_secs()
-                    * 1000
-                    + 1,
+            advance_time(
+                test_consts::BOOTSTRAP_TIMEOUT.max(test_consts::JOIN_TIMEOUT)
+                    + Duration::from_millis(1),
             );
             options.fire_join_timeout = false;
             continue;
@@ -315,7 +308,7 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
         // Give the nodes time to detect lost peers.
         if resend_attempts < test_consts::RESEND_MAX_ATTEMPTS {
             resend_attempts += 1;
-            FakeClock::advance_time(test_consts::RESEND_DELAY.as_secs() * 1000 + 1);
+            advance_time(test_consts::RESEND_DELAY + Duration::from_millis(1));
             continue;
         }
 
@@ -339,6 +332,10 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOpt
         "poll_and_resend has been called {} times. No busy nodes",
         MAX_POLL_CALLS
     );
+}
+
+fn advance_time(duration: Duration) {
+    FakeClock::advance_time(duration.as_millis().try_into().expect("time step too long"));
 }
 
 /// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those

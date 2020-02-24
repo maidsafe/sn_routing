@@ -190,17 +190,15 @@ pub trait Approved: Base {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
             None => {
-                // Only send random gossip if we made some change to our parsec (voted or received
-                // gossip).
-                if !self.parsec_map_mut().should_send_gossip() {
+                let log_ident = self.log_ident();
+
+                if !self.parsec_map_mut().should_send_gossip(&log_ident) {
                     return;
                 }
 
-                let version = self.parsec_map().last_version();
                 let recipients = self.parsec_map().gossip_recipients();
                 if recipients.is_empty() {
-                    trace!("{} Not sending gossip", self);
-                    // Parsec hasn't caught up with the event of us joining yet.
+                    trace!("{} - not sending parsec request: no recipients", self);
                     return;
                 }
 
@@ -213,12 +211,13 @@ pub trait Approved: Base {
                 if p2p_recipients.is_empty() {
                     log_or_panic!(
                         LogLevel::Error,
-                        "{} - Not connected to any gossip recipient.",
+                        "{} - not connected to any gossip recipient.",
                         self
                     );
                     return;
                 }
 
+                let version = self.parsec_map().last_version();
                 let rand_index = self.rng().gen_range(0, p2p_recipients.len());
                 (version, p2p_recipients[rand_index].clone())
             }
