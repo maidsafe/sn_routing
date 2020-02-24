@@ -174,11 +174,6 @@ impl JoiningPeer {
 
         Ok(true)
     }
-
-    #[cfg(feature = "mock_base")]
-    pub fn process_timers(&mut self) {
-        self.timer.process_timers()
-    }
 }
 
 impl Base for JoiningPeer {

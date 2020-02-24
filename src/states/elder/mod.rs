@@ -1416,10 +1416,6 @@ impl Elder {
         &self.chain
     }
 
-    pub fn process_timers(&mut self) {
-        self.timer.process_timers()
-    }
-
     pub fn has_unpolled_observations(&self) -> bool {
         if !self.chain.is_self_elder() {
             return false;

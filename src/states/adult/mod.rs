@@ -349,10 +349,6 @@ impl Adult {
         &self.chain
     }
 
-    pub fn process_timers(&mut self) {
-        self.timer.process_timers()
-    }
-
     pub fn has_unpolled_observations(&self) -> bool {
         self.parsec_map.has_unpolled_observations()
     }

@@ -219,12 +219,11 @@ impl State {
     }
 
     pub fn process_timers(&mut self) {
-        match *self {
-            Self::BootstrappingPeer(_) | Self::Terminated => (),
-            Self::JoiningPeer(ref mut state) => state.process_timers(),
-            Self::Adult(ref mut state) => state.process_timers(),
-            Self::Elder(ref mut state) => state.process_timers(),
-        }
+        state_dispatch!(
+            self,
+            state => state.process_timers(),
+            Terminated => ()
+        )
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
