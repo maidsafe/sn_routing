@@ -196,30 +196,12 @@ pub trait Approved: Base {
                     return;
                 }
 
-                let recipients = self.parsec_map().gossip_recipients();
-                if recipients.is_empty() {
-                    trace!("{} - not sending parsec request: no recipients", self);
+                if let Some(recipient) = self.choose_gossip_recipient() {
+                    let version = self.parsec_map().last_version();
+                    (version, recipient)
+                } else {
                     return;
                 }
-
-                let p2p_recipients: Vec<_> = recipients
-                    .into_iter()
-                    .filter_map(|pub_id| self.chain().get_member_p2p_node(pub_id.name()))
-                    .cloned()
-                    .collect();
-
-                if p2p_recipients.is_empty() {
-                    log_or_panic!(
-                        LogLevel::Error,
-                        "{} - not connected to any gossip recipient.",
-                        self
-                    );
-                    return;
-                }
-
-                let version = self.parsec_map().last_version();
-                let rand_index = self.rng().gen_range(0, p2p_recipients.len());
-                (version, p2p_recipients[rand_index].clone())
             }
         };
 
@@ -246,6 +228,32 @@ pub trait Approved: Base {
                 );
             }
         }
+    }
+
+    fn choose_gossip_recipient(&mut self) -> Option<P2pNode> {
+        let recipients = self.parsec_map().gossip_recipients();
+        if recipients.is_empty() {
+            trace!("{} - not sending parsec request: no recipients", self,);
+            return None;
+        }
+
+        let mut p2p_recipients: Vec<_> = recipients
+            .into_iter()
+            .filter_map(|pub_id| self.chain().get_member_p2p_node(pub_id.name()))
+            .cloned()
+            .collect();
+
+        if p2p_recipients.is_empty() {
+            log_or_panic!(
+                LogLevel::Error,
+                "{} - not sending parsec request: not connected to any gossip recipient.",
+                self
+            );
+            return None;
+        }
+
+        let rand_index = self.rng().gen_range(0, p2p_recipients.len());
+        Some(p2p_recipients.swap_remove(rand_index))
     }
 
     fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
