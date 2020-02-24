@@ -451,4 +451,9 @@ pub trait Base: Display {
             their_key_infos.into_iter().format(", ")
         )
     }
+
+    #[cfg(feature = "mock_base")]
+    fn process_timers(&mut self) {
+        self.timer().process_timers()
+    }
 }

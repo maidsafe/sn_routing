@@ -263,12 +263,6 @@ impl Base for BootstrappingPeer {
         Transition::Terminate
     }
 
-    fn handle_connection_failure(&mut self, addr: SocketAddr, _: &mut dyn EventBox) -> Transition {
-        let _ = self.pending_requests.remove(&addr);
-        self.request_failed();
-        Transition::Stay
-    }
-
     fn handle_message(
         &mut self,
         sender: Option<SocketAddr>,
@@ -364,6 +358,7 @@ mod tests {
         unwrap, NetworkConfig, NetworkEvent,
     };
     use crossbeam_channel as mpmc;
+    use fake_clock::FakeClock;
 
     #[test]
     // Check that losing our proxy connection while in the `BootstrappingPeer` state doesn't stall
@@ -446,11 +441,12 @@ mod tests {
             panic!("Should have received `NewMessage` event.");
         }
 
-        // Drop the network service...
+        // Drop the network service and let some time pass...
         drop(node_a_network_service);
+        FakeClock::advance_time(BOOTSTRAP_TIMEOUT.as_secs() * 1000 + 1);
         env.poll();
 
-        // ...which triggers `ConnectionFailure` on the state machine which then attempts to
+        // ...which causes the bootstrap request to timeout and the node then attempts to
         // rebootstrap..
         step_at_least_once(&mut node_b_state_machine, &mut node_b_outbox);
         assert!(node_b_outbox.is_empty());
