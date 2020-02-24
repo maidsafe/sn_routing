@@ -31,7 +31,7 @@ use crate::{
     },
     network_service::NetworkService,
     outbox::EventBox,
-    parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap, GOSSIP_PERIOD},
+    parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
     relocation::RelocateDetails,
     rng::{self, MainRng},
@@ -249,7 +249,9 @@ impl Elder {
 
     fn new(details: ElderDetails) -> Self {
         let timer = details.timer;
-        let gossip_timer_token = timer.schedule(GOSSIP_PERIOD);
+        let parsec_map = details.parsec_map;
+
+        let gossip_timer_token = timer.schedule(parsec_map.gossip_period());
 
         Self {
             network_service: details.network_service,
@@ -259,7 +261,7 @@ impl Elder {
             msg_filter: details.msg_filter,
             sig_accumulator: details.sig_accumulator,
             timer,
-            parsec_map: details.parsec_map,
+            parsec_map,
             gen_pfx_info: details.gen_pfx_info,
             gossip_timer_token,
             chain: details.chain,
@@ -1294,7 +1296,7 @@ impl Base for Elder {
 
     fn handle_timeout(&mut self, token: u64, _outbox: &mut dyn EventBox) -> Transition {
         if self.gossip_timer_token == token {
-            self.gossip_timer_token = self.timer.schedule(GOSSIP_PERIOD);
+            self.gossip_timer_token = self.timer.schedule(self.parsec_map.gossip_period());
             self.parsec_map.reset_gossip_period();
         }
 

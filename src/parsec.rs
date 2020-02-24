@@ -27,7 +27,10 @@ use parsec as inner;
 use std::collections::BTreeSet;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
-    fmt, mem,
+    env,
+    fmt::{self, Display},
+    mem,
+    str::FromStr,
 };
 
 #[cfg(feature = "mock")]
@@ -84,19 +87,39 @@ impl ParsecSizeCounter {
     }
 }
 
-impl fmt::Display for ParsecSizeCounter {
+impl Display for ParsecSizeCounter {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.size_counter)
     }
 }
 
-#[derive(Default)]
 pub struct ParsecMap {
     map: BTreeMap<u64, Parsec>,
     size_counter: ParsecSizeCounter,
     send_gossip: bool,
     // Number of gossip messages we sent within this gossip period.
     gossip_count: usize,
+
+    gossip_limit: usize,
+    gossip_period: Duration,
+}
+
+impl Default for ParsecMap {
+    fn default() -> Self {
+        let gossip_limit = parse_env_var("ROUTING_GOSSIP_LIMIT").unwrap_or(GOSSIP_LIMIT);
+        let gossip_period = parse_env_var("ROUTING_GOSSIP_PERIOD")
+            .map(Duration::from_millis)
+            .unwrap_or(GOSSIP_PERIOD);
+
+        Self {
+            map: Default::default(),
+            size_counter: Default::default(),
+            send_gossip: false,
+            gossip_count: 0,
+            gossip_limit,
+            gossip_period,
+        }
+    }
 }
 
 impl ParsecMap {
@@ -197,7 +220,9 @@ impl ParsecMap {
             .ok_or(CreateGossipError::MissingVersion)?
             .create_gossip(target)?;
 
-        self.gossip_count += 1;
+        if version == self.last_version() {
+            self.gossip_count += 1;
+        }
 
         Ok(Variant::ParsecRequest(version, request))
     }
@@ -328,12 +353,16 @@ impl ParsecMap {
             return false;
         }
 
-        if self.gossip_count >= GOSSIP_LIMIT {
-            trace!("{} - not sending parsec request: limit reached", log_ident,);
+        if self.gossip_count >= self.gossip_limit {
+            trace!("{} - not sending parsec request: limit reached", log_ident);
             return false;
         }
 
         true
+    }
+
+    pub fn gossip_period(&self) -> Duration {
+        self.gossip_period
     }
 
     pub fn reset_gossip_period(&mut self) {
@@ -452,6 +481,17 @@ impl From<Error> for CreateGossipError {
     fn from(src: Error) -> Self {
         Self::Other(src)
     }
+}
+
+fn parse_env_var<T>(name: &str) -> Option<T>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    env::var(name).ok().map(|value| match value.parse() {
+        Ok(value) => value,
+        Err(error) => panic!("Failed to parse '{}': {}", name, error),
+    })
 }
 
 #[cfg(all(test, feature = "mock"))]
