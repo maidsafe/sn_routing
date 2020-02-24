@@ -120,6 +120,7 @@ pub mod test_consts {
     pub use crate::{
         chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
         network_service::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
+        parsec::GOSSIP_PERIOD,
         states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
     };
 }

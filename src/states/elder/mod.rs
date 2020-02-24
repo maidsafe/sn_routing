@@ -31,14 +31,13 @@ use crate::{
     },
     network_service::NetworkService,
     outbox::EventBox,
-    parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
+    parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap, GOSSIP_PERIOD},
     pause::PausedState,
     relocation::RelocateDetails,
     rng::{self, MainRng},
     routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
-    time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
 };
@@ -53,8 +52,6 @@ use std::{
     net::SocketAddr,
 };
 
-/// Time after which an Elder should send a new Gossip.
-const GOSSIP_TIMEOUT: Duration = Duration::from_secs(2);
 /// Number of RelocatePrepare to consensus before actually relocating a node.
 /// This helps avoid relocated node receiving message they need to process from previous section.
 const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
@@ -252,7 +249,7 @@ impl Elder {
 
     fn new(details: ElderDetails) -> Self {
         let timer = details.timer;
-        let gossip_timer_token = timer.schedule(GOSSIP_TIMEOUT);
+        let gossip_timer_token = timer.schedule(GOSSIP_PERIOD);
 
         Self {
             network_service: details.network_service,
@@ -1297,8 +1294,8 @@ impl Base for Elder {
 
     fn handle_timeout(&mut self, token: u64, _outbox: &mut dyn EventBox) -> Transition {
         if self.gossip_timer_token == token {
-            self.gossip_timer_token = self.timer.schedule(GOSSIP_TIMEOUT);
-            // The gossip is actually sent in `finish_handle_input`
+            self.gossip_timer_token = self.timer.schedule(GOSSIP_PERIOD);
+            self.parsec_map.reset_gossip_period();
         }
 
         Transition::Stay

@@ -17,6 +17,7 @@ use crate::{
     id::{self, FullId},
     messages::Variant,
     rng::{self, MainRng, RngCompat},
+    time::Duration,
     utils::LogIdent,
 };
 use log::LogLevel;
@@ -55,6 +56,13 @@ const PARSEC_SIZE_LIMIT: u64 = 20_000_000;
 #[cfg(feature = "mock")]
 const PARSEC_SIZE_LIMIT: u64 = 500;
 
+/// Period within which the number of sent gossip messages is limited. When the period ends, the
+/// limit resets at a new period starts.
+pub const GOSSIP_PERIOD: Duration = Duration::from_secs(2);
+
+// Maximum number of gossip messages a node can send within one gossip period.
+const GOSSIP_LIMIT: usize = 100;
+
 // Keep track of size in case we need to prune.
 #[derive(Default, Debug, PartialEq, Eq)]
 struct ParsecSizeCounter {
@@ -87,6 +95,8 @@ pub struct ParsecMap {
     map: BTreeMap<u64, Parsec>,
     size_counter: ParsecSizeCounter,
     send_gossip: bool,
+    // Number of gossip messages we sent within this gossip period.
+    gossip_count: usize,
 }
 
 impl ParsecMap {
@@ -135,7 +145,9 @@ impl ParsecMap {
 
         match parsec.handle_request(&pub_id, request) {
             Ok(response) => {
-                if msg_version == self.last_version() {
+                // Check gossip termination condition - if there are no more unpolled observations
+                // in our parsec instance we can stop gossiping.
+                if self.has_unpolled_observations() {
                     self.send_gossip = true;
                 }
 
@@ -184,6 +196,9 @@ impl ParsecMap {
             .get_mut(&version)
             .ok_or(CreateGossipError::MissingVersion)?
             .create_gossip(target)?;
+
+        self.gossip_count += 1;
+
         Ok(Variant::ParsecRequest(version, request))
     }
 
@@ -257,6 +272,16 @@ impl ParsecMap {
             .flatten()
     }
 
+    pub fn has_unpolled_observations(&self) -> bool {
+        let parsec = if let Some(parsec) = self.map.values().last() {
+            parsec
+        } else {
+            return false;
+        };
+
+        parsec.has_unpolled_observations()
+    }
+
     #[cfg(feature = "mock")]
     pub fn unpolled_observations_string(&self) -> String {
         let parsec = if let Some(parsec) = self.map.values().last() {
@@ -295,10 +320,25 @@ impl ParsecMap {
     }
 
     // Returns whether we should send parsec gossip now.
-    pub fn should_send_gossip(&mut self) -> bool {
-        let prev = self.send_gossip;
+    pub fn should_send_gossip(&mut self, log_ident: &LogIdent) -> bool {
+        let send_gossip = self.send_gossip;
         self.send_gossip = false;
-        prev
+
+        if !send_gossip {
+            return false;
+        }
+
+        if self.gossip_count >= GOSSIP_LIMIT {
+            trace!("{} - not sending parsec request: limit reached", log_ident,);
+            return false;
+        }
+
+        true
+    }
+
+    pub fn reset_gossip_period(&mut self) {
+        self.gossip_count = 0;
+        self.send_gossip = true;
     }
 
     fn count_size(&mut self, size: u64, msg_version: u64, log_ident: &LogIdent) {
@@ -343,16 +383,6 @@ impl ParsecMap {
 
 #[cfg(feature = "mock_base")]
 impl ParsecMap {
-    pub fn has_unpolled_observations(&self) -> bool {
-        let parsec = if let Some(parsec) = self.map.values().last() {
-            parsec
-        } else {
-            return false;
-        };
-
-        parsec.has_unpolled_observations()
-    }
-
     pub fn get_size(&self) -> u64 {
         self.size_counter.size_counter
     }
