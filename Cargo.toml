@@ -31,7 +31,7 @@ lru_time_cache = "~0.8.1"
 maidsafe_utilities = "~0.18.0"
 mock-quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", rev = "52f8ae2", optional = true }
 num-bigint = "~0.1.40"
-parsec = { git = "https://github.com/maidsafe/parsec", rev = "0f9b1226" }
+parsec = { git = "https://github.com/maidsafe/parsec", rev = "c878e84c" }
 # quic-p2p = "~0.2.0"
 quic-p2p = { git = "https://github.com/maidsafe/quic-p2p", rev = "52f8ae2" }
 # rand in the versions used for compatibility
@@ -63,4 +63,3 @@ mock_base = [
     "bls/use-insecure-test-only-mock-crypto"
 ]
 mock = ["mock_base"]
-
