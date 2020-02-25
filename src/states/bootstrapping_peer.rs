@@ -23,8 +23,9 @@ use crate::{
     timer::Timer,
     xor_space::{Prefix, XorName},
 };
+use fxhash::FxHashSet;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::{self, Display, Formatter},
     iter,
     net::SocketAddr,
@@ -44,7 +45,8 @@ pub struct BootstrappingPeerDetails {
 
 // State of Client or Node while bootstrapping.
 pub struct BootstrappingPeer {
-    pending_requests: HashSet<SocketAddr>,
+    // Using `FxHashSet` for deterministic iteration order.
+    pending_requests: FxHashSet<SocketAddr>,
     timeout_tokens: HashMap<u64, SocketAddr>,
     network_service: NetworkService,
     full_id: FullId,
