@@ -170,7 +170,7 @@ impl ParsecMap {
             Ok(response) => {
                 // Check gossip termination condition - if there are no more unpolled observations
                 // in our parsec instance we can stop gossiping.
-                if self.has_unpolled_observations() {
+                if msg_version == self.last_version() && self.has_unpolled_observations() {
                     self.send_gossip = true;
                 }
 
@@ -367,7 +367,10 @@ impl ParsecMap {
 
     pub fn reset_gossip_period(&mut self) {
         self.gossip_count = 0;
-        self.send_gossip = true;
+
+        if self.has_unpolled_observations() {
+            self.send_gossip = true;
+        }
     }
 
     fn count_size(&mut self, size: u64, msg_version: u64, log_ident: &LogIdent) {
