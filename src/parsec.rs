@@ -61,10 +61,10 @@ const PARSEC_SIZE_LIMIT: u64 = 500;
 
 /// Period within which the number of sent gossip messages is limited. When the period ends, the
 /// limit resets at a new period starts.
-pub const GOSSIP_PERIOD: Duration = Duration::from_secs(2);
+pub const GOSSIP_PERIOD: Duration = Duration::from_secs(1);
 
 // Maximum number of gossip messages a node can send within one gossip period.
-const GOSSIP_LIMIT: usize = 100;
+const GOSSIP_LIMIT: usize = 5;
 
 // Keep track of size in case we need to prune.
 #[derive(Default, Debug, PartialEq, Eq)]
