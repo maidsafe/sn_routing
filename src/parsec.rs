@@ -20,7 +20,6 @@ use crate::{
     time::Duration,
     utils::LogIdent,
 };
-use log::LogLevel;
 #[cfg(not(feature = "mock"))]
 use parsec as inner;
 #[cfg(feature = "mock")]
@@ -269,7 +268,7 @@ impl ParsecMap {
         if let Some(version) = self.map.keys().last() {
             *version
         } else {
-            log_or_panic!(LogLevel::Error, "ParsecMap is empty.");
+            log_or_panic!(log::Level::Error, "ParsecMap is empty.");
             0
         }
     }

@@ -14,7 +14,6 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
-use log::LogLevel;
 use std::{collections::BTreeSet, mem};
 
 /// Section-source message that is in the process of signature accumulation.
@@ -92,7 +91,7 @@ impl AccumulatingMessage {
             Ok(signature) => signature,
             Err(error) => {
                 log_or_panic!(
-                    LogLevel::Error,
+                    log::Level::Error,
                     "Combining signatures failed on {:?}: {:?}. \
                      (shares: {:?}, public key set: {:?}, proof: {:?})",
                     self,

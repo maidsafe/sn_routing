@@ -43,7 +43,6 @@ use crate::{
 };
 use hex_fmt::HexFmt;
 use itertools::Itertools;
-use log::LogLevel;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
@@ -274,7 +273,7 @@ impl Elder {
     }
 
     fn print_rt_size(&self) {
-        const TABLE_LVL: LogLevel = LogLevel::Info;
+        const TABLE_LVL: log::Level = log::Level::Info;
         if log_enabled!(TABLE_LVL) {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
@@ -484,7 +483,7 @@ impl Elder {
             | evt @ AccumulatingEvent::TheirKeyInfo(_)
             | evt @ AccumulatingEvent::SendAckMessage(_)
             | evt @ AccumulatingEvent::User(_) => {
-                log_or_panic!(LogLevel::Error, "unexpected event {:?}", evt);
+                log_or_panic!(log::Level::Error, "unexpected event {:?}", evt);
             }
             AccumulatingEvent::Online(payload) => {
                 self.resend_bootstrap_response_join(&payload.p2p_node);
@@ -1066,7 +1065,7 @@ impl Elder {
     ) -> Result<()> {
         if !self.in_src_location(&src) {
             log_or_panic!(
-                LogLevel::Error,
+                log::Level::Error,
                 "{} Not part of the source location. Not sending message {:?} -> {:?}: {:?}.",
                 self,
                 src,
@@ -1172,7 +1171,7 @@ impl Elder {
             DstLocation::Prefix(prefix) => prefix.name(),
             DstLocation::Direct => {
                 log_or_panic!(
-                    LogLevel::Error,
+                    log::Level::Error,
                     "{} - Invalid destination for signature targets: {:?}",
                     self,
                     dst
@@ -1556,7 +1555,7 @@ impl Approved for Elder {
             self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
         } else {
             log_or_panic!(
-                LogLevel::Error,
+                log::Level::Error,
                 "{} DKG for an unexpected info {:?} (expected: {{{:?}}})",
                 self,
                 participants,
@@ -1569,7 +1568,7 @@ impl Approved for Elder {
     fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
         if self.chain.split_in_progress() {
             log_or_panic!(
-                LogLevel::Warn,
+                log::Level::Warn,
                 "{} Tring to prune parsec during prefix change.",
                 self
             );

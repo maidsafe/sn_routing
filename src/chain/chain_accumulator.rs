@@ -8,7 +8,6 @@
 
 use super::{AccumulatingEvent, EldersInfo, EventSigPayload, NetworkEvent, Proof, ProofSet};
 use crate::id::PublicId;
-use log::LogLevel;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     mem,
@@ -142,7 +141,7 @@ impl ChainAccumulator {
         let proofs = self.chain_accumulator.remove(&event)?;
 
         if !self.completed_events.insert(event.clone()) {
-            log_or_panic!(LogLevel::Warn, "Duplicate insert in completed events.");
+            log_or_panic!(log::Level::Warn, "Duplicate insert in completed events.");
         }
 
         self.add_expectation(event.clone(), &proofs, all_voters);

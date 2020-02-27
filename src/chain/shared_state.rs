@@ -16,7 +16,6 @@ use crate::{
 };
 use bincode::{deserialize, serialize};
 use itertools::Itertools;
-use log::LogLevel;
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::{self, Debug, Formatter},
@@ -429,7 +428,7 @@ fn update_with_genesis_related_info_check_same<T>(
 {
     if self_info != to_use_info {
         log_or_panic!(
-            LogLevel::Error,
+            log::Level::Error,
             "{} - update_with_genesis_related_info_check_same different {}:\n{:?},\n{:?}",
             id,
             log_ident,
@@ -645,7 +644,7 @@ impl SectionProofChain {
     pub fn push(&mut self, block: SectionProofBlock) {
         if !validate_next_block(self.last_key_info(), &block) {
             log_or_panic!(
-                LogLevel::Error,
+                log::Level::Error,
                 "Invalid next block: {:?} -> {:?}",
                 self.last_key_info(),
                 block

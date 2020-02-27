@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{quic_p2p::Token, time::Duration};
-use log::LogLevel;
 use std::{collections::HashMap, net::SocketAddr};
 
 /// Maximal number of resend attempts to the same target.
@@ -80,14 +79,14 @@ impl SendingTargetsCache {
         {
             match *state {
                 TargetState::Failed(_) => {
-                    log_or_panic!(LogLevel::Error, "Got a failure from a failed target!");
+                    log_or_panic!(log::Level::Error, "Got a failure from a failed target!");
                 }
                 TargetState::Sending(x) => {
                     *state = TargetState::Failed(x + 1);
                 }
                 TargetState::Sent => {
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "A target that should no longer fail - failed!"
                     );
                 }
