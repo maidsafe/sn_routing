@@ -25,7 +25,6 @@ use crate::{
 };
 use bincode::serialize;
 use itertools::Itertools;
-use log::LogLevel;
 use serde::Serialize;
 use std::{
     cmp::Ordering,
@@ -171,7 +170,7 @@ impl Chain {
                 .insert(*first.name(), dkg_result.0.clone())
                 .is_some()
             {
-                log_or_panic!(LogLevel::Error, "{} - Ejected previous DKG result", self);
+                log_or_panic!(log::Level::Error, "{} - Ejected previous DKG result", self);
             }
         }
 
@@ -218,7 +217,7 @@ impl Chain {
             Err(InsertError::ReplacedAlreadyInserted) => {
                 // TODO: If detecting duplicate vote from peer, penalise.
                 log_or_panic!(
-                    LogLevel::Warn,
+                    log::Level::Warn,
                     "{} Duplicate proof for {:?} in chain accumulator. {:?}",
                     self,
                     event,
@@ -518,7 +517,7 @@ impl Chain {
                 } else {
                     // Node already joined - this should not happen.
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "{} - Adding member that already exists: {}",
                         self,
                         p2p_node,
@@ -552,7 +551,7 @@ impl Chain {
             member_state
         } else {
             log_or_panic!(
-                LogLevel::Error,
+                log::Level::Error,
                 "{} - Removing member that doesn't exist: {}",
                 self,
                 pub_id
@@ -972,7 +971,7 @@ impl Chain {
 
                 if !info.is_successor_of(self.our_info()) {
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "We shouldn't have a SectionInfo that is not a direct descendant. our: \
                          {:?}, new: {:?}",
                         self.our_info(),
@@ -1014,7 +1013,7 @@ impl Chain {
             }
             AccumulatingEvent::StartDkg(_) => {
                 log_or_panic!(
-                    LogLevel::Error,
+                    log::Level::Error,
                     "StartDkg present in the chain accumulator - should never happen!"
                 );
                 false
@@ -1050,7 +1049,7 @@ impl Chain {
                     && elders_info.version() > self.state.our_info().version() + 1
                 {
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "We shouldn't have progressed past the split/merged version."
                     );
                     return false;
@@ -1069,7 +1068,7 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         if !self.state.split_in_progress {
             log_or_panic!(
-                LogLevel::Error,
+                log::Level::Error,
                 "Shouldn't be caching events while not splitting."
             );
         }
@@ -1153,7 +1152,7 @@ impl Chain {
         if let Some(old_elders_info) = self.state.neighbour_infos.insert(pfx, elders_info) {
             if old_elders_info.version() > new_elders_info_version {
                 log_or_panic!(
-                    LogLevel::Error,
+                    log::Level::Error,
                     "{} Ejected newer neighbour info {:?}",
                     self,
                     old_elders_info
@@ -1200,7 +1199,7 @@ impl Chain {
         let signed_bytes = serialize(signed_payload)
             .map_err(|err| {
                 log_or_panic!(
-                    LogLevel::Error,
+                    log::Level::Error,
                     "{} Failed to serialise accumulated event: {:?} for {:?}",
                     self,
                     err,
@@ -1218,7 +1217,7 @@ impl Chain {
             )
             .or_else(|| {
                 log_or_panic!(
-                    LogLevel::Error,
+                    log::Level::Error,
                     "{} Failed to combine signatures for accumulated event: {:?}",
                     self,
                     signed_payload
@@ -1571,7 +1570,7 @@ impl Chain {
     fn assert_no_prefix_change(&self, label: &str) {
         if self.state.split_in_progress {
             log_or_panic!(
-                LogLevel::Warn,
+                log::Level::Warn,
                 "{} - attempt to {} during prefix change.",
                 self,
                 label,

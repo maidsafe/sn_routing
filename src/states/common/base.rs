@@ -26,7 +26,6 @@ use crate::{
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
-use log::LogLevel;
 use std::{
     fmt::{Debug, Display},
     net::SocketAddr,
@@ -443,7 +442,7 @@ pub trait Base: Display {
         I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
     {
         log_or_panic!(
-            LogLevel::Error,
+            log::Level::Error,
             "{} - Verification failed: {:?} - {:?} --- [{:?}]",
             self,
             msg,

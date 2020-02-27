@@ -30,7 +30,6 @@ use crate::{
     timer::Timer,
     xor_space::{Prefix, XorName},
 };
-use log::LogLevel;
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
@@ -260,7 +259,7 @@ impl Base for JoiningPeer {
                         self.send_join_requests();
                     } else {
                         log_or_panic!(
-                            LogLevel::Error,
+                            log::Level::Error,
                             "{} - Newer Join response not for our prefix {:?} from {:?}",
                             self,
                             info,

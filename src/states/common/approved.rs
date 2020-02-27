@@ -23,7 +23,6 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use itertools::Itertools;
-use log::LogLevel;
 use rand::Rng;
 use std::collections::BTreeSet;
 
@@ -245,7 +244,7 @@ pub trait Approved: Base {
 
         if p2p_recipients.is_empty() {
             log_or_panic!(
-                LogLevel::Error,
+                log::Level::Error,
                 "{} - not sending parsec request: not connected to any gossip recipient.",
                 self
             );
@@ -300,7 +299,7 @@ pub trait Approved: Base {
                 }
                 Observation::Add { peer_id, .. } => {
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "{} Unexpected Parsec Add {}: - {}",
                         self,
                         parsec_version,
@@ -309,7 +308,7 @@ pub trait Approved: Base {
                 }
                 Observation::Remove { peer_id, .. } => {
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "{} Unexpected Parsec Remove {}: - {}",
                         self,
                         parsec_version,
@@ -318,7 +317,7 @@ pub trait Approved: Base {
                 }
                 obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "parsec_poll polled internal Observation {}: {:?}",
                         parsec_version,
                         obs
@@ -380,7 +379,7 @@ pub trait Approved: Base {
         match event.content {
             AccumulatingEvent::StartDkg(_) => {
                 log_or_panic!(
-                    LogLevel::Error,
+                    log::Level::Error,
                     "StartDkg came out of Parsec - this shouldn't happen"
                 );
             }
@@ -435,7 +434,7 @@ pub trait Approved: Base {
             self.network_service_mut().disconnect(peer_addr);
         } else {
             log_or_panic!(
-                LogLevel::Error,
+                log::Level::Error,
                 "{} - Can't disconnect from node we can't lookup in Chain: {}.",
                 self,
                 pub_id
@@ -498,7 +497,7 @@ pub trait Approved: Base {
                 }
                 state => {
                     log_or_panic!(
-                        LogLevel::Error,
+                        log::Level::Error,
                         "{} - Expected the state of {} to be Relocating, but was {:?}",
                         self,
                         details.pub_id,
