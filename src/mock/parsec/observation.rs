@@ -76,9 +76,9 @@ impl<P: PublicId> ObservationState<P> {
         &mut self,
         our_secret_id: &S,
         observation: &Rc<Observation<T, P>>,
-    ) {
+    ) -> bool {
         let proof = our_secret_id.create_proof(&unwrap!(serialize(&**observation)));
-        let _ = self.votes.insert(proof);
+        self.votes.insert(proof)
     }
 
     pub fn compute_consensus<T: NetworkEvent>(

@@ -45,7 +45,9 @@ impl<T: NetworkEvent, P: PublicId> SectionState<T, P> {
         }
     }
 
-    pub fn vote<S>(&mut self, our_id: &S, holder: ObservationHolder<T, P>)
+    // Vote for the given observation. Returns true if the vote was created, false if it already
+    // existed.
+    pub fn vote<S>(&mut self, our_id: &S, holder: ObservationHolder<T, P>) -> bool
     where
         S: SecretId<PublicId = P>,
     {
