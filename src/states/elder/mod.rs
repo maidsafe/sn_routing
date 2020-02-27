@@ -636,10 +636,11 @@ impl Elder {
     ) -> Result<Transition> {
         if !self.chain.is_peer_elder(&src) {
             debug!(
-                "{} - Received message signature from invalid peer {}, {:?}",
+                "{} - Received message signature from not known elder (still use it) {}, {:?}",
                 self, src, msg
             );
-            return Err(RoutingError::InvalidSource);
+            // FIXME: currently accepting signatures from unknown senders to cater to lagging nodes.
+            // Need to verify whether there are any security implications with doing this.
         }
 
         if let Some(msg) = self.sig_accumulator.add_proof(msg, &self.log_ident()) {
