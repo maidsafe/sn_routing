@@ -111,22 +111,24 @@ where
         state::with(self.section_hash, |state| {
             let holder =
                 ObservationHolder::new(observation, self.our_id.public_id(), self.consensus_mode);
-            state.vote(&self.our_id, holder.clone());
-            self.observations
-                .entry(holder)
-                .or_insert_with(ObservationInfo::new)
-                .our = true;
-            self.compute_consensus(state)
-        });
-
-        Ok(())
+            if state.vote(&self.our_id, holder.clone()) {
+                self.observations
+                    .entry(holder)
+                    .or_insert_with(ObservationInfo::new)
+                    .our = true;
+                self.compute_consensus(state);
+                Ok(())
+            } else {
+                Err(Error::DuplicateVote)
+            }
+        })
     }
 
     pub fn vote_for_as(&mut self, observation: Observation<T, S::PublicId>, vote_id: &S) {
         state::with(self.section_hash, |state| {
             let holder =
                 ObservationHolder::new(observation, vote_id.public_id(), self.consensus_mode);
-            state.vote(vote_id, holder);
+            let _ = state.vote(vote_id, holder);
         });
     }
 
@@ -360,6 +362,7 @@ impl<T: NetworkEvent, P: PublicId> Response<T, P> {
 #[derive(Debug)]
 pub enum Error {
     InvalidPeerState,
+    DuplicateVote,
 }
 
 #[derive(Clone, Copy)]
