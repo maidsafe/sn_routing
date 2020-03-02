@@ -389,7 +389,9 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
             match event {
                 Event::SectionSplit(..)
                 | Event::RestartRequired
-                | Event::Connected(Connected::Relocate) => (),
+                | Event::Connected(Connected::Relocate)
+                | Event::Promoted
+                | Event::Demoted => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -454,7 +456,10 @@ pub fn add_connected_nodes_until_split(
     );
 
     clear_all_event_queues(nodes, |node, event| match event {
-        Event::SectionSplit(..) | Event::Connected(Connected::Relocate) => (),
+        Event::SectionSplit(..)
+        | Event::Connected(Connected::Relocate)
+        | Event::Promoted
+        | Event::Demoted => (),
         event => panic!("Got unexpected event for {}: {:?}", node.inner, event),
     });
 

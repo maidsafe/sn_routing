@@ -33,6 +33,8 @@ pub enum Connected {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
+    /// The node has successfully connected to the network.
+    Connected(Connected),
     /// Received a message.
     MessageReceived {
         /// The content of the message.
@@ -42,21 +44,26 @@ pub enum Event {
         /// The destination location that receives the message.
         dst: DstLocation,
     },
+    /// Consensus on a custom event.
+    Consensus(Vec<u8>),
+    /// The node has been promoted to elder
+    Promoted,
+    /// The node has been demoted from elder
+    Demoted,
     /// Our own section has been split, resulting in the included `Prefix` for our new section.
     SectionSplit(Prefix<XorName>),
-    /// The client has successfully connected to a proxy node on the network.
-    Connected(Connected),
     /// Disconnected or failed to connect - restart required.
     RestartRequired,
     /// Startup failed - terminate.
     Terminated,
-    /// Consensus on a custom event.
-    Consensus(Vec<u8>),
 }
 
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
+            Self::Connected(ref connect_type) => {
+                write!(formatter, "Event::Connected({:?})", connect_type)
+            }
             Self::MessageReceived {
                 ref content,
                 ref src,
@@ -68,17 +75,16 @@ impl Debug for Event {
                 src,
                 dst
             ),
-            Self::SectionSplit(ref prefix) => {
-                write!(formatter, "Event::SectionSplit({:?})", prefix)
-            }
-            Self::Connected(ref connect_type) => {
-                write!(formatter, "Event::Connected({:?})", connect_type)
-            }
-            Self::RestartRequired => write!(formatter, "Event::RestartRequired"),
-            Self::Terminated => write!(formatter, "Event::Terminated"),
             Self::Consensus(ref payload) => {
                 write!(formatter, "Event::Consensus({:<8})", HexFmt(payload))
             }
+            Self::Promoted => write!(formatter, "Event::Promoted"),
+            Self::Demoted => write!(formatter, "Event::Demoted"),
+            Self::SectionSplit(ref prefix) => {
+                write!(formatter, "Event::SectionSplit({:?})", prefix)
+            }
+            Self::RestartRequired => write!(formatter, "Event::RestartRequired"),
+            Self::Terminated => write!(formatter, "Event::Terminated"),
         }
     }
 }
