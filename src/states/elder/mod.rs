@@ -167,6 +167,7 @@ impl Elder {
         info!("{} - Started a new network as a seed node.", node);
 
         outbox.send_event(Event::Connected(Connected::First));
+        outbox.send_event(Event::Promoted);
 
         Ok(node)
     }
@@ -179,6 +180,9 @@ impl Elder {
         let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
         let mut elder = Self::new(details);
         elder.init(old_pfx, event_backlog, outbox)?;
+
+        outbox.send_event(Event::Promoted);
+
         Ok(elder)
     }
 
@@ -187,6 +191,8 @@ impl Elder {
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut dyn EventBox,
     ) -> Result<State, RoutingError> {
+        outbox.send_event(Event::Demoted);
+
         let details = AdultDetails {
             network_service: self.network_service,
             event_backlog: Vec::new(),
