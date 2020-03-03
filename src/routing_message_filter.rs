@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    crypto::Digest256, id::PublicId, location::DstLocation, message_filter::MessageFilter,
-    messages::MessageWithBytes,
-};
+use crate::{crypto::Digest256, id::PublicId, location::DstLocation, messages::MessageWithBytes};
 use lru_time_cache::LruCache;
 use std::time::Duration;
 
@@ -36,7 +33,7 @@ impl FilteringResult {
 
 // Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
 pub struct RoutingMessageFilter {
-    incoming: MessageFilter<Digest256>,
+    incoming: LruCache<Digest256, ()>,
     outgoing: LruCache<(Digest256, PublicId), ()>,
 }
 
@@ -46,7 +43,7 @@ impl RoutingMessageFilter {
         let outgoing_duration = Duration::from_secs(OUTGOING_EXPIRY_DURATION_SECS);
 
         Self {
-            incoming: MessageFilter::with_expiry_duration(incoming_duration),
+            incoming: LruCache::with_expiry_duration(incoming_duration),
             outgoing: LruCache::with_expiry_duration(outgoing_duration),
         }
     }
@@ -60,7 +57,7 @@ impl RoutingMessageFilter {
 
         let hash = msg.full_crypto_hash();
 
-        if self.incoming.insert(hash) > 1 {
+        if self.incoming.insert(*hash, ()).is_some() {
             FilteringResult::KnownMessage
         } else {
             FilteringResult::NewMessage

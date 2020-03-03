@@ -137,7 +137,6 @@ mod chain;
 mod error;
 mod id;
 mod location;
-mod message_filter;
 mod messages;
 mod network_service;
 mod node;
