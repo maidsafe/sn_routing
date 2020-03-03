@@ -17,6 +17,7 @@ use crate::{
     event::{Connected, Event},
     id::FullId,
     location::{DstLocation, SrcLocation},
+    message_filter::MessageFilter,
     messages::{
         BootstrapResponse, JoinRequest, Message, MessageWithBytes, QueuedMessage, Variant,
         VerifyStatus,
@@ -25,7 +26,6 @@ use crate::{
     outbox::EventBox,
     relocation::RelocatePayload,
     rng::MainRng,
-    routing_message_filter::RoutingMessageFilter,
     state_machine::{State, Transition},
     timer::Timer,
     xor_space::{Prefix, XorName},
@@ -52,7 +52,7 @@ pub struct JoiningPeerDetails {
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
     network_service: NetworkService,
-    msg_filter: RoutingMessageFilter,
+    msg_filter: MessageFilter,
     msg_backlog: Vec<QueuedMessage>,
     full_id: FullId,
     timer: Timer,
@@ -74,7 +74,7 @@ impl JoiningPeer {
 
         let mut joining_peer = Self {
             network_service: details.network_service,
-            msg_filter: RoutingMessageFilter::new(),
+            msg_filter: MessageFilter::new(),
             msg_backlog: vec![],
             full_id: details.full_id,
             timer: details.timer,

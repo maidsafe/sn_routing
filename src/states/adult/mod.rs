@@ -23,6 +23,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
+    message_filter::MessageFilter,
     messages::{
         AccumulatingMessage, BootstrapResponse, Message, MessageWithBytes, QueuedMessage, Variant,
         VerifyStatus,
@@ -33,7 +34,6 @@ use crate::{
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
-    routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
     time::Duration,
@@ -59,7 +59,7 @@ pub struct AdultDetails {
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_backlog: Vec<QueuedMessage>,
     pub sig_accumulator: SignatureAccumulator,
-    pub msg_filter: RoutingMessageFilter,
+    pub msg_filter: MessageFilter,
     pub timer: Timer,
     pub network_cfg: NetworkParams,
     pub rng: MainRng,
@@ -76,7 +76,7 @@ pub struct Adult {
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     knowledge_timer_token: u64,
-    msg_filter: RoutingMessageFilter,
+    msg_filter: MessageFilter,
     timer: Timer,
     rng: MainRng,
 }
@@ -179,7 +179,7 @@ impl Adult {
             parsec_map: self.parsec_map,
             // we reset the message filter so that the node can correctly process some messages as
             // an Elder even if it has already seen them as an Adult
-            msg_filter: RoutingMessageFilter::new(),
+            msg_filter: MessageFilter::new(),
             timer: self.timer,
             rng: self.rng,
         };
