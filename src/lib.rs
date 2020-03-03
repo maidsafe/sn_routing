@@ -137,6 +137,7 @@ mod chain;
 mod error;
 mod id;
 mod location;
+mod message_filter;
 mod messages;
 mod network_service;
 mod node;
@@ -146,7 +147,6 @@ mod pause;
 mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;
-mod routing_message_filter;
 mod signature_accumulator;
 mod state_machine;
 mod states;

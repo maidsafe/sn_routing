@@ -25,6 +25,7 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
+    message_filter::MessageFilter,
     messages::{
         AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
         MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant, VerifyStatus,
@@ -35,7 +36,6 @@ use crate::{
     pause::PausedState,
     relocation::RelocateDetails,
     rng::{self, MainRng},
-    routing_message_filter::RoutingMessageFilter,
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
     timer::Timer,
@@ -86,7 +86,7 @@ pub struct ElderDetails {
     pub msg_backlog: Vec<QueuedMessage>,
     pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
-    pub msg_filter: RoutingMessageFilter,
+    pub msg_filter: MessageFilter,
     pub timer: Timer,
     pub rng: MainRng,
 }
@@ -98,7 +98,7 @@ pub struct Elder {
     // although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<QueuedMessage>,
     msg_backlog: Vec<QueuedMessage>,
-    msg_filter: RoutingMessageFilter,
+    msg_filter: MessageFilter,
     sig_accumulator: SignatureAccumulator,
     timer: Timer,
     parsec_map: ParsecMap,
@@ -156,7 +156,7 @@ impl Elder {
             msg_backlog: Default::default(),
             sig_accumulator: Default::default(),
             parsec_map,
-            msg_filter: RoutingMessageFilter::new(),
+            msg_filter: MessageFilter::new(),
             timer,
             rng,
         };

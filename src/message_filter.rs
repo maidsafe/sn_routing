@@ -10,8 +10,8 @@ use crate::{crypto::Digest256, id::PublicId, location::DstLocation, messages::Me
 use lru_time_cache::LruCache;
 use std::time::Duration;
 
-const INCOMING_EXPIRY_DURATION_SECS: u64 = 60 * 20;
-const OUTGOING_EXPIRY_DURATION_SECS: u64 = 60 * 10;
+const INCOMING_EXPIRY_DURATION: Duration = Duration::from_secs(20 * 60);
+const OUTGOING_EXPIRY_DURATION: Duration = Duration::from_secs(10 * 60);
 
 /// An enum representing a result of message filtering
 #[derive(Eq, PartialEq)]
@@ -31,20 +31,17 @@ impl FilteringResult {
     }
 }
 
-// Structure to filter (throttle) incoming and outgoing `RoutingMessages`.
-pub struct RoutingMessageFilter {
+// Structure to filter (throttle) incoming and outgoing messages.
+pub struct MessageFilter {
     incoming: LruCache<Digest256, ()>,
     outgoing: LruCache<(Digest256, PublicId), ()>,
 }
 
-impl RoutingMessageFilter {
+impl MessageFilter {
     pub fn new() -> Self {
-        let incoming_duration = Duration::from_secs(INCOMING_EXPIRY_DURATION_SECS);
-        let outgoing_duration = Duration::from_secs(OUTGOING_EXPIRY_DURATION_SECS);
-
         Self {
-            incoming: LruCache::with_expiry_duration(incoming_duration),
-            outgoing: LruCache::with_expiry_duration(outgoing_duration),
+            incoming: LruCache::with_expiry_duration(INCOMING_EXPIRY_DURATION),
+            outgoing: LruCache::with_expiry_duration(OUTGOING_EXPIRY_DURATION),
         }
     }
 
@@ -88,7 +85,7 @@ impl RoutingMessageFilter {
     }
 }
 
-impl Default for RoutingMessageFilter {
+impl Default for MessageFilter {
     fn default() -> Self {
         Self::new()
     }

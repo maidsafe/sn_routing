@@ -366,7 +366,7 @@ fn new_elder_state(
         msg_backlog: Default::default(),
         sig_accumulator: Default::default(),
         parsec_map,
-        msg_filter: RoutingMessageFilter::new(),
+        msg_filter: MessageFilter::new(),
         timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
