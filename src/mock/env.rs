@@ -12,13 +12,11 @@ use crate::{
     chain::NetworkParams,
     quic_p2p::Network,
     rng::{self, MainRng, Seed, SeedPrinter},
-    unwrap,
 };
-use maidsafe_utilities::log;
 use rand::SeedableRng;
 use std::{
     cell::RefCell,
-    env,
+    io::Write,
     ops::{Deref, DerefMut},
     sync::Once,
 };
@@ -37,12 +35,21 @@ impl Environment {
     /// Construct new mock network.
     pub fn new(network_cfg: NetworkParams) -> Self {
         LOG_INIT.call_once(|| {
-            if env::var("RUST_LOG")
-                .map(|value| !value.is_empty())
-                .unwrap_or(false)
-            {
-                unwrap!(log::init(true));
-            }
+            env_logger::builder()
+                // the test framework will capture the log output and show it only on failure.
+                // Run the tests with --nocapture to override.
+                .is_test(true)
+                .format(|buf, record| {
+                    writeln!(
+                        buf,
+                        "{:.1} {} ({}:{})",
+                        record.level(),
+                        record.args(),
+                        record.file().unwrap_or("<unknown>"),
+                        record.line().unwrap_or(0)
+                    )
+                })
+                .init()
         });
 
         #[cfg(feature = "mock")]
