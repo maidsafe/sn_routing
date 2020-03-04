@@ -18,6 +18,7 @@ use crate::{
     quic_p2p::{Peer, Token},
     rng::MainRng,
     state_machine::Transition,
+    time::Duration,
     timer::Timer,
     utils::LogIdent,
     xor_space::{Prefix, XorName},
@@ -55,7 +56,7 @@ pub trait Base: Display {
 
     fn is_message_handled(&self, msg: &MessageWithBytes) -> bool;
     fn set_message_handled(&mut self, msg: &MessageWithBytes);
-    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()>;
+    fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()>;
     fn should_handle_message(&self, _msg: &Message) -> bool;
     fn verify_message(&self, msg: &Message) -> Result<bool>;
 
@@ -66,7 +67,7 @@ pub trait Base: Display {
         outbox: &mut dyn EventBox,
     ) -> Result<Transition>;
 
-    fn unhandled_message(&mut self, sender: Option<SocketAddr>, message: Message);
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes);
 
     fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
         match action {
@@ -234,7 +235,7 @@ pub trait Base: Display {
             HexFmt(msg_with_bytes.full_crypto_hash())
         );
 
-        self.try_relay_message(&msg_with_bytes)?;
+        self.try_relay_message(sender, &msg_with_bytes)?;
 
         if !self.in_dst_location(msg_with_bytes.message_dst()) {
             return Ok(Transition::Stay);
@@ -255,15 +256,19 @@ pub trait Base: Display {
             self.set_message_handled(&msg_with_bytes);
             self.handle_message(sender, msg, outbox)
         } else {
-            self.unhandled_message(sender, msg);
+            self.unhandled_message(sender, msg, msg_with_bytes.full_bytes().clone());
             Ok(Transition::Stay)
         }
     }
 
-    fn try_relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
+    fn try_relay_message(
+        &mut self,
+        sender: Option<SocketAddr>,
+        msg: &MessageWithBytes,
+    ) -> Result<()> {
         if !self.in_dst_location(msg.message_dst()) || msg.message_dst().is_multiple() {
             // Relay closer to the destination or broadcast to the rest of our section.
-            self.relay_message(msg)
+            self.relay_message(sender, msg)
         } else {
             Ok(())
         }
@@ -420,6 +425,12 @@ pub trait Base: Display {
             token,
             &conn_infos[..dg_size.min(conn_infos.len())]
         );
+    }
+
+    fn send_message_to_target_later(&mut self, dst: &SocketAddr, message: Bytes, delay: Duration) {
+        let timer_token = self.timer().schedule(delay);
+        self.network_service_mut()
+            .send_message_to_target_later(dst, message, timer_token)
     }
 
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {

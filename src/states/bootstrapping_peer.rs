@@ -6,9 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{common::Base, joining_peer::JoiningPeerDetails};
+use super::{
+    common::{Base, BOUNCE_RESEND_DELAY},
+    joining_peer::JoiningPeerDetails,
+};
 use crate::{
     chain::{EldersInfo, NetworkParams},
+    crypto,
     error::{Result, RoutingError},
     event::Event,
     id::FullId,
@@ -23,7 +27,9 @@ use crate::{
     timer::Timer,
     xor_space::{Prefix, XorName},
 };
+use bytes::Bytes;
 use fxhash::FxHashSet;
+use hex_fmt::HexFmt;
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
@@ -299,12 +305,33 @@ impl Base for BootstrappingPeer {
                 self.reconnect_to_new_section(new_conn_infos);
                 Ok(Transition::Stay)
             }
+            Variant::Bounce { message, .. } => {
+                let sender = msg.src.to_sender_node(sender)?;
+
+                trace!(
+                    "{} - Received Bounce of {} from {}. Resending",
+                    self,
+                    HexFmt(crypto::sha3_256(&message)),
+                    sender,
+                );
+                self.send_message_to_target_later(sender.peer_addr(), message, BOUNCE_RESEND_DELAY);
+                Ok(Transition::Stay)
+            }
             _ => unreachable!(),
         }
     }
 
-    fn unhandled_message(&mut self, _sender: Option<SocketAddr>, msg: Message) {
-        debug!("{} - Unhandled message {:?}", self, msg);
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
+        let sender = sender.expect("sender missing");
+
+        debug!("{} Unhandled message - bouncing: {:?}", self, msg);
+
+        let variant = Variant::Bounce {
+            elders_version: None,
+            message: msg_bytes,
+        };
+
+        self.send_direct_message(&sender, variant)
     }
 
     fn is_message_handled(&self, _msg: &MessageWithBytes) -> bool {
@@ -315,7 +342,7 @@ impl Base for BootstrappingPeer {
 
     fn should_handle_message(&self, msg: &Message) -> bool {
         match msg.variant {
-            Variant::BootstrapResponse(_) => true,
+            Variant::BootstrapResponse(_) | Variant::Bounce { .. } => true,
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::NodeApproval(_)
@@ -338,7 +365,11 @@ impl Base for BootstrappingPeer {
         Ok(true)
     }
 
-    fn relay_message(&mut self, _message: &MessageWithBytes) -> Result<()> {
+    fn relay_message(
+        &mut self,
+        _sender: Option<SocketAddr>,
+        _message: &MessageWithBytes,
+    ) -> Result<()> {
         Ok(())
     }
 }

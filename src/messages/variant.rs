@@ -13,6 +13,7 @@ use crate::{
     relocation::{RelocateDetails, RelocatePayload},
     xor_space::{Prefix, XorName},
 };
+use bytes::Bytes;
 use hex_fmt::HexFmt;
 use serde::Serialize;
 use std::{
@@ -64,6 +65,16 @@ pub enum Variant {
     ParsecResponse(u64, parsec::Response),
     /// Message sent to a disconnected peer to trigger lost peer detection.
     Ping,
+    /// Response to a message that the recipient cannot handle at this time but might be able to
+    /// handle it later. For example, an adult receiving a message intended for elders will be
+    /// able to handle it after being promoted.
+    Bounce {
+        /// Elders version of the section of the message recipient according to their knowledge.
+        /// `None` if the recipient is not yet member of any section.
+        elders_version: Option<u64>,
+        /// The original message, serialized.
+        message: Bytes,
+    },
 }
 
 impl Debug for Variant {
@@ -90,6 +101,14 @@ impl Debug for Variant {
             Self::ParsecRequest(version, _) => write!(f, "ParsecRequest({}, ..)", version),
             Self::ParsecResponse(version, _) => write!(f, "ParsecResponse({}, ..)", version),
             Self::Ping => write!(f, "Ping"),
+            Self::Bounce {
+                elders_version,
+                message,
+            } => f
+                .debug_struct("Bounce")
+                .field("elders_version", elders_version)
+                .field("message", &HexFmt(message))
+                .finish(),
         }
     }
 }

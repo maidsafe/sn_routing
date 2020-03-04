@@ -363,7 +363,6 @@ fn new_elder_state(
         full_id,
         gen_pfx_info,
         msg_queue: Default::default(),
-        msg_backlog: Default::default(),
         sig_accumulator: Default::default(),
         parsec_map,
         msg_filter: MessageFilter::new(),

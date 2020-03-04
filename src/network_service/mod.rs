@@ -15,7 +15,7 @@ use crate::{
     NetworkConfig,
 };
 use bytes::Bytes;
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, slice};
 
 use sending_targets_cache::SendingTargetsCache;
 
@@ -59,6 +59,17 @@ impl NetworkService {
         self.cache.insert_message(token, conn_infos, dg_size);
 
         token
+    }
+
+    pub fn send_message_to_target_later(
+        &mut self,
+        target: &SocketAddr,
+        content: Bytes,
+        timer_token: u64,
+    ) {
+        let token = self.next_msg_token();
+        self.send_later(*target, content, token, timer_token);
+        self.cache.insert_message(token, slice::from_ref(target), 1);
     }
 
     pub fn target_failed(&mut self, msg_token: Token, failed_target: SocketAddr) -> Resend {
