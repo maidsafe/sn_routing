@@ -676,7 +676,8 @@ impl Elder {
         }
 
         let msg = msg.take_or_deserialize_message()?;
-        if self.verify_message(&msg)? {
+
+        if self.should_handle_message(&msg) && self.verify_message(&msg)? {
             self.msg_queue.push_back(msg.into_queued(None));
         }
 
@@ -690,11 +691,11 @@ impl Elder {
     ) -> Result<(), RoutingError> {
         trace!("{} - Handle backlogged message: {:?}", self, msg);
 
-        if self.in_dst_location(&msg.dst) {
-            if !self.verify_message_quiet(&msg).unwrap_or(false) {
-                return Ok(());
-            }
+        if !self.in_dst_location(&msg.dst) {
+            return Ok(());
+        }
 
+        if self.should_handle_message(&msg) && self.verify_message_quiet(&msg).unwrap_or(false) {
             // If message still for us and we still trust it, then it must not be stale.
             self.update_our_knowledge(&msg);
             self.msg_queue.push_back(msg.into_queued(sender));
@@ -767,13 +768,7 @@ impl Elder {
             Variant::ParsecResponse(version, response) => {
                 return self.handle_parsec_response(version, response, *msg.src.as_node()?, outbox);
             }
-            Variant::GenesisUpdate(_) | Variant::Relocate(_) => {
-                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
-                self.msg_backlog.push(msg.into_queued(sender));
-            }
-            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => {
-                debug!("{} Unhandled message, ignoring: {:?}", self, msg);
-            }
+            _ => unreachable!(),
         }
 
         Ok(Transition::Stay)
@@ -1391,8 +1386,17 @@ impl Base for Elder {
         Ok(Transition::Stay)
     }
 
-    fn unhandled_message(&mut self, _sender: Option<SocketAddr>, _msg: Message) {
-        unreachable!()
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message) {
+        match msg.variant {
+            Variant::GenesisUpdate(_) | Variant::Relocate(_) => {
+                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
+                self.msg_backlog.push(msg.into_queued(sender));
+            }
+            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => {
+                debug!("{} Unhandled message, ignoring: {:?}", self, msg);
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn filter_incoming_message(&mut self, message: &MessageWithBytes) -> bool {
@@ -1403,8 +1407,24 @@ impl Base for Elder {
         self.send_signed_message(message)
     }
 
-    fn should_handle_message(&self, _msg: &Message) -> bool {
-        true
+    fn should_handle_message(&self, msg: &Message) -> bool {
+        match msg.variant {
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::AckMessage { .. }
+            | Variant::MessageSignature(_)
+            | Variant::BootstrapRequest(_)
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge(_)
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..) => true,
+
+            Variant::GenesisUpdate(_)
+            | Variant::Relocate(_)
+            | Variant::BootstrapResponse(_)
+            | Variant::NodeApproval(_)
+            | Variant::Ping => false,
+        }
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {
