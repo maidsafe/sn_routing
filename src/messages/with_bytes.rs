@@ -9,6 +9,7 @@
 use super::{DstLocation, Message, MessageHash, PartialMessage};
 use crate::{error::Result, utils::LogIdent};
 use bytes::Bytes;
+use std::fmt::{self, Debug, Formatter};
 
 /// Message in both its serialized and unserialized forms.
 #[derive(Eq, PartialEq, Clone)]
@@ -84,6 +85,16 @@ impl MessageWithBytes {
 
     fn deserialize_message(&self) -> Result<Message> {
         Message::from_bytes(&self.full_bytes)
+    }
+}
+
+impl Debug for MessageWithBytes {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if let Some(content) = &self.full_content {
+            write!(f, "{:?}", content)
+        } else {
+            write!(f, "Message({:?})", self.full_crypto_hash)
+        }
     }
 }
 

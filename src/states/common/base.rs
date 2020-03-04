@@ -228,11 +228,7 @@ pub trait Base: Display {
         mut msg_with_bytes: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
-        trace!(
-            "{} - try handle message {:?}",
-            self,
-            msg_with_bytes.full_crypto_hash()
-        );
+        trace!("{} - try handle message {:?}", self, msg_with_bytes);
 
         self.try_relay_message(sender, &msg_with_bytes)?;
 
@@ -244,7 +240,7 @@ pub trait Base: Display {
             trace!(
                 "{} - not handling message - already handled: {:?}",
                 self,
-                msg_with_bytes.full_crypto_hash()
+                msg_with_bytes
             );
             return Ok(Transition::Stay);
         }
