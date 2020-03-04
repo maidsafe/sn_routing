@@ -341,11 +341,7 @@ impl Base for JoiningPeer {
     fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
         let sender = sender.expect("sender missing");
 
-        trace!(
-            "{} Message not for us, bouncing: {:?}",
-            self,
-            msg.full_crypto_hash()
-        );
+        trace!("{} Message not for us, bouncing: {:?}", self, msg);
 
         let variant = Variant::Bounce {
             elders_version: None,

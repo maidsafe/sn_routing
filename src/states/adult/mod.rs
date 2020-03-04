@@ -499,7 +499,7 @@ impl Base for Adult {
         trace!(
             "{}: Forwarding message {:?} via elder targets {:?}",
             self,
-            msg.full_crypto_hash(),
+            msg,
             self.chain.our_elders().format(", ")
         );
 

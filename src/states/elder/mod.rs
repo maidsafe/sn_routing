@@ -528,13 +528,8 @@ impl Elder {
                 }
             };
             match self.send_signed_message(&msg) {
-                Ok(()) => trace!("{} - Resend {:?}", self, msg.full_crypto_hash()),
-                Err(error) => debug!(
-                    "{} - Failed to resend {:?}: {:?}",
-                    self,
-                    msg.full_crypto_hash(),
-                    error
-                ),
+                Ok(()) => trace!("{} - Resend {:?}", self, msg),
+                Err(error) => debug!("{} - Failed to resend {:?}: {:?}", self, msg, error),
             }
         }
     }
@@ -661,7 +656,7 @@ impl Elder {
             trace!(
                 "{} - not handling message - already handled: {:?}",
                 self,
-                msg_with_bytes.full_crypto_hash()
+                msg_with_bytes
             );
             return Ok(());
         }
@@ -1113,7 +1108,7 @@ impl Elder {
         trace!(
             "{}: Sending message {:?} via targets {:?}",
             self,
-            msg.full_crypto_hash(),
+            msg,
             target_p2p_nodes
         );
 
