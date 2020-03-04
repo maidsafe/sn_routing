@@ -48,6 +48,15 @@ impl MessageWithBytes {
         Ok(result)
     }
 
+    pub fn partial_from_full(full_content: &Message) -> Result<Self> {
+        let full_bytes = full_content.to_bytes()?;
+        let partial_content = PartialMessage {
+            dst: full_content.dst,
+        };
+
+        Ok(Self::new_from_parts(None, partial_content, full_bytes))
+    }
+
     pub fn partial_from_bytes(bytes: Bytes) -> Result<Self> {
         let partial_content = PartialMessage::from_bytes(&bytes)?;
         Ok(Self::new_from_parts(None, partial_content, bytes))

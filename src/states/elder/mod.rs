@@ -655,30 +655,31 @@ impl Elder {
         Ok(Transition::Stay)
     }
 
-    fn handle_accumulated_message(&mut self, mut msg: MessageWithBytes) -> Result<()> {
+    fn handle_accumulated_message(&mut self, mut msg_with_bytes: MessageWithBytes) -> Result<()> {
         // FIXME: this is almost the same as `Base::try_handle__message` - find a way
         // to avoid the duplication.
+        self.try_relay_message(&msg_with_bytes)?;
 
-        if !self.filter_incoming_message(&msg) {
+        if !self.in_dst_location(msg_with_bytes.message_dst()) {
+            return Ok(());
+        }
+
+        if self.is_message_handled(&msg_with_bytes) {
             trace!(
-                "{} Known message: {} - not handling further",
+                "{} - not handling message - already handled: {}",
                 self,
-                HexFmt(msg.full_crypto_hash())
+                HexFmt(msg_with_bytes.full_crypto_hash())
             );
-
             return Ok(());
         }
 
-        self.try_relay_message(&msg)?;
-
-        if !self.in_dst_location(msg.message_dst()) {
-            return Ok(());
-        }
-
-        let msg = msg.take_or_deserialize_message()?;
+        let msg = msg_with_bytes.take_or_deserialize_message()?;
 
         if self.should_handle_message(&msg) && self.verify_message(&msg)? {
+            self.set_message_handled(&msg_with_bytes);
             self.msg_queue.push_back(msg.into_queued(None));
+        } else {
+            self.unhandled_message(None, msg);
         }
 
         Ok(())
@@ -695,8 +696,15 @@ impl Elder {
             return Ok(());
         }
 
+        let msg_with_bytes = MessageWithBytes::partial_from_full(&msg)?;
+
+        if self.is_message_handled(&msg_with_bytes) {
+            return Ok(());
+        }
+
         if self.should_handle_message(&msg) && self.verify_message_quiet(&msg).unwrap_or(false) {
             // If message still for us and we still trust it, then it must not be stale.
+            self.set_message_handled(&msg_with_bytes);
             self.update_our_knowledge(&msg);
             self.msg_queue.push_back(msg.into_queued(sender));
         }
@@ -1399,8 +1407,12 @@ impl Base for Elder {
         }
     }
 
-    fn filter_incoming_message(&mut self, message: &MessageWithBytes) -> bool {
-        self.msg_filter.filter_incoming(message).is_new()
+    fn is_message_handled(&self, msg: &MessageWithBytes) -> bool {
+        self.msg_filter.contains_incoming(msg)
+    }
+
+    fn set_message_handled(&mut self, msg: &MessageWithBytes) {
+        self.msg_filter.insert_incoming(msg)
     }
 
     fn relay_message(&mut self, message: &MessageWithBytes) -> Result<()> {

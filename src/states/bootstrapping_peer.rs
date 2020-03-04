@@ -307,9 +307,11 @@ impl Base for BootstrappingPeer {
         debug!("{} - Unhandled message {:?}", self, msg);
     }
 
-    fn filter_incoming_message(&mut self, _message: &MessageWithBytes) -> bool {
-        true
+    fn is_message_handled(&self, _msg: &MessageWithBytes) -> bool {
+        false
     }
+
+    fn set_message_handled(&mut self, _msg: &MessageWithBytes) {}
 
     fn should_handle_message(&self, msg: &Message) -> bool {
         match msg.variant {

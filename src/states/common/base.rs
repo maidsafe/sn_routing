@@ -53,7 +53,8 @@ pub trait Base: Display {
         Transition::Stay
     }
 
-    fn filter_incoming_message(&mut self, msg: &MessageWithBytes) -> bool;
+    fn is_message_handled(&self, msg: &MessageWithBytes) -> bool;
+    fn set_message_handled(&mut self, msg: &MessageWithBytes);
     fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()>;
     fn should_handle_message(&self, _msg: &Message) -> bool;
     fn verify_message(&self, msg: &Message) -> Result<bool>;
@@ -224,42 +225,34 @@ pub trait Base: Display {
     fn try_handle_message(
         &mut self,
         sender: Option<SocketAddr>,
-        msg: MessageWithBytes,
+        mut msg_with_bytes: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
         trace!(
             "{} - try handle message {:?}",
             self,
-            HexFmt(msg.full_crypto_hash())
+            HexFmt(msg_with_bytes.full_crypto_hash())
         );
 
-        if !self.filter_incoming_message(&msg) {
+        self.try_relay_message(&msg_with_bytes)?;
+
+        if !self.in_dst_location(msg_with_bytes.message_dst()) {
+            return Ok(Transition::Stay);
+        }
+
+        if self.is_message_handled(&msg_with_bytes) {
             trace!(
-                "{} - Known message {:?}, not handling further",
+                "{} - not handling message - already handled: {}",
                 self,
-                HexFmt(msg.full_crypto_hash())
+                HexFmt(msg_with_bytes.full_crypto_hash())
             );
-
             return Ok(Transition::Stay);
         }
 
-        self.handle_filtered_message(sender, msg, outbox)
-    }
+        let msg = msg_with_bytes.take_or_deserialize_message()?;
 
-    fn handle_filtered_message(
-        &mut self,
-        sender: Option<SocketAddr>,
-        mut msg: MessageWithBytes,
-        outbox: &mut dyn EventBox,
-    ) -> Result<Transition> {
-        self.try_relay_message(&msg)?;
-
-        if !self.in_dst_location(msg.message_dst()) {
-            return Ok(Transition::Stay);
-        }
-
-        let msg = msg.take_or_deserialize_message()?;
         if self.should_handle_message(&msg) && self.verify_message(&msg)? {
+            self.set_message_handled(&msg_with_bytes);
             self.handle_message(sender, msg, outbox)
         } else {
             self.unhandled_message(sender, msg);
