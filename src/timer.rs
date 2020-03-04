@@ -13,7 +13,7 @@ use crate::{
 use crossbeam_channel as mpmc;
 use itertools::Itertools;
 #[cfg(not(feature = "mock_base"))]
-use maidsafe_utilities::thread::{self, Joiner};
+use std::thread::{self, JoinHandle};
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc};
 
 struct Detail {
@@ -33,12 +33,12 @@ struct Inner {
     #[cfg(not(feature = "mock_base"))]
     tx: mpsc::SyncSender<Detail>,
     #[cfg(not(feature = "mock_base"))]
-    _worker: Joiner,
+    worker: Option<JoinHandle<()>>,
 
     #[cfg(feature = "mock_base")]
     tx: mpsc::Sender<Detail>,
     #[cfg(feature = "mock_base")]
-    _worker: Box<dyn FnMut()>,
+    worker: Box<dyn FnMut()>,
 }
 
 impl Timer {
@@ -47,8 +47,11 @@ impl Timer {
         #[cfg(not(feature = "mock_base"))]
         let (tx, worker) = {
             let (tx, rx) = mpsc::sync_channel(1);
-            let worker = thread::named("Timer", move || Self::run(sender, rx));
-            (tx, worker)
+            let worker = thread::Builder::new()
+                .name("Timer".to_string())
+                .spawn(move || Self::run(sender, rx))
+                .expect("failed to spawn timer thread");
+            (tx, Some(worker))
         };
 
         #[cfg(feature = "mock_base")]
@@ -64,7 +67,7 @@ impl Timer {
             inner: Rc::new(RefCell::new(Inner {
                 next_token: 0,
                 tx,
-                _worker: worker,
+                worker,
             })),
         }
     }
@@ -144,7 +147,7 @@ impl Timer {
     #[cfg(feature = "mock_base")]
     pub fn process_timers(&self) {
         let mut inner = self.inner.borrow_mut();
-        let process_timers = &mut *inner._worker;
+        let process_timers = &mut *inner.worker;
         process_timers();
     }
 
@@ -159,6 +162,15 @@ impl Timer {
         }
 
         Self::process_deadlines(deadlines, sender);
+    }
+}
+
+#[cfg(not(feature = "mock_base"))]
+impl Drop for Timer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.inner.borrow_mut().worker.take() {
+            let _ = handle.join();
+        }
     }
 }
 

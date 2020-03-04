@@ -54,8 +54,6 @@
 
 #[macro_use]
 extern crate log;
-#[allow(unused_extern_crates, clippy::useless_attribute)]
-extern crate maidsafe_utilities;
 #[macro_use]
 extern crate unwrap;
 
