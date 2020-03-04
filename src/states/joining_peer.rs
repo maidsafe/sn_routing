@@ -312,8 +312,12 @@ impl Base for JoiningPeer {
         }
     }
 
-    fn filter_incoming_message(&mut self, msg: &MessageWithBytes) -> bool {
-        self.msg_filter.filter_incoming(msg).is_new()
+    fn is_message_handled(&self, msg: &MessageWithBytes) -> bool {
+        self.msg_filter.contains_incoming(msg)
+    }
+
+    fn set_message_handled(&mut self, msg: &MessageWithBytes) {
+        self.msg_filter.insert_incoming(msg)
     }
 
     fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {

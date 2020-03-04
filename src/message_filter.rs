@@ -45,20 +45,17 @@ impl MessageFilter {
         }
     }
 
-    // Filter incoming `RoutingMessage`. Return whether this specific message has already been seen.
-    pub fn filter_incoming(&mut self, msg: &MessageWithBytes) -> FilteringResult {
+    pub fn contains_incoming(&self, msg: &MessageWithBytes) -> bool {
+        self.incoming.contains_key(msg.full_crypto_hash())
+    }
+
+    pub fn insert_incoming(&mut self, msg: &MessageWithBytes) {
         // Not filtering direct messages.
         if let DstLocation::Direct = msg.message_dst() {
-            return FilteringResult::NewMessage;
+            return;
         }
 
-        let hash = msg.full_crypto_hash();
-
-        if self.incoming.insert(*hash, ()).is_some() {
-            FilteringResult::KnownMessage
-        } else {
-            FilteringResult::NewMessage
-        }
+        let _ = self.incoming.insert(*msg.full_crypto_hash(), ());
     }
 
     // Filter outgoing `RoutingMessage`. Return whether this specific message has been seen recently

@@ -400,7 +400,7 @@ impl Base for Adult {
                     }
                 };
 
-                match self.handle_filtered_message(sender, msg, outbox) {
+                match self.try_handle_message(sender, msg, outbox) {
                     Ok(new_transition) => transition = new_transition,
                     Err(err) => debug!("{} - {:?}", self, err),
                 }
@@ -477,8 +477,12 @@ impl Base for Adult {
         }
     }
 
-    fn filter_incoming_message(&mut self, message: &MessageWithBytes) -> bool {
-        self.msg_filter.filter_incoming(message).is_new()
+    fn is_message_handled(&self, msg: &MessageWithBytes) -> bool {
+        self.msg_filter.contains_incoming(msg)
+    }
+
+    fn set_message_handled(&mut self, msg: &MessageWithBytes) {
+        self.msg_filter.insert_incoming(msg)
     }
 
     fn should_handle_message(&self, msg: &Message) -> bool {
