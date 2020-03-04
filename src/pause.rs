@@ -33,7 +33,6 @@ pub struct PausedState {
     pub(super) gen_pfx_info: GenesisPfxInfo,
     pub(super) msg_filter: MessageFilter,
     pub(super) msg_queue: VecDeque<QueuedMessage>,
-    pub(super) msg_backlog: Vec<QueuedMessage>,
     // TODO: instead of storing both network_service and network_rx, store only the network config.
     pub(super) network_service: NetworkService,
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,

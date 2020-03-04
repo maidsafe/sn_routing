@@ -691,6 +691,19 @@ impl Chain {
         self.state.neighbour_infos.get(prefix)
     }
 
+    /// Find section (prefix + version) which has member with the given name
+    pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<(Prefix<XorName>, u64)> {
+        if self.is_peer_our_member(pub_id) {
+            return Some((*self.our_info().prefix(), self.our_info().version()));
+        }
+
+        self.state
+            .neighbour_infos
+            .values()
+            .find(|info| info.is_member(pub_id))
+            .map(|info| (*info.prefix(), info.version()))
+    }
+
     /// Check if the given `PublicId` is a member of our section.
     pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
         self.state

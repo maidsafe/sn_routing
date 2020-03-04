@@ -41,6 +41,7 @@ use crate::{
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
 };
+use bytes::Bytes;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
 use std::{
@@ -83,7 +84,6 @@ pub struct ElderDetails {
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_queue: VecDeque<QueuedMessage>,
-    pub msg_backlog: Vec<QueuedMessage>,
     pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
     pub msg_filter: MessageFilter,
@@ -97,7 +97,6 @@ pub struct Elder {
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
     // although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<QueuedMessage>,
-    msg_backlog: Vec<QueuedMessage>,
     msg_filter: MessageFilter,
     sig_accumulator: SignatureAccumulator,
     timer: Timer,
@@ -153,7 +152,6 @@ impl Elder {
             full_id,
             gen_pfx_info,
             msg_queue: Default::default(),
-            msg_backlog: Default::default(),
             sig_accumulator: Default::default(),
             parsec_map,
             msg_filter: MessageFilter::new(),
@@ -196,7 +194,6 @@ impl Elder {
         let details = AdultDetails {
             network_service: self.network_service,
             event_backlog: Vec::new(),
-            msg_backlog: self.msg_backlog,
             full_id: self.full_id,
             gen_pfx_info,
             sig_accumulator: self.sig_accumulator,
@@ -215,7 +212,6 @@ impl Elder {
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: self.msg_filter,
             msg_queue: self.msg_queue,
-            msg_backlog: self.msg_backlog,
             network_service: self.network_service,
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
@@ -231,7 +227,6 @@ impl Elder {
             full_id: state.full_id,
             gen_pfx_info: state.gen_pfx_info,
             msg_queue: state.msg_queue,
-            msg_backlog: state.msg_backlog,
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
             msg_filter: state.msg_filter,
@@ -262,7 +257,6 @@ impl Elder {
             network_service: details.network_service,
             full_id: details.full_id.clone(),
             msg_queue: details.msg_queue,
-            msg_backlog: details.msg_backlog,
             msg_filter: details.msg_filter,
             sig_accumulator: details.sig_accumulator,
             timer,
@@ -658,7 +652,7 @@ impl Elder {
     fn handle_accumulated_message(&mut self, mut msg_with_bytes: MessageWithBytes) -> Result<()> {
         // FIXME: this is almost the same as `Base::try_handle__message` - find a way
         // to avoid the duplication.
-        self.try_relay_message(&msg_with_bytes)?;
+        self.try_relay_message(None, &msg_with_bytes)?;
 
         if !self.in_dst_location(msg_with_bytes.message_dst()) {
             return Ok(());
@@ -679,34 +673,7 @@ impl Elder {
             self.set_message_handled(&msg_with_bytes);
             self.msg_queue.push_back(msg.into_queued(None));
         } else {
-            self.unhandled_message(None, msg);
-        }
-
-        Ok(())
-    }
-
-    fn handle_backlogged_message(
-        &mut self,
-        sender: Option<SocketAddr>,
-        msg: Message,
-    ) -> Result<(), RoutingError> {
-        trace!("{} - Handle backlogged message: {:?}", self, msg);
-
-        if !self.in_dst_location(&msg.dst) {
-            return Ok(());
-        }
-
-        let msg_with_bytes = MessageWithBytes::partial_from_full(&msg)?;
-
-        if self.is_message_handled(&msg_with_bytes) {
-            return Ok(());
-        }
-
-        if self.should_handle_message(&msg) && self.verify_message_quiet(&msg).unwrap_or(false) {
-            // If message still for us and we still trust it, then it must not be stale.
-            self.set_message_handled(&msg_with_bytes);
-            self.update_our_knowledge(&msg);
-            self.msg_queue.push_back(msg.into_queued(sender));
+            self.unhandled_message(None, msg, msg_with_bytes.full_bytes().clone());
         }
 
         Ok(())
@@ -776,6 +743,10 @@ impl Elder {
             Variant::ParsecResponse(version, response) => {
                 return self.handle_parsec_response(version, response, *msg.src.as_node()?, outbox);
             }
+            Variant::Bounce {
+                elders_version,
+                message,
+            } => self.handle_bounce(msg.src.to_sender_node(sender)?, elders_version, message),
             _ => unreachable!(),
         }
 
@@ -1276,14 +1247,6 @@ impl Base for Elder {
 
     fn finish_handle_transition(&mut self, _outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State change to Elder finished.", self);
-
-        for QueuedMessage { message, sender } in mem::take(&mut self.msg_backlog) {
-            match self.handle_backlogged_message(sender, message) {
-                Ok(()) => (),
-                Err(err) => debug!("{} - {:?}", self, err),
-            }
-        }
-
         Transition::Stay
     }
 
@@ -1394,14 +1357,14 @@ impl Base for Elder {
         Ok(Transition::Stay)
     }
 
-    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message) {
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
-            Variant::GenesisUpdate(_) | Variant::Relocate(_) => {
-                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
-                self.msg_backlog.push(msg.into_queued(sender));
+            Variant::GenesisUpdate(_) | Variant::Relocate(_) | Variant::MessageSignature(_) => {
+                debug!("{} Unhandled message, bouncing: {:?}", self, msg);
+                self.send_bounce(sender, msg_bytes);
             }
             Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => {
-                debug!("{} Unhandled message, ignoring: {:?}", self, msg);
+                debug!("{} Unhandled message, discarding: {:?}", self, msg);
             }
             _ => unreachable!(),
         }
@@ -1415,21 +1378,46 @@ impl Base for Elder {
         self.msg_filter.insert_incoming(msg)
     }
 
-    fn relay_message(&mut self, message: &MessageWithBytes) -> Result<()> {
+    fn relay_message(
+        &mut self,
+        _sender: Option<SocketAddr>,
+        message: &MessageWithBytes,
+    ) -> Result<()> {
         self.send_signed_message(message)
     }
 
     fn should_handle_message(&self, msg: &Message) -> bool {
-        match msg.variant {
+        match &msg.variant {
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::AckMessage { .. }
-            | Variant::MessageSignature(_)
             | Variant::BootstrapRequest(_)
             | Variant::JoinRequest(_)
             | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
-            | Variant::ParsecResponse(..) => true,
+            | Variant::ParsecResponse(..)
+            | Variant::Bounce { .. } => true,
+
+            Variant::MessageSignature(accumulating_msg) => {
+                match &accumulating_msg.content.variant {
+                    Variant::NeighbourInfo(_)
+                    | Variant::UserMessage(_)
+                    | Variant::NodeApproval(_)
+                    | Variant::AckMessage { .. }
+                    | Variant::Relocate(_) => true,
+
+                    Variant::GenesisUpdate(_)
+                    | Variant::MessageSignature(_)
+                    | Variant::BootstrapRequest(_)
+                    | Variant::BootstrapResponse(_)
+                    | Variant::JoinRequest(_)
+                    | Variant::MemberKnowledge(_)
+                    | Variant::ParsecRequest(..)
+                    | Variant::ParsecResponse(..)
+                    | Variant::Ping
+                    | Variant::Bounce { .. } => false,
+                }
+            }
 
             Variant::GenesisUpdate(_)
             | Variant::Relocate(_)

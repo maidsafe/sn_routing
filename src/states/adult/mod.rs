@@ -25,8 +25,7 @@ use crate::{
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{
-        AccumulatingMessage, BootstrapResponse, Message, MessageWithBytes, QueuedMessage, Variant,
-        VerifyStatus,
+        AccumulatingMessage, BootstrapResponse, Message, MessageWithBytes, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -41,11 +40,12 @@ use crate::{
     utils::LogIdent,
     xor_space::{Prefix, XorName},
 };
+use bytes::Bytes;
+use hex_fmt::HexFmt;
 use itertools::Itertools;
 use std::{
     collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
-    mem,
     net::SocketAddr,
 };
 
@@ -57,7 +57,6 @@ pub struct AdultDetails {
     pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_backlog: Vec<QueuedMessage>,
     pub sig_accumulator: SignatureAccumulator,
     pub msg_filter: MessageFilter,
     pub timer: Timer,
@@ -71,8 +70,6 @@ pub struct Adult {
     event_backlog: Vec<Event>,
     full_id: FullId,
     gen_pfx_info: GenesisPfxInfo,
-    /// Messages addressed to us that we cannot handle until we are promoted.
-    msg_backlog: Vec<QueuedMessage>,
     sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     knowledge_timer_token: u64,
@@ -109,7 +106,6 @@ impl Adult {
             event_backlog: details.event_backlog,
             full_id: details.full_id,
             gen_pfx_info: details.gen_pfx_info,
-            msg_backlog: details.msg_backlog,
             sig_accumulator: details.sig_accumulator,
             parsec_map,
             msg_filter: details.msg_filter,
@@ -174,7 +170,6 @@ impl Adult {
             full_id: self.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_queue: Default::default(),
-            msg_backlog: self.msg_backlog,
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
             // we reset the message filter so that the node can correctly process some messages as
@@ -194,7 +189,6 @@ impl Adult {
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: self.msg_filter,
             msg_queue: VecDeque::new(),
-            msg_backlog: self.msg_backlog,
             network_service: self.network_service,
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
@@ -211,7 +205,6 @@ impl Adult {
             event_backlog: Vec::new(),
             full_id: state.full_id,
             gen_pfx_info: state.gen_pfx_info,
-            msg_backlog: state.msg_backlog,
             sig_accumulator: state.sig_accumulator,
             parsec_map: state.parsec_map,
             knowledge_timer_token,
@@ -312,11 +305,6 @@ impl Adult {
         );
         self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
 
-        // We were not promoted during the last section change, so we are not going to need these
-        // messages anymore. This also prevents the messages from becoming stale (fail the trust
-        // check) when they are eventually taken from the backlog and swarmed to other nodes.
-        self.msg_backlog.clear();
-
         Ok(Transition::Stay)
     }
 
@@ -383,33 +371,9 @@ impl Base for Adult {
         &mut self.rng
     }
 
-    fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
+    fn finish_handle_transition(&mut self, _outbox: &mut dyn EventBox) -> Transition {
         debug!("{} - State changed to Adult finished.", self);
-
-        let mut transition = Transition::Stay;
-
-        for QueuedMessage { sender, message } in
-            mem::replace(&mut self.msg_backlog, Default::default())
-        {
-            if let Transition::Stay = &transition {
-                let msg = match MessageWithBytes::new(message, &self.log_ident()) {
-                    Ok(msg) => msg,
-                    Err(err) => {
-                        error!("{} - Failed to make message {:?}", self, err);
-                        continue;
-                    }
-                };
-
-                match self.try_handle_message(sender, msg, outbox) {
-                    Ok(new_transition) => transition = new_transition,
-                    Err(err) => debug!("{} - {:?}", self, err),
-                }
-            } else {
-                self.msg_backlog.push(message.into_queued(sender));
-            }
-        }
-
-        transition
+        Transition::Stay
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
@@ -461,18 +425,25 @@ impl Base for Adult {
                 self.handle_bootstrap_request(msg.src.to_sender_node(sender)?, name);
                 Ok(Transition::Stay)
             }
+            Variant::Bounce {
+                elders_version,
+                message,
+            } => {
+                self.handle_bounce(msg.src.to_sender_node(sender)?, elders_version, message);
+                Ok(Transition::Stay)
+            }
             _ => unreachable!(),
         }
     }
 
-    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message) {
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
             Variant::Ping | Variant::BootstrapResponse(_) => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
             }
             _ => {
-                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg);
-                self.msg_backlog.push(msg.into_queued(sender));
+                debug!("{} Unhandled message, bouncing: {:?}", self, msg);
+                self.send_bounce(sender, msg_bytes)
             }
         }
     }
@@ -486,13 +457,21 @@ impl Base for Adult {
     }
 
     fn should_handle_message(&self, msg: &Message) -> bool {
-        match msg.variant {
+        match &msg.variant {
             Variant::GenesisUpdate(_)
             | Variant::Relocate(_)
-            | Variant::MessageSignature(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
-            | Variant::BootstrapRequest(_) => true,
+            | Variant::BootstrapRequest(_)
+            | Variant::Bounce { .. } => true,
+
+            // Handle message signatures only for messages we can handle.
+            Variant::MessageSignature(accumulating_msg) => {
+                match &accumulating_msg.content.variant {
+                    Variant::GenesisUpdate(_) | Variant::Relocate(_) => true,
+                    _ => false,
+                }
+            }
 
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
@@ -516,12 +495,12 @@ impl Base for Adult {
         Ok(true)
     }
 
-    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
+    fn relay_message(&mut self, _sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
         // Send message to our elders so they can route it properly.
         trace!(
-            "{}: Forwarding message {:?} via elder targets {:?}",
+            "{}: Forwarding message {} via elder targets {:?}",
             self,
-            msg.full_crypto_hash(),
+            HexFmt(msg.full_crypto_hash()),
             self.chain.our_elders().format(", ")
         );
 

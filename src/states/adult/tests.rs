@@ -153,7 +153,6 @@ fn new_adult_state(
         event_backlog: Vec::new(),
         full_id,
         gen_pfx_info,
-        msg_backlog: Vec::new(),
         sig_accumulator: Default::default(),
         msg_filter: Default::default(),
         timer: test_utils::create_timer(),

@@ -6,12 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::Base;
+use super::{Base, BOUNCE_RESEND_DELAY};
 use crate::{
     chain::{
         AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
         OnlinePayload, PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
+    crypto,
     error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
@@ -22,9 +23,11 @@ use crate::{
     state_machine::Transition,
     xor_space::{Prefix, XorName},
 };
+use bytes::Bytes;
+use hex_fmt::HexFmt;
 use itertools::Itertools;
 use rand::Rng;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, net::SocketAddr};
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -543,6 +546,57 @@ pub trait Approved: Base {
         for recipient in recipients {
             self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
         }
+    }
+
+    fn handle_bounce(&mut self, sender: P2pNode, sender_version: Option<u64>, msg_bytes: Bytes) {
+        if let Some((_, version)) = self.chain().find_section_by_member(sender.public_id()) {
+            if sender_version
+                .map(|sender_version| sender_version < version)
+                .unwrap_or(true)
+            {
+                trace!(
+                    "{} - Received Bounce of {} from {}. Peer is lagging behind, resending",
+                    self,
+                    HexFmt(crypto::sha3_256(&msg_bytes)),
+                    sender
+                );
+                self.send_message_to_target_later(
+                    sender.peer_addr(),
+                    msg_bytes,
+                    BOUNCE_RESEND_DELAY,
+                );
+            } else {
+                trace!(
+                    "{} - Received Bounce of {} from {}. Peer has moved on, not resending",
+                    self,
+                    HexFmt(crypto::sha3_256(&msg_bytes)),
+                    sender
+                );
+            }
+        } else {
+            trace!(
+                "{} - Received Bounce of {} from {}. Peer not known, not resending",
+                self,
+                HexFmt(crypto::sha3_256(&msg_bytes)),
+                sender
+            );
+        }
+    }
+
+    fn send_bounce(&mut self, recipient: Option<SocketAddr>, msg_bytes: Bytes) {
+        let recipient = if let Some(recipient) = recipient {
+            recipient
+        } else {
+            log_or_panic!(log::Level::Error, "{} - Bounce recipient missing", self);
+            return;
+        };
+
+        let variant = Variant::Bounce {
+            elders_version: Some(self.chain().our_info().version()),
+            message: msg_bytes,
+        };
+
+        self.send_direct_message(&recipient, variant)
     }
 }
 

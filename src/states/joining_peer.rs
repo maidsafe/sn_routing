@@ -9,19 +9,17 @@
 use super::{
     adult::{Adult, AdultDetails},
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
-    common::Base,
+    common::{Base, BOUNCE_RESEND_DELAY},
 };
 use crate::{
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
+    crypto,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::FullId,
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
-    messages::{
-        BootstrapResponse, JoinRequest, Message, MessageWithBytes, QueuedMessage, Variant,
-        VerifyStatus,
-    },
+    messages::{BootstrapResponse, JoinRequest, Message, MessageWithBytes, Variant, VerifyStatus},
     network_service::NetworkService,
     outbox::EventBox,
     relocation::RelocatePayload,
@@ -30,6 +28,8 @@ use crate::{
     timer::Timer,
     xor_space::{Prefix, XorName},
 };
+use bytes::Bytes;
+use hex_fmt::HexFmt;
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
@@ -53,7 +53,6 @@ pub struct JoiningPeerDetails {
 pub struct JoiningPeer {
     network_service: NetworkService,
     msg_filter: MessageFilter,
-    msg_backlog: Vec<QueuedMessage>,
     full_id: FullId,
     timer: Timer,
     rng: MainRng,
@@ -75,7 +74,6 @@ impl JoiningPeer {
         let mut joining_peer = Self {
             network_service: details.network_service,
             msg_filter: MessageFilter::new(),
-            msg_backlog: vec![],
             full_id: details.full_id,
             timer: details.timer,
             rng: details.rng,
@@ -98,7 +96,6 @@ impl JoiningPeer {
             event_backlog: vec![],
             full_id: self.full_id,
             gen_pfx_info,
-            msg_backlog: self.msg_backlog,
             msg_filter: self.msg_filter,
             sig_accumulator: Default::default(),
             timer: self.timer,
@@ -275,27 +272,47 @@ impl Base for JoiningPeer {
 
                 return Ok(self.handle_node_approval(*gen_info));
             }
+            Variant::Bounce { message, .. } => {
+                let sender = msg.src.to_sender_node(sender)?;
+
+                trace!(
+                    "{} - Received Bounce of {} from {}. Resending",
+                    self,
+                    HexFmt(crypto::sha3_256(&message)),
+                    sender
+                );
+                self.send_message_to_target_later(sender.peer_addr(), message, BOUNCE_RESEND_DELAY);
+            }
             _ => unreachable!(),
         }
 
         Ok(Transition::Stay)
     }
 
-    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message) {
+    fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
             Variant::BootstrapResponse(_) => (),
             _ => {
-                debug!("{} Unhandled message, adding to backlog: {:?}", self, msg,);
-                self.msg_backlog.push(msg.into_queued(sender));
+                let sender = sender.expect("sender missing");
+
+                debug!("{} Unhandled message - bouncing: {:?}", self, msg);
+
+                let variant = Variant::Bounce {
+                    elders_version: None,
+                    message: msg_bytes,
+                };
+
+                self.send_direct_message(&sender, variant)
             }
         }
     }
 
     fn should_handle_message(&self, msg: &Message) -> bool {
         match msg.variant {
-            Variant::BootstrapResponse(BootstrapResponse::Join(_)) | Variant::NodeApproval(_) => {
-                true
-            }
+            Variant::BootstrapResponse(BootstrapResponse::Join(_))
+            | Variant::NodeApproval(_)
+            | Variant::Bounce { .. } => true,
+
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::AckMessage { .. }
@@ -320,9 +337,22 @@ impl Base for JoiningPeer {
         self.msg_filter.insert_incoming(msg)
     }
 
-    fn relay_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
-        self.msg_backlog
-            .push(msg.clone_or_deserialize_message()?.into_queued(None));
+    fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
+        let sender = sender.expect("sender missing");
+
+        trace!(
+            "{} Message not for us, bouncing: {}",
+            self,
+            HexFmt(msg.full_crypto_hash())
+        );
+
+        let variant = Variant::Bounce {
+            elders_version: None,
+            message: msg.full_bytes().clone(),
+        };
+
+        self.send_direct_message(&sender, variant);
+
         Ok(())
     }
 
@@ -338,10 +368,9 @@ impl Base for JoiningPeer {
                 // handle it.
                 Ok(true)
             }
-            (Variant::BootstrapResponse(BootstrapResponse::Join(_)), _) => {
-                self.verify_message_full(msg, None)
-            }
-            _ => unreachable!(),
+            (Variant::BootstrapResponse(BootstrapResponse::Join(_)), _)
+            | (Variant::Bounce { .. }, _) => self.verify_message_full(msg, None),
+            _ => unreachable!("unexpected message to verify: {:?}", msg),
         }
     }
 }
