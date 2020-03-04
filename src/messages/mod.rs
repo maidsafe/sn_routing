@@ -7,12 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod accumulating_message;
+mod hash;
 mod src_authority;
 mod variant;
 mod with_bytes;
 
 pub use self::{
     accumulating_message::{AccumulatingMessage, PlainMessage},
+    hash::MessageHash,
     src_authority::SrcAuthority,
     variant::{BootstrapResponse, JoinRequest, MemberKnowledge, Variant},
     with_bytes::MessageWithBytes,

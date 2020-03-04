@@ -6,14 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{DstLocation, Message, PartialMessage};
-use crate::{
-    crypto::{self, Digest256},
-    error::Result,
-    utils::LogIdent,
-};
+use super::{DstLocation, Message, MessageHash, PartialMessage};
+use crate::{error::Result, utils::LogIdent};
 use bytes::Bytes;
-use hex_fmt::HexFmt;
 
 /// Message in both its serialized and unserialized forms.
 #[derive(Eq, PartialEq, Clone)]
@@ -25,7 +20,7 @@ pub struct MessageWithBytes {
     /// Serialized full message as received or sent to quic_p2p.
     full_bytes: Bytes,
     /// Crypto hash of the full message.
-    full_crypto_hash: Digest256,
+    full_crypto_hash: MessageHash,
 }
 
 impl MessageWithBytes {
@@ -36,9 +31,9 @@ impl MessageWithBytes {
         let result = Self::new_from_parts(Some(full_content), partial_content, full_bytes);
 
         trace!(
-            "{} Creating message hash({}) {:?}",
+            "{} Creating message hash({:?}) {:?}",
             log_ident,
-            HexFmt(result.full_crypto_hash),
+            result.full_crypto_hash,
             result
                 .full_content
                 .as_ref()
@@ -59,7 +54,7 @@ impl MessageWithBytes {
         partial_content: PartialMessage,
         full_bytes: Bytes,
     ) -> Self {
-        let full_crypto_hash = crypto::sha3_256(&full_bytes);
+        let full_crypto_hash = MessageHash::from_bytes(&full_bytes);
 
         Self {
             full_content,
@@ -79,7 +74,7 @@ impl MessageWithBytes {
         &self.full_bytes
     }
 
-    pub fn full_crypto_hash(&self) -> &Digest256 {
+    pub fn full_crypto_hash(&self) -> &MessageHash {
         &self.full_crypto_hash
     }
 

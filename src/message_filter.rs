@@ -6,7 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{crypto::Digest256, id::PublicId, location::DstLocation, messages::MessageWithBytes};
+use crate::{
+    id::PublicId,
+    location::DstLocation,
+    messages::{MessageHash, MessageWithBytes},
+};
 use lru_time_cache::LruCache;
 use std::time::Duration;
 
@@ -33,8 +37,8 @@ impl FilteringResult {
 
 // Structure to filter (throttle) incoming and outgoing messages.
 pub struct MessageFilter {
-    incoming: LruCache<Digest256, ()>,
-    outgoing: LruCache<(Digest256, PublicId), ()>,
+    incoming: LruCache<MessageHash, ()>,
+    outgoing: LruCache<(MessageHash, PublicId), ()>,
 }
 
 impl MessageFilter {

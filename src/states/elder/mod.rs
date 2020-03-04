@@ -42,7 +42,6 @@ use crate::{
     xor_space::{Prefix, XorName, Xorable},
 };
 use bytes::Bytes;
-use hex_fmt::HexFmt;
 use itertools::Itertools;
 use std::{
     cmp,
@@ -529,11 +528,11 @@ impl Elder {
                 }
             };
             match self.send_signed_message(&msg) {
-                Ok(()) => trace!("{} - Resend {}", self, HexFmt(msg.full_crypto_hash())),
+                Ok(()) => trace!("{} - Resend {:?}", self, msg.full_crypto_hash()),
                 Err(error) => debug!(
-                    "{} - Failed to resend {}: {:?}",
+                    "{} - Failed to resend {:?}: {:?}",
                     self,
-                    HexFmt(msg.full_crypto_hash()),
+                    msg.full_crypto_hash(),
                     error
                 ),
             }
@@ -660,9 +659,9 @@ impl Elder {
 
         if self.is_message_handled(&msg_with_bytes) {
             trace!(
-                "{} - not handling message - already handled: {}",
+                "{} - not handling message - already handled: {:?}",
                 self,
-                HexFmt(msg_with_bytes.full_crypto_hash())
+                msg_with_bytes.full_crypto_hash()
             );
             return Ok(());
         }
@@ -1112,9 +1111,9 @@ impl Elder {
         };
 
         trace!(
-            "{}: Sending message {} via targets {:?}",
+            "{}: Sending message {:?} via targets {:?}",
             self,
-            HexFmt(msg.full_crypto_hash()),
+            msg.full_crypto_hash(),
             target_p2p_nodes
         );
 

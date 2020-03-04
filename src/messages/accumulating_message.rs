@@ -6,10 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{DstLocation, Message, SrcAuthority, Variant};
+use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
 use crate::{
     chain::{SectionKeyShare, SectionProofSlice},
-    crypto::{self, Digest256},
     error::Result,
     xor_space::{Prefix, XorName},
 };
@@ -117,9 +116,9 @@ impl AccumulatingMessage {
 
     // Computes the cryptographuc hash of this message. Messages with identical `content` have the
     // same hash, regardless of their signature shares and/or proof.
-    pub(crate) fn crypto_hash(&self) -> Result<Digest256> {
+    pub(crate) fn crypto_hash(&self) -> Result<MessageHash> {
         let bytes = serialize(&self.content)?;
-        Ok(crypto::sha3_256(&bytes))
+        Ok(MessageHash::from_bytes(&bytes))
     }
 
     fn remove_invalid_signatures(&mut self, bytes: &[u8]) -> Vec<(usize, bls::SignatureShare)> {
