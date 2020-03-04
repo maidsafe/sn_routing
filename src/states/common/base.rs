@@ -25,7 +25,6 @@ use crate::{
     NetworkEvent,
 };
 use bytes::Bytes;
-use hex_fmt::HexFmt;
 use itertools::Itertools;
 use std::{
     fmt::{Debug, Display},
@@ -232,7 +231,7 @@ pub trait Base: Display {
         trace!(
             "{} - try handle message {:?}",
             self,
-            HexFmt(msg_with_bytes.full_crypto_hash())
+            msg_with_bytes.full_crypto_hash()
         );
 
         self.try_relay_message(sender, &msg_with_bytes)?;
@@ -243,9 +242,9 @@ pub trait Base: Display {
 
         if self.is_message_handled(&msg_with_bytes) {
             trace!(
-                "{} - not handling message - already handled: {}",
+                "{} - not handling message - already handled: {:?}",
                 self,
-                HexFmt(msg_with_bytes.full_crypto_hash())
+                msg_with_bytes.full_crypto_hash()
             );
             return Ok(Transition::Stay);
         }

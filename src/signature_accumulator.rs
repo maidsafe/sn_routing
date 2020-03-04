@@ -7,8 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    crypto::Digest256,
-    messages::{AccumulatingMessage, Message, MessageWithBytes},
+    messages::{AccumulatingMessage, Message, MessageHash, MessageWithBytes},
     time::{Duration, Instant},
     utils::LogIdent,
 };
@@ -21,7 +20,7 @@ pub const ACCUMULATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Default)]
 pub struct SignatureAccumulator {
-    msgs: HashMap<Digest256, (Option<AccumulatingMessage>, Instant)>,
+    msgs: HashMap<MessageHash, (Option<AccumulatingMessage>, Instant)>,
 }
 
 impl SignatureAccumulator {
@@ -69,7 +68,7 @@ impl SignatureAccumulator {
         }
     }
 
-    fn remove_if_complete(&mut self, hash: &Digest256) -> Option<Message> {
+    fn remove_if_complete(&mut self, hash: &MessageHash) -> Option<Message> {
         self.msgs.get_mut(hash).and_then(|(msg, _)| {
             if msg.as_mut().map_or(false, |msg| msg.check_fully_signed()) {
                 msg.take().and_then(|msg| msg.combine_signatures())

@@ -13,13 +13,15 @@ use super::{
 };
 use crate::{
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
-    crypto,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::FullId,
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
-    messages::{BootstrapResponse, JoinRequest, Message, MessageWithBytes, Variant, VerifyStatus},
+    messages::{
+        BootstrapResponse, JoinRequest, Message, MessageHash, MessageWithBytes, Variant,
+        VerifyStatus,
+    },
     network_service::NetworkService,
     outbox::EventBox,
     relocation::RelocatePayload,
@@ -29,7 +31,6 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
-use hex_fmt::HexFmt;
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
@@ -276,9 +277,9 @@ impl Base for JoiningPeer {
                 let sender = msg.src.to_sender_node(sender)?;
 
                 trace!(
-                    "{} - Received Bounce of {} from {}. Resending",
+                    "{} - Received Bounce of {:?} from {}. Resending",
                     self,
-                    HexFmt(crypto::sha3_256(&message)),
+                    MessageHash::from_bytes(&message),
                     sender
                 );
                 self.send_message_to_target_later(sender.peer_addr(), message, BOUNCE_RESEND_DELAY);
@@ -341,9 +342,9 @@ impl Base for JoiningPeer {
         let sender = sender.expect("sender missing");
 
         trace!(
-            "{} Message not for us, bouncing: {}",
+            "{} Message not for us, bouncing: {:?}",
             self,
-            HexFmt(msg.full_crypto_hash())
+            msg.full_crypto_hash()
         );
 
         let variant = Variant::Bounce {

@@ -12,11 +12,10 @@ use crate::{
         AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
         OnlinePayload, PollAccumulated, Proof, ProofSet, SectionKeyInfo, SendAckMessagePayload,
     },
-    crypto,
     error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{MemberKnowledge, Variant, VerifyStatus},
+    messages::{MemberKnowledge, MessageHash, Variant, VerifyStatus},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -24,7 +23,6 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
-use hex_fmt::HexFmt;
 use itertools::Itertools;
 use rand::Rng;
 use std::{collections::BTreeSet, net::SocketAddr};
@@ -555,9 +553,9 @@ pub trait Approved: Base {
                 .unwrap_or(true)
             {
                 trace!(
-                    "{} - Received Bounce of {} from {}. Peer is lagging behind, resending",
+                    "{} - Received Bounce of {:?} from {}. Peer is lagging behind, resending",
                     self,
-                    HexFmt(crypto::sha3_256(&msg_bytes)),
+                    MessageHash::from_bytes(&msg_bytes),
                     sender
                 );
                 self.send_message_to_target_later(
@@ -567,17 +565,17 @@ pub trait Approved: Base {
                 );
             } else {
                 trace!(
-                    "{} - Received Bounce of {} from {}. Peer has moved on, not resending",
+                    "{} - Received Bounce of {:?} from {}. Peer has moved on, not resending",
                     self,
-                    HexFmt(crypto::sha3_256(&msg_bytes)),
+                    MessageHash::from_bytes(&msg_bytes),
                     sender
                 );
             }
         } else {
             trace!(
-                "{} - Received Bounce of {} from {}. Peer not known, not resending",
+                "{} - Received Bounce of {:?} from {}. Peer not known, not resending",
                 self,
-                HexFmt(crypto::sha3_256(&msg_bytes)),
+                MessageHash::from_bytes(&msg_bytes),
                 sender
             );
         }

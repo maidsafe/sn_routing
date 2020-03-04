@@ -41,7 +41,6 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
-use hex_fmt::HexFmt;
 use itertools::Itertools;
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -498,9 +497,9 @@ impl Base for Adult {
     fn relay_message(&mut self, _sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
         // Send message to our elders so they can route it properly.
         trace!(
-            "{}: Forwarding message {} via elder targets {:?}",
+            "{}: Forwarding message {:?} via elder targets {:?}",
             self,
-            HexFmt(msg.full_crypto_hash()),
+            msg.full_crypto_hash(),
             self.chain.our_elders().format(", ")
         );
 

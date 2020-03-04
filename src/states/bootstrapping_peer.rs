@@ -12,12 +12,11 @@ use super::{
 };
 use crate::{
     chain::{EldersInfo, NetworkParams},
-    crypto,
     error::{Result, RoutingError},
     event::Event,
     id::FullId,
     location::{DstLocation, SrcLocation},
-    messages::{BootstrapResponse, Message, MessageWithBytes, Variant, VerifyStatus},
+    messages::{BootstrapResponse, Message, MessageHash, MessageWithBytes, Variant, VerifyStatus},
     network_service::NetworkService,
     outbox::EventBox,
     relocation::{RelocatePayload, SignedRelocateDetails},
@@ -29,7 +28,6 @@ use crate::{
 };
 use bytes::Bytes;
 use fxhash::FxHashSet;
-use hex_fmt::HexFmt;
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
@@ -309,9 +307,9 @@ impl Base for BootstrappingPeer {
                 let sender = msg.src.to_sender_node(sender)?;
 
                 trace!(
-                    "{} - Received Bounce of {} from {}. Resending",
+                    "{} - Received Bounce of {:?} from {}. Resending",
                     self,
-                    HexFmt(crypto::sha3_256(&message)),
+                    MessageHash::from_bytes(&message),
                     sender,
                 );
                 self.send_message_to_target_later(sender.peer_addr(), message, BOUNCE_RESEND_DELAY);
