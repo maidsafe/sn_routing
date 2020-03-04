@@ -536,9 +536,6 @@ impl Base for Adult {
         let cheap_bytes_clone = msg.full_bytes().clone();
         self.send_message_to_targets(&targets, targets.len(), cheap_bytes_clone);
 
-        // we've seen this message - don't handle it again if someone else sends it to us
-        let _ = self.msg_filter.filter_incoming(msg);
-
         Ok(())
     }
 }
