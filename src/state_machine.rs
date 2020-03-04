@@ -77,14 +77,6 @@ impl State {
         )
     }
 
-    pub fn finish_handle_transition(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        state_dispatch!(
-            *self,
-            ref mut state => state.finish_handle_transition(outbox),
-            Terminated => Transition::Terminate
-        )
-    }
-
     fn handle_network_event(
         &mut self,
         event: NetworkEvent,
@@ -409,11 +401,8 @@ impl StateMachine {
     pub fn apply_transition(&mut self, transition: Transition, outbox: &mut dyn EventBox) {
         use self::Transition::*;
         match transition {
-            Stay => return,
-            Terminate => {
-                self.terminate();
-                return;
-            }
+            Stay => (),
+            Terminate => self.terminate(),
             IntoJoining {
                 info,
                 relocate_payload,
@@ -446,9 +435,6 @@ impl StateMachine {
                 _ => unreachable!(),
             }),
         }
-
-        let new_transition = self.state.finish_handle_transition(outbox);
-        self.apply_transition(new_transition, outbox)
     }
 
     fn terminate(&mut self) {

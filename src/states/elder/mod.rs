@@ -160,7 +160,7 @@ impl Elder {
 
         let node = Self::new(details);
 
-        debug!("{} - State changed to Node.", node);
+        debug!("{} - State changed to Elder.", node);
         info!("{} - Started a new network as a seed node.", node);
 
         outbox.send_event(Event::Connected(Connected::First));
@@ -1237,11 +1237,6 @@ impl Base for Elder {
 
     fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
-    }
-
-    fn finish_handle_transition(&mut self, _outbox: &mut dyn EventBox) -> Transition {
-        debug!("{} - State change to Elder finished.", self);
-        Transition::Stay
     }
 
     fn handle_send_message(

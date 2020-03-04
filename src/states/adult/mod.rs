@@ -113,6 +113,8 @@ impl Adult {
             rng: details.rng,
         };
 
+        debug!("{} - State changed to Adult.", node);
+
         Ok(node)
     }
 
@@ -368,11 +370,6 @@ impl Base for Adult {
 
     fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
-    }
-
-    fn finish_handle_transition(&mut self, _outbox: &mut dyn EventBox) -> Transition {
-        debug!("{} - State changed to Adult finished.", self);
-        Transition::Stay
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
