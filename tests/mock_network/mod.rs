@@ -637,7 +637,7 @@ fn node_pause_and_resume(env: Environment, mut nodes: Nodes, new_node_id: FullId
         nodes.last().unwrap().name()
     );
 
-    poll_and_resend_with_options(&mut nodes, PollOptions::default().fire_join_timeout(false));
+    poll_and_resend(&mut nodes);
 
     // Resume the node and verify it caugh up to the changes in the network.
     nodes.push(TestNode::resume(&env, state));

@@ -25,6 +25,7 @@ use crate::{
     NetworkEvent,
 };
 use bytes::Bytes;
+use hex_fmt::HexFmt;
 use itertools::Itertools;
 use std::{
     fmt::{Debug, Display},
@@ -394,7 +395,10 @@ pub trait Base: Display {
         if conn_infos.len() < dg_size {
             warn!(
                 "{} Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
-                self, dg_size, conn_infos, message
+                self,
+                dg_size,
+                conn_infos,
+                HexFmt(&message)
             );
         }
 
