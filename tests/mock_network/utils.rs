@@ -229,6 +229,7 @@ pub fn poll_all(nodes: &mut [TestNode]) -> bool {
 
         result = true;
     }
+
     panic!("poll_all has been called {} times.", MAX_POLL_CALLS);
 }
 
@@ -241,16 +242,12 @@ pub fn poll_and_resend(nodes: &mut [TestNode]) {
 pub struct PollOptions {
     /// If set, polling continues while this predicate returns true even if all nodes are idle.
     pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
-    /// If true and all nodes become idle, advances the time by the amount it takes for joining
-    /// nodes to timeout and polls again one more time.
-    pub fire_join_timeout: bool,
 }
 
 impl Default for PollOptions {
     fn default() -> Self {
         Self {
             continue_predicate: None,
-            fire_join_timeout: true,
         }
     }
 }
@@ -262,53 +259,40 @@ impl PollOptions {
     {
         Self {
             continue_predicate: Some(Box::new(pred)),
-            ..self
-        }
-    }
-
-    pub fn fire_join_timeout(self, fire_join_timeout: bool) -> Self {
-        Self {
-            fire_join_timeout,
-            ..self
         }
     }
 }
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
-pub fn poll_and_resend_with_options(nodes: &mut [TestNode], mut options: PollOptions) {
+pub fn poll_and_resend_with_options(nodes: &mut [TestNode], options: PollOptions) {
     let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
 
-    let mut resend_attempts = 0;
+    // Duration to advance the time after each iteration.
+    let time_step = test_consts::GOSSIP_PERIOD + Duration::from_millis(1);
+
+    // When all nodes become idle, run a couple more iterations, advancing the time a bit after
+    // each one. This should allow the nodes to process failed or bounced messages.
+    let max_final_iterations = 15;
+    let mut final_iterations = 0;
 
     for _ in 0..MAX_POLL_CALLS {
         if poll_all(nodes) || nodes.iter().any(node_busy) {
             // Advance time for next route/gossip iter.
-            advance_time(test_consts::GOSSIP_PERIOD + Duration::from_millis(1));
+            advance_time(time_step);
             continue;
         }
 
         if let Some(continue_predicate) = options.continue_predicate.as_ref() {
             if continue_predicate(nodes) {
                 // Advance time in case the predicate is timeout-triggered.
-                advance_time(test_consts::GOSSIP_PERIOD + Duration::from_millis(1));
+                advance_time(time_step);
                 continue;
             }
         }
 
-        if options.fire_join_timeout {
-            // When all routes are polled, advance time to purge any pending re-connecting peers.
-            advance_time(
-                test_consts::BOOTSTRAP_TIMEOUT.max(test_consts::JOIN_TIMEOUT)
-                    + Duration::from_millis(1),
-            );
-            options.fire_join_timeout = false;
-            continue;
-        }
-
-        // Give the nodes time to detect lost peers.
-        if resend_attempts < test_consts::RESEND_MAX_ATTEMPTS {
-            resend_attempts += 1;
-            advance_time(test_consts::RESEND_DELAY + Duration::from_millis(1));
+        if final_iterations < max_final_iterations {
+            final_iterations += 1;
+            advance_time(time_step);
             continue;
         }
 
@@ -895,12 +879,10 @@ fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pr
     let elder_size = env.elder_size();
     poll_and_resend_with_options(
         nodes,
-        PollOptions::default()
-            .continue_if(move |nodes| {
-                nodes.len() >= elder_size
-                    && nodes.iter().filter(|node| node.inner.is_elder()).count() < elder_size
-            })
-            .fire_join_timeout(false),
+        PollOptions::default().continue_if(move |nodes| {
+            nodes.len() >= elder_size
+                && nodes.iter().filter(|node| node.inner.is_elder()).count() < elder_size
+        }),
     );
     expect_any_event!(unwrap!(nodes.last_mut()), Event::Connected(_));
     assert!(

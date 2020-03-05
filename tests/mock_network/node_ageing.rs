@@ -164,8 +164,7 @@ fn relocate_during_split() {
     poll_and_resend_with_options(
         &mut nodes,
         PollOptions::default()
-            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix))
-            .fire_join_timeout(true),
+            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix)),
     )
 }
 
@@ -287,17 +286,14 @@ fn section_churn(
                 poll_and_resend_with_options(
                     nodes,
                     PollOptions::default()
-                        .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1))
-                        .fire_join_timeout(false),
+                        .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1)),
                 );
             }
             Churn::Remove => {
                 let id = remove_node_from_prefix(nodes, prefix).id();
                 poll_and_resend_with_options(
                     nodes,
-                    PollOptions::default()
-                        .continue_if(move |nodes| !node_left(nodes, &id))
-                        .fire_join_timeout(false),
+                    PollOptions::default().continue_if(move |nodes| !node_left(nodes, &id)),
                 );
             }
         }
