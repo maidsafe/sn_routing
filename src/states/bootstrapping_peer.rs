@@ -320,16 +320,28 @@ impl Base for BootstrappingPeer {
     }
 
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
-        let sender = sender.expect("sender missing");
+        match msg.variant {
+            Variant::MemberKnowledge { .. }
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..) => (),
+            _ => {
+                let sender = sender.expect("sender missing");
 
-        debug!("{} Unhandled message - bouncing: {:?}", self, msg);
+                debug!(
+                    "{} Unhandled message - bouncing: {:?}, hash: {:?}",
+                    self,
+                    msg,
+                    MessageHash::from_bytes(&msg_bytes)
+                );
 
-        let variant = Variant::Bounce {
-            elders_version: None,
-            message: msg_bytes,
-        };
+                let variant = Variant::Bounce {
+                    elders_version: None,
+                    message: msg_bytes,
+                };
 
-        self.send_direct_message(&sender, variant)
+                self.send_direct_message(&sender, variant)
+            }
+        }
     }
 
     fn is_message_handled(&self, _msg: &MessageWithBytes) -> bool {

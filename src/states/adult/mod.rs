@@ -25,7 +25,8 @@ use crate::{
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{
-        AccumulatingMessage, BootstrapResponse, Message, MessageWithBytes, Variant, VerifyStatus,
+        AccumulatingMessage, BootstrapResponse, Message, MessageHash, MessageWithBytes, Variant,
+        VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -434,11 +435,18 @@ impl Base for Adult {
 
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
-            Variant::Ping | Variant::BootstrapResponse(_) => {
+            // MemberKnowledge is a periodically sent message so it will be sent again - there is
+            // no need to bounce it.
+            Variant::Ping | Variant::MemberKnowledge(_) | Variant::BootstrapResponse(_) => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
             }
             _ => {
-                debug!("{} Unhandled message, bouncing: {:?}", self, msg);
+                debug!(
+                    "{} Unhandled message, bouncing: {:?}, hash: {:?}",
+                    self,
+                    msg,
+                    MessageHash::from_bytes(&msg_bytes)
+                );
                 self.send_bounce(sender, msg_bytes)
             }
         }
