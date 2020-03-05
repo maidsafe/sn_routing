@@ -27,7 +27,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
     messages::{
-        AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
+        AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message, MessageHash,
         MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant, VerifyStatus,
     },
     network_service::NetworkService,
@@ -1349,7 +1349,13 @@ impl Base for Elder {
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
             Variant::GenesisUpdate(_) | Variant::Relocate(_) | Variant::MessageSignature(_) => {
-                debug!("{} Unhandled message, bouncing: {:?}", self, msg);
+                debug!(
+                    "{} Unhandled message - bouncing: {:?}, hash: {:?}",
+                    self,
+                    msg,
+                    MessageHash::from_bytes(&msg_bytes)
+                );
+
                 self.send_bounce(sender, msg_bytes);
             }
             Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => {

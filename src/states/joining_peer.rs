@@ -292,11 +292,19 @@ impl Base for JoiningPeer {
 
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
-            Variant::BootstrapResponse(_) => (),
+            Variant::BootstrapResponse(_)
+            | Variant::MemberKnowledge { .. }
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..) => (),
             _ => {
                 let sender = sender.expect("sender missing");
 
-                debug!("{} Unhandled message - bouncing: {:?}", self, msg);
+                debug!(
+                    "{} Unhandled message - bouncing: {:?}, hash: {:?}",
+                    self,
+                    msg,
+                    MessageHash::from_bytes(&msg_bytes)
+                );
 
                 let variant = Variant::Bounce {
                     elders_version: None,
