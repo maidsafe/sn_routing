@@ -1349,14 +1349,23 @@ impl Base for Elder {
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
             Variant::GenesisUpdate(_) | Variant::Relocate(_) | Variant::MessageSignature(_) => {
-                debug!(
-                    "{} Unhandled message - bouncing: {:?}, hash: {:?}",
-                    self,
-                    msg,
-                    MessageHash::from_bytes(&msg_bytes)
-                );
+                if let Some(sender) = sender {
+                    debug!(
+                        "{} Unhandled message - bouncing: {:?}, hash: {:?}",
+                        self,
+                        msg,
+                        MessageHash::from_bytes(&msg_bytes)
+                    );
 
-                self.send_bounce(sender, msg_bytes);
+                    self.send_bounce(&sender, msg_bytes);
+                } else {
+                    log_or_panic!(
+                        log::Level::Error,
+                        "{} Unhandled accumulated message: {:?}",
+                        self,
+                        msg
+                    );
+                }
             }
             Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);

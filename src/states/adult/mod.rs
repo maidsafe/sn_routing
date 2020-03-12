@@ -449,13 +449,21 @@ impl Base for Adult {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
             }
             _ => {
-                debug!(
-                    "{} Unhandled message, bouncing: {:?}, hash: {:?}",
-                    self,
-                    msg,
-                    MessageHash::from_bytes(&msg_bytes)
-                );
-                self.send_bounce(sender, msg_bytes)
+                if let Some(sender) = sender {
+                    debug!(
+                        "{} Unhandled message, bouncing: {:?}, hash: {:?}",
+                        self,
+                        msg,
+                        MessageHash::from_bytes(&msg_bytes)
+                    );
+                    self.send_bounce(&sender, msg_bytes)
+                } else {
+                    trace!(
+                        "{} Unhandled accumulated message, discarding: {:?}",
+                        self,
+                        msg
+                    );
+                }
             }
         }
     }
@@ -477,12 +485,10 @@ impl Base for Adult {
             | Variant::BootstrapRequest(_)
             | Variant::Bounce { .. } => true,
 
-            // Handle message signatures only for messages we can handle.
             Variant::MessageSignature(accumulating_msg) => {
                 match &accumulating_msg.content.variant {
                     Variant::GenesisUpdate(info) => self.is_genesis_update_new(info),
-                    Variant::Relocate(_) => true,
-                    _ => false,
+                    _ => true,
                 }
             }
 
