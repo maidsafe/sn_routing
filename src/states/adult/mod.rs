@@ -293,11 +293,10 @@ impl Adult {
     ) -> Result<Transition, RoutingError> {
         info!("{} - Received GenesisUpdate: {:?}", self, gen_pfx_info);
 
-        // An Adult can receive the same message from multiple Elders - bail early if we are
-        // already up to date
-        if gen_pfx_info.parsec_version <= self.gen_pfx_info.parsec_version {
+        if !self.is_genesis_update_new(&gen_pfx_info) {
             return Ok(Transition::Stay);
         }
+
         self.gen_pfx_info = gen_pfx_info.clone();
         self.parsec_map.init(
             &mut self.rng,
@@ -308,6 +307,11 @@ impl Adult {
         self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
 
         Ok(Transition::Stay)
+    }
+
+    // Ignore stale GenesisUpdates
+    fn is_genesis_update_new(&self, gen_pfx_info: &GenesisPfxInfo) -> bool {
+        gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
     }
 
     /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
@@ -435,9 +439,13 @@ impl Base for Adult {
 
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
         match msg.variant {
+            Variant::Ping
             // MemberKnowledge is a periodically sent message so it will be sent again - there is
             // no need to bounce it.
-            Variant::Ping | Variant::MemberKnowledge(_) | Variant::BootstrapResponse(_) => {
+            | Variant::MemberKnowledge(_)
+            | Variant::BootstrapResponse(_)
+            // Do not bounce stale GenesisUpdates
+            | Variant::GenesisUpdate(_) => {
                 debug!("{} Unhandled message, discarding: {:?}", self, msg);
             }
             _ => {
@@ -462,8 +470,8 @@ impl Base for Adult {
 
     fn should_handle_message(&self, msg: &Message) -> bool {
         match &msg.variant {
-            Variant::GenesisUpdate(_)
-            | Variant::Relocate(_)
+            Variant::GenesisUpdate(info) => self.is_genesis_update_new(info),
+            Variant::Relocate(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::BootstrapRequest(_)
@@ -472,7 +480,8 @@ impl Base for Adult {
             // Handle message signatures only for messages we can handle.
             Variant::MessageSignature(accumulating_msg) => {
                 match &accumulating_msg.content.variant {
-                    Variant::GenesisUpdate(_) | Variant::Relocate(_) => true,
+                    Variant::GenesisUpdate(info) => self.is_genesis_update_new(info),
+                    Variant::Relocate(_) => true,
                     _ => false,
                 }
             }
