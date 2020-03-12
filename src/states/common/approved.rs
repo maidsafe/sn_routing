@@ -581,20 +581,13 @@ pub trait Approved: Base {
         }
     }
 
-    fn send_bounce(&mut self, recipient: Option<SocketAddr>, msg_bytes: Bytes) {
-        let recipient = if let Some(recipient) = recipient {
-            recipient
-        } else {
-            log_or_panic!(log::Level::Error, "{} - Bounce recipient missing", self);
-            return;
-        };
-
+    fn send_bounce(&mut self, recipient: &SocketAddr, msg_bytes: Bytes) {
         let variant = Variant::Bounce {
             elders_version: Some(self.chain().our_info().version()),
             message: msg_bytes,
         };
 
-        self.send_direct_message(&recipient, variant)
+        self.send_direct_message(recipient, variant)
     }
 }
 
