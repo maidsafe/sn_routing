@@ -553,10 +553,11 @@ pub trait Approved: Base {
                 .unwrap_or(true)
             {
                 trace!(
-                    "{} - Received Bounce of {:?} from {}. Peer is lagging behind, resending",
+                    "{} - Received Bounce of {:?} from {}. Peer is lagging behind, resending in {:?}",
                     self,
                     MessageHash::from_bytes(&msg_bytes),
-                    sender
+                    sender,
+                    BOUNCE_RESEND_DELAY
                 );
                 self.send_message_to_target_later(
                     sender.peer_addr(),
