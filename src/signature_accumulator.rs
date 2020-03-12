@@ -11,7 +11,6 @@ use crate::{
     time::{Duration, Instant},
     utils::LogIdent,
 };
-use itertools::Itertools;
 use std::collections::HashMap;
 
 /// Time (in seconds) within which a message and a quorum of signatures need to arrive to
@@ -31,7 +30,7 @@ impl SignatureAccumulator {
         msg: AccumulatingMessage,
         log_ident: &LogIdent,
     ) -> Option<MessageWithBytes> {
-        self.remove_expired();
+        self.remove_expired(log_ident);
         let hash = msg.crypto_hash().ok()?;
         if let Some((existing_msg, _)) = self.msgs.get_mut(&hash) {
             if let Some(existing_msg) = existing_msg {
@@ -51,21 +50,17 @@ impl SignatureAccumulator {
         }
     }
 
-    fn remove_expired(&mut self) {
-        let expired_msgs = self
-            .msgs
-            .iter()
-            .filter(|&(_, &(_, ref time))| time.elapsed() > ACCUMULATION_TIMEOUT)
-            .map(|(hash, _)| *hash)
-            .collect_vec();
-        for hash in expired_msgs {
-            if let Some((Some(existing_msg), clock)) = self.msgs.remove(&hash) {
-                error!(
-                    "Remove unaccumulated expired message clock {:?}, msg {:?}",
-                    clock, existing_msg,
-                );
+    fn remove_expired(&mut self, log_ident: &LogIdent) {
+        self.msgs.retain(|_, (msg, timestamp)| {
+            if timestamp.elapsed() <= ACCUMULATION_TIMEOUT {
+                true
+            } else {
+                if let Some(msg) = msg {
+                    error!("{} - Expired unaccumulated message: {:?}", log_ident, msg);
+                }
+                false
             }
-        }
+        });
     }
 
     fn remove_if_complete(&mut self, hash: &MessageHash) -> Option<Message> {
@@ -243,7 +238,7 @@ mod tests {
 
         FakeClock::advance_time(ACCUMULATION_TIMEOUT.as_secs() * 1000 + 1000);
 
-        sig_accumulator.remove_expired();
+        sig_accumulator.remove_expired(&log_ident);
         assert!(sig_accumulator.msgs.is_empty());
     }
 }
