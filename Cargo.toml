@@ -43,10 +43,6 @@ serde_derive = "~1.0.25"
 tiny-keccak = "~1.5.0"
 unwrap = "~1.2.1"
 
-# Note: we don't actually use this crate, but we need to pin it to work around a bug in failure_derive:
-# https://github.com/rust-lang-nursery/failure/issues/342. Remove it when that bug is fixed.
-quote = "=1.0.2"
-
 [dev-dependencies]
 env_logger = "~0.7.1"
 structopt = "~0.3.9"
