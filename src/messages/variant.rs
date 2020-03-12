@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::AccumulatingMessage;
+use super::{AccumulatingMessage, MessageHash};
 use crate::{
     chain::{EldersInfo, GenesisPfxInfo},
     parsec,
@@ -107,7 +107,7 @@ impl Debug for Variant {
             } => f
                 .debug_struct("Bounce")
                 .field("elders_version", elders_version)
-                .field("message", &HexFmt(message))
+                .field("message_hash", &MessageHash::from_bytes(message))
                 .finish(),
         }
     }
