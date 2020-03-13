@@ -355,7 +355,7 @@ fn new_elder_state(
         Some(secret_key_share),
     );
 
-    let prefix = *gen_pfx_info.first_info.prefix();
+    let prefix = *gen_pfx_info.elders_info.prefix();
     let details = ElderDetails {
         chain,
         network_service: test_utils::create_network_service(network),

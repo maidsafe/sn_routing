@@ -445,27 +445,29 @@ pub fn generate_bls_threshold_secret_key(
 fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
     #[cfg(feature = "mock")]
     let hash = {
-        let fields = (gen_pfx_info.first_info.hash(), gen_pfx_info.parsec_version);
+        let fields = (gen_pfx_info.elders_info.hash(), gen_pfx_info.parsec_version);
         crypto::sha3_256(&unwrap!(bincode::serialize(&fields)))
     };
 
-    if gen_pfx_info.first_info.is_member(full_id.public_id()) {
+    if gen_pfx_info.elders_info.is_member(full_id.public_id()) {
         Parsec::from_genesis(
             #[cfg(feature = "mock")]
             hash,
             full_id,
-            &gen_pfx_info.first_info.member_ids().copied().collect(),
-            gen_pfx_info.first_state_serialized.clone(),
+            &gen_pfx_info.elders_info.member_ids().copied().collect(),
+            gen_pfx_info.state_serialized.clone(),
             ConsensusMode::Single,
             Box::new(rng::new_from(rng)),
         )
     } else {
+        let members = gen_pfx_info.elders_info.member_ids().copied().collect();
+
         Parsec::from_existing(
             #[cfg(feature = "mock")]
             hash,
             full_id,
-            &gen_pfx_info.first_info.member_ids().copied().collect(),
-            &gen_pfx_info.latest_info.member_ids().copied().collect(),
+            &members,
+            &members,
             ConsensusMode::Single,
             Box::new(rng::new_from(rng)),
         )
@@ -541,16 +543,15 @@ mod tests {
             Prefix::<XorName>::default(),
             version
         ));
-        let first_ages = elders_info
+        let ages = elders_info
             .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
         GenesisPfxInfo {
-            first_info: elders_info,
-            first_bls_keys: generate_first_dkg_result(rng).public_key_set,
-            first_state_serialized: Vec::new(),
-            first_ages,
-            latest_info: EldersInfo::default(),
+            elders_info,
+            public_keys: generate_first_dkg_result(rng).public_key_set,
+            state_serialized: Vec::new(),
+            ages,
             parsec_version: version,
         }
     }

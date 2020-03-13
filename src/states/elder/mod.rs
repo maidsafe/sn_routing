@@ -125,15 +125,14 @@ impl Elder {
         let public_id = *full_id.public_id();
         let connection_info = network_service.our_connection_info()?;
         let p2p_node = P2pNode::new(public_id, connection_info);
-        let mut first_ages = BTreeMap::new();
-        let _ = first_ages.insert(public_id, MIN_AGE_COUNTER);
+        let mut ages = BTreeMap::new();
+        let _ = ages.insert(public_id, MIN_AGE_COUNTER);
         let first_dkg_result = generate_first_dkg_result(&mut rng);
         let gen_pfx_info = GenesisPfxInfo {
-            first_info: create_first_elders_info(p2p_node)?,
-            first_bls_keys: first_dkg_result.public_key_set,
-            first_state_serialized: Vec::new(),
-            first_ages,
-            latest_info: EldersInfo::default(),
+            elders_info: create_first_elders_info(p2p_node)?,
+            public_keys: first_dkg_result.public_key_set,
+            state_serialized: Vec::new(),
+            ages,
             parsec_version: 0,
         };
         let parsec_map = ParsecMap::default().with_init(&mut rng, full_id.clone(), &gen_pfx_info);
@@ -794,15 +793,14 @@ impl Elder {
         let dst = DstLocation::Node(*pub_id.name());
 
         let trimmed_info = GenesisPfxInfo {
-            first_info: self.gen_pfx_info.first_info.clone(),
-            first_bls_keys: self.gen_pfx_info.first_bls_keys.clone(),
-            first_state_serialized: Default::default(),
-            first_ages: self.gen_pfx_info.first_ages.clone(),
-            latest_info: self.chain.our_info().clone(),
+            elders_info: self.gen_pfx_info.elders_info.clone(),
+            public_keys: self.gen_pfx_info.public_keys.clone(),
+            state_serialized: Default::default(),
+            ages: self.gen_pfx_info.ages.clone(),
             parsec_version: self.gen_pfx_info.parsec_version,
         };
 
-        let src = SrcLocation::Section(*trimmed_info.first_info.prefix());
+        let src = SrcLocation::Section(*trimmed_info.elders_info.prefix());
         let variant = Variant::NodeApproval(Box::new(trimmed_info));
         if let Err(error) = self.send_routing_message(src, dst, variant, their_knowledge) {
             debug!(
