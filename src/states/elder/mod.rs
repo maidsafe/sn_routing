@@ -1089,30 +1089,16 @@ impl Elder {
 
     // Send message over the network.
     fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<(), RoutingError> {
-        let dst = msg.message_dst();
-
-        // If the message is to a single node and we have the connection info for this node, don't
-        // go through the routing table
-        let single_target = if let DstLocation::Node(node_name) = dst {
-            self.chain.get_p2p_node(node_name)
-        } else {
-            None
-        };
-
-        let (target_p2p_nodes, dg_size) = if let Some(target) = single_target {
-            (vec![target.clone()], 1)
-        } else {
-            self.get_targets(dst)?
-        };
+        let (targets, dg_size) = self.get_targets(msg.message_dst())?;
 
         trace!(
             "{}: Sending message {:?} via targets {:?}",
             self,
             msg,
-            target_p2p_nodes
+            targets
         );
 
-        let targets: Vec<_> = target_p2p_nodes
+        let targets: Vec<_> = targets
             .into_iter()
             .filter(|p2p_node| {
                 self.msg_filter
