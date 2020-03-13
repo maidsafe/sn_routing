@@ -8,7 +8,7 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState, SplitCache},
+    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState},
     AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
     MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
     SectionProofSlice,
@@ -62,6 +62,8 @@ pub struct Chain {
     event_cache: BTreeSet<NetworkEvent>,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
+    /// Is split of the section currently in progress.
+    split_in_progress: bool,
     /// Marker indicating we are processing a relocation.
     relocation_in_progress: bool,
     /// Marker indicating that elders may need to change,
@@ -71,6 +73,10 @@ pub struct Chain {
     /// then members are disjoint. We are working around not having access to the prefix for the
     /// DkgResult but only the list of participants.
     new_section_bls_keys: BTreeMap<XorName, DkgResult>,
+    // The accumulated info during a split pfx change.
+    split_cache: Option<SplitCache>,
+    // members that we had before last split.
+    post_split_sibling_members: BTreeMap<XorName, MemberInfo>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -137,9 +143,12 @@ impl Chain {
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             churn_in_progress: false,
+            split_in_progress: false,
             relocation_in_progress: false,
             members_changed: false,
             new_section_bls_keys: Default::default(),
+            split_cache: None,
+            post_split_sibling_members: Default::default(),
         }
     }
 
@@ -488,7 +497,7 @@ impl Chain {
         self.state.handled_genesis_event
             && !self.churn_in_progress
             && !self.relocation_in_progress
-            && !self.state.split_in_progress
+            && !self.split_in_progress
     }
 
     /// Validate if can call add_member on this node.
@@ -571,7 +580,7 @@ impl Chain {
 
         if self.should_split()? {
             let (our_info, other_info) = self.split_self()?;
-            self.state.split_in_progress = true;
+            self.split_in_progress = true;
             self.members_changed = false;
             self.churn_in_progress = true;
             return Ok(Some(vec![our_info, other_info]));
@@ -643,7 +652,7 @@ impl Chain {
     ) -> Result<ParsecResetData, RoutingError> {
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
-        self.state.split_in_progress = false;
+        self.split_in_progress = false;
 
         info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
         trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
@@ -668,7 +677,7 @@ impl Chain {
 
     /// Returns whether our section is in the process of splitting.
     pub fn split_in_progress(&self) -> bool {
-        self.state.split_in_progress
+        self.split_in_progress
     }
 
     /// Returns whether a churn (elders change) is in progress.
@@ -723,8 +732,7 @@ impl Chain {
 
     /// Returns an old section member `P2pNode`
     fn get_post_split_sibling_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state
-            .post_split_sibling_members
+        self.post_split_sibling_members
             .get(name)
             .map(|member_info| &member_info.p2p_node)
     }
@@ -1022,7 +1030,7 @@ impl Chain {
             | AccumulatingEvent::User(_)
             | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::RelocatePrepare(_, _) => {
-                !self.state.split_in_progress && self.our_info().is_quorum(proofs)
+                !self.split_in_progress && self.our_info().is_quorum(proofs)
             }
             AccumulatingEvent::StartDkg(_) => {
                 log_or_panic!(
@@ -1034,7 +1042,7 @@ impl Chain {
             AccumulatingEvent::SendAckMessage(_) => {
                 // We may not reach consensus if malicious peer, but when we do we know all our
                 // nodes have updated `their_keys`.
-                !self.state.split_in_progress && self.our_info().is_total_consensus(proofs)
+                !self.split_in_progress && self.our_info().is_total_consensus(proofs)
             }
         }
     }
@@ -1051,7 +1059,7 @@ impl Chain {
     /// Returns `true` if we are not in the process of waiting for a pfx change
     /// or if incoming event is a vote for the ongoing pfx change.
     fn can_handle_vote(&self, event: &NetworkEvent) -> bool {
-        if !self.state.split_in_progress {
+        if !self.split_in_progress {
             return true;
         }
 
@@ -1079,7 +1087,7 @@ impl Chain {
         net_event: &NetworkEvent,
         sender_id: &PublicId,
     ) -> Result<(), RoutingError> {
-        if !self.state.split_in_progress {
+        if !self.split_in_progress {
             log_or_panic!(
                 log::Level::Error,
                 "Shouldn't be caching events while not splitting."
@@ -1101,9 +1109,9 @@ impl Chain {
     ) -> Result<bool, RoutingError> {
         // Split handling alone. wouldn't cater to merge
         if elders_info.prefix().is_extension_of(self.our_prefix()) {
-            match self.state.split_cache.take() {
+            match self.split_cache.take() {
                 None => {
-                    self.state.split_cache = Some(SplitCache {
+                    self.split_cache = Some(SplitCache {
                         elders_info,
                         key_info,
                         proofs,
@@ -1150,7 +1158,7 @@ impl Chain {
         }
         self.churn_in_progress = false;
         self.check_and_clean_neighbour_infos(None);
-        self.state.remove_our_members_not_matching_our_prefix();
+        self.post_split_sibling_members = self.state.remove_our_members_not_matching_our_prefix();
         Ok(())
     }
 
@@ -1261,7 +1269,7 @@ impl Chain {
 
     /// Returns whether we should split into two sections.
     fn should_split(&self) -> Result<bool, RoutingError> {
-        if self.state.split_in_progress {
+        if self.split_in_progress {
             return Ok(false);
         }
 
@@ -1579,7 +1587,7 @@ impl Chain {
     }
 
     fn assert_no_prefix_change(&self, label: &str) {
-        if self.state.split_in_progress {
+        if self.split_in_progress {
             log_or_panic!(
                 log::Level::Warn,
                 "{} - attempt to {} during prefix change.",
@@ -1607,11 +1615,7 @@ impl Debug for Chain {
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
         writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
-        writeln!(
-            formatter,
-            "\tsplit_in_progress: {}",
-            self.state.split_in_progress
-        )?;
+        writeln!(formatter, "\tsplit_in_progress: {}", self.split_in_progress)?;
 
         writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
         for info in self.state.our_infos() {
@@ -1821,6 +1825,13 @@ impl EldersChangeBuilder {
                 .collect(),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SplitCache {
+    elders_info: EldersInfo,
+    key_info: SectionKeyInfo,
+    proofs: AccumulatingProof,
 }
 
 #[cfg(test)]

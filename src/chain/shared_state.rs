@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    AccumulatedEvent, AccumulatingProof, AgeCounter, EldersInfo, MemberInfo, MemberPersona,
-    MemberState, MIN_AGE_COUNTER,
+    AccumulatedEvent, AgeCounter, EldersInfo, MemberInfo, MemberPersona, MemberState,
+    MIN_AGE_COUNTER,
 };
 use crate::{
     error::RoutingError, id::PublicId, location::DstLocation, relocation::RelocateDetails,
@@ -40,16 +40,10 @@ pub struct SharedState {
     pub our_infos: NonEmptyList<EldersInfo>,
     /// Info about all members of our section - elders, adults and infants.
     pub our_members: BTreeMap<XorName, MemberInfo>,
-    /// members that we had before last split.
-    pub post_split_sibling_members: BTreeMap<XorName, MemberInfo>,
     /// Maps our neighbours' prefixes to their latest signed elders infos.
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
     pub neighbour_infos: BTreeMap<Prefix<XorName>, EldersInfo>,
-    /// Is split of the section currently in progress.
-    pub split_in_progress: bool,
-    // The accumulated info during a split pfx change.
-    pub split_cache: Option<SplitCache>,
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// BLS public keys of other sections
@@ -92,9 +86,6 @@ impl SharedState {
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
             our_members,
-            post_split_sibling_members: Default::default(),
-            split_in_progress: false,
-            split_cache: None,
             our_history,
             their_keys,
             their_knowledge: Default::default(),
@@ -276,14 +267,13 @@ impl SharedState {
         }
     }
 
-    /// Remove all entries from `out_members` whose name does not match our prefix.
-    pub fn remove_our_members_not_matching_our_prefix(&mut self) {
-        let (our_members, post_split_sibling_members) =
-            mem::replace(&mut self.our_members, BTreeMap::new())
-                .into_iter()
-                .partition(|(name, _)| self.our_prefix().matches(name));
+    /// Remove all entries from `out_members` whose name does not match our prefix and returns them.
+    pub fn remove_our_members_not_matching_our_prefix(&mut self) -> BTreeMap<XorName, MemberInfo> {
+        let (our_members, sibling_members) = mem::take(&mut self.our_members)
+            .into_iter()
+            .partition(|(name, _)| self.our_prefix().matches(name));
         self.our_members = our_members;
-        self.post_split_sibling_members = post_split_sibling_members;
+        sibling_members
     }
 
     pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
@@ -436,13 +426,6 @@ fn update_with_genesis_related_info_check_same<T>(
             to_use_info
         );
     }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct SplitCache {
-    pub elders_info: EldersInfo,
-    pub key_info: SectionKeyInfo,
-    pub proofs: AccumulatingProof,
 }
 
 /// Vec-like container that is guaranteed to contain at least one element.
