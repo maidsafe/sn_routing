@@ -161,10 +161,18 @@ impl Chain {
         _group: &BTreeSet<PublicId>,
         related_info: &[u8],
     ) -> Result<(), RoutingError> {
+        // `related_info` is empty only if this is the `first` node.
+        let new_state = if !related_info.is_empty() {
+            Some(bincode::deserialize(related_info)?)
+        } else {
+            None
+        };
+
         // On split membership may need to be checked again.
         self.members_changed = true;
-        self.state
-            .update_with_genesis_related_info(related_info, &LogIdent::new(self))
+        self.state.update(new_state, &LogIdent::new(self));
+
+        Ok(())
     }
 
     /// Handles a completed parsec DKG Observation.
@@ -189,7 +197,7 @@ impl Chain {
     /// Get the serialized shared state that will be the starting point when processing
     /// parsec data
     pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
-        self.state.get_genesis_related_info()
+        Ok(serialize(&self.state)?)
     }
 
     fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {

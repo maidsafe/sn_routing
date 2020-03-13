@@ -14,7 +14,7 @@ use crate::{
     error::RoutingError, id::PublicId, location::DstLocation, relocation::RelocateDetails,
     utils::LogIdent, Prefix, XorName,
 };
-use bincode::{deserialize, serialize};
+use bincode::serialize;
 use itertools::Itertools;
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -31,9 +31,10 @@ use crate::crypto::Digest256;
 const MAX_THEIR_RECENT_KEYS: usize = 20;
 
 /// Section state that is shared among all elders of a section via Parsec consensus.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SharedState {
     /// Indicate whether nodes are shared state because genesis event was seen
+    #[serde(skip)]
     pub handled_genesis_event: bool,
     /// The latest few fully signed infos of our own sections.
     /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
@@ -95,116 +96,30 @@ impl SharedState {
         }
     }
 
-    pub fn update_with_genesis_related_info(
-        &mut self,
-        related_info: &[u8],
-        log_ident: &LogIdent,
-    ) -> Result<(), RoutingError> {
-        update_with_genesis_related_info_check_same(
-            log_ident,
-            "handled_genesis_event",
-            &self.handled_genesis_event,
-            &false,
-        );
+    pub fn update(&mut self, new: Option<Self>, log_ident: &LogIdent) {
+        if self.handled_genesis_event {
+            log_or_panic!(
+                log::Level::Error,
+                "{} - shared state update - genesis event already handled",
+                log_ident
+            );
+        }
+
+        if let Some(new) = new {
+            if self.our_infos.len() > 1 && *self != new {
+                log_or_panic!(
+                    log::Level::Error,
+                    "{} - shared state update - mismatch: old: {:?} --- new: {:?}",
+                    log_ident,
+                    self,
+                    new
+                );
+            }
+
+            *self = new;
+        }
+
         self.handled_genesis_event = true;
-
-        if related_info.is_empty() {
-            return Ok(());
-        }
-
-        let (
-            our_infos,
-            our_history,
-            our_members,
-            neighbour_infos,
-            their_keys,
-            their_knowledge,
-            their_recent_keys,
-            churn_event_backlog,
-            relocate_queue,
-        ) = deserialize(related_info)?;
-        if self.our_infos.len() != 1 {
-            // Check nodes with a history before genesis match the genesis block:
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "our_infos",
-                &self.our_infos,
-                &our_infos,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "our_history",
-                &self.our_history,
-                &our_history,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "our_members",
-                &self.our_members,
-                &our_members,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "neighbour_infos",
-                &self.neighbour_infos,
-                &neighbour_infos,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "their_keys",
-                &self.their_keys,
-                &their_keys,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "their_knowledge",
-                &self.their_knowledge,
-                &their_knowledge,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "their_recent_keys",
-                &self.their_recent_keys,
-                &their_recent_keys,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "churn_event_backlog",
-                &self.churn_event_backlog,
-                &churn_event_backlog,
-            );
-            update_with_genesis_related_info_check_same(
-                log_ident,
-                "relocate_queue",
-                &self.relocate_queue,
-                &relocate_queue,
-            );
-        }
-        self.our_infos = our_infos;
-        self.our_history = our_history;
-        self.our_members = our_members;
-        self.neighbour_infos = neighbour_infos;
-        self.their_keys = their_keys;
-        self.their_knowledge = their_knowledge;
-        self.their_recent_keys = their_recent_keys;
-        self.churn_event_backlog = churn_event_backlog;
-        self.relocate_queue = relocate_queue;
-
-        Ok(())
-    }
-
-    pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
-        Ok(serialize(&(
-            &self.our_infos,
-            &self.our_history,
-            &self.our_members,
-            &self.neighbour_infos,
-            &self.their_keys,
-            &self.their_knowledge,
-            &self.their_recent_keys,
-            &self.churn_event_backlog,
-            &self.relocate_queue,
-        ))?)
     }
 
     pub fn our_infos(&self) -> impl Iterator<Item = &EldersInfo> + DoubleEndedIterator {
@@ -405,26 +320,6 @@ impl SharedState {
         } else {
             index
         }
-    }
-}
-
-fn update_with_genesis_related_info_check_same<T>(
-    log_ident: &LogIdent,
-    id: &str,
-    self_info: &T,
-    to_use_info: &T,
-) where
-    T: Eq + Debug,
-{
-    if self_info != to_use_info {
-        log_or_panic!(
-            log::Level::Error,
-            "{} - update_with_genesis_related_info_check_same different {}:\n{:?},\n{:?}",
-            id,
-            log_ident,
-            self_info,
-            to_use_info
-        );
     }
 }
 
