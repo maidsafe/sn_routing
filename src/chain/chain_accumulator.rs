@@ -156,8 +156,8 @@ impl ChainAccumulator {
     }
 
     pub fn reset_accumulator(&mut self, our_id: &PublicId) -> RemainingEvents {
-        let completed_events = mem::replace(&mut self.completed_events, Default::default());
-        let chain_acc = mem::replace(&mut self.chain_accumulator, Default::default());
+        let completed_events = std::mem::take(&mut self.completed_events);
+        let chain_acc = std::mem::take(&mut self.chain_accumulator);
         self.vote_statuses = Default::default();
 
         RemainingEvents {
