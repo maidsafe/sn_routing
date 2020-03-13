@@ -28,7 +28,6 @@ use std::{
     collections::{btree_map::Entry, BTreeMap},
     env,
     fmt::{self, Display},
-    mem,
     str::FromStr,
 };
 
@@ -402,7 +401,7 @@ impl ParsecMap {
     }
 
     fn remove_old(&mut self) {
-        let parsec_map = mem::replace(&mut self.map, Default::default());
+        let parsec_map = std::mem::take(&mut self.map);
         self.map = parsec_map
             .into_iter()
             .rev()

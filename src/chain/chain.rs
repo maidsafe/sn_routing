@@ -613,7 +613,7 @@ impl Chain {
         parsec_version: u64,
     ) -> Result<ParsecResetData, RoutingError> {
         let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
-        let event_cache = mem::replace(&mut self.event_cache, Default::default());
+        let event_cache = mem::take(&mut self.event_cache);
 
         self.state.handled_genesis_event = false;
 
@@ -1126,10 +1126,8 @@ impl Chain {
     ) -> Result<(), RoutingError> {
         let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
         let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
-        let our_new_key = key_matching_first_elder_name(
-            &elders_info,
-            mem::replace(&mut self.new_section_bls_keys, Default::default()),
-        )?;
+        let our_new_key =
+            key_matching_first_elder_name(&elders_info, mem::take(&mut self.new_section_bls_keys))?;
 
         self.state.push_our_new_info(elders_info, proof_block);
         self.our_section_bls_keys = SectionKeys::new(our_new_key, self.our_id(), self.our_info());
