@@ -124,21 +124,17 @@ impl Chain {
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_elder = gen_info.first_info.is_member(&our_id);
+        let is_elder = gen_info.elders_info.is_member(&our_id);
         let secret_key_share = secret_key_share
-            .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.first_info));
+            .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.elders_info));
         Self {
             network_cfg,
             our_id,
             our_section_bls_keys: SectionKeys {
-                public_key_set: gen_info.first_bls_keys.clone(),
+                public_key_set: gen_info.public_keys.clone(),
                 secret_key_share,
             },
-            state: SharedState::new(
-                gen_info.first_info,
-                gen_info.first_bls_keys,
-                gen_info.first_ages,
-            ),
+            state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
@@ -636,11 +632,10 @@ impl Chain {
 
         Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
-                first_info: self.our_info().clone(),
-                first_bls_keys: self.our_section_bls_keys().clone(),
-                first_state_serialized: self.get_genesis_related_info()?,
-                first_ages: self.get_age_counters(),
-                latest_info: self.our_info().clone(),
+                elders_info: self.our_info().clone(),
+                public_keys: self.our_section_bls_keys().clone(),
+                state_serialized: self.get_genesis_related_info()?,
+                ages: self.get_age_counters(),
                 parsec_version,
             },
             cached_events: remaining
@@ -1940,24 +1935,23 @@ mod tests {
         let our_id = unwrap!(our_id);
         let mut sections_iter = section_members.into_iter();
 
-        let first_info = sections_iter.next().expect("section members");
-        let first_ages = first_info
+        let elders_info = sections_iter.next().expect("section members");
+        let ages = elders_info
             .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
 
-        let participants = first_info.len();
+        let participants = elders_info.len();
         let our_id_index = 0;
         let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
         let secret_key_share = secret_key_set.secret_key_share(our_id_index);
         let public_key_set = secret_key_set.public_keys();
 
         let genesis_info = GenesisPfxInfo {
-            first_info,
-            first_bls_keys: public_key_set,
-            first_state_serialized: Vec::new(),
-            first_ages,
-            latest_info: Default::default(),
+            elders_info,
+            public_keys: public_key_set,
+            state_serialized: Vec::new(),
+            ages,
             parsec_version: 0,
         };
 

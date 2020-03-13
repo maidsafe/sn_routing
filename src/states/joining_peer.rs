@@ -152,7 +152,7 @@ impl JoiningPeer {
         info!(
             "{} - This node has been approved to join the network at {:?}!",
             self,
-            gen_pfx_info.latest_info.prefix(),
+            gen_pfx_info.elders_info.prefix(),
         );
         Transition::IntoAdult { gen_pfx_info }
     }

@@ -46,11 +46,10 @@ use crate::{error::RoutingError, id::P2pNode, Prefix, XorName};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
-    pub first_info: EldersInfo,
-    pub first_bls_keys: bls::PublicKeySet,
-    pub first_state_serialized: Vec<u8>,
-    pub first_ages: BTreeMap<PublicId, AgeCounter>,
-    pub latest_info: EldersInfo,
+    pub elders_info: EldersInfo,
+    pub public_keys: bls::PublicKeySet,
+    pub state_serialized: Vec<u8>,
+    pub ages: BTreeMap<PublicId, AgeCounter>,
     pub parsec_version: u64,
 }
 
@@ -58,10 +57,9 @@ impl Debug for GenesisPfxInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "GenesisPfxInfo({:?}, gen_version: {}, latest_version: {}, parsec_version {})",
-            self.first_info.prefix(),
-            self.first_info.version(),
-            self.latest_info.version(),
+            "GenesisPfxInfo({:?}, elders_version: {}, parsec_version {})",
+            self.elders_info.prefix(),
+            self.elders_info.version(),
             self.parsec_version,
         )
     }

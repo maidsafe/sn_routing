@@ -74,17 +74,16 @@ pub fn create_elders_info(
 
 pub fn create_gen_pfx_info(
     elders_info: EldersInfo,
-    public_key_set: bls::PublicKeySet,
+    public_keys: bls::PublicKeySet,
     parsec_version: u64,
 ) -> GenesisPfxInfo {
-    let first_ages = elder_age_counters(elders_info.member_ids());
+    let ages = elder_age_counters(elders_info.member_ids());
 
     GenesisPfxInfo {
-        first_info: elders_info,
-        first_bls_keys: public_key_set,
-        first_state_serialized: Vec::new(),
-        first_ages,
-        latest_info: EldersInfo::default(),
+        elders_info,
+        public_keys,
+        state_serialized: Vec::new(),
+        ages,
         parsec_version,
     }
 }
