@@ -619,6 +619,7 @@ impl Approved for Adult {
     fn handle_section_info_event(
         &mut self,
         old_pfx: Prefix<XorName>,
+        _was_elder: bool,
         _neighbour_change: EldersChange,
         _: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
