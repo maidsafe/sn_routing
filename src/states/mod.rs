@@ -11,11 +11,10 @@ mod bootstrapping_peer;
 pub mod common;
 mod elder;
 mod joining_peer;
-#[cfg(all(test, feature = "mock_base"))]
+#[cfg(all(test, feature = "mock"))]
 mod test_utils;
 
 pub use self::{
-    adult::Adult,
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     elder::Elder,
     joining_peer::JoiningPeer,
@@ -32,18 +31,13 @@ pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT
 //      ┌───────────────┐
 //      │ Bootstrapping │──────────┐
 //      └───────────────┘          │
-//        ▲     ▲     ▲            │
-//        │     │     │            │
-//        │     │     │            ▼
-//        │     │     │          ┌─────────────┐
-//        │     │     └──────────│ JoiningNode │
-//        │     │                └─────────────┘
-//        │     │                  │
-//        │     │                  │
-//        │     │                  ▼
-//        │     │                ┌───────┐
-//        │     └────────────────│ Adult │
-//        │                      └───────┘
+//        ▲           ▲            │
+//        │           │            │
+//        │           │            ▼
+//        │           │          ┌─────────────┐
+//        │           └──────────│ JoiningNode │
+//        │                      └─────────────┘
+//        │                        │
 //        │                        │
 //        │                        │
 //        │                        ▼
@@ -55,9 +49,8 @@ pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT
 // # Common traits
 //                              BootstrappingPeer
 //                              │   JoininigPeer
-//                              │   │   Adult
-//                              │   │   │   Elder
-//                              │   │   │   │
-// Base                         *   *   *   *
-// Approved                             *   *
+//                              │   │   Elder
+//                              │   │   │
+// Base                         *   *   *
+// Approved                             *
 //

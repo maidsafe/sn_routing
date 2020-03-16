@@ -7,14 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    adult::{Adult, AdultDetails},
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     common::{Base, BOUNCE_RESEND_DELAY},
+    elder::{Elder, ElderDetails},
 };
 use crate::{
-    chain::{EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
+    chain::{Chain, EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
     error::{Result, RoutingError},
-    event::{Connected, Event},
+    event::Connected,
     id::FullId,
     location::{DstLocation, SrcLocation},
     message_filter::MessageFilter,
@@ -24,6 +24,7 @@ use crate::{
     },
     network_service::NetworkService,
     outbox::EventBox,
+    parsec::ParsecMap,
     relocation::RelocatePayload,
     rng::MainRng,
     state_machine::{State, Transition},
@@ -88,30 +89,39 @@ impl JoiningPeer {
     }
 
     pub fn approve(
-        self,
+        mut self,
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut dyn EventBox,
-    ) -> Result<State, RoutingError> {
-        let details = AdultDetails {
+    ) -> Result<State> {
+        let public_id = *self.full_id.public_id();
+        let parsec_map =
+            ParsecMap::default().with_init(&mut self.rng, self.full_id.clone(), &gen_pfx_info);
+        let chain = Chain::new(self.network_cfg, public_id, gen_pfx_info.clone(), None);
+
+        let details = ElderDetails {
+            chain,
             network_service: self.network_service,
-            event_backlog: vec![],
+            event_backlog: Default::default(),
             full_id: self.full_id,
             gen_pfx_info,
-            msg_filter: self.msg_filter,
+            msg_queue: Default::default(),
             sig_accumulator: Default::default(),
+            parsec_map,
+            msg_filter: self.msg_filter,
             timer: self.timer,
             rng: self.rng,
-            network_cfg: self.network_cfg,
         };
-        let node = Adult::new(details, Default::default(), outbox).map(State::Adult);
 
         let connect_type = match self.join_type {
             JoinType::First { .. } => Connected::First,
             JoinType::Relocate(_) => Connected::Relocate,
         };
-        outbox.send_event(Event::Connected(connect_type));
 
-        node
+        Ok(State::Elder(Elder::from_joining_peer(
+            details,
+            connect_type,
+            outbox,
+        )))
     }
 
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {

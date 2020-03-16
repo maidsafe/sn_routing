@@ -10,9 +10,8 @@
 mod tests;
 
 use super::{
-    adult::AdultDetails,
     common::{Approved, Base},
-    Adult,
+    BootstrappingPeer, BootstrappingPeerDetails,
 };
 use crate::{
     chain::{
@@ -34,10 +33,11 @@ use crate::{
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
     pause::PausedState,
-    relocation::RelocateDetails,
+    relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
+    time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
 };
@@ -50,6 +50,9 @@ use std::{
     iter, mem,
     net::SocketAddr,
 };
+
+// Send our knowledge in a similar speed as GOSSIP_TIMEOUT
+const KNOWLEDGE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Number of RelocatePrepare to consensus before actually relocating a node.
 /// This helps avoid relocated node receiving message they need to process from previous section.
@@ -101,7 +104,7 @@ pub struct Elder {
     timer: Timer,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
-    gossip_timer_token: u64,
+    timer_token: u64,
     chain: Chain,
     pfx_is_successfully_polled: bool,
     // DKG cache
@@ -168,39 +171,35 @@ impl Elder {
         Ok(node)
     }
 
-    pub fn from_adult(
-        mut details: ElderDetails,
-        old_pfx: Prefix<XorName>,
+    pub fn from_joining_peer(
+        details: ElderDetails,
+        connect_type: Connected,
         outbox: &mut dyn EventBox,
-    ) -> Result<Self, RoutingError> {
-        let event_backlog = mem::replace(&mut details.event_backlog, Vec::new());
-        let mut elder = Self::new(details);
-        elder.init(old_pfx, event_backlog, outbox)?;
+    ) -> Self {
+        let node = Self::new(details);
 
-        outbox.send_event(Event::Promoted);
+        debug!("{} - State changed to Elder.", node);
+        outbox.send_event(Event::Connected(connect_type));
 
-        Ok(elder)
+        node
     }
 
-    pub fn demote(
+    pub fn relocate(
         self,
-        gen_pfx_info: GenesisPfxInfo,
-        outbox: &mut dyn EventBox,
+        conn_infos: Vec<SocketAddr>,
+        details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
-        outbox.send_event(Event::Demoted);
-
-        let details = AdultDetails {
-            network_service: self.network_service,
-            event_backlog: Vec::new(),
-            full_id: self.full_id,
-            gen_pfx_info,
-            sig_accumulator: self.sig_accumulator,
-            msg_filter: self.msg_filter,
-            timer: self.timer,
-            network_cfg: self.chain.network_cfg(),
-            rng: self.rng,
-        };
-        Adult::new(details, self.parsec_map, outbox).map(State::Adult)
+        Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
+            BootstrappingPeerDetails {
+                network_service: self.network_service,
+                full_id: self.full_id,
+                network_cfg: self.chain.network_cfg(),
+                timer: self.timer,
+                rng: self.rng,
+            },
+            conn_infos,
+            details,
+        )))
     }
 
     pub fn pause(self) -> PausedState {
@@ -249,7 +248,11 @@ impl Elder {
         let timer = details.timer;
         let parsec_map = details.parsec_map;
 
-        let gossip_timer_token = timer.schedule(parsec_map.gossip_period());
+        let timer_token = if details.chain.is_self_elder() {
+            timer.schedule(parsec_map.gossip_period())
+        } else {
+            timer.schedule(KNOWLEDGE_TIMEOUT)
+        };
 
         Self {
             network_service: details.network_service,
@@ -260,7 +263,7 @@ impl Elder {
             timer,
             parsec_map,
             gen_pfx_info: details.gen_pfx_info,
-            gossip_timer_token,
+            timer_token,
             chain: details.chain,
             pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
@@ -289,34 +292,6 @@ impl Elder {
             log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", network_estimate, sep_len);
             log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
         }
-    }
-
-    // Initialise regular node
-    fn init(
-        &mut self,
-        old_pfx: Prefix<XorName>,
-        event_backlog: Vec<Event>,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        debug!("{} - State changed to Elder.", self);
-        trace!(
-            "{} - Node Established. Prefixes: {:?}",
-            self,
-            self.chain.prefixes()
-        );
-
-        for event in event_backlog {
-            self.send_event(event, outbox);
-        }
-
-        // Handle the SectionInfo event which triggered us becoming Elder.
-        let change = EldersChange {
-            neighbour_added: self.chain.neighbour_elder_nodes().cloned().collect(),
-            neighbour_removed: Default::default(),
-        };
-        let _ = self.handle_section_info_event(old_pfx, false, change, outbox)?;
-
-        Ok(())
     }
 
     fn handle_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
@@ -565,6 +540,17 @@ impl Elder {
         Ok(complete_data)
     }
 
+    fn demote(&mut self, gen_pfx_info: GenesisPfxInfo) {
+        self.gen_pfx_info = gen_pfx_info.clone();
+        self.init_parsec();
+        self.chain = Chain::new(
+            self.chain.network_cfg(),
+            *self.full_id.public_id(),
+            gen_pfx_info,
+            None,
+        );
+    }
+
     fn send_neighbour_infos(&mut self) {
         self.chain.other_prefixes().iter().for_each(|pfx| {
             let src = SrcLocation::Section(*self.our_prefix());
@@ -710,6 +696,15 @@ impl Elder {
                     *msg.src.as_section()?,
                     *msg.dst.as_section()?,
                 )?;
+            }
+            Variant::GenesisUpdate(info) => {
+                let _: &Prefix<_> = msg.src.as_section()?;
+                self.handle_genesis_update(*info)?;
+            }
+            Variant::Relocate(_) => {
+                let _: &Prefix<_> = msg.src.as_section()?;
+                let signed_relocate = SignedRelocateDetails::new(msg)?;
+                return self.handle_relocate(signed_relocate);
             }
             Variant::MessageSignature(accumulating_msg) => {
                 return self.handle_message_signature(
@@ -941,6 +936,70 @@ impl Elder {
         Ok(())
     }
 
+    fn handle_genesis_update(&mut self, gen_pfx_info: GenesisPfxInfo) -> Result<()> {
+        info!("{} - Received GenesisUpdate: {:?}", self, gen_pfx_info);
+
+        if !self.is_genesis_update_new(&gen_pfx_info) {
+            return Ok(());
+        }
+
+        self.gen_pfx_info = gen_pfx_info.clone();
+
+        let log_ident = self.log_ident();
+        self.parsec_map.init(
+            &mut self.rng,
+            self.full_id.clone(),
+            &self.gen_pfx_info,
+            &log_ident,
+        );
+
+        self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
+
+        Ok(())
+    }
+
+    // Ignore stale GenesisUpdates
+    fn is_genesis_update_new(&self, gen_pfx_info: &GenesisPfxInfo) -> bool {
+        gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
+    }
+
+    fn handle_relocate(
+        &mut self,
+        signed_msg: SignedRelocateDetails,
+    ) -> Result<Transition, RoutingError> {
+        if signed_msg.relocate_details().pub_id != *self.id() {
+            // This `Relocate` message is not for us - it's most likely a duplicate of a previous
+            // message that we already handled.
+            return Ok(Transition::Stay);
+        }
+
+        debug!(
+            "{} - Received Relocate message to join the section at {}.",
+            self,
+            signed_msg.relocate_details().destination
+        );
+
+        if !self.check_signed_relocation_details(&signed_msg) {
+            return Ok(Transition::Stay);
+        }
+
+        let conn_infos: Vec<_> = self
+            .chain
+            .our_elders()
+            .map(|p2p_node| *p2p_node.peer_addr())
+            .collect();
+
+        // Disconnect from everyone we know.
+        for addr in self.chain.known_nodes().map(|node| *node.peer_addr()) {
+            self.network_service.disconnect(addr);
+        }
+
+        Ok(Transition::Relocate {
+            details: signed_msg,
+            conn_infos,
+        })
+    }
+
     fn maintain_parsec(&mut self) {
         if self.parsec_map.needs_pruning() {
             self.vote_for_event(AccumulatingEvent::ParsecPrune);
@@ -1166,9 +1225,15 @@ impl Base for Elder {
     }
 
     fn handle_timeout(&mut self, token: u64, _outbox: &mut dyn EventBox) -> Transition {
-        if self.gossip_timer_token == token {
-            self.gossip_timer_token = self.timer.schedule(self.parsec_map.gossip_period());
-            self.parsec_map.reset_gossip_period();
+        if self.timer_token == token {
+            if self.chain.is_self_elder() {
+                self.timer_token = self.timer.schedule(self.parsec_map.gossip_period());
+                self.parsec_map.reset_gossip_period();
+            } else {
+                // TODO: send this only when the knowledge changes, not periodically.
+                self.send_member_knowledge();
+                self.timer_token = self.timer.schedule(KNOWLEDGE_TIMEOUT);
+            }
         }
 
         Transition::Stay
@@ -1241,7 +1306,7 @@ impl Base for Elder {
             return Transition::Stay;
         };
 
-        if self.chain.is_peer_our_member(&pub_id) {
+        if self.chain.is_self_elder() && self.chain.is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
 
@@ -1260,30 +1325,46 @@ impl Base for Elder {
     }
 
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes) {
-        match msg.variant {
-            Variant::GenesisUpdate(_) | Variant::Relocate(_) | Variant::MessageSignature(_) => {
-                if let Some(sender) = sender {
-                    debug!(
-                        "{} Unhandled message - bouncing: {:?}, hash: {:?}",
-                        self,
-                        msg,
-                        MessageHash::from_bytes(&msg_bytes)
-                    );
+        let bounce = match msg.variant {
+            Variant::MessageSignature(_) => true,
+            Variant::Relocate(_) if self.chain.is_self_elder() => true,
+            Variant::JoinRequest(_)
+            | Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::AckMessage { .. }
+                if !self.chain.is_self_elder() =>
+            {
+                true
+            }
+            Variant::GenesisUpdate(_) => self.chain.is_self_elder(),
+            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => false,
+            Variant::MemberKnowledge(_) if !self.chain.is_self_elder() => false,
 
-                    self.send_bounce(&sender, msg_bytes);
-                } else {
-                    log_or_panic!(
-                        log::Level::Error,
-                        "{} Unhandled accumulated message: {:?}",
-                        self,
-                        msg
-                    );
-                }
+            _ => unreachable!("unexpected unhandled message: {:?}", msg),
+        };
+
+        if bounce {
+            if let Some(sender) = sender {
+                debug!(
+                    "{} Unhandled message - bouncing: {:?}, hash: {:?}",
+                    self,
+                    msg,
+                    MessageHash::from_bytes(&msg_bytes)
+                );
+
+                self.send_bounce(&sender, msg_bytes);
+            } else {
+                trace!(
+                    "{} Unhandled accumulated message, discarding: {:?}",
+                    self,
+                    msg
+                );
             }
-            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => {
-                debug!("{} Unhandled message, discarding: {:?}", self, msg);
-            }
-            _ => unreachable!(),
+        } else {
+            debug!(
+                "{} Unhandled message from {:?}, discarding: {:?}",
+                self, sender, msg
+            );
         }
     }
 
@@ -1305,15 +1386,21 @@ impl Base for Elder {
 
     fn should_handle_message(&self, msg: &Message) -> bool {
         match &msg.variant {
-            Variant::NeighbourInfo(_)
-            | Variant::UserMessage(_)
-            | Variant::AckMessage { .. }
-            | Variant::BootstrapRequest(_)
-            | Variant::JoinRequest(_)
-            | Variant::MemberKnowledge(_)
+            Variant::BootstrapRequest(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Bounce { .. } => true,
+
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::AckMessage { .. }
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge(_) => self.chain.is_self_elder(),
+
+            Variant::GenesisUpdate(info) => {
+                !self.chain.is_self_elder() && self.is_genesis_update_new(info)
+            }
+            Variant::Relocate(_) => !self.chain.is_self_elder(),
 
             Variant::MessageSignature(accumulating_msg) => {
                 match &accumulating_msg.content.variant {
@@ -1323,8 +1410,12 @@ impl Base for Elder {
                     | Variant::AckMessage { .. }
                     | Variant::Relocate(_) => true,
 
-                    Variant::GenesisUpdate(_)
-                    | Variant::MessageSignature(_)
+                    Variant::GenesisUpdate(info) => {
+                        !self.chain.is_self_elder() && self.is_genesis_update_new(info)
+                    }
+
+                    // These variants are not be signature-accumulated
+                    Variant::MessageSignature(_)
                     | Variant::BootstrapRequest(_)
                     | Variant::BootstrapResponse(_)
                     | Variant::JoinRequest(_)
@@ -1336,11 +1427,7 @@ impl Base for Elder {
                 }
             }
 
-            Variant::GenesisUpdate(_)
-            | Variant::Relocate(_)
-            | Variant::BootstrapResponse(_)
-            | Variant::NodeApproval(_)
-            | Variant::Ping => false,
+            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => false,
         }
     }
 
@@ -1424,7 +1511,12 @@ impl Approved for Elder {
     }
 
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
         self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
+
         Ok(())
     }
 
@@ -1432,6 +1524,10 @@ impl Approved for Elder {
         &mut self,
         new_infos: Vec<EldersInfo>,
     ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
         for info in new_infos {
             let participants: BTreeSet<_> = info.member_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
@@ -1446,6 +1542,10 @@ impl Approved for Elder {
         payload: OnlinePayload,
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
         self.handle_candidate_approval(payload.p2p_node, payload.their_knowledge, outbox);
         self.print_rt_size();
         Ok(())
@@ -1467,6 +1567,10 @@ impl Approved for Elder {
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         let _ = self.members_knowledge.remove(details.pub_id.name());
+
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
 
         if &details.pub_id == self.id() {
             // Do not send the message to ourselves.
@@ -1496,6 +1600,10 @@ impl Approved for Elder {
         participants: &BTreeSet<PublicId>,
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
         if let Some(info) = self.dkg_cache.remove(participants) {
             info!("{} - handle DkgResult: {:?}", self, participants);
             self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
@@ -1512,6 +1620,11 @@ impl Approved for Elder {
     }
 
     fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            debug!("{} - Unhandled ParsecPrune event", self);
+            return Ok(());
+        }
+
         if self.chain.split_in_progress() {
             log_or_panic!(
                 log::Level::Warn,
@@ -1536,16 +1649,21 @@ impl Approved for Elder {
     fn handle_section_info_event(
         &mut self,
         old_pfx: Prefix<XorName>,
-        _was_elder: bool,
+        was_elder: bool,
         elders_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         let elders_info = self.chain.our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
-        let is_member = elders_info.is_member(self.full_id.public_id());
+        let is_elder = elders_info.is_member(self.full_id.public_id());
 
-        info!("{} - handle SectionInfo: {:?}.", self, elders_info);
+        if was_elder || is_elder {
+            info!("{} - handle SectionInfo: {:?}", self, elders_info);
+        } else {
+            trace!("{} - unhandled SectionInfo", self);
+            return Ok(Transition::Stay);
+        }
 
         let complete_data = if info_prefix.is_extension_of(&old_pfx) {
             self.prepare_finalise_split()?
@@ -1558,13 +1676,16 @@ impl Approved for Elder {
             self.prepare_reset_parsec()?
         };
 
-        if !is_member {
+        if !is_elder {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
             // i.e the one that would be received with NodeApproval.
             self.process_post_reset_events(old_pfx, complete_data.to_process);
-            return Ok(Transition::Demote {
-                gen_pfx_info: complete_data.gen_pfx_info,
-            });
+            self.demote(complete_data.gen_pfx_info);
+
+            info!("{} - Demoted", self);
+            outbox.send_event(Event::Demoted);
+
+            return Ok(Transition::Stay);
         }
 
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
@@ -1583,7 +1704,12 @@ impl Approved for Elder {
 
         self.print_rt_size();
         if let Some(to_send) = complete_data.event_to_send {
-            self.send_event(to_send, outbox);
+            outbox.send_event(to_send);
+        }
+
+        if !was_elder {
+            info!("{} - Promoted", self);
+            outbox.send_event(Event::Promoted);
         }
 
         Ok(Transition::Stay)
@@ -1595,6 +1721,11 @@ impl Approved for Elder {
         neighbour_change: EldersChange,
     ) -> Result<(), RoutingError> {
         info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
+
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
         let _ = self
             .pending_voted_msgs
             .remove(&PendingMessageKey::NeighbourInfo {
@@ -1609,6 +1740,10 @@ impl Approved for Elder {
         &mut self,
         key_info: SectionKeyInfo,
     ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
         self.vote_send_section_info_ack(SendAckMessagePayload {
             ack_prefix: *key_info.prefix(),
             ack_version: key_info.version(),
@@ -1620,6 +1755,10 @@ impl Approved for Elder {
         &mut self,
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
         let src = SrcLocation::Section(*self.our_prefix());
         let dst = DstLocation::Section(ack_payload.ack_prefix.name());
         let variant = Variant::AckMessage {
@@ -1636,6 +1775,10 @@ impl Approved for Elder {
         count_down: i32,
         _outbox: &mut dyn EventBox,
     ) {
+        if !self.chain.is_self_elder() {
+            return;
+        }
+
         if count_down > 0 {
             self.vote_for_relocate_prepare(payload, count_down - 1);
         } else {
@@ -1646,7 +1789,17 @@ impl Approved for Elder {
 
 impl Display for Elder {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Elder({}({:b}))", self.name(), self.our_prefix())
+        write!(
+            formatter,
+            "{}({}({:b}))",
+            if self.chain.is_self_elder() {
+                "Elder"
+            } else {
+                "Adult"
+            },
+            self.name(),
+            self.our_prefix()
+        )
     }
 }
 

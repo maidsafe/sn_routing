@@ -16,9 +16,9 @@ use crate::{
     pause::PausedState,
     quic_p2p::EventSenders,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    states::{common::Base, Adult, BootstrappingPeer, Elder, JoiningPeer},
+    states::{common::Base, BootstrappingPeer, Elder, JoiningPeer},
     timer::Timer,
-    xor_space::{Prefix, XorName},
+    xor_space::XorName,
     NetworkConfig, NetworkEvent,
 };
 #[cfg(feature = "mock_base")]
@@ -41,7 +41,6 @@ macro_rules! state_dispatch {
         match $self {
             Self::BootstrappingPeer($state) => $expr,
             Self::JoiningPeer($state) => $expr,
-            Self::Adult($state) => $expr,
             Self::Elder($state) => $expr,
             Self::Terminated => $term_expr,
         }
@@ -63,7 +62,6 @@ pub struct StateMachine {
 pub enum State {
     BootstrappingPeer(BootstrappingPeer),
     JoiningPeer(JoiningPeer),
-    Adult(Adult),
     Elder(Elder),
     Terminated,
 }
@@ -108,17 +106,13 @@ impl State {
     pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
         match *self {
             Self::Elder(ref state) => Some(state.our_elders()),
-            Self::BootstrappingPeer(_)
-            | Self::JoiningPeer(_)
-            | Self::Adult(_)
-            | Self::Terminated => None,
+            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => None,
         }
     }
 
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
         match *self {
             Self::Elder(ref state) => Ok(state.our_prefix().matches(name)),
-            Self::Adult(ref state) => Ok(state.our_prefix().matches(name)),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
                 Err(RoutingError::InvalidState)
             }
@@ -131,7 +125,6 @@ impl State {
     ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
         match *self {
             Self::Elder(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
-            Self::Adult(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
                 Err(RoutingError::InvalidState)
             }
@@ -196,7 +189,6 @@ impl Debug for State {
 impl State {
     pub fn chain(&self) -> Option<&Chain> {
         match *self {
-            Self::Adult(ref state) => Some(state.chain()),
             Self::Elder(ref state) => Some(state.chain()),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => None,
         }
@@ -219,18 +211,16 @@ impl State {
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
-        match *self {
+        match self {
             Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => false,
-            Self::Adult(ref state) => state.has_unpolled_observations(),
-            Self::Elder(ref state) => state.has_unpolled_observations(),
+            Self::Elder(state) => state.has_unpolled_observations(),
         }
     }
 
     pub fn unpolled_observations_string(&self) -> String {
-        match *self {
+        match self {
             Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => String::new(),
-            Self::Adult(ref state) => state.unpolled_observations_string(),
-            Self::Elder(ref state) => state.unpolled_observations_string(),
+            Self::Elder(state) => state.unpolled_observations_string(),
         }
     }
 
@@ -280,14 +270,6 @@ pub enum Transition {
     Approve {
         gen_pfx_info: GenesisPfxInfo,
     },
-    // `Adult` state transition to `Elder`.
-    IntoElder {
-        old_pfx: Prefix<XorName>,
-    },
-    // `Elder` state transition to `Adult` as a result of demotion
-    Demote {
-        gen_pfx_info: GenesisPfxInfo,
-    },
     Terminate,
 }
 
@@ -299,8 +281,6 @@ impl Debug for Transition {
             Self::Rebootstrap => write!(f, "Rebootstrap"),
             Self::Relocate { .. } => write!(f, "Relocate"),
             Self::Approve { .. } => write!(f, "Approve"),
-            Self::IntoElder { .. } => write!(f, "IntoElder"),
-            Self::Demote { .. } => write!(f, "Demote"),
             Self::Terminate => write!(f, "Terminate"),
         }
     }
@@ -355,7 +335,6 @@ impl StateMachine {
 
         let mut paused_state = match self.state {
             State::Elder(state) => state.pause(),
-            State::Adult(state) => state.pause(),
             _ => return Err(RoutingError::InvalidState),
         };
 
@@ -368,11 +347,7 @@ impl StateMachine {
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
 
         let timer = Timer::new(action_tx.clone());
-        let state = if state.is_elder() {
-            State::Elder(Elder::resume(state, timer))
-        } else {
-            State::Adult(Adult::resume(state, timer))
-        };
+        let state = State::Elder(Elder::resume(state, timer));
 
         let machine = Self {
             state,
@@ -418,19 +393,11 @@ impl StateMachine {
                 details,
                 conn_infos,
             } => self.state.replace_with(|state| match state {
-                State::Adult(src) => src.relocate(conn_infos, details),
+                State::Elder(src) => src.relocate(conn_infos, details),
                 _ => unreachable!(),
             }),
             Approve { gen_pfx_info } => self.state.replace_with(|state| match state {
                 State::JoiningPeer(src) => src.approve(gen_pfx_info, outbox),
-                _ => unreachable!(),
-            }),
-            IntoElder { old_pfx } => self.state.replace_with(|state| match state {
-                State::Adult(src) => src.into_elder(old_pfx, outbox),
-                _ => unreachable!(),
-            }),
-            Demote { gen_pfx_info } => self.state.replace_with(|state| match state {
-                State::Elder(src) => src.demote(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
         }
