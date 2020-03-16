@@ -23,6 +23,7 @@ use crate::{
     event::Event,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
+    message_filter::FilteringResult,
     message_filter::MessageFilter,
     messages::{
         AccumulatingMessage, Message, MessageHash, MessageWithBytes, Variant, VerifyStatus,
@@ -41,7 +42,6 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
-use itertools::Itertools;
 use std::{
     collections::{BTreeSet, VecDeque},
     fmt::{self, Display, Formatter},
@@ -484,30 +484,7 @@ impl Base for Adult {
     }
 
     fn relay_message(&mut self, _sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
-        // Send message to our elders so they can route it properly.
-        trace!(
-            "{}: Forwarding message {:?} via elder targets {:?}",
-            self,
-            msg,
-            self.chain.our_elders().format(", ")
-        );
-
-        let msg_filter = &mut self.msg_filter;
-        let targets: Vec<_> = self
-            .chain
-            .our_elders()
-            .filter(|p2p_node| {
-                msg_filter
-                    .filter_outgoing(msg, p2p_node.public_id())
-                    .is_new()
-            })
-            .map(|node| *node.peer_addr())
-            .collect();
-
-        let cheap_bytes_clone = msg.full_bytes().clone();
-        self.send_message_to_targets(&targets, targets.len(), cheap_bytes_clone);
-
-        Ok(())
+        self.send_signed_message(msg)
     }
 }
 
@@ -538,6 +515,14 @@ impl Approved for Adult {
 
     fn is_pfx_successfully_polled(&self) -> bool {
         false
+    }
+
+    fn filter_outgoing_message(
+        &mut self,
+        msg: &MessageWithBytes,
+        recipient_id: &PublicId,
+    ) -> FilteringResult {
+        self.msg_filter.filter_outgoing(msg, recipient_id)
     }
 
     fn handle_relocate_polled(&mut self, _details: RelocateDetails) -> Result<(), RoutingError> {

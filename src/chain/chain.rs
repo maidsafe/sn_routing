@@ -1433,6 +1433,14 @@ impl Chain {
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
     pub fn targets(&self, dst: &DstLocation) -> Result<(Vec<P2pNode>, usize), RoutingError> {
+        if !self.is_self_elder() {
+            // We are not Elder - return all the elders of our section, so the message can be properly
+            // relayed through them.
+            let targets: Vec<_> = self.our_info().member_nodes().cloned().collect();
+            let dg_size = targets.len();
+            return Ok((targets, dg_size));
+        }
+
         let (best_section, dg_size) = match dst {
             DstLocation::Node(target_name) => {
                 if target_name == self.our_id().name() {
