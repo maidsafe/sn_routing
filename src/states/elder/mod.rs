@@ -309,12 +309,12 @@ impl Elder {
             self.send_event(event, outbox);
         }
 
-        // Handle the SectionInfo event which triggered us becoming established node.
+        // Handle the SectionInfo event which triggered us becoming Elder.
         let change = EldersChange {
             neighbour_added: self.chain.neighbour_elder_nodes().cloned().collect(),
             neighbour_removed: Default::default(),
         };
-        let _ = self.handle_section_info_event(old_pfx, change, outbox)?;
+        let _ = self.handle_section_info_event(old_pfx, false, change, outbox)?;
 
         Ok(())
     }
@@ -1599,6 +1599,7 @@ impl Approved for Elder {
     fn handle_section_info_event(
         &mut self,
         old_pfx: Prefix<XorName>,
+        _was_elder: bool,
         elders_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {

@@ -79,6 +79,7 @@ pub trait Approved: Base {
     fn handle_section_info_event(
         &mut self,
         old_pfx: Prefix<XorName>,
+        was_elder: bool,
         neighbour_change: EldersChange,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError>;
@@ -347,10 +348,12 @@ pub trait Approved: Base {
 
     fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         let mut old_pfx = *self.chain_mut().our_prefix();
+        let mut was_elder = self.chain().is_self_elder();
+
         while let Some(event) = self.chain_mut().poll_accumulated()? {
             match event {
                 PollAccumulated::AccumulatedEvent(event) => {
-                    match self.handle_accumulated_event(event, old_pfx, outbox)? {
+                    match self.handle_accumulated_event(event, old_pfx, was_elder, outbox)? {
                         Transition::Stay => (),
                         transition => return Ok(transition),
                     }
@@ -364,6 +367,7 @@ pub trait Approved: Base {
             }
 
             old_pfx = *self.chain_mut().our_prefix();
+            was_elder = self.chain().is_self_elder();
         }
 
         Ok(Transition::Stay)
@@ -373,6 +377,7 @@ pub trait Approved: Base {
         &mut self,
         event: AccumulatedEvent,
         old_pfx: Prefix<XorName>,
+        was_elder: bool,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
         trace!("{} Handle accumulated event: {:?}", self, event);
@@ -391,7 +396,12 @@ pub trait Approved: Base {
                 self.handle_offline_event(pub_id, outbox)?;
             }
             AccumulatingEvent::SectionInfo(_, _) => {
-                return self.handle_section_info_event(old_pfx, event.elders_change, outbox);
+                return self.handle_section_info_event(
+                    old_pfx,
+                    was_elder,
+                    event.elders_change,
+                    outbox,
+                );
             }
             AccumulatingEvent::NeighbourInfo(elders_info) => {
                 self.handle_neighbour_info_event(elders_info, event.elders_change)?;
