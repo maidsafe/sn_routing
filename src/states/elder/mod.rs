@@ -1049,7 +1049,7 @@ impl Elder {
 
     // Send message over the network.
     fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<(), RoutingError> {
-        let (targets, dg_size) = self.get_targets(msg.message_dst())?;
+        let (targets, dg_size) = self.chain.targets(msg.message_dst())?;
 
         trace!(
             "{}: Sending message {:?} via targets {:?}",
@@ -1105,12 +1105,6 @@ impl Elder {
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
         list.truncate(delivery_group_size(list.len()));
         list
-    }
-
-    /// Returns a list of target IDs for a message sent via route.
-    fn get_targets(&self, dst: &DstLocation) -> Result<(Vec<P2pNode>, usize), RoutingError> {
-        let (targets, dg_size) = self.chain.targets(dst)?;
-        Ok((targets.into_iter().cloned().collect(), dg_size))
     }
 
     // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
