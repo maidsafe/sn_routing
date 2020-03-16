@@ -595,11 +595,13 @@ impl Elder {
     }
 
     fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
+        let payload = self.gen_pfx_info.trimmed();
+
         self.chain
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
-                let variant = Variant::GenesisUpdate(Box::new(self.gen_pfx_info.clone()));
+                let variant = Variant::GenesisUpdate(Box::new(payload.clone()));
                 let dst = DstLocation::Node(*recipient.name());
                 let version = self
                     .members_knowledge
@@ -789,23 +791,15 @@ impl Elder {
             p2p_node
         );
 
-        let pub_id = *p2p_node.public_id();
-        let dst = DstLocation::Node(*pub_id.name());
-
-        let trimmed_info = GenesisPfxInfo {
-            elders_info: self.gen_pfx_info.elders_info.clone(),
-            public_keys: self.gen_pfx_info.public_keys.clone(),
-            state_serialized: Default::default(),
-            ages: self.gen_pfx_info.ages.clone(),
-            parsec_version: self.gen_pfx_info.parsec_version,
-        };
-
+        let trimmed_info = self.gen_pfx_info.trimmed();
         let src = SrcLocation::Section(*trimmed_info.elders_info.prefix());
+        let dst = DstLocation::Node(*p2p_node.name());
+
         let variant = Variant::NodeApproval(Box::new(trimmed_info));
         if let Err(error) = self.send_routing_message(src, dst, variant, their_knowledge) {
             debug!(
                 "{} Failed sending NodeApproval to {}: {:?}",
-                self, pub_id, error
+                self, p2p_node, error
             );
         }
     }

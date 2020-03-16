@@ -53,6 +53,18 @@ pub struct GenesisPfxInfo {
     pub parsec_version: u64,
 }
 
+impl GenesisPfxInfo {
+    pub fn trimmed(&self) -> Self {
+        Self {
+            elders_info: self.elders_info.clone(),
+            public_keys: self.public_keys.clone(),
+            state_serialized: Vec::new(),
+            ages: self.ages.clone(),
+            parsec_version: self.parsec_version,
+        }
+    }
+}
+
 impl Debug for GenesisPfxInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
