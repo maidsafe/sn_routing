@@ -25,8 +25,7 @@ use crate::{
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{
-        AccumulatingMessage, BootstrapResponse, Message, MessageHash, MessageWithBytes, Variant,
-        VerifyStatus,
+        AccumulatingMessage, Message, MessageHash, MessageWithBytes, Variant, VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -255,36 +254,6 @@ impl Adult {
             details: signed_msg,
             conn_infos,
         })
-    }
-
-    // Since we are an adult we should only give info about our section elders and they would
-    // further guide the joining node.
-    // However this lead to a loop if the Adult is the new Elder so we use the same code as
-    // in Elder and return Join in some cases.
-    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
-        // Use same code as from Elder::respond_to_bootstrap_request.
-        // This is problematic since Elders do additional checks before doing this.
-        // This was necessary to merge the initial work for promotion demotion.
-        let response = if self.our_prefix().matches(&destination) {
-            let our_info = self.chain.our_info().clone();
-            debug!(
-                "{} - Sending BootstrapResponse::Join to {:?} ({:?})",
-                self, p2p_node, our_info
-            );
-            BootstrapResponse::Join(our_info)
-        } else {
-            let conn_infos: Vec<_> = self
-                .closest_known_elders_to(&destination)
-                .map(|p2p_node| *p2p_node.peer_addr())
-                .collect();
-            debug!(
-                "{} - Sending BootstrapResponse::Rebootstrap to {}",
-                self, p2p_node
-            );
-            BootstrapResponse::Rebootstrap(conn_infos)
-        };
-
-        self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response))
     }
 
     fn handle_genesis_update(

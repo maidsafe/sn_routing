@@ -15,7 +15,7 @@ use crate::{
     error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{MemberKnowledge, MessageHash, Variant, VerifyStatus},
+    messages::{BootstrapResponse, MemberKnowledge, MessageHash, Variant, VerifyStatus},
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -599,6 +599,39 @@ pub trait Approved: Base {
         };
 
         self.send_direct_message(recipient, variant)
+    }
+
+    // Note: As an adult, we should only give info about our section elders and they would
+    // further guide the joining node. However this lead to a loop if the Adult is the new Elder so
+    // we use the same code as for Elder and return Join in some cases.
+    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
+        debug!(
+            "{} - Received BootstrapRequest to section at {} from {:?}.",
+            self, destination, p2p_node
+        );
+
+        let response = if self.chain().our_prefix().matches(&destination) {
+            let our_info = self.chain().our_info().clone();
+            debug!(
+                "{} - Sending BootstrapResponse::Join to {:?} ({:?})",
+                self, p2p_node, our_info
+            );
+            BootstrapResponse::Join(our_info)
+        } else {
+            let conn_infos: Vec<_> = self
+                .chain()
+                .closest_section_info(destination)
+                .1
+                .member_nodes()
+                .map(|p2p_node| *p2p_node.peer_addr())
+                .collect();
+            debug!(
+                "{} - Sending BootstrapResponse::Rebootstrap to {}",
+                self, p2p_node
+            );
+            BootstrapResponse::Rebootstrap(conn_infos)
+        };
+        self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
     }
 }
 
