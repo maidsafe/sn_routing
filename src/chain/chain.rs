@@ -1432,18 +1432,18 @@ impl Chain {
     ///     - if our name *is* the destination, returns an empty set; otherwise
     ///     - if the destination name is an entry in the routing table, returns it; otherwise
     ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(&self, dst: &DstLocation) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
-        let (best_section, dg_size) = match *dst {
-            DstLocation::Node(ref target_name) => {
+    pub fn targets(&self, dst: &DstLocation) -> Result<(Vec<P2pNode>, usize), RoutingError> {
+        let (best_section, dg_size) = match dst {
+            DstLocation::Node(target_name) => {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
                 }
                 if let Some(node) = self.get_p2p_node(target_name) {
-                    return Ok((vec![node], 1));
+                    return Ok((vec![node.clone()], 1));
                 }
                 self.candidates(target_name)?
             }
-            DstLocation::Section(ref target_name) => {
+            DstLocation::Section(target_name) => {
                 let (prefix, section) = self.closest_section_info(*target_name);
                 if prefix == self.our_prefix() || prefix.is_neighbour(self.our_prefix()) {
                     // Exclude our name since we don't need to send to ourself
@@ -1454,13 +1454,14 @@ impl Chain {
                     let section: Vec<_> = section
                         .member_nodes()
                         .filter(|node| node.name() != our_name)
+                        .cloned()
                         .collect();
                     let dg_size = section.len();
                     return Ok((section, dg_size));
                 }
                 self.candidates(target_name)?
             }
-            DstLocation::Prefix(ref prefix) => {
+            DstLocation::Prefix(prefix) => {
                 if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
                 {
                     // only route the message when we have all the targets in our chain -
@@ -1483,12 +1484,13 @@ impl Chain {
                     // Exclude our name since we don't need to send to ourself
                     let our_name = self.our_id().name();
 
-                    let targets = self
+                    let targets: Vec<_> = self
                         .all_sections()
                         .filter_map(is_compatible)
                         .flat_map(EldersInfo::member_nodes)
                         .filter(|node| node.name() != our_name)
-                        .collect::<Vec<_>>();
+                        .cloned()
+                        .collect();
                     let dg_size = targets.len();
                     return Ok((targets, dg_size));
                 }
@@ -1501,28 +1503,22 @@ impl Chain {
     }
 
     // Obtain the delivery group candidates for this target
-    fn candidates(&self, target_name: &XorName) -> Result<(Vec<&P2pNode>, usize), RoutingError> {
-        let filtered_sections =
-            self.closest_sections_info(*target_name)
-                .into_iter()
-                .map(|(prefix, members)| {
-                    (
-                        prefix,
-                        members.len(),
-                        members.member_nodes().collect::<Vec<_>>(),
-                    )
-                });
+    fn candidates(&self, target_name: &XorName) -> Result<(Vec<P2pNode>, usize), RoutingError> {
+        let filtered_sections = self
+            .closest_sections_info(*target_name)
+            .into_iter()
+            .map(|(prefix, members)| (prefix, members.len(), members.member_nodes()));
 
         let mut dg_size = 0;
         let mut nodes_to_send = Vec::new();
         for (idx, (prefix, len, connected)) in filtered_sections.enumerate() {
-            nodes_to_send.extend(connected.into_iter());
+            nodes_to_send.extend(connected.cloned());
             dg_size = delivery_group_size(len);
 
             if prefix == self.our_prefix() {
                 // Send to all connected targets so they can forward the message
                 let our_name = self.our_id().name();
-                nodes_to_send.retain(|&node| node.name() != our_name);
+                nodes_to_send.retain(|node| node.name() != our_name);
                 dg_size = nodes_to_send.len();
                 break;
             }
