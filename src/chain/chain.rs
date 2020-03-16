@@ -53,9 +53,6 @@ pub struct Chain {
     our_section_bls_keys: SectionKeys,
     /// The shared state of the section.
     state: SharedState,
-    /// If we're an elder of the section yet. This will be toggled once we get a `EldersInfo`
-    /// block accumulated which bears `our_id` as one of the members
-    is_elder: bool,
     /// Accumulate NetworkEvent that do not have yet enough vote/proofs.
     chain_accumulator: ChainAccumulator,
     /// Pending events whose handling has been deferred due to an ongoing split or merge.
@@ -124,7 +121,6 @@ impl Chain {
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let is_elder = gen_info.elders_info.is_member(&our_id);
         let secret_key_share = secret_key_share
             .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.elders_info));
         Self {
@@ -135,7 +131,6 @@ impl Chain {
                 secret_key_share,
             },
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
-            is_elder,
             chain_accumulator: Default::default(),
             event_cache: Default::default(),
             churn_in_progress: false,
@@ -787,7 +782,7 @@ impl Chain {
 
     /// Returns whether we are elder in our section.
     pub fn is_self_elder(&self) -> bool {
-        self.is_elder
+        self.is_peer_our_elder(&self.our_id)
     }
 
     /// Returns whether the given peer is elder in our section.
@@ -1148,17 +1143,12 @@ impl Chain {
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
-        let is_new_elder = !self.is_elder && elders_info.is_member(&self.our_id);
         let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
         let our_new_key =
             key_matching_first_elder_name(&elders_info, mem::take(&mut self.new_section_bls_keys))?;
 
         self.state.push_our_new_info(elders_info, proof_block);
         self.our_section_bls_keys = SectionKeys::new(our_new_key, self.our_id(), self.our_info());
-
-        if is_new_elder {
-            self.is_elder = true;
-        }
         self.churn_in_progress = false;
         self.check_and_clean_neighbour_infos(None);
         self.post_split_sibling_members = self.state.remove_our_members_not_matching_our_prefix();
@@ -1617,7 +1607,7 @@ impl Debug for Chain {
         writeln!(formatter, "Chain {{")?;
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
-        writeln!(formatter, "\tis_elder: {},", self.is_elder)?;
+        writeln!(formatter, "\tis_elder: {},", self.is_self_elder())?;
         writeln!(formatter, "\tsplit_in_progress: {}", self.split_in_progress)?;
 
         writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;

@@ -1430,9 +1430,6 @@ impl Elder {
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
-        if !self.chain.is_self_elder() {
-            return false;
-        }
         self.parsec_map.has_unpolled_observations()
     }
 
