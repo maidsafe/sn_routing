@@ -272,7 +272,7 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], options: PollOptions
 
     // When all nodes become idle, run a couple more iterations, advancing the time a bit after
     // each one. This should allow the nodes to process failed or bounced messages.
-    let max_final_iterations = 15;
+    let max_final_iterations = 16;
     let mut final_iterations = 0;
 
     for _ in 0..MAX_POLL_CALLS {
