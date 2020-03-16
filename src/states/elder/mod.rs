@@ -816,34 +816,6 @@ impl Elder {
         )
     }
 
-    // If this returns an error, the peer will be dropped.
-    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
-        debug!(
-            "{} - Received BootstrapRequest to section at {} from {:?}.",
-            self, destination, p2p_node
-        );
-
-        let response = if self.our_prefix().matches(&destination) {
-            let our_info = self.chain.our_info().clone();
-            debug!(
-                "{} - Sending BootstrapResponse::Join to {:?} ({:?})",
-                self, p2p_node, our_info
-            );
-            BootstrapResponse::Join(our_info)
-        } else {
-            let conn_infos: Vec<_> = self
-                .closest_known_elders_to(&destination)
-                .map(|p2p_node| *p2p_node.peer_addr())
-                .collect();
-            debug!(
-                "{} - Sending BootstrapResponse::Rebootstrap to {}",
-                self, p2p_node
-            );
-            BootstrapResponse::Rebootstrap(conn_infos)
-        };
-        self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
-    }
-
     fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
         debug!(
             "{} - Received JoinRequest from {} for v{}",
