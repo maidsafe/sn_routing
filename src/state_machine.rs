@@ -412,7 +412,6 @@ impl StateMachine {
             }),
             Rebootstrap => self.state.replace_with(|state| match state {
                 State::JoiningPeer(src) => src.rebootstrap(),
-                State::Adult(src) => src.rebootstrap(),
                 _ => unreachable!(),
             }),
             Relocate {
