@@ -646,12 +646,7 @@ pub trait Approved: Base {
     fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
         let (targets, dg_size) = self.chain().targets(msg.message_dst())?;
 
-        trace!(
-            "{}: Sending message {:?} via targets {:?}",
-            self,
-            msg,
-            targets
-        );
+        trace!("{}: Sending {:?} via targets {:?}", self, msg, targets);
 
         let targets: Vec<_> = targets
             .into_iter()

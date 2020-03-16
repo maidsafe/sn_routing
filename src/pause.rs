@@ -39,9 +39,3 @@ pub struct PausedState {
     pub(super) sig_accumulator: SignatureAccumulator,
     pub(super) parsec_map: ParsecMap,
 }
-
-impl PausedState {
-    pub(super) fn is_elder(&self) -> bool {
-        self.chain.is_self_elder()
-    }
-}

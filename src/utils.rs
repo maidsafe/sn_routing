@@ -58,6 +58,8 @@ impl Display for LogIdent {
 
 /// If the iterator yields exactly one element, returns it. Otherwise panics.
 #[cfg(all(test, feature = "mock"))]
+// TODO: remove this unused
+#[allow(unused)]
 pub fn exactly_one<I>(input: I) -> I::Item
 where
     I: IntoIterator,

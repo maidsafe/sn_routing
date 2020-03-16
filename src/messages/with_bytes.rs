@@ -31,15 +31,7 @@ impl MessageWithBytes {
         let partial_content = full_content.to_partial();
         let result = Self::new_from_parts(Some(full_content), partial_content, full_bytes);
 
-        trace!(
-            "{} Creating message hash({:?}) {:?}",
-            log_ident,
-            result.full_crypto_hash,
-            result
-                .full_content
-                .as_ref()
-                .expect("New MessageWithBytes need full_content")
-        );
+        trace!("{} Creating {:?}", log_ident, result);
 
         Ok(result)
     }
@@ -90,11 +82,15 @@ impl MessageWithBytes {
 
 impl Debug for MessageWithBytes {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "MessageWithBytes {{ hash: {:?}", self.full_crypto_hash)?;
+
         if let Some(content) = &self.full_content {
-            write!(f, "{:?}", content)
+            write!(f, ", full: {:?}", content)?;
         } else {
-            write!(f, "Message({:?})", self.full_crypto_hash)
+            write!(f, ", ..")?;
         }
+
+        write!(f, " }}")
     }
 }
 

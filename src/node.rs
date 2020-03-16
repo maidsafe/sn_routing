@@ -345,15 +345,17 @@ impl Node {
         unwrap!(self.elder_state(), "Should be State::Elder")
     }
 
-    /// Returns whether the current state is `Elder`.
+    /// Returns whether the node is Elder.
     pub fn is_elder(&self) -> bool {
-        self.elder_state().is_some()
+        self.chain()
+            .map(|chain| chain.is_self_elder())
+            .unwrap_or(false)
     }
 
-    /// Returns whether the current state is `Elder` or `Adult`.
+    /// Returns whether the node is Elder or Adult.
     pub fn is_approved(&self) -> bool {
         match self.machine.current() {
-            State::Elder(_) | State::Adult(_) => true,
+            State::Elder(_) => true,
             _ => false,
         }
     }

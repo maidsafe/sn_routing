@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+/* FIXME: move this over to `states/elder/tests.rs`
+
 use super::{super::test_utils, *};
 use crate::{messages::PlainMessage, parsec::generate_bls_threshold_secret_key, unwrap};
 use mock_quic_p2p::Network;
@@ -223,3 +225,4 @@ fn genesis_update_message_failed_trust_check_proof_too_new() {
     let msg = adult_test.genesis_update_message(gen_pfx_info);
     let _ = adult_test.handle_message(msg);
 }
+*/
