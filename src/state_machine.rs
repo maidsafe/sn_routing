@@ -277,7 +277,7 @@ pub enum Transition {
         details: SignedRelocateDetails,
     },
     // `JoiningPeer` state transitioning to `Adult`.
-    IntoAdult {
+    Approve {
         gen_pfx_info: GenesisPfxInfo,
     },
     // `Adult` state transition to `Elder`.
@@ -298,7 +298,7 @@ impl Debug for Transition {
             Self::IntoJoining { .. } => write!(f, "IntoJoining"),
             Self::Rebootstrap => write!(f, "Rebootstrap"),
             Self::Relocate { .. } => write!(f, "Relocate"),
-            Self::IntoAdult { .. } => write!(f, "IntoAdult"),
+            Self::Approve { .. } => write!(f, "Approve"),
             Self::IntoElder { .. } => write!(f, "IntoElder"),
             Self::Demote { .. } => write!(f, "Demote"),
             Self::Terminate => write!(f, "Terminate"),
@@ -421,8 +421,8 @@ impl StateMachine {
                 State::Adult(src) => src.relocate(conn_infos, details),
                 _ => unreachable!(),
             }),
-            IntoAdult { gen_pfx_info } => self.state.replace_with(|state| match state {
-                State::JoiningPeer(src) => src.into_adult(gen_pfx_info, outbox),
+            Approve { gen_pfx_info } => self.state.replace_with(|state| match state {
+                State::JoiningPeer(src) => src.approve(gen_pfx_info, outbox),
                 _ => unreachable!(),
             }),
             IntoElder { old_pfx } => self.state.replace_with(|state| match state {

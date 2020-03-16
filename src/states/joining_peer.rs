@@ -87,7 +87,7 @@ impl JoiningPeer {
         joining_peer
     }
 
-    pub fn into_adult(
+    pub fn approve(
         self,
         gen_pfx_info: GenesisPfxInfo,
         outbox: &mut dyn EventBox,
@@ -155,7 +155,7 @@ impl JoiningPeer {
             self,
             gen_pfx_info.elders_info.prefix(),
         );
-        Transition::IntoAdult { gen_pfx_info }
+        Transition::Approve { gen_pfx_info }
     }
 
     fn verify_message_full(
