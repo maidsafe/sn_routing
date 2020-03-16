@@ -25,7 +25,7 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    message_filter::MessageFilter,
+    message_filter::{FilteringResult, MessageFilter},
     messages::{
         AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message, MessageHash,
         MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant, VerifyStatus,
@@ -1047,33 +1047,6 @@ impl Elder {
         Ok(())
     }
 
-    // Send message over the network.
-    fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<(), RoutingError> {
-        let (targets, dg_size) = self.chain.targets(msg.message_dst())?;
-
-        trace!(
-            "{}: Sending message {:?} via targets {:?}",
-            self,
-            msg,
-            targets
-        );
-
-        let targets: Vec<_> = targets
-            .into_iter()
-            .filter(|p2p_node| {
-                self.msg_filter
-                    .filter_outgoing(msg, p2p_node.public_id())
-                    .is_new()
-            })
-            .map(|node| *node.peer_addr())
-            .collect();
-
-        let cheap_bytes_clone = msg.full_bytes().clone();
-        self.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
-
-        Ok(())
-    }
-
     /// Vote for a user-defined event.
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
         self.vote_for_event(AccumulatingEvent::User(event));
@@ -1440,6 +1413,14 @@ impl Approved for Elder {
 
     fn is_pfx_successfully_polled(&self) -> bool {
         self.pfx_is_successfully_polled
+    }
+
+    fn filter_outgoing_message(
+        &mut self,
+        msg: &MessageWithBytes,
+        recipient_id: &PublicId,
+    ) -> FilteringResult {
+        self.msg_filter.filter_outgoing(msg, recipient_id)
     }
 
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {

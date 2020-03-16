@@ -15,7 +15,10 @@ use crate::{
     error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
-    messages::{BootstrapResponse, MemberKnowledge, MessageHash, Variant, VerifyStatus},
+    message_filter::FilteringResult,
+    messages::{
+        BootstrapResponse, MemberKnowledge, MessageHash, MessageWithBytes, Variant, VerifyStatus,
+    },
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -36,6 +39,11 @@ pub trait Approved: Base {
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
+    fn filter_outgoing_message(
+        &mut self,
+        msg: &MessageWithBytes,
+        recipient_id: &PublicId,
+    ) -> FilteringResult;
 
     /// Handles an accumulated relocation trigger
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError>;
@@ -632,6 +640,32 @@ pub trait Approved: Base {
             BootstrapResponse::Rebootstrap(conn_infos)
         };
         self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
+    }
+
+    // Send message over the network.
+    fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
+        let (targets, dg_size) = self.chain().targets(msg.message_dst())?;
+
+        trace!(
+            "{}: Sending message {:?} via targets {:?}",
+            self,
+            msg,
+            targets
+        );
+
+        let targets: Vec<_> = targets
+            .into_iter()
+            .filter(|p2p_node| {
+                self.filter_outgoing_message(msg, p2p_node.public_id())
+                    .is_new()
+            })
+            .map(|node| *node.peer_addr())
+            .collect();
+
+        let cheap_bytes_clone = msg.full_bytes().clone();
+        self.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
+
+        Ok(())
     }
 }
 
