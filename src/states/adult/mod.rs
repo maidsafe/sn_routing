@@ -122,25 +122,6 @@ impl Adult {
         self.chain.our_elders()
     }
 
-    pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
-        let network_cfg = self.chain.network_cfg();
-
-        // Try to join the same section, but using new id, otherwise the section won't accept us
-        // due to duplicate votes.
-        let range_inclusive = self.our_prefix().range_inclusive();
-        let full_id = FullId::within_range(&mut self.rng, &range_inclusive);
-
-        Ok(State::BootstrappingPeer(BootstrappingPeer::new(
-            BootstrappingPeerDetails {
-                network_service: self.network_service,
-                full_id,
-                network_cfg,
-                timer: self.timer,
-                rng: self.rng,
-            },
-        )))
-    }
-
     pub fn relocate(
         self,
         conn_infos: Vec<SocketAddr>,
@@ -173,9 +154,7 @@ impl Adult {
             msg_queue: Default::default(),
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
-            // we reset the message filter so that the node can correctly process some messages as
-            // an Elder even if it has already seen them as an Adult
-            msg_filter: MessageFilter::new(),
+            msg_filter: self.msg_filter,
             timer: self.timer,
             rng: self.rng,
         };

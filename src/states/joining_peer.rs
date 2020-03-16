@@ -103,14 +103,15 @@ impl JoiningPeer {
             rng: self.rng,
             network_cfg: self.network_cfg,
         };
-        let adult = Adult::new(details, Default::default(), outbox).map(State::Adult);
+        let node = Adult::new(details, Default::default(), outbox).map(State::Adult);
 
         let connect_type = match self.join_type {
             JoinType::First { .. } => Connected::First,
             JoinType::Relocate(_) => Connected::Relocate,
         };
         outbox.send_event(Event::Connected(connect_type));
-        adult
+
+        node
     }
 
     pub fn rebootstrap(mut self) -> Result<State, RoutingError> {
