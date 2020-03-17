@@ -296,7 +296,7 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
 
     fn handle_accumulated_message(&mut self, mut msg_with_bytes: MessageWithBytes) -> Result<()> {
-        // FIXME: this is almost the same as `Base::try_handle__message` - find a way
+        // TODO: this is almost the same as `Base::try_handle_message` - find a way
         // to avoid the duplication.
         self.try_relay_message(None, &msg_with_bytes)?;
 
@@ -1831,8 +1831,7 @@ impl ApprovedPeer {
     }
 
     // Returns the set of peers that are responsible for collecting signatures to verify a message;
-    // this may contain us or only other nodes. If our signature is not required, this returns
-    // `None`.
+    // this may contain us or only other nodes.
     fn get_signature_targets(&self, dst: &DstLocation) -> Vec<P2pNode> {
         let dst_name = match dst {
             DstLocation::Node(name) => *name,
