@@ -101,7 +101,7 @@ fn remove_unresponsive_node() {
             }
             let _ = node
                 .inner
-                .elder_state_mut()
+                .approved_peer_state_mut()
                 .map(|state| state.vote_for_user_event(event.clone()));
         });
 

@@ -6,14 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod approved_peer;
 mod bootstrapping_peer;
 pub mod common;
-mod elder;
 mod joining_peer;
 
 pub use self::{
+    approved_peer::ApprovedPeer,
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
-    elder::Elder,
     joining_peer::JoiningPeer,
 };
 
@@ -38,15 +38,15 @@ pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT
 //        │                        │
 //        │                        │
 //        │                        ▼
-//        │                      ┌───────┐
-//        └──────────────────────│ Elder │
-//                               └───────┘
+//        │                      ┌──────────────┐
+//        └──────────────────────│ ApprovedPeer │
+//                               └──────────────┘
 //
 //
 // # Common traits
 //                              BootstrappingPeer
 //                              │   JoininigPeer
-//                              │   │   Elder
+//                              │   │   ApprovedPeer
 //                              │   │   │
 // Base                         *   *   *
 //

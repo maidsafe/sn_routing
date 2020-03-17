@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{super::super::elder::*, utils as test_utils};
+use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{messages::PlainMessage, parsec::generate_bls_threshold_secret_key};
 use mock_quic_p2p::Network;
 use std::collections::BTreeMap;
@@ -20,7 +20,7 @@ const NETWORK_PARAMS: NetworkParams = NetworkParams {
 struct Env {
     rng: MainRng,
     network: Network,
-    subject: Elder,
+    subject: ApprovedPeer,
     elders: BTreeMap<XorName, Chain>,
 }
 
@@ -123,7 +123,11 @@ fn create_elders(
         .collect()
 }
 
-fn create_state(rng: &mut MainRng, network: &Network, gen_pfx_info: GenesisPfxInfo) -> Elder {
+fn create_state(
+    rng: &mut MainRng,
+    network: &Network,
+    gen_pfx_info: GenesisPfxInfo,
+) -> ApprovedPeer {
     let full_id = FullId::gen(rng);
 
     let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), &gen_pfx_info);
@@ -148,7 +152,7 @@ fn create_state(rng: &mut MainRng, network: &Network, gen_pfx_info: GenesisPfxIn
         rng: rng::new_from(rng),
     };
 
-    let subject = Elder::from_joining_peer(details, Connected::First, &mut ());
+    let subject = ApprovedPeer::from_joining_peer(details, Connected::First, &mut ());
     assert!(!subject.chain.is_self_elder());
     subject
 }

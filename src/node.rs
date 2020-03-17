@@ -37,7 +37,6 @@ use {
         collections::{BTreeMap, BTreeSet},
         fmt::{self, Display, Formatter},
     },
-    unwrap::unwrap,
 };
 
 /// A builder to configure and create a new `Node`.
@@ -125,9 +124,16 @@ impl Builder {
                 if first {
                     debug!("Creating a first node in the Elder state");
 
-                    states::Elder::first(network_service, full_id, network_cfg, timer, rng, outbox)
-                        .map(State::Elder)
-                        .unwrap_or(State::Terminated)
+                    states::ApprovedPeer::first(
+                        network_service,
+                        full_id,
+                        network_cfg,
+                        timer,
+                        rng,
+                        outbox,
+                    )
+                    .map(State::ApprovedPeer)
+                    .unwrap_or(State::Terminated)
                 } else {
                     debug!("Creating a node in the BootstrappingPeer state");
 
@@ -235,7 +241,7 @@ impl Node {
         let _ = self
             .machine
             .current_mut()
-            .elder_state_mut()
+            .approved_peer_state_mut()
             .map(|elder| elder.vote_for_user_event(event));
     }
 
@@ -330,19 +336,20 @@ impl Node {
         self.machine.current().chain()
     }
 
-    /// Returns the underlying Elder state.
-    pub fn elder_state(&self) -> Option<&crate::states::Elder> {
-        self.machine.current().elder_state()
+    /// Returns the underlying ApprovedPeer state.
+    pub fn approved_peer_state(&self) -> Option<&crate::states::ApprovedPeer> {
+        self.machine.current().approved_peer_state()
     }
 
-    /// Returns mutable reference to the underlying Elder state.
-    pub fn elder_state_mut(&mut self) -> Option<&mut crate::states::Elder> {
-        self.machine.current_mut().elder_state_mut()
+    /// Returns mutable reference to the underlying ApprovedPeer state.
+    pub fn approved_peer_state_mut(&mut self) -> Option<&mut crate::states::ApprovedPeer> {
+        self.machine.current_mut().approved_peer_state_mut()
     }
 
-    /// Returns the underlying Elder state unwrapped - panics if not Elder.
-    pub fn elder_state_unchecked(&self) -> &crate::states::Elder {
-        unwrap!(self.elder_state(), "Should be State::Elder")
+    /// Returns the underlying ApprovedPeer state unwrapped - panics if not ApprovedPeer.
+    pub fn approved_peer_state_unchecked(&self) -> &crate::states::ApprovedPeer {
+        self.approved_peer_state()
+            .expect("should be State::ApprovedPeer")
     }
 
     /// Returns whether the node is Elder.
@@ -355,7 +362,7 @@ impl Node {
     /// Returns whether the node is Elder or Adult.
     pub fn is_approved(&self) -> bool {
         match self.machine.current() {
-            State::Elder(_) => true,
+            State::ApprovedPeer(_) => true,
             _ => false,
         }
     }
