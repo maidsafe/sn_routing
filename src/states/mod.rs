@@ -49,5 +49,4 @@ pub use self::{bootstrapping_peer::BOOTSTRAP_TIMEOUT, joining_peer::JOIN_TIMEOUT
 //                              │   │   Elder
 //                              │   │   │
 // Base                         *   *   *
-// Approved                             *
 //

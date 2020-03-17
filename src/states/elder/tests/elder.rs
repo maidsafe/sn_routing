@@ -88,7 +88,7 @@ impl Env {
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
         assert!(count <= self.other_ids.len());
 
-        let parsec = self.subject.parsec_map_mut();
+        let parsec = &mut self.subject.parsec_map;
         for event in events {
             self.other_ids
                 .iter()
@@ -114,7 +114,7 @@ impl Env {
     }
 
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
-        let parsec = self.subject.parsec_map_mut();
+        let parsec = &mut self.subject.parsec_map;
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
         for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
@@ -131,7 +131,7 @@ impl Env {
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
         let other_full_id = &self.other_ids[0].0;
         let addr: SocketAddr = "127.0.0.3:9999".parse().unwrap();
-        let parsec = self.subject.parsec_map_mut();
+        let parsec = &mut self.subject.parsec_map;
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
         let message = Message::single_src(
@@ -169,7 +169,7 @@ impl Env {
 
     fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
         let participants: BTreeSet<_> = new_elders_info.member_ids().copied().collect();
-        let parsec = self.subject.parsec_map_mut();
+        let parsec = &mut self.subject.parsec_map;
 
         let dkg_results = self
             .other_ids

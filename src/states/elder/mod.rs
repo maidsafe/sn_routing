@@ -10,15 +10,15 @@
 mod tests;
 
 use super::{
-    common::{Approved, Base, BOUNCE_RESEND_DELAY},
+    common::{Base, BOUNCE_RESEND_DELAY},
     BootstrappingPeer, BootstrappingPeerDetails,
 };
 use crate::{
     chain::{
-        delivery_group_size, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
-        OnlinePayload, ParsecResetData, SectionKeyInfo, SendAckMessagePayload, MIN_AGE,
-        MIN_AGE_COUNTER,
+        delivery_group_size, AccumulatedEvent, AccumulatingEvent, AckMessagePayload, Chain,
+        EldersChange, EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent,
+        MemberState, NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PollAccumulated,
+        Proof, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     error::{Result, RoutingError},
     event::{Connected, Event},
@@ -31,7 +31,7 @@ use crate::{
     },
     network_service::NetworkService,
     outbox::EventBox,
-    parsec::{self, generate_first_dkg_result, DkgResultWrapper, ParsecMap},
+    parsec::{self, generate_first_dkg_result, DkgResultWrapper, Observation, ParsecMap},
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
@@ -346,6 +346,20 @@ impl Elder {
                 self.network_service.disconnect(*p2p_node.peer_addr());
             }
         }
+    }
+
+    fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
+        if let Some(node) = self.chain.get_p2p_node(pub_id.name()) {
+            let peer_addr = *node.peer_addr();
+            self.network_service.disconnect(peer_addr);
+        } else {
+            log_or_panic!(
+                log::Level::Error,
+                "{} - Can't disconnect from node we can't lookup in Chain: {}.",
+                self,
+                pub_id
+            );
+        };
     }
 
     fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
@@ -823,7 +837,7 @@ impl Elder {
     fn init_parsec(&mut self) {
         let log_ident = self.log_ident();
 
-        self.set_pfx_successfully_polled(false);
+        self.pfx_is_successfully_polled = false;
         self.parsec_map.init(
             &mut self.rng,
             self.full_id.clone(),
@@ -1054,6 +1068,71 @@ impl Elder {
         })
     }
 
+    fn handle_parsec_request(
+        &mut self,
+        msg_version: u64,
+        par_request: parsec::Request,
+        p2p_node: P2pNode,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition> {
+        trace!(
+            "{} - handle parsec request v{} from {} (last: v{})",
+            self,
+            msg_version,
+            p2p_node.public_id(),
+            self.parsec_map.last_version(),
+        );
+
+        let log_ident = self.log_ident();
+        let response = self.parsec_map.handle_request(
+            msg_version,
+            par_request,
+            *p2p_node.public_id(),
+            &log_ident,
+        );
+
+        if let Some(response) = response {
+            trace!(
+                "{} - send parsec response v{} to {:?}",
+                self,
+                msg_version,
+                p2p_node,
+            );
+            self.send_direct_message(p2p_node.peer_addr(), response);
+        }
+
+        if msg_version == self.parsec_map.last_version() {
+            self.parsec_poll(outbox)
+        } else {
+            Ok(Transition::Stay)
+        }
+    }
+
+    fn handle_parsec_response(
+        &mut self,
+        msg_version: u64,
+        par_response: parsec::Response,
+        pub_id: PublicId,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition> {
+        trace!(
+            "{} - handle parsec response v{} from {}",
+            self,
+            msg_version,
+            pub_id
+        );
+
+        let log_ident = self.log_ident();
+        self.parsec_map
+            .handle_response(msg_version, par_response, pub_id, &log_ident);
+
+        if msg_version == self.parsec_map.last_version() {
+            self.parsec_poll(outbox)
+        } else {
+            Ok(Transition::Stay)
+        }
+    }
+
     fn send_parsec_gossip(&mut self, target: Option<(u64, P2pNode)>) {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
@@ -1124,10 +1203,517 @@ impl Elder {
         Some(p2p_recipients.swap_remove(rand_index))
     }
 
+    fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
+        while let Some(block) = self.parsec_map.poll() {
+            let parsec_version = self.parsec_map.last_version();
+            match block.payload() {
+                Observation::Accusation { .. } => {
+                    // FIXME: Handle properly
+                    unreachable!("...")
+                }
+                Observation::Genesis {
+                    group,
+                    related_info,
+                } => {
+                    // FIXME: Validate with Chain info.
+
+                    trace!(
+                        "{} Parsec Genesis {}: group {:?} - related_info {}",
+                        self,
+                        parsec_version,
+                        group,
+                        related_info.len()
+                    );
+
+                    self.chain.handle_genesis_event(group, related_info)?;
+                    self.pfx_is_successfully_polled = true;
+
+                    continue;
+                }
+                Observation::OpaquePayload(event) => {
+                    if let Some(proof) = block.proofs().iter().next().map(|p| Proof {
+                        pub_id: *p.public_id(),
+                        sig: *p.signature(),
+                    }) {
+                        trace!(
+                            "{} Parsec OpaquePayload {}: {} - {:?}",
+                            self,
+                            parsec_version,
+                            proof.pub_id(),
+                            event
+                        );
+                        self.chain.handle_opaque_event(event, proof)?;
+                    }
+                }
+                Observation::Add { peer_id, .. } => {
+                    log_or_panic!(
+                        log::Level::Error,
+                        "{} Unexpected Parsec Add {}: - {}",
+                        self,
+                        parsec_version,
+                        peer_id
+                    );
+                }
+                Observation::Remove { peer_id, .. } => {
+                    log_or_panic!(
+                        log::Level::Error,
+                        "{} Unexpected Parsec Remove {}: - {}",
+                        self,
+                        parsec_version,
+                        peer_id
+                    );
+                }
+                obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
+                    log_or_panic!(
+                        log::Level::Error,
+                        "parsec_poll polled internal Observation {}: {:?}",
+                        parsec_version,
+                        obs
+                    );
+                }
+                Observation::DkgResult {
+                    participants,
+                    dkg_result,
+                } => {
+                    self.chain
+                        .handle_dkg_result_event(participants, dkg_result)?;
+                    self.handle_dkg_result_event(participants, dkg_result)?;
+                }
+            }
+
+            match self.chain_poll(outbox)? {
+                Transition::Stay => (),
+                transition => return Ok(transition),
+            }
+        }
+
+        self.check_voting_status();
+
+        Ok(Transition::Stay)
+    }
+
+    fn chain_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
+        let mut old_pfx = *self.chain.our_prefix();
+        let mut was_elder = self.chain.is_self_elder();
+
+        while let Some(event) = self.chain.poll_accumulated()? {
+            match event {
+                PollAccumulated::AccumulatedEvent(event) => {
+                    match self.handle_accumulated_event(event, old_pfx, was_elder, outbox)? {
+                        Transition::Stay => (),
+                        transition => return Ok(transition),
+                    }
+                }
+                PollAccumulated::RelocateDetails(details) => {
+                    self.handle_relocate_polled(details)?;
+                }
+                PollAccumulated::PromoteDemoteElders(new_infos) => {
+                    self.handle_promote_and_demote_elders(new_infos)?;
+                }
+            }
+
+            old_pfx = *self.chain.our_prefix();
+            was_elder = self.chain.is_self_elder();
+        }
+
+        Ok(Transition::Stay)
+    }
+
+    fn handle_accumulated_event(
+        &mut self,
+        event: AccumulatedEvent,
+        old_pfx: Prefix<XorName>,
+        was_elder: bool,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition, RoutingError> {
+        trace!("{} Handle accumulated event: {:?}", self, event);
+
+        match event.content {
+            AccumulatingEvent::StartDkg(_) => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "StartDkg came out of Parsec - this shouldn't happen"
+                );
+            }
+            AccumulatingEvent::Online(payload) => {
+                self.handle_online_event(payload, outbox)?;
+            }
+            AccumulatingEvent::Offline(pub_id) => {
+                self.handle_offline_event(pub_id, outbox)?;
+            }
+            AccumulatingEvent::SectionInfo(_, _) => {
+                return self.handle_section_info_event(
+                    old_pfx,
+                    was_elder,
+                    event.elders_change,
+                    outbox,
+                );
+            }
+            AccumulatingEvent::NeighbourInfo(elders_info) => {
+                self.handle_neighbour_info_event(elders_info, event.elders_change)?;
+            }
+            AccumulatingEvent::TheirKeyInfo(key_info) => {
+                self.handle_their_key_info_event(key_info)?
+            }
+            AccumulatingEvent::AckMessage(_payload) => {
+                // Update their_knowledge is handled within the chain.
+            }
+            AccumulatingEvent::SendAckMessage(payload) => {
+                self.handle_send_ack_message_event(payload)?
+            }
+            AccumulatingEvent::ParsecPrune => self.handle_prune_event()?,
+            AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(payload, outbox)?,
+            AccumulatingEvent::RelocatePrepare(pub_id, count) => {
+                self.handle_relocate_prepare_event(pub_id, count, outbox);
+            }
+            AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
+        }
+
+        Ok(Transition::Stay)
+    }
+
+    fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
+        self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
+
+        Ok(())
+    }
+
+    fn handle_promote_and_demote_elders(
+        &mut self,
+        new_infos: Vec<EldersInfo>,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
+        for info in new_infos {
+            let participants: BTreeSet<_> = info.member_ids().copied().collect();
+            let _ = self.dkg_cache.insert(participants.clone(), info);
+            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+        }
+
+        Ok(())
+    }
+
+    fn handle_online_event(
+        &mut self,
+        payload: OnlinePayload,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.can_add_member(payload.p2p_node.public_id()) {
+            info!("{} - ignore Online: {:?}.", self, payload);
+        } else {
+            info!("{} - handle Online: {:?}.", self, payload);
+
+            let pub_id = *payload.p2p_node.public_id();
+            self.chain.add_member(payload.p2p_node.clone(), payload.age);
+            self.chain.increment_age_counters(&pub_id);
+
+            if self.chain.is_self_elder() {
+                self.handle_candidate_approval(payload.p2p_node, payload.their_knowledge, outbox);
+                self.print_rt_size();
+            }
+        }
+
+        Ok(())
+    }
+
+    fn handle_offline_event(
+        &mut self,
+        pub_id: PublicId,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.can_remove_member(&pub_id) {
+            info!("{} - ignore Offline: {}.", self, pub_id);
+        } else {
+            info!("{} - handle Offline: {}.", self, pub_id);
+
+            self.chain.increment_age_counters(&pub_id);
+            let _ = self.chain.remove_member(&pub_id);
+            self.disconnect_by_id_lookup(&pub_id);
+            let _ = self.members_knowledge.remove(pub_id.name());
+        }
+
+        Ok(())
+    }
+
+    fn handle_relocate_prepare_event(
+        &mut self,
+        payload: RelocateDetails,
+        count_down: i32,
+        _outbox: &mut dyn EventBox,
+    ) {
+        if !self.chain.is_self_elder() {
+            return;
+        }
+
+        if count_down > 0 {
+            self.vote_for_relocate_prepare(payload, count_down - 1);
+        } else {
+            self.vote_for_relocate(payload);
+        }
+    }
+
+    fn handle_relocate_event(
+        &mut self,
+        details: RelocateDetails,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.can_remove_member(&details.pub_id) {
+            info!("{} - ignore Relocate: {:?} - not a member", self, details);
+            return Ok(());
+        }
+
+        info!("{} - handle Relocate: {:?}.", self, details);
+
+        let node_knowledge = match self.chain.remove_member(&details.pub_id) {
+            MemberState::Relocating { node_knowledge } => node_knowledge,
+            state => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "{} - Expected the state of {} to be Relocating, but was {:?}",
+                    self,
+                    details.pub_id,
+                    state,
+                );
+                return Ok(());
+            }
+        };
+
+        let _ = self.members_knowledge.remove(details.pub_id.name());
+
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
+        if &details.pub_id == self.id() {
+            // Do not send the message to ourselves.
+            return Ok(());
+        }
+
+        // We need proof that is valid for both the relocating node and the target section. To
+        // construct such proof, we create one proof for the relocating node and one for the target
+        // section and then take the longer of the two. This works because the longer proof is a
+        // superset of the shorter one. We need to do this because in rare cases, the relocating
+        // node might be lagging behind the target section in the knowledge of the source section.
+        let knowledge_index = cmp::min(
+            node_knowledge,
+            self.chain
+                .knowledge_index(&DstLocation::Section(details.destination), None),
+        );
+
+        let src = SrcLocation::Section(*self.our_prefix());
+        let dst = DstLocation::Node(*details.pub_id.name());
+        let content = Variant::Relocate(Box::new(details));
+
+        self.send_routing_message(src, dst, content, Some(knowledge_index))
+    }
+
+    fn handle_dkg_result_event(
+        &mut self,
+        participants: &BTreeSet<PublicId>,
+        dkg_result: &DkgResultWrapper,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
+        if let Some(info) = self.dkg_cache.remove(participants) {
+            info!("{} - handle DkgResult: {:?}", self, participants);
+            self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
+        } else {
+            log_or_panic!(
+                log::Level::Error,
+                "{} DKG for an unexpected info {:?} (expected: {{{:?}}})",
+                self,
+                participants,
+                self.dkg_cache.keys().format(", ")
+            );
+        }
+        Ok(())
+    }
+
+    fn handle_section_info_event(
+        &mut self,
+        old_pfx: Prefix<XorName>,
+        was_elder: bool,
+        elders_change: EldersChange,
+        outbox: &mut dyn EventBox,
+    ) -> Result<Transition, RoutingError> {
+        let elders_info = self.chain.our_info();
+        let info_prefix = *elders_info.prefix();
+        let info_version = elders_info.version();
+        let is_elder = elders_info.is_member(self.full_id.public_id());
+
+        if was_elder || is_elder {
+            info!("{} - handle SectionInfo: {:?}", self, elders_info);
+        } else {
+            trace!("{} - unhandled SectionInfo", self);
+            return Ok(Transition::Stay);
+        }
+
+        let complete_data = if info_prefix.is_extension_of(&old_pfx) {
+            self.prepare_finalise_split()?
+        } else if old_pfx.is_extension_of(&info_prefix) {
+            panic!(
+                "{} - Merge not supported: {:?} -> {:?}",
+                self, old_pfx, info_prefix,
+            );
+        } else {
+            self.prepare_reset_parsec()?
+        };
+
+        if !is_elder {
+            // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
+            // i.e the one that would be received with NodeApproval.
+            self.process_post_reset_events(old_pfx, complete_data.to_process);
+            self.demote(complete_data.gen_pfx_info);
+
+            info!("{} - Demoted", self);
+            outbox.send_event(Event::Demoted);
+
+            return Ok(Transition::Stay);
+        }
+
+        self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
+        self.process_post_reset_events(old_pfx, complete_data.to_process);
+
+        self.update_peer_connections(&elders_change);
+        self.send_neighbour_infos();
+        self.send_genesis_updates();
+        self.send_member_knowledge();
+
+        // Vote to update our self messages proof
+        self.vote_send_section_info_ack(SendAckMessagePayload {
+            ack_prefix: info_prefix,
+            ack_version: info_version,
+        });
+
+        self.print_rt_size();
+        if let Some(to_send) = complete_data.event_to_send {
+            outbox.send_event(to_send);
+        }
+
+        if !was_elder {
+            info!("{} - Promoted", self);
+            outbox.send_event(Event::Promoted);
+        }
+
+        Ok(Transition::Stay)
+    }
+
+    fn handle_neighbour_info_event(
+        &mut self,
+        elders_info: EldersInfo,
+        neighbour_change: EldersChange,
+    ) -> Result<(), RoutingError> {
+        info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
+
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
+        let _ = self
+            .pending_voted_msgs
+            .remove(&PendingMessageKey::NeighbourInfo {
+                version: elders_info.version(),
+                prefix: *elders_info.prefix(),
+            });
+        self.update_peer_connections(&neighbour_change);
+        Ok(())
+    }
+
+    fn handle_their_key_info_event(
+        &mut self,
+        key_info: SectionKeyInfo,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
+        self.vote_send_section_info_ack(SendAckMessagePayload {
+            ack_prefix: *key_info.prefix(),
+            ack_version: key_info.version(),
+        });
+        Ok(())
+    }
+
+    fn handle_send_ack_message_event(
+        &mut self,
+        ack_payload: SendAckMessagePayload,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            return Ok(());
+        }
+
+        let src = SrcLocation::Section(*self.our_prefix());
+        let dst = DstLocation::Section(ack_payload.ack_prefix.name());
+        let variant = Variant::AckMessage {
+            src_prefix: *self.our_prefix(),
+            ack_version: ack_payload.ack_version,
+        };
+
+        self.send_routing_message(src, dst, variant, None)
+    }
+
+    fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
+        if !self.chain.is_self_elder() {
+            debug!("{} - Unhandled ParsecPrune event", self);
+            return Ok(());
+        }
+
+        if self.chain.split_in_progress() {
+            log_or_panic!(
+                log::Level::Warn,
+                "{} Tring to prune parsec during prefix change.",
+                self
+            );
+            return Ok(());
+        }
+        if self.chain.churn_in_progress() {
+            trace!("{} - ignore ParsecPrune - churn in progress.", self);
+            return Ok(());
+        }
+
+        info!("{} - handle ParsecPrune", self);
+        let complete_data = self.prepare_reset_parsec()?;
+        self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
+        self.send_genesis_updates();
+        self.send_member_knowledge();
+        Ok(())
+    }
+
+    /// Handle an accumulated `User` event
+    fn handle_user_event(
+        &mut self,
+        payload: Vec<u8>,
+        outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        outbox.send_event(Event::Consensus(payload));
+        Ok(())
+    }
+
     fn maintain_parsec(&mut self) {
         if self.parsec_map.needs_pruning() {
             self.vote_for_event(AccumulatingEvent::ParsecPrune);
-            self.parsec_map_mut().set_pruning_voted_for();
+            self.parsec_map.set_pruning_voted_for();
+        }
+    }
+
+    // Checking members vote status and vote to remove those non-resposive nodes.
+    fn check_voting_status(&mut self) {
+        let unresponsive_nodes = self.chain.check_vote_status();
+        let log_ident = self.log_ident();
+        for pub_id in &unresponsive_nodes {
+            info!("{} Voting for unresponsive node {:?}", log_ident, pub_id);
+            self.parsec_map.vote_for(
+                AccumulatingEvent::Offline(*pub_id).into_network_event(),
+                &log_ident,
+            );
         }
     }
 
@@ -1367,6 +1953,17 @@ impl Elder {
             Ok(VerifyStatus::ProofTooNew) => Err(RoutingError::UntrustedMessage),
             Err(error) => Err(error),
         }
+    }
+
+    fn check_signed_relocation_details(&self, msg: &SignedRelocateDetails) -> bool {
+        msg.signed_msg()
+            .verify(self.chain.get_their_key_infos())
+            .and_then(VerifyStatus::require_full)
+            .map_err(|error| {
+                self.log_verify_failure(msg.signed_msg(), &error, self.chain.get_their_key_infos());
+                error
+            })
+            .is_ok()
     }
 }
 
@@ -1661,312 +2258,6 @@ impl Elder {
 
     pub fn parsec_last_version(&self) -> u64 {
         self.parsec_map.last_version()
-    }
-}
-
-impl Approved for Elder {
-    fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox) {
-        outbox.send_event(event);
-    }
-
-    fn parsec_map(&self) -> &ParsecMap {
-        &self.parsec_map
-    }
-
-    fn parsec_map_mut(&mut self) -> &mut ParsecMap {
-        &mut self.parsec_map
-    }
-
-    fn chain(&self) -> &Chain {
-        &self.chain
-    }
-
-    fn chain_mut(&mut self) -> &mut Chain {
-        &mut self.chain
-    }
-
-    fn set_pfx_successfully_polled(&mut self, val: bool) {
-        self.pfx_is_successfully_polled = val;
-    }
-
-    fn is_pfx_successfully_polled(&self) -> bool {
-        self.pfx_is_successfully_polled
-    }
-
-    fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
-
-        Ok(())
-    }
-
-    fn handle_promote_and_demote_elders(
-        &mut self,
-        new_infos: Vec<EldersInfo>,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        for info in new_infos {
-            let participants: BTreeSet<_> = info.member_ids().copied().collect();
-            let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
-        }
-
-        Ok(())
-    }
-
-    fn handle_member_added(
-        &mut self,
-        payload: OnlinePayload,
-        outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        self.handle_candidate_approval(payload.p2p_node, payload.their_knowledge, outbox);
-        self.print_rt_size();
-        Ok(())
-    }
-
-    fn handle_member_removed(
-        &mut self,
-        pub_id: PublicId,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        let _ = self.members_knowledge.remove(pub_id.name());
-        Ok(())
-    }
-
-    fn handle_member_relocated(
-        &mut self,
-        details: RelocateDetails,
-        node_knowledge: u64,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        let _ = self.members_knowledge.remove(details.pub_id.name());
-
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        if &details.pub_id == self.id() {
-            // Do not send the message to ourselves.
-            return Ok(());
-        }
-
-        // We need proof that is valid for both the relocating node and the target section. To
-        // construct such proof, we create one proof for the relocating node and one for the target
-        // section and then take the longer of the two. This works because the longer proof is a
-        // superset of the shorter one. We need to do this because in rare cases, the relocating
-        // node might be lagging behind the target section in the knowledge of the source section.
-        let knowledge_index = cmp::min(
-            node_knowledge,
-            self.chain
-                .knowledge_index(&DstLocation::Section(details.destination), None),
-        );
-
-        let src = SrcLocation::Section(*self.our_prefix());
-        let dst = DstLocation::Node(*details.pub_id.name());
-        let content = Variant::Relocate(Box::new(details));
-
-        self.send_routing_message(src, dst, content, Some(knowledge_index))
-    }
-
-    fn handle_dkg_result_event(
-        &mut self,
-        participants: &BTreeSet<PublicId>,
-        dkg_result: &DkgResultWrapper,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        if let Some(info) = self.dkg_cache.remove(participants) {
-            info!("{} - handle DkgResult: {:?}", self, participants);
-            self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
-        } else {
-            log_or_panic!(
-                log::Level::Error,
-                "{} DKG for an unexpected info {:?} (expected: {{{:?}}})",
-                self,
-                participants,
-                self.dkg_cache.keys().format(", ")
-            );
-        }
-        Ok(())
-    }
-
-    fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
-            debug!("{} - Unhandled ParsecPrune event", self);
-            return Ok(());
-        }
-
-        if self.chain.split_in_progress() {
-            log_or_panic!(
-                log::Level::Warn,
-                "{} Tring to prune parsec during prefix change.",
-                self
-            );
-            return Ok(());
-        }
-        if self.chain.churn_in_progress() {
-            trace!("{} - ignore ParsecPrune - churn in progress.", self);
-            return Ok(());
-        }
-
-        info!("{} - handle ParsecPrune", self);
-        let complete_data = self.prepare_reset_parsec()?;
-        self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
-        self.send_genesis_updates();
-        self.send_member_knowledge();
-        Ok(())
-    }
-
-    fn handle_section_info_event(
-        &mut self,
-        old_pfx: Prefix<XorName>,
-        was_elder: bool,
-        elders_change: EldersChange,
-        outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
-        let elders_info = self.chain.our_info();
-        let info_prefix = *elders_info.prefix();
-        let info_version = elders_info.version();
-        let is_elder = elders_info.is_member(self.full_id.public_id());
-
-        if was_elder || is_elder {
-            info!("{} - handle SectionInfo: {:?}", self, elders_info);
-        } else {
-            trace!("{} - unhandled SectionInfo", self);
-            return Ok(Transition::Stay);
-        }
-
-        let complete_data = if info_prefix.is_extension_of(&old_pfx) {
-            self.prepare_finalise_split()?
-        } else if old_pfx.is_extension_of(&info_prefix) {
-            panic!(
-                "{} - Merge not supported: {:?} -> {:?}",
-                self, old_pfx, info_prefix,
-            );
-        } else {
-            self.prepare_reset_parsec()?
-        };
-
-        if !is_elder {
-            // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
-            // i.e the one that would be received with NodeApproval.
-            self.process_post_reset_events(old_pfx, complete_data.to_process);
-            self.demote(complete_data.gen_pfx_info);
-
-            info!("{} - Demoted", self);
-            outbox.send_event(Event::Demoted);
-
-            return Ok(Transition::Stay);
-        }
-
-        self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
-        self.process_post_reset_events(old_pfx, complete_data.to_process);
-
-        self.update_peer_connections(&elders_change);
-        self.send_neighbour_infos();
-        self.send_genesis_updates();
-        self.send_member_knowledge();
-
-        // Vote to update our self messages proof
-        self.vote_send_section_info_ack(SendAckMessagePayload {
-            ack_prefix: info_prefix,
-            ack_version: info_version,
-        });
-
-        self.print_rt_size();
-        if let Some(to_send) = complete_data.event_to_send {
-            outbox.send_event(to_send);
-        }
-
-        if !was_elder {
-            info!("{} - Promoted", self);
-            outbox.send_event(Event::Promoted);
-        }
-
-        Ok(Transition::Stay)
-    }
-
-    fn handle_neighbour_info_event(
-        &mut self,
-        elders_info: EldersInfo,
-        neighbour_change: EldersChange,
-    ) -> Result<(), RoutingError> {
-        info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
-
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        let _ = self
-            .pending_voted_msgs
-            .remove(&PendingMessageKey::NeighbourInfo {
-                version: elders_info.version(),
-                prefix: *elders_info.prefix(),
-            });
-        self.update_peer_connections(&neighbour_change);
-        Ok(())
-    }
-
-    fn handle_their_key_info_event(
-        &mut self,
-        key_info: SectionKeyInfo,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        self.vote_send_section_info_ack(SendAckMessagePayload {
-            ack_prefix: *key_info.prefix(),
-            ack_version: key_info.version(),
-        });
-        Ok(())
-    }
-
-    fn handle_send_ack_message_event(
-        &mut self,
-        ack_payload: SendAckMessagePayload,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
-            return Ok(());
-        }
-
-        let src = SrcLocation::Section(*self.our_prefix());
-        let dst = DstLocation::Section(ack_payload.ack_prefix.name());
-        let variant = Variant::AckMessage {
-            src_prefix: *self.our_prefix(),
-            ack_version: ack_payload.ack_version,
-        };
-
-        self.send_routing_message(src, dst, variant, None)
-    }
-
-    fn handle_relocate_prepare_event(
-        &mut self,
-        payload: RelocateDetails,
-        count_down: i32,
-        _outbox: &mut dyn EventBox,
-    ) {
-        if !self.chain.is_self_elder() {
-            return;
-        }
-
-        if count_down > 0 {
-            self.vote_for_relocate_prepare(payload, count_down - 1);
-        } else {
-            self.vote_for_relocate(payload);
-        }
     }
 }
 
