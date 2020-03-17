@@ -66,11 +66,11 @@
 )]
 
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate serde_derive;
 
 // Needs to be before all other modules to make the macros available to them.
+#[macro_use]
+mod log_utils;
 #[macro_use]
 mod macros;
 

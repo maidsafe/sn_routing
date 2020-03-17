@@ -16,6 +16,7 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode},
     location::{DstLocation, SrcLocation},
+    log_utils,
     message_filter::MessageFilter,
     messages::{
         BootstrapResponse, JoinRequest, Message, MessageHash, MessageWithBytes, Variant,
@@ -384,6 +385,11 @@ impl Base for JoiningPeer {
 
     fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
+    }
+
+    fn set_log_ident(&self) -> log_utils::Guard {
+        use std::fmt::Write;
+        log_utils::set_ident(|buffer| write!(buffer, "{} ", self))
     }
 
     fn handle_send_message(
