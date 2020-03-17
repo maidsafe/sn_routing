@@ -13,8 +13,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/* FIXME: uncomment this when states/elder/tests and states/adult/tests are sorted.
-
 use crate::{
     chain::{AgeCounter, EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER},
     id::{FullId, P2pNode, PublicId},
@@ -99,5 +97,3 @@ where
         .map(|id| (*id, MIN_AGE_COUNTER))
         .collect()
 }
-
-*/
