@@ -13,11 +13,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/* FIXME: fix these tests
-
 use super::{super::test_utils, *};
 use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
+    event::Connected,
     generate_bls_threshold_secret_key,
     messages::Variant,
     quic_p2p,
@@ -357,7 +356,6 @@ fn new_elder_state(
         Some(secret_key_share),
     );
 
-    let prefix = *gen_pfx_info.elders_info.prefix();
     let details = ElderDetails {
         chain,
         network_service: test_utils::create_network_service(network),
@@ -372,7 +370,9 @@ fn new_elder_state(
         rng: rng::new_from(rng),
     };
 
-    unwrap!(Elder::from_adult(details, prefix, &mut ()))
+    let elder = Elder::from_joining_peer(details, Connected::First, &mut ());
+    assert!(elder.chain.is_self_elder());
+    elder
 }
 
 fn gen_p2p_node(rng: &mut MainRng, network: &Network) -> P2pNode {
@@ -584,5 +584,3 @@ impl JoiningPeer {
             })
     }
 }
-
-*/
