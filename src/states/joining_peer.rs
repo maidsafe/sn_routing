@@ -655,7 +655,6 @@ fn as_iter(
         .map(|key_info| (key_info.prefix(), key_info))
 }
 
-/*
 #[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
@@ -672,7 +671,7 @@ mod tests {
     use fake_clock::FakeClock;
 
     #[test]
-    // Check that losing our proxy connection while in the `BootstrappingPeer` state doesn't stall
+    // Check that losing our proxy connection while in the bootstrapping stage doesn't stall
     // and instead triggers a re-bootstrap attempt..
     fn lose_proxy_connection() {
         let mut network_cfg = NetworkParams::default();
@@ -708,7 +707,7 @@ mod tests {
 
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
             move |network_service, timer, _outbox2| {
-                State::BootstrappingPeer(BootstrappingPeer::new(BootstrappingPeerDetails {
+                State::JoiningPeer(JoiningPeer::new(JoiningPeerDetails {
                     network_service,
                     full_id: node_b_full_id,
                     network_cfg,
@@ -791,4 +790,3 @@ mod tests {
         }
     }
 }
-*/
