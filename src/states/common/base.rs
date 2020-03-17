@@ -25,7 +25,6 @@ use crate::{
     NetworkEvent,
 };
 use bytes::Bytes;
-use hex_fmt::HexFmt;
 use itertools::Itertools;
 use std::{fmt::Debug, net::SocketAddr, slice};
 
@@ -362,45 +361,8 @@ pub trait Base {
             }
         };
 
-        self.send_message_to_target(recipient, bytes)
-    }
-
-    fn send_message_to_target(&mut self, dst: &SocketAddr, message: Bytes) {
-        self.send_message_to_targets(slice::from_ref(dst), 1, message);
-    }
-
-    fn send_message_to_targets(
-        &mut self,
-        conn_infos: &[SocketAddr],
-        dg_size: usize,
-        message: Bytes,
-    ) {
-        if conn_infos.len() < dg_size {
-            warn!(
-                "Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
-                dg_size,
-                conn_infos,
-                HexFmt(&message)
-            );
-        }
-
-        self.send_message_to_initial_targets(conn_infos, dg_size, message);
-    }
-
-    fn send_message_to_initial_targets(
-        &mut self,
-        conn_infos: &[SocketAddr],
-        dg_size: usize,
-        message: Bytes,
-    ) {
-        let token = self
-            .network_service_mut()
-            .send_message_to_initial_targets(conn_infos, dg_size, message);
-        trace!(
-            "Sending message ID {} to {:?}",
-            token,
-            &conn_infos[..dg_size.min(conn_infos.len())]
-        );
+        self.network_service_mut()
+            .send_message_to_targets(slice::from_ref(recipient), 1, bytes)
     }
 
     fn send_message_to_target_later(&mut self, dst: &SocketAddr, message: Bytes, delay: Duration) {

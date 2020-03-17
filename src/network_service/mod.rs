@@ -15,6 +15,7 @@ use crate::{
     NetworkConfig,
 };
 use bytes::Bytes;
+use hex_fmt::HexFmt;
 use std::{collections::HashMap, net::SocketAddr, slice};
 
 use sending_targets_cache::SendingTargetsCache;
@@ -42,13 +43,37 @@ impl NetworkService {
         &mut self.cache
     }
 
+    pub fn send_message_to_targets(
+        &mut self,
+        conn_infos: &[SocketAddr],
+        dg_size: usize,
+        message: Bytes,
+    ) {
+        if conn_infos.len() < dg_size {
+            warn!(
+                "Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
+                dg_size,
+                conn_infos,
+                HexFmt(&message)
+            );
+        }
+
+        self.send_message_to_initial_targets(conn_infos, dg_size, message);
+    }
+
     pub fn send_message_to_initial_targets(
         &mut self,
         conn_infos: &[SocketAddr],
         dg_size: usize,
         msg: Bytes,
-    ) -> Token {
+    ) {
         let token = self.next_msg_token();
+
+        trace!(
+            "Sending message ID {} to {:?}",
+            token,
+            &conn_infos[..dg_size.min(conn_infos.len())]
+        );
 
         // initially only send to dg_size targets
         for addr in conn_infos.iter().take(dg_size) {
@@ -57,8 +82,6 @@ impl NetworkService {
         }
 
         self.cache.insert_message(token, conn_infos, dg_size);
-
-        token
     }
 
     pub fn send_message_to_target_later(

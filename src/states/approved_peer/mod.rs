@@ -1791,7 +1791,8 @@ impl ApprovedPeer {
             .collect();
 
         let cheap_bytes_clone = msg.full_bytes().clone();
-        self.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
+        self.network_service
+            .send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
 
         Ok(())
     }
@@ -2196,7 +2197,8 @@ impl ApprovedPeer {
         message: Message,
     ) -> Result<(), RoutingError> {
         let message = message.to_bytes()?;
-        self.send_message_to_targets(dst_targets, dg_size, message);
+        self.network_service
+            .send_message_to_targets(dst_targets, dg_size, message);
         Ok(())
     }
 
