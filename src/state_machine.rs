@@ -8,15 +8,15 @@
 
 use crate::{
     action::Action,
-    chain::{EldersInfo, GenesisPfxInfo},
+    chain::GenesisPfxInfo,
     error::RoutingError,
     id::{P2pNode, PublicId},
     network_service::{NetworkBuilder, NetworkService},
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::EventSenders,
-    relocation::{RelocatePayload, SignedRelocateDetails},
-    states::{common::Base, ApprovedPeer, BootstrappingPeer, JoiningPeer},
+    relocation::SignedRelocateDetails,
+    states::{common::Base, ApprovedPeer, JoiningPeer},
     timer::Timer,
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
@@ -39,7 +39,6 @@ use std::{
 macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
-            Self::BootstrappingPeer($state) => $expr,
             Self::JoiningPeer($state) => $expr,
             Self::ApprovedPeer($state) => $expr,
             Self::Terminated => $term_expr,
@@ -60,7 +59,6 @@ pub struct StateMachine {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum State {
-    BootstrappingPeer(BootstrappingPeer),
     JoiningPeer(JoiningPeer),
     ApprovedPeer(ApprovedPeer),
     Terminated,
@@ -106,16 +104,14 @@ impl State {
     pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
         match self {
             Self::ApprovedPeer(state) => Some(state.our_elders()),
-            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => None,
+            Self::JoiningPeer(_) | Self::Terminated => None,
         }
     }
 
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
         match self {
             Self::ApprovedPeer(state) => Ok(state.our_prefix().matches(name)),
-            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
-                Err(RoutingError::InvalidState)
-            }
+            Self::JoiningPeer(_) | Self::Terminated => Err(RoutingError::InvalidState),
         }
     }
 
@@ -125,9 +121,7 @@ impl State {
     ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
         match self {
             Self::ApprovedPeer(state) => Ok(Box::new(state.closest_known_elders_to(name))),
-            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
-                Err(RoutingError::InvalidState)
-            }
+            Self::JoiningPeer(_) | Self::Terminated => Err(RoutingError::InvalidState),
         }
     }
 
@@ -190,7 +184,7 @@ impl State {
     pub fn chain(&self) -> Option<&Chain> {
         match self {
             Self::ApprovedPeer(state) => Some(state.chain()),
-            Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => None,
+            Self::JoiningPeer(_) | Self::Terminated => None,
         }
     }
 
@@ -212,14 +206,14 @@ impl State {
 
     pub fn has_unpolled_observations(&self) -> bool {
         match self {
-            Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => false,
+            Self::Terminated | Self::JoiningPeer(_) => false,
             Self::ApprovedPeer(state) => state.has_unpolled_observations(),
         }
     }
 
     pub fn unpolled_observations_string(&self) -> String {
         match self {
-            Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => String::new(),
+            Self::Terminated | Self::JoiningPeer(_) => String::new(),
             Self::ApprovedPeer(state) => state.unpolled_observations_string(),
         }
     }
@@ -254,13 +248,6 @@ impl State {
 #[derive(PartialEq, Eq)]
 pub enum Transition {
     Stay,
-    // `BootstrappingPeer` state transitioning to `JoiningPeer`
-    IntoJoining {
-        info: EldersInfo,
-        relocate_payload: Option<RelocatePayload>,
-    },
-    // `JoiningPeer` failing to join and transitioning back to `BootstrappingPeer`
-    Rebootstrap,
     // Node getting relocated.
     Relocate {
         conn_infos: Vec<SocketAddr>,
@@ -277,8 +264,6 @@ impl Debug for Transition {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             Self::Stay => write!(f, "Stay"),
-            Self::IntoJoining { .. } => write!(f, "IntoJoining"),
-            Self::Rebootstrap => write!(f, "Rebootstrap"),
             Self::Relocate { .. } => write!(f, "Relocate"),
             Self::Approve { .. } => write!(f, "Approve"),
             Self::Terminate => write!(f, "Terminate"),
@@ -378,17 +363,6 @@ impl StateMachine {
         match transition {
             Stay => (),
             Terminate => self.terminate(),
-            IntoJoining {
-                info,
-                relocate_payload,
-            } => self.state.replace_with(|state| match state {
-                State::BootstrappingPeer(src) => src.into_joining(info, relocate_payload, outbox),
-                _ => unreachable!(),
-            }),
-            Rebootstrap => self.state.replace_with(|state| match state {
-                State::JoiningPeer(src) => src.rebootstrap(),
-                _ => unreachable!(),
-            }),
             Relocate {
                 details,
                 conn_infos,
