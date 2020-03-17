@@ -122,7 +122,7 @@ impl Builder {
         StateMachine::new(
             move |network_service, timer, outbox| {
                 if first {
-                    debug!("Creating a first node in the Elder state");
+                    debug!("Creating the first node");
 
                     states::ApprovedPeer::first(
                         network_service,
@@ -135,7 +135,7 @@ impl Builder {
                     .map(State::ApprovedPeer)
                     .unwrap_or(State::Terminated)
                 } else {
-                    debug!("Creating a node in the BootstrappingPeer state");
+                    debug!("Creating a regular node");
 
                     State::BootstrappingPeer(BootstrappingPeer::new(BootstrappingPeerDetails {
                         network_service,
@@ -359,7 +359,7 @@ impl Node {
             .unwrap_or(false)
     }
 
-    /// Returns whether the node is Elder or Adult.
+    /// Returns whether the node is approved member of a section (Infant, Adult or Elder).
     pub fn is_approved(&self) -> bool {
         match self.machine.current() {
             State::ApprovedPeer(_) => true,

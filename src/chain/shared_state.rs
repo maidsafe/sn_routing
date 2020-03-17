@@ -182,7 +182,7 @@ impl SharedState {
         }
     }
 
-    /// Remove all entries from `out_members` whose name does not match our prefix and returns them.
+    /// Remove all entries from `our_members` whose name does not match our prefix and returns them.
     pub fn remove_our_members_not_matching_our_prefix(&mut self) -> BTreeMap<XorName, MemberInfo> {
         let (our_members, sibling_members) = mem::take(&mut self.our_members)
             .into_iter()

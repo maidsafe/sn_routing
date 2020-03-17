@@ -72,7 +72,7 @@ pub struct Chain {
     new_section_bls_keys: BTreeMap<XorName, DkgResult>,
     // The accumulated info during a split pfx change.
     split_cache: Option<SplitCache>,
-    // members that we had before last split.
+    // Members of our sibling section immediately after the last split.
     post_split_sibling_members: BTreeMap<XorName, MemberInfo>,
 }
 
