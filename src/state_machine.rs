@@ -266,7 +266,7 @@ pub enum Transition {
         conn_infos: Vec<SocketAddr>,
         details: SignedRelocateDetails,
     },
-    // `JoiningPeer` state transitioning to `Adult`.
+    // `JoiningPeer` state transitioning to `ApprovedPeer`.
     Approve {
         gen_pfx_info: GenesisPfxInfo,
     },
