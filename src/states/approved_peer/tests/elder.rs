@@ -13,7 +13,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{super::super::elder::*, utils as test_utils};
+use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
     event::Connected,
@@ -42,7 +42,7 @@ struct DkgToSectionInfo {
 struct Env {
     pub rng: MainRng,
     pub network: Network,
-    pub subject: Elder,
+    pub subject: ApprovedPeer,
     pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
@@ -360,7 +360,7 @@ fn create_state(
     full_id: FullId,
     secret_key_share: bls::SecretKeyShare,
     gen_pfx_info: GenesisPfxInfo,
-) -> Elder {
+) -> ApprovedPeer {
     let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), &gen_pfx_info);
     let chain = Chain::new(
         Default::default(),
@@ -383,7 +383,7 @@ fn create_state(
         rng: rng::new_from(rng),
     };
 
-    let elder = Elder::from_joining_peer(details, Connected::First, &mut ());
+    let elder = ApprovedPeer::from_joining_peer(details, Connected::First, &mut ());
     assert!(elder.chain.is_self_elder());
     elder
 }

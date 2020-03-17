@@ -94,7 +94,7 @@ pub struct ElderDetails {
     pub rng: MainRng,
 }
 
-pub struct Elder {
+pub struct ApprovedPeer {
     network_service: NetworkService,
     full_id: FullId,
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
@@ -117,7 +117,7 @@ pub struct Elder {
     rng: MainRng,
 }
 
-impl Elder {
+impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
     // Construction and transition
     ////////////////////////////////////////////////////////////////////////////
@@ -1991,7 +1991,7 @@ impl Elder {
     }
 }
 
-impl Base for Elder {
+impl Base for ApprovedPeer {
     fn network_service(&self) -> &NetworkService {
         &self.network_service
     }
@@ -2252,7 +2252,7 @@ impl Base for Elder {
 }
 
 #[cfg(feature = "mock_base")]
-impl Elder {
+impl ApprovedPeer {
     pub fn chain(&self) -> &Chain {
         &self.chain
     }
@@ -2285,7 +2285,7 @@ impl Elder {
     }
 }
 
-impl Display for Elder {
+impl Display for ApprovedPeer {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,

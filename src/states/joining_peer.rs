@@ -7,9 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
+    approved_peer::{ApprovedPeer, ElderDetails},
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},
     common::{Base, BOUNCE_RESEND_DELAY},
-    elder::{Elder, ElderDetails},
 };
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
@@ -117,7 +117,7 @@ impl JoiningPeer {
             JoinType::Relocate(_) => Connected::Relocate,
         };
 
-        Ok(State::Elder(Elder::from_joining_peer(
+        Ok(State::ApprovedPeer(ApprovedPeer::from_joining_peer(
             details,
             connect_type,
             outbox,

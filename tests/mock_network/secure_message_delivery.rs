@@ -28,7 +28,7 @@ fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
 
     let _ = nodes[src]
         .inner
-        .elder_state_mut()
+        .approved_peer_state_mut()
         .map(|state| unwrap!(state.send_msg_to_targets(&targets, 1, message)));
 }
 

@@ -16,7 +16,7 @@ use crate::{
     pause::PausedState,
     quic_p2p::EventSenders,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    states::{common::Base, BootstrappingPeer, Elder, JoiningPeer},
+    states::{common::Base, ApprovedPeer, BootstrappingPeer, JoiningPeer},
     timer::Timer,
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
@@ -41,7 +41,7 @@ macro_rules! state_dispatch {
         match $self {
             Self::BootstrappingPeer($state) => $expr,
             Self::JoiningPeer($state) => $expr,
-            Self::Elder($state) => $expr,
+            Self::ApprovedPeer($state) => $expr,
             Self::Terminated => $term_expr,
         }
     };
@@ -62,7 +62,7 @@ pub struct StateMachine {
 pub enum State {
     BootstrappingPeer(BootstrappingPeer),
     JoiningPeer(JoiningPeer),
-    Elder(Elder),
+    ApprovedPeer(ApprovedPeer),
     Terminated,
 }
 
@@ -104,15 +104,15 @@ impl State {
     }
 
     pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
-        match *self {
-            Self::Elder(ref state) => Some(state.our_elders()),
+        match self {
+            Self::ApprovedPeer(state) => Some(state.our_elders()),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => None,
         }
     }
 
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
-        match *self {
-            Self::Elder(ref state) => Ok(state.our_prefix().matches(name)),
+        match self {
+            Self::ApprovedPeer(state) => Ok(state.our_prefix().matches(name)),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
                 Err(RoutingError::InvalidState)
             }
@@ -123,8 +123,8 @@ impl State {
         &'a self,
         name: &XorName,
     ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
-        match *self {
-            Self::Elder(ref state) => Ok(Box::new(state.closest_known_elders_to(name))),
+        match self {
+            Self::ApprovedPeer(state) => Ok(Box::new(state.closest_known_elders_to(name))),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => {
                 Err(RoutingError::InvalidState)
             }
@@ -139,10 +139,10 @@ impl State {
         )
     }
 
-    /// Returns this elder mut state.
-    pub fn elder_state_mut(&mut self) -> Option<&mut Elder> {
-        match *self {
-            Self::Elder(ref mut state) => Some(state),
+    /// Returns this ApprovedPeer mut state.
+    pub fn approved_peer_state_mut(&mut self) -> Option<&mut ApprovedPeer> {
+        match self {
+            Self::ApprovedPeer(state) => Some(state),
             _ => None,
         }
     }
@@ -188,16 +188,16 @@ impl Debug for State {
 #[cfg(feature = "mock_base")]
 impl State {
     pub fn chain(&self) -> Option<&Chain> {
-        match *self {
-            Self::Elder(ref state) => Some(state.chain()),
+        match self {
+            Self::ApprovedPeer(state) => Some(state.chain()),
             Self::BootstrappingPeer(_) | Self::JoiningPeer(_) | Self::Terminated => None,
         }
     }
 
-    /// Returns this elder state.
-    pub fn elder_state(&self) -> Option<&Elder> {
-        match *self {
-            Self::Elder(ref state) => Some(state),
+    /// Returns this ApprovedPeer state.
+    pub fn approved_peer_state(&self) -> Option<&ApprovedPeer> {
+        match self {
+            Self::ApprovedPeer(state) => Some(state),
             _ => None,
         }
     }
@@ -213,20 +213,20 @@ impl State {
     pub fn has_unpolled_observations(&self) -> bool {
         match self {
             Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => false,
-            Self::Elder(state) => state.has_unpolled_observations(),
+            Self::ApprovedPeer(state) => state.has_unpolled_observations(),
         }
     }
 
     pub fn unpolled_observations_string(&self) -> String {
         match self {
             Self::Terminated | Self::BootstrappingPeer(_) | Self::JoiningPeer(_) => String::new(),
-            Self::Elder(state) => state.unpolled_observations_string(),
+            Self::ApprovedPeer(state) => state.unpolled_observations_string(),
         }
     }
 
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
         match self {
-            Self::Elder(state) => state.in_src_location(src),
+            Self::ApprovedPeer(state) => state.in_src_location(src),
             _ => false,
         }
     }
@@ -334,7 +334,7 @@ impl StateMachine {
         info!("{} - Pause", self.current());
 
         let mut paused_state = match self.state {
-            State::Elder(state) => state.pause(),
+            State::ApprovedPeer(state) => state.pause(),
             _ => return Err(RoutingError::InvalidState),
         };
 
@@ -347,7 +347,7 @@ impl StateMachine {
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
 
         let timer = Timer::new(action_tx.clone());
-        let state = State::Elder(Elder::resume(state, timer));
+        let state = State::ApprovedPeer(ApprovedPeer::resume(state, timer));
 
         let machine = Self {
             state,
@@ -393,7 +393,7 @@ impl StateMachine {
                 details,
                 conn_infos,
             } => self.state.replace_with(|state| match state {
-                State::Elder(src) => src.relocate(conn_infos, details),
+                State::ApprovedPeer(src) => src.relocate(conn_infos, details),
                 _ => unreachable!(),
             }),
             Approve { gen_pfx_info } => self.state.replace_with(|state| match state {
