@@ -12,6 +12,7 @@ use crate::{
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::{DstLocation, SrcLocation},
+    log_utils,
     messages::{Message, MessageWithBytes, Variant},
     network_service::{NetworkService, Resend},
     outbox::EventBox,
@@ -46,6 +47,8 @@ pub trait Base: Display {
         LogIdent::new(self)
     }
 
+    fn set_log_ident(&self) -> log_utils::Guard;
+
     fn handle_peer_lost(
         &mut self,
         _peer_addr: SocketAddr,
@@ -70,6 +73,8 @@ pub trait Base: Display {
     fn unhandled_message(&mut self, sender: Option<SocketAddr>, msg: Message, msg_bytes: Bytes);
 
     fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
+        let _log_ident = self.set_log_ident();
+
         match action {
             Action::SendMessage {
                 src,
@@ -139,6 +144,8 @@ pub trait Base: Display {
         outbox: &mut dyn EventBox,
     ) -> Transition {
         use crate::NetworkEvent::*;
+
+        let _log_ident = self.set_log_ident();
 
         let transition = match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),

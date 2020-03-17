@@ -24,6 +24,7 @@ use crate::{
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
+    log_utils,
     message_filter::MessageFilter,
     messages::{
         AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message, MessageHash,
@@ -1885,7 +1886,7 @@ impl ApprovedPeer {
 
     fn print_rt_size(&self) {
         const TABLE_LVL: log::Level = log::Level::Info;
-        if log_enabled!(TABLE_LVL) {
+        if log::log_enabled!(TABLE_LVL) {
             let status_str = format!(
                 "{} - Routing Table size: {:3}",
                 self,
@@ -2020,6 +2021,11 @@ impl Base for ApprovedPeer {
 
     fn rng(&mut self) -> &mut MainRng {
         &mut self.rng
+    }
+
+    fn set_log_ident(&self) -> log_utils::Guard {
+        use std::fmt::Write;
+        log_utils::set_ident(|buffer| write!(buffer, "{} ", self))
     }
 
     fn handle_send_message(
