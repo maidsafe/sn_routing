@@ -21,7 +21,7 @@ use crate::{
     messages::Variant,
     quic_p2p,
     rng::{self, MainRng},
-    unwrap, utils, ELDER_SIZE,
+    utils, ELDER_SIZE,
 };
 use crossbeam_channel::Receiver;
 use mock_quic_p2p::Network;
@@ -39,16 +39,16 @@ struct DkgToSectionInfo {
     new_elders_info: EldersInfo,
 }
 
-struct ElderUnderTest {
+struct Env {
     pub rng: MainRng,
     pub network: Network,
-    pub elder: Elder,
+    pub subject: Elder,
     pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
 }
 
-impl ElderUnderTest {
+impl Env {
     fn new(sec_size: usize) -> Self {
         let mut rng = rng::new();
         let network = Network::new();
@@ -67,28 +67,28 @@ impl ElderUnderTest {
 
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
-        let elder = new_elder_state(&mut rng, &network, full_id, secret_key_share, gen_pfx_info);
+        let subject = create_state(&mut rng, &network, full_id, secret_key_share, gen_pfx_info);
         let candidate = gen_p2p_node(&mut rng, &network);
 
-        let mut elder_test = Self {
+        let mut env = Self {
             rng,
             network,
-            elder,
+            subject,
             other_ids,
             elders_info,
             candidate,
         };
 
         // Process initial unpolled event including genesis
-        elder_test.n_vote_for_unconsensused_events(elder_test.other_ids.len());
-        unwrap!(elder_test.create_gossip());
-        elder_test
+        env.n_vote_for_unconsensused_events(env.other_ids.len());
+        env.create_gossip().unwrap();
+        env
     }
 
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
         assert!(count <= self.other_ids.len());
 
-        let parsec = self.elder.parsec_map_mut();
+        let parsec = self.subject.parsec_map_mut();
         for event in events {
             self.other_ids
                 .iter()
@@ -96,10 +96,10 @@ impl ElderUnderTest {
                 .for_each(|(full_id, bls_id)| {
                     let sig_event =
                         if let AccumulatingEvent::SectionInfo(ref _info, ref section_key) = event {
-                            Some(unwrap!(EventSigPayload::new_for_section_key_info(
-                                bls_id,
-                                section_key
-                            )))
+                            Some(
+                                EventSigPayload::new_for_section_key_info(bls_id, section_key)
+                                    .unwrap(),
+                            )
                         } else {
                             None
                         };
@@ -114,7 +114,7 @@ impl ElderUnderTest {
     }
 
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
-        let parsec = self.elder.parsec_map_mut();
+        let parsec = self.subject.parsec_map_mut();
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
         for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
@@ -130,17 +130,20 @@ impl ElderUnderTest {
 
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
         let other_full_id = &self.other_ids[0].0;
-        let addr: SocketAddr = unwrap!("127.0.0.3:9999".parse());
-        let parsec = self.elder.parsec_map_mut();
+        let addr: SocketAddr = "127.0.0.3:9999".parse().unwrap();
+        let parsec = self.subject.parsec_map_mut();
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
-        let message = unwrap!(Message::single_src(
+        let message = Message::single_src(
             other_full_id,
             DstLocation::Direct,
-            Variant::ParsecRequest(parsec_version, request)
-        ));
+            Variant::ParsecRequest(parsec_version, request),
+        )
+        .unwrap();
 
-        let _ = self.elder.dispatch_message(Some(addr), message, &mut ())?;
+        let _ = self
+            .subject
+            .dispatch_message(Some(addr), message, &mut ())?;
         Ok(())
     }
 
@@ -166,7 +169,7 @@ impl ElderUnderTest {
 
     fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
         let participants: BTreeSet<_> = new_elders_info.member_ids().copied().collect();
-        let parsec = self.elder.parsec_map_mut();
+        let parsec = self.subject.parsec_map_mut();
 
         let dkg_results = self
             .other_ids
@@ -174,12 +177,19 @@ impl ElderUnderTest {
             .map(|(full_id, _)| {
                 (
                     full_id.clone(),
-                    unwrap!(parsec.get_dkg_result_as(participants.clone(), full_id)),
+                    parsec
+                        .get_dkg_result_as(participants.clone(), full_id)
+                        .expect("failed to get DKG result"),
                 )
             })
             .collect_vec();
 
-        let new_pk_set = unwrap!(dkg_results.first()).1.public_key_set.clone();
+        let new_pk_set = dkg_results
+            .first()
+            .expect("no DKG results")
+            .1
+            .public_key_set
+            .clone();
         let new_other_ids = dkg_results
             .into_iter()
             .filter_map(|(full_id, result)| (result.secret_key_share.map(|share| (full_id, share))))
@@ -234,7 +244,7 @@ impl ElderUnderTest {
         });
 
         // This event needs total consensus.
-        self.elder.vote_for_event(event.clone());
+        self.subject.vote_for_event(event.clone());
         let _ = self.n_vote_for_gossipped(self.other_ids.len(), iter::once(event));
     }
 
@@ -244,26 +254,28 @@ impl ElderUnderTest {
             "There is already ELDER_SIZE elders - the candidate won't be promoted"
         );
 
-        let new_elder_info = unwrap!(EldersInfo::new(
+        let new_elder_info = EldersInfo::new(
             self.elders_info
                 .member_nodes()
                 .chain(iter::once(&self.candidate))
                 .map(|node| (*node.public_id().name(), node.clone()))
                 .collect(),
             *self.elders_info.prefix(),
-            Some(&self.elders_info)
-        ));
+            Some(&self.elders_info),
+        )
+        .unwrap();
 
         self.updated_other_ids(new_elder_info)
     }
 
     fn new_elders_info_without_candidate(&mut self) -> DkgToSectionInfo {
         let old_info = self.new_elders_info_with_candidate();
-        let new_elder_info = unwrap!(EldersInfo::new(
+        let new_elder_info = EldersInfo::new(
             self.elders_info.member_map().clone(),
             *old_info.new_elders_info.prefix(),
-            Some(&old_info.new_elders_info)
-        ));
+            Some(&old_info.new_elders_info),
+        )
+        .unwrap();
         self.updated_other_ids(new_elder_info)
     }
 
@@ -293,26 +305,27 @@ impl ElderUnderTest {
             )))
             .collect();
 
-        let new_elders_info = unwrap!(EldersInfo::new(
+        let new_elders_info = EldersInfo::new(
             new_member_map,
             *self.elders_info.prefix(),
-            Some(&self.elders_info)
-        ));
+            Some(&self.elders_info),
+        )
+        .unwrap();
         self.updated_other_ids(new_elders_info)
     }
 
     fn has_unpolled_observations(&self) -> bool {
-        self.elder.has_unpolled_observations()
+        self.subject.has_unpolled_observations()
     }
 
     fn is_candidate_member(&self) -> bool {
-        self.elder
+        self.subject
             .chain()
             .is_peer_our_member(self.candidate.public_id())
     }
 
     fn is_candidate_elder(&self) -> bool {
-        self.elder
+        self.subject
             .chain()
             .is_peer_our_elder(self.candidate.public_id())
     }
@@ -341,7 +354,7 @@ impl ElderUnderTest {
     }
 }
 
-fn new_elder_state(
+fn create_state(
     rng: &mut MainRng,
     network: &Network,
     full_id: FullId,
@@ -381,137 +394,135 @@ fn gen_p2p_node(rng: &mut MainRng, network: &Network) -> P2pNode {
 
 #[test]
 fn construct() {
-    let elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
+    let env = Env::new(ELDER_SIZE - 1);
 
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.is_candidate_elder());
+    assert!(!env.has_unpolled_observations());
+    assert!(!env.is_candidate_elder());
 }
 
 #[test]
 fn when_accumulate_online_then_node_is_added_to_our_members() {
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
-    let new_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg(&new_info);
+    let mut env = Env::new(ELDER_SIZE - 1);
+    let new_info = env.new_elders_info_with_candidate();
+    env.accumulate_online(env.candidate.clone());
+    env.accumulate_start_dkg(&new_info);
 
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.is_candidate_member());
-    assert!(!elder_test.is_candidate_elder());
+    assert!(!env.has_unpolled_observations());
+    assert!(env.is_candidate_member());
+    assert!(!env.is_candidate_elder());
 }
 
 #[test]
 fn when_accumulate_online_and_start_dkg_and_section_info_then_node_is_added_to_our_elders() {
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
-    let new_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg(&new_info);
+    let mut env = Env::new(ELDER_SIZE - 1);
+    let new_info = env.new_elders_info_with_candidate();
+    env.accumulate_online(env.candidate.clone());
+    env.accumulate_start_dkg(&new_info);
 
-    elder_test.accumulate_section_info_if_vote(&new_info);
-    elder_test.accumulate_voted_unconsensused_events();
+    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_voted_unconsensused_events();
 
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(elder_test.is_candidate_member());
-    assert!(elder_test.is_candidate_elder());
+    assert!(!env.has_unpolled_observations());
+    assert!(env.is_candidate_member());
+    assert!(env.is_candidate_elder());
 }
 
 #[test]
 fn when_accumulate_offline_then_node_is_removed_from_our_members() {
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
-    let new_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg(&new_info);
-    elder_test.accumulate_section_info_if_vote(&new_info);
-    elder_test.accumulate_voted_unconsensused_events();
+    let mut env = Env::new(ELDER_SIZE - 1);
+    let new_info = env.new_elders_info_with_candidate();
+    env.accumulate_online(env.candidate.clone());
+    env.accumulate_start_dkg(&new_info);
+    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_voted_unconsensused_events();
 
-    elder_test.other_ids = new_info.new_other_ids;
-    let new_info = elder_test.new_elders_info_without_candidate();
-    elder_test.accumulate_offline(*elder_test.candidate.public_id());
-    elder_test.accumulate_start_dkg(&new_info);
+    env.other_ids = new_info.new_other_ids;
+    let new_info = env.new_elders_info_without_candidate();
+    env.accumulate_offline(*env.candidate.public_id());
+    env.accumulate_start_dkg(&new_info);
 
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.is_candidate_member());
-    assert!(elder_test.is_candidate_elder());
+    assert!(!env.has_unpolled_observations());
+    assert!(!env.is_candidate_member());
+    assert!(env.is_candidate_elder());
 }
 
 #[test]
 fn when_accumulate_offline_and_start_dkg_and_section_info_then_node_is_removed_from_our_elders() {
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE - 1);
-    let new_info = elder_test.new_elders_info_with_candidate();
-    elder_test.accumulate_online(elder_test.candidate.clone());
-    elder_test.accumulate_start_dkg(&new_info);
-    elder_test.accumulate_section_info_if_vote(&new_info);
-    elder_test.accumulate_voted_unconsensused_events();
+    let mut env = Env::new(ELDER_SIZE - 1);
+    let new_info = env.new_elders_info_with_candidate();
+    env.accumulate_online(env.candidate.clone());
+    env.accumulate_start_dkg(&new_info);
+    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_voted_unconsensused_events();
 
-    elder_test.other_ids = new_info.new_other_ids;
-    let new_info = elder_test.new_elders_info_without_candidate();
-    elder_test.accumulate_offline(*elder_test.candidate.public_id());
-    elder_test.accumulate_start_dkg(&new_info);
-    elder_test.accumulate_section_info_if_vote(&new_info);
-    elder_test.accumulate_voted_unconsensused_events();
+    env.other_ids = new_info.new_other_ids;
+    let new_info = env.new_elders_info_without_candidate();
+    env.accumulate_offline(*env.candidate.public_id());
+    env.accumulate_start_dkg(&new_info);
+    env.accumulate_section_info_if_vote(&new_info);
+    env.accumulate_voted_unconsensused_events();
 
-    assert!(!elder_test.has_unpolled_observations());
-    assert!(!elder_test.is_candidate_member());
-    assert!(!elder_test.is_candidate_elder());
+    assert!(!env.has_unpolled_observations());
+    assert!(!env.is_candidate_member());
+    assert!(!env.is_candidate_elder());
 }
 
 #[test]
 fn handle_bootstrap() {
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE);
-    let mut new_node = JoiningPeer::new(&mut elder_test.rng);
+    let mut env = Env::new(ELDER_SIZE);
+    let mut new_node = JoiningPeer::new(&mut env.rng);
 
     let p2p_node = P2pNode::new(*new_node.public_id(), new_node.our_connection_info());
     let dst_name = *new_node.public_id().name();
 
-    elder_test
-        .elder
-        .handle_bootstrap_request(p2p_node, dst_name);
-    elder_test.network.poll(&mut elder_test.rng);
+    env.subject.handle_bootstrap_request(p2p_node, dst_name);
+    env.network.poll(&mut env.rng);
 
     let response = new_node.expect_bootstrap_response();
     match response {
-        BootstrapResponse::Join(elders_info) => assert_eq!(elders_info, elder_test.elders_info),
+        BootstrapResponse::Join(elders_info) => assert_eq!(elders_info, env.elders_info),
         BootstrapResponse::Rebootstrap(_) => panic!("Unexpected Rebootstrap response"),
     }
 }
 
 #[test]
 fn send_genesis_update() {
-    let mut elder_test = ElderUnderTest::new(ELDER_SIZE);
+    let mut env = Env::new(ELDER_SIZE);
 
-    let orig_elders_version = elder_test.elders_info.version();
+    let orig_elders_version = env.elders_info.version();
 
-    let adult0 = elder_test.gen_p2p_node();
-    let adult1 = elder_test.gen_p2p_node();
+    let adult0 = env.gen_p2p_node();
+    let adult1 = env.gen_p2p_node();
 
-    elder_test.accumulate_online(adult0.clone());
-    elder_test.accumulate_online(adult1.clone());
+    env.accumulate_online(adult0.clone());
+    env.accumulate_online(adult1.clone());
 
     // Remove one existing elder and promote an adult to take its place. This increments the
     // section version.
-    let dropped_id = *elder_test.other_ids[0].0.public_id();
-    elder_test.perform_offline_and_promote(&dropped_id, adult0);
+    let dropped_id = *env.other_ids[0].0.public_id();
+    env.perform_offline_and_promote(&dropped_id, adult0);
 
     // Create `GenesisUpdate` message and check its proof contains the version the adult is at.
-    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    let message = utils::exactly_one(env.subject.create_genesis_updates());
     assert_eq!(message.0, adult1);
 
     let proof = &message.1.proof;
     verify_proof_chain_contains(proof, orig_elders_version);
 
     // Receive MemberKnowledge from the adult
-    elder_test.elder.handle_member_knowledge(
+    env.subject.handle_member_knowledge(
         adult1,
         MemberKnowledge {
-            elders_version: elder_test.elders_info.version(),
-            parsec_version: elder_test.elder.parsec_map.last_version(),
+            elders_version: env.elders_info.version(),
+            parsec_version: env.subject.parsec_map.last_version(),
         },
     );
 
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
     // contain the previous version.
-    let message = utils::exactly_one(elder_test.elder.create_genesis_updates());
+    let message = utils::exactly_one(env.subject.create_genesis_updates());
     let proof = &message.1.proof;
-    verify_proof_chain_contains(proof, elder_test.elders_info.version());
+    verify_proof_chain_contains(proof, env.elders_info.version());
     verify_proof_chain_does_not_contain(proof, orig_elders_version);
 }
 
@@ -550,7 +561,7 @@ impl JoiningPeer {
             let (client_tx, _) = crossbeam_channel::unbounded();
             (quic_p2p::EventSenders { node_tx, client_tx }, node_rx)
         };
-        let network_service = unwrap!(quic_p2p::Builder::new(network_event_tx).build());
+        let network_service = quic_p2p::Builder::new(network_event_tx).build().unwrap();
 
         Self {
             network_service,
@@ -560,7 +571,7 @@ impl JoiningPeer {
     }
 
     fn our_connection_info(&mut self) -> SocketAddr {
-        unwrap!(self.network_service.our_connection_info())
+        self.network_service.our_connection_info().unwrap()
     }
 
     fn public_id(&self) -> &PublicId {
@@ -568,18 +579,19 @@ impl JoiningPeer {
     }
 
     fn expect_bootstrap_response(&self) -> BootstrapResponse {
-        let response = self.recv_messages().find_map(|msg| match msg.variant {
-            Variant::BootstrapResponse(response) => Some(response),
-            _ => None,
-        });
-        unwrap!(response, "BootstrapResponse not received")
+        self.recv_messages()
+            .find_map(|msg| match msg.variant {
+                Variant::BootstrapResponse(response) => Some(response),
+                _ => None,
+            })
+            .expect("BootstrapResponse not received")
     }
 
     fn recv_messages<'a>(&'a self) -> impl Iterator<Item = Message> + 'a {
         self.network_event_rx
             .try_iter()
             .filter_map(|event| match event {
-                quic_p2p::Event::NewMessage { msg, .. } => Some(unwrap!(Message::from_bytes(&msg))),
+                quic_p2p::Event::NewMessage { msg, .. } => Some(Message::from_bytes(&msg).unwrap()),
                 _ => None,
             })
     }
