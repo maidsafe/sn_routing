@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Base, BOUNCE_RESEND_DELAY};
+use super::Base;
 use crate::{
     chain::{
         AccumulatedEvent, AccumulatingEvent, Chain, EldersChange, EldersInfo, MemberState,
@@ -15,20 +15,14 @@ use crate::{
     error::{Result, RoutingError},
     event::Event,
     id::{P2pNode, PublicId},
-    message_filter::FilteringResult,
-    messages::{
-        BootstrapResponse, MemberKnowledge, MessageHash, MessageWithBytes, Variant, VerifyStatus,
-    },
+    messages::VerifyStatus,
     outbox::EventBox,
     parsec::{self, Block, DkgResultWrapper, Observation, ParsecMap},
     relocation::{RelocateDetails, SignedRelocateDetails},
     state_machine::Transition,
     xor_space::{Prefix, XorName},
 };
-use bytes::Bytes;
-use itertools::Itertools;
-use rand::Rng;
-use std::{collections::BTreeSet, net::SocketAddr};
+use std::collections::BTreeSet;
 
 /// Common functionality for node states post resource proof.
 pub trait Approved: Base {
@@ -39,11 +33,6 @@ pub trait Approved: Base {
     fn send_event(&mut self, event: Event, outbox: &mut dyn EventBox);
     fn set_pfx_successfully_polled(&mut self, val: bool);
     fn is_pfx_successfully_polled(&self) -> bool;
-    fn filter_outgoing_message(
-        &mut self,
-        msg: &MessageWithBytes,
-        recipient_id: &PublicId,
-    ) -> FilteringResult;
 
     /// Handles an accumulated relocation trigger
     fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError>;
@@ -193,76 +182,6 @@ pub trait Approved: Base {
         } else {
             Ok(Transition::Stay)
         }
-    }
-
-    fn send_parsec_gossip(&mut self, target: Option<(u64, P2pNode)>) {
-        let (version, gossip_target) = match target {
-            Some((v, p)) => (v, p),
-            None => {
-                let log_ident = self.log_ident();
-
-                if !self.parsec_map_mut().should_send_gossip(&log_ident) {
-                    return;
-                }
-
-                if let Some(recipient) = self.choose_gossip_recipient() {
-                    let version = self.parsec_map().last_version();
-                    (version, recipient)
-                } else {
-                    return;
-                }
-            }
-        };
-
-        match self
-            .parsec_map_mut()
-            .create_gossip(version, gossip_target.public_id())
-        {
-            Ok(msg) => {
-                trace!(
-                    "{} - send parsec request v{} to {:?}",
-                    self,
-                    version,
-                    gossip_target,
-                );
-                self.send_direct_message(gossip_target.peer_addr(), msg);
-            }
-            Err(error) => {
-                trace!(
-                    "{} - failed to send parsec request v{} to {:?}: {:?}",
-                    self,
-                    version,
-                    gossip_target,
-                    error
-                );
-            }
-        }
-    }
-
-    fn choose_gossip_recipient(&mut self) -> Option<P2pNode> {
-        let recipients = self.parsec_map().gossip_recipients();
-        if recipients.is_empty() {
-            trace!("{} - not sending parsec request: no recipients", self,);
-            return None;
-        }
-
-        let mut p2p_recipients: Vec<_> = recipients
-            .into_iter()
-            .filter_map(|pub_id| self.chain().get_member_p2p_node(pub_id.name()))
-            .cloned()
-            .collect();
-
-        if p2p_recipients.is_empty() {
-            log_or_panic!(
-                log::Level::Error,
-                "{} - not sending parsec request: not connected to any gossip recipient.",
-                self
-            );
-            return None;
-        }
-
-        let rand_index = self.rng().gen_range(0, p2p_recipients.len());
-        Some(p2p_recipients.swap_remove(rand_index))
     }
 
     fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
@@ -542,125 +461,6 @@ pub trait Approved: Base {
                 error
             })
             .is_ok()
-    }
-
-    fn send_member_knowledge(&mut self) {
-        let recipients = self
-            .chain()
-            .our_info()
-            .member_nodes()
-            .filter(|node| node.public_id() != self.id())
-            .cloned()
-            .collect_vec();
-        let payload = MemberKnowledge {
-            elders_version: self.chain().our_info().version(),
-            parsec_version: self.parsec_map().last_version(),
-        };
-
-        trace!("{} - Send {:?} to {:?}", self, payload, recipients);
-
-        for recipient in recipients {
-            self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
-        }
-    }
-
-    fn handle_bounce(&mut self, sender: P2pNode, sender_version: Option<u64>, msg_bytes: Bytes) {
-        if let Some((_, version)) = self.chain().find_section_by_member(sender.public_id()) {
-            if sender_version
-                .map(|sender_version| sender_version < version)
-                .unwrap_or(true)
-            {
-                trace!(
-                    "{} - Received Bounce of {:?} from {}. Peer is lagging behind, resending in {:?}",
-                    self,
-                    MessageHash::from_bytes(&msg_bytes),
-                    sender,
-                    BOUNCE_RESEND_DELAY
-                );
-                self.send_message_to_target_later(
-                    sender.peer_addr(),
-                    msg_bytes,
-                    BOUNCE_RESEND_DELAY,
-                );
-            } else {
-                trace!(
-                    "{} - Received Bounce of {:?} from {}. Peer has moved on, not resending",
-                    self,
-                    MessageHash::from_bytes(&msg_bytes),
-                    sender
-                );
-            }
-        } else {
-            trace!(
-                "{} - Received Bounce of {:?} from {}. Peer not known, not resending",
-                self,
-                MessageHash::from_bytes(&msg_bytes),
-                sender
-            );
-        }
-    }
-
-    fn send_bounce(&mut self, recipient: &SocketAddr, msg_bytes: Bytes) {
-        let variant = Variant::Bounce {
-            elders_version: Some(self.chain().our_info().version()),
-            message: msg_bytes,
-        };
-
-        self.send_direct_message(recipient, variant)
-    }
-
-    // Note: As an adult, we should only give info about our section elders and they would
-    // further guide the joining node. However this lead to a loop if the Adult is the new Elder so
-    // we use the same code as for Elder and return Join in some cases.
-    fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
-        debug!(
-            "{} - Received BootstrapRequest to section at {} from {:?}.",
-            self, destination, p2p_node
-        );
-
-        let response = if self.chain().our_prefix().matches(&destination) {
-            let our_info = self.chain().our_info().clone();
-            debug!(
-                "{} - Sending BootstrapResponse::Join to {:?} ({:?})",
-                self, p2p_node, our_info
-            );
-            BootstrapResponse::Join(our_info)
-        } else {
-            let conn_infos: Vec<_> = self
-                .chain()
-                .closest_section_info(destination)
-                .1
-                .member_nodes()
-                .map(|p2p_node| *p2p_node.peer_addr())
-                .collect();
-            debug!(
-                "{} - Sending BootstrapResponse::Rebootstrap to {}",
-                self, p2p_node
-            );
-            BootstrapResponse::Rebootstrap(conn_infos)
-        };
-        self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
-    }
-
-    // Send message over the network.
-    fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
-        let (targets, dg_size) = self.chain().targets(msg.message_dst())?;
-
-        trace!("{}: Sending {:?} via targets {:?}", self, msg, targets);
-
-        let targets: Vec<_> = targets
-            .into_iter()
-            .filter(|p2p_node| {
-                self.filter_outgoing_message(msg, p2p_node.public_id())
-                    .is_new()
-            })
-            .map(|node| *node.peer_addr())
-            .collect();
-
-        let cheap_bytes_clone = msg.full_bytes().clone();
-        self.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
-
-        Ok(())
     }
 }
 
