@@ -118,6 +118,10 @@ pub struct Elder {
 }
 
 impl Elder {
+    ////////////////////////////////////////////////////////////////////////////
+    // Construction and transition
+    ////////////////////////////////////////////////////////////////////////////
+
     pub fn first(
         mut network_service: NetworkService,
         full_id: FullId,
@@ -233,18 +237,6 @@ impl Elder {
         })
     }
 
-    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.chain.our_elders()
-    }
-
-    pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.chain.our_prefix()
-    }
-
-    pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
-        self.chain.closest_section_info(*name).1.member_nodes()
-    }
-
     fn new(details: ElderDetails) -> Self {
         let timer = details.timer;
         let parsec_map = details.parsec_map;
@@ -274,396 +266,34 @@ impl Elder {
         }
     }
 
-    fn print_rt_size(&self) {
-        const TABLE_LVL: log::Level = log::Level::Info;
-        if log_enabled!(TABLE_LVL) {
-            let status_str = format!(
-                "{} - Routing Table size: {:3}",
-                self,
-                self.chain.elders().count()
-            );
-            let network_estimate = match self.chain.network_size_estimate() {
-                (n, true) => format!("Exact network size: {}", n),
-                (n, false) => format!("Estimated network size: {}", n),
-            };
-            let sep_len = cmp::max(status_str.len(), network_estimate.len());
-            let sep_str = iter::repeat('-').take(sep_len).collect::<String>();
-            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", status_str, sep_len);
-            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", network_estimate, sep_len);
-            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-        }
+    ////////////////////////////////////////////////////////////////////////////
+    // Public API
+    ////////////////////////////////////////////////////////////////////////////
+
+    pub fn our_prefix(&self) -> &Prefix<XorName> {
+        self.chain.our_prefix()
     }
 
-    fn handle_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        while let Some(QueuedMessage { message, sender }) = self.msg_queue.pop_front() {
-            if self.in_dst_location(&message.dst) {
-                match self.dispatch_message(sender, message, outbox) {
-                    Ok(Transition::Stay) => (),
-                    Ok(transition) => return transition,
-                    Err(err) => debug!("{} Routing message dispatch failed: {:?}", self, err),
-                }
-            }
-        }
-
-        Transition::Stay
+    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
+        self.chain.our_elders()
     }
 
-    fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
-        self.chain.our_section_bls_keys()
+    pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
+        self.chain.closest_section_info(*name).1.member_nodes()
     }
 
-    fn handle_member_knowledge(&mut self, p2p_node: P2pNode, payload: MemberKnowledge) {
-        trace!("{} - Received {:?} from {:?}", self, payload, p2p_node);
-
-        if self.chain.is_peer_our_active_member(p2p_node.public_id()) {
-            self.members_knowledge
-                .entry(*p2p_node.name())
-                .or_default()
-                .update(payload);
-        }
-
-        self.send_parsec_gossip(Some((payload.parsec_version, p2p_node)))
+    /// Vote for a user-defined event.
+    pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
+        self.vote_for_event(AccumulatingEvent::User(event));
     }
 
-    // Connect to all elders from our section or neighbour sections that we are not yet connected
-    // to and disconnect from peers that are no longer elders of neighbour sections.
-    fn update_peer_connections(&mut self, change: &EldersChange) {
-        if !self.chain.split_in_progress() {
-            let our_needed_connections: HashSet<_> = self
-                .chain
-                .known_nodes()
-                .map(|node| *node.peer_addr())
-                .collect();
-
-            for p2p_node in &change.neighbour_removed {
-                // The peer might have been relocated from a neighbour to us - in that case do not
-                // disconnect from them.
-                if our_needed_connections.contains(p2p_node.peer_addr()) {
-                    continue;
-                }
-
-                self.network_service.disconnect(*p2p_node.peer_addr());
-            }
-        }
+    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
+        self.chain.in_src_location(src)
     }
 
-    fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
-        if let Some(node) = self.chain.get_p2p_node(pub_id.name()) {
-            let peer_addr = *node.peer_addr();
-            self.network_service.disconnect(peer_addr);
-        } else {
-            log_or_panic!(
-                log::Level::Error,
-                "{} - Can't disconnect from node we can't lookup in Chain: {}.",
-                self,
-                pub_id
-            );
-        };
-    }
-
-    fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
-        let ParsecResetData {
-            gen_pfx_info,
-            cached_events,
-            completed_events,
-        } = reset_data;
-
-        let cached_events: BTreeSet<_> = cached_events
-            .into_iter()
-            .chain(
-                self.parsec_map
-                    .our_unpolled_observations()
-                    .filter_map(|obs| match obs {
-                        parsec::Observation::OpaquePayload(event) => Some(event),
-
-                        parsec::Observation::Genesis { .. }
-                        | parsec::Observation::Add { .. }
-                        | parsec::Observation::Remove { .. }
-                        | parsec::Observation::Accusation { .. }
-                        | parsec::Observation::StartDkg(_)
-                        | parsec::Observation::DkgResult { .. }
-                        | parsec::Observation::DkgMessage(_) => None,
-                    })
-                    .cloned(),
-            )
-            .filter(|event| !completed_events.contains(&event.payload))
-            .collect();
-
-        let our_pfx = *self.our_prefix();
-
-        let to_process = cached_events
-            .iter()
-            .filter(|event| match &event.payload {
-                // Events to re-process
-                AccumulatingEvent::Online(_) => true,
-                // Events to re-insert
-                AccumulatingEvent::Offline(_)
-                | AccumulatingEvent::AckMessage(_)
-                | AccumulatingEvent::StartDkg(_)
-                | AccumulatingEvent::ParsecPrune
-                | AccumulatingEvent::Relocate(_)
-                | AccumulatingEvent::RelocatePrepare(_, _)
-                | AccumulatingEvent::SectionInfo(_, _)
-                | AccumulatingEvent::NeighbourInfo(_)
-                | AccumulatingEvent::TheirKeyInfo(_)
-                | AccumulatingEvent::SendAckMessage(_)
-                | AccumulatingEvent::User(_) => false,
-            })
-            .cloned()
-            .collect();
-
-        let to_vote_again = cached_events
-            .into_iter()
-            .filter(|event| {
-                match event.payload {
-                    // Only re-vote if still relevant to our new prefix.
-                    AccumulatingEvent::Online(ref payload) => {
-                        our_pfx.matches(payload.p2p_node.name())
-                    }
-                    AccumulatingEvent::Offline(pub_id) => our_pfx.matches(pub_id.name()),
-                    AccumulatingEvent::AckMessage(ref payload) => {
-                        our_pfx.matches(&payload.dst_name)
-                    }
-                    AccumulatingEvent::Relocate(ref details)
-                    | AccumulatingEvent::RelocatePrepare(ref details, _) => {
-                        our_pfx.matches(details.pub_id.name())
-                    }
-                    // Drop: no longer relevant after prefix change.
-                    AccumulatingEvent::StartDkg(_) | AccumulatingEvent::ParsecPrune => false,
-
-                    // Keep: Additional signatures for neighbours for sec-msg-relay.
-                    AccumulatingEvent::SectionInfo(ref elders_info, _)
-                    | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
-                        our_pfx.is_neighbour(elders_info.prefix())
-                    }
-
-                    // Keep: Still relevant after prefix change.
-                    AccumulatingEvent::TheirKeyInfo(_)
-                    | AccumulatingEvent::SendAckMessage(_)
-                    | AccumulatingEvent::User(_) => true,
-                }
-            })
-            .collect();
-
-        CompleteParsecReset {
-            gen_pfx_info,
-            to_vote_again,
-            to_process,
-            event_to_send: None,
-        }
-    }
-
-    fn process_post_reset_events(
-        &mut self,
-        old_pfx: Prefix<XorName>,
-        to_process: BTreeSet<NetworkEvent>,
-    ) {
-        to_process.iter().for_each(|event| match &event.payload {
-            evt @ AccumulatingEvent::Offline(_)
-            | evt @ AccumulatingEvent::AckMessage(_)
-            | evt @ AccumulatingEvent::StartDkg(_)
-            | evt @ AccumulatingEvent::ParsecPrune
-            | evt @ AccumulatingEvent::Relocate(_)
-            | evt @ AccumulatingEvent::RelocatePrepare(_, _)
-            | evt @ AccumulatingEvent::SectionInfo(_, _)
-            | evt @ AccumulatingEvent::NeighbourInfo(_)
-            | evt @ AccumulatingEvent::TheirKeyInfo(_)
-            | evt @ AccumulatingEvent::SendAckMessage(_)
-            | evt @ AccumulatingEvent::User(_) => {
-                log_or_panic!(log::Level::Error, "unexpected event {:?}", evt);
-            }
-            AccumulatingEvent::Online(payload) => {
-                self.resend_bootstrap_response_join(&payload.p2p_node);
-            }
-        });
-
-        self.resend_pending_voted_messages(old_pfx);
-    }
-
-    // Resend the response with ours or our sibling's info in case of split.
-    fn resend_bootstrap_response_join(&mut self, p2p_node: &P2pNode) {
-        let our_info = self.chain.our_info();
-
-        let response_section = Some(our_info)
-            .filter(|info| info.prefix().matches(p2p_node.name()))
-            .or_else(|| self.chain.get_neighbour_info(&our_info.prefix().sibling()))
-            .filter(|info| info.prefix().matches(p2p_node.name()))
-            .cloned();
-
-        if let Some(response_section) = response_section {
-            trace!(
-                "{} - Resend Join to {} with version {}",
-                self,
-                p2p_node,
-                response_section.version()
-            );
-            self.send_direct_message(
-                p2p_node.peer_addr(),
-                Variant::BootstrapResponse(BootstrapResponse::Join(response_section)),
-            );
-        }
-    }
-
-    // After parsec reset, resend any unaccumulated voted messages to everyone that needs
-    // them but possibly did not receive them already.
-    fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
-        for (_, msg) in mem::take(&mut self.pending_voted_msgs) {
-            let msg = match MessageWithBytes::new(msg, &self.log_ident()) {
-                Ok(msg) => msg,
-                Err(err) => {
-                    error!("Failed to make message {:?}", err);
-                    continue;
-                }
-            };
-            match self.send_signed_message(&msg) {
-                Ok(()) => trace!("{} - Resend {:?}", self, msg),
-                Err(error) => debug!("{} - Failed to resend {:?}: {:?}", self, msg, error),
-            }
-        }
-    }
-
-    fn reset_parsec_with_data(
-        &mut self,
-        gen_pfx_info: GenesisPfxInfo,
-        to_vote_again: BTreeSet<NetworkEvent>,
-    ) -> Result<(), RoutingError> {
-        self.gen_pfx_info = gen_pfx_info;
-        self.init_parsec(); // We don't reset the chain on prefix change.
-
-        to_vote_again.iter().for_each(|event| {
-            self.vote_for_network_event(event.clone());
-        });
-
-        Ok(())
-    }
-
-    fn prepare_reset_parsec(&mut self) -> Result<CompleteParsecReset, RoutingError> {
-        let reset_data = self
-            .chain
-            .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
-        let complete_data = self.complete_parsec_reset_data(reset_data);
-        Ok(complete_data)
-    }
-
-    fn prepare_finalise_split(&mut self) -> Result<CompleteParsecReset, RoutingError> {
-        let reset_data = self
-            .chain
-            .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
-        let mut complete_data = self.complete_parsec_reset_data(reset_data);
-        complete_data.event_to_send = Some(Event::SectionSplit(*self.our_prefix()));
-        Ok(complete_data)
-    }
-
-    fn demote(&mut self, gen_pfx_info: GenesisPfxInfo) {
-        self.gen_pfx_info = gen_pfx_info.clone();
-        self.init_parsec();
-        self.chain = Chain::new(
-            self.chain.network_cfg(),
-            *self.full_id.public_id(),
-            gen_pfx_info,
-            None,
-        );
-    }
-
-    fn send_neighbour_infos(&mut self) {
-        self.chain.other_prefixes().iter().for_each(|pfx| {
-            let src = SrcLocation::Section(*self.our_prefix());
-            let dst = DstLocation::Prefix(*pfx);
-            let variant = Variant::NeighbourInfo(self.chain.our_info().clone());
-
-            if let Err(err) = self.send_routing_message(src, dst, variant, None) {
-                debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
-            }
-        });
-    }
-
-    // Send `GenesisUpdate` message to all non-elders.
-    fn send_genesis_updates(&mut self) {
-        for (recipient, msg) in self.create_genesis_updates() {
-            trace!(
-                "{} - Send GenesisUpdate({:?}) to {}",
-                self,
-                self.gen_pfx_info,
-                recipient
-            );
-
-            self.send_direct_message(
-                recipient.peer_addr(),
-                Variant::MessageSignature(Box::new(msg)),
-            );
-        }
-    }
-
-    fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
-        let payload = self.gen_pfx_info.trimmed();
-
-        self.chain
-            .adults_and_infants_p2p_nodes()
-            .cloned()
-            .filter_map(|recipient| {
-                let variant = Variant::GenesisUpdate(Box::new(payload.clone()));
-                let dst = DstLocation::Node(*recipient.name());
-                let version = self
-                    .members_knowledge
-                    .get(recipient.name())
-                    .map(|knowledge| knowledge.elders_version)
-                    .unwrap_or(0);
-
-                match self.to_accumulating_message(dst, variant, Some(version)) {
-                    Ok(msg) => Some((recipient, msg)),
-                    Err(error) => {
-                        error!("{} - Failed to create signed message: {:?}", self, error);
-                        None
-                    }
-                }
-            })
-            .collect()
-    }
-
-    fn send_member_knowledge(&mut self) {
-        let recipients = self
-            .chain
-            .our_info()
-            .member_nodes()
-            .filter(|node| node.public_id() != self.id())
-            .cloned()
-            .collect_vec();
-        let payload = MemberKnowledge {
-            elders_version: self.chain.our_info().version(),
-            parsec_version: self.parsec_map.last_version(),
-        };
-
-        trace!("{} - Send {:?} to {:?}", self, payload, recipients);
-
-        for recipient in recipients {
-            self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
-        }
-    }
-
-    /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
-    /// message, handles it.
-    fn handle_message_signature(
-        &mut self,
-        msg: AccumulatingMessage,
-        src: PublicId,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<Transition> {
-        if !self.chain.is_peer_elder(&src) {
-            debug!(
-                "{} - Received message signature from not known elder (still use it) {}, {:?}",
-                self, src, msg
-            );
-            // FIXME: currently accepting signatures from unknown senders to cater to lagging nodes.
-            // Need to verify whether there are any security implications with doing this.
-        }
-
-        if let Some(msg) = self.sig_accumulator.add_proof(msg, &self.log_ident()) {
-            self.handle_accumulated_message(msg)?
-        }
-
-        Ok(Transition::Stay)
-    }
+    ////////////////////////////////////////////////////////////////////////////
+    // Message handling
+    ////////////////////////////////////////////////////////////////////////////
 
     fn handle_accumulated_message(&mut self, mut msg_with_bytes: MessageWithBytes) -> Result<()> {
         // FIXME: this is almost the same as `Base::try_handle__message` - find a way
@@ -693,6 +323,20 @@ impl Elder {
         }
 
         Ok(())
+    }
+
+    fn handle_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
+        while let Some(QueuedMessage { message, sender }) = self.msg_queue.pop_front() {
+            if self.in_dst_location(&message.dst) {
+                match self.dispatch_message(sender, message, outbox) {
+                    Ok(Transition::Stay) => (),
+                    Ok(transition) => return transition,
+                    Err(err) => debug!("{} Routing message dispatch failed: {:?}", self, err),
+                }
+            }
+        }
+
+        Transition::Stay
     }
 
     fn dispatch_message(
@@ -778,6 +422,36 @@ impl Elder {
         Ok(Transition::Stay)
     }
 
+    fn handle_neighbour_info(
+        &mut self,
+        elders_info: EldersInfo,
+        src: SrcAuthority,
+        dst: DstLocation,
+    ) -> Result<()> {
+        if self.chain.is_new_neighbour(&elders_info) {
+            let _ = self
+                .pending_voted_msgs
+                .entry(PendingMessageKey::NeighbourInfo {
+                    version: elders_info.version(),
+                    prefix: *elders_info.prefix(),
+                })
+                .or_insert_with(|| Message {
+                    src,
+                    dst,
+                    variant: Variant::NeighbourInfo(elders_info.clone()),
+                });
+
+            self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
+        } else {
+            trace!(
+                "{} Ignore not new neighbour neighbour_info: {:?}",
+                self,
+                elders_info
+            );
+        }
+        Ok(())
+    }
+
     fn handle_ack_message(
         &mut self,
         src_prefix: Prefix<XorName>,
@@ -795,55 +469,87 @@ impl Elder {
         Ok(())
     }
 
-    fn vote_send_section_info_ack(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys = self.chain.get_their_key_infos().any(|(_, info)| {
-            *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
-        });
+    fn handle_genesis_update(&mut self, gen_pfx_info: GenesisPfxInfo) -> Result<()> {
+        info!("{} - Received GenesisUpdate: {:?}", self, gen_pfx_info);
 
-        if has_their_keys {
-            self.vote_for_event(AccumulatingEvent::SendAckMessage(ack_payload));
+        if !self.is_genesis_update_new(&gen_pfx_info) {
+            return Ok(());
         }
-    }
 
-    // Send NodeApproval to the current candidate which promotes them to Adult and allows them to
-    // passively participate in parsec consensus (that is, they can receive gossip and poll
-    // consensused blocks out of parsec, but they can't vote yet)
-    fn handle_candidate_approval(
-        &mut self,
-        p2p_node: P2pNode,
-        their_knowledge: Option<u64>,
-        _outbox: &mut dyn EventBox,
-    ) {
-        info!(
-            "{} Our section with {:?} has approved candidate {}.",
-            self,
-            self.our_prefix(),
-            p2p_node
-        );
+        self.gen_pfx_info = gen_pfx_info.clone();
 
-        let trimmed_info = self.gen_pfx_info.trimmed();
-        let src = SrcLocation::Section(*trimmed_info.elders_info.prefix());
-        let dst = DstLocation::Node(*p2p_node.name());
-
-        let variant = Variant::NodeApproval(Box::new(trimmed_info));
-        if let Err(error) = self.send_routing_message(src, dst, variant, their_knowledge) {
-            debug!(
-                "{} Failed sending NodeApproval to {}: {:?}",
-                self, p2p_node, error
-            );
-        }
-    }
-
-    fn init_parsec(&mut self) {
         let log_ident = self.log_ident();
-
-        self.pfx_is_successfully_polled = false;
         self.parsec_map.init(
             &mut self.rng,
             self.full_id.clone(),
             &self.gen_pfx_info,
             &log_ident,
-        )
+        );
+
+        self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
+
+        Ok(())
+    }
+
+    fn handle_relocate(
+        &mut self,
+        signed_msg: SignedRelocateDetails,
+    ) -> Result<Transition, RoutingError> {
+        if signed_msg.relocate_details().pub_id != *self.id() {
+            // This `Relocate` message is not for us - it's most likely a duplicate of a previous
+            // message that we already handled.
+            return Ok(Transition::Stay);
+        }
+
+        debug!(
+            "{} - Received Relocate message to join the section at {}.",
+            self,
+            signed_msg.relocate_details().destination
+        );
+
+        if !self.check_signed_relocation_details(&signed_msg) {
+            return Ok(Transition::Stay);
+        }
+
+        let conn_infos: Vec<_> = self
+            .chain
+            .our_elders()
+            .map(|p2p_node| *p2p_node.peer_addr())
+            .collect();
+
+        // Disconnect from everyone we know.
+        for addr in self.chain.known_nodes().map(|node| *node.peer_addr()) {
+            self.network_service.disconnect(addr);
+        }
+
+        Ok(Transition::Relocate {
+            details: signed_msg,
+            conn_infos,
+        })
+    }
+
+    /// Handles a signature of a `SignedMessage`, and if we have enough to verify the signed
+    /// message, handles it.
+    fn handle_message_signature(
+        &mut self,
+        msg: AccumulatingMessage,
+        src: PublicId,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<Transition> {
+        if !self.chain.is_peer_elder(&src) {
+            debug!(
+                "{} - Received message signature from not known elder (still use it) {}, {:?}",
+                self, src, msg
+            );
+            // FIXME: currently accepting signatures from unknown senders to cater to lagging nodes.
+            // Need to verify whether there are any security implications with doing this.
+        }
+
+        if let Some(msg) = self.sig_accumulator.add_proof(msg, &self.log_ident()) {
+            self.handle_accumulated_message(msg)?
+        }
+
+        Ok(Transition::Stay)
     }
 
     // Note: As an adult, we should only give info about our section elders and they would
@@ -956,116 +662,17 @@ impl Elder {
         }))
     }
 
-    fn update_our_knowledge(&mut self, msg: &Message) {
-        let key_info = if let Some(key_info) = msg.source_section_key_info() {
-            key_info
-        } else {
-            return;
-        };
+    fn handle_member_knowledge(&mut self, p2p_node: P2pNode, payload: MemberKnowledge) {
+        trace!("{} - Received {:?} from {:?}", self, payload, p2p_node);
 
-        let new_key_info = self
-            .chain
-            .get_their_key_infos()
-            .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
-            .map_or(false, |(_, info)| info.version() < key_info.version());
-
-        if new_key_info {
-            self.vote_for_event(AccumulatingEvent::TheirKeyInfo(key_info.clone()));
-        }
-    }
-
-    fn handle_neighbour_info(
-        &mut self,
-        elders_info: EldersInfo,
-        src: SrcAuthority,
-        dst: DstLocation,
-    ) -> Result<()> {
-        if self.chain.is_new_neighbour(&elders_info) {
-            let _ = self
-                .pending_voted_msgs
-                .entry(PendingMessageKey::NeighbourInfo {
-                    version: elders_info.version(),
-                    prefix: *elders_info.prefix(),
-                })
-                .or_insert_with(|| Message {
-                    src,
-                    dst,
-                    variant: Variant::NeighbourInfo(elders_info.clone()),
-                });
-
-            self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
-        } else {
-            trace!(
-                "{} Ignore not new neighbour neighbour_info: {:?}",
-                self,
-                elders_info
-            );
-        }
-        Ok(())
-    }
-
-    fn handle_genesis_update(&mut self, gen_pfx_info: GenesisPfxInfo) -> Result<()> {
-        info!("{} - Received GenesisUpdate: {:?}", self, gen_pfx_info);
-
-        if !self.is_genesis_update_new(&gen_pfx_info) {
-            return Ok(());
+        if self.chain.is_peer_our_active_member(p2p_node.public_id()) {
+            self.members_knowledge
+                .entry(*p2p_node.name())
+                .or_default()
+                .update(payload);
         }
 
-        self.gen_pfx_info = gen_pfx_info.clone();
-
-        let log_ident = self.log_ident();
-        self.parsec_map.init(
-            &mut self.rng,
-            self.full_id.clone(),
-            &self.gen_pfx_info,
-            &log_ident,
-        );
-
-        self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
-
-        Ok(())
-    }
-
-    // Ignore stale GenesisUpdates
-    fn is_genesis_update_new(&self, gen_pfx_info: &GenesisPfxInfo) -> bool {
-        gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
-    }
-
-    fn handle_relocate(
-        &mut self,
-        signed_msg: SignedRelocateDetails,
-    ) -> Result<Transition, RoutingError> {
-        if signed_msg.relocate_details().pub_id != *self.id() {
-            // This `Relocate` message is not for us - it's most likely a duplicate of a previous
-            // message that we already handled.
-            return Ok(Transition::Stay);
-        }
-
-        debug!(
-            "{} - Received Relocate message to join the section at {}.",
-            self,
-            signed_msg.relocate_details().destination
-        );
-
-        if !self.check_signed_relocation_details(&signed_msg) {
-            return Ok(Transition::Stay);
-        }
-
-        let conn_infos: Vec<_> = self
-            .chain
-            .our_elders()
-            .map(|p2p_node| *p2p_node.peer_addr())
-            .collect();
-
-        // Disconnect from everyone we know.
-        for addr in self.chain.known_nodes().map(|node| *node.peer_addr()) {
-            self.network_service.disconnect(addr);
-        }
-
-        Ok(Transition::Relocate {
-            details: signed_msg,
-            conn_infos,
-        })
+        self.send_parsec_gossip(Some((payload.parsec_version, p2p_node)))
     }
 
     fn handle_parsec_request(
@@ -1133,75 +740,45 @@ impl Elder {
         }
     }
 
-    fn send_parsec_gossip(&mut self, target: Option<(u64, P2pNode)>) {
-        let (version, gossip_target) = match target {
-            Some((v, p)) => (v, p),
-            None => {
-                let log_ident = self.log_ident();
-
-                if !self.parsec_map.should_send_gossip(&log_ident) {
-                    return;
-                }
-
-                if let Some(recipient) = self.choose_gossip_recipient() {
-                    let version = self.parsec_map.last_version();
-                    (version, recipient)
-                } else {
-                    return;
-                }
-            }
-        };
-
-        match self
-            .parsec_map
-            .create_gossip(version, gossip_target.public_id())
-        {
-            Ok(msg) => {
+    fn handle_bounce(&mut self, sender: P2pNode, sender_version: Option<u64>, msg_bytes: Bytes) {
+        if let Some((_, version)) = self.chain.find_section_by_member(sender.public_id()) {
+            if sender_version
+                .map(|sender_version| sender_version < version)
+                .unwrap_or(true)
+            {
                 trace!(
-                    "{} - send parsec request v{} to {:?}",
+                    "{} - Received Bounce of {:?} from {}. Peer is lagging behind, resending in {:?}",
                     self,
-                    version,
-                    gossip_target,
+                    MessageHash::from_bytes(&msg_bytes),
+                    sender,
+                    BOUNCE_RESEND_DELAY
                 );
-                self.send_direct_message(gossip_target.peer_addr(), msg);
-            }
-            Err(error) => {
+                self.send_message_to_target_later(
+                    sender.peer_addr(),
+                    msg_bytes,
+                    BOUNCE_RESEND_DELAY,
+                );
+            } else {
                 trace!(
-                    "{} - failed to send parsec request v{} to {:?}: {:?}",
+                    "{} - Received Bounce of {:?} from {}. Peer has moved on, not resending",
                     self,
-                    version,
-                    gossip_target,
-                    error
+                    MessageHash::from_bytes(&msg_bytes),
+                    sender
                 );
             }
-        }
-    }
-
-    fn choose_gossip_recipient(&mut self) -> Option<P2pNode> {
-        let recipients = self.parsec_map.gossip_recipients();
-        if recipients.is_empty() {
-            trace!("{} - not sending parsec request: no recipients", self,);
-            return None;
-        }
-
-        let mut p2p_recipients: Vec<_> = recipients
-            .into_iter()
-            .filter_map(|pub_id| self.chain.get_member_p2p_node(pub_id.name()))
-            .cloned()
-            .collect();
-
-        if p2p_recipients.is_empty() {
-            log_or_panic!(
-                log::Level::Error,
-                "{} - not sending parsec request: not connected to any gossip recipient.",
-                self
+        } else {
+            trace!(
+                "{} - Received Bounce of {:?} from {}. Peer not known, not resending",
+                self,
+                MessageHash::from_bytes(&msg_bytes),
+                sender
             );
-            return None;
         }
-
-        let rand_index = self.rng.gen_range(0, p2p_recipients.len());
-        Some(p2p_recipients.swap_remove(rand_index))
     }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Accumulated events handling
+    ////////////////////////////////////////////////////////////////////////////
 
     fn parsec_poll(&mut self, outbox: &mut dyn EventBox) -> Result<Transition, RoutingError> {
         while let Some(block) = self.parsec_map.poll() {
@@ -1414,28 +991,9 @@ impl Elder {
             self.chain.increment_age_counters(&pub_id);
 
             if self.chain.is_self_elder() {
-                self.handle_candidate_approval(payload.p2p_node, payload.their_knowledge, outbox);
+                self.send_node_approval(payload.p2p_node, payload.their_knowledge, outbox);
                 self.print_rt_size();
             }
-        }
-
-        Ok(())
-    }
-
-    fn handle_offline_event(
-        &mut self,
-        pub_id: PublicId,
-        _outbox: &mut dyn EventBox,
-    ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&pub_id) {
-            info!("{} - ignore Offline: {}.", self, pub_id);
-        } else {
-            info!("{} - handle Offline: {}.", self, pub_id);
-
-            self.chain.increment_age_counters(&pub_id);
-            let _ = self.chain.remove_member(&pub_id);
-            self.disconnect_by_id_lookup(&pub_id);
-            let _ = self.members_knowledge.remove(pub_id.name());
         }
 
         Ok(())
@@ -1513,6 +1071,25 @@ impl Elder {
         self.send_routing_message(src, dst, content, Some(knowledge_index))
     }
 
+    fn handle_offline_event(
+        &mut self,
+        pub_id: PublicId,
+        _outbox: &mut dyn EventBox,
+    ) -> Result<(), RoutingError> {
+        if !self.chain.can_remove_member(&pub_id) {
+            info!("{} - ignore Offline: {}.", self, pub_id);
+        } else {
+            info!("{} - handle Offline: {}.", self, pub_id);
+
+            self.chain.increment_age_counters(&pub_id);
+            let _ = self.chain.remove_member(&pub_id);
+            self.disconnect_by_id_lookup(&pub_id);
+            let _ = self.members_knowledge.remove(pub_id.name());
+        }
+
+        Ok(())
+    }
+
     fn handle_dkg_result_event(
         &mut self,
         participants: &BTreeSet<PublicId>,
@@ -1588,7 +1165,7 @@ impl Elder {
         self.send_member_knowledge();
 
         // Vote to update our self messages proof
-        self.vote_send_section_info_ack(SendAckMessagePayload {
+        self.vote_for_send_ack_message(SendAckMessagePayload {
             ack_prefix: info_prefix,
             ack_version: info_version,
         });
@@ -1635,7 +1212,7 @@ impl Elder {
             return Ok(());
         }
 
-        self.vote_send_section_info_ack(SendAckMessagePayload {
+        self.vote_for_send_ack_message(SendAckMessagePayload {
             ack_prefix: *key_info.prefix(),
             ack_version: key_info.version(),
         });
@@ -1697,6 +1274,184 @@ impl Elder {
         Ok(())
     }
 
+    ////////////////////////////////////////////////////////////////////////////
+    // Parsec and Chain management
+    ////////////////////////////////////////////////////////////////////////////
+
+    fn init_parsec(&mut self) {
+        let log_ident = self.log_ident();
+
+        self.pfx_is_successfully_polled = false;
+        self.parsec_map.init(
+            &mut self.rng,
+            self.full_id.clone(),
+            &self.gen_pfx_info,
+            &log_ident,
+        )
+    }
+
+    fn prepare_reset_parsec(&mut self) -> Result<CompleteParsecReset, RoutingError> {
+        let reset_data = self
+            .chain
+            .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
+        let complete_data = self.complete_parsec_reset_data(reset_data);
+        Ok(complete_data)
+    }
+
+    fn prepare_finalise_split(&mut self) -> Result<CompleteParsecReset, RoutingError> {
+        let reset_data = self
+            .chain
+            .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
+        let mut complete_data = self.complete_parsec_reset_data(reset_data);
+        complete_data.event_to_send = Some(Event::SectionSplit(*self.our_prefix()));
+        Ok(complete_data)
+    }
+
+    fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
+        let ParsecResetData {
+            gen_pfx_info,
+            cached_events,
+            completed_events,
+        } = reset_data;
+
+        let cached_events: BTreeSet<_> = cached_events
+            .into_iter()
+            .chain(
+                self.parsec_map
+                    .our_unpolled_observations()
+                    .filter_map(|obs| match obs {
+                        parsec::Observation::OpaquePayload(event) => Some(event),
+
+                        parsec::Observation::Genesis { .. }
+                        | parsec::Observation::Add { .. }
+                        | parsec::Observation::Remove { .. }
+                        | parsec::Observation::Accusation { .. }
+                        | parsec::Observation::StartDkg(_)
+                        | parsec::Observation::DkgResult { .. }
+                        | parsec::Observation::DkgMessage(_) => None,
+                    })
+                    .cloned(),
+            )
+            .filter(|event| !completed_events.contains(&event.payload))
+            .collect();
+
+        let our_pfx = *self.our_prefix();
+
+        let to_process = cached_events
+            .iter()
+            .filter(|event| match &event.payload {
+                // Events to re-process
+                AccumulatingEvent::Online(_) => true,
+                // Events to re-insert
+                AccumulatingEvent::Offline(_)
+                | AccumulatingEvent::AckMessage(_)
+                | AccumulatingEvent::StartDkg(_)
+                | AccumulatingEvent::ParsecPrune
+                | AccumulatingEvent::Relocate(_)
+                | AccumulatingEvent::RelocatePrepare(_, _)
+                | AccumulatingEvent::SectionInfo(_, _)
+                | AccumulatingEvent::NeighbourInfo(_)
+                | AccumulatingEvent::TheirKeyInfo(_)
+                | AccumulatingEvent::SendAckMessage(_)
+                | AccumulatingEvent::User(_) => false,
+            })
+            .cloned()
+            .collect();
+
+        let to_vote_again = cached_events
+            .into_iter()
+            .filter(|event| {
+                match event.payload {
+                    // Only re-vote if still relevant to our new prefix.
+                    AccumulatingEvent::Online(ref payload) => {
+                        our_pfx.matches(payload.p2p_node.name())
+                    }
+                    AccumulatingEvent::Offline(pub_id) => our_pfx.matches(pub_id.name()),
+                    AccumulatingEvent::AckMessage(ref payload) => {
+                        our_pfx.matches(&payload.dst_name)
+                    }
+                    AccumulatingEvent::Relocate(ref details)
+                    | AccumulatingEvent::RelocatePrepare(ref details, _) => {
+                        our_pfx.matches(details.pub_id.name())
+                    }
+                    // Drop: no longer relevant after prefix change.
+                    AccumulatingEvent::StartDkg(_) | AccumulatingEvent::ParsecPrune => false,
+
+                    // Keep: Additional signatures for neighbours for sec-msg-relay.
+                    AccumulatingEvent::SectionInfo(ref elders_info, _)
+                    | AccumulatingEvent::NeighbourInfo(ref elders_info) => {
+                        our_pfx.is_neighbour(elders_info.prefix())
+                    }
+
+                    // Keep: Still relevant after prefix change.
+                    AccumulatingEvent::TheirKeyInfo(_)
+                    | AccumulatingEvent::SendAckMessage(_)
+                    | AccumulatingEvent::User(_) => true,
+                }
+            })
+            .collect();
+
+        CompleteParsecReset {
+            gen_pfx_info,
+            to_vote_again,
+            to_process,
+            event_to_send: None,
+        }
+    }
+
+    fn reset_parsec_with_data(
+        &mut self,
+        gen_pfx_info: GenesisPfxInfo,
+        to_vote_again: BTreeSet<NetworkEvent>,
+    ) -> Result<(), RoutingError> {
+        self.gen_pfx_info = gen_pfx_info;
+        self.init_parsec(); // We don't reset the chain on prefix change.
+
+        to_vote_again.iter().for_each(|event| {
+            self.vote_for_network_event(event.clone());
+        });
+
+        Ok(())
+    }
+
+    fn process_post_reset_events(
+        &mut self,
+        old_pfx: Prefix<XorName>,
+        to_process: BTreeSet<NetworkEvent>,
+    ) {
+        to_process.iter().for_each(|event| match &event.payload {
+            evt @ AccumulatingEvent::Offline(_)
+            | evt @ AccumulatingEvent::AckMessage(_)
+            | evt @ AccumulatingEvent::StartDkg(_)
+            | evt @ AccumulatingEvent::ParsecPrune
+            | evt @ AccumulatingEvent::Relocate(_)
+            | evt @ AccumulatingEvent::RelocatePrepare(_, _)
+            | evt @ AccumulatingEvent::SectionInfo(_, _)
+            | evt @ AccumulatingEvent::NeighbourInfo(_)
+            | evt @ AccumulatingEvent::TheirKeyInfo(_)
+            | evt @ AccumulatingEvent::SendAckMessage(_)
+            | evt @ AccumulatingEvent::User(_) => {
+                log_or_panic!(log::Level::Error, "unexpected event {:?}", evt);
+            }
+            AccumulatingEvent::Online(payload) => {
+                self.resend_bootstrap_response_join(&payload.p2p_node);
+            }
+        });
+
+        self.resend_pending_voted_messages(old_pfx);
+    }
+
+    fn demote(&mut self, gen_pfx_info: GenesisPfxInfo) {
+        self.gen_pfx_info = gen_pfx_info.clone();
+        self.init_parsec();
+        self.chain = Chain::new(
+            self.chain.network_cfg(),
+            *self.full_id.public_id(),
+            gen_pfx_info,
+            None,
+        );
+    }
+
     fn maintain_parsec(&mut self) {
         if self.parsec_map.needs_pruning() {
             self.vote_for_event(AccumulatingEvent::ParsecPrune);
@@ -1715,10 +1470,6 @@ impl Elder {
                 &log_ident,
             );
         }
-    }
-
-    fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        self.vote_for_network_event(event.into_network_event())
     }
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) {
@@ -1748,9 +1499,252 @@ impl Elder {
         Ok(())
     }
 
+    fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
+        let has_their_keys = self.chain.get_their_key_infos().any(|(_, info)| {
+            *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
+        });
+
+        if has_their_keys {
+            self.vote_for_event(AccumulatingEvent::SendAckMessage(ack_payload));
+        }
+    }
+
+    fn vote_for_event(&mut self, event: AccumulatingEvent) {
+        self.vote_for_network_event(event.into_network_event())
+    }
+
     fn vote_for_network_event(&mut self, event: NetworkEvent) {
         trace!("{} Vote for Event {:?}", self, event);
         self.parsec_map.vote_for(event, &self.log_ident());
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Message sending
+    ////////////////////////////////////////////////////////////////////////////
+
+    fn send_neighbour_infos(&mut self) {
+        self.chain.other_prefixes().iter().for_each(|pfx| {
+            let src = SrcLocation::Section(*self.our_prefix());
+            let dst = DstLocation::Prefix(*pfx);
+            let variant = Variant::NeighbourInfo(self.chain.our_info().clone());
+
+            if let Err(err) = self.send_routing_message(src, dst, variant, None) {
+                debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
+            }
+        });
+    }
+
+    // Send `GenesisUpdate` message to all non-elders.
+    fn send_genesis_updates(&mut self) {
+        for (recipient, msg) in self.create_genesis_updates() {
+            trace!(
+                "{} - Send GenesisUpdate({:?}) to {}",
+                self,
+                self.gen_pfx_info,
+                recipient
+            );
+
+            self.send_direct_message(
+                recipient.peer_addr(),
+                Variant::MessageSignature(Box::new(msg)),
+            );
+        }
+    }
+
+    fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
+        let payload = self.gen_pfx_info.trimmed();
+
+        self.chain
+            .adults_and_infants_p2p_nodes()
+            .cloned()
+            .filter_map(|recipient| {
+                let variant = Variant::GenesisUpdate(Box::new(payload.clone()));
+                let dst = DstLocation::Node(*recipient.name());
+                let version = self
+                    .members_knowledge
+                    .get(recipient.name())
+                    .map(|knowledge| knowledge.elders_version)
+                    .unwrap_or(0);
+
+                match self.to_accumulating_message(dst, variant, Some(version)) {
+                    Ok(msg) => Some((recipient, msg)),
+                    Err(error) => {
+                        error!("{} - Failed to create signed message: {:?}", self, error);
+                        None
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn send_member_knowledge(&mut self) {
+        let recipients = self
+            .chain
+            .our_info()
+            .member_nodes()
+            .filter(|node| node.public_id() != self.id())
+            .cloned()
+            .collect_vec();
+        let payload = MemberKnowledge {
+            elders_version: self.chain.our_info().version(),
+            parsec_version: self.parsec_map.last_version(),
+        };
+
+        trace!("{} - Send {:?} to {:?}", self, payload, recipients);
+
+        for recipient in recipients {
+            self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
+        }
+    }
+
+    // Send NodeApproval to the current candidate which makes them a section member and allows them
+    // to passively participate in parsec consensus (that is, they can receive gossip and poll
+    // consensused blocks out of parsec, but they can't vote yet)
+    fn send_node_approval(
+        &mut self,
+        p2p_node: P2pNode,
+        their_knowledge: Option<u64>,
+        _outbox: &mut dyn EventBox,
+    ) {
+        info!(
+            "{} Our section with {:?} has approved candidate {}.",
+            self,
+            self.our_prefix(),
+            p2p_node
+        );
+
+        let trimmed_info = self.gen_pfx_info.trimmed();
+        let src = SrcLocation::Section(*trimmed_info.elders_info.prefix());
+        let dst = DstLocation::Node(*p2p_node.name());
+
+        let variant = Variant::NodeApproval(Box::new(trimmed_info));
+        if let Err(error) = self.send_routing_message(src, dst, variant, their_knowledge) {
+            debug!(
+                "{} Failed sending NodeApproval to {}: {:?}",
+                self, p2p_node, error
+            );
+        }
+    }
+
+    fn send_parsec_gossip(&mut self, target: Option<(u64, P2pNode)>) {
+        let (version, gossip_target) = match target {
+            Some((v, p)) => (v, p),
+            None => {
+                let log_ident = self.log_ident();
+
+                if !self.parsec_map.should_send_gossip(&log_ident) {
+                    return;
+                }
+
+                if let Some(recipient) = self.choose_gossip_recipient() {
+                    let version = self.parsec_map.last_version();
+                    (version, recipient)
+                } else {
+                    return;
+                }
+            }
+        };
+
+        match self
+            .parsec_map
+            .create_gossip(version, gossip_target.public_id())
+        {
+            Ok(msg) => {
+                trace!(
+                    "{} - send parsec request v{} to {:?}",
+                    self,
+                    version,
+                    gossip_target,
+                );
+                self.send_direct_message(gossip_target.peer_addr(), msg);
+            }
+            Err(error) => {
+                trace!(
+                    "{} - failed to send parsec request v{} to {:?}: {:?}",
+                    self,
+                    version,
+                    gossip_target,
+                    error
+                );
+            }
+        }
+    }
+
+    fn choose_gossip_recipient(&mut self) -> Option<P2pNode> {
+        let recipients = self.parsec_map.gossip_recipients();
+        if recipients.is_empty() {
+            trace!("{} - not sending parsec request: no recipients", self,);
+            return None;
+        }
+
+        let mut p2p_recipients: Vec<_> = recipients
+            .into_iter()
+            .filter_map(|pub_id| self.chain.get_member_p2p_node(pub_id.name()))
+            .cloned()
+            .collect();
+
+        if p2p_recipients.is_empty() {
+            log_or_panic!(
+                log::Level::Error,
+                "{} - not sending parsec request: not connected to any gossip recipient.",
+                self
+            );
+            return None;
+        }
+
+        let rand_index = self.rng.gen_range(0, p2p_recipients.len());
+        Some(p2p_recipients.swap_remove(rand_index))
+    }
+
+    fn send_bounce(&mut self, recipient: &SocketAddr, msg_bytes: Bytes) {
+        let variant = Variant::Bounce {
+            elders_version: Some(self.chain.our_info().version()),
+            message: msg_bytes,
+        };
+
+        self.send_direct_message(recipient, variant)
+    }
+
+    // Resend the response with ours or our sibling's info in case of split.
+    fn resend_bootstrap_response_join(&mut self, p2p_node: &P2pNode) {
+        let our_info = self.chain.our_info();
+
+        let response_section = Some(our_info)
+            .filter(|info| info.prefix().matches(p2p_node.name()))
+            .or_else(|| self.chain.get_neighbour_info(&our_info.prefix().sibling()))
+            .filter(|info| info.prefix().matches(p2p_node.name()))
+            .cloned();
+
+        if let Some(response_section) = response_section {
+            trace!(
+                "{} - Resend Join to {} with version {}",
+                self,
+                p2p_node,
+                response_section.version()
+            );
+            self.send_direct_message(
+                p2p_node.peer_addr(),
+                Variant::BootstrapResponse(BootstrapResponse::Join(response_section)),
+            );
+        }
+    }
+
+    // After parsec reset, resend any unaccumulated voted messages to everyone that needs
+    // them but possibly did not receive them already.
+    fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
+        for (_, msg) in mem::take(&mut self.pending_voted_msgs) {
+            let msg = match MessageWithBytes::new(msg, &self.log_ident()) {
+                Ok(msg) => msg,
+                Err(err) => {
+                    error!("Failed to make message {:?}", err);
+                    continue;
+                }
+            };
+            match self.send_signed_message(&msg) {
+                Ok(()) => trace!("{} - Resend {:?}", self, msg),
+                Err(error) => debug!("{} - Failed to resend {:?}: {:?}", self, msg, error),
+            }
+        }
     }
 
     // Constructs a message, finds the nodes responsible for accumulation, and either sends
@@ -1816,81 +1810,29 @@ impl Elder {
         Ok(())
     }
 
-    // Send message over the network.
-    fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
-        let (targets, dg_size) = self.chain.targets(msg.message_dst())?;
+    // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
+    fn to_accumulating_message(
+        &self,
+        dst: DstLocation,
+        variant: Variant,
+        node_knowledge_override: Option<u64>,
+    ) -> Result<AccumulatingMessage> {
+        let proof = self.chain.prove(&dst, node_knowledge_override);
+        let pk_set = self.chain.our_section_bls_keys().clone();
+        let secret_key = self.chain.our_section_bls_secret_key_share()?;
 
-        trace!("{}: Sending {:?} via targets {:?}", self, msg, targets);
-
-        let targets: Vec<_> = targets
-            .into_iter()
-            .filter(|p2p_node| {
-                self.msg_filter
-                    .filter_outgoing(msg, p2p_node.public_id())
-                    .is_new()
-            })
-            .map(|node| *node.peer_addr())
-            .collect();
-
-        let cheap_bytes_clone = msg.full_bytes().clone();
-        self.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
-
-        Ok(())
-    }
-
-    fn send_bounce(&mut self, recipient: &SocketAddr, msg_bytes: Bytes) {
-        let variant = Variant::Bounce {
-            elders_version: Some(self.chain.our_info().version()),
-            message: msg_bytes,
+        let content = PlainMessage {
+            src: *self.our_prefix(),
+            dst,
+            variant,
         };
 
-        self.send_direct_message(recipient, variant)
+        AccumulatingMessage::new(content, secret_key, pk_set, proof)
     }
 
-    fn handle_bounce(&mut self, sender: P2pNode, sender_version: Option<u64>, msg_bytes: Bytes) {
-        if let Some((_, version)) = self.chain.find_section_by_member(sender.public_id()) {
-            if sender_version
-                .map(|sender_version| sender_version < version)
-                .unwrap_or(true)
-            {
-                trace!(
-                    "{} - Received Bounce of {:?} from {}. Peer is lagging behind, resending in {:?}",
-                    self,
-                    MessageHash::from_bytes(&msg_bytes),
-                    sender,
-                    BOUNCE_RESEND_DELAY
-                );
-                self.send_message_to_target_later(
-                    sender.peer_addr(),
-                    msg_bytes,
-                    BOUNCE_RESEND_DELAY,
-                );
-            } else {
-                trace!(
-                    "{} - Received Bounce of {:?} from {}. Peer has moved on, not resending",
-                    self,
-                    MessageHash::from_bytes(&msg_bytes),
-                    sender
-                );
-            }
-        } else {
-            trace!(
-                "{} - Received Bounce of {:?} from {}. Peer not known, not resending",
-                self,
-                MessageHash::from_bytes(&msg_bytes),
-                sender
-            );
-        }
-    }
-
-    /// Vote for a user-defined event.
-    pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
-        self.vote_for_event(AccumulatingEvent::User(event));
-    }
-
-    /// Returns the set of peers that are responsible for collecting signatures to verify a message;
-    /// this may contain us or only other nodes. If our signature is not required, this returns
-    /// `None`.
+    // Returns the set of peers that are responsible for collecting signatures to verify a message;
+    // this may contain us or only other nodes. If our signature is not required, this returns
+    // `None`.
     fn get_signature_targets(&self, dst: &DstLocation) -> Vec<P2pNode> {
         let dst_name = match dst {
             DstLocation::Node(name) => *name,
@@ -1916,28 +1858,110 @@ impl Elder {
         list
     }
 
-    // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
-    fn to_accumulating_message(
-        &self,
-        dst: DstLocation,
-        variant: Variant,
-        node_knowledge_override: Option<u64>,
-    ) -> Result<AccumulatingMessage> {
-        let proof = self.chain.prove(&dst, node_knowledge_override);
-        let pk_set = self.our_section_bls_keys().clone();
-        let secret_key = self.chain.our_section_bls_secret_key_share()?;
+    // Send message over the network.
+    fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
+        let (targets, dg_size) = self.chain.targets(msg.message_dst())?;
 
-        let content = PlainMessage {
-            src: *self.our_prefix(),
-            dst,
-            variant,
-        };
+        trace!("{}: Sending {:?} via targets {:?}", self, msg, targets);
 
-        AccumulatingMessage::new(content, secret_key, pk_set, proof)
+        let targets: Vec<_> = targets
+            .into_iter()
+            .filter(|p2p_node| {
+                self.msg_filter
+                    .filter_outgoing(msg, p2p_node.public_id())
+                    .is_new()
+            })
+            .map(|node| *node.peer_addr())
+            .collect();
+
+        let cheap_bytes_clone = msg.full_bytes().clone();
+        self.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
+
+        Ok(())
     }
 
-    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        self.chain.in_src_location(src)
+    ////////////////////////////////////////////////////////////////////////////
+    // Miscellaneous
+    ////////////////////////////////////////////////////////////////////////////
+
+    fn print_rt_size(&self) {
+        const TABLE_LVL: log::Level = log::Level::Info;
+        if log_enabled!(TABLE_LVL) {
+            let status_str = format!(
+                "{} - Routing Table size: {:3}",
+                self,
+                self.chain.elders().count()
+            );
+            let network_estimate = match self.chain.network_size_estimate() {
+                (n, true) => format!("Exact network size: {}", n),
+                (n, false) => format!("Estimated network size: {}", n),
+            };
+            let sep_len = cmp::max(status_str.len(), network_estimate.len());
+            let sep_str = iter::repeat('-').take(sep_len).collect::<String>();
+            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", status_str, sep_len);
+            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", network_estimate, sep_len);
+            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
+        }
+    }
+
+    // Ignore stale GenesisUpdates
+    fn is_genesis_update_new(&self, gen_pfx_info: &GenesisPfxInfo) -> bool {
+        gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
+    }
+
+    // Connect to all elders from our section or neighbour sections that we are not yet connected
+    // to and disconnect from peers that are no longer elders of neighbour sections.
+    fn update_peer_connections(&mut self, change: &EldersChange) {
+        if !self.chain.split_in_progress() {
+            let our_needed_connections: HashSet<_> = self
+                .chain
+                .known_nodes()
+                .map(|node| *node.peer_addr())
+                .collect();
+
+            for p2p_node in &change.neighbour_removed {
+                // The peer might have been relocated from a neighbour to us - in that case do not
+                // disconnect from them.
+                if our_needed_connections.contains(p2p_node.peer_addr()) {
+                    continue;
+                }
+
+                self.network_service.disconnect(*p2p_node.peer_addr());
+            }
+        }
+    }
+
+    fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
+        if let Some(node) = self.chain.get_p2p_node(pub_id.name()) {
+            let peer_addr = *node.peer_addr();
+            self.network_service.disconnect(peer_addr);
+        } else {
+            log_or_panic!(
+                log::Level::Error,
+                "{} - Can't disconnect from node we can't lookup in Chain: {}.",
+                self,
+                pub_id
+            );
+        };
+    }
+
+    fn update_our_knowledge(&mut self, msg: &Message) {
+        let key_info = if let Some(key_info) = msg.source_section_key_info() {
+            key_info
+        } else {
+            return;
+        };
+
+        let new_key_info = self
+            .chain
+            .get_their_key_infos()
+            .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
+            .map_or(false, |(_, info)| info.version() < key_info.version());
+
+        if new_key_info {
+            self.vote_for_event(AccumulatingEvent::TheirKeyInfo(key_info.clone()));
+        }
     }
 
     // Verifies message but doesn't log anything on failure, only returns result.
