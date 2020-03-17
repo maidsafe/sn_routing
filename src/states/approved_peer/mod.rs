@@ -11,7 +11,7 @@ mod tests;
 
 use super::{
     common::{Base, BOUNCE_RESEND_DELAY},
-    BootstrappingPeer, BootstrappingPeerDetails,
+    JoiningPeer, JoiningPeerDetails,
 };
 use crate::{
     chain::{
@@ -194,8 +194,8 @@ impl ApprovedPeer {
         conn_infos: Vec<SocketAddr>,
         details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
-        Ok(State::BootstrappingPeer(BootstrappingPeer::relocate(
-            BootstrappingPeerDetails {
+        Ok(State::JoiningPeer(JoiningPeer::relocate(
+            JoiningPeerDetails {
                 network_service: self.network_service,
                 full_id: self.full_id,
                 network_cfg: self.chain.network_cfg(),

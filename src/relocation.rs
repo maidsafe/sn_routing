@@ -71,6 +71,10 @@ impl SignedRelocateDetails {
     pub fn signed_msg(&self) -> &Message {
         &self.signed_msg
     }
+
+    pub fn destination(&self) -> &XorName {
+        &self.relocate_details().destination
+    }
 }
 
 impl Serialize for SignedRelocateDetails {
