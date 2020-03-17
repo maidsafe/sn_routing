@@ -6,13 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod adult;
 mod bootstrapping_peer;
 pub mod common;
 mod elder;
 mod joining_peer;
-#[cfg(all(test, feature = "mock"))]
-mod test_utils;
 
 pub use self::{
     bootstrapping_peer::{BootstrappingPeer, BootstrappingPeerDetails},

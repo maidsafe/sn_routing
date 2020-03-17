@@ -13,7 +13,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{super::test_utils, *};
+use super::{super::elder::*, utils as test_utils};
 use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
     event::Connected,
