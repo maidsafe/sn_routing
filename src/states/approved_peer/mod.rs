@@ -10,8 +10,8 @@
 mod tests;
 
 use super::{
-    common::{Base, BOUNCE_RESEND_DELAY},
-    JoiningPeer, JoiningPeerDetails,
+    common::{Base, Core, BOUNCE_RESEND_DELAY},
+    JoiningPeer,
 };
 use crate::{
     chain::{
@@ -194,13 +194,14 @@ impl ApprovedPeer {
         details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
         Ok(State::JoiningPeer(JoiningPeer::relocate(
-            JoiningPeerDetails {
-                network_service: self.network_service,
+            Core {
                 full_id: self.full_id,
-                network_cfg: self.chain.network_cfg(),
+                network_service: self.network_service,
+                msg_filter: Default::default(),
                 timer: self.timer,
                 rng: self.rng,
             },
+            self.chain.network_cfg(),
             conn_infos,
             details,
         )))

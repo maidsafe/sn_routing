@@ -9,7 +9,19 @@
 mod base;
 
 pub use self::base::Base;
-use crate::time::Duration;
+use crate::{
+    id::FullId, message_filter::MessageFilter, network_service::NetworkService, rng::MainRng,
+    time::Duration, timer::Timer,
+};
 
 /// Delay after which a bounced message is resent.
 pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
+
+/// Struct that contains data common to all states.
+pub struct Core {
+    pub full_id: FullId,
+    pub network_service: NetworkService,
+    pub msg_filter: MessageFilter,
+    pub timer: Timer,
+    pub rng: MainRng,
+}

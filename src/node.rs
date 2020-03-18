@@ -18,7 +18,7 @@ use crate::{
     quic_p2p::{OurType, Token},
     rng::{self, MainRng},
     state_machine::{State, StateMachine},
-    states::{self, JoiningPeer, JoiningPeerDetails},
+    states::{self, Core, JoiningPeer},
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
 };
@@ -134,13 +134,16 @@ impl Builder {
                 } else {
                     debug!("Creating a regular node");
 
-                    State::JoiningPeer(JoiningPeer::new(JoiningPeerDetails {
-                        network_service,
-                        full_id,
+                    State::JoiningPeer(JoiningPeer::new(
+                        Core {
+                            full_id,
+                            network_service,
+                            msg_filter: Default::default(),
+                            timer,
+                            rng,
+                        },
                         network_cfg,
-                        timer,
-                        rng,
-                    }))
+                    ))
                 }
             },
             network_config,
