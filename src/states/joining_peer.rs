@@ -8,7 +8,7 @@
 
 use super::{
     approved_peer::{ApprovedPeer, ElderDetails},
-    common::{Base, BOUNCE_RESEND_DELAY},
+    common::{Base, Core, BOUNCE_RESEND_DELAY},
 };
 use crate::{
     chain::{Chain, EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
@@ -17,7 +17,6 @@ use crate::{
     id::{FullId, P2pNode},
     location::{DstLocation, SrcLocation},
     log_utils,
-    message_filter::MessageFilter,
     messages::{
         BootstrapResponse, JoinRequest, Message, MessageHash, MessageWithBytes, Variant,
         VerifyStatus,
@@ -41,54 +40,35 @@ pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
 
-pub struct JoiningPeerDetails {
-    pub network_service: NetworkService,
-    pub full_id: FullId,
-    pub network_cfg: NetworkParams,
-    pub timer: Timer,
-    pub rng: MainRng,
-}
-
-// State of a node while joining a section
+// State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
+    core: Core,
     stage: Stage,
-    network_service: NetworkService,
-    msg_filter: MessageFilter,
-    full_id: FullId,
-    timer: Timer,
-    rng: MainRng,
     network_cfg: NetworkParams,
 }
 
 impl JoiningPeer {
-    pub fn new(mut details: JoiningPeerDetails) -> Self {
-        details.network_service.service_mut().bootstrap();
+    pub fn new(mut core: Core, network_cfg: NetworkParams) -> Self {
+        core.network_service.service_mut().bootstrap();
 
         Self {
+            core,
             stage: Stage::new(None),
-            network_service: details.network_service,
-            msg_filter: MessageFilter::new(),
-            full_id: details.full_id,
-            timer: details.timer,
-            rng: details.rng,
-            network_cfg: details.network_cfg,
+            network_cfg,
         }
     }
 
     /// Create `JoiningPeer` for a node that is being relocated into another sections.
     pub fn relocate(
-        details: JoiningPeerDetails,
+        core: Core,
+        network_cfg: NetworkParams,
         conn_infos: Vec<SocketAddr>,
         relocate_details: SignedRelocateDetails,
     ) -> Self {
         let mut node = Self {
+            core,
             stage: Stage::new(Some(relocate_details)),
-            network_service: details.network_service,
-            msg_filter: MessageFilter::new(),
-            full_id: details.full_id,
-            timer: details.timer,
-            rng: details.rng,
-            network_cfg: details.network_cfg,
+            network_cfg,
         };
 
         for conn_info in conn_infos {
@@ -108,23 +88,26 @@ impl JoiningPeer {
             Stage::Joining(stage) => stage,
         };
 
-        let public_id = *self.full_id.public_id();
-        let parsec_map =
-            ParsecMap::default().with_init(&mut self.rng, self.full_id.clone(), &gen_pfx_info);
+        let public_id = *self.core.full_id.public_id();
+        let parsec_map = ParsecMap::default().with_init(
+            &mut self.core.rng,
+            self.core.full_id.clone(),
+            &gen_pfx_info,
+        );
         let chain = Chain::new(self.network_cfg, public_id, gen_pfx_info.clone(), None);
 
         let details = ElderDetails {
             chain,
-            network_service: self.network_service,
+            network_service: self.core.network_service,
             event_backlog: Default::default(),
-            full_id: self.full_id,
+            full_id: self.core.full_id,
             gen_pfx_info,
             msg_queue: Default::default(),
             sig_accumulator: Default::default(),
             parsec_map,
-            msg_filter: self.msg_filter,
-            timer: self.timer,
-            rng: self.rng,
+            msg_filter: self.core.msg_filter,
+            timer: self.core.timer,
+            rng: self.core.rng,
         };
 
         let connect_type = match stage.join_type {
@@ -218,7 +201,7 @@ impl JoiningPeer {
             return;
         }
 
-        let token = self.timer.schedule(BOOTSTRAP_TIMEOUT);
+        let token = self.core.timer.schedule(BOOTSTRAP_TIMEOUT);
         let _ = stage.timeout_tokens.insert(token, dst);
 
         let destination = match &stage.relocate_details {
@@ -234,7 +217,7 @@ impl JoiningPeer {
         match &mut self.stage {
             Stage::Bootstrapping(stage) => {
                 for addr in stage.pending_requests.drain() {
-                    self.network_service.disconnect(addr);
+                    self.core.network_service.disconnect(addr);
                 }
 
                 stage.timeout_tokens.clear();
@@ -289,7 +272,7 @@ impl JoiningPeer {
             Some(details) => *details.destination(),
             None => *self.name(),
         };
-        let old_full_id = self.full_id.clone();
+        let old_full_id = self.core.full_id.clone();
 
         // Use a name that will match the destination even after multiple splits
         let extra_split_count = 3;
@@ -299,18 +282,19 @@ impl JoiningPeer {
         );
 
         if !name_prefix.matches(self.name()) {
-            let new_full_id = FullId::within_range(&mut self.rng, &name_prefix.range_inclusive());
+            let new_full_id =
+                FullId::within_range(&mut self.core.rng, &name_prefix.range_inclusive());
             info!("Changing name to {}.", new_full_id.public_id().name());
-            self.full_id = new_full_id;
+            self.core.full_id = new_full_id;
         }
 
         let join_type = if let Some(details) = relocate_details {
             let relocate_payload =
-                RelocatePayload::new(details, self.full_id.public_id(), &old_full_id)?;
+                RelocatePayload::new(details, self.core.full_id.public_id(), &old_full_id)?;
 
             JoinType::Relocate(relocate_payload)
         } else {
-            let timeout_token = self.timer.schedule(JOIN_TIMEOUT);
+            let timeout_token = self.core.timer.schedule(JOIN_TIMEOUT);
             JoinType::First { timeout_token }
         };
 
@@ -326,7 +310,7 @@ impl JoiningPeer {
     fn rebootstrap(&mut self) {
         // TODO: preserve relocation details
         self.stage = Stage::new(None);
-        self.full_id = FullId::gen(&mut self.rng);
+        self.core.full_id = FullId::gen(&mut self.core.rng);
     }
 
     fn verify_message_full(
@@ -347,15 +331,15 @@ impl JoiningPeer {
 
 impl Base for JoiningPeer {
     fn network_service(&self) -> &NetworkService {
-        &self.network_service
+        &self.core.network_service
     }
 
     fn network_service_mut(&mut self) -> &mut NetworkService {
-        &mut self.network_service
+        &mut self.core.network_service
     }
 
     fn full_id(&self) -> &FullId {
-        &self.full_id
+        &self.core.full_id
     }
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
@@ -367,11 +351,11 @@ impl Base for JoiningPeer {
     }
 
     fn timer(&self) -> &Timer {
-        &self.timer
+        &self.core.timer
     }
 
     fn rng(&mut self) -> &mut MainRng {
-        &mut self.rng
+        &mut self.core.rng
     }
 
     fn set_log_ident(&self) -> log_utils::Guard {
@@ -409,11 +393,11 @@ impl Base for JoiningPeer {
                         return Transition::Stay;
                     }
 
-                    self.network_service.disconnect(peer_addr);
+                    self.core.network_service.disconnect(peer_addr);
 
                     if stage.pending_requests.is_empty() {
                         // Rebootstrap
-                        self.network_service.service_mut().bootstrap();
+                        self.core.network_service.service_mut().bootstrap();
                     }
                 }
             }
@@ -431,7 +415,7 @@ impl Base for JoiningPeer {
                         .member_nodes()
                         .map(|node| *node.peer_addr())
                     {
-                        self.network_service.disconnect(addr);
+                        self.core.network_service.disconnect(addr);
                     }
 
                     self.rebootstrap();
@@ -468,7 +452,7 @@ impl Base for JoiningPeer {
                     "Ignoring message from unexpected peer: {}: {:?}",
                     sender, msg,
                 );
-                self.network_service.disconnect(*sender.peer_addr());
+                self.core.network_service.disconnect(*sender.peer_addr());
                 return Ok(Transition::Stay);
             }
         }
@@ -539,11 +523,11 @@ impl Base for JoiningPeer {
     }
 
     fn is_message_handled(&self, msg: &MessageWithBytes) -> bool {
-        self.msg_filter.contains_incoming(msg)
+        self.core.msg_filter.contains_incoming(msg)
     }
 
     fn set_message_handled(&mut self, msg: &MessageWithBytes) {
-        self.msg_filter.insert_incoming(msg)
+        self.core.msg_filter.insert_incoming(msg)
     }
 
     fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
@@ -690,13 +674,16 @@ mod tests {
 
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
             move |network_service, timer, _outbox2| {
-                State::JoiningPeer(JoiningPeer::new(JoiningPeerDetails {
-                    network_service,
-                    full_id: node_b_full_id,
+                State::JoiningPeer(JoiningPeer::new(
+                    Core {
+                        full_id: node_b_full_id,
+                        network_service,
+                        msg_filter: Default::default(),
+                        timer,
+                        rng,
+                    },
                     network_cfg,
-                    timer,
-                    rng,
-                }))
+                ))
             },
             config,
             node_b_client_tx,
