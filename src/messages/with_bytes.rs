@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{DstLocation, Message, MessageHash, PartialMessage};
-use crate::{error::Result, utils::LogIdent};
+use crate::error::Result;
 use bytes::Bytes;
 use std::fmt::{self, Debug, Formatter};
 
@@ -26,12 +26,12 @@ pub struct MessageWithBytes {
 
 impl MessageWithBytes {
     /// Serialize message and keep both SignedRoutingMessage and Bytes.
-    pub fn new(full_content: Message, log_ident: &LogIdent) -> Result<Self> {
+    pub fn new(full_content: Message) -> Result<Self> {
         let full_bytes = full_content.to_bytes()?;
         let partial_content = full_content.to_partial();
         let result = Self::new_from_parts(Some(full_content), partial_content, full_bytes);
 
-        trace!("{} Creating {:?}", log_ident, result);
+        trace!("Creating {:?}", result);
 
         Ok(result)
     }
@@ -109,7 +109,7 @@ mod tests {
         let variant = Variant::UserMessage(rng.sample_iter(Standard).take(6).collect());
         let msg = unwrap!(Message::single_src(&full_id, dst, variant));
 
-        let msg_with_bytes = unwrap!(MessageWithBytes::new(msg.clone(), &LogIdent::new("node")));
+        let msg_with_bytes = unwrap!(MessageWithBytes::new(msg.clone()));
         let bytes = msg_with_bytes.full_bytes();
 
         let full_msg = unwrap!(Message::from_bytes(bytes));

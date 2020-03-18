@@ -9,7 +9,6 @@
 use crate::{
     messages::{AccumulatingMessage, Message, MessageHash, MessageWithBytes},
     time::{Duration, Instant},
-    utils::LogIdent,
 };
 use std::collections::HashMap;
 
@@ -25,12 +24,8 @@ pub struct SignatureAccumulator {
 impl SignatureAccumulator {
     /// Adds the given signature to the list of pending signatures or to the appropriate
     /// `Message`. Returns the message, if it has enough signatures now.
-    pub fn add_proof(
-        &mut self,
-        msg: AccumulatingMessage,
-        log_ident: &LogIdent,
-    ) -> Option<MessageWithBytes> {
-        self.remove_expired(log_ident);
+    pub fn add_proof(&mut self, msg: AccumulatingMessage) -> Option<MessageWithBytes> {
+        self.remove_expired();
         let hash = msg.crypto_hash().ok()?;
         if let Some((existing_msg, _)) = self.msgs.get_mut(&hash) {
             if let Some(existing_msg) = existing_msg {
@@ -41,22 +36,22 @@ impl SignatureAccumulator {
         }
 
         let msg = self.remove_if_complete(&hash)?;
-        match MessageWithBytes::new(msg, log_ident) {
+        match MessageWithBytes::new(msg) {
             Ok(msg) => Some(msg),
             Err(error) => {
-                error!("{} - Failed to make message: {:?}", log_ident, error);
+                error!("Failed to make message: {:?}", error);
                 None
             }
         }
     }
 
-    fn remove_expired(&mut self, log_ident: &LogIdent) {
+    fn remove_expired(&mut self) {
         self.msgs.retain(|_, (msg, timestamp)| {
             if timestamp.elapsed() <= ACCUMULATION_TIMEOUT {
                 true
             } else {
                 if let Some(msg) = msg {
-                    error!("{} - Expired unaccumulated message: {:?}", log_ident, msg);
+                    error!("Expired unaccumulated message: {:?}", msg);
                 }
                 false
             }
@@ -192,12 +187,11 @@ mod tests {
 
         let mut sig_accumulator = SignatureAccumulator::default();
         let env = Env::new();
-        let log_ident = LogIdent::new("Node");
 
         // Add each message with the section list added - none should accumulate.
         env.msgs_and_sigs.iter().foreach(|msg_and_sigs| {
             let signed_msg = msg_and_sigs.signed_msg.clone();
-            let result = sig_accumulator.add_proof(signed_msg, &log_ident);
+            let result = sig_accumulator.add_proof(signed_msg);
             assert!(result.is_none());
         });
         let expected_msgs_count = env.msgs_and_sigs.len();
@@ -210,7 +204,7 @@ mod tests {
                 let old_num_msgs = sig_accumulator.msgs.len();
 
                 let result = match signature_msg.variant {
-                    Variant::MessageSignature(msg) => sig_accumulator.add_proof(*msg, &log_ident),
+                    Variant::MessageSignature(msg) => sig_accumulator.add_proof(*msg),
                     unexpected_msg => panic!("Unexpected message: {:?}", unexpected_msg),
                 };
 
@@ -238,7 +232,7 @@ mod tests {
 
         FakeClock::advance_time(ACCUMULATION_TIMEOUT.as_secs() * 1000 + 1000);
 
-        sig_accumulator.remove_expired(&log_ident);
+        sig_accumulator.remove_expired();
         assert!(sig_accumulator.msgs.is_empty());
     }
 }
