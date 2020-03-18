@@ -52,7 +52,7 @@ fn send() {
                     }
                 }
                 Some(_) => (),
-                _ => panic!("{} - Event::MessageReceived not received", node.inner),
+                _ => panic!("{} - Event::MessageReceived not received", node.name()),
             }
         }
     }

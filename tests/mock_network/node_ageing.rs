@@ -58,7 +58,7 @@ fn relocate_without_split() {
     assert!(
         target_prefix.matches(&nodes[0].name()),
         "Verify the Node {}, got relocated to prefix {:?}",
-        nodes[0].inner,
+        nodes[0].name(),
         target_prefix
     );
 }
@@ -105,7 +105,7 @@ fn relocate_causing_split() {
     assert!(
         target_prefix.matches(&nodes[0].name()),
         "Verify the Node {}, got relocated to prefix {:?}",
-        nodes[0].inner,
+        nodes[0].name(),
         target_prefix
     );
 

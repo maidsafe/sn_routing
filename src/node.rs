@@ -33,10 +33,7 @@ use {
         chain::{Chain, SectionProofSlice},
         Prefix,
     },
-    std::{
-        collections::{BTreeMap, BTreeSet},
-        fmt::{self, Display, Formatter},
-    },
+    std::collections::{BTreeMap, BTreeSet},
 };
 
 /// A builder to configure and create a new `Node`.
@@ -367,6 +364,11 @@ impl Node {
         }
     }
 
+    /// The name of this node.
+    pub fn name(&self) -> XorName {
+        *self.id().expect("invalid node state").name()
+    }
+
     /// Our `Prefix` once we are a part of the section.
     pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
         self.chain().map(Chain::our_prefix)
@@ -488,12 +490,5 @@ impl Node {
     pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
         self.chain()
             .and_then(|chain| chain.member_age_counter(name))
-    }
-}
-
-#[cfg(feature = "mock_base")]
-impl Display for Node {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        self.machine.fmt(formatter)
     }
 }

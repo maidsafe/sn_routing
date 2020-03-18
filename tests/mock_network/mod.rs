@@ -489,6 +489,7 @@ fn check_close_names_for_elder_size_nodes() {
         }),
         LOWERED_ELDER_SIZE,
     );
+
     let close_sections_complete = nodes
         .iter()
         .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));

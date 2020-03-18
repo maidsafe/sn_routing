@@ -33,12 +33,7 @@ use crate::{
 };
 use bytes::Bytes;
 use fxhash::FxHashSet;
-use std::{
-    collections::HashMap,
-    fmt::{self, Display, Formatter},
-    net::SocketAddr,
-    time::Duration,
-};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -198,8 +193,7 @@ impl JoiningPeer {
 
     fn handle_node_approval(&mut self, gen_pfx_info: GenesisPfxInfo) -> Transition {
         info!(
-            "{} - This node has been approved to join the network at {:?}!",
-            self,
+            "This node has been approved to join the network at {:?}!",
             gen_pfx_info.elders_info.prefix(),
         );
         Transition::Approve { gen_pfx_info }
@@ -207,8 +201,7 @@ impl JoiningPeer {
 
     fn handle_bounce(&mut self, sender: P2pNode, message: Bytes) {
         trace!(
-            "{} - Received Bounce of {:?} from {}. Resending",
-            self,
+            "Received Bounce of {:?} from {}. Resending",
             MessageHash::from_bytes(&message),
             sender
         );
@@ -233,7 +226,7 @@ impl JoiningPeer {
             None => *self.name(),
         };
 
-        debug!("{} Sending BootstrapRequest to {}.", self, dst);
+        debug!("Sending BootstrapRequest to {}.", dst);
         self.send_direct_message(&dst, Variant::BootstrapRequest(destination));
     }
 
@@ -280,7 +273,7 @@ impl JoiningPeer {
             .collect();
 
         for (dst, variant) in messages {
-            info!("{} - Sending JoinRequest to {}", self, dst);
+            info!("Sending JoinRequest to {}", dst);
             self.send_direct_message(dst.peer_addr(), variant);
         }
     }
@@ -307,11 +300,7 @@ impl JoiningPeer {
 
         if !name_prefix.matches(self.name()) {
             let new_full_id = FullId::within_range(&mut self.rng, &name_prefix.range_inclusive());
-            info!(
-                "{} - Changing name to {}.",
-                self,
-                new_full_id.public_id().name()
-            );
+            info!("Changing name to {}.", new_full_id.public_id().name());
             self.full_id = new_full_id;
         }
 
@@ -387,7 +376,15 @@ impl Base for JoiningPeer {
 
     fn set_log_ident(&self) -> log_utils::Guard {
         use std::fmt::Write;
-        log_utils::set_ident(|buffer| write!(buffer, "{} ", self))
+        log_utils::set_ident(|buffer| {
+            write!(buffer, "JoiningPeer({}", self.name())?;
+
+            if let Stage::Joining(stage) = &self.stage {
+                write!(buffer, "({:b})", stage.elders_info.prefix())?
+            }
+
+            write!(buffer, ") ")
+        })
     }
 
     fn handle_send_message(
@@ -396,7 +393,7 @@ impl Base for JoiningPeer {
         _: DstLocation,
         _: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        warn!("{} - Cannot handle SendMessage - not joined.", self);
+        warn!("Cannot handle SendMessage - not joined.");
         // TODO: return Err here eventually. Returning Ok for now to
         // preserve the pre-refactor behaviour.
         Ok(())
@@ -451,7 +448,7 @@ impl Base for JoiningPeer {
     }
 
     fn handle_bootstrap_failure(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        info!("{} Failed to bootstrap. Terminating.", self);
+        info!("Failed to bootstrap. Terminating.");
         outbox.send_event(Event::Terminated);
         Transition::Terminate
     }
@@ -468,8 +465,8 @@ impl Base for JoiningPeer {
 
             if !stage.pending_requests.contains(sender.peer_addr()) {
                 debug!(
-                    "{} - Ignoring message from unexpected peer: {}: {:?}",
-                    self, sender, msg,
+                    "Ignoring message from unexpected peer: {}: {:?}",
+                    sender, msg,
                 );
                 self.network_service.disconnect(*sender.peer_addr());
                 return Ok(Transition::Stay);
@@ -506,8 +503,7 @@ impl Base for JoiningPeer {
                 let sender = sender.expect("sender missing");
 
                 debug!(
-                    "{} Unhandled message - bouncing: {:?}, hash: {:?}",
-                    self,
+                    "Unhandled message - bouncing: {:?}, hash: {:?}",
                     msg,
                     MessageHash::from_bytes(&msg_bytes)
                 );
@@ -553,7 +549,7 @@ impl Base for JoiningPeer {
     fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
         let sender = sender.expect("sender missing");
 
-        trace!("{} Message not for us, bouncing: {:?}", self, msg);
+        trace!("Message not for us, bouncing: {:?}", msg);
 
         let variant = Variant::Bounce {
             elders_version: None,
@@ -587,18 +583,6 @@ impl Base for JoiningPeer {
             }
             _ => unreachable!("unexpected message to verify: {:?}", msg),
         }
-    }
-}
-
-impl Display for JoiningPeer {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "JoiningPeer({}", self.name())?;
-
-        if let Stage::Joining(stage) = &self.stage {
-            write!(formatter, "({:b})", stage.elders_info.prefix())?
-        }
-
-        write!(formatter, ")")
     }
 }
 
