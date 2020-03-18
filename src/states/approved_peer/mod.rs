@@ -1902,16 +1902,12 @@ impl ApprovedPeer {
 }
 
 impl Base for ApprovedPeer {
-    fn network_service(&self) -> &NetworkService {
-        &self.core.network_service
+    fn core(&self) -> &Core {
+        &self.core
     }
 
-    fn network_service_mut(&mut self) -> &mut NetworkService {
-        &mut self.core.network_service
-    }
-
-    fn full_id(&self) -> &FullId {
-        &self.core.full_id
+    fn core_mut(&mut self) -> &mut Core {
+        &mut self.core
     }
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
@@ -1923,14 +1919,6 @@ impl Base for ApprovedPeer {
         conn_peers.sort_unstable();
         conn_peers.dedup();
         self.chain.closest_names(&name, count, &conn_peers)
-    }
-
-    fn timer(&self) -> &Timer {
-        &self.core.timer
-    }
-
-    fn rng(&mut self) -> &mut MainRng {
-        &mut self.core.rng
     }
 
     fn set_log_ident(&self) -> log_utils::Guard {

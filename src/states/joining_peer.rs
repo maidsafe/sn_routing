@@ -21,13 +21,10 @@ use crate::{
         BootstrapResponse, JoinRequest, Message, MessageHash, MessageWithBytes, Variant,
         VerifyStatus,
     },
-    network_service::NetworkService,
     outbox::EventBox,
     parsec::ParsecMap,
     relocation::{RelocatePayload, SignedRelocateDetails},
-    rng::MainRng,
     state_machine::{State, Transition},
-    timer::Timer,
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
@@ -329,16 +326,12 @@ impl JoiningPeer {
 }
 
 impl Base for JoiningPeer {
-    fn network_service(&self) -> &NetworkService {
-        &self.core.network_service
+    fn core(&self) -> &Core {
+        &self.core
     }
 
-    fn network_service_mut(&mut self) -> &mut NetworkService {
-        &mut self.core.network_service
-    }
-
-    fn full_id(&self) -> &FullId {
-        &self.core.full_id
+    fn core_mut(&mut self) -> &mut Core {
+        &mut self.core
     }
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
@@ -347,14 +340,6 @@ impl Base for JoiningPeer {
             DstLocation::Section(_) | DstLocation::Prefix(_) => false,
             DstLocation::Direct => true,
         }
-    }
-
-    fn timer(&self) -> &Timer {
-        &self.core.timer
-    }
-
-    fn rng(&mut self) -> &mut MainRng {
-        &mut self.core.rng
     }
 
     fn set_log_ident(&self) -> log_utils::Guard {
