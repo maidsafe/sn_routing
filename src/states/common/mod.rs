@@ -18,6 +18,7 @@ use crate::{
     rng::MainRng,
     time::Duration,
     timer::Timer,
+    xor_space::XorName,
 };
 use bytes::Bytes;
 use std::{net::SocketAddr, slice};
@@ -35,6 +36,10 @@ pub struct Core {
 }
 
 impl Core {
+    pub fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
+
     pub fn send_message_to_targets(
         &mut self,
         conn_infos: &[SocketAddr],

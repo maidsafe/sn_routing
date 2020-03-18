@@ -29,7 +29,7 @@ use crate::{
 };
 use bytes::Bytes;
 use fxhash::FxHashSet;
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, iter, net::SocketAddr, time::Duration};
 
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -57,22 +57,22 @@ impl JoiningPeer {
 
     /// Create `JoiningPeer` for a node that is being relocated into another sections.
     pub fn relocate(
-        core: Core,
+        mut core: Core,
         network_cfg: NetworkParams,
         conn_infos: Vec<SocketAddr>,
         relocate_details: SignedRelocateDetails,
     ) -> Self {
-        let mut node = Self {
-            core,
-            stage: Stage::new(Some(relocate_details)),
-            network_cfg,
-        };
+        let mut stage = BootstrappingStage::new(Some(relocate_details));
 
         for conn_info in conn_infos {
-            node.send_bootstrap_request(conn_info)
+            stage.send_bootstrap_request(&mut core, conn_info)
         }
 
-        node
+        Self {
+            core,
+            stage: Stage::Bootstrapping(stage),
+            network_cfg,
+        }
     }
 
     pub fn approve(
@@ -123,50 +123,19 @@ impl JoiningPeer {
         sender: P2pNode,
         response: BootstrapResponse,
     ) -> Result<()> {
-        let name = *self.name();
-
         match &mut self.stage {
-            Stage::Bootstrapping(_) => match response {
-                BootstrapResponse::Join(elders_info) => {
-                    info!(
-                        "Joining a section {:?} (given by {:?})",
-                        elders_info, sender
-                    );
-                    self.join_section(elders_info)
+            Stage::Bootstrapping(stage) => {
+                if let Some(new_stage) =
+                    stage.handle_bootstrap_response(&mut self.core, sender, response)?
+                {
+                    self.stage = Stage::Joining(new_stage);
                 }
-                BootstrapResponse::Rebootstrap(new_conn_infos) => {
-                    info!(
-                        "Bootstrapping redirected to another set of peers: {:?}",
-                        new_conn_infos
-                    );
-                    self.reconnect_to_new_section(new_conn_infos);
-                    Ok(())
-                }
-            },
-            Stage::Joining(stage) => match response {
-                BootstrapResponse::Join(new_elders_info) => {
-                    if new_elders_info.version() > stage.elders_info.version() {
-                        if new_elders_info.prefix().matches(&name) {
-                            info!(
-                                "Newer Join response for our prefix {:?} from {:?}",
-                                new_elders_info, sender
-                            );
-                            stage.elders_info = new_elders_info;
-                            self.send_join_requests();
-                        } else {
-                            log_or_panic!(
-                                log::Level::Error,
-                                "Newer Join response not for our prefix {:?} from {:?}",
-                                new_elders_info,
-                                sender,
-                            );
-                        }
-                    }
 
-                    Ok(())
-                }
-                BootstrapResponse::Rebootstrap(_) => unreachable!(),
-            },
+                Ok(())
+            }
+            Stage::Joining(stage) => {
+                stage.handle_bootstrap_response(&mut self.core, sender, response)
+            }
         }
     }
 
@@ -188,142 +157,11 @@ impl JoiningPeer {
             .send_message_to_target_later(sender.peer_addr(), message, BOUNCE_RESEND_DELAY);
     }
 
-    fn send_bootstrap_request(&mut self, dst: SocketAddr) {
-        let stage = match &mut self.stage {
-            Stage::Bootstrapping(stage) => stage,
-            Stage::Joining(_) => unreachable!(),
-        };
-
-        if !stage.pending_requests.insert(dst) {
-            return;
-        }
-
-        let token = self.core.timer.schedule(BOOTSTRAP_TIMEOUT);
-        let _ = stage.timeout_tokens.insert(token, dst);
-
-        let destination = match &stage.relocate_details {
-            Some(details) => *details.destination(),
-            None => *self.name(),
-        };
-
-        debug!("Sending BootstrapRequest to {}.", dst);
-        self.core
-            .send_direct_message(&dst, Variant::BootstrapRequest(destination));
-    }
-
-    fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<SocketAddr>) {
-        match &mut self.stage {
-            Stage::Bootstrapping(stage) => {
-                for addr in stage.pending_requests.drain() {
-                    self.core.network_service.disconnect(addr);
-                }
-
-                stage.timeout_tokens.clear();
-
-                for conn_info in new_conn_infos {
-                    self.send_bootstrap_request(conn_info);
-                }
-            }
-            Stage::Joining(_) => unreachable!(),
-        }
-    }
-
-    fn send_join_requests(&mut self) {
-        let stage = match &mut self.stage {
-            Stage::Bootstrapping(_) => unreachable!(),
-            Stage::Joining(stage) => stage,
-        };
-
-        let relocate_payload = match &stage.join_type {
-            JoinType::First { .. } => None,
-            JoinType::Relocate(payload) => Some(payload),
-        };
-
-        let elders_version = stage.elders_info.version();
-        let messages: Vec<_> = stage
-            .elders_info
-            .member_nodes()
-            .map(|dst| {
-                let join_request = JoinRequest {
-                    elders_version,
-                    relocate_payload: relocate_payload.cloned(),
-                };
-
-                (dst.clone(), Variant::JoinRequest(Box::new(join_request)))
-            })
-            .collect();
-
-        for (dst, variant) in messages {
-            info!("Sending JoinRequest to {}", dst);
-            self.core.send_direct_message(dst.peer_addr(), variant);
-        }
-    }
-
-    fn join_section(&mut self, elders_info: EldersInfo) -> Result<()> {
-        let stage = match &mut self.stage {
-            Stage::Bootstrapping(stage) => stage,
-            Stage::Joining(_) => unreachable!(),
-        };
-
-        let relocate_details = stage.relocate_details.take();
-        let destination = match &relocate_details {
-            Some(details) => *details.destination(),
-            None => *self.name(),
-        };
-        let old_full_id = self.core.full_id.clone();
-
-        // Use a name that will match the destination even after multiple splits
-        let extra_split_count = 3;
-        let name_prefix = Prefix::new(
-            elders_info.prefix().bit_count() + extra_split_count,
-            destination,
-        );
-
-        if !name_prefix.matches(self.name()) {
-            let new_full_id =
-                FullId::within_range(&mut self.core.rng, &name_prefix.range_inclusive());
-            info!("Changing name to {}.", new_full_id.public_id().name());
-            self.core.full_id = new_full_id;
-        }
-
-        let join_type = if let Some(details) = relocate_details {
-            let relocate_payload =
-                RelocatePayload::new(details, self.core.full_id.public_id(), &old_full_id)?;
-
-            JoinType::Relocate(relocate_payload)
-        } else {
-            let timeout_token = self.core.timer.schedule(JOIN_TIMEOUT);
-            JoinType::First { timeout_token }
-        };
-
-        self.stage = Stage::Joining(JoiningStage {
-            elders_info,
-            join_type,
-        });
-
-        self.send_join_requests();
-
-        Ok(())
-    }
     fn rebootstrap(&mut self) {
         // TODO: preserve relocation details
-        self.stage = Stage::new(None);
+        self.stage = Stage::Bootstrapping(BootstrappingStage::new(None));
         self.core.full_id = FullId::gen(&mut self.core.rng);
-    }
-
-    fn verify_message_full(
-        &self,
-        msg: &Message,
-        key_info: Option<&SectionKeyInfo>,
-    ) -> Result<bool> {
-        msg.verify(as_iter(key_info))
-            .and_then(VerifyStatus::require_full)
-            .map_err(|error| {
-                messages::log_verify_failure(msg, &error, as_iter(key_info));
-                error
-            })?;
-
-        Ok(true)
+        self.core.network_service.service_mut().bootstrap();
     }
 }
 
@@ -371,40 +209,10 @@ impl Base for JoiningPeer {
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
         match &mut self.stage {
-            Stage::Bootstrapping(stage) => {
-                if let Some(peer_addr) = stage.timeout_tokens.remove(&token) {
-                    debug!("Timeout when trying to bootstrap against {}.", peer_addr);
-
-                    if !stage.pending_requests.remove(&peer_addr) {
-                        return Transition::Stay;
-                    }
-
-                    self.core.network_service.disconnect(peer_addr);
-
-                    if stage.pending_requests.is_empty() {
-                        // Rebootstrap
-                        self.core.network_service.service_mut().bootstrap();
-                    }
-                }
-            }
+            Stage::Bootstrapping(stage) => stage.handle_timeout(&mut self.core, token),
             Stage::Joining(stage) => {
-                let join_token = match stage.join_type {
-                    JoinType::First { timeout_token } => timeout_token,
-                    JoinType::Relocate(_) => return Transition::Stay,
-                };
-
-                if join_token == token {
-                    debug!("Timeout when trying to join a section.");
-
-                    for addr in stage
-                        .elders_info
-                        .member_nodes()
-                        .map(|node| *node.peer_addr())
-                    {
-                        self.core.network_service.disconnect(addr);
-                    }
-
-                    self.rebootstrap();
+                if stage.handle_timeout(&mut self.core, token) {
+                    self.rebootstrap()
                 }
             }
         }
@@ -413,7 +221,11 @@ impl Base for JoiningPeer {
     }
 
     fn handle_bootstrapped_to(&mut self, conn_info: SocketAddr) -> Transition {
-        self.send_bootstrap_request(conn_info);
+        match &mut self.stage {
+            Stage::Bootstrapping(stage) => stage.send_bootstrap_request(&mut self.core, conn_info),
+            Stage::Joining(_) => (),
+        }
+
         Transition::Stay
     }
 
@@ -429,20 +241,6 @@ impl Base for JoiningPeer {
         msg: Message,
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        // Ignore messages from peers we didn't send `BootstrapRequest` to.
-        if let Stage::Bootstrapping(stage) = &self.stage {
-            let sender = msg.src.to_sender_node(sender)?;
-
-            if !stage.pending_requests.contains(sender.peer_addr()) {
-                debug!(
-                    "Ignoring message from unexpected peer: {}: {:?}",
-                    sender, msg,
-                );
-                self.core.network_service.disconnect(*sender.peer_addr());
-                return Ok(Transition::Stay);
-            }
-        }
-
         match msg.variant {
             Variant::BootstrapResponse(response) => {
                 self.handle_bootstrap_response(msg.src.to_sender_node(sender)?, response)?;
@@ -524,26 +322,9 @@ impl Base for JoiningPeer {
     }
 
     fn verify_message(&self, msg: &Message) -> Result<bool> {
-        let join_type = match &self.stage {
-            Stage::Bootstrapping(_) => None,
-            Stage::Joining(stage) => Some(&stage.join_type),
-        };
-
-        match (&msg.variant, join_type) {
-            (Variant::NodeApproval(_), Some(JoinType::Relocate(payload))) => {
-                let details = payload.relocate_details();
-                let key_info = &details.destination_key_info;
-                self.verify_message_full(msg, Some(key_info))
-            }
-            (Variant::NodeApproval(_), Some(JoinType::First { .. })) => {
-                // We don't have any trusted keys to verify this message, but we still need to
-                // handle it.
-                Ok(true)
-            }
-            (Variant::BootstrapResponse(_), _) | (Variant::Bounce { .. }, _) => {
-                self.verify_message_full(msg, None)
-            }
-            _ => unreachable!("unexpected message to verify: {:?}", msg),
+        match &self.stage {
+            Stage::Bootstrapping(stage) => stage.verify_message(msg),
+            Stage::Joining(stage) => stage.verify_message(msg),
         }
     }
 }
@@ -556,11 +337,7 @@ enum Stage {
 
 impl Stage {
     fn new(relocate_details: Option<SignedRelocateDetails>) -> Self {
-        Self::Bootstrapping(BootstrappingStage {
-            pending_requests: Default::default(),
-            timeout_tokens: Default::default(),
-            relocate_details,
-        })
+        Self::Bootstrapping(BootstrappingStage::new(relocate_details))
     }
 
     fn is_bootstrapping(&self) -> bool {
@@ -579,9 +356,246 @@ struct BootstrappingStage {
     relocate_details: Option<SignedRelocateDetails>,
 }
 
+impl BootstrappingStage {
+    fn new(relocate_details: Option<SignedRelocateDetails>) -> Self {
+        Self {
+            pending_requests: Default::default(),
+            timeout_tokens: Default::default(),
+            relocate_details,
+        }
+    }
+
+    fn handle_timeout(&mut self, core: &mut Core, token: u64) {
+        let peer_addr = if let Some(peer_addr) = self.timeout_tokens.remove(&token) {
+            peer_addr
+        } else {
+            return;
+        };
+
+        debug!("Timeout when trying to bootstrap against {}.", peer_addr);
+
+        if !self.pending_requests.remove(&peer_addr) {
+            return;
+        }
+
+        core.network_service.disconnect(peer_addr);
+
+        if self.pending_requests.is_empty() {
+            // Rebootstrap
+            core.network_service.service_mut().bootstrap();
+        }
+    }
+
+    fn handle_bootstrap_response(
+        &mut self,
+        core: &mut Core,
+        sender: P2pNode,
+        response: BootstrapResponse,
+    ) -> Result<Option<JoiningStage>> {
+        // Ignore messages from peers we didn't send `BootstrapRequest` to.
+        if !self.pending_requests.contains(sender.peer_addr()) {
+            debug!(
+                "Ignoring BootstrapResponse from unexpected peer: {}",
+                sender,
+            );
+            core.network_service.disconnect(*sender.peer_addr());
+            return Ok(None);
+        }
+
+        match response {
+            BootstrapResponse::Join(elders_info) => {
+                info!(
+                    "Joining a section {:?} (given by {:?})",
+                    elders_info, sender
+                );
+
+                let join_type = self.join_section(core, &elders_info)?;
+                let stage = JoiningStage {
+                    elders_info,
+                    join_type,
+                };
+                stage.send_join_requests(core);
+                Ok(Some(stage))
+            }
+            BootstrapResponse::Rebootstrap(new_conn_infos) => {
+                info!(
+                    "Bootstrapping redirected to another set of peers: {:?}",
+                    new_conn_infos
+                );
+                self.reconnect_to_new_section(core, new_conn_infos);
+                Ok(None)
+            }
+        }
+    }
+
+    fn send_bootstrap_request(&mut self, core: &mut Core, dst: SocketAddr) {
+        if !self.pending_requests.insert(dst) {
+            return;
+        }
+
+        let token = core.timer.schedule(BOOTSTRAP_TIMEOUT);
+        let _ = self.timeout_tokens.insert(token, dst);
+
+        let destination = match &self.relocate_details {
+            Some(details) => *details.destination(),
+            None => *core.name(),
+        };
+
+        debug!("Sending BootstrapRequest to {}.", dst);
+        core.send_direct_message(&dst, Variant::BootstrapRequest(destination));
+    }
+
+    fn reconnect_to_new_section(&mut self, core: &mut Core, new_conn_infos: Vec<SocketAddr>) {
+        for addr in self.pending_requests.drain() {
+            core.network_service.disconnect(addr);
+        }
+
+        self.timeout_tokens.clear();
+
+        for conn_info in new_conn_infos {
+            self.send_bootstrap_request(core, conn_info);
+        }
+    }
+
+    fn join_section(&mut self, core: &mut Core, elders_info: &EldersInfo) -> Result<JoinType> {
+        let relocate_details = self.relocate_details.take();
+        let destination = match &relocate_details {
+            Some(details) => *details.destination(),
+            None => *core.name(),
+        };
+        let old_full_id = core.full_id.clone();
+
+        // Use a name that will match the destination even after multiple splits
+        let extra_split_count = 3;
+        let name_prefix = Prefix::new(
+            elders_info.prefix().bit_count() + extra_split_count,
+            destination,
+        );
+
+        if !name_prefix.matches(core.name()) {
+            let new_full_id = FullId::within_range(&mut core.rng, &name_prefix.range_inclusive());
+            info!("Changing name to {}.", new_full_id.public_id().name());
+            core.full_id = new_full_id;
+        }
+
+        if let Some(details) = relocate_details {
+            let relocate_payload =
+                RelocatePayload::new(details, core.full_id.public_id(), &old_full_id)?;
+
+            Ok(JoinType::Relocate(relocate_payload))
+        } else {
+            let timeout_token = core.timer.schedule(JOIN_TIMEOUT);
+            Ok(JoinType::First { timeout_token })
+        }
+    }
+
+    fn verify_message(&self, msg: &Message) -> Result<bool> {
+        msg.verify(iter::empty())
+            .and_then(VerifyStatus::require_full)?;
+        Ok(true)
+    }
+}
+
 struct JoiningStage {
     elders_info: EldersInfo,
     join_type: JoinType,
+}
+
+impl JoiningStage {
+    // Returns whether the joining failed and we need to rebootstrap.
+    fn handle_timeout(&mut self, core: &mut Core, token: u64) -> bool {
+        let join_token = match self.join_type {
+            JoinType::First { timeout_token } => timeout_token,
+            JoinType::Relocate(_) => return false,
+        };
+
+        if join_token == token {
+            debug!("Timeout when trying to join a section.");
+
+            for addr in self
+                .elders_info
+                .member_nodes()
+                .map(|node| *node.peer_addr())
+            {
+                core.network_service.disconnect(addr);
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+
+    fn handle_bootstrap_response(
+        &mut self,
+        core: &mut Core,
+        sender: P2pNode,
+        response: BootstrapResponse,
+    ) -> Result<()> {
+        let new_elders_info = match response {
+            BootstrapResponse::Join(elders_info) => elders_info,
+            BootstrapResponse::Rebootstrap(_) => unreachable!(),
+        };
+
+        if new_elders_info.version() <= self.elders_info.version() {
+            return Ok(());
+        }
+
+        if new_elders_info.prefix().matches(core.name()) {
+            info!(
+                "Newer Join response for our prefix {:?} from {:?}",
+                new_elders_info, sender
+            );
+            self.elders_info = new_elders_info;
+            self.send_join_requests(core);
+        } else {
+            log_or_panic!(
+                log::Level::Error,
+                "Newer Join response not for our prefix {:?} from {:?}",
+                new_elders_info,
+                sender,
+            );
+        }
+
+        Ok(())
+    }
+
+    fn send_join_requests(&self, core: &mut Core) {
+        let relocate_payload = match &self.join_type {
+            JoinType::First { .. } => None,
+            JoinType::Relocate(payload) => Some(payload),
+        };
+
+        for dst in self.elders_info.member_nodes() {
+            let join_request = JoinRequest {
+                elders_version: self.elders_info.version(),
+                relocate_payload: relocate_payload.cloned(),
+            };
+
+            let variant = Variant::JoinRequest(Box::new(join_request));
+
+            info!("Sending JoinRequest to {}", dst);
+            core.send_direct_message(dst.peer_addr(), variant);
+        }
+    }
+
+    fn verify_message(&self, msg: &Message) -> Result<bool> {
+        match (&msg.variant, &self.join_type) {
+            (Variant::NodeApproval(_), JoinType::Relocate(payload)) => {
+                let details = payload.relocate_details();
+                let key_info = &details.destination_key_info;
+                verify_message_full(msg, Some(key_info))
+            }
+            (Variant::NodeApproval(_), JoinType::First { .. }) => {
+                // We don't have any trusted keys to verify this message, but we still need to
+                // handle it.
+                Ok(true)
+            }
+            (Variant::BootstrapResponse(BootstrapResponse::Join(_)), _)
+            | (Variant::Bounce { .. }, _) => verify_message_full(msg, None),
+            _ => unreachable!("unexpected message to verify: {:?}", msg),
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -598,6 +612,17 @@ fn as_iter(
     key_info
         .into_iter()
         .map(|key_info| (key_info.prefix(), key_info))
+}
+
+fn verify_message_full(msg: &Message, key_info: Option<&SectionKeyInfo>) -> Result<bool> {
+    msg.verify(as_iter(key_info))
+        .and_then(VerifyStatus::require_full)
+        .map_err(|error| {
+            messages::log_verify_failure(msg, &error, as_iter(key_info));
+            error
+        })?;
+
+    Ok(true)
 }
 
 #[cfg(all(test, feature = "mock_base"))]
