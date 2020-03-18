@@ -83,7 +83,6 @@ enum PendingMessageKey {
 pub struct ElderDetails {
     pub chain: Chain,
     pub network_service: NetworkService,
-    pub event_backlog: Vec<Event>,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_queue: VecDeque<QueuedMessage>,
@@ -95,14 +94,11 @@ pub struct ElderDetails {
 }
 
 pub struct ApprovedPeer {
-    network_service: NetworkService,
-    full_id: FullId,
+    core: Core,
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
     // although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<QueuedMessage>,
-    msg_filter: MessageFilter,
     sig_accumulator: SignatureAccumulator,
-    timer: Timer,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     timer_token: u64,
@@ -114,7 +110,6 @@ pub struct ApprovedPeer {
     pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
     /// The knowledge of the non-elder members about our section.
     members_knowledge: BTreeMap<XorName, MemberKnowledge>,
-    rng: MainRng,
 }
 
 impl ApprovedPeer {
@@ -154,7 +149,6 @@ impl ApprovedPeer {
         let details = ElderDetails {
             chain,
             network_service,
-            event_backlog: Vec::new(),
             full_id,
             gen_pfx_info,
             msg_queue: Default::default(),
@@ -194,13 +188,7 @@ impl ApprovedPeer {
         details: SignedRelocateDetails,
     ) -> Result<State, RoutingError> {
         Ok(State::JoiningPeer(JoiningPeer::relocate(
-            Core {
-                full_id: self.full_id,
-                network_service: self.network_service,
-                msg_filter: Default::default(),
-                timer: self.timer,
-                rng: self.rng,
-            },
+            self.core,
             self.chain.network_cfg(),
             conn_infos,
             details,
@@ -210,11 +198,11 @@ impl ApprovedPeer {
     pub fn pause(self) -> PausedState {
         PausedState {
             chain: self.chain,
-            full_id: self.full_id,
+            full_id: self.core.full_id,
             gen_pfx_info: self.gen_pfx_info,
-            msg_filter: self.msg_filter,
+            msg_filter: self.core.msg_filter,
             msg_queue: self.msg_queue,
-            network_service: self.network_service,
+            network_service: self.core.network_service,
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
@@ -225,7 +213,6 @@ impl ApprovedPeer {
         Self::new(ElderDetails {
             chain: state.chain,
             network_service: state.network_service,
-            event_backlog: Vec::new(),
             full_id: state.full_id,
             gen_pfx_info: state.gen_pfx_info,
             msg_queue: state.msg_queue,
@@ -248,12 +235,15 @@ impl ApprovedPeer {
         };
 
         Self {
-            network_service: details.network_service,
-            full_id: details.full_id.clone(),
-            msg_queue: details.msg_queue,
-            msg_filter: details.msg_filter,
+            core: Core {
+                full_id: details.full_id.clone(),
+                network_service: details.network_service,
+                msg_filter: details.msg_filter,
+                timer,
+                rng: details.rng,
+            },
             sig_accumulator: details.sig_accumulator,
-            timer,
+            msg_queue: details.msg_queue,
             parsec_map,
             gen_pfx_info: details.gen_pfx_info,
             timer_token,
@@ -262,7 +252,6 @@ impl ApprovedPeer {
             dkg_cache: Default::default(),
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
-            rng: details.rng,
         }
     }
 
@@ -472,8 +461,11 @@ impl ApprovedPeer {
         }
 
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.parsec_map
-            .init(&mut self.rng, self.full_id.clone(), &self.gen_pfx_info);
+        self.parsec_map.init(
+            &mut self.core.rng,
+            self.core.full_id.clone(),
+            &self.gen_pfx_info,
+        );
         self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
 
         Ok(())
@@ -506,7 +498,7 @@ impl ApprovedPeer {
 
         // Disconnect from everyone we know.
         for addr in self.chain.known_nodes().map(|node| *node.peer_addr()) {
-            self.network_service.disconnect(addr);
+            self.core.network_service.disconnect(addr);
         }
 
         Ok(Transition::Relocate {
@@ -1078,7 +1070,7 @@ impl ApprovedPeer {
         let elders_info = self.chain.our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
-        let is_elder = elders_info.is_member(self.full_id.public_id());
+        let is_elder = elders_info.is_member(self.core.full_id.public_id());
 
         if was_elder || is_elder {
             info!("handle SectionInfo: {:?}", elders_info);
@@ -1230,8 +1222,11 @@ impl ApprovedPeer {
 
     fn init_parsec(&mut self) {
         self.pfx_is_successfully_polled = false;
-        self.parsec_map
-            .init(&mut self.rng, self.full_id.clone(), &self.gen_pfx_info)
+        self.parsec_map.init(
+            &mut self.core.rng,
+            self.core.full_id.clone(),
+            &self.gen_pfx_info,
+        )
     }
 
     fn prepare_reset_parsec(&mut self) -> Result<CompleteParsecReset, RoutingError> {
@@ -1390,7 +1385,7 @@ impl ApprovedPeer {
         self.init_parsec();
         self.chain = Chain::new(
             self.chain.network_cfg(),
-            *self.full_id.public_id(),
+            *self.core.full_id.public_id(),
             gen_pfx_info,
             None,
         );
@@ -1619,7 +1614,7 @@ impl ApprovedPeer {
             return None;
         }
 
-        let rand_index = self.rng.gen_range(0, p2p_recipients.len());
+        let rand_index = self.core.rng.gen_range(0, p2p_recipients.len());
         Some(p2p_recipients.swap_remove(rand_index))
     }
 
@@ -1700,7 +1695,7 @@ impl ApprovedPeer {
 
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if src.is_single() {
-            let msg = Message::single_src(&self.full_id, dst, variant)?;
+            let msg = Message::single_src(&self.core.full_id, dst, variant)?;
             let msg = MessageWithBytes::new(msg)?;
             return self.handle_accumulated_message(msg);
         }
@@ -1784,7 +1779,8 @@ impl ApprovedPeer {
         let targets: Vec<_> = targets
             .into_iter()
             .filter(|p2p_node| {
-                self.msg_filter
+                self.core
+                    .msg_filter
                     .filter_outgoing(msg, p2p_node.public_id())
                     .is_new()
             })
@@ -1792,7 +1788,8 @@ impl ApprovedPeer {
             .collect();
 
         let cheap_bytes_clone = msg.full_bytes().clone();
-        self.network_service
+        self.core
+            .network_service
             .send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
 
         Ok(())
@@ -1841,7 +1838,7 @@ impl ApprovedPeer {
                     continue;
                 }
 
-                self.network_service.disconnect(*p2p_node.peer_addr());
+                self.core.network_service.disconnect(*p2p_node.peer_addr());
             }
         }
     }
@@ -1849,7 +1846,7 @@ impl ApprovedPeer {
     fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
         if let Some(node) = self.chain.get_p2p_node(pub_id.name()) {
             let peer_addr = *node.peer_addr();
-            self.network_service.disconnect(peer_addr);
+            self.core.network_service.disconnect(peer_addr);
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -1906,15 +1903,15 @@ impl ApprovedPeer {
 
 impl Base for ApprovedPeer {
     fn network_service(&self) -> &NetworkService {
-        &self.network_service
+        &self.core.network_service
     }
 
     fn network_service_mut(&mut self) -> &mut NetworkService {
-        &mut self.network_service
+        &mut self.core.network_service
     }
 
     fn full_id(&self) -> &FullId {
-        &self.full_id
+        &self.core.full_id
     }
 
     fn in_dst_location(&self, dst: &DstLocation) -> bool {
@@ -1929,11 +1926,11 @@ impl Base for ApprovedPeer {
     }
 
     fn timer(&self) -> &Timer {
-        &self.timer
+        &self.core.timer
     }
 
     fn rng(&mut self) -> &mut MainRng {
-        &mut self.rng
+        &mut self.core.rng
     }
 
     fn set_log_ident(&self) -> log_utils::Guard {
@@ -1969,12 +1966,12 @@ impl Base for ApprovedPeer {
     fn handle_timeout(&mut self, token: u64, _outbox: &mut dyn EventBox) -> Transition {
         if self.timer_token == token {
             if self.chain.is_self_elder() {
-                self.timer_token = self.timer.schedule(self.parsec_map.gossip_period());
+                self.timer_token = self.core.timer.schedule(self.parsec_map.gossip_period());
                 self.parsec_map.reset_gossip_period();
             } else {
                 // TODO: send this only when the knowledge changes, not periodically.
                 self.send_member_knowledge();
-                self.timer_token = self.timer.schedule(KNOWLEDGE_TIMEOUT);
+                self.timer_token = self.core.timer.schedule(KNOWLEDGE_TIMEOUT);
             }
         }
 
@@ -2008,7 +2005,10 @@ impl Base for ApprovedPeer {
 
     fn handle_bootstrapped_to(&mut self, addr: SocketAddr) -> Transition {
         // A mature node doesn't need a bootstrap connection
-        self.network_service.service_mut().disconnect_from(addr);
+        self.core
+            .network_service
+            .service_mut()
+            .disconnect_from(addr);
         Transition::Stay
     }
 
@@ -2103,11 +2103,11 @@ impl Base for ApprovedPeer {
     }
 
     fn is_message_handled(&self, msg: &MessageWithBytes) -> bool {
-        self.msg_filter.contains_incoming(msg)
+        self.core.msg_filter.contains_incoming(msg)
     }
 
     fn set_message_handled(&mut self, msg: &MessageWithBytes) {
-        self.msg_filter.insert_incoming(msg)
+        self.core.msg_filter.insert_incoming(msg)
     }
 
     fn relay_message(
@@ -2198,7 +2198,8 @@ impl ApprovedPeer {
         message: Message,
     ) -> Result<(), RoutingError> {
         let message = message.to_bytes()?;
-        self.network_service
+        self.core
+            .network_service
             .send_message_to_targets(dst_targets, dg_size, message);
         Ok(())
     }

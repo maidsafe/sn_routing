@@ -365,7 +365,6 @@ fn create_state(
     let details = ElderDetails {
         chain,
         network_service: test_utils::create_network_service(network),
-        event_backlog: Default::default(),
         full_id,
         gen_pfx_info,
         msg_queue: Default::default(),
