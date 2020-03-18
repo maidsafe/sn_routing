@@ -38,22 +38,6 @@ impl Display for DisplayDurObj {
     }
 }
 
-/// Identified or node/client for logging purposes.
-#[derive(Clone)]
-pub struct LogIdent(String);
-
-impl LogIdent {
-    pub fn new<T: Display + ?Sized>(node: &T) -> Self {
-        Self(format!("{}", node))
-    }
-}
-
-impl Display for LogIdent {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "{}", self.0)
-    }
-}
-
 // Test utils
 
 /// If the iterator yields exactly one element, returns it. Otherwise panics.

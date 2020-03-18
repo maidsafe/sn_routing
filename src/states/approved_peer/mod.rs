@@ -471,22 +471,15 @@ impl ApprovedPeer {
     }
 
     fn handle_genesis_update(&mut self, gen_pfx_info: GenesisPfxInfo) -> Result<()> {
-        info!("{} - Received GenesisUpdate: {:?}", self, gen_pfx_info);
+        info!("Received GenesisUpdate: {:?}", gen_pfx_info);
 
         if !self.is_genesis_update_new(&gen_pfx_info) {
             return Ok(());
         }
 
         self.gen_pfx_info = gen_pfx_info.clone();
-
-        let log_ident = self.log_ident();
-        self.parsec_map.init(
-            &mut self.rng,
-            self.full_id.clone(),
-            &self.gen_pfx_info,
-            &log_ident,
-        );
-
+        self.parsec_map
+            .init(&mut self.rng, self.full_id.clone(), &self.gen_pfx_info);
         self.chain = Chain::new(self.chain.network_cfg(), *self.id(), gen_pfx_info, None);
 
         Ok(())
@@ -539,14 +532,14 @@ impl ApprovedPeer {
     ) -> Result<Transition> {
         if !self.chain.is_peer_elder(&src) {
             debug!(
-                "{} - Received message signature from not known elder (still use it) {}, {:?}",
-                self, src, msg
+                "Received message signature from not known elder (still use it) {}, {:?}",
+                src, msg
             );
             // FIXME: currently accepting signatures from unknown senders to cater to lagging nodes.
             // Need to verify whether there are any security implications with doing this.
         }
 
-        if let Some(msg) = self.sig_accumulator.add_proof(msg, &self.log_ident()) {
+        if let Some(msg) = self.sig_accumulator.add_proof(msg) {
             self.handle_accumulated_message(msg)?
         }
 
@@ -691,21 +684,12 @@ impl ApprovedPeer {
             self.parsec_map.last_version(),
         );
 
-        let log_ident = self.log_ident();
-        let response = self.parsec_map.handle_request(
-            msg_version,
-            par_request,
-            *p2p_node.public_id(),
-            &log_ident,
-        );
+        let response =
+            self.parsec_map
+                .handle_request(msg_version, par_request, *p2p_node.public_id());
 
         if let Some(response) = response {
-            trace!(
-                "{} - send parsec response v{} to {:?}",
-                self,
-                msg_version,
-                p2p_node,
-            );
+            trace!("send parsec response v{} to {:?}", msg_version, p2p_node,);
             self.send_direct_message(p2p_node.peer_addr(), response);
         }
 
@@ -730,9 +714,8 @@ impl ApprovedPeer {
             pub_id
         );
 
-        let log_ident = self.log_ident();
         self.parsec_map
-            .handle_response(msg_version, par_response, pub_id, &log_ident);
+            .handle_response(msg_version, par_response, pub_id);
 
         if msg_version == self.parsec_map.last_version() {
             self.parsec_poll(outbox)
@@ -1280,15 +1263,9 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
 
     fn init_parsec(&mut self) {
-        let log_ident = self.log_ident();
-
         self.pfx_is_successfully_polled = false;
-        self.parsec_map.init(
-            &mut self.rng,
-            self.full_id.clone(),
-            &self.gen_pfx_info,
-            &log_ident,
-        )
+        self.parsec_map
+            .init(&mut self.rng, self.full_id.clone(), &self.gen_pfx_info)
     }
 
     fn prepare_reset_parsec(&mut self) -> Result<CompleteParsecReset, RoutingError> {
@@ -1463,13 +1440,10 @@ impl ApprovedPeer {
     // Checking members vote status and vote to remove those non-resposive nodes.
     fn check_voting_status(&mut self) {
         let unresponsive_nodes = self.chain.check_vote_status();
-        let log_ident = self.log_ident();
         for pub_id in &unresponsive_nodes {
-            info!("{} Voting for unresponsive node {:?}", log_ident, pub_id);
-            self.parsec_map.vote_for(
-                AccumulatingEvent::Offline(*pub_id).into_network_event(),
-                &log_ident,
-            );
+            info!("Voting for unresponsive node {:?}", pub_id);
+            self.parsec_map
+                .vote_for(AccumulatingEvent::Offline(*pub_id).into_network_event());
         }
     }
 
@@ -1515,8 +1489,8 @@ impl ApprovedPeer {
     }
 
     fn vote_for_network_event(&mut self, event: NetworkEvent) {
-        trace!("{} Vote for Event {:?}", self, event);
-        self.parsec_map.vote_for(event, &self.log_ident());
+        trace!("Vote for Event {:?}", event);
+        self.parsec_map.vote_for(event);
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1631,9 +1605,7 @@ impl ApprovedPeer {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
             None => {
-                let log_ident = self.log_ident();
-
-                if !self.parsec_map.should_send_gossip(&log_ident) {
+                if !self.parsec_map.should_send_gossip() {
                     return;
                 }
 
@@ -1734,7 +1706,7 @@ impl ApprovedPeer {
     // them but possibly did not receive them already.
     fn resend_pending_voted_messages(&mut self, _old_pfx: Prefix<XorName>) {
         for (_, msg) in mem::take(&mut self.pending_voted_msgs) {
-            let msg = match MessageWithBytes::new(msg, &self.log_ident()) {
+            let msg = match MessageWithBytes::new(msg) {
                 Ok(msg) => msg,
                 Err(err) => {
                     error!("Failed to make message {:?}", err);
@@ -1774,12 +1746,10 @@ impl ApprovedPeer {
             return Ok(());
         }
 
-        let log_ident = self.log_ident();
-
         // If the source is single, we don't even need to send signatures, so let's cut this short
         if src.is_single() {
             let msg = Message::single_src(&self.full_id, dst, variant)?;
-            let msg = MessageWithBytes::new(msg, &log_ident)?;
+            let msg = MessageWithBytes::new(msg)?;
             return self.handle_accumulated_message(msg);
         }
 
@@ -1788,10 +1758,7 @@ impl ApprovedPeer {
 
         for target in self.get_signature_targets(&dst) {
             if target.name() == self.name() {
-                if let Some(msg) = self
-                    .sig_accumulator
-                    .add_proof(accumulating_msg.clone(), &log_ident)
-                {
+                if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
                     self.handle_accumulated_message(msg)?;
                 }
             } else {

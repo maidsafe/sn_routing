@@ -150,21 +150,20 @@ impl JoiningPeer {
         response: BootstrapResponse,
     ) -> Result<()> {
         let name = *self.name();
-        let log_ident = self.log_ident();
 
         match &mut self.stage {
             Stage::Bootstrapping(_) => match response {
                 BootstrapResponse::Join(elders_info) => {
                     info!(
-                        "{} - Joining a section {:?} (given by {:?})",
-                        self, elders_info, sender
+                        "Joining a section {:?} (given by {:?})",
+                        elders_info, sender
                     );
                     self.join_section(elders_info)
                 }
                 BootstrapResponse::Rebootstrap(new_conn_infos) => {
                     info!(
-                        "{} - Bootstrapping redirected to another set of peers: {:?}",
-                        self, new_conn_infos
+                        "Bootstrapping redirected to another set of peers: {:?}",
+                        new_conn_infos
                     );
                     self.reconnect_to_new_section(new_conn_infos);
                     Ok(())
@@ -175,16 +174,15 @@ impl JoiningPeer {
                     if new_elders_info.version() > stage.elders_info.version() {
                         if new_elders_info.prefix().matches(&name) {
                             info!(
-                                "{} - Newer Join response for our prefix {:?} from {:?}",
-                                log_ident, new_elders_info, sender
+                                "Newer Join response for our prefix {:?} from {:?}",
+                                new_elders_info, sender
                             );
                             stage.elders_info = new_elders_info;
                             self.send_join_requests();
                         } else {
                             log_or_panic!(
                                 log::Level::Error,
-                                "{} - Newer Join response not for our prefix {:?} from {:?}",
-                                self,
+                                "Newer Join response not for our prefix {:?} from {:?}",
                                 new_elders_info,
                                 sender,
                             );
@@ -405,15 +403,10 @@ impl Base for JoiningPeer {
     }
 
     fn handle_timeout(&mut self, token: u64, _: &mut dyn EventBox) -> Transition {
-        let log_ident = self.log_ident();
-
         match &mut self.stage {
             Stage::Bootstrapping(stage) => {
                 if let Some(peer_addr) = stage.timeout_tokens.remove(&token) {
-                    debug!(
-                        "{} - Timeout when trying to bootstrap against {}.",
-                        log_ident, peer_addr
-                    );
+                    debug!("Timeout when trying to bootstrap against {}.", peer_addr);
 
                     if !stage.pending_requests.remove(&peer_addr) {
                         return Transition::Stay;
@@ -434,7 +427,7 @@ impl Base for JoiningPeer {
                 };
 
                 if join_token == token {
-                    debug!("{} - Timeout when trying to join a section.", log_ident);
+                    debug!("Timeout when trying to join a section.");
 
                     for addr in stage
                         .elders_info

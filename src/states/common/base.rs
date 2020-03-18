@@ -21,31 +21,22 @@ use crate::{
     state_machine::Transition,
     time::Duration,
     timer::Timer,
-    utils::LogIdent,
     xor_space::{Prefix, XorName},
     NetworkEvent,
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
-use std::{
-    fmt::{Debug, Display},
-    net::SocketAddr,
-    slice,
-};
+use std::{fmt::Debug, net::SocketAddr, slice};
 
 // Trait for all states.
-pub trait Base: Display {
+pub trait Base {
     fn network_service(&self) -> &NetworkService;
     fn network_service_mut(&mut self) -> &mut NetworkService;
     fn full_id(&self) -> &FullId;
     fn in_dst_location(&self, dst: &DstLocation) -> bool;
     fn timer(&self) -> &Timer;
     fn rng(&mut self) -> &mut MainRng;
-
-    fn log_ident(&self) -> LogIdent {
-        LogIdent::new(self)
-    }
 
     fn set_log_ident(&self) -> log_utils::Guard;
 
@@ -118,7 +109,7 @@ pub trait Base: Display {
         _dst: DstLocation,
         _content: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        warn!("{} - Cannot handle SendMessage - invalid state.", self);
+        warn!("Cannot handle SendMessage - invalid state.");
         Err(RoutingError::InvalidState)
     }
 
@@ -181,12 +172,12 @@ pub trait Base: Display {
     }
 
     fn handle_bootstrapped_to(&mut self, _addr: SocketAddr) -> Transition {
-        debug!("{} - Unhandled network event: BootstrappedTo", self);
+        debug!("Unhandled network event: BootstrappedTo");
         Transition::Stay
     }
 
     fn handle_bootstrap_failure(&mut self, _outbox: &mut dyn EventBox) -> Transition {
-        debug!("{} - Unhandled network event: BootstrapFailure", self);
+        debug!("Unhandled network event: BootstrapFailure");
         Transition::Stay
     }
 
@@ -199,7 +190,7 @@ pub trait Base: Display {
         addr: SocketAddr,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        trace!("{} - ConnectionFailure from {}", self, addr);
+        trace!("ConnectionFailure from {}", addr);
         Transition::Stay
     }
 
@@ -212,7 +203,7 @@ pub trait Base: Display {
         let msg = match MessageWithBytes::partial_from_bytes(bytes) {
             Ok(msg) => msg,
             Err(error) => {
-                debug!("{} - Failed to deserialize message: {:?}", self, error);
+                debug!("Failed to deserialize message: {:?}", error);
                 return Transition::Stay;
             }
         };
@@ -220,7 +211,7 @@ pub trait Base: Display {
         match self.try_handle_message(Some(sender), msg, outbox) {
             Ok(transition) => transition,
             Err(error) => {
-                debug!("{} - Failed to handle message: {:?}", self, error);
+                debug!("Failed to handle message: {:?}", error);
                 Transition::Stay
             }
         }
@@ -232,7 +223,7 @@ pub trait Base: Display {
         mut msg_with_bytes: MessageWithBytes,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
-        trace!("{} - try handle message {:?}", self, msg_with_bytes);
+        trace!("try handle message {:?}", msg_with_bytes);
 
         self.try_relay_message(sender, &msg_with_bytes)?;
 
@@ -242,8 +233,7 @@ pub trait Base: Display {
 
         if self.is_message_handled(&msg_with_bytes) {
             trace!(
-                "{} - not handling message - already handled: {:?}",
-                self,
+                "not handling message - already handled: {:?}",
                 msg_with_bytes
             );
             return Ok(Transition::Stay);
@@ -283,8 +273,7 @@ pub trait Base: Display {
         match self.network_service_mut().target_failed(msg_token, addr) {
             Resend::Now(next_target) => {
                 trace!(
-                    "{} - Sending message ID {} to {} failed - resending to {} now",
-                    self,
+                    "Sending message ID {} to {} failed - resending to {} now",
                     msg_token,
                     addr,
                     next_target
@@ -296,8 +285,7 @@ pub trait Base: Display {
             }
             Resend::Later(next_target, delay) => {
                 trace!(
-                    "{} - Sending message ID {} to {} failed - resending to {} in {:?}",
-                    self,
+                    "Sending message ID {} to {} failed - resending to {} in {:?}",
                     msg_token,
                     addr,
                     next_target,
@@ -311,8 +299,7 @@ pub trait Base: Display {
             }
             Resend::Never => {
                 trace!(
-                    "{} - Sending message ID {} to {} failed too many times - giving up.",
-                    self,
+                    "Sending message ID {} to {} failed too many times - giving up.",
                     msg_token,
                     addr,
                 );
@@ -329,12 +316,7 @@ pub trait Base: Display {
         token: Token,
         _outbox: &mut dyn EventBox,
     ) -> Transition {
-        trace!(
-            "{} Successfully sent message with ID {} to {:?}",
-            self,
-            token,
-            addr
-        );
+        trace!("Successfully sent message with ID {} to {:?}", token, addr);
         self.network_service_mut()
             .targets_cache_mut()
             .target_succeeded(token, addr);
@@ -354,10 +336,7 @@ pub trait Base: Display {
             .service_mut()
             .our_connection_info()
             .map_err(|err| {
-                debug!(
-                    "{} - Failed to retrieve our connection info: {:?}",
-                    self, err
-                );
+                debug!("Failed to retrieve our connection info: {:?}", err);
                 err.into()
             })
     }
@@ -370,7 +349,7 @@ pub trait Base: Display {
         let message = match Message::single_src(self.full_id(), DstLocation::Direct, variant) {
             Ok(message) => message,
             Err(error) => {
-                error!("{} - Failed to create message: {:?}", self, error);
+                error!("Failed to create message: {:?}", error);
                 return;
             }
         };
@@ -378,10 +357,7 @@ pub trait Base: Display {
         let bytes = match message.to_bytes() {
             Ok(bytes) => bytes,
             Err(error) => {
-                error!(
-                    "{} - Failed to serialize message {:?}: {:?}",
-                    self, message, error
-                );
+                error!("Failed to serialize message {:?}: {:?}", message, error);
                 return;
             }
         };
@@ -401,8 +377,7 @@ pub trait Base: Display {
     ) {
         if conn_infos.len() < dg_size {
             warn!(
-                "{} Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
-                self,
+                "Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
                 dg_size,
                 conn_infos,
                 HexFmt(&message)
@@ -422,8 +397,7 @@ pub trait Base: Display {
             .network_service_mut()
             .send_message_to_initial_targets(conn_infos, dg_size, message);
         trace!(
-            "{} Sending message ID {} to {:?}",
-            self,
+            "Sending message ID {} to {:?}",
             token,
             &conn_infos[..dg_size.min(conn_infos.len())]
         );
@@ -449,8 +423,7 @@ pub trait Base: Display {
     {
         log_or_panic!(
             log::Level::Error,
-            "{} - Verification failed: {:?} - {:?} --- [{:?}]",
-            self,
+            "Verification failed: {:?} - {:?} --- [{:?}]",
             msg,
             error,
             their_key_infos.into_iter().format(", ")

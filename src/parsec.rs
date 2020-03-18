@@ -18,7 +18,6 @@ use crate::{
     messages::Variant,
     rng::{self, MainRng, RngCompat},
     time::Duration,
-    utils::LogIdent,
 };
 #[cfg(not(feature = "mock"))]
 use parsec as inner;
@@ -127,19 +126,12 @@ impl ParsecMap {
         full_id: FullId,
         gen_pfx_info: &GenesisPfxInfo,
     ) -> Self {
-        let log_ident = LogIdent::new(full_id.public_id());
-        self.init(rng, full_id, gen_pfx_info, &log_ident);
+        self.init(rng, full_id, gen_pfx_info);
         self
     }
 
-    pub fn init(
-        &mut self,
-        rng: &mut MainRng,
-        full_id: FullId,
-        gen_pfx_info: &GenesisPfxInfo,
-        log_ident: &LogIdent,
-    ) {
-        self.add_new(rng, full_id, gen_pfx_info, log_ident);
+    pub fn init(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) {
+        self.add_new(rng, full_id, gen_pfx_info);
         self.remove_old();
     }
 
@@ -148,7 +140,6 @@ impl ParsecMap {
         msg_version: u64,
         request: Request,
         pub_id: id::PublicId,
-        log_ident: &LogIdent,
     ) -> Option<Variant> {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
@@ -156,7 +147,7 @@ impl ParsecMap {
         } else {
             return None;
         };
-        self.count_size(ser_size, msg_version, log_ident);
+        self.count_size(ser_size, msg_version);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
@@ -175,26 +166,20 @@ impl ParsecMap {
                 Some(Variant::ParsecResponse(msg_version, response))
             }
             Err(err) => {
-                debug!("{} - Error handling parsec request: {:?}", log_ident, err);
+                debug!("Error handling parsec request: {:?}", err);
                 None
             }
         }
     }
 
-    pub fn handle_response(
-        &mut self,
-        msg_version: u64,
-        response: Response,
-        pub_id: id::PublicId,
-        log_ident: &LogIdent,
-    ) {
+    pub fn handle_response(&mut self, msg_version: u64, response: Response, pub_id: id::PublicId) {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&response) {
             size
         } else {
             return;
         };
-        self.count_size(ser_size, msg_version, log_ident);
+        self.count_size(ser_size, msg_version);
 
         let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
             parsec
@@ -203,7 +188,7 @@ impl ParsecMap {
         };
 
         if let Err(err) = parsec.handle_response(&pub_id, response) {
-            debug!("{} - Error handling parsec response: {:?}", log_ident, err);
+            debug!("Error handling parsec response: {:?}", err);
         }
     }
 
@@ -225,7 +210,7 @@ impl ParsecMap {
         Ok(Variant::ParsecRequest(version, request))
     }
 
-    pub fn vote_for(&mut self, event: chain::NetworkEvent, log_ident: &LogIdent) {
+    pub fn vote_for(&mut self, event: chain::NetworkEvent) {
         if let Some(parsec) = self.map.values_mut().last() {
             let obs = event.into_obs();
 
@@ -233,7 +218,7 @@ impl ParsecMap {
                 Ok(()) => {
                     self.send_gossip = true;
                 }
-                Err(err) => trace!("{} - Parsec vote error: {:?}", log_ident, err),
+                Err(err) => trace!("Parsec vote error: {:?}", err),
             }
         }
     }
@@ -343,7 +328,7 @@ impl ParsecMap {
     }
 
     // Returns whether we should send parsec gossip now.
-    pub fn should_send_gossip(&mut self, log_ident: &LogIdent) -> bool {
+    pub fn should_send_gossip(&mut self) -> bool {
         let send_gossip = self.send_gossip;
         self.send_gossip = false;
 
@@ -352,7 +337,7 @@ impl ParsecMap {
         }
 
         if self.gossip_count >= self.gossip_limit {
-            trace!("{} - not sending parsec request: limit reached", log_ident);
+            trace!("not sending parsec request: limit reached");
             return false;
         }
 
@@ -371,32 +356,22 @@ impl ParsecMap {
         }
     }
 
-    fn count_size(&mut self, size: u64, msg_version: u64, log_ident: &LogIdent) {
+    fn count_size(&mut self, size: u64, msg_version: u64) {
         if self.last_version() == msg_version && self.map.contains_key(&msg_version) {
             self.size_counter.increase_size(size);
             trace!(
-                "{} - Parsec size is now estimated to: {} / {}.",
-                log_ident,
+                "Parsec size is now estimated to: {} / {}.",
                 self.size_counter,
                 PARSEC_SIZE_LIMIT,
             );
         }
     }
 
-    fn add_new(
-        &mut self,
-        rng: &mut MainRng,
-        full_id: FullId,
-        gen_pfx_info: &GenesisPfxInfo,
-        log_ident: &LogIdent,
-    ) {
+    fn add_new(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) {
         if let Entry::Vacant(entry) = self.map.entry(gen_pfx_info.parsec_version) {
             let _ = entry.insert(create(rng, full_id, gen_pfx_info));
             self.size_counter = ParsecSizeCounter::default();
-            info!(
-                "{}: Init new Parsec, genesis = {:?}",
-                log_ident, gen_pfx_info
-            );
+            info!("Init new Parsec, genesis = {:?}", gen_pfx_info);
         }
     }
 
@@ -557,59 +532,39 @@ mod tests {
     }
 
     fn create_parsec_map(rng: &mut MainRng, size: u64) -> ParsecMap {
-        let log_ident = LogIdent::new("node");
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
 
         let mut parsec_map = ParsecMap::default();
         for parsec_no in 0..=size {
             let gen_pfx_info = create_gen_pfx_info(rng, full_ids.clone(), parsec_no);
-            parsec_map.init(rng, full_id.clone(), &gen_pfx_info, &log_ident);
+            parsec_map.init(rng, full_id.clone(), &gen_pfx_info);
         }
 
         parsec_map
     }
 
     fn add_to_parsec_map(rng: &mut MainRng, parsec_map: &mut ParsecMap, version: u64) {
-        let log_ident = LogIdent::new("node");
         let full_ids = create_full_ids(rng);
         let full_id = full_ids[0].clone();
 
         let gen_pfx_info = create_gen_pfx_info(rng, full_ids, version);
-        parsec_map.init(rng, full_id, &gen_pfx_info, &log_ident);
+        parsec_map.init(rng, full_id, &gen_pfx_info);
     }
 
     trait HandleRequestResponse {
-        fn handle(
-            &self,
-            parsec_map: &mut ParsecMap,
-            msg_version: u64,
-            pub_id: &id::PublicId,
-            log_ident: &LogIdent,
-        );
+        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &id::PublicId);
     }
 
     impl HandleRequestResponse for Request {
-        fn handle(
-            &self,
-            parsec_map: &mut ParsecMap,
-            msg_version: u64,
-            pub_id: &id::PublicId,
-            log_ident: &LogIdent,
-        ) {
-            let _ = parsec_map.handle_request(msg_version, self.clone(), *pub_id, log_ident);
+        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &id::PublicId) {
+            let _ = parsec_map.handle_request(msg_version, self.clone(), *pub_id);
         }
     }
 
     impl HandleRequestResponse for Response {
-        fn handle(
-            &self,
-            parsec_map: &mut ParsecMap,
-            msg_version: u64,
-            pub_id: &id::PublicId,
-            log_ident: &LogIdent,
-        ) {
-            parsec_map.handle_response(msg_version, self.clone(), *pub_id, log_ident);
+        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &id::PublicId) {
+            parsec_map.handle_response(msg_version, self.clone(), *pub_id);
         }
     }
 
@@ -618,7 +573,6 @@ mod tests {
         msg_version: u64,
         msg: &T,
         pub_id: &id::PublicId,
-        log_ident: &LogIdent,
     ) {
         let msg_size = unwrap!(bincode::serialized_size(&msg));
         let msg_size_limit = PARSEC_SIZE_LIMIT / msg_size;
@@ -626,7 +580,7 @@ mod tests {
         // Handle msg_size_limit msgs which should trigger pruning needed on the next
         // msg if it's against the latest parsec.
         for _ in 0..msg_size_limit {
-            msg.handle(parsec_map, msg_version, pub_id, log_ident);
+            msg.handle(parsec_map, msg_version, pub_id);
         }
 
         // Make sure we don't cross the prune limit
@@ -643,15 +597,14 @@ mod tests {
         let pub_id = full_id.public_id();
         let number_of_parsecs = 2;
 
-        let log_ident = LogIdent::new("node");
         let mut parsec_map = create_parsec_map(rng, number_of_parsecs);
 
         // Sometimes send to an old parsec
         let msg_version = number_of_parsecs - parsec_age;
 
-        handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, pub_id, &log_ident);
+        handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, pub_id);
 
-        msg.handle(&mut parsec_map, msg_version, pub_id, &log_ident);
+        msg.handle(&mut parsec_map, msg_version, pub_id);
         assert_eq!(parsec_map.needs_pruning(), prune_needed);
 
         parsec_map

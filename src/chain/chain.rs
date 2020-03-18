@@ -19,7 +19,6 @@ use crate::{
     location::{DstLocation, SrcLocation},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    utils::LogIdent,
     xor_space::Xorable,
     Prefix, XorName,
 };
@@ -161,7 +160,7 @@ impl Chain {
 
         // On split membership may need to be checked again.
         self.members_changed = true;
-        self.state.update(new_state, &LogIdent::new(self));
+        self.state.update(new_state);
 
         Ok(())
     }

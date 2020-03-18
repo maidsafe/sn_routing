@@ -11,8 +11,8 @@ use super::{
     MIN_AGE_COUNTER,
 };
 use crate::{
-    error::RoutingError, id::PublicId, location::DstLocation, relocation::RelocateDetails,
-    utils::LogIdent, Prefix, XorName,
+    error::RoutingError, id::PublicId, location::DstLocation, relocation::RelocateDetails, Prefix,
+    XorName,
 };
 use bincode::serialize;
 use itertools::Itertools;
@@ -96,12 +96,11 @@ impl SharedState {
         }
     }
 
-    pub fn update(&mut self, new: Option<Self>, log_ident: &LogIdent) {
+    pub fn update(&mut self, new: Option<Self>) {
         if self.handled_genesis_event {
             log_or_panic!(
                 log::Level::Error,
-                "{} - shared state update - genesis event already handled",
-                log_ident
+                "shared state update - genesis event already handled",
             );
         }
 
@@ -109,8 +108,7 @@ impl SharedState {
             if self.our_infos.len() > 1 && *self != new {
                 log_or_panic!(
                     log::Level::Error,
-                    "{} - shared state update - mismatch: old: {:?} --- new: {:?}",
-                    log_ident,
+                    "shared state update - mismatch: old: {:?} --- new: {:?}",
                     self,
                     new
                 );

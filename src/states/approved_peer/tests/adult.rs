@@ -90,7 +90,7 @@ impl Env {
     }
 
     fn handle_message(&mut self, msg: Message) -> Result<()> {
-        let msg = MessageWithBytes::new(msg, &self.subject.log_ident()).unwrap();
+        let msg = MessageWithBytes::new(msg).unwrap();
         let _ = self.subject.try_handle_message(None, msg, &mut ())?;
         let _ = self.subject.handle_messages(&mut ());
         Ok(())
