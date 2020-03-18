@@ -95,23 +95,23 @@ impl TestNode {
     }
 
     pub fn endpoint(&mut self) -> SocketAddr {
-        unwrap!(self.inner.our_connection_info(), "{}", self.inner)
+        unwrap!(self.inner.our_connection_info(), "{}", self.name())
     }
 
     pub fn id(&self) -> PublicId {
-        unwrap!(self.inner.id(), "{}", self.inner)
+        self.inner.id().unwrap()
     }
 
     pub fn name(&self) -> XorName {
-        *self.id().name()
+        self.inner.name()
     }
 
     pub fn close_names(&self) -> Vec<XorName> {
-        unwrap!(self.inner.close_names(&self.name()), "{}", self.inner)
+        unwrap!(self.inner.close_names(&self.name()), "{}", self.name())
     }
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        unwrap!(self.inner.our_prefix(), "{}", self.inner)
+        unwrap!(self.inner.our_prefix(), "{}", self.name())
     }
 
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
@@ -301,14 +301,16 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], options: PollOptions
 
     for node in nodes.iter().filter(|node| node_busy(node)) {
         let unpolled_string = node.inner.unpolled_observations_string();
-        error!("Still busy: {}: {}", node.inner, unpolled_string);
+        error!("Still busy: {}: {}", node.name(), unpolled_string);
     }
 
     if let Some(first_node_busy) = nodes.iter().find(|node| node_busy(node)) {
         let unpolled_string = first_node_busy.inner.unpolled_observations_string();
         panic!(
             "poll_and_resend has been called {} times. first busy: {} : {}",
-            MAX_POLL_CALLS, first_node_busy.inner, unpolled_string
+            MAX_POLL_CALLS,
+            first_node_busy.name(),
+            unpolled_string
         );
     }
 
@@ -355,7 +357,7 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
     nodes.push(TestNode::builder(env).first().create());
     let _ = nodes[0].poll();
     let endpoint = nodes[0].endpoint();
-    info!("Seed node: {}", nodes[0].inner);
+    info!("Seed node: {}", nodes[0].name());
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
@@ -444,7 +446,7 @@ pub fn add_connected_nodes_until_split(
         | Event::Connected(Connected::Relocate)
         | Event::Promoted
         | Event::Demoted => (),
-        event => panic!("Got unexpected event for {}: {:?}", node.inner, event),
+        event => panic!("Got unexpected event for {}: {:?}", node.name(), event),
     });
 
     trace!("Created testnet comprising {:?}", prefixes);
@@ -511,7 +513,7 @@ fn add_nodes_to_prefixes(
 // Clear all event queues applying check_event to them.
 fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(&TestNode, Event)) {
     for node in nodes.iter_mut() {
-        trace!("Start Check with {}", node.inner);
+        trace!("Start Check with {}", node.name());
         while let Some(event) = node.try_recv_event() {
             check_event(node, event)
         }
@@ -591,7 +593,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     assert!(
         our_prefix.matches(&our_name),
         "{} Our prefix doesn't match our name: {:?}, {:?}",
-        node.inner,
+        node.name(),
         our_prefix,
         our_name,
     );
@@ -600,7 +602,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         assert!(
             our_section_elders.len() >= elder_size,
             "{} Our section {:?} is below the minimum size!",
-            node.inner,
+            node.name(),
             our_prefix,
         );
     }
@@ -611,7 +613,9 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     {
         panic!(
             "{} A name in our section doesn't match its prefix! {:?}, {:?}",
-            node.inner, name, our_prefix,
+            node.name(),
+            name,
+            our_prefix,
         );
     }
 
@@ -631,7 +635,10 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         panic!(
             "{} Our prefix is compatible with one of the neighbour prefixes:us: {:?} / neighbour: \
              {:?}, neighbour_prefixes: {:?}",
-            node.inner, our_prefix, compatible_prefix, neighbour_prefixes,
+            node.name(),
+            our_prefix,
+            compatible_prefix,
+            neighbour_prefixes,
         );
     }
 
@@ -642,7 +649,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         panic!(
             "{} A section is below the minimum size: size({:?}) = {}; For ({:?}: {:?}), \
              neighbour_prefixes: {:?}",
-            node.inner,
+            node.name(),
             prefix,
             node.inner.section_elders(prefix).len(),
             our_name,
@@ -660,7 +667,9 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
         {
             panic!(
                 "{} A name in a section doesn't match its prefix! {:?}, {:?}",
-                node.inner, name, prefix,
+                node.name(),
+                name,
+                prefix,
             );
         }
     }
@@ -673,7 +682,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     if !all_are_neighbours {
         panic!(
             "{} Some sections in the chain aren't neighbours of our section: {:?}",
-            node.inner,
+            node.name(),
             iter::once(*our_prefix)
                 .chain(neighbour_prefixes)
                 .collect::<Vec<_>>()
@@ -690,7 +699,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     if !all_neighbours_covered {
         panic!(
             "{} Some neighbours aren't fully covered by the chain: {:?}",
-            node.inner,
+            node.name(),
             iter::once(*our_prefix)
                 .chain(neighbour_prefixes)
                 .collect::<Vec<_>>()

@@ -118,9 +118,9 @@ fn remove_unresponsive_node() {
         .iter()
         .map(|n| &n.inner)
         .filter(|n| n.elders().any(|id| *id.name() == non_responsive_name))
-        .map(|n| format!("{}", n))
+        .map(|n| n.name())
         .collect_vec();
-    assert_eq!(still_has_unresponsibe_elder, Vec::<String>::new());
+    assert_eq!(still_has_unresponsibe_elder, Vec::<XorName>::new());
 }
 
 // Parameters for the churn tests.
@@ -685,9 +685,12 @@ impl Expectations {
                     } else {
                         let expected_dst = DstLocation::Node(orig_name);
                         assert_eq!(
-                            expected_dst, dst,
+                            expected_dst,
+                            dst,
                             "Receiver does not match destination {}: {:?}, {:?}",
-                            node.inner, expected_dst, dst,
+                            node.name(),
+                            expected_dst,
+                            dst,
                         );
                         assert!(
                             self.messages.remove(&key),
@@ -708,7 +711,7 @@ impl Expectations {
                     assert!(
                         !node.inner.is_elder(),
                         "{} failed to receive message {:?}",
-                        node.inner,
+                        node.name(),
                         key
                     );
                 }

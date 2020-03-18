@@ -29,7 +29,7 @@ use crate::{
 };
 use crossbeam_channel as mpmc;
 use std::{
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{self, Debug, Formatter},
     mem,
     net::SocketAddr,
 };
@@ -147,35 +147,11 @@ impl State {
         E: Debug,
     {
         let old_state = mem::replace(self, Self::Terminated);
-        let old_state_log_ident = format!("{}", old_state);
 
         match f(old_state) {
             Ok(new_state) => *self = new_state,
-            Err(error) => error!(
-                "{} - Failed state transition: {:?}",
-                old_state_log_ident, error
-            ),
+            Err(error) => error!("Failed state transition: {:?}", error),
         }
-    }
-}
-
-impl Display for State {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        state_dispatch!(
-            *self,
-            ref state => write!(formatter, "{}", state),
-            Terminated => write!(formatter, "Terminated")
-        )
-    }
-}
-
-impl Debug for State {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        state_dispatch!(
-            *self,
-            ref state => write!(formatter, "State::{}", state),
-            Terminated => write!(formatter, "State::Terminated")
-        )
     }
 }
 
@@ -316,7 +292,7 @@ impl StateMachine {
     }
 
     pub fn pause(self) -> Result<PausedState, RoutingError> {
-        info!("{} - Pause", self.current());
+        info!("Pause");
 
         let mut paused_state = match self.state {
             State::ApprovedPeer(state) => state.pause(),
@@ -343,7 +319,7 @@ impl StateMachine {
             is_running: true,
         };
 
-        info!("{} - Resume", machine.current());
+        info!("Resume");
 
         (action_tx, machine)
     }
@@ -378,7 +354,7 @@ impl StateMachine {
     }
 
     fn terminate(&mut self) {
-        debug!("{} Terminating state machine", self);
+        debug!("Terminating state machine");
         self.is_running = false;
     }
 
@@ -443,12 +419,6 @@ impl StateMachine {
     /// Get mutable reference to the current state.
     pub fn current_mut(&mut self) -> &mut State {
         &mut self.state
-    }
-}
-
-impl Display for StateMachine {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "{}", self.state)
     }
 }
 
