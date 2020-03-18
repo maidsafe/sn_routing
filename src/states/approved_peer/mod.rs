@@ -48,7 +48,6 @@ use rand::Rng;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
-    fmt::{self, Display, Formatter},
     iter, mem,
     net::SocketAddr,
 };
@@ -168,8 +167,7 @@ impl ApprovedPeer {
 
         let node = Self::new(details);
 
-        debug!("{} - State changed to Elder.", node);
-        info!("{} - Started a new network as a seed node.", node);
+        info!("{} Started a new network as a seed node.", node.name());
 
         outbox.send_event(Event::Connected(Connected::First));
         outbox.send_event(Event::Promoted);
@@ -184,7 +182,7 @@ impl ApprovedPeer {
     ) -> Self {
         let node = Self::new(details);
 
-        debug!("{} - State changed to Elder.", node);
+        debug!("{} State changed to Elder.", node.name());
         outbox.send_event(Event::Connected(connect_type));
 
         node
@@ -307,8 +305,7 @@ impl ApprovedPeer {
 
         if self.is_message_handled(&msg_with_bytes) {
             trace!(
-                "{} - not handling message - already handled: {:?}",
-                self,
+                "not handling message - already handled: {:?}",
                 msg_with_bytes
             );
             return Ok(());
@@ -332,7 +329,7 @@ impl ApprovedPeer {
                 match self.dispatch_message(sender, message, outbox) {
                     Ok(Transition::Stay) => (),
                     Ok(transition) => return transition,
-                    Err(err) => debug!("{} Routing message dispatch failed: {:?}", self, err),
+                    Err(err) => debug!("Routing message dispatch failed: {:?}", err),
                 }
             }
         }
@@ -348,7 +345,7 @@ impl ApprovedPeer {
     ) -> Result<Transition, RoutingError> {
         match msg.variant {
             Variant::UserMessage { .. } => (),
-            _ => trace!("{} Got {:?}.", self, msg),
+            _ => trace!("Got {:?}", msg),
         }
 
         match msg.variant {
@@ -444,11 +441,7 @@ impl ApprovedPeer {
 
             self.vote_for_event(AccumulatingEvent::NeighbourInfo(elders_info));
         } else {
-            trace!(
-                "{} Ignore not new neighbour neighbour_info: {:?}",
-                self,
-                elders_info
-            );
+            trace!("Ignore not new neighbour neighbour_info: {:?}", elders_info);
         }
         Ok(())
     }
@@ -496,8 +489,7 @@ impl ApprovedPeer {
         }
 
         debug!(
-            "{} - Received Relocate message to join the section at {}.",
-            self,
+            "Received Relocate message to join the section at {}.",
             signed_msg.relocate_details().destination
         );
 
@@ -551,15 +543,15 @@ impl ApprovedPeer {
     // we use the same code as for Elder and return Join in some cases.
     fn handle_bootstrap_request(&mut self, p2p_node: P2pNode, destination: XorName) {
         debug!(
-            "{} - Received BootstrapRequest to section at {} from {:?}.",
-            self, destination, p2p_node
+            "Received BootstrapRequest to section at {} from {:?}.",
+            destination, p2p_node
         );
 
         let response = if self.chain.our_prefix().matches(&destination) {
             let our_info = self.chain.our_info().clone();
             debug!(
-                "{} - Sending BootstrapResponse::Join to {:?} ({:?})",
-                self, p2p_node, our_info
+                "Sending BootstrapResponse::Join to {:?} ({:?})",
+                p2p_node, our_info
             );
             BootstrapResponse::Join(our_info)
         } else {
@@ -570,10 +562,7 @@ impl ApprovedPeer {
                 .member_nodes()
                 .map(|p2p_node| *p2p_node.peer_addr())
                 .collect();
-            debug!(
-                "{} - Sending BootstrapResponse::Rebootstrap to {}",
-                self, p2p_node
-            );
+            debug!("Sending BootstrapResponse::Rebootstrap to {}", p2p_node);
             BootstrapResponse::Rebootstrap(conn_infos)
         };
         self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
@@ -581,8 +570,8 @@ impl ApprovedPeer {
 
     fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
         debug!(
-            "{} - Received JoinRequest from {} for v{}",
-            self, p2p_node, join_request.elders_version
+            "Received JoinRequest from {} for v{}",
+            p2p_node, join_request.elders_version
         );
 
         if join_request.elders_version < self.chain.our_info().version() {
@@ -592,8 +581,7 @@ impl ApprovedPeer {
         let pub_id = *p2p_node.public_id();
         if !self.our_prefix().matches(pub_id.name()) {
             debug!(
-                "{} - Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
-                self,
+                "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
                 pub_id,
                 self.our_prefix()
             );
@@ -602,17 +590,14 @@ impl ApprovedPeer {
 
         if self.chain.is_peer_our_member(&pub_id) {
             debug!(
-                "{} - Ignoring JoinRequest from {} - already member of our section.",
-                self, pub_id
+                "Ignoring JoinRequest from {} - already member of our section.",
+                pub_id
             );
             return;
         }
 
         if self.chain.is_in_online_backlog(&pub_id) {
-            debug!(
-                "{} - Ignoring JoinRequest from {} - already in backlog.",
-                self, pub_id
-            );
+            debug!("Ignoring JoinRequest from {} - already in backlog.", pub_id);
             return;
         }
 
@@ -620,8 +605,8 @@ impl ApprovedPeer {
         let (age, their_knowledge) = if let Some(payload) = join_request.relocate_payload {
             if !payload.verify_identity(&pub_id) {
                 debug!(
-                    "{} - Ignoring relocation JoinRequest from {} - invalid signature.",
-                    self, pub_id
+                    "Ignoring relocation JoinRequest from {} - invalid signature.",
+                    pub_id
                 );
                 return;
             }
@@ -630,9 +615,8 @@ impl ApprovedPeer {
 
             if !self.our_prefix().matches(&details.destination) {
                 debug!(
-                    "{} - Ignoring relocation JoinRequest from {} - destination {} doesn't match \
+                    "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                      our prefix {:?}.",
-                    self,
                     pub_id,
                     details.destination,
                     self.our_prefix()
@@ -657,7 +641,7 @@ impl ApprovedPeer {
     }
 
     fn handle_member_knowledge(&mut self, p2p_node: P2pNode, payload: MemberKnowledge) {
-        trace!("{} - Received {:?} from {:?}", self, payload, p2p_node);
+        trace!("Received {:?} from {:?}", payload, p2p_node);
 
         if self.chain.is_peer_our_active_member(p2p_node.public_id()) {
             self.members_knowledge
@@ -677,8 +661,7 @@ impl ApprovedPeer {
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
         trace!(
-            "{} - handle parsec request v{} from {} (last: v{})",
-            self,
+            "handle parsec request v{} from {} (last: v{})",
             msg_version,
             p2p_node.public_id(),
             self.parsec_map.last_version(),
@@ -707,12 +690,7 @@ impl ApprovedPeer {
         pub_id: PublicId,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
-        trace!(
-            "{} - handle parsec response v{} from {}",
-            self,
-            msg_version,
-            pub_id
-        );
+        trace!("handle parsec response v{} from {}", msg_version, pub_id);
 
         self.parsec_map
             .handle_response(msg_version, par_response, pub_id);
@@ -731,8 +709,7 @@ impl ApprovedPeer {
                 .unwrap_or(true)
             {
                 trace!(
-                    "{} - Received Bounce of {:?} from {}. Peer is lagging behind, resending in {:?}",
-                    self,
+                    "Received Bounce of {:?} from {}. Peer is lagging behind, resending in {:?}",
                     MessageHash::from_bytes(&msg_bytes),
                     sender,
                     BOUNCE_RESEND_DELAY
@@ -744,16 +721,14 @@ impl ApprovedPeer {
                 );
             } else {
                 trace!(
-                    "{} - Received Bounce of {:?} from {}. Peer has moved on, not resending",
-                    self,
+                    "Received Bounce of {:?} from {}. Peer has moved on, not resending",
                     MessageHash::from_bytes(&msg_bytes),
                     sender
                 );
             }
         } else {
             trace!(
-                "{} - Received Bounce of {:?} from {}. Peer not known, not resending",
-                self,
+                "Received Bounce of {:?} from {}. Peer not known, not resending",
                 MessageHash::from_bytes(&msg_bytes),
                 sender
             );
@@ -779,8 +754,7 @@ impl ApprovedPeer {
                     // FIXME: Validate with Chain info.
 
                     trace!(
-                        "{} Parsec Genesis {}: group {:?} - related_info {}",
-                        self,
+                        "Parsec Genesis {}: group {:?} - related_info {}",
                         parsec_version,
                         group,
                         related_info.len()
@@ -797,8 +771,7 @@ impl ApprovedPeer {
                         sig: *p.signature(),
                     }) {
                         trace!(
-                            "{} Parsec OpaquePayload {}: {} - {:?}",
-                            self,
+                            "Parsec OpaquePayload {}: {} - {:?}",
                             parsec_version,
                             proof.pub_id(),
                             event
@@ -809,8 +782,7 @@ impl ApprovedPeer {
                 Observation::Add { peer_id, .. } => {
                     log_or_panic!(
                         log::Level::Error,
-                        "{} Unexpected Parsec Add {}: - {}",
-                        self,
+                        "Unexpected Parsec Add {}: - {}",
                         parsec_version,
                         peer_id
                     );
@@ -818,8 +790,7 @@ impl ApprovedPeer {
                 Observation::Remove { peer_id, .. } => {
                     log_or_panic!(
                         log::Level::Error,
-                        "{} Unexpected Parsec Remove {}: - {}",
-                        self,
+                        "Unexpected Parsec Remove {}: - {}",
                         parsec_version,
                         peer_id
                     );
@@ -887,7 +858,7 @@ impl ApprovedPeer {
         was_elder: bool,
         outbox: &mut dyn EventBox,
     ) -> Result<Transition, RoutingError> {
-        trace!("{} Handle accumulated event: {:?}", self, event);
+        trace!("Handle accumulated event: {:?}", event);
 
         match event.content {
             AccumulatingEvent::StartDkg(_) => {
@@ -966,9 +937,9 @@ impl ApprovedPeer {
         outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_add_member(payload.p2p_node.public_id()) {
-            info!("{} - ignore Online: {:?}.", self, payload);
+            info!("ignore Online: {:?}.", payload);
         } else {
-            info!("{} - handle Online: {:?}.", self, payload);
+            info!("handle Online: {:?}.", payload);
 
             let pub_id = *payload.p2p_node.public_id();
             self.chain.add_member(payload.p2p_node.clone(), payload.age);
@@ -1006,19 +977,18 @@ impl ApprovedPeer {
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&details.pub_id) {
-            info!("{} - ignore Relocate: {:?} - not a member", self, details);
+            info!("ignore Relocate: {:?} - not a member", details);
             return Ok(());
         }
 
-        info!("{} - handle Relocate: {:?}.", self, details);
+        info!("handle Relocate: {:?}", details);
 
         let node_knowledge = match self.chain.remove_member(&details.pub_id) {
             MemberState::Relocating { node_knowledge } => node_knowledge,
             state => {
                 log_or_panic!(
                     log::Level::Error,
-                    "{} - Expected the state of {} to be Relocating, but was {:?}",
-                    self,
+                    "Expected the state of {} to be Relocating, but was {:?}",
                     details.pub_id,
                     state,
                 );
@@ -1061,9 +1031,9 @@ impl ApprovedPeer {
         _outbox: &mut dyn EventBox,
     ) -> Result<(), RoutingError> {
         if !self.chain.can_remove_member(&pub_id) {
-            info!("{} - ignore Offline: {}.", self, pub_id);
+            info!("ignore Offline: {}", pub_id);
         } else {
-            info!("{} - handle Offline: {}.", self, pub_id);
+            info!("handle Offline: {}", pub_id);
 
             self.chain.increment_age_counters(&pub_id);
             let _ = self.chain.remove_member(&pub_id);
@@ -1084,13 +1054,12 @@ impl ApprovedPeer {
         }
 
         if let Some(info) = self.dkg_cache.remove(participants) {
-            info!("{} - handle DkgResult: {:?}", self, participants);
+            info!("handle DkgResult: {:?}", participants);
             self.vote_for_section_info(info, dkg_result.0.public_key_set.public_key())?;
         } else {
             log_or_panic!(
                 log::Level::Error,
-                "{} DKG for an unexpected info {:?} (expected: {{{:?}}})",
-                self,
+                "DKG for an unexpected info {:?} (expected: {{{:?}}})",
                 participants,
                 self.dkg_cache.keys().format(", ")
             );
@@ -1111,19 +1080,16 @@ impl ApprovedPeer {
         let is_elder = elders_info.is_member(self.full_id.public_id());
 
         if was_elder || is_elder {
-            info!("{} - handle SectionInfo: {:?}", self, elders_info);
+            info!("handle SectionInfo: {:?}", elders_info);
         } else {
-            trace!("{} - unhandled SectionInfo", self);
+            trace!("unhandled SectionInfo");
             return Ok(Transition::Stay);
         }
 
         let complete_data = if info_prefix.is_extension_of(&old_pfx) {
             self.prepare_finalise_split()?
         } else if old_pfx.is_extension_of(&info_prefix) {
-            panic!(
-                "{} - Merge not supported: {:?} -> {:?}",
-                self, old_pfx, info_prefix,
-            );
+            panic!("Merge not supported: {:?} -> {:?}", old_pfx, info_prefix,);
         } else {
             self.prepare_reset_parsec()?
         };
@@ -1134,7 +1100,7 @@ impl ApprovedPeer {
             self.process_post_reset_events(old_pfx, complete_data.to_process);
             self.demote(complete_data.gen_pfx_info);
 
-            info!("{} - Demoted", self);
+            info!("Demoted");
             outbox.send_event(Event::Demoted);
 
             return Ok(Transition::Stay);
@@ -1160,7 +1126,7 @@ impl ApprovedPeer {
         }
 
         if !was_elder {
-            info!("{} - Promoted", self);
+            info!("Promoted");
             outbox.send_event(Event::Promoted);
         }
 
@@ -1172,7 +1138,7 @@ impl ApprovedPeer {
         elders_info: EldersInfo,
         neighbour_change: EldersChange,
     ) -> Result<(), RoutingError> {
-        info!("{} - handle NeighbourInfo: {:?}.", self, elders_info);
+        info!("handle NeighbourInfo: {:?}", elders_info);
 
         if !self.chain.is_self_elder() {
             return Ok(());
@@ -1223,24 +1189,23 @@ impl ApprovedPeer {
 
     fn handle_prune_event(&mut self) -> Result<(), RoutingError> {
         if !self.chain.is_self_elder() {
-            debug!("{} - Unhandled ParsecPrune event", self);
+            debug!("Unhandled ParsecPrune event");
             return Ok(());
         }
 
         if self.chain.split_in_progress() {
             log_or_panic!(
                 log::Level::Warn,
-                "{} Tring to prune parsec during prefix change.",
-                self
+                "Tring to prune parsec during prefix change.",
             );
             return Ok(());
         }
         if self.chain.churn_in_progress() {
-            trace!("{} - ignore ParsecPrune - churn in progress.", self);
+            trace!("ignore ParsecPrune - churn in progress.");
             return Ok(());
         }
 
-        info!("{} - handle ParsecPrune", self);
+        info!("handle ParsecPrune");
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(complete_data.gen_pfx_info, complete_data.to_vote_again)?;
         self.send_genesis_updates();
@@ -1504,7 +1469,7 @@ impl ApprovedPeer {
             let variant = Variant::NeighbourInfo(self.chain.our_info().clone());
 
             if let Err(err) = self.send_routing_message(src, dst, variant, None) {
-                debug!("{} Failed to send NeighbourInfo: {:?}.", self, err);
+                debug!("Failed to send NeighbourInfo: {:?}", err);
             }
         });
     }
@@ -1513,8 +1478,7 @@ impl ApprovedPeer {
     fn send_genesis_updates(&mut self) {
         for (recipient, msg) in self.create_genesis_updates() {
             trace!(
-                "{} - Send GenesisUpdate({:?}) to {}",
-                self,
+                "Send GenesisUpdate({:?}) to {}",
                 self.gen_pfx_info,
                 recipient
             );
@@ -1544,7 +1508,7 @@ impl ApprovedPeer {
                 match self.to_accumulating_message(dst, variant, Some(version)) {
                     Ok(msg) => Some((recipient, msg)),
                     Err(error) => {
-                        error!("{} - Failed to create signed message: {:?}", self, error);
+                        error!("Failed to create signed message: {:?}", error);
                         None
                     }
                 }
@@ -1565,7 +1529,7 @@ impl ApprovedPeer {
             parsec_version: self.parsec_map.last_version(),
         };
 
-        trace!("{} - Send {:?} to {:?}", self, payload, recipients);
+        trace!("Send {:?} to {:?}", payload, recipients);
 
         for recipient in recipients {
             self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
@@ -1582,8 +1546,7 @@ impl ApprovedPeer {
         _outbox: &mut dyn EventBox,
     ) {
         info!(
-            "{} Our section with {:?} has approved candidate {}.",
-            self,
+            "Our section with {:?} has approved candidate {}.",
             self.our_prefix(),
             p2p_node
         );
@@ -1594,10 +1557,7 @@ impl ApprovedPeer {
 
         let variant = Variant::NodeApproval(Box::new(trimmed_info));
         if let Err(error) = self.send_routing_message(src, dst, variant, their_knowledge) {
-            debug!(
-                "{} Failed sending NodeApproval to {}: {:?}",
-                self, p2p_node, error
-            );
+            debug!("Failed sending NodeApproval to {}: {:?}", p2p_node, error);
         }
     }
 
@@ -1623,18 +1583,12 @@ impl ApprovedPeer {
             .create_gossip(version, gossip_target.public_id())
         {
             Ok(msg) => {
-                trace!(
-                    "{} - send parsec request v{} to {:?}",
-                    self,
-                    version,
-                    gossip_target,
-                );
+                trace!("send parsec request v{} to {:?}", version, gossip_target,);
                 self.send_direct_message(gossip_target.peer_addr(), msg);
             }
             Err(error) => {
                 trace!(
-                    "{} - failed to send parsec request v{} to {:?}: {:?}",
-                    self,
+                    "failed to send parsec request v{} to {:?}: {:?}",
                     version,
                     gossip_target,
                     error
@@ -1646,7 +1600,7 @@ impl ApprovedPeer {
     fn choose_gossip_recipient(&mut self) -> Option<P2pNode> {
         let recipients = self.parsec_map.gossip_recipients();
         if recipients.is_empty() {
-            trace!("{} - not sending parsec request: no recipients", self,);
+            trace!("not sending parsec request: no recipients");
             return None;
         }
 
@@ -1659,8 +1613,7 @@ impl ApprovedPeer {
         if p2p_recipients.is_empty() {
             log_or_panic!(
                 log::Level::Error,
-                "{} - not sending parsec request: not connected to any gossip recipient.",
-                self
+                "not sending parsec request: not connected to any gossip recipient.",
             );
             return None;
         }
@@ -1690,8 +1643,7 @@ impl ApprovedPeer {
 
         if let Some(response_section) = response_section {
             trace!(
-                "{} - Resend Join to {} with version {}",
-                self,
+                "Resend Join to {} with version {}",
                 p2p_node,
                 response_section.version()
             );
@@ -1714,8 +1666,8 @@ impl ApprovedPeer {
                 }
             };
             match self.send_signed_message(&msg) {
-                Ok(()) => trace!("{} - Resend {:?}", self, msg),
-                Err(error) => debug!("{} - Failed to resend {:?}: {:?}", self, msg, error),
+                Ok(()) => trace!("Resend {:?}", msg),
+                Err(error) => debug!("Failed to resend {:?}: {:?}", msg, error),
             }
         }
     }
@@ -1737,8 +1689,7 @@ impl ApprovedPeer {
         if !self.in_src_location(&src) {
             log_or_panic!(
                 log::Level::Error,
-                "{} Not part of the source location. Not sending message {:?} -> {:?}: {:?}.",
-                self,
+                "Not part of the source location. Not sending message {:?} -> {:?}: {:?}.",
                 src,
                 dst,
                 variant
@@ -1763,8 +1714,7 @@ impl ApprovedPeer {
                 }
             } else {
                 trace!(
-                    "{} Sending a signature for {:?} to {:?}",
-                    self,
+                    "Sending a signature for {:?} to {:?}",
                     accumulating_msg.content,
                     target,
                 );
@@ -1808,8 +1758,7 @@ impl ApprovedPeer {
             DstLocation::Direct => {
                 log_or_panic!(
                     log::Level::Error,
-                    "{} - Invalid destination for signature targets: {:?}",
-                    self,
+                    "Invalid destination for signature targets: {:?}",
                     dst
                 );
                 return vec![];
@@ -1829,7 +1778,7 @@ impl ApprovedPeer {
     fn send_signed_message(&mut self, msg: &MessageWithBytes) -> Result<()> {
         let (targets, dg_size) = self.chain.targets(msg.message_dst())?;
 
-        trace!("{}: Sending {:?} via targets {:?}", self, msg, targets);
+        trace!("Sending {:?} via targets {:?}", msg, targets);
 
         let targets: Vec<_> = targets
             .into_iter()
@@ -1854,11 +1803,7 @@ impl ApprovedPeer {
     fn print_rt_size(&self) {
         const TABLE_LVL: log::Level = log::Level::Info;
         if log::log_enabled!(TABLE_LVL) {
-            let status_str = format!(
-                "{} - Routing Table size: {:3}",
-                self,
-                self.chain.elders().count()
-            );
+            let status_str = format!("Routing Table size: {:3}", self.chain.elders().count());
             let network_estimate = match self.chain.network_size_estimate() {
                 (n, true) => format!("Exact network size: {}", n),
                 (n, false) => format!("Estimated network size: {}", n),
@@ -1906,8 +1851,7 @@ impl ApprovedPeer {
         } else {
             log_or_panic!(
                 log::Level::Error,
-                "{} - Can't disconnect from node we can't lookup in Chain: {}.",
-                self,
+                "Can't disconnect from node we can't lookup in Chain: {}.",
                 pub_id
             );
         };
@@ -1992,7 +1936,19 @@ impl Base for ApprovedPeer {
 
     fn set_log_ident(&self) -> log_utils::Guard {
         use std::fmt::Write;
-        log_utils::set_ident(|buffer| write!(buffer, "{} ", self))
+        log_utils::set_ident(|buffer| {
+            write!(
+                buffer,
+                "{}({}({:b})) ",
+                if self.chain.is_self_elder() {
+                    "Elder"
+                } else {
+                    "Adult"
+                },
+                self.name(),
+                self.our_prefix()
+            )
+        })
     }
 
     fn handle_send_message(
@@ -2034,7 +1990,7 @@ impl Base for ApprovedPeer {
             match self.parsec_poll(outbox) {
                 Ok(transition) => transition,
                 Err(error) => {
-                    error!("{} - Parsec poll failed: {:?}", self, error);
+                    error!("Parsec poll failed: {:?}", error);
                     Transition::Stay
                 }
             }
@@ -2065,13 +2021,13 @@ impl Base for ApprovedPeer {
             .find(|node| *node.peer_addr() == addr);
 
         if let Some(node) = node {
-            trace!("{} - ConnectionFailure from member {}", self, node);
+            trace!("ConnectionFailure from member {}", node);
 
             // Ping the peer to trigger lost peer detection.
             let addr = *node.peer_addr();
             self.send_direct_message(&addr, Variant::Ping);
         } else {
-            trace!("{} - ConnectionFailure from non-member {}", self, addr);
+            trace!("ConnectionFailure from non-member {}", addr);
         }
 
         Transition::Stay
@@ -2083,10 +2039,10 @@ impl Base for ApprovedPeer {
         _outbox: &mut dyn EventBox,
     ) -> Transition {
         let pub_id = if let Some(node) = self.chain.find_p2p_node_from_addr(&peer_addr) {
-            debug!("{} - Lost known peer {}", self, node);
+            debug!("Lost known peer {}", node);
             *node.public_id()
         } else {
-            trace!("{} - Lost unknown peer {}", self, peer_addr);
+            trace!("Lost unknown peer {}", peer_addr);
             return Transition::Stay;
         };
 
@@ -2130,25 +2086,17 @@ impl Base for ApprovedPeer {
         if bounce {
             if let Some(sender) = sender {
                 debug!(
-                    "{} Unhandled message - bouncing: {:?}, hash: {:?}",
-                    self,
+                    "Unhandled message - bouncing: {:?}, hash: {:?}",
                     msg,
                     MessageHash::from_bytes(&msg_bytes)
                 );
 
                 self.send_bounce(&sender, msg_bytes);
             } else {
-                trace!(
-                    "{} Unhandled accumulated message, discarding: {:?}",
-                    self,
-                    msg
-                );
+                trace!("Unhandled accumulated message, discarding: {:?}", msg);
             }
         } else {
-            debug!(
-                "{} Unhandled message from {:?}, discarding: {:?}",
-                self, sender, msg
-            );
+            debug!("Unhandled message from {:?}, discarding: {:?}", sender, msg);
         }
     }
 
@@ -2254,22 +2202,6 @@ impl ApprovedPeer {
 
     pub fn parsec_last_version(&self) -> u64 {
         self.parsec_map.last_version()
-    }
-}
-
-impl Display for ApprovedPeer {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "{}({}({:b}))",
-            if self.chain.is_self_elder() {
-                "Elder"
-            } else {
-                "Adult"
-            },
-            self.name(),
-            self.our_prefix()
-        )
     }
 }
 
