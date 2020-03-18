@@ -42,7 +42,7 @@ use std::{
 /// Time after which bootstrap is cancelled (and possibly retried).
 pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Time after which bootstrap is cancelled (and possibly retried).
+/// Time after which an attempt to joining a section is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub struct JoiningPeerDetails {
@@ -53,7 +53,7 @@ pub struct JoiningPeerDetails {
     pub rng: MainRng,
 }
 
-// State of a node after bootstrapping, while joining a section
+// State of a node while joining a section
 pub struct JoiningPeer {
     stage: Stage,
     network_service: NetworkService,
