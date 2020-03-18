@@ -99,7 +99,6 @@ impl JoiningPeer {
         let details = ElderDetails {
             chain,
             network_service: self.core.network_service,
-            event_backlog: Default::default(),
             full_id: self.core.full_id,
             gen_pfx_info,
             msg_queue: Default::default(),
