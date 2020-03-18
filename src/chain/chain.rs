@@ -28,7 +28,7 @@ use serde::Serialize;
 use std::{
     cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{self, Debug, Formatter},
     iter, mem,
     net::SocketAddr,
 };
@@ -177,7 +177,7 @@ impl Chain {
                 .insert(*first.name(), dkg_result.0.clone())
                 .is_some()
             {
-                log_or_panic!(log::Level::Error, "{} - Ejected previous DKG result", self);
+                log_or_panic!(log::Level::Error, "Ejected previous DKG result");
             }
         }
 
@@ -225,8 +225,7 @@ impl Chain {
                 // TODO: If detecting duplicate vote from peer, penalise.
                 log_or_panic!(
                     log::Level::Warn,
-                    "{} Duplicate proof for {:?} in chain accumulator. {:?}",
-                    self,
+                    "Duplicate proof for {:?} in chain accumulator. {:?}",
                     event,
                     self.chain_accumulator.incomplete_events().collect_vec()
                 );
@@ -335,8 +334,7 @@ impl Chain {
         if self.can_poll_churn() {
             if let Some(event) = self.state.churn_event_backlog.pop_back() {
                 trace!(
-                    "{} churn backlog poll {:?}, Others: {:?}",
-                    self,
+                    "churn backlog poll {:?}, Others: {:?}",
                     event,
                     self.state.churn_event_backlog
                 );
@@ -358,8 +356,7 @@ impl Chain {
 
         if start_churn_event && !self.can_poll_churn() {
             trace!(
-                "{} churn backlog {:?}, Other: {:?}",
-                self,
+                "churn backlog {:?}, Other: {:?}",
                 event,
                 self.state.churn_event_backlog
             );
@@ -388,8 +385,7 @@ impl Chain {
             // Temporarily ignore until we either find a better way of preventing churn spam,
             // or we change the tests to provide some Adult churn at all times.
             trace!(
-                "{} FIXME: should do nothing for infants and unknown nodes {:?}",
-                self,
+                "FIXME: should do nothing for infants and unknown nodes {:?}",
                 trigger_node
             );
         }
@@ -435,7 +431,7 @@ impl Chain {
         trace!("increment_age_counters: {:?}", self.state.our_members);
 
         for details in details_to_add {
-            trace!("{} - Change state to Relocating {}", self, details.pub_id);
+            trace!("Change state to Relocating {}", details.pub_id);
 
             let destination_key_info = self
                 .latest_compatible_their_key_info(&details.destination)
@@ -463,11 +459,7 @@ impl Chain {
                 if self.is_peer_our_member(&details.pub_id) {
                     break details;
                 } else {
-                    trace!(
-                        "{} - Not relocating {} - not a member",
-                        self,
-                        details.pub_id
-                    );
+                    trace!("Not relocating {} - not a member", details.pub_id);
                 }
             } else {
                 return None;
@@ -476,8 +468,8 @@ impl Chain {
 
         if self.is_peer_our_elder(&details.pub_id) {
             warn!(
-                "{} - Not relocating {} - The peer is still our elder.",
-                self, details.pub_id,
+                "Not relocating {} - The peer is still our elder.",
+                details.pub_id,
             );
 
             // Keep the details in the queue so when the node is demoted we can relocate it.
@@ -485,7 +477,7 @@ impl Chain {
             return None;
         }
 
-        trace!("{} - relocating member {}", self, details.pub_id);
+        trace!("relocating member {}", details.pub_id);
         self.relocation_in_progress = true;
 
         Some(details)
@@ -525,8 +517,7 @@ impl Chain {
                     // Node already joined - this should not happen.
                     log_or_panic!(
                         log::Level::Error,
-                        "{} - Adding member that already exists: {}",
-                        self,
+                        "Adding member that already exists: {}",
                         p2p_node,
                     );
                 }
@@ -559,8 +550,7 @@ impl Chain {
         } else {
             log_or_panic!(
                 log::Level::Error,
-                "{} - Removing member that doesn't exist: {}",
-                self,
+                "Removing member that doesn't exist: {}",
                 pub_id
             );
 
@@ -651,8 +641,8 @@ impl Chain {
         self.check_and_clean_neighbour_infos(None);
         self.split_in_progress = false;
 
-        info!("{} - finalise_prefix_change: {:?}", self, self.our_prefix());
-        trace!("{} - finalise_prefix_change state: {:?}", self, self.state);
+        info!("finalise_prefix_change: {:?}", self.our_prefix());
+        trace!("finalise_prefix_change state: {:?}", self.state);
 
         self.prepare_parsec_reset(parsec_version)
     }
@@ -1164,8 +1154,7 @@ impl Chain {
             if old_elders_info.version() > new_elders_info_version {
                 log_or_panic!(
                     log::Level::Error,
-                    "{} Ejected newer neighbour info {:?}",
-                    self,
+                    "Ejected newer neighbour info {:?}",
                     old_elders_info
                 );
             }
@@ -1211,8 +1200,7 @@ impl Chain {
             .map_err(|err| {
                 log_or_panic!(
                     log::Level::Error,
-                    "{} Failed to serialise accumulated event: {:?} for {:?}",
-                    self,
+                    "Failed to serialise accumulated event: {:?} for {:?}",
                     err,
                     signed_payload
                 );
@@ -1229,8 +1217,7 @@ impl Chain {
             .or_else(|| {
                 log_or_panic!(
                     log::Level::Error,
-                    "{} Failed to combine signatures for accumulated event: {:?}",
-                    self,
+                    "Failed to combine signatures for accumulated event: {:?}",
                     signed_payload
                 );
                 None
@@ -1240,9 +1227,8 @@ impl Chain {
     /// Inserts the `version` of our own section into `their_knowledge` for `pfx`.
     pub fn update_their_knowledge(&mut self, prefix: Prefix<XorName>, version: u64) {
         trace!(
-            "{:?} attempts to update their_knowledge of our elders_info with version {:?} for \
+            "attempts to update their_knowledge of our elders_info with version {:?} for \
              prefix {:?} ",
-            self.our_id(),
             version,
             prefix
         );
@@ -1586,8 +1572,7 @@ impl Chain {
         if self.split_in_progress {
             log_or_panic!(
                 log::Level::Warn,
-                "{} - attempt to {} during prefix change.",
-                self,
+                "attempt to {} during prefix change.",
                 label,
             );
         }
@@ -1624,12 +1609,6 @@ impl Debug for Chain {
         }
 
         writeln!(formatter, "}}")
-    }
-}
-
-impl Display for Chain {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "Node({}({:b}))", self.our_id(), self.state.our_prefix())
     }
 }
 
