@@ -27,6 +27,7 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
+use itertools::Itertools;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
@@ -143,6 +144,20 @@ impl VerifyStatus {
 pub struct QueuedMessage {
     pub message: Message,
     pub sender: Option<SocketAddr>,
+}
+
+pub fn log_verify_failure<'a, T, I>(msg: &T, error: &RoutingError, their_key_infos: I)
+where
+    T: Debug,
+    I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
+{
+    log_or_panic!(
+        log::Level::Error,
+        "Verification failed: {:?} - {:?} --- [{:?}]",
+        msg,
+        error,
+        their_key_infos.into_iter().format(", ")
+    )
 }
 
 fn serialize_for_section_signing(dst: &DstLocation, variant: &Variant) -> Result<Vec<u8>> {

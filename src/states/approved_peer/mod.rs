@@ -27,8 +27,9 @@ use crate::{
     log_utils,
     message_filter::MessageFilter,
     messages::{
-        AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message, MessageHash,
-        MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant, VerifyStatus,
+        self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
+        MessageHash, MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant,
+        VerifyStatus,
     },
     network_service::NetworkService,
     outbox::EventBox,
@@ -293,7 +294,7 @@ impl ApprovedPeer {
             return Ok(());
         }
 
-        if self.is_message_handled(&msg_with_bytes) {
+        if self.core.msg_filter.contains_incoming(&msg_with_bytes) {
             trace!(
                 "not handling message - already handled: {:?}",
                 msg_with_bytes
@@ -304,7 +305,7 @@ impl ApprovedPeer {
         let msg = msg_with_bytes.take_or_deserialize_message()?;
 
         if self.should_handle_message(&msg) && self.verify_message(&msg)? {
-            self.set_message_handled(&msg_with_bytes);
+            self.core.msg_filter.insert_incoming(&msg_with_bytes);
             self.msg_queue.push_back(msg.into_queued(None));
         } else {
             self.unhandled_message(None, msg, msg_with_bytes.full_bytes().clone());
@@ -558,7 +559,8 @@ impl ApprovedPeer {
             debug!("Sending BootstrapResponse::Rebootstrap to {}", p2p_node);
             BootstrapResponse::Rebootstrap(conn_infos)
         };
-        self.send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
+        self.core
+            .send_direct_message(p2p_node.peer_addr(), Variant::BootstrapResponse(response));
     }
 
     fn handle_join_request(&mut self, p2p_node: P2pNode, join_request: JoinRequest) {
@@ -666,7 +668,8 @@ impl ApprovedPeer {
 
         if let Some(response) = response {
             trace!("send parsec response v{} to {:?}", msg_version, p2p_node,);
-            self.send_direct_message(p2p_node.peer_addr(), response);
+            self.core
+                .send_direct_message(p2p_node.peer_addr(), response);
         }
 
         if msg_version == self.parsec_map.last_version() {
@@ -707,7 +710,7 @@ impl ApprovedPeer {
                     sender,
                     BOUNCE_RESEND_DELAY
                 );
-                self.send_message_to_target_later(
+                self.core.send_message_to_target_later(
                     sender.peer_addr(),
                     msg_bytes,
                     BOUNCE_RESEND_DELAY,
@@ -1479,7 +1482,7 @@ impl ApprovedPeer {
                 recipient
             );
 
-            self.send_direct_message(
+            self.core.send_direct_message(
                 recipient.peer_addr(),
                 Variant::MessageSignature(Box::new(msg)),
             );
@@ -1513,22 +1516,19 @@ impl ApprovedPeer {
     }
 
     fn send_member_knowledge(&mut self) {
-        let recipients = self
-            .chain
-            .our_info()
-            .member_nodes()
-            .filter(|node| node.public_id() != self.id())
-            .cloned()
-            .collect_vec();
         let payload = MemberKnowledge {
             elders_version: self.chain.our_info().version(),
             parsec_version: self.parsec_map.last_version(),
         };
 
-        trace!("Send {:?} to {:?}", payload, recipients);
+        for recipient in self.chain.our_info().member_nodes() {
+            if recipient.public_id() == self.id() {
+                continue;
+            }
 
-        for recipient in recipients {
-            self.send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
+            trace!("Send {:?} to {:?}", payload, recipient);
+            self.core
+                .send_direct_message(recipient.peer_addr(), Variant::MemberKnowledge(payload))
         }
     }
 
@@ -1580,7 +1580,8 @@ impl ApprovedPeer {
         {
             Ok(msg) => {
                 trace!("send parsec request v{} to {:?}", version, gossip_target,);
-                self.send_direct_message(gossip_target.peer_addr(), msg);
+                self.core
+                    .send_direct_message(gossip_target.peer_addr(), msg);
             }
             Err(error) => {
                 trace!(
@@ -1624,7 +1625,7 @@ impl ApprovedPeer {
             message: msg_bytes,
         };
 
-        self.send_direct_message(recipient, variant)
+        self.core.send_direct_message(recipient, variant)
     }
 
     // Resend the response with ours or our sibling's info in case of split.
@@ -1643,7 +1644,7 @@ impl ApprovedPeer {
                 p2p_node,
                 response_section.version()
             );
-            self.send_direct_message(
+            self.core.send_direct_message(
                 p2p_node.peer_addr(),
                 Variant::BootstrapResponse(BootstrapResponse::Join(response_section)),
             );
@@ -1714,7 +1715,7 @@ impl ApprovedPeer {
                     accumulating_msg.content,
                     target,
                 );
-                self.send_direct_message(
+                self.core.send_direct_message(
                     target.peer_addr(),
                     Variant::MessageSignature(Box::new(accumulating_msg.clone())),
                 );
@@ -1789,7 +1790,6 @@ impl ApprovedPeer {
 
         let cheap_bytes_clone = msg.full_bytes().clone();
         self.core
-            .network_service
             .send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
 
         Ok(())
@@ -1894,7 +1894,11 @@ impl ApprovedPeer {
             .verify(self.chain.get_their_key_infos())
             .and_then(VerifyStatus::require_full)
             .map_err(|error| {
-                self.log_verify_failure(msg.signed_msg(), &error, self.chain.get_their_key_infos());
+                messages::log_verify_failure(
+                    msg.signed_msg(),
+                    &error,
+                    self.chain.get_their_key_infos(),
+                );
                 error
             })
             .is_ok()
@@ -2015,7 +2019,7 @@ impl Base for ApprovedPeer {
 
             // Ping the peer to trigger lost peer detection.
             let addr = *node.peer_addr();
-            self.send_direct_message(&addr, Variant::Ping);
+            self.core.send_direct_message(&addr, Variant::Ping);
         } else {
             trace!("ConnectionFailure from non-member {}", addr);
         }
@@ -2090,14 +2094,6 @@ impl Base for ApprovedPeer {
         }
     }
 
-    fn is_message_handled(&self, msg: &MessageWithBytes) -> bool {
-        self.core.msg_filter.contains_incoming(msg)
-    }
-
-    fn set_message_handled(&mut self, msg: &MessageWithBytes) {
-        self.core.msg_filter.insert_incoming(msg)
-    }
-
     fn relay_message(
         &mut self,
         _sender: Option<SocketAddr>,
@@ -2155,7 +2151,7 @@ impl Base for ApprovedPeer {
 
     fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {
         self.verify_message_quiet(msg).map_err(|error| {
-            self.log_verify_failure(msg, &error, self.chain.get_their_key_infos());
+            messages::log_verify_failure(msg, &error, self.chain.get_their_key_infos());
             error
         })
     }
@@ -2187,7 +2183,6 @@ impl ApprovedPeer {
     ) -> Result<(), RoutingError> {
         let message = message.to_bytes()?;
         self.core
-            .network_service
             .send_message_to_targets(dst_targets, dg_size, message);
         Ok(())
     }

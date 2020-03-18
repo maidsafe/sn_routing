@@ -10,9 +10,17 @@ mod base;
 
 pub use self::base::Base;
 use crate::{
-    id::FullId, message_filter::MessageFilter, network_service::NetworkService, rng::MainRng,
-    time::Duration, timer::Timer,
+    id::FullId,
+    location::DstLocation,
+    message_filter::MessageFilter,
+    messages::{Message, Variant},
+    network_service::NetworkService,
+    rng::MainRng,
+    time::Duration,
+    timer::Timer,
 };
+use bytes::Bytes;
+use std::{net::SocketAddr, slice};
 
 /// Delay after which a bounced message is resent.
 pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
@@ -24,4 +32,47 @@ pub struct Core {
     pub msg_filter: MessageFilter,
     pub timer: Timer,
     pub rng: MainRng,
+}
+
+impl Core {
+    pub fn send_message_to_targets(
+        &mut self,
+        conn_infos: &[SocketAddr],
+        dg_size: usize,
+        msg: Bytes,
+    ) {
+        self.network_service
+            .send_message_to_targets(conn_infos, dg_size, msg)
+    }
+
+    pub fn send_message_to_target_later(
+        &mut self,
+        dst: &SocketAddr,
+        message: Bytes,
+        delay: Duration,
+    ) {
+        let timer_token = self.timer.schedule(delay);
+        self.network_service
+            .send_message_to_target_later(dst, message, timer_token)
+    }
+
+    pub fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {
+        let message = match Message::single_src(&self.full_id, DstLocation::Direct, variant) {
+            Ok(message) => message,
+            Err(error) => {
+                error!("Failed to create message: {:?}", error);
+                return;
+            }
+        };
+
+        let bytes = match message.to_bytes() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                error!("Failed to serialize message {:?}: {:?}", message, error);
+                return;
+            }
+        };
+
+        self.send_message_to_targets(slice::from_ref(recipient), 1, bytes)
+    }
 }

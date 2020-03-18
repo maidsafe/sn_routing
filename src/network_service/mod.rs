@@ -47,26 +47,17 @@ impl NetworkService {
         &mut self,
         conn_infos: &[SocketAddr],
         dg_size: usize,
-        message: Bytes,
+        msg: Bytes,
     ) {
         if conn_infos.len() < dg_size {
             warn!(
                 "Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
                 dg_size,
                 conn_infos,
-                HexFmt(&message)
+                HexFmt(&msg)
             );
         }
 
-        self.send_message_to_initial_targets(conn_infos, dg_size, message);
-    }
-
-    pub fn send_message_to_initial_targets(
-        &mut self,
-        conn_infos: &[SocketAddr],
-        dg_size: usize,
-        msg: Bytes,
-    ) {
         let token = self.next_msg_token();
 
         trace!(

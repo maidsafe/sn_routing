@@ -18,7 +18,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     log_utils,
     messages::{
-        BootstrapResponse, JoinRequest, Message, MessageHash, MessageWithBytes, Variant,
+        self, BootstrapResponse, JoinRequest, Message, MessageHash, MessageWithBytes, Variant,
         VerifyStatus,
     },
     outbox::EventBox,
@@ -184,7 +184,8 @@ impl JoiningPeer {
             MessageHash::from_bytes(&message),
             sender
         );
-        self.send_message_to_target_later(sender.peer_addr(), message, BOUNCE_RESEND_DELAY);
+        self.core
+            .send_message_to_target_later(sender.peer_addr(), message, BOUNCE_RESEND_DELAY);
     }
 
     fn send_bootstrap_request(&mut self, dst: SocketAddr) {
@@ -206,7 +207,8 @@ impl JoiningPeer {
         };
 
         debug!("Sending BootstrapRequest to {}.", dst);
-        self.send_direct_message(&dst, Variant::BootstrapRequest(destination));
+        self.core
+            .send_direct_message(&dst, Variant::BootstrapRequest(destination));
     }
 
     fn reconnect_to_new_section(&mut self, new_conn_infos: Vec<SocketAddr>) {
@@ -253,7 +255,7 @@ impl JoiningPeer {
 
         for (dst, variant) in messages {
             info!("Sending JoinRequest to {}", dst);
-            self.send_direct_message(dst.peer_addr(), variant);
+            self.core.send_direct_message(dst.peer_addr(), variant);
         }
     }
 
@@ -317,7 +319,7 @@ impl JoiningPeer {
         msg.verify(as_iter(key_info))
             .and_then(VerifyStatus::require_full)
             .map_err(|error| {
-                self.log_verify_failure(msg, &error, as_iter(key_info));
+                messages::log_verify_failure(msg, &error, as_iter(key_info));
                 error
             })?;
 
@@ -481,7 +483,7 @@ impl Base for JoiningPeer {
                     message: msg_bytes,
                 };
 
-                self.send_direct_message(&sender, variant)
+                self.core.send_direct_message(&sender, variant)
             }
         }
     }
@@ -506,14 +508,6 @@ impl Base for JoiningPeer {
         }
     }
 
-    fn is_message_handled(&self, msg: &MessageWithBytes) -> bool {
-        self.core.msg_filter.contains_incoming(msg)
-    }
-
-    fn set_message_handled(&mut self, msg: &MessageWithBytes) {
-        self.core.msg_filter.insert_incoming(msg)
-    }
-
     fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()> {
         let sender = sender.expect("sender missing");
 
@@ -524,7 +518,7 @@ impl Base for JoiningPeer {
             message: msg.full_bytes().clone(),
         };
 
-        self.send_direct_message(&sender, variant);
+        self.core.send_direct_message(&sender, variant);
 
         Ok(())
     }

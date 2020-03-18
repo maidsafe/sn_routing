@@ -9,23 +9,20 @@
 use super::Core;
 use crate::{
     action::Action,
-    chain::SectionKeyInfo,
     error::{Result, RoutingError},
     id::PublicId,
     location::{DstLocation, SrcLocation},
     log_utils,
-    messages::{Message, MessageWithBytes, Variant},
+    messages::{Message, MessageWithBytes},
     network_service::Resend,
     outbox::EventBox,
     quic_p2p::{Peer, Token},
     state_machine::Transition,
-    time::Duration,
-    xor_space::{Prefix, XorName},
+    xor_space::XorName,
     NetworkEvent,
 };
 use bytes::Bytes;
-use itertools::Itertools;
-use std::{fmt::Debug, net::SocketAddr, slice};
+use std::net::SocketAddr;
 
 // Trait for all states.
 pub trait Base {
@@ -43,8 +40,6 @@ pub trait Base {
         Transition::Stay
     }
 
-    fn is_message_handled(&self, msg: &MessageWithBytes) -> bool;
-    fn set_message_handled(&mut self, msg: &MessageWithBytes);
     fn relay_message(&mut self, sender: Option<SocketAddr>, msg: &MessageWithBytes) -> Result<()>;
     fn should_handle_message(&self, _msg: &Message) -> bool;
     fn verify_message(&self, msg: &Message) -> Result<bool>;
@@ -226,7 +221,7 @@ pub trait Base {
             return Ok(Transition::Stay);
         }
 
-        if self.is_message_handled(&msg_with_bytes) {
+        if self.core().msg_filter.contains_incoming(&msg_with_bytes) {
             trace!(
                 "not handling message - already handled: {:?}",
                 msg_with_bytes
@@ -237,7 +232,7 @@ pub trait Base {
         let msg = msg_with_bytes.take_or_deserialize_message()?;
 
         if self.should_handle_message(&msg) && self.verify_message(&msg)? {
-            self.set_message_handled(&msg_with_bytes);
+            self.core_mut().msg_filter.insert_incoming(&msg_with_bytes);
             self.handle_message(sender, msg, outbox)
         } else {
             self.unhandled_message(sender, msg, msg_with_bytes.full_bytes().clone());
@@ -351,58 +346,12 @@ pub trait Base {
         None
     }
 
-    fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {
-        let message = match Message::single_src(&self.core().full_id, DstLocation::Direct, variant)
-        {
-            Ok(message) => message,
-            Err(error) => {
-                error!("Failed to create message: {:?}", error);
-                return;
-            }
-        };
-
-        let bytes = match message.to_bytes() {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                error!("Failed to serialize message {:?}: {:?}", message, error);
-                return;
-            }
-        };
-
-        self.core_mut().network_service.send_message_to_targets(
-            slice::from_ref(recipient),
-            1,
-            bytes,
-        )
-    }
-
-    fn send_message_to_target_later(&mut self, dst: &SocketAddr, message: Bytes, delay: Duration) {
-        let timer_token = self.core().timer.schedule(delay);
-        self.core_mut()
-            .network_service
-            .send_message_to_target_later(dst, message, timer_token)
-    }
-
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
         let client = Peer::Client(peer_addr);
         self.core_mut()
             .network_service
             .service_mut()
             .send(client, msg, token);
-    }
-
-    fn log_verify_failure<'a, T, I>(&self, msg: &T, error: &RoutingError, their_key_infos: I)
-    where
-        T: Debug,
-        I: IntoIterator<Item = (&'a Prefix<XorName>, &'a SectionKeyInfo)>,
-    {
-        log_or_panic!(
-            log::Level::Error,
-            "Verification failed: {:?} - {:?} --- [{:?}]",
-            msg,
-            error,
-            their_key_infos.into_iter().format(", ")
-        )
     }
 
     #[cfg(feature = "mock_base")]
