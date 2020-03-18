@@ -6,21 +6,20 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::Core;
 use crate::{
     action::Action,
     chain::SectionKeyInfo,
     error::{Result, RoutingError},
-    id::{FullId, PublicId},
+    id::PublicId,
     location::{DstLocation, SrcLocation},
     log_utils,
     messages::{Message, MessageWithBytes, Variant},
-    network_service::{NetworkService, Resend},
+    network_service::Resend,
     outbox::EventBox,
     quic_p2p::{Peer, Token},
-    rng::MainRng,
     state_machine::Transition,
     time::Duration,
-    timer::Timer,
     xor_space::{Prefix, XorName},
     NetworkEvent,
 };
@@ -30,12 +29,9 @@ use std::{fmt::Debug, net::SocketAddr, slice};
 
 // Trait for all states.
 pub trait Base {
-    fn network_service(&self) -> &NetworkService;
-    fn network_service_mut(&mut self) -> &mut NetworkService;
-    fn full_id(&self) -> &FullId;
+    fn core(&self) -> &Core;
+    fn core_mut(&mut self) -> &mut Core;
     fn in_dst_location(&self, dst: &DstLocation) -> bool;
-    fn timer(&self) -> &Timer;
-    fn rng(&mut self) -> &mut MainRng;
 
     fn set_log_ident(&self) -> log_utils::Guard;
 
@@ -85,7 +81,7 @@ pub trait Base {
                 peer_addr,
                 result_tx,
             } => {
-                self.network_service_mut().disconnect(peer_addr);
+                self.core_mut().network_service.disconnect(peer_addr);
                 let _ = result_tx.send(Ok(()));
             }
             Action::SendMessageToClient {
@@ -113,7 +109,7 @@ pub trait Base {
     }
 
     fn invoke_handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
-        if self.network_service_mut().handle_timeout(token) {
+        if self.core_mut().network_service.handle_timeout(token) {
             Transition::Stay
         } else {
             self.handle_timeout(token, outbox)
@@ -269,7 +265,11 @@ pub trait Base {
         msg_token: Token,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        match self.network_service_mut().target_failed(msg_token, addr) {
+        match self
+            .core_mut()
+            .network_service
+            .target_failed(msg_token, addr)
+        {
             Resend::Now(next_target) => {
                 trace!(
                     "Sending message ID {} to {} failed - resending to {} now",
@@ -278,7 +278,8 @@ pub trait Base {
                     next_target
                 );
 
-                self.network_service_mut()
+                self.core_mut()
+                    .network_service
                     .send_now(next_target, msg, msg_token);
                 Transition::Stay
             }
@@ -291,9 +292,13 @@ pub trait Base {
                     delay
                 );
 
-                let timer_token = self.timer().schedule(delay);
-                self.network_service_mut()
-                    .send_later(next_target, msg, msg_token, timer_token);
+                let timer_token = self.core().timer.schedule(delay);
+                self.core_mut().network_service.send_later(
+                    next_target,
+                    msg,
+                    msg_token,
+                    timer_token,
+                );
                 Transition::Stay
             }
             Resend::Never => {
@@ -316,22 +321,24 @@ pub trait Base {
         _outbox: &mut dyn EventBox,
     ) -> Transition {
         trace!("Successfully sent message with ID {} to {:?}", token, addr);
-        self.network_service_mut()
+        self.core_mut()
+            .network_service
             .targets_cache_mut()
             .target_succeeded(token, addr);
         Transition::Stay
     }
 
     fn id(&self) -> &PublicId {
-        self.full_id().public_id()
+        self.core().full_id.public_id()
     }
 
     fn name(&self) -> &XorName {
-        self.full_id().public_id().name()
+        self.core().full_id.public_id().name()
     }
 
     fn our_connection_info(&mut self) -> Result<SocketAddr> {
-        self.network_service_mut()
+        self.core_mut()
+            .network_service
             .service_mut()
             .our_connection_info()
             .map_err(|err| {
@@ -345,7 +352,8 @@ pub trait Base {
     }
 
     fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {
-        let message = match Message::single_src(self.full_id(), DstLocation::Direct, variant) {
+        let message = match Message::single_src(&self.core().full_id, DstLocation::Direct, variant)
+        {
             Ok(message) => message,
             Err(error) => {
                 error!("Failed to create message: {:?}", error);
@@ -361,19 +369,24 @@ pub trait Base {
             }
         };
 
-        self.network_service_mut()
-            .send_message_to_targets(slice::from_ref(recipient), 1, bytes)
+        self.core_mut().network_service.send_message_to_targets(
+            slice::from_ref(recipient),
+            1,
+            bytes,
+        )
     }
 
     fn send_message_to_target_later(&mut self, dst: &SocketAddr, message: Bytes, delay: Duration) {
-        let timer_token = self.timer().schedule(delay);
-        self.network_service_mut()
+        let timer_token = self.core().timer.schedule(delay);
+        self.core_mut()
+            .network_service
             .send_message_to_target_later(dst, message, timer_token)
     }
 
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
         let client = Peer::Client(peer_addr);
-        self.network_service_mut()
+        self.core_mut()
+            .network_service
             .service_mut()
             .send(client, msg, token);
     }
@@ -394,6 +407,6 @@ pub trait Base {
 
     #[cfg(feature = "mock_base")]
     fn process_timers(&mut self) {
-        self.timer().process_timers()
+        self.core().timer.process_timers()
     }
 }

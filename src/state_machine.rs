@@ -128,7 +128,7 @@ impl State {
     pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
         state_dispatch!(
             self,
-            state => state.network_service_mut().our_connection_info().map_err(RoutingError::from),
+            state => state.core_mut().network_service.our_connection_info().map_err(RoutingError::from),
             Terminated => Err(RoutingError::InvalidState)
         )
     }
@@ -212,7 +212,7 @@ impl State {
     pub fn rng(&mut self) -> &mut MainRng {
         state_dispatch!(
             self,
-            state => state.rng(),
+            state => &mut state.core_mut().rng,
             Terminated => unreachable!()
         )
     }
