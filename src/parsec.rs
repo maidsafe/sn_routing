@@ -6,12 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-#[cfg(feature = "mock")]
-use crate::crypto;
-#[cfg(feature = "mock")]
-use crate::mock::parsec as inner;
-#[cfg(feature = "mock")]
-use crate::unwrap;
 use crate::{
     chain::{self, AccumulatingEvent, GenesisPfxInfo},
     id::{self, FullId},
@@ -19,9 +13,11 @@ use crate::{
     rng::{self, MainRng, RngCompat},
     time::Duration,
 };
+#[cfg(feature = "mock")]
+use crate::{crypto, mock::parsec as inner, unwrap};
 #[cfg(not(feature = "mock"))]
 use parsec as inner;
-#[cfg(feature = "mock")]
+#[cfg(all(test, feature = "mock"))]
 use std::collections::BTreeSet;
 use std::{
     collections::{btree_map::Entry, BTreeMap},
@@ -226,7 +222,7 @@ impl ParsecMap {
     }
 
     // Enable test to simulate other members voting
-    #[cfg(feature = "mock")]
+    #[cfg(all(test, feature = "mock"))]
     pub fn vote_for_as(
         &mut self,
         obs: Observation<chain::NetworkEvent, id::PublicId>,
@@ -238,7 +234,7 @@ impl ParsecMap {
     }
 
     // Enable test to simulate other members signing and getting the right pk_set
-    #[cfg(feature = "mock")]
+    #[cfg(all(test, feature = "mock"))]
     pub fn get_dkg_result_as(
         &mut self,
         participants: BTreeSet<id::PublicId>,
@@ -384,13 +380,6 @@ impl ParsecMap {
             .take(MAX_PARSECS)
             .rev()
             .collect();
-    }
-}
-
-#[cfg(feature = "mock_base")]
-impl ParsecMap {
-    pub fn get_size(&self) -> u64 {
-        self.size_counter.size_counter
     }
 }
 

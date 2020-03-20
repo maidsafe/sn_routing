@@ -7,11 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    approved_peer::{ApprovedPeer, ElderDetails},
+    approved_peer::ApprovedPeer,
     common::{Base, BOUNCE_RESEND_DELAY},
 };
 use crate::{
-    chain::{Chain, GenesisPfxInfo, NetworkParams},
+    chain::{GenesisPfxInfo, NetworkParams},
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
@@ -20,7 +20,6 @@ use crate::{
     log_utils,
     messages::{BootstrapResponse, Message, MessageHash, MessageWithBytes, Variant},
     outbox::EventBox,
-    parsec::ParsecMap,
     relocation::SignedRelocateDetails,
     stage::{Bootstrapping, BootstrappingStatus, Joining, Stage},
     state_machine::{State, Transition},
@@ -67,35 +66,10 @@ impl JoiningPeer {
         }
     }
 
-    pub fn approve(
-        mut self,
-        gen_pfx_info: GenesisPfxInfo,
-        outbox: &mut dyn EventBox,
-    ) -> Result<State> {
+    pub fn approve(self, gen_pfx_info: GenesisPfxInfo, outbox: &mut dyn EventBox) -> Result<State> {
         let stage = match self.stage {
             Stage::Bootstrapping(_) => unreachable!(),
             Stage::Joining(stage) => stage,
-        };
-
-        let public_id = *self.core.full_id.public_id();
-        let parsec_map = ParsecMap::default().with_init(
-            &mut self.core.rng,
-            self.core.full_id.clone(),
-            &gen_pfx_info,
-        );
-        let chain = Chain::new(self.network_cfg, public_id, gen_pfx_info.clone(), None);
-
-        let details = ElderDetails {
-            chain,
-            transport: self.core.transport,
-            full_id: self.core.full_id,
-            gen_pfx_info,
-            msg_queue: Default::default(),
-            sig_accumulator: Default::default(),
-            parsec_map,
-            msg_filter: self.core.msg_filter,
-            timer: self.core.timer,
-            rng: self.core.rng,
         };
 
         let connect_type = if stage.is_relocating() {
@@ -104,9 +78,12 @@ impl JoiningPeer {
             Connected::First
         };
 
-        Ok(State::ApprovedPeer(ApprovedPeer::from_joining_peer(
-            details,
+        Ok(State::ApprovedPeer(ApprovedPeer::regular(
+            self.core,
+            self.network_cfg,
             connect_type,
+            gen_pfx_info,
+            None,
             outbox,
         )))
     }

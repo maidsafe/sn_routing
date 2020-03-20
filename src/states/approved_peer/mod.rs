@@ -80,19 +80,6 @@ enum PendingMessageKey {
     },
 }
 
-pub struct ElderDetails {
-    pub chain: Chain,
-    pub transport: Transport,
-    pub full_id: FullId,
-    pub gen_pfx_info: GenesisPfxInfo,
-    pub msg_queue: VecDeque<QueuedMessage>,
-    pub sig_accumulator: SignatureAccumulator,
-    pub parsec_map: ParsecMap,
-    pub msg_filter: MessageFilter,
-    pub timer: Timer,
-    pub rng: MainRng,
-}
-
 pub struct ApprovedPeer {
     core: Core,
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
@@ -116,6 +103,7 @@ impl ApprovedPeer {
     // Construction and transition
     ////////////////////////////////////////////////////////////////////////////
 
+    // Create the first node in the network.
     pub fn first(
         mut transport: Transport,
         full_id: FullId,
@@ -145,20 +133,22 @@ impl ApprovedPeer {
             first_dkg_result.secret_key_share,
         );
 
-        let details = ElderDetails {
-            chain,
-            transport,
+        let core = Core {
             full_id,
-            gen_pfx_info,
-            msg_queue: Default::default(),
-            sig_accumulator: Default::default(),
-            parsec_map,
+            transport,
             msg_filter: MessageFilter::new(),
             timer,
             rng,
         };
 
-        let node = Self::new(details);
+        let node = Self::new(
+            core,
+            chain,
+            parsec_map,
+            Default::default(),
+            Default::default(),
+            gen_pfx_info,
+        );
 
         info!("{} Started a new network as a seed node.", node.name());
 
@@ -168,12 +158,33 @@ impl ApprovedPeer {
         Ok(node)
     }
 
-    pub fn from_joining_peer(
-        details: ElderDetails,
+    // Create regular node.
+    pub fn regular(
+        mut core: Core,
+        network_cfg: NetworkParams,
         connect_type: Connected,
+        gen_pfx_info: GenesisPfxInfo,
+        secret_key_share: Option<bls::SecretKeyShare>,
         outbox: &mut dyn EventBox,
     ) -> Self {
-        let node = Self::new(details);
+        let chain = Chain::new(
+            network_cfg,
+            *core.full_id.public_id(),
+            gen_pfx_info.clone(),
+            secret_key_share,
+        );
+
+        let parsec_map =
+            ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
+
+        let node = Self::new(
+            core,
+            chain,
+            parsec_map,
+            Default::default(),
+            Default::default(),
+            gen_pfx_info,
+        );
 
         debug!("{} State changed to Elder.", node.name());
         outbox.send_event(Event::Connected(connect_type));
@@ -209,44 +220,46 @@ impl ApprovedPeer {
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
-        Self::new(ElderDetails {
-            chain: state.chain,
-            transport: state.transport,
+        let core = Core {
             full_id: state.full_id,
-            gen_pfx_info: state.gen_pfx_info,
-            msg_queue: state.msg_queue,
-            sig_accumulator: state.sig_accumulator,
-            parsec_map: state.parsec_map,
+            transport: state.transport,
             msg_filter: state.msg_filter,
             timer,
             rng: rng::new(),
-        })
+        };
+
+        Self::new(
+            core,
+            state.chain,
+            state.parsec_map,
+            state.msg_queue,
+            state.sig_accumulator,
+            state.gen_pfx_info,
+        )
     }
 
-    fn new(details: ElderDetails) -> Self {
-        let timer = details.timer;
-        let parsec_map = details.parsec_map;
-
-        let timer_token = if details.chain.is_self_elder() {
-            timer.schedule(parsec_map.gossip_period())
+    fn new(
+        core: Core,
+        chain: Chain,
+        parsec_map: ParsecMap,
+        msg_queue: VecDeque<QueuedMessage>,
+        sig_accumulator: SignatureAccumulator,
+        gen_pfx_info: GenesisPfxInfo,
+    ) -> Self {
+        let timer_token = if chain.is_self_elder() {
+            core.timer.schedule(parsec_map.gossip_period())
         } else {
-            timer.schedule(KNOWLEDGE_TIMEOUT)
+            core.timer.schedule(KNOWLEDGE_TIMEOUT)
         };
 
         Self {
-            core: Core {
-                full_id: details.full_id.clone(),
-                transport: details.transport,
-                msg_filter: details.msg_filter,
-                timer,
-                rng: details.rng,
-            },
-            sig_accumulator: details.sig_accumulator,
-            msg_queue: details.msg_queue,
+            core,
+            sig_accumulator,
+            msg_queue,
             parsec_map,
-            gen_pfx_info: details.gen_pfx_info,
+            gen_pfx_info,
             timer_token,
-            chain: details.chain,
+            chain,
             dkg_cache: Default::default(),
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),

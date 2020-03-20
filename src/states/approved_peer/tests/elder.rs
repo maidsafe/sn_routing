@@ -354,28 +354,22 @@ fn create_state(
     secret_key_share: bls::SecretKeyShare,
     gen_pfx_info: GenesisPfxInfo,
 ) -> ApprovedPeer {
-    let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), &gen_pfx_info);
-    let chain = Chain::new(
-        Default::default(),
-        *full_id.public_id(),
-        gen_pfx_info.clone(),
-        Some(secret_key_share),
-    );
-
-    let details = ElderDetails {
-        chain,
-        transport: test_utils::create_transport(network),
+    let core = Core {
         full_id,
-        gen_pfx_info,
-        msg_queue: Default::default(),
-        sig_accumulator: Default::default(),
-        parsec_map,
+        transport: test_utils::create_transport(network),
         msg_filter: MessageFilter::new(),
         timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
 
-    let elder = ApprovedPeer::from_joining_peer(details, Connected::First, &mut ());
+    let elder = ApprovedPeer::regular(
+        core,
+        NetworkParams::default(),
+        Connected::First,
+        gen_pfx_info,
+        Some(secret_key_share),
+        &mut (),
+    );
     assert!(elder.chain.is_self_elder());
     elder
 }
