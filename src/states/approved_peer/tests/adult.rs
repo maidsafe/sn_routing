@@ -130,28 +130,22 @@ fn create_state(
 ) -> ApprovedPeer {
     let full_id = FullId::gen(rng);
 
-    let parsec_map = ParsecMap::default().with_init(rng, full_id.clone(), &gen_pfx_info);
-    let chain = Chain::new(
-        Default::default(),
-        *full_id.public_id(),
-        gen_pfx_info.clone(),
-        None,
-    );
-
-    let details = ElderDetails {
-        chain,
-        transport: test_utils::create_transport(network),
+    let core = Core {
         full_id,
-        gen_pfx_info,
-        msg_queue: Default::default(),
-        sig_accumulator: Default::default(),
-        parsec_map,
+        transport: test_utils::create_transport(network),
         msg_filter: MessageFilter::new(),
         timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
 
-    let subject = ApprovedPeer::from_joining_peer(details, Connected::First, &mut ());
+    let subject = ApprovedPeer::regular(
+        core,
+        NetworkParams::default(),
+        Connected::First,
+        gen_pfx_info,
+        None,
+        &mut (),
+    );
     assert!(!subject.chain.is_self_elder());
     subject
 }
