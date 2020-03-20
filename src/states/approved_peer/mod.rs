@@ -69,8 +69,6 @@ struct CompleteParsecReset {
     /// The events to process. Not shared state: only the ones we voted for.
     /// Also contains our votes that never reached consensus.
     pub to_process: BTreeSet<NetworkEvent>,
-    /// Event to send on completion.
-    pub event_to_send: Option<Event>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
@@ -104,7 +102,6 @@ pub struct ApprovedPeer {
     gen_pfx_info: GenesisPfxInfo,
     timer_token: u64,
     chain: Chain,
-    pfx_is_successfully_polled: bool,
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     // Messages we received but not accumulated yet, so may need to re-swarm.
@@ -249,7 +246,6 @@ impl ApprovedPeer {
             gen_pfx_info: details.gen_pfx_info,
             timer_token,
             chain: details.chain,
-            pfx_is_successfully_polled: false,
             dkg_cache: Default::default(),
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
@@ -757,7 +753,6 @@ impl ApprovedPeer {
                     );
 
                     self.chain.handle_genesis_event(group, related_info)?;
-                    self.pfx_is_successfully_polled = true;
 
                     continue;
                 }
@@ -1074,6 +1069,7 @@ impl ApprovedPeer {
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
         let is_elder = elders_info.is_member(self.core.full_id.public_id());
+        let is_split = info_prefix.is_extension_of(&old_pfx);
 
         if was_elder || is_elder {
             info!("handle SectionInfo: {:?}", elders_info);
@@ -1082,7 +1078,7 @@ impl ApprovedPeer {
             return Ok(Transition::Stay);
         }
 
-        let complete_data = if info_prefix.is_extension_of(&old_pfx) {
+        let complete_data = if is_split {
             self.prepare_finalise_split()?
         } else if old_pfx.is_extension_of(&info_prefix) {
             panic!("Merge not supported: {:?} -> {:?}", old_pfx, info_prefix,);
@@ -1117,8 +1113,10 @@ impl ApprovedPeer {
         });
 
         self.print_rt_size();
-        if let Some(to_send) = complete_data.event_to_send {
-            outbox.send_event(to_send);
+
+        if is_split {
+            info!("Split");
+            outbox.send_event(Event::SectionSplit(*self.our_prefix()));
         }
 
         if !was_elder {
@@ -1224,7 +1222,6 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
 
     fn init_parsec(&mut self) {
-        self.pfx_is_successfully_polled = false;
         self.parsec_map.init(
             &mut self.core.rng,
             self.core.full_id.clone(),
@@ -1244,8 +1241,7 @@ impl ApprovedPeer {
         let reset_data = self
             .chain
             .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
-        let mut complete_data = self.complete_parsec_reset_data(reset_data);
-        complete_data.event_to_send = Some(Event::SectionSplit(*self.our_prefix()));
+        let complete_data = self.complete_parsec_reset_data(reset_data);
         Ok(complete_data)
     }
 
@@ -1337,7 +1333,6 @@ impl ApprovedPeer {
             gen_pfx_info,
             to_vote_again,
             to_process,
-            event_to_send: None,
         }
     }
 
