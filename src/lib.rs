@@ -134,6 +134,7 @@ pub use self::mock::parsec::init_mock;
 
 mod action;
 mod chain;
+mod core;
 mod error;
 mod id;
 mod location;

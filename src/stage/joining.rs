@@ -8,11 +8,11 @@
 
 use crate::{
     chain::{EldersInfo, SectionKeyInfo},
+    core::Core,
     error::Result,
     id::P2pNode,
     messages::{self, BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
     relocation::RelocatePayload,
-    states::Core,
     xor_space::{Prefix, XorName},
 };
 use std::time::Duration;

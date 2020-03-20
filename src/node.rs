@@ -9,6 +9,7 @@
 use crate::{
     action::Action,
     chain::NetworkParams,
+    core::Core,
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
@@ -18,7 +19,7 @@ use crate::{
     quic_p2p::{OurType, Token},
     rng::{self, MainRng},
     state_machine::{State, StateMachine},
-    states::{self, Core, JoiningPeer},
+    states::{self, JoiningPeer},
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
 };
