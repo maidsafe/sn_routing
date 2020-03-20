@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::joining::{JoinType, Joining, JOIN_TIMEOUT};
 use crate::{
     chain::EldersInfo,
     error::Result,
@@ -66,7 +65,7 @@ impl Bootstrapping {
         core: &mut Core,
         sender: P2pNode,
         response: BootstrapResponse,
-    ) -> Result<Option<Joining>> {
+    ) -> Result<BootstrappingStatus> {
         // Ignore messages from peers we didn't send `BootstrapRequest` to.
         if !self.pending_requests.contains(sender.peer_addr()) {
             debug!(
@@ -74,7 +73,7 @@ impl Bootstrapping {
                 sender,
             );
             core.transport.disconnect(*sender.peer_addr());
-            return Ok(None);
+            return Ok(BootstrappingStatus::Ongoing);
         }
 
         match response {
@@ -84,13 +83,11 @@ impl Bootstrapping {
                     elders_info, sender
                 );
 
-                let join_type = self.join_section(core, &elders_info)?;
-                let stage = Joining {
+                let relocate_payload = self.join_section(core, &elders_info)?;
+                Ok(BootstrappingStatus::Finished {
                     elders_info,
-                    join_type,
-                };
-                stage.send_join_requests(core);
-                Ok(Some(stage))
+                    relocate_payload,
+                })
             }
             BootstrapResponse::Rebootstrap(new_conn_infos) => {
                 info!(
@@ -98,7 +95,7 @@ impl Bootstrapping {
                     new_conn_infos
                 );
                 self.reconnect_to_new_section(core, new_conn_infos);
-                Ok(None)
+                Ok(BootstrappingStatus::Ongoing)
             }
         }
     }
@@ -132,7 +129,11 @@ impl Bootstrapping {
         }
     }
 
-    fn join_section(&mut self, core: &mut Core, elders_info: &EldersInfo) -> Result<JoinType> {
+    fn join_section(
+        &mut self,
+        core: &mut Core,
+        elders_info: &EldersInfo,
+    ) -> Result<Option<RelocatePayload>> {
         let relocate_details = self.relocate_details.take();
         let destination = match &relocate_details {
             Some(details) => *details.destination(),
@@ -154,13 +155,10 @@ impl Bootstrapping {
         }
 
         if let Some(details) = relocate_details {
-            let relocate_payload =
-                RelocatePayload::new(details, core.full_id.public_id(), &old_full_id)?;
-
-            Ok(JoinType::Relocate(relocate_payload))
+            let payload = RelocatePayload::new(details, core.full_id.public_id(), &old_full_id)?;
+            Ok(Some(payload))
         } else {
-            let timeout_token = core.timer.schedule(JOIN_TIMEOUT);
-            Ok(JoinType::First { timeout_token })
+            Ok(None)
         }
     }
 
@@ -169,4 +167,15 @@ impl Bootstrapping {
             .and_then(VerifyStatus::require_full)?;
         Ok(true)
     }
+}
+
+#[allow(clippy::large_enum_variant)]
+pub enum BootstrappingStatus {
+    // Bootstraping is still ongoing.
+    Ongoing,
+    // Bootstraping successfuly finished.
+    Finished {
+        elders_info: EldersInfo,
+        relocate_payload: Option<RelocatePayload>,
+    },
 }

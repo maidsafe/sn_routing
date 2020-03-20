@@ -10,12 +10,12 @@ mod bootstrapping;
 mod joining;
 
 pub use self::{
-    bootstrapping::Bootstrapping,
-    joining::{JoinType, Joining, JOIN_TIMEOUT},
+    bootstrapping::{Bootstrapping, BootstrappingStatus},
+    joining::Joining,
 };
 
 #[cfg(feature = "mock_base")]
-pub use self::bootstrapping::BOOTSTRAP_TIMEOUT;
+pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
 
 // Type to represent the various stages a node goes through during its lifetime.
 pub enum Stage {

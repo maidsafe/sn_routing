@@ -22,12 +22,35 @@ pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
 
 // The joining stage - node is waiting to be approved by the section.
 pub struct Joining {
-    pub elders_info: EldersInfo,
-    pub join_type: JoinType,
+    // EldersInfo of the section we are joining.
+    elders_info: EldersInfo,
+    // Whether we are joining as infant or relocating.
+    join_type: JoinType,
 }
 
 impl Joining {
-    // Returns whether the joining failed and we need to rebootstrap.
+    pub fn new(
+        core: &mut Core,
+        elders_info: EldersInfo,
+        relocate_payload: Option<RelocatePayload>,
+    ) -> Self {
+        let join_type = match relocate_payload {
+            Some(payload) => JoinType::Relocate(payload),
+            None => {
+                let timeout_token = core.timer.schedule(JOIN_TIMEOUT);
+                JoinType::First { timeout_token }
+            }
+        };
+
+        let stage = Self {
+            elders_info,
+            join_type,
+        };
+        stage.send_join_requests(core);
+        stage
+    }
+
+    // Returns whether the timeout was handled.
     pub fn handle_timeout(&mut self, core: &mut Core, token: u64) -> bool {
         let join_token = match self.join_type {
             JoinType::First { timeout_token } => timeout_token,
@@ -85,25 +108,6 @@ impl Joining {
         Ok(())
     }
 
-    pub fn send_join_requests(&self, core: &mut Core) {
-        let relocate_payload = match &self.join_type {
-            JoinType::First { .. } => None,
-            JoinType::Relocate(payload) => Some(payload),
-        };
-
-        for dst in self.elders_info.member_nodes() {
-            let join_request = JoinRequest {
-                elders_version: self.elders_info.version(),
-                relocate_payload: relocate_payload.cloned(),
-            };
-
-            let variant = Variant::JoinRequest(Box::new(join_request));
-
-            info!("Sending JoinRequest to {}", dst);
-            core.send_direct_message(dst.peer_addr(), variant);
-        }
-    }
-
     pub fn verify_message(&self, msg: &Message) -> Result<bool> {
         match (&msg.variant, &self.join_type) {
             (Variant::NodeApproval(_), JoinType::Relocate(payload)) => {
@@ -121,10 +125,39 @@ impl Joining {
             _ => unreachable!("unexpected message to verify: {:?}", msg),
         }
     }
+
+    // Prefix of the section we are joining.
+    pub fn target_section_prefix(&self) -> &Prefix<XorName> {
+        self.elders_info.prefix()
+    }
+
+    // Are we relocating or joining for the first time?
+    pub fn is_relocating(&self) -> bool {
+        matches!(self.join_type, JoinType::Relocate(_))
+    }
+
+    fn send_join_requests(&self, core: &mut Core) {
+        let relocate_payload = match &self.join_type {
+            JoinType::First { .. } => None,
+            JoinType::Relocate(payload) => Some(payload),
+        };
+
+        for dst in self.elders_info.member_nodes() {
+            let join_request = JoinRequest {
+                elders_version: self.elders_info.version(),
+                relocate_payload: relocate_payload.cloned(),
+            };
+
+            let variant = Variant::JoinRequest(Box::new(join_request));
+
+            info!("Sending JoinRequest to {}", dst);
+            core.send_direct_message(dst.peer_addr(), variant);
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
-pub enum JoinType {
+enum JoinType {
     // Node joining the network for the first time.
     First { timeout_token: u64 },
     // Node being relocated.
