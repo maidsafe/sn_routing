@@ -14,10 +14,10 @@ use crate::{
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{Message, Variant},
-    network_service::NetworkService,
     rng::MainRng,
     time::Duration,
     timer::Timer,
+    transport::Transport,
     xor_space::XorName,
 };
 use bytes::Bytes;
@@ -29,7 +29,7 @@ pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
 /// Struct that contains data common to all states.
 pub struct Core {
     pub full_id: FullId,
-    pub network_service: NetworkService,
+    pub transport: Transport,
     pub msg_filter: MessageFilter,
     pub timer: Timer,
     pub rng: MainRng,
@@ -46,7 +46,7 @@ impl Core {
         dg_size: usize,
         msg: Bytes,
     ) {
-        self.network_service
+        self.transport
             .send_message_to_targets(conn_infos, dg_size, msg)
     }
 
@@ -57,7 +57,7 @@ impl Core {
         delay: Duration,
     ) {
         let timer_token = self.timer.schedule(delay);
-        self.network_service
+        self.transport
             .send_message_to_target_later(dst, message, timer_token)
     }
 

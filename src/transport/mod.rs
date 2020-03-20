@@ -22,14 +22,14 @@ use sending_targets_cache::SendingTargetsCache;
 
 /// Struct that handles network operations: sending and receiving messages, as well as resending on
 /// failure.
-pub struct NetworkService {
+pub struct Transport {
     quic_p2p: QuicP2p,
     cache: SendingTargetsCache,
     next_msg_token: Token,
     scheduled_messages: HashMap<u64, ScheduledMessage>,
 }
 
-impl NetworkService {
+impl Transport {
     pub fn service_mut(&mut self) -> &mut QuicP2p {
         &mut self.quic_p2p
     }
@@ -130,11 +130,11 @@ impl NetworkService {
     }
 }
 
-pub struct NetworkBuilder {
+pub struct TransportBuilder {
     quic_p2p: Builder,
 }
 
-impl NetworkBuilder {
+impl TransportBuilder {
     pub fn new(event_tx: EventSenders) -> Self {
         Self {
             quic_p2p: Builder::new(event_tx),
@@ -147,8 +147,8 @@ impl NetworkBuilder {
         }
     }
 
-    pub fn build(self) -> Result<NetworkService, QuicP2pError> {
-        Ok(NetworkService {
+    pub fn build(self) -> Result<Transport, QuicP2pError> {
+        Ok(Transport {
             quic_p2p: self.quic_p2p.build()?,
             cache: Default::default(),
             next_msg_token: 0,

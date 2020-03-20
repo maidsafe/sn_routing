@@ -16,10 +16,10 @@
 use crate::{
     chain::{AgeCounter, EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER},
     id::{FullId, P2pNode, PublicId},
-    network_service::{NetworkBuilder, NetworkService},
     quic_p2p,
     rng::MainRng,
     timer::Timer,
+    transport::{Transport, TransportBuilder},
     unwrap,
     xor_space::{Prefix, XorName},
     NetworkConfig,
@@ -28,7 +28,7 @@ use crossbeam_channel as mpmc;
 use mock_quic_p2p::Network;
 use std::collections::BTreeMap;
 
-pub fn create_network_service(network: &Network) -> NetworkService {
+pub fn create_transport(network: &Network) -> Transport {
     let endpoint = network.gen_addr();
     let network_config = NetworkConfig::node().with_hard_coded_contact(endpoint);
     let network_tx = {
@@ -36,7 +36,7 @@ pub fn create_network_service(network: &Network) -> NetworkService {
         let (client_tx, _) = crossbeam_channel::unbounded();
         quic_p2p::EventSenders { node_tx, client_tx }
     };
-    unwrap!(NetworkBuilder::new(network_tx)
+    unwrap!(TransportBuilder::new(network_tx)
         .with_config(network_config)
         .build())
 }

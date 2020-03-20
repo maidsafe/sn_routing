@@ -46,7 +46,7 @@ pub struct JoiningPeer {
 
 impl JoiningPeer {
     pub fn new(mut core: Core, network_cfg: NetworkParams) -> Self {
-        core.network_service.service_mut().bootstrap();
+        core.transport.service_mut().bootstrap();
 
         Self {
             core,
@@ -95,7 +95,7 @@ impl JoiningPeer {
 
         let details = ElderDetails {
             chain,
-            network_service: self.core.network_service,
+            transport: self.core.transport,
             full_id: self.core.full_id,
             gen_pfx_info,
             msg_queue: Default::default(),
@@ -161,7 +161,7 @@ impl JoiningPeer {
         // TODO: preserve relocation details
         self.stage = Stage::Bootstrapping(BootstrappingStage::new(None));
         self.core.full_id = FullId::gen(&mut self.core.rng);
-        self.core.network_service.service_mut().bootstrap();
+        self.core.transport.service_mut().bootstrap();
     }
 }
 
@@ -378,11 +378,11 @@ impl BootstrappingStage {
             return;
         }
 
-        core.network_service.disconnect(peer_addr);
+        core.transport.disconnect(peer_addr);
 
         if self.pending_requests.is_empty() {
             // Rebootstrap
-            core.network_service.service_mut().bootstrap();
+            core.transport.service_mut().bootstrap();
         }
     }
 
@@ -398,7 +398,7 @@ impl BootstrappingStage {
                 "Ignoring BootstrapResponse from unexpected peer: {}",
                 sender,
             );
-            core.network_service.disconnect(*sender.peer_addr());
+            core.transport.disconnect(*sender.peer_addr());
             return Ok(None);
         }
 
@@ -447,7 +447,7 @@ impl BootstrappingStage {
 
     fn reconnect_to_new_section(&mut self, core: &mut Core, new_conn_infos: Vec<SocketAddr>) {
         for addr in self.pending_requests.drain() {
-            core.network_service.disconnect(addr);
+            core.transport.disconnect(addr);
         }
 
         self.timeout_tokens.clear();
@@ -517,7 +517,7 @@ impl JoiningStage {
                 .member_nodes()
                 .map(|node| *node.peer_addr())
             {
-                core.network_service.disconnect(addr);
+                core.transport.disconnect(addr);
             }
 
             true
@@ -676,11 +676,11 @@ mod tests {
         let (node_b_client_tx, _) = mpmc::unbounded();
 
         let (_node_b_action_tx, mut node_b_state_machine) = StateMachine::new(
-            move |network_service, timer, _outbox2| {
+            move |transport, timer, _outbox2| {
                 State::JoiningPeer(JoiningPeer::new(
                     Core {
                         full_id: node_b_full_id,
-                        network_service,
+                        transport,
                         msg_filter: Default::default(),
                         timer,
                         rng,

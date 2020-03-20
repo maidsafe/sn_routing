@@ -11,13 +11,13 @@ use crate::{
     chain::GenesisPfxInfo,
     error::RoutingError,
     id::{P2pNode, PublicId},
-    network_service::{NetworkBuilder, NetworkService},
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::EventSenders,
     relocation::SignedRelocateDetails,
     states::{common::Base, ApprovedPeer, JoiningPeer},
     timer::Timer,
+    transport::{Transport, TransportBuilder},
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
 };
@@ -128,7 +128,7 @@ impl State {
     pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
         state_dispatch!(
             self,
-            state => state.core_mut().network_service.our_connection_info().map_err(RoutingError::from),
+            state => state.core_mut().transport.our_connection_info().map_err(RoutingError::from),
             Terminated => Err(RoutingError::InvalidState)
         )
     }
@@ -256,7 +256,7 @@ impl StateMachine {
         outbox: &mut dyn EventBox,
     ) -> (mpmc::Sender<Action>, Self)
     where
-        F: FnOnce(NetworkService, Timer, &mut dyn EventBox) -> State,
+        F: FnOnce(Transport, Timer, &mut dyn EventBox) -> State,
     {
         let (action_tx, action_rx) = mpmc::unbounded();
         let (network_tx, network_rx) = {
@@ -264,16 +264,16 @@ impl StateMachine {
             (EventSenders { node_tx, client_tx }, node_rx)
         };
 
-        let network_service = match NetworkBuilder::new(network_tx)
+        let transport = match TransportBuilder::new(network_tx)
             .with_config(network_config)
             .build()
         {
-            Ok(network_service) => network_service,
+            Ok(transport) => transport,
             Err(err) => panic!("Unable to start network service: {:?}", err),
         };
 
         let timer = Timer::new(action_tx.clone());
-        let state = init_state(network_service, timer, outbox);
+        let state = init_state(transport, timer, outbox);
         let is_running = match state {
             State::Terminated => false,
             _ => true,

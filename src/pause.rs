@@ -11,9 +11,9 @@ use crate::{
     id::FullId,
     message_filter::MessageFilter,
     messages::QueuedMessage,
-    network_service::NetworkService,
     parsec::ParsecMap,
     signature_accumulator::SignatureAccumulator,
+    transport::Transport,
     NetworkEvent,
 };
 use crossbeam_channel as mpmc;
@@ -33,8 +33,8 @@ pub struct PausedState {
     pub(super) gen_pfx_info: GenesisPfxInfo,
     pub(super) msg_filter: MessageFilter,
     pub(super) msg_queue: VecDeque<QueuedMessage>,
-    // TODO: instead of storing both network_service and network_rx, store only the network config.
-    pub(super) network_service: NetworkService,
+    // TODO: instead of storing both transport and network_rx, store only the network config.
+    pub(super) transport: Transport,
     pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,
     pub(super) sig_accumulator: SignatureAccumulator,
     pub(super) parsec_map: ParsecMap,
