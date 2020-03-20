@@ -14,10 +14,11 @@ use crate::{
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{Message, Variant},
+    quic_p2p::Token,
     rng::MainRng,
     time::Duration,
     timer::Timer,
-    transport::Transport,
+    transport::{PeerStatus, Transport},
     xor_space::XorName,
 };
 use bytes::Bytes;
@@ -56,9 +57,8 @@ impl Core {
         message: Bytes,
         delay: Duration,
     ) {
-        let timer_token = self.timer.schedule(delay);
         self.transport
-            .send_message_to_target_later(dst, message, timer_token)
+            .send_message_to_target_later(dst, message, &self.timer, delay)
     }
 
     pub fn send_direct_message(&mut self, recipient: &SocketAddr, variant: Variant) {
@@ -79,5 +79,15 @@ impl Core {
         };
 
         self.send_message_to_targets(slice::from_ref(recipient), 1, bytes)
+    }
+
+    pub fn handle_unsent_message(
+        &mut self,
+        addr: SocketAddr,
+        msg: Bytes,
+        msg_token: Token,
+    ) -> PeerStatus {
+        self.transport
+            .target_failed(msg, msg_token, addr, &self.timer)
     }
 }

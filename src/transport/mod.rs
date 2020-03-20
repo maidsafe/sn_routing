@@ -12,6 +12,8 @@ pub use sending_targets_cache::{Resend, RESEND_DELAY, RESEND_MAX_ATTEMPTS};
 
 use crate::{
     quic_p2p::{Builder, EventSenders, Peer, QuicP2p, QuicP2pError, Token},
+    time::Duration,
+    timer::Timer,
     NetworkConfig,
 };
 use bytes::Bytes;
@@ -30,17 +32,8 @@ pub struct Transport {
 }
 
 impl Transport {
-    pub fn service_mut(&mut self) -> &mut QuicP2p {
-        &mut self.quic_p2p
-    }
-
-    pub fn next_msg_token(&mut self) -> Token {
-        self.next_msg_token = self.next_msg_token.wrapping_add(1);
-        self.next_msg_token
-    }
-
-    pub fn targets_cache_mut(&mut self) -> &mut SendingTargetsCache {
-        &mut self.cache
+    pub fn bootstrap(&mut self) {
+        self.quic_p2p.bootstrap()
     }
 
     pub fn send_message_to_targets(
@@ -79,36 +72,64 @@ impl Transport {
         &mut self,
         target: &SocketAddr,
         content: Bytes,
-        timer_token: u64,
+        timer: &Timer,
+        delay: Duration,
     ) {
         let token = self.next_msg_token();
-        self.send_later(*target, content, token, timer_token);
+        self.send_later(*target, content, token, timer, delay);
         self.cache.insert_message(token, slice::from_ref(target), 1);
     }
 
-    pub fn target_failed(&mut self, msg_token: Token, failed_target: SocketAddr) -> Resend {
-        self.cache.target_failed(msg_token, failed_target)
+    pub fn send_message_to_client(&mut self, target: SocketAddr, msg: Bytes, token: Token) {
+        let client = Peer::Client(target);
+        self.quic_p2p.send(client, msg, token);
     }
 
-    pub fn send_now(&mut self, target: SocketAddr, content: Bytes, token: Token) {
-        self.quic_p2p.send(Peer::Node(target), content, token)
+    pub fn target_succeeded(&mut self, token: Token, target: SocketAddr) {
+        self.cache.target_succeeded(token, target)
     }
 
-    pub fn send_later(
+    pub fn target_failed(
         &mut self,
-        target: SocketAddr,
-        content: Bytes,
-        token: Token,
-        timer_token: u64,
-    ) {
-        let _ = self.scheduled_messages.insert(
-            timer_token,
-            ScheduledMessage {
-                content,
-                token,
-                target,
-            },
-        );
+        msg: Bytes,
+        msg_token: Token,
+        failed_target: SocketAddr,
+        timer: &Timer,
+    ) -> PeerStatus {
+        match self.cache.target_failed(msg_token, failed_target) {
+            Resend::Now(next_target) => {
+                trace!(
+                    "Sending message ID {} to {} failed - resending to {} now",
+                    msg_token,
+                    failed_target,
+                    next_target
+                );
+
+                self.send_now(next_target, msg, msg_token);
+                PeerStatus::Normal
+            }
+            Resend::Later(next_target, delay) => {
+                trace!(
+                    "Sending message ID {} to {} failed - resending to {} in {:?}",
+                    msg_token,
+                    failed_target,
+                    next_target,
+                    delay
+                );
+
+                self.send_later(next_target, msg, msg_token, timer, delay);
+                PeerStatus::Normal
+            }
+            Resend::Never => {
+                trace!(
+                    "Sending message ID {} to {} failed too many times - giving up.",
+                    msg_token,
+                    failed_target,
+                );
+
+                PeerStatus::Lost
+            }
+        }
     }
 
     pub fn our_connection_info(&mut self) -> Result<SocketAddr, QuicP2pError> {
@@ -127,6 +148,34 @@ impl Transport {
         } else {
             false
         }
+    }
+
+    fn next_msg_token(&mut self) -> Token {
+        self.next_msg_token = self.next_msg_token.wrapping_add(1);
+        self.next_msg_token
+    }
+
+    fn send_now(&mut self, target: SocketAddr, content: Bytes, token: Token) {
+        self.quic_p2p.send(Peer::Node(target), content, token)
+    }
+
+    fn send_later(
+        &mut self,
+        target: SocketAddr,
+        content: Bytes,
+        token: Token,
+        timer: &Timer,
+        delay: Duration,
+    ) {
+        let timer_token = timer.schedule(delay);
+        let _ = self.scheduled_messages.insert(
+            timer_token,
+            ScheduledMessage {
+                content,
+                token,
+                target,
+            },
+        );
     }
 }
 
@@ -161,4 +210,10 @@ struct ScheduledMessage {
     content: Bytes,
     token: Token,
     target: SocketAddr,
+}
+
+#[derive(Debug)]
+pub enum PeerStatus {
+    Normal,
+    Lost,
 }
