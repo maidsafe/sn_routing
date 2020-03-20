@@ -11,6 +11,7 @@ use crate::{
     chain::{SectionKeyInfo, SectionProofSlice},
     event::Connected,
     generate_bls_threshold_secret_key,
+    id::FullId,
     messages::Variant,
     quic_p2p,
     rng::{self, MainRng},
@@ -357,12 +358,12 @@ fn create_state(
     let core = Core {
         full_id,
         transport: test_utils::create_transport(network),
-        msg_filter: MessageFilter::new(),
+        msg_filter: Default::default(),
         timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
 
-    let elder = ApprovedPeer::regular(
+    let elder = ApprovedPeer::new(
         core,
         NetworkParams::default(),
         Connected::First,

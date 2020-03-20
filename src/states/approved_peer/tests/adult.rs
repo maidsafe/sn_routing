@@ -7,7 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{super::super::approved_peer::*, utils as test_utils};
-use crate::{messages::PlainMessage, parsec::generate_bls_threshold_secret_key};
+use crate::{
+    id::FullId, messages::PlainMessage, parsec::generate_bls_threshold_secret_key, rng::MainRng,
+};
 use mock_quic_p2p::Network;
 use std::collections::BTreeMap;
 
@@ -133,12 +135,12 @@ fn create_state(
     let core = Core {
         full_id,
         transport: test_utils::create_transport(network),
-        msg_filter: MessageFilter::new(),
+        msg_filter: Default::default(),
         timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
 
-    let subject = ApprovedPeer::regular(
+    let subject = ApprovedPeer::new(
         core,
         NetworkParams::default(),
         Connected::First,

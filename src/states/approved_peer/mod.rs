@@ -23,10 +23,9 @@ use crate::{
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
-    id::{FullId, P2pNode, PublicId},
+    id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     log_utils,
-    message_filter::MessageFilter,
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
         MessageHash, MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant,
@@ -36,12 +35,11 @@ use crate::{
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, Observation, ParsecMap},
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
-    rng::{self, MainRng},
+    rng,
     signature_accumulator::SignatureAccumulator,
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
-    transport::Transport,
     xor_space::{Prefix, XorName, Xorable},
 };
 use bytes::Bytes;
@@ -105,19 +103,16 @@ impl ApprovedPeer {
 
     // Create the first node in the network.
     pub fn first(
-        mut transport: Transport,
-        full_id: FullId,
+        mut core: Core,
         network_cfg: NetworkParams,
-        timer: Timer,
-        mut rng: MainRng,
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
-        let public_id = *full_id.public_id();
-        let connection_info = transport.our_connection_info()?;
+        let public_id = *core.full_id.public_id();
+        let connection_info = core.transport.our_connection_info()?;
         let p2p_node = P2pNode::new(public_id, connection_info);
         let mut ages = BTreeMap::new();
         let _ = ages.insert(public_id, MIN_AGE_COUNTER);
-        let first_dkg_result = generate_first_dkg_result(&mut rng);
+        let first_dkg_result = generate_first_dkg_result(&mut core.rng);
         let gen_pfx_info = GenesisPfxInfo {
             elders_info: create_first_elders_info(p2p_node)?,
             public_keys: first_dkg_result.public_key_set,
@@ -125,41 +120,24 @@ impl ApprovedPeer {
             ages,
             parsec_version: 0,
         };
-        let parsec_map = ParsecMap::default().with_init(&mut rng, full_id.clone(), &gen_pfx_info);
-        let chain = Chain::new(
-            network_cfg,
-            public_id,
-            gen_pfx_info.clone(),
-            first_dkg_result.secret_key_share,
-        );
-
-        let core = Core {
-            full_id,
-            transport,
-            msg_filter: MessageFilter::new(),
-            timer,
-            rng,
-        };
 
         let node = Self::new(
             core,
-            chain,
-            parsec_map,
-            Default::default(),
-            Default::default(),
+            network_cfg,
+            Connected::First,
             gen_pfx_info,
+            first_dkg_result.secret_key_share,
+            outbox,
         );
 
         info!("{} Started a new network as a seed node.", node.name());
-
-        outbox.send_event(Event::Connected(Connected::First));
         outbox.send_event(Event::Promoted);
 
         Ok(node)
     }
 
     // Create regular node.
-    pub fn regular(
+    pub fn new(
         mut core: Core,
         network_cfg: NetworkParams,
         connect_type: Connected,
@@ -177,7 +155,7 @@ impl ApprovedPeer {
         let parsec_map =
             ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
 
-        let node = Self::new(
+        let node = Self::from_parts(
             core,
             chain,
             parsec_map,
@@ -186,7 +164,7 @@ impl ApprovedPeer {
             gen_pfx_info,
         );
 
-        debug!("{} State changed to Elder.", node.name());
+        debug!("{} State changed to ApprovedPeer.", node.name());
         outbox.send_event(Event::Connected(connect_type));
 
         node
@@ -228,7 +206,7 @@ impl ApprovedPeer {
             rng: rng::new(),
         };
 
-        Self::new(
+        Self::from_parts(
             core,
             state.chain,
             state.parsec_map,
@@ -238,7 +216,7 @@ impl ApprovedPeer {
         )
     }
 
-    fn new(
+    fn from_parts(
         core: Core,
         chain: Chain,
         parsec_map: ParsecMap,
