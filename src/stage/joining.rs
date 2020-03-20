@@ -1,0 +1,151 @@
+// Copyright 2020 MaidSafe.net limited.
+//
+// This SAFE Network Software is licensed to you under The General Public License (GPL), version 3.
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied. Please review the Licences for the specific language governing
+// permissions and limitations relating to use of the SAFE Network Software.
+
+use crate::{
+    chain::{EldersInfo, SectionKeyInfo},
+    error::Result,
+    id::P2pNode,
+    messages::{self, BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
+    relocation::RelocatePayload,
+    states::Core,
+    xor_space::{Prefix, XorName},
+};
+use std::time::Duration;
+
+/// Time after which an attempt to joining a section is cancelled (and possibly retried).
+pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
+
+// The joining stage - node is waiting to be approved by the section.
+pub struct Joining {
+    pub elders_info: EldersInfo,
+    pub join_type: JoinType,
+}
+
+impl Joining {
+    // Returns whether the joining failed and we need to rebootstrap.
+    pub fn handle_timeout(&mut self, core: &mut Core, token: u64) -> bool {
+        let join_token = match self.join_type {
+            JoinType::First { timeout_token } => timeout_token,
+            JoinType::Relocate(_) => return false,
+        };
+
+        if join_token == token {
+            debug!("Timeout when trying to join a section.");
+
+            for addr in self
+                .elders_info
+                .member_nodes()
+                .map(|node| *node.peer_addr())
+            {
+                core.transport.disconnect(addr);
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn handle_bootstrap_response(
+        &mut self,
+        core: &mut Core,
+        sender: P2pNode,
+        response: BootstrapResponse,
+    ) -> Result<()> {
+        let new_elders_info = match response {
+            BootstrapResponse::Join(elders_info) => elders_info,
+            BootstrapResponse::Rebootstrap(_) => unreachable!(),
+        };
+
+        if new_elders_info.version() <= self.elders_info.version() {
+            return Ok(());
+        }
+
+        if new_elders_info.prefix().matches(core.name()) {
+            info!(
+                "Newer Join response for our prefix {:?} from {:?}",
+                new_elders_info, sender
+            );
+            self.elders_info = new_elders_info;
+            self.send_join_requests(core);
+        } else {
+            log_or_panic!(
+                log::Level::Error,
+                "Newer Join response not for our prefix {:?} from {:?}",
+                new_elders_info,
+                sender,
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn send_join_requests(&self, core: &mut Core) {
+        let relocate_payload = match &self.join_type {
+            JoinType::First { .. } => None,
+            JoinType::Relocate(payload) => Some(payload),
+        };
+
+        for dst in self.elders_info.member_nodes() {
+            let join_request = JoinRequest {
+                elders_version: self.elders_info.version(),
+                relocate_payload: relocate_payload.cloned(),
+            };
+
+            let variant = Variant::JoinRequest(Box::new(join_request));
+
+            info!("Sending JoinRequest to {}", dst);
+            core.send_direct_message(dst.peer_addr(), variant);
+        }
+    }
+
+    pub fn verify_message(&self, msg: &Message) -> Result<bool> {
+        match (&msg.variant, &self.join_type) {
+            (Variant::NodeApproval(_), JoinType::Relocate(payload)) => {
+                let details = payload.relocate_details();
+                let key_info = &details.destination_key_info;
+                verify_message_full(msg, Some(key_info))
+            }
+            (Variant::NodeApproval(_), JoinType::First { .. }) => {
+                // We don't have any trusted keys to verify this message, but we still need to
+                // handle it.
+                Ok(true)
+            }
+            (Variant::BootstrapResponse(BootstrapResponse::Join(_)), _)
+            | (Variant::Bounce { .. }, _) => verify_message_full(msg, None),
+            _ => unreachable!("unexpected message to verify: {:?}", msg),
+        }
+    }
+}
+
+#[allow(clippy::large_enum_variant)]
+pub enum JoinType {
+    // Node joining the network for the first time.
+    First { timeout_token: u64 },
+    // Node being relocated.
+    Relocate(RelocatePayload),
+}
+
+fn verify_message_full(msg: &Message, key_info: Option<&SectionKeyInfo>) -> Result<bool> {
+    msg.verify(as_iter(key_info))
+        .and_then(VerifyStatus::require_full)
+        .map_err(|error| {
+            messages::log_verify_failure(msg, &error, as_iter(key_info));
+            error
+        })?;
+
+    Ok(true)
+}
+
+fn as_iter(
+    key_info: Option<&SectionKeyInfo>,
+) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
+    key_info
+        .into_iter()
+        .map(|key_info| (key_info.prefix(), key_info))
+}
