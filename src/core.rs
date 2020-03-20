@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    id::FullId,
+    id::{FullId, PublicId},
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{Message, Variant},
@@ -31,6 +31,10 @@ pub struct Core {
 }
 
 impl Core {
+    pub fn id(&self) -> &PublicId {
+        self.full_id.public_id()
+    }
+
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
     }
