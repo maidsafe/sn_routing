@@ -1350,7 +1350,7 @@ impl ApprovedPeer {
         self.init_parsec(); // We don't reset the chain on prefix change.
 
         to_vote_again.iter().for_each(|event| {
-            self.vote_for_network_event(event.clone());
+            self.parsec_map.vote_for(event.clone());
         });
 
         Ok(())
@@ -1394,13 +1394,6 @@ impl ApprovedPeer {
         );
     }
 
-    fn maintain_parsec(&mut self) {
-        if self.parsec_map.needs_pruning() {
-            self.vote_for_event(AccumulatingEvent::ParsecPrune);
-            self.parsec_map.set_pruning_voted_for();
-        }
-    }
-
     // Checking members vote status and vote to remove those non-resposive nodes.
     fn check_voting_status(&mut self) {
         let unresponsive_nodes = self.chain.check_vote_status();
@@ -1412,13 +1405,13 @@ impl ApprovedPeer {
     }
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) {
-        self.vote_for_network_event(details.into_accumulating_event().into_network_event())
+        self.parsec_map
+            .vote_for(details.into_accumulating_event().into_network_event())
     }
 
     fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
-        self.vote_for_network_event(
-            AccumulatingEvent::RelocatePrepare(details, count_down).into_network_event(),
-        );
+        self.parsec_map
+            .vote_for(AccumulatingEvent::RelocatePrepare(details, count_down).into_network_event());
     }
 
     fn vote_for_section_info(
@@ -1434,7 +1427,7 @@ impl ApprovedPeer {
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
         let event = acc_event.into_network_event_with(Some(signature_payload));
-        self.vote_for_network_event(event);
+        self.parsec_map.vote_for(event);
         Ok(())
     }
 
@@ -1449,12 +1442,7 @@ impl ApprovedPeer {
     }
 
     fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        self.vote_for_network_event(event.into_network_event())
-    }
-
-    fn vote_for_network_event(&mut self, event: NetworkEvent) {
-        trace!("Vote for Event {:?}", event);
-        self.parsec_map.vote_for(event);
+        self.parsec_map.vote_for(event.into_network_event())
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1989,7 +1977,7 @@ impl Base for ApprovedPeer {
             Transition::Stay
         };
 
-        self.maintain_parsec();
+        self.parsec_map.prune_if_needed();
         self.send_parsec_gossip(None);
 
         transition

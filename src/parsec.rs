@@ -13,7 +13,7 @@ use crate::mock::parsec as inner;
 #[cfg(feature = "mock")]
 use crate::unwrap;
 use crate::{
-    chain::{self, GenesisPfxInfo},
+    chain::{self, AccumulatingEvent, GenesisPfxInfo},
     id::{self, FullId},
     messages::Variant,
     rng::{self, MainRng, RngCompat},
@@ -211,6 +211,8 @@ impl ParsecMap {
     }
 
     pub fn vote_for(&mut self, event: chain::NetworkEvent) {
+        trace!("Vote for Event {:?}", event);
+
         if let Some(parsec) = self.map.values_mut().last() {
             let obs = event.into_obs();
 
@@ -319,12 +321,11 @@ impl ParsecMap {
         )
     }
 
-    pub fn needs_pruning(&self) -> bool {
-        self.size_counter.needs_pruning()
-    }
-
-    pub fn set_pruning_voted_for(&mut self) {
-        self.size_counter.set_pruning_voted_for();
+    pub fn prune_if_needed(&mut self) {
+        if self.size_counter.needs_pruning() {
+            self.vote_for(AccumulatingEvent::ParsecPrune.into_network_event());
+            self.size_counter.set_pruning_voted_for();
+        }
     }
 
     // Returns whether we should send parsec gossip now.
@@ -584,7 +585,7 @@ mod tests {
         }
 
         // Make sure we don't cross the prune limit
-        assert_eq!(parsec_map.needs_pruning(), false);
+        assert_eq!(parsec_map.size_counter.needs_pruning(), false);
     }
 
     fn check_prune_needed_after_msg<T: HandleRequestResponse + Serialize>(
@@ -605,7 +606,7 @@ mod tests {
         handle_msgs_just_below_prune_limit(&mut parsec_map, msg_version, &msg, pub_id);
 
         msg.handle(&mut parsec_map, msg_version, pub_id);
-        assert_eq!(parsec_map.needs_pruning(), prune_needed);
+        assert_eq!(parsec_map.size_counter.needs_pruning(), prune_needed);
 
         parsec_map
     }
@@ -641,10 +642,10 @@ mod tests {
         let mut parsec_map =
             check_prune_needed_after_msg(&mut rng, Response::new(), parsec_age, true);
 
-        assert_eq!(parsec_map.needs_pruning(), true);
+        assert_eq!(parsec_map.size_counter.needs_pruning(), true);
         let number_of_parsecs = 2;
         add_to_parsec_map(&mut rng, &mut parsec_map, number_of_parsecs + 1);
-        assert_eq!(parsec_map.needs_pruning(), false);
+        assert_eq!(parsec_map.size_counter.needs_pruning(), false);
     }
 
     #[test]
@@ -653,8 +654,8 @@ mod tests {
         let mut parsec_map =
             check_prune_needed_after_msg(&mut rng::new(), Response::new(), parsec_age, true);
 
-        assert_eq!(parsec_map.needs_pruning(), true);
-        parsec_map.set_pruning_voted_for();
-        assert_eq!(parsec_map.needs_pruning(), false);
+        assert_eq!(parsec_map.size_counter.needs_pruning(), true);
+        parsec_map.size_counter.set_pruning_voted_for();
+        assert_eq!(parsec_map.size_counter.needs_pruning(), false);
     }
 }
