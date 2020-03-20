@@ -10,7 +10,7 @@
 mod tests;
 
 use super::{
-    common::{Base, Core, BOUNCE_RESEND_DELAY},
+    common::{Base, BOUNCE_RESEND_DELAY},
     JoiningPeer,
 };
 use crate::{
@@ -20,6 +20,7 @@ use crate::{
         MemberState, NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PollAccumulated,
         Proof, SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
+    core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},

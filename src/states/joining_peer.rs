@@ -8,10 +8,11 @@
 
 use super::{
     approved_peer::{ApprovedPeer, ElderDetails},
-    common::{Base, Core, BOUNCE_RESEND_DELAY},
+    common::{Base, BOUNCE_RESEND_DELAY},
 };
 use crate::{
     chain::{Chain, GenesisPfxInfo, NetworkParams},
+    core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode},

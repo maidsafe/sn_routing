@@ -8,11 +8,11 @@
 
 use crate::{
     chain::EldersInfo,
+    core::Core,
     error::Result,
     id::{FullId, P2pNode},
     messages::{BootstrapResponse, Message, Variant, VerifyStatus},
     relocation::{RelocatePayload, SignedRelocateDetails},
-    states::Core,
     time::Duration,
     xor_space::Prefix,
 };
