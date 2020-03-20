@@ -78,7 +78,7 @@ impl JoiningPeer {
             Connected::First
         };
 
-        Ok(State::ApprovedPeer(ApprovedPeer::regular(
+        Ok(State::ApprovedPeer(ApprovedPeer::new(
             self.core,
             self.network_cfg,
             connect_type,

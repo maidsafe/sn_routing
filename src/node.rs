@@ -119,25 +119,22 @@ impl Builder {
 
         StateMachine::new(
             move |transport, timer, outbox| {
+                let core = Core {
+                    full_id,
+                    transport,
+                    msg_filter: Default::default(),
+                    timer,
+                    rng,
+                };
+
                 if first {
                     debug!("Creating the first node");
-
-                    states::ApprovedPeer::first(transport, full_id, network_cfg, timer, rng, outbox)
+                    states::ApprovedPeer::first(core, network_cfg, outbox)
                         .map(State::ApprovedPeer)
                         .unwrap_or(State::Terminated)
                 } else {
                     debug!("Creating a regular node");
-
-                    State::JoiningPeer(JoiningPeer::new(
-                        Core {
-                            full_id,
-                            transport,
-                            msg_filter: Default::default(),
-                            timer,
-                            rng,
-                        },
-                        network_cfg,
-                    ))
+                    State::JoiningPeer(JoiningPeer::new(core, network_cfg))
                 }
             },
             network_config,
