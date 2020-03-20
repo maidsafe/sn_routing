@@ -21,7 +21,7 @@ use crate::{
     outbox::EventBox,
     parsec::ParsecMap,
     relocation::SignedRelocateDetails,
-    stage::{Bootstrapping, JoinType, Stage},
+    stage::{Bootstrapping, BootstrappingStatus, Joining, Stage},
     state_machine::{State, Transition},
     xor_space::{Prefix, XorName},
 };
@@ -97,9 +97,10 @@ impl JoiningPeer {
             rng: self.core.rng,
         };
 
-        let connect_type = match stage.join_type {
-            JoinType::First { .. } => Connected::First,
-            JoinType::Relocate(_) => Connected::Relocate,
+        let connect_type = if stage.is_relocating() {
+            Connected::Relocate
+        } else {
+            Connected::First
         };
 
         Ok(State::ApprovedPeer(ApprovedPeer::from_joining_peer(
@@ -116,10 +117,18 @@ impl JoiningPeer {
     ) -> Result<()> {
         match &mut self.stage {
             Stage::Bootstrapping(stage) => {
-                if let Some(new_stage) =
-                    stage.handle_bootstrap_response(&mut self.core, sender, response)?
-                {
-                    self.stage = Stage::Joining(new_stage);
+                match stage.handle_bootstrap_response(&mut self.core, sender, response)? {
+                    BootstrappingStatus::Ongoing => (),
+                    BootstrappingStatus::Finished {
+                        elders_info,
+                        relocate_payload,
+                    } => {
+                        self.stage = Stage::Joining(Joining::new(
+                            &mut self.core,
+                            elders_info,
+                            relocate_payload,
+                        ));
+                    }
                 }
 
                 Ok(())
@@ -179,7 +188,7 @@ impl Base for JoiningPeer {
             write!(buffer, "JoiningPeer({}", self.name())?;
 
             if let Stage::Joining(stage) = &self.stage {
-                write!(buffer, "({:b})", stage.elders_info.prefix())?
+                write!(buffer, "({:b})", stage.target_section_prefix())?
             }
 
             write!(buffer, ") ")
