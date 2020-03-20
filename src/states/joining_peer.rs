@@ -11,31 +11,22 @@ use super::{
     common::{Base, Core, BOUNCE_RESEND_DELAY},
 };
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, NetworkParams, SectionKeyInfo},
+    chain::{Chain, GenesisPfxInfo, NetworkParams},
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode},
     location::{DstLocation, SrcLocation},
     log_utils,
-    messages::{
-        self, BootstrapResponse, JoinRequest, Message, MessageHash, MessageWithBytes, Variant,
-        VerifyStatus,
-    },
+    messages::{BootstrapResponse, Message, MessageHash, MessageWithBytes, Variant},
     outbox::EventBox,
     parsec::ParsecMap,
-    relocation::{RelocatePayload, SignedRelocateDetails},
+    relocation::SignedRelocateDetails,
+    stage::{Bootstrapping, JoinType, Stage},
     state_machine::{State, Transition},
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
-use fxhash::FxHashSet;
-use std::{collections::HashMap, iter, net::SocketAddr, time::Duration};
-
-/// Time after which bootstrap is cancelled (and possibly retried).
-pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
-
-/// Time after which an attempt to joining a section is cancelled (and possibly retried).
-pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
+use std::net::SocketAddr;
 
 // State of a node after bootstrapping, while joining a section
 pub struct JoiningPeer {
@@ -50,7 +41,7 @@ impl JoiningPeer {
 
         Self {
             core,
-            stage: Stage::new(None),
+            stage: Stage::Bootstrapping(Bootstrapping::new(None)),
             network_cfg,
         }
     }
@@ -62,7 +53,7 @@ impl JoiningPeer {
         conn_infos: Vec<SocketAddr>,
         relocate_details: SignedRelocateDetails,
     ) -> Self {
-        let mut stage = BootstrappingStage::new(Some(relocate_details));
+        let mut stage = Bootstrapping::new(Some(relocate_details));
 
         for conn_info in conn_infos {
             stage.send_bootstrap_request(&mut core, conn_info)
@@ -159,7 +150,7 @@ impl JoiningPeer {
 
     fn rebootstrap(&mut self) {
         // TODO: preserve relocation details
-        self.stage = Stage::Bootstrapping(BootstrappingStage::new(None));
+        self.stage = Stage::Bootstrapping(Bootstrapping::new(None));
         self.core.full_id = FullId::gen(&mut self.core.rng);
         self.core.transport.bootstrap();
     }
@@ -329,302 +320,6 @@ impl Base for JoiningPeer {
     }
 }
 
-// Stage of joining the network.
-enum Stage {
-    Bootstrapping(BootstrappingStage),
-    Joining(JoiningStage),
-}
-
-impl Stage {
-    fn new(relocate_details: Option<SignedRelocateDetails>) -> Self {
-        Self::Bootstrapping(BootstrappingStage::new(relocate_details))
-    }
-
-    fn is_bootstrapping(&self) -> bool {
-        matches!(self, Self::Bootstrapping(_))
-    }
-
-    fn is_joining(&self) -> bool {
-        matches!(self, Self::Joining(_))
-    }
-}
-
-struct BootstrappingStage {
-    // Using `FxHashSet` for deterministic iteration order.
-    pending_requests: FxHashSet<SocketAddr>,
-    timeout_tokens: HashMap<u64, SocketAddr>,
-    relocate_details: Option<SignedRelocateDetails>,
-}
-
-impl BootstrappingStage {
-    fn new(relocate_details: Option<SignedRelocateDetails>) -> Self {
-        Self {
-            pending_requests: Default::default(),
-            timeout_tokens: Default::default(),
-            relocate_details,
-        }
-    }
-
-    fn handle_timeout(&mut self, core: &mut Core, token: u64) {
-        let peer_addr = if let Some(peer_addr) = self.timeout_tokens.remove(&token) {
-            peer_addr
-        } else {
-            return;
-        };
-
-        debug!("Timeout when trying to bootstrap against {}.", peer_addr);
-
-        if !self.pending_requests.remove(&peer_addr) {
-            return;
-        }
-
-        core.transport.disconnect(peer_addr);
-
-        if self.pending_requests.is_empty() {
-            // Rebootstrap
-            core.transport.bootstrap();
-        }
-    }
-
-    fn handle_bootstrap_response(
-        &mut self,
-        core: &mut Core,
-        sender: P2pNode,
-        response: BootstrapResponse,
-    ) -> Result<Option<JoiningStage>> {
-        // Ignore messages from peers we didn't send `BootstrapRequest` to.
-        if !self.pending_requests.contains(sender.peer_addr()) {
-            debug!(
-                "Ignoring BootstrapResponse from unexpected peer: {}",
-                sender,
-            );
-            core.transport.disconnect(*sender.peer_addr());
-            return Ok(None);
-        }
-
-        match response {
-            BootstrapResponse::Join(elders_info) => {
-                info!(
-                    "Joining a section {:?} (given by {:?})",
-                    elders_info, sender
-                );
-
-                let join_type = self.join_section(core, &elders_info)?;
-                let stage = JoiningStage {
-                    elders_info,
-                    join_type,
-                };
-                stage.send_join_requests(core);
-                Ok(Some(stage))
-            }
-            BootstrapResponse::Rebootstrap(new_conn_infos) => {
-                info!(
-                    "Bootstrapping redirected to another set of peers: {:?}",
-                    new_conn_infos
-                );
-                self.reconnect_to_new_section(core, new_conn_infos);
-                Ok(None)
-            }
-        }
-    }
-
-    fn send_bootstrap_request(&mut self, core: &mut Core, dst: SocketAddr) {
-        if !self.pending_requests.insert(dst) {
-            return;
-        }
-
-        let token = core.timer.schedule(BOOTSTRAP_TIMEOUT);
-        let _ = self.timeout_tokens.insert(token, dst);
-
-        let destination = match &self.relocate_details {
-            Some(details) => *details.destination(),
-            None => *core.name(),
-        };
-
-        debug!("Sending BootstrapRequest to {}.", dst);
-        core.send_direct_message(&dst, Variant::BootstrapRequest(destination));
-    }
-
-    fn reconnect_to_new_section(&mut self, core: &mut Core, new_conn_infos: Vec<SocketAddr>) {
-        for addr in self.pending_requests.drain() {
-            core.transport.disconnect(addr);
-        }
-
-        self.timeout_tokens.clear();
-
-        for conn_info in new_conn_infos {
-            self.send_bootstrap_request(core, conn_info);
-        }
-    }
-
-    fn join_section(&mut self, core: &mut Core, elders_info: &EldersInfo) -> Result<JoinType> {
-        let relocate_details = self.relocate_details.take();
-        let destination = match &relocate_details {
-            Some(details) => *details.destination(),
-            None => *core.name(),
-        };
-        let old_full_id = core.full_id.clone();
-
-        // Use a name that will match the destination even after multiple splits
-        let extra_split_count = 3;
-        let name_prefix = Prefix::new(
-            elders_info.prefix().bit_count() + extra_split_count,
-            destination,
-        );
-
-        if !name_prefix.matches(core.name()) {
-            let new_full_id = FullId::within_range(&mut core.rng, &name_prefix.range_inclusive());
-            info!("Changing name to {}.", new_full_id.public_id().name());
-            core.full_id = new_full_id;
-        }
-
-        if let Some(details) = relocate_details {
-            let relocate_payload =
-                RelocatePayload::new(details, core.full_id.public_id(), &old_full_id)?;
-
-            Ok(JoinType::Relocate(relocate_payload))
-        } else {
-            let timeout_token = core.timer.schedule(JOIN_TIMEOUT);
-            Ok(JoinType::First { timeout_token })
-        }
-    }
-
-    fn verify_message(&self, msg: &Message) -> Result<bool> {
-        msg.verify(iter::empty())
-            .and_then(VerifyStatus::require_full)?;
-        Ok(true)
-    }
-}
-
-struct JoiningStage {
-    elders_info: EldersInfo,
-    join_type: JoinType,
-}
-
-impl JoiningStage {
-    // Returns whether the joining failed and we need to rebootstrap.
-    fn handle_timeout(&mut self, core: &mut Core, token: u64) -> bool {
-        let join_token = match self.join_type {
-            JoinType::First { timeout_token } => timeout_token,
-            JoinType::Relocate(_) => return false,
-        };
-
-        if join_token == token {
-            debug!("Timeout when trying to join a section.");
-
-            for addr in self
-                .elders_info
-                .member_nodes()
-                .map(|node| *node.peer_addr())
-            {
-                core.transport.disconnect(addr);
-            }
-
-            true
-        } else {
-            false
-        }
-    }
-
-    fn handle_bootstrap_response(
-        &mut self,
-        core: &mut Core,
-        sender: P2pNode,
-        response: BootstrapResponse,
-    ) -> Result<()> {
-        let new_elders_info = match response {
-            BootstrapResponse::Join(elders_info) => elders_info,
-            BootstrapResponse::Rebootstrap(_) => unreachable!(),
-        };
-
-        if new_elders_info.version() <= self.elders_info.version() {
-            return Ok(());
-        }
-
-        if new_elders_info.prefix().matches(core.name()) {
-            info!(
-                "Newer Join response for our prefix {:?} from {:?}",
-                new_elders_info, sender
-            );
-            self.elders_info = new_elders_info;
-            self.send_join_requests(core);
-        } else {
-            log_or_panic!(
-                log::Level::Error,
-                "Newer Join response not for our prefix {:?} from {:?}",
-                new_elders_info,
-                sender,
-            );
-        }
-
-        Ok(())
-    }
-
-    fn send_join_requests(&self, core: &mut Core) {
-        let relocate_payload = match &self.join_type {
-            JoinType::First { .. } => None,
-            JoinType::Relocate(payload) => Some(payload),
-        };
-
-        for dst in self.elders_info.member_nodes() {
-            let join_request = JoinRequest {
-                elders_version: self.elders_info.version(),
-                relocate_payload: relocate_payload.cloned(),
-            };
-
-            let variant = Variant::JoinRequest(Box::new(join_request));
-
-            info!("Sending JoinRequest to {}", dst);
-            core.send_direct_message(dst.peer_addr(), variant);
-        }
-    }
-
-    fn verify_message(&self, msg: &Message) -> Result<bool> {
-        match (&msg.variant, &self.join_type) {
-            (Variant::NodeApproval(_), JoinType::Relocate(payload)) => {
-                let details = payload.relocate_details();
-                let key_info = &details.destination_key_info;
-                verify_message_full(msg, Some(key_info))
-            }
-            (Variant::NodeApproval(_), JoinType::First { .. }) => {
-                // We don't have any trusted keys to verify this message, but we still need to
-                // handle it.
-                Ok(true)
-            }
-            (Variant::BootstrapResponse(BootstrapResponse::Join(_)), _)
-            | (Variant::Bounce { .. }, _) => verify_message_full(msg, None),
-            _ => unreachable!("unexpected message to verify: {:?}", msg),
-        }
-    }
-}
-
-#[allow(clippy::large_enum_variant)]
-enum JoinType {
-    // Node joining the network for the first time.
-    First { timeout_token: u64 },
-    // Node being relocated.
-    Relocate(RelocatePayload),
-}
-
-fn as_iter(
-    key_info: Option<&SectionKeyInfo>,
-) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
-    key_info
-        .into_iter()
-        .map(|key_info| (key_info.prefix(), key_info))
-}
-
-fn verify_message_full(msg: &Message, key_info: Option<&SectionKeyInfo>) -> Result<bool> {
-    msg.verify(as_iter(key_info))
-        .and_then(VerifyStatus::require_full)
-        .map_err(|error| {
-            messages::log_verify_failure(msg, &error, as_iter(key_info));
-            error
-        })?;
-
-    Ok(true)
-}
-
 #[cfg(all(test, feature = "mock_base"))]
 mod tests {
     use super::*;
@@ -634,6 +329,7 @@ mod tests {
         messages::Message,
         mock::Environment,
         quic_p2p::{Builder, EventSenders, Peer},
+        stage::BOOTSTRAP_TIMEOUT,
         state_machine::{State, StateMachine},
         unwrap, NetworkConfig, NetworkEvent,
     };

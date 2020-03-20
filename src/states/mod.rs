@@ -13,9 +13,6 @@ pub mod common;
 
 pub use self::{approved_peer::ApprovedPeer, common::Core, joining_peer::JoiningPeer};
 
-#[cfg(feature = "mock_base")]
-pub use self::joining_peer::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
-
 // # The state machine
 //
 //            START

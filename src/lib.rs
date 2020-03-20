@@ -120,7 +120,7 @@ pub mod test_consts {
     pub use crate::{
         chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
         parsec::GOSSIP_PERIOD,
-        states::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
+        stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
         transport::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
     };
 }
@@ -147,6 +147,7 @@ mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;
 mod signature_accumulator;
+mod stage;
 mod state_machine;
 mod states;
 mod time;
