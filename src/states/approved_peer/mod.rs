@@ -37,6 +37,7 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng,
     signature_accumulator::SignatureAccumulator,
+    stage::Approved,
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
@@ -80,10 +81,10 @@ enum PendingMessageKey {
 
 pub struct ApprovedPeer {
     core: Core,
+    stage: Approved,
     // The queue of routing messages addressed to us. These do not themselves need forwarding,
     // although they may wrap a message which needs forwarding.
     msg_queue: VecDeque<QueuedMessage>,
-    sig_accumulator: SignatureAccumulator,
     parsec_map: ParsecMap,
     gen_pfx_info: GenesisPfxInfo,
     timer_token: u64,
@@ -192,7 +193,7 @@ impl ApprovedPeer {
             msg_queue: self.msg_queue,
             transport: self.core.transport,
             network_rx: None,
-            sig_accumulator: self.sig_accumulator,
+            sig_accumulator: self.stage.sig_accumulator,
             parsec_map: self.parsec_map,
         }
     }
@@ -231,8 +232,8 @@ impl ApprovedPeer {
         };
 
         Self {
+            stage: Approved::new(sig_accumulator),
             core,
-            sig_accumulator,
             msg_queue,
             parsec_map,
             gen_pfx_info,
@@ -513,7 +514,7 @@ impl ApprovedPeer {
             // Need to verify whether there are any security implications with doing this.
         }
 
-        if let Some(msg) = self.sig_accumulator.add_proof(msg) {
+        if let Some(msg) = self.stage.sig_accumulator.add_proof(msg) {
             self.handle_accumulated_message(msg)?
         }
 
@@ -1681,7 +1682,11 @@ impl ApprovedPeer {
 
         for target in self.get_signature_targets(&dst) {
             if target.name() == self.name() {
-                if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
+                if let Some(msg) = self
+                    .stage
+                    .sig_accumulator
+                    .add_proof(accumulating_msg.clone())
+                {
                     self.handle_accumulated_message(msg)?;
                 }
             } else {
