@@ -31,7 +31,6 @@ use crate::{
         MessageHash, MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant,
         VerifyStatus,
     },
-    network_service::NetworkService,
     outbox::EventBox,
     parsec::{self, generate_first_dkg_result, DkgResultWrapper, Observation, ParsecMap},
     pause::PausedState,
@@ -41,6 +40,7 @@ use crate::{
     state_machine::{State, Transition},
     time::Duration,
     timer::Timer,
+    transport::Transport,
     xor_space::{Prefix, XorName, Xorable},
 };
 use bytes::Bytes;
@@ -83,7 +83,7 @@ enum PendingMessageKey {
 
 pub struct ElderDetails {
     pub chain: Chain,
-    pub network_service: NetworkService,
+    pub transport: Transport,
     pub full_id: FullId,
     pub gen_pfx_info: GenesisPfxInfo,
     pub msg_queue: VecDeque<QueuedMessage>,
@@ -119,7 +119,7 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
 
     pub fn first(
-        mut network_service: NetworkService,
+        mut transport: Transport,
         full_id: FullId,
         network_cfg: NetworkParams,
         timer: Timer,
@@ -127,7 +127,7 @@ impl ApprovedPeer {
         outbox: &mut dyn EventBox,
     ) -> Result<Self, RoutingError> {
         let public_id = *full_id.public_id();
-        let connection_info = network_service.our_connection_info()?;
+        let connection_info = transport.our_connection_info()?;
         let p2p_node = P2pNode::new(public_id, connection_info);
         let mut ages = BTreeMap::new();
         let _ = ages.insert(public_id, MIN_AGE_COUNTER);
@@ -149,7 +149,7 @@ impl ApprovedPeer {
 
         let details = ElderDetails {
             chain,
-            network_service,
+            transport,
             full_id,
             gen_pfx_info,
             msg_queue: Default::default(),
@@ -203,7 +203,7 @@ impl ApprovedPeer {
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: self.core.msg_filter,
             msg_queue: self.msg_queue,
-            network_service: self.core.network_service,
+            transport: self.core.transport,
             network_rx: None,
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
@@ -213,7 +213,7 @@ impl ApprovedPeer {
     pub fn resume(state: PausedState, timer: Timer) -> Self {
         Self::new(ElderDetails {
             chain: state.chain,
-            network_service: state.network_service,
+            transport: state.transport,
             full_id: state.full_id,
             gen_pfx_info: state.gen_pfx_info,
             msg_queue: state.msg_queue,
@@ -238,7 +238,7 @@ impl ApprovedPeer {
         Self {
             core: Core {
                 full_id: details.full_id.clone(),
-                network_service: details.network_service,
+                transport: details.transport,
                 msg_filter: details.msg_filter,
                 timer,
                 rng: details.rng,
@@ -499,7 +499,7 @@ impl ApprovedPeer {
 
         // Disconnect from everyone we know.
         for addr in self.chain.known_nodes().map(|node| *node.peer_addr()) {
-            self.core.network_service.disconnect(addr);
+            self.core.transport.disconnect(addr);
         }
 
         Ok(Transition::Relocate {
@@ -1838,7 +1838,7 @@ impl ApprovedPeer {
                     continue;
                 }
 
-                self.core.network_service.disconnect(*p2p_node.peer_addr());
+                self.core.transport.disconnect(*p2p_node.peer_addr());
             }
         }
     }
@@ -1846,7 +1846,7 @@ impl ApprovedPeer {
     fn disconnect_by_id_lookup(&mut self, pub_id: &PublicId) {
         if let Some(node) = self.chain.get_p2p_node(pub_id.name()) {
             let peer_addr = *node.peer_addr();
-            self.core.network_service.disconnect(peer_addr);
+            self.core.transport.disconnect(peer_addr);
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -1997,10 +1997,7 @@ impl Base for ApprovedPeer {
 
     fn handle_bootstrapped_to(&mut self, addr: SocketAddr) -> Transition {
         // A mature node doesn't need a bootstrap connection
-        self.core
-            .network_service
-            .service_mut()
-            .disconnect_from(addr);
+        self.core.transport.service_mut().disconnect_from(addr);
         Transition::Stay
     }
 

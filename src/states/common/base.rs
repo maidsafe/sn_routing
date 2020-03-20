@@ -14,10 +14,10 @@ use crate::{
     location::{DstLocation, SrcLocation},
     log_utils,
     messages::{Message, MessageWithBytes},
-    network_service::Resend,
     outbox::EventBox,
     quic_p2p::{Peer, Token},
     state_machine::Transition,
+    transport::Resend,
     xor_space::XorName,
     NetworkEvent,
 };
@@ -76,7 +76,7 @@ pub trait Base {
                 peer_addr,
                 result_tx,
             } => {
-                self.core_mut().network_service.disconnect(peer_addr);
+                self.core_mut().transport.disconnect(peer_addr);
                 let _ = result_tx.send(Ok(()));
             }
             Action::SendMessageToClient {
@@ -104,7 +104,7 @@ pub trait Base {
     }
 
     fn invoke_handle_timeout(&mut self, token: u64, outbox: &mut dyn EventBox) -> Transition {
-        if self.core_mut().network_service.handle_timeout(token) {
+        if self.core_mut().transport.handle_timeout(token) {
             Transition::Stay
         } else {
             self.handle_timeout(token, outbox)
@@ -260,11 +260,7 @@ pub trait Base {
         msg_token: Token,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        match self
-            .core_mut()
-            .network_service
-            .target_failed(msg_token, addr)
-        {
+        match self.core_mut().transport.target_failed(msg_token, addr) {
             Resend::Now(next_target) => {
                 trace!(
                     "Sending message ID {} to {} failed - resending to {} now",
@@ -274,7 +270,7 @@ pub trait Base {
                 );
 
                 self.core_mut()
-                    .network_service
+                    .transport
                     .send_now(next_target, msg, msg_token);
                 Transition::Stay
             }
@@ -288,12 +284,9 @@ pub trait Base {
                 );
 
                 let timer_token = self.core().timer.schedule(delay);
-                self.core_mut().network_service.send_later(
-                    next_target,
-                    msg,
-                    msg_token,
-                    timer_token,
-                );
+                self.core_mut()
+                    .transport
+                    .send_later(next_target, msg, msg_token, timer_token);
                 Transition::Stay
             }
             Resend::Never => {
@@ -317,7 +310,7 @@ pub trait Base {
     ) -> Transition {
         trace!("Successfully sent message with ID {} to {:?}", token, addr);
         self.core_mut()
-            .network_service
+            .transport
             .targets_cache_mut()
             .target_succeeded(token, addr);
         Transition::Stay
@@ -333,7 +326,7 @@ pub trait Base {
 
     fn our_connection_info(&mut self) -> Result<SocketAddr> {
         self.core_mut()
-            .network_service
+            .transport
             .service_mut()
             .our_connection_info()
             .map_err(|err| {
@@ -349,7 +342,7 @@ pub trait Base {
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
         let client = Peer::Client(peer_addr);
         self.core_mut()
-            .network_service
+            .transport
             .service_mut()
             .send(client, msg, token);
     }
