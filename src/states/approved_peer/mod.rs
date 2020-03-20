@@ -1997,7 +1997,7 @@ impl Base for ApprovedPeer {
 
     fn handle_bootstrapped_to(&mut self, addr: SocketAddr) -> Transition {
         // A mature node doesn't need a bootstrap connection
-        self.core.transport.service_mut().disconnect_from(addr);
+        self.core.transport.disconnect(addr);
         Transition::Stay
     }
 

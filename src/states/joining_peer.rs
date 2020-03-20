@@ -46,7 +46,7 @@ pub struct JoiningPeer {
 
 impl JoiningPeer {
     pub fn new(mut core: Core, network_cfg: NetworkParams) -> Self {
-        core.transport.service_mut().bootstrap();
+        core.transport.bootstrap();
 
         Self {
             core,
@@ -161,7 +161,7 @@ impl JoiningPeer {
         // TODO: preserve relocation details
         self.stage = Stage::Bootstrapping(BootstrappingStage::new(None));
         self.core.full_id = FullId::gen(&mut self.core.rng);
-        self.core.transport.service_mut().bootstrap();
+        self.core.transport.bootstrap();
     }
 }
 
@@ -382,7 +382,7 @@ impl BootstrappingStage {
 
         if self.pending_requests.is_empty() {
             // Rebootstrap
-            core.transport.service_mut().bootstrap();
+            core.transport.bootstrap();
         }
     }
 

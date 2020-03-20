@@ -17,7 +17,7 @@ use crate::{
     outbox::EventBox,
     quic_p2p::{Peer, Token},
     state_machine::Transition,
-    transport::Resend,
+    transport::PeerStatus,
     xor_space::XorName,
     NetworkEvent,
 };
@@ -260,44 +260,9 @@ pub trait Base {
         msg_token: Token,
         outbox: &mut dyn EventBox,
     ) -> Transition {
-        match self.core_mut().transport.target_failed(msg_token, addr) {
-            Resend::Now(next_target) => {
-                trace!(
-                    "Sending message ID {} to {} failed - resending to {} now",
-                    msg_token,
-                    addr,
-                    next_target
-                );
-
-                self.core_mut()
-                    .transport
-                    .send_now(next_target, msg, msg_token);
-                Transition::Stay
-            }
-            Resend::Later(next_target, delay) => {
-                trace!(
-                    "Sending message ID {} to {} failed - resending to {} in {:?}",
-                    msg_token,
-                    addr,
-                    next_target,
-                    delay
-                );
-
-                let timer_token = self.core().timer.schedule(delay);
-                self.core_mut()
-                    .transport
-                    .send_later(next_target, msg, msg_token, timer_token);
-                Transition::Stay
-            }
-            Resend::Never => {
-                trace!(
-                    "Sending message ID {} to {} failed too many times - giving up.",
-                    msg_token,
-                    addr,
-                );
-
-                self.handle_peer_lost(addr, outbox)
-            }
+        match self.core_mut().handle_unsent_message(addr, msg, msg_token) {
+            PeerStatus::Normal => Transition::Stay,
+            PeerStatus::Lost => self.handle_peer_lost(addr, outbox),
         }
     }
 
@@ -309,10 +274,7 @@ pub trait Base {
         _outbox: &mut dyn EventBox,
     ) -> Transition {
         trace!("Successfully sent message with ID {} to {:?}", token, addr);
-        self.core_mut()
-            .transport
-            .targets_cache_mut()
-            .target_succeeded(token, addr);
+        self.core_mut().transport.target_succeeded(token, addr);
         Transition::Stay
     }
 
@@ -327,7 +289,6 @@ pub trait Base {
     fn our_connection_info(&mut self) -> Result<SocketAddr> {
         self.core_mut()
             .transport
-            .service_mut()
             .our_connection_info()
             .map_err(|err| {
                 debug!("Failed to retrieve our connection info: {:?}", err);
@@ -340,11 +301,9 @@ pub trait Base {
     }
 
     fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
-        let client = Peer::Client(peer_addr);
         self.core_mut()
             .transport
-            .service_mut()
-            .send(client, msg, token);
+            .send_message_to_client(peer_addr, msg, token)
     }
 
     #[cfg(feature = "mock_base")]
