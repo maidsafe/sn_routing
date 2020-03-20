@@ -6,10 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod approved;
 mod bootstrapping;
 mod joining;
 
 pub use self::{
+    approved::Approved,
     bootstrapping::{Bootstrapping, BootstrappingStatus},
     joining::Joining,
 };
