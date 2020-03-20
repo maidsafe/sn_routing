@@ -8,18 +8,22 @@
 
 use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{
-    chain::{SectionKeyInfo, SectionProofSlice},
+    chain::{
+        AccumulatingEvent, AckMessagePayload, EventSigPayload, OnlinePayload, SectionKeyInfo,
+        SectionProofSlice, MIN_AGE,
+    },
     event::Connected,
     generate_bls_threshold_secret_key,
     id::FullId,
-    messages::Variant,
-    quic_p2p,
+    messages::{BootstrapResponse, MemberKnowledge, Variant},
+    parsec, quic_p2p,
     rng::{self, MainRng},
     utils, ELDER_SIZE,
 };
 use crossbeam_channel::Receiver;
+use itertools::Itertools;
 use mock_quic_p2p::Network;
-use std::{iter, net::SocketAddr};
+use std::{collections::BTreeSet, iter, net::SocketAddr};
 
 // Minimal number of votes to reach accumulation.
 const ACCUMULATE_VOTE_COUNT: usize = 5;
@@ -82,7 +86,7 @@ impl Env {
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
         assert!(count <= self.other_ids.len());
 
-        let parsec = &mut self.subject.parsec_map;
+        let parsec = &mut self.subject.stage.parsec_map;
         for event in events {
             self.other_ids
                 .iter()
@@ -108,7 +112,7 @@ impl Env {
     }
 
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
-        let parsec = &mut self.subject.parsec_map;
+        let parsec = &mut self.subject.stage.parsec_map;
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
         for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
@@ -125,7 +129,7 @@ impl Env {
     fn create_gossip(&mut self) -> Result<(), RoutingError> {
         let other_full_id = &self.other_ids[0].0;
         let addr: SocketAddr = "127.0.0.3:9999".parse().unwrap();
-        let parsec = &mut self.subject.parsec_map;
+        let parsec = &mut self.subject.stage.parsec_map;
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
         let message = Message::single_src(
@@ -163,7 +167,7 @@ impl Env {
 
     fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
         let participants: BTreeSet<_> = new_elders_info.member_ids().copied().collect();
-        let parsec = &mut self.subject.parsec_map;
+        let parsec = &mut self.subject.stage.parsec_map;
 
         let dkg_results = self
             .other_ids
@@ -238,7 +242,7 @@ impl Env {
         });
 
         // This event needs total consensus.
-        self.subject.vote_for_event(event.clone());
+        self.subject.stage.vote_for_event(event.clone());
         let _ = self.n_vote_for_gossipped(self.other_ids.len(), iter::once(event));
     }
 
@@ -371,7 +375,7 @@ fn create_state(
         Some(secret_key_share),
         &mut (),
     );
-    assert!(elder.chain.is_self_elder());
+    assert!(elder.stage.chain.is_self_elder());
     elder
 }
 
@@ -462,7 +466,9 @@ fn handle_bootstrap() {
     let p2p_node = P2pNode::new(*new_node.public_id(), new_node.our_connection_info());
     let dst_name = *new_node.public_id().name();
 
-    env.subject.handle_bootstrap_request(p2p_node, dst_name);
+    env.subject
+        .stage
+        .handle_bootstrap_request(&mut env.subject.core, p2p_node, dst_name);
     env.network.poll(&mut env.rng);
 
     let response = new_node.expect_bootstrap_response();
@@ -490,24 +496,25 @@ fn send_genesis_update() {
     env.perform_offline_and_promote(&dropped_id, adult0);
 
     // Create `GenesisUpdate` message and check its proof contains the version the adult is at.
-    let message = utils::exactly_one(env.subject.create_genesis_updates());
+    let message = utils::exactly_one(env.subject.stage.create_genesis_updates());
     assert_eq!(message.0, adult1);
 
     let proof = &message.1.proof;
     verify_proof_chain_contains(proof, orig_elders_version);
 
     // Receive MemberKnowledge from the adult
-    env.subject.handle_member_knowledge(
+    env.subject.stage.handle_member_knowledge(
+        &mut env.subject.core,
         adult1,
         MemberKnowledge {
             elders_version: env.elders_info.version(),
-            parsec_version: env.subject.parsec_map.last_version(),
+            parsec_version: env.subject.stage.parsec_map.last_version(),
         },
     );
 
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
     // contain the previous version.
-    let message = utils::exactly_one(env.subject.create_genesis_updates());
+    let message = utils::exactly_one(env.subject.stage.create_genesis_updates());
     let proof = &message.1.proof;
     verify_proof_chain_contains(proof, env.elders_info.version());
     verify_proof_chain_does_not_contain(proof, orig_elders_version);

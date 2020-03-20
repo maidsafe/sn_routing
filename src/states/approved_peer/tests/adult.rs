@@ -8,7 +8,8 @@
 
 use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{
-    id::FullId, messages::PlainMessage, parsec::generate_bls_threshold_secret_key, rng::MainRng,
+    id::FullId, messages::AccumulatingMessage, messages::PlainMessage,
+    parsec::generate_bls_threshold_secret_key, rng::MainRng,
 };
 use mock_quic_p2p::Network;
 use std::collections::BTreeMap;
@@ -148,18 +149,21 @@ fn create_state(
         None,
         &mut (),
     );
-    assert!(!subject.chain.is_self_elder());
+    assert!(!subject.stage.chain.is_self_elder());
     subject
 }
 
 #[test]
 fn handle_genesis_update_on_parsec_prune() {
     let mut env = Env::new();
-    assert_eq!(env.subject.parsec_map.last_version(), 0);
+    assert_eq!(env.subject.stage.parsec_map.last_version(), 0);
 
     let gen_pfx_info = env.gen_pfx_info(1);
-    env.subject.handle_genesis_update(gen_pfx_info).unwrap();
-    assert_eq!(env.subject.parsec_map.last_version(), 1);
+    env.subject
+        .stage
+        .handle_genesis_update(&mut env.subject.core, gen_pfx_info)
+        .unwrap();
+    assert_eq!(env.subject.stage.parsec_map.last_version(), 1);
 }
 
 #[test]
@@ -170,23 +174,33 @@ fn handle_genesis_update_ignore_old_vesions() {
     let gen_pfx_info_2 = env.gen_pfx_info(2);
 
     env.subject
-        .handle_genesis_update(gen_pfx_info_1.clone())
+        .stage
+        .handle_genesis_update(&mut env.subject.core, gen_pfx_info_1.clone())
         .unwrap();
-    env.subject.handle_genesis_update(gen_pfx_info_2).unwrap();
-    assert_eq!(env.subject.parsec_map.last_version(), 2);
+    env.subject
+        .stage
+        .handle_genesis_update(&mut env.subject.core, gen_pfx_info_2)
+        .unwrap();
+    assert_eq!(env.subject.stage.parsec_map.last_version(), 2);
 
-    env.subject.handle_genesis_update(gen_pfx_info_1).unwrap();
-    assert_eq!(env.subject.parsec_map.last_version(), 2);
+    env.subject
+        .stage
+        .handle_genesis_update(&mut env.subject.core, gen_pfx_info_1)
+        .unwrap();
+    assert_eq!(env.subject.stage.parsec_map.last_version(), 2);
 }
 
 #[test]
 fn handle_genesis_update_allow_skipped_versions() {
     let mut env = Env::new();
-    assert_eq!(env.subject.parsec_map.last_version(), 0);
+    assert_eq!(env.subject.stage.parsec_map.last_version(), 0);
 
     let gen_pfx_info = env.gen_pfx_info(2);
-    env.subject.handle_genesis_update(gen_pfx_info).unwrap();
-    assert_eq!(env.subject.parsec_map.last_version(), 2);
+    env.subject
+        .stage
+        .handle_genesis_update(&mut env.subject.core, gen_pfx_info)
+        .unwrap();
+    assert_eq!(env.subject.stage.parsec_map.last_version(), 2);
 }
 
 #[test]
@@ -196,7 +210,7 @@ fn genesis_update_message_successful_trust_check() {
     let msg = env.genesis_update_message(gen_pfx_info);
 
     env.handle_message(msg).unwrap();
-    assert_eq!(env.subject.parsec_map.last_version(), 1);
+    assert_eq!(env.subject.stage.parsec_map.last_version(), 1);
 }
 
 #[test]
