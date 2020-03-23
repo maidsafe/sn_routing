@@ -188,6 +188,10 @@ impl Approved {
         self.vote_for_event(AccumulatingEvent::User(event));
     }
 
+    pub fn network_cfg(&self) -> NetworkParams {
+        self.chain.network_cfg()
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
