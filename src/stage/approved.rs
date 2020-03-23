@@ -20,8 +20,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageHash, MessageWithBytes, PlainMessage, QueuedMessage, SrcAuthority, Variant,
-        VerifyStatus,
+        MessageHash, MessageWithBytes, PlainMessage, SrcAuthority, Variant, VerifyStatus,
     },
     outbox::EventBox,
     parsec::{self, DkgResultWrapper, Observation, ParsecMap},
@@ -37,7 +36,7 @@ use itertools::Itertools;
 use rand::Rng;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashSet},
     iter, mem,
     net::SocketAddr,
 };
@@ -57,9 +56,6 @@ pub struct Approved {
     pub parsec_map: ParsecMap,
     pub chain: Chain,
     pub gen_pfx_info: GenesisPfxInfo,
-    // The queue of routing messages addressed to us. These do not themselves need forwarding,
-    // although they may wrap a message which needs forwarding.
-    pub msg_queue: VecDeque<QueuedMessage>,
     pub timer_token: u64,
     // DKG cache
     pub dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
@@ -76,7 +72,6 @@ impl Approved {
         parsec_map: ParsecMap,
         chain: Chain,
         gen_pfx_info: GenesisPfxInfo,
-        msg_queue: VecDeque<QueuedMessage>,
     ) -> Self {
         let timer_token = if chain.is_self_elder() {
             core.timer.schedule(parsec_map.gossip_period())
@@ -89,7 +84,6 @@ impl Approved {
             parsec_map,
             chain,
             gen_pfx_info,
-            msg_queue,
             timer_token,
             dkg_cache: Default::default(),
             pending_voted_msgs: Default::default(),
@@ -241,7 +235,7 @@ impl Approved {
 
         if self.should_handle_message(&msg) && self.verify_message(&msg)? {
             core.msg_filter.insert_incoming(&msg_with_bytes);
-            self.msg_queue.push_back(msg.into_queued(None));
+            core.msg_queue.push_back(msg.into_queued(None));
         } else {
             self.unhandled_message(core, None, msg, msg_with_bytes.full_bytes().clone());
         }

@@ -36,11 +36,7 @@ use crate::{
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
-use std::{
-    collections::{BTreeMap, VecDeque},
-    iter,
-    net::SocketAddr,
-};
+use std::{collections::BTreeMap, iter, net::SocketAddr};
 
 pub struct ApprovedPeer {
     core: Core,
@@ -106,14 +102,7 @@ impl ApprovedPeer {
         let parsec_map =
             ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
 
-        let node = Self::from_parts(
-            core,
-            chain,
-            parsec_map,
-            Default::default(),
-            Default::default(),
-            gen_pfx_info,
-        );
+        let node = Self::from_parts(core, chain, parsec_map, Default::default(), gen_pfx_info);
 
         debug!("{} State changed to ApprovedPeer.", node.name());
         outbox.send_event(Event::Connected(connect_type));
@@ -140,7 +129,7 @@ impl ApprovedPeer {
             full_id: self.core.full_id,
             gen_pfx_info: self.stage.gen_pfx_info,
             msg_filter: self.core.msg_filter,
-            msg_queue: self.stage.msg_queue,
+            msg_queue: self.core.msg_queue,
             transport: self.core.transport,
             network_rx: None,
             sig_accumulator: self.stage.sig_accumulator,
@@ -153,6 +142,7 @@ impl ApprovedPeer {
             full_id: state.full_id,
             transport: state.transport,
             msg_filter: state.msg_filter,
+            msg_queue: state.msg_queue,
             timer,
             rng: rng::new(),
         };
@@ -161,7 +151,6 @@ impl ApprovedPeer {
             core,
             state.chain,
             state.parsec_map,
-            state.msg_queue,
             state.sig_accumulator,
             state.gen_pfx_info,
         )
@@ -171,19 +160,11 @@ impl ApprovedPeer {
         mut core: Core,
         chain: Chain,
         parsec_map: ParsecMap,
-        msg_queue: VecDeque<QueuedMessage>,
         sig_accumulator: SignatureAccumulator,
         gen_pfx_info: GenesisPfxInfo,
     ) -> Self {
         Self {
-            stage: Approved::new(
-                &mut core,
-                sig_accumulator,
-                parsec_map,
-                chain,
-                gen_pfx_info,
-                msg_queue,
-            ),
+            stage: Approved::new(&mut core, sig_accumulator, parsec_map, chain, gen_pfx_info),
             core,
         }
     }
@@ -218,7 +199,7 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
 
     fn handle_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        while let Some(QueuedMessage { message, sender }) = self.stage.msg_queue.pop_front() {
+        while let Some(QueuedMessage { message, sender }) = self.core.msg_queue.pop_front() {
             if self.in_dst_location(&message.dst) {
                 match self.dispatch_message(sender, message, outbox) {
                     Ok(Transition::Stay) => (),
@@ -464,7 +445,7 @@ impl Base for ApprovedPeer {
         _outbox: &mut dyn EventBox,
     ) -> Result<Transition> {
         self.stage.update_our_knowledge(&msg);
-        self.stage.msg_queue.push_back(msg.into_queued(sender));
+        self.core.msg_queue.push_back(msg.into_queued(sender));
         Ok(Transition::Stay)
     }
 

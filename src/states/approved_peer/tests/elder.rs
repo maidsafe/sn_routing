@@ -363,6 +363,7 @@ fn create_state(
         full_id,
         transport: test_utils::create_transport(network),
         msg_filter: Default::default(),
+        msg_queue: Default::default(),
         timer: test_utils::create_timer(),
         rng: rng::new_from(rng),
     };
