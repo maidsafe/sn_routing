@@ -68,8 +68,8 @@ impl JoiningPeer {
 
     pub fn approve(self, gen_pfx_info: GenesisPfxInfo, outbox: &mut dyn EventBox) -> Result<State> {
         let stage = match self.stage {
-            Stage::Bootstrapping(_) => unreachable!(),
             Stage::Joining(stage) => stage,
+            Stage::Bootstrapping(_) | Stage::Approved(_) => unreachable!(),
         };
 
         let connect_type = if stage.is_relocating() {
@@ -114,6 +114,7 @@ impl JoiningPeer {
             Stage::Joining(stage) => {
                 stage.handle_bootstrap_response(&mut self.core, sender, response)
             }
+            Stage::Approved(_) => unreachable!(),
         }
     }
 
@@ -193,6 +194,7 @@ impl Base for JoiningPeer {
                     self.rebootstrap()
                 }
             }
+            Stage::Approved(_) => unreachable!(),
         }
 
         Transition::Stay
@@ -202,6 +204,7 @@ impl Base for JoiningPeer {
         match &mut self.stage {
             Stage::Bootstrapping(stage) => stage.send_bootstrap_request(&mut self.core, conn_info),
             Stage::Joining(_) => (),
+            Stage::Approved(_) => unreachable!(),
         }
 
         Transition::Stay
@@ -303,6 +306,7 @@ impl Base for JoiningPeer {
         match &self.stage {
             Stage::Bootstrapping(stage) => stage.verify_message(msg),
             Stage::Joining(stage) => stage.verify_message(msg),
+            Stage::Approved(_) => unreachable!(),
         }
     }
 }
