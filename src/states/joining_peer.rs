@@ -32,7 +32,6 @@ use std::net::SocketAddr;
 pub struct JoiningPeer {
     core: Core,
     stage: Stage,
-    network_cfg: NetworkParams,
 }
 
 impl JoiningPeer {
@@ -41,8 +40,7 @@ impl JoiningPeer {
 
         Self {
             core,
-            stage: Stage::Bootstrapping(Bootstrapping::new(None)),
-            network_cfg,
+            stage: Stage::Bootstrapping(Bootstrapping::new(network_cfg, None)),
         }
     }
 
@@ -53,7 +51,7 @@ impl JoiningPeer {
         conn_infos: Vec<SocketAddr>,
         relocate_details: SignedRelocateDetails,
     ) -> Self {
-        let mut stage = Bootstrapping::new(Some(relocate_details));
+        let mut stage = Bootstrapping::new(network_cfg, Some(relocate_details));
 
         for conn_info in conn_infos {
             stage.send_bootstrap_request(&mut core, conn_info)
@@ -62,7 +60,6 @@ impl JoiningPeer {
         Self {
             core,
             stage: Stage::Bootstrapping(stage),
-            network_cfg,
         }
     }
 
@@ -80,7 +77,7 @@ impl JoiningPeer {
 
         Ok(State::ApprovedPeer(ApprovedPeer::new(
             self.core,
-            self.network_cfg,
+            stage.network_cfg,
             connect_type,
             gen_pfx_info,
             None,
@@ -103,6 +100,7 @@ impl JoiningPeer {
                     } => {
                         self.stage = Stage::Joining(Joining::new(
                             &mut self.core,
+                            stage.network_cfg,
                             elders_info,
                             relocate_payload,
                         ));
@@ -138,7 +136,14 @@ impl JoiningPeer {
 
     fn rebootstrap(&mut self) {
         // TODO: preserve relocation details
-        self.stage = Stage::Bootstrapping(Bootstrapping::new(None));
+
+        let network_cfg = match &self.stage {
+            Stage::Bootstrapping(stage) => stage.network_cfg,
+            Stage::Joining(stage) => stage.network_cfg,
+            Stage::Approved(stage) => stage.network_cfg(),
+        };
+
+        self.stage = Stage::Bootstrapping(Bootstrapping::new(network_cfg, None));
         self.core.full_id = FullId::gen(&mut self.core.rng);
         self.core.transport.bootstrap();
     }

@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::EldersInfo,
+    chain::{EldersInfo, NetworkParams},
     core::Core,
     error::Result,
     id::{FullId, P2pNode},
@@ -24,6 +24,7 @@ pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // The bootstrapping stage - node is trying to find the section to join.
 pub struct Bootstrapping {
+    pub network_cfg: NetworkParams,
     // Using `FxHashSet` for deterministic iteration order.
     pending_requests: FxHashSet<SocketAddr>,
     timeout_tokens: HashMap<u64, SocketAddr>,
@@ -31,8 +32,12 @@ pub struct Bootstrapping {
 }
 
 impl Bootstrapping {
-    pub fn new(relocate_details: Option<SignedRelocateDetails>) -> Self {
+    pub fn new(
+        network_cfg: NetworkParams,
+        relocate_details: Option<SignedRelocateDetails>,
+    ) -> Self {
         Self {
+            network_cfg,
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
             relocate_details,
