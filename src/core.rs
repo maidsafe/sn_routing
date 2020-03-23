@@ -7,6 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    error::Result,
     id::{FullId, PublicId},
     location::DstLocation,
     message_filter::MessageFilter,
@@ -38,6 +39,13 @@ impl Core {
 
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
+    }
+
+    pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
+        self.transport.our_connection_info().map_err(|err| {
+            debug!("Failed to retrieve our connection info: {:?}", err);
+            err.into()
+        })
     }
 
     pub fn send_message_to_targets(

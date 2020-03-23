@@ -13,7 +13,7 @@ use crate::{
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::EventSenders,
-    states::{common::Base, ApprovedPeer},
+    states::ApprovedPeer,
     timer::Timer,
     transport::{Transport, TransportBuilder},
     xor_space::XorName,
@@ -128,7 +128,7 @@ impl State {
     pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
         state_dispatch!(
             self,
-            state => state.core_mut().transport.our_connection_info().map_err(RoutingError::from),
+            state => state.our_connection_info(),
             Terminated => Err(RoutingError::InvalidState)
         )
     }
