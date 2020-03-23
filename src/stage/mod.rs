@@ -11,7 +11,7 @@ mod bootstrapping;
 mod joining;
 
 pub use self::{
-    approved::Approved,
+    approved::{Approved, RelocateParams},
     bootstrapping::{Bootstrapping, BootstrappingStatus},
     joining::Joining,
 };
@@ -28,27 +28,17 @@ pub enum Stage {
 }
 
 impl Stage {
-    pub fn is_bootstrapping(&self) -> bool {
-        matches!(self, Self::Bootstrapping(_))
-    }
-
-    pub fn is_joining(&self) -> bool {
-        matches!(self, Self::Joining(_))
-    }
-
-    // TODO: return Option instead of panic.
-    pub fn approved(&self) -> &Approved {
+    pub fn approved(&self) -> Option<&Approved> {
         match self {
-            Self::Approved(stage) => stage,
-            _ => unreachable!(),
+            Self::Approved(stage) => Some(stage),
+            _ => None,
         }
     }
 
-    // TODO: return Option instead of panic.
-    pub fn approved_mut(&mut self) -> &mut Approved {
+    pub fn approved_mut(&mut self) -> Option<&mut Approved> {
         match self {
-            Self::Approved(stage) => stage,
-            _ => unreachable!(),
+            Self::Approved(stage) => Some(stage),
+            _ => None,
         }
     }
 }

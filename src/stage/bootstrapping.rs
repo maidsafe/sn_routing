@@ -11,11 +11,12 @@ use crate::{
     core::Core,
     error::Result,
     id::{FullId, P2pNode},
-    messages::{BootstrapResponse, Message, Variant, VerifyStatus},
+    messages::{BootstrapResponse, Message, MessageHash, Variant, VerifyStatus},
     relocation::{RelocatePayload, SignedRelocateDetails},
     time::Duration,
     xor_space::Prefix,
 };
+use bytes::Bytes;
 use fxhash::FxHashSet;
 use std::{collections::HashMap, iter, net::SocketAddr};
 
@@ -65,6 +66,25 @@ impl Bootstrapping {
         }
     }
 
+    pub fn should_handle_message(&self, msg: &Message) -> bool {
+        match msg.variant {
+            Variant::BootstrapResponse(_) | Variant::Bounce { .. } => true,
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::NodeApproval(_)
+            | Variant::AckMessage { .. }
+            | Variant::GenesisUpdate(_)
+            | Variant::Relocate(_)
+            | Variant::MessageSignature(_)
+            | Variant::BootstrapRequest(_)
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge { .. }
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..)
+            | Variant::Ping => false,
+        }
+    }
+
     pub fn handle_bootstrap_response(
         &mut self,
         core: &mut Core,
@@ -101,6 +121,38 @@ impl Bootstrapping {
                 );
                 self.reconnect_to_new_section(core, new_conn_infos);
                 Ok(BootstrappingStatus::Ongoing)
+            }
+        }
+    }
+
+    pub fn unhandled_message(
+        &mut self,
+        core: &mut Core,
+        sender: Option<SocketAddr>,
+        msg: Message,
+        msg_bytes: Bytes,
+    ) {
+        match msg.variant {
+            Variant::MemberKnowledge { .. }
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..)
+            | Variant::Ping => (),
+            Variant::BootstrapResponse(_) | Variant::Bounce { .. } => unreachable!(),
+            _ => {
+                let sender = sender.expect("sender missing");
+
+                debug!(
+                    "Unhandled message - bouncing: {:?}, hash: {:?}",
+                    msg,
+                    MessageHash::from_bytes(&msg_bytes)
+                );
+
+                let variant = Variant::Bounce {
+                    elders_version: None,
+                    message: msg_bytes,
+                };
+
+                core.send_direct_message(&sender, variant)
             }
         }
     }

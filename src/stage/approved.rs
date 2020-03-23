@@ -28,7 +28,6 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::{self, MainRng},
     signature_accumulator::SignatureAccumulator,
-    state_machine::Transition,
     time::Duration,
     timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
@@ -84,41 +83,35 @@ impl Approved {
             parsec_version: 0,
         };
 
-        let chain = Chain::new(
-            network_cfg,
-            public_id,
-            gen_pfx_info.clone(),
-            first_dkg_result.secret_key_share,
-        );
-
-        let parsec_map =
-            ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
-
         Ok(Self::new(
             core,
-            Default::default(),
-            parsec_map,
-            chain,
+            network_cfg,
             gen_pfx_info,
+            first_dkg_result.secret_key_share,
         ))
     }
 
     // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
-        sig_accumulator: SignatureAccumulator,
-        parsec_map: ParsecMap,
-        chain: Chain,
+        network_cfg: NetworkParams,
         gen_pfx_info: GenesisPfxInfo,
+        secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
-        let timer_token = if chain.is_self_elder() {
-            core.timer.schedule(parsec_map.gossip_period())
-        } else {
-            core.timer.schedule(KNOWLEDGE_TIMEOUT)
-        };
+        let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
+
+        let chain = Chain::new(
+            network_cfg,
+            *core.full_id.public_id(),
+            gen_pfx_info.clone(),
+            secret_key_share,
+        );
+
+        let parsec_map =
+            ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
 
         Self {
-            sig_accumulator,
+            sig_accumulator: Default::default(),
             parsec_map,
             chain,
             gen_pfx_info,
@@ -145,7 +138,7 @@ impl Approved {
 
     // Create the approved stage by resuming a paused node.
     pub fn resume(state: PausedState, timer: Timer) -> (Self, Core) {
-        let mut core = Core {
+        let core = Core {
             full_id: state.full_id,
             transport: state.transport,
             msg_filter: state.msg_filter,
@@ -154,13 +147,23 @@ impl Approved {
             rng: rng::new(),
         };
 
-        let stage = Approved::new(
-            &mut core,
-            state.sig_accumulator,
-            state.parsec_map,
-            state.chain,
-            state.gen_pfx_info,
-        );
+        let timer_token = if state.chain.is_self_elder() {
+            core.timer.schedule(state.parsec_map.gossip_period())
+        } else {
+            core.timer.schedule(KNOWLEDGE_TIMEOUT)
+        };
+
+        let stage = Self {
+            sig_accumulator: state.sig_accumulator,
+            parsec_map: state.parsec_map,
+            chain: state.chain,
+            gen_pfx_info: state.gen_pfx_info,
+            timer_token,
+            // TODO: these fields should come from PausedState too
+            dkg_cache: Default::default(),
+            pending_voted_msgs: Default::default(),
+            members_knowledge: Default::default(),
+        };
 
         (stage, core)
     }
@@ -224,10 +227,6 @@ impl Approved {
     /// Vote for a user-defined event.
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
         self.vote_for_event(AccumulatingEvent::User(event));
-    }
-
-    pub fn network_cfg(&self) -> NetworkParams {
-        self.chain.network_cfg()
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -387,11 +386,11 @@ impl Approved {
         &mut self,
         core: &mut Core,
         signed_msg: SignedRelocateDetails,
-    ) -> Result<Transition> {
+    ) -> Option<RelocateParams> {
         if signed_msg.relocate_details().pub_id != *core.id() {
             // This `Relocate` message is not for us - it's most likely a duplicate of a previous
             // message that we already handled.
-            return Ok(Transition::Stay);
+            return None;
         }
 
         debug!(
@@ -400,7 +399,7 @@ impl Approved {
         );
 
         if !self.check_signed_relocation_details(&signed_msg) {
-            return Ok(Transition::Stay);
+            return None;
         }
 
         let conn_infos: Vec<_> = self
@@ -414,7 +413,8 @@ impl Approved {
             core.transport.disconnect(addr);
         }
 
-        Ok(Transition::Relocate {
+        Some(RelocateParams {
+            network_cfg: self.chain.network_cfg(),
             details: signed_msg,
             conn_infos,
         })
@@ -1855,6 +1855,12 @@ pub struct CompleteParsecReset {
     /// The events to process. Not shared state: only the ones we voted for.
     /// Also contains our votes that never reached consensus.
     pub to_process: BTreeSet<NetworkEvent>,
+}
+
+pub struct RelocateParams {
+    pub network_cfg: NetworkParams,
+    pub conn_infos: Vec<SocketAddr>,
+    pub details: SignedRelocateDetails,
 }
 
 // Create `EldersInfo` for the first node.
