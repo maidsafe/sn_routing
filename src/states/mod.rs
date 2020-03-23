@@ -9,8 +9,6 @@
 mod approved_peer;
 mod joining_peer;
 
-pub mod common;
-
 pub use self::approved_peer::ApprovedPeer;
 
 // # The state machine
@@ -21,10 +19,4 @@ pub use self::approved_peer::ApprovedPeer;
 //      ┌──────────────┐
 //      │ ApprovedPeer │
 //      └──────────────┘
-//
-//
-// # Common traits
-//       ApprovedPeer
-//       │
-// Base  *
 //
