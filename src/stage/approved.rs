@@ -10,8 +10,8 @@ use crate::{
     chain::{
         self, AccumulatedEvent, AccumulatingEvent, AckMessagePayload, Chain, EldersChange,
         EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, MemberState,
-        NetworkEvent, OnlinePayload, ParsecResetData, PollAccumulated, Proof, SectionKeyInfo,
-        SendAckMessagePayload, MIN_AGE,
+        NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PollAccumulated, Proof,
+        SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -66,6 +66,42 @@ pub struct Approved {
 }
 
 impl Approved {
+    // Create the approved stage for the first node in the network.
+    pub fn first(core: &mut Core, network_cfg: NetworkParams) -> Result<Self> {
+        let public_id = *core.full_id.public_id();
+        let connection_info = core.transport.our_connection_info()?;
+        let p2p_node = P2pNode::new(public_id, connection_info);
+        let mut ages = BTreeMap::new();
+        let _ = ages.insert(public_id, MIN_AGE_COUNTER);
+        let first_dkg_result = parsec::generate_first_dkg_result(&mut core.rng);
+        let gen_pfx_info = GenesisPfxInfo {
+            elders_info: create_first_elders_info(p2p_node)?,
+            public_keys: first_dkg_result.public_key_set,
+            state_serialized: Vec::new(),
+            ages,
+            parsec_version: 0,
+        };
+
+        let chain = Chain::new(
+            network_cfg,
+            public_id,
+            gen_pfx_info.clone(),
+            first_dkg_result.secret_key_share,
+        );
+
+        let parsec_map =
+            ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
+
+        Ok(Self::new(
+            core,
+            Default::default(),
+            parsec_map,
+            chain,
+            gen_pfx_info,
+        ))
+    }
+
+    // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
         sig_accumulator: SignatureAccumulator,
@@ -1777,4 +1813,17 @@ pub struct CompleteParsecReset {
     /// The events to process. Not shared state: only the ones we voted for.
     /// Also contains our votes that never reached consensus.
     pub to_process: BTreeSet<NetworkEvent>,
+}
+
+// Create `EldersInfo` for the first node.
+fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo> {
+    let name = *p2p_node.name();
+    let node = (name, p2p_node);
+    EldersInfo::new(iter::once(node).collect(), Prefix::default(), iter::empty()).map_err(|err| {
+        error!(
+            "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
+            name, err
+        );
+        err
+    })
 }
