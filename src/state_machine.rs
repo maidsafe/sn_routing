@@ -25,18 +25,14 @@ use crate::{
     location::{DstLocation, SrcLocation},
 };
 use crossbeam_channel as mpmc;
-use std::{
-    fmt::{self, Debug, Formatter},
-    net::SocketAddr,
-};
+use std::net::SocketAddr;
 
 // Execute $expr on the current variant of $self. Execute $term_expr if the current variant is
 // `Terminated`.
 macro_rules! state_dispatch {
-    ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
+    ($self:expr, $state:pat => $expr:expr) => {
         match $self {
             Self::ApprovedPeer($state) => $expr,
-            Self::Terminated => $term_expr,
         }
     };
 }
@@ -48,57 +44,46 @@ pub struct StateMachine {
     network_rx_idx: usize,
     action_rx: mpmc::Receiver<Action>,
     action_rx_idx: usize,
-    is_running: bool,
 }
 
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum State {
     ApprovedPeer(ApprovedPeer),
-    Terminated,
 }
 
 impl State {
-    pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
+    pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) {
         state_dispatch!(
             *self,
-            ref mut state => state.handle_action(action, outbox),
-            Terminated => Transition::Terminate
+            ref mut state => state.handle_action(action, outbox)
         )
     }
 
-    fn handle_network_event(
-        &mut self,
-        event: NetworkEvent,
-        outbox: &mut dyn EventBox,
-    ) -> Transition {
+    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
         state_dispatch!(
             *self,
-            ref mut state => state.handle_network_event(event, outbox),
-            Terminated => Transition::Terminate
+            ref mut state => state.handle_network_event(event, outbox)
         )
     }
 
     pub fn id(&self) -> Option<PublicId> {
         state_dispatch!(
             *self,
-            ref state => Some(*state.id()),
-            Terminated => None
+            ref state => Some(*state.id())
         )
     }
 
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         state_dispatch!(
             *self,
-            ref state => state.close_group(name, count),
-            Terminated => None
+            ref state => state.close_group(name, count)
         )
     }
 
     pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
         match self {
             Self::ApprovedPeer(state) => Some(state.our_elders()),
-            Self::Terminated => None,
         }
     }
 
@@ -111,7 +96,6 @@ impl State {
                     Err(RoutingError::InvalidState)
                 }
             }
-            Self::Terminated => Err(RoutingError::InvalidState),
         }
     }
 
@@ -121,15 +105,13 @@ impl State {
     ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
         match self {
             Self::ApprovedPeer(state) => Ok(Box::new(state.closest_known_elders_to(name))),
-            Self::Terminated => Err(RoutingError::InvalidState),
         }
     }
 
     pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
         state_dispatch!(
             self,
-            state => state.our_connection_info(),
-            Terminated => Err(RoutingError::InvalidState)
+            state => state.our_connection_info()
         )
     }
 
@@ -137,7 +119,18 @@ impl State {
     pub fn approved_peer_state_mut(&mut self) -> Option<&mut ApprovedPeer> {
         match self {
             Self::ApprovedPeer(state) => Some(state),
-            _ => None,
+        }
+    }
+
+    // pub fn terminate(&mut self) {
+    //     match self {
+    //         Self::ApprovedPeer(state) => state.terminate(),
+    //     }
+    // }
+
+    pub fn is_running(&self) -> bool {
+        match self {
+            Self::ApprovedPeer(state) => state.is_running(),
         }
     }
 }
@@ -147,7 +140,6 @@ impl State {
     pub fn chain(&self) -> Option<&Chain> {
         match self {
             Self::ApprovedPeer(state) => state.chain(),
-            Self::Terminated => None,
         }
     }
 
@@ -155,28 +147,24 @@ impl State {
     pub fn approved_peer_state(&self) -> Option<&ApprovedPeer> {
         match self {
             Self::ApprovedPeer(state) => Some(state),
-            _ => None,
         }
     }
 
     pub fn process_timers(&mut self) {
         state_dispatch!(
             self,
-            state => state.process_timers(),
-            Terminated => ()
+            state => state.process_timers()
         )
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
         match self {
-            Self::Terminated => false,
             Self::ApprovedPeer(state) => state.has_unpolled_observations(),
         }
     }
 
     pub fn unpolled_observations_string(&self) -> String {
         match self {
-            Self::Terminated => String::new(),
             Self::ApprovedPeer(state) => state.unpolled_observations_string(),
         }
     }
@@ -184,34 +172,14 @@ impl State {
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
         match self {
             Self::ApprovedPeer(state) => state.in_src_location(src),
-            _ => false,
         }
     }
 
     pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
         state_dispatch!(
             *self,
-            ref state => state.in_dst_location(dst),
-            Terminated => false
+            ref state => state.in_dst_location(dst)
         )
-    }
-}
-
-/// Enum returned from many message handlers
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-#[derive(PartialEq, Eq)]
-pub enum Transition {
-    Stay,
-    Terminate,
-}
-
-impl Debug for Transition {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Self::Stay => write!(f, "Stay"),
-            Self::Terminate => write!(f, "Terminate"),
-        }
     }
 }
 
@@ -242,10 +210,6 @@ impl StateMachine {
 
         let timer = Timer::new(action_tx.clone());
         let state = init_state(transport, timer, outbox);
-        let is_running = match state {
-            State::Terminated => false,
-            _ => true,
-        };
 
         let machine = Self {
             state,
@@ -253,7 +217,6 @@ impl StateMachine {
             network_rx_idx: 0,
             action_rx,
             action_rx_idx: 0,
-            is_running,
         };
 
         (action_tx, machine)
@@ -264,7 +227,6 @@ impl StateMachine {
 
         let mut paused_state = match self.state {
             State::ApprovedPeer(state) => state.pause(),
-            _ => return Err(RoutingError::InvalidState),
         };
 
         paused_state.network_rx = Some(self.network_rx);
@@ -284,7 +246,6 @@ impl StateMachine {
             network_rx_idx: 0,
             action_rx,
             action_rx_idx: 0,
-            is_running: true,
         };
 
         info!("Resume");
@@ -293,26 +254,11 @@ impl StateMachine {
     }
 
     fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
-        let transition = self.state.handle_network_event(event, outbox);
-        self.apply_transition(transition, outbox)
+        self.state.handle_network_event(event, outbox)
     }
 
     fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) {
-        let transition = self.state.handle_action(action, outbox);
-        self.apply_transition(transition, outbox)
-    }
-
-    pub fn apply_transition(&mut self, transition: Transition, _outbox: &mut dyn EventBox) {
-        use self::Transition::*;
-        match transition {
-            Stay => (),
-            Terminate => self.terminate(),
-        }
-    }
-
-    fn terminate(&mut self) {
-        debug!("Terminating state machine");
-        self.is_running = false;
+        self.state.handle_action(action, outbox)
     }
 
     /// Register the state machine event channels with the provided [selector](mpmc::Select).
@@ -348,7 +294,7 @@ impl StateMachine {
         op_index: usize,
         outbox: &mut dyn EventBox,
     ) -> Result<bool, mpmc::RecvError> {
-        if !self.is_running {
+        if !self.state.is_running() {
             return Err(mpmc::RecvError);
         }
         match op_index {

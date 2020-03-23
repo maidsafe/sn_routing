@@ -130,9 +130,7 @@ impl Builder {
 
                 if first {
                     debug!("Creating the first node");
-                    ApprovedPeer::first(core, network_cfg, outbox)
-                        .map(State::ApprovedPeer)
-                        .unwrap_or(State::Terminated)
+                    State::ApprovedPeer(ApprovedPeer::first(core, network_cfg, outbox))
                 } else {
                     debug!("Creating a regular node");
                     State::ApprovedPeer(ApprovedPeer::new(core, network_cfg))
@@ -282,12 +280,9 @@ impl Node {
     }
 
     fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
-        let transition = self
-            .machine
+        self.machine
             .current_mut()
             .handle_action(action, &mut self.user_event_tx);
-        self.machine
-            .apply_transition(transition, &mut self.user_event_tx);
         self.interface_result_rx.recv()?
     }
 
@@ -354,8 +349,7 @@ impl Node {
     /// Returns whether the node is approved member of a section (Infant, Adult or Elder).
     pub fn is_approved(&self) -> bool {
         match self.machine.current() {
-            State::ApprovedPeer(_) => true,
-            _ => false,
+            State::ApprovedPeer(state) => state.is_approved(),
         }
     }
 

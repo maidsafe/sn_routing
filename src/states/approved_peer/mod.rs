@@ -26,7 +26,6 @@ use crate::{
     quic_p2p::{Peer, Token},
     relocation::{RelocatePayload, SignedRelocateDetails},
     stage::{Approved, Bootstrapping, BootstrappingStatus, Joining, RelocateParams, Stage},
-    state_machine::Transition,
     time::Duration,
     timer::Timer,
     transport::PeerStatus,
@@ -50,22 +49,21 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
 
     // Create the first node in the network.
-    pub fn first(
-        mut core: Core,
-        network_cfg: NetworkParams,
-        outbox: &mut dyn EventBox,
-    ) -> Result<Self> {
-        let stage = Approved::first(&mut core, network_cfg)?;
-        let node = Self {
-            stage: Stage::Approved(stage),
-            core,
+    pub fn first(mut core: Core, network_cfg: NetworkParams, outbox: &mut dyn EventBox) -> Self {
+        let stage = match Approved::first(&mut core, network_cfg) {
+            Ok(stage) => {
+                info!("{} Started a new network as a seed node.", core.name());
+                outbox.send_event(Event::Connected(Connected::First));
+                outbox.send_event(Event::Promoted);
+                Stage::Approved(stage)
+            }
+            Err(error) => {
+                error!("Failed to start the first node: {:?}", error);
+                Stage::Terminated
+            }
         };
 
-        info!("{} Started a new network as a seed node.", node.name());
-        outbox.send_event(Event::Connected(Connected::First));
-        outbox.send_event(Event::Promoted);
-
-        Ok(node)
+        Self { stage, core }
     }
 
     // Create regular node.
@@ -99,6 +97,10 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
     // Public API
     ////////////////////////////////////////////////////////////////////////////
+
+    pub fn is_running(&self) -> bool {
+        !matches!(self.stage, Stage::Terminated)
+    }
 
     pub fn id(&self) -> &PublicId {
         self.core.id()
@@ -160,6 +162,7 @@ impl ApprovedPeer {
                 DstLocation::Direct => true,
             },
             Stage::Approved(stage) => stage.chain.in_dst_location(dst),
+            Stage::Terminated => false,
         }
     }
 
@@ -180,7 +183,7 @@ impl ApprovedPeer {
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
 
-    pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) -> Transition {
+    pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) {
         let _log_ident = self.set_log_ident();
 
         match action {
@@ -215,59 +218,49 @@ impl ApprovedPeer {
         self.finish_handle_input(outbox)
     }
 
-    pub fn handle_network_event(
-        &mut self,
-        event: NetworkEvent,
-        outbox: &mut dyn EventBox,
-    ) -> Transition {
+    pub fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
         use crate::NetworkEvent::*;
 
         let _log_ident = self.set_log_ident();
 
-        let transition = match event {
+        match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
             BootstrapFailure => self.handle_bootstrap_failure(outbox),
             ConnectedTo { peer } => match peer {
-                Peer::Client(_) => Transition::Stay,
+                Peer::Client(_) => (),
                 Peer::Node(peer_addr) => self.handle_connected_to(peer_addr, outbox),
             },
             ConnectionFailure { peer, .. } => match peer {
-                Peer::Client(_) => Transition::Stay,
+                Peer::Client(_) => (),
                 Peer::Node(peer_addr) => self.handle_connection_failure(peer_addr, outbox),
             },
             NewMessage { peer, msg } => match peer {
-                Peer::Client(_) => Transition::Stay,
+                Peer::Client(_) => (),
                 Peer::Node(peer_addr) => self.handle_new_message(peer_addr, msg, outbox),
             },
             UnsentUserMessage { peer, msg, token } => match peer {
-                Peer::Client(_) => Transition::Stay,
+                Peer::Client(_) => (),
                 Peer::Node(peer_addr) => self.handle_unsent_message(peer_addr, msg, token, outbox),
             },
             SentUserMessage { peer, msg, token } => match peer {
-                Peer::Client(_) => Transition::Stay,
+                Peer::Client(_) => (),
                 Peer::Node(peer_addr) => self.handle_sent_message(peer_addr, msg, token, outbox),
             },
-            Finish => Transition::Terminate,
+            Finish => {
+                self.stage = Stage::Terminated;
+                return;
+            }
         };
 
-        if let Transition::Stay = transition {
-            self.finish_handle_input(outbox)
-        } else {
-            transition
-        }
+        self.finish_handle_input(outbox)
     }
 
-    fn finish_handle_input(&mut self, outbox: &mut dyn EventBox) -> Transition {
-        match self.handle_messages(outbox) {
-            Transition::Stay => (),
-            transition => return transition,
-        }
+    fn finish_handle_input(&mut self, outbox: &mut dyn EventBox) {
+        self.handle_messages(outbox);
 
         if let Stage::Approved(stage) = &mut self.stage {
             stage.finish_handle_input(&mut self.core, outbox);
         }
-
-        Transition::Stay
     }
 
     fn handle_send_message(
@@ -281,7 +274,7 @@ impl ApprovedPeer {
         }
 
         match &mut self.stage {
-            Stage::Bootstrapping(_) | Stage::Joining(_) => {
+            Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => {
                 warn!("Cannot handle SendMessage - not joined.");
                 // TODO: return Err here eventually. Returning Ok for now to
                 // preserve the pre-refactor behaviour.
@@ -297,64 +290,46 @@ impl ApprovedPeer {
         }
     }
 
-    fn handle_bootstrapped_to(&mut self, addr: SocketAddr) -> Transition {
+    fn handle_bootstrapped_to(&mut self, addr: SocketAddr) {
         match &mut self.stage {
             Stage::Bootstrapping(stage) => stage.send_bootstrap_request(&mut self.core, addr),
             Stage::Joining(_) | Stage::Approved(_) => {
                 // A bootstrapped node doesn't need another bootstrap connection
                 self.core.transport.disconnect(addr);
             }
+            Stage::Terminated => {}
         }
-
-        Transition::Stay
     }
 
-    fn handle_bootstrap_failure(&mut self, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_bootstrap_failure(&mut self, outbox: &mut dyn EventBox) {
         assert!(matches!(self.stage, Stage::Bootstrapping(_)));
 
         info!("Failed to bootstrap. Terminating.");
         outbox.send_event(Event::Terminated);
-        Transition::Terminate
+        self.stage = Stage::Terminated;
     }
 
-    fn handle_connected_to(&mut self, _addr: SocketAddr, _outbox: &mut dyn EventBox) -> Transition {
-        Transition::Stay
-    }
+    fn handle_connected_to(&mut self, _addr: SocketAddr, _outbox: &mut dyn EventBox) {}
 
-    fn handle_connection_failure(
-        &mut self,
-        addr: SocketAddr,
-        _outbox: &mut dyn EventBox,
-    ) -> Transition {
+    fn handle_connection_failure(&mut self, addr: SocketAddr, _outbox: &mut dyn EventBox) {
         if let Stage::Approved(stage) = &mut self.stage {
             stage.handle_connection_failure(&mut self.core, addr);
         } else {
             trace!("ConnectionFailure from {}", addr);
         }
-
-        Transition::Stay
     }
 
-    fn handle_new_message(
-        &mut self,
-        sender: SocketAddr,
-        bytes: Bytes,
-        outbox: &mut dyn EventBox,
-    ) -> Transition {
+    fn handle_new_message(&mut self, sender: SocketAddr, bytes: Bytes, outbox: &mut dyn EventBox) {
         let msg = match MessageWithBytes::partial_from_bytes(bytes) {
             Ok(msg) => msg,
             Err(error) => {
                 debug!("Failed to deserialize message: {:?}", error);
-                return Transition::Stay;
+                return;
             }
         };
 
-        match self.try_handle_message(Some(sender), msg, outbox) {
-            Ok(transition) => transition,
-            Err(error) => {
-                debug!("Failed to handle message: {:?}", error);
-                Transition::Stay
-            }
+        if let Err(error) = self.try_handle_message(Some(sender), msg, outbox) {
+            debug!("Failed to handle message: {:?}", error);
         }
     }
 
@@ -364,9 +339,9 @@ impl ApprovedPeer {
         msg: Bytes,
         msg_token: Token,
         outbox: &mut dyn EventBox,
-    ) -> Transition {
+    ) {
         match self.core.handle_unsent_message(addr, msg, msg_token) {
-            PeerStatus::Normal => Transition::Stay,
+            PeerStatus::Normal => (),
             PeerStatus::Lost => self.handle_peer_lost(addr, outbox),
         }
     }
@@ -377,10 +352,9 @@ impl ApprovedPeer {
         _msg: Bytes,
         token: Token,
         _outbox: &mut dyn EventBox,
-    ) -> Transition {
+    ) {
         trace!("Successfully sent message with ID {} to {:?}", token, addr);
         self.core.transport.target_succeeded(token, addr);
-        Transition::Stay
     }
 
     fn handle_timeout(&mut self, token: u64, _outbox: &mut dyn EventBox) {
@@ -397,19 +371,14 @@ impl ApprovedPeer {
                 }
             }
             Stage::Approved(stage) => stage.handle_timeout(&mut self.core, token),
+            Stage::Terminated => {}
         }
     }
 
-    fn handle_peer_lost(
-        &mut self,
-        peer_addr: SocketAddr,
-        _outbox: &mut dyn EventBox,
-    ) -> Transition {
+    fn handle_peer_lost(&mut self, peer_addr: SocketAddr, _outbox: &mut dyn EventBox) {
         if let Stage::Approved(stage) = &mut self.stage {
             stage.handle_peer_lost(peer_addr);
         }
-
-        Transition::Stay
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -421,13 +390,13 @@ impl ApprovedPeer {
         sender: Option<SocketAddr>,
         mut msg_with_bytes: MessageWithBytes,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition> {
+    ) -> Result<()> {
         trace!("try handle message {:?}", msg_with_bytes);
 
         self.try_relay_message(sender, &msg_with_bytes)?;
 
         if !self.in_dst_location(msg_with_bytes.message_dst()) {
-            return Ok(Transition::Stay);
+            return Ok(());
         }
 
         if self.core.msg_filter.contains_incoming(&msg_with_bytes) {
@@ -435,7 +404,7 @@ impl ApprovedPeer {
                 "not handling message - already handled: {:?}",
                 msg_with_bytes
             );
-            return Ok(Transition::Stay);
+            return Ok(());
         }
 
         let msg = msg_with_bytes.take_or_deserialize_message()?;
@@ -445,7 +414,7 @@ impl ApprovedPeer {
             self.handle_message(sender, msg, outbox)
         } else {
             self.unhandled_message(sender, msg, msg_with_bytes.full_bytes().clone());
-            Ok(Transition::Stay)
+            Ok(())
         }
     }
 
@@ -479,6 +448,7 @@ impl ApprovedPeer {
                 Ok(())
             }
             Stage::Approved(stage) => stage.send_signed_message(&mut self.core, msg),
+            Stage::Terminated => unreachable!(),
         }
     }
 
@@ -487,6 +457,7 @@ impl ApprovedPeer {
             Stage::Bootstrapping(stage) => stage.should_handle_message(msg),
             Stage::Joining(stage) => stage.should_handle_message(msg),
             Stage::Approved(stage) => stage.should_handle_message(msg),
+            Stage::Terminated => false,
         }
     }
 
@@ -495,6 +466,7 @@ impl ApprovedPeer {
             Stage::Bootstrapping(stage) => stage.verify_message(msg),
             Stage::Joining(stage) => stage.verify_message(msg),
             Stage::Approved(stage) => stage.verify_message(msg),
+            Stage::Terminated => unreachable!(),
         }
     }
 
@@ -503,28 +475,25 @@ impl ApprovedPeer {
         sender: Option<SocketAddr>,
         msg: Message,
         _outbox: &mut dyn EventBox,
-    ) -> Result<Transition> {
+    ) -> Result<()> {
         if let Stage::Approved(stage) = &mut self.stage {
             stage.update_our_knowledge(&msg);
         }
 
         self.core.msg_queue.push_back(msg.into_queued(sender));
 
-        Ok(Transition::Stay)
+        Ok(())
     }
 
-    fn handle_messages(&mut self, outbox: &mut dyn EventBox) -> Transition {
+    fn handle_messages(&mut self, outbox: &mut dyn EventBox) {
         while let Some(QueuedMessage { message, sender }) = self.core.msg_queue.pop_front() {
             if self.in_dst_location(&message.dst) {
                 match self.dispatch_message(sender, message, outbox) {
-                    Ok(Transition::Stay) => (),
-                    Ok(transition) => return transition,
+                    Ok(()) => (),
                     Err(err) => debug!("Routing message dispatch failed: {:?}", err),
                 }
             }
         }
-
-        Transition::Stay
     }
 
     fn dispatch_message(
@@ -532,7 +501,7 @@ impl ApprovedPeer {
         sender: Option<SocketAddr>,
         msg: Message,
         outbox: &mut dyn EventBox,
-    ) -> Result<Transition, RoutingError> {
+    ) -> Result<()> {
         // Common messages
         match msg.variant {
             Variant::UserMessage(_) => (),
@@ -663,9 +632,10 @@ impl ApprovedPeer {
                     unreachable!()
                 }
             },
+            Stage::Terminated => unreachable!(),
         }
 
-        Ok(Transition::Stay)
+        Ok(())
     }
 
     fn handle_bounce(&mut self, sender: P2pNode, sender_version: Option<u64>, msg_bytes: Bytes) {
@@ -687,6 +657,7 @@ impl ApprovedPeer {
                 .chain
                 .find_section_by_member(sender.public_id())
                 .map(|(_, version)| version),
+            Stage::Terminated => unreachable!(),
         };
 
         if let Some(known_version) = known_version {
@@ -732,6 +703,7 @@ impl ApprovedPeer {
             Stage::Approved(stage) => {
                 stage.unhandled_message(&mut self.core, sender, msg, msg_bytes)
             }
+            Stage::Terminated => {}
         }
     }
 
@@ -820,12 +792,17 @@ impl ApprovedPeer {
                 self.core.name(),
                 stage.chain.our_prefix()
             ),
+            Stage::Terminated => write!(buffer, "Terminated"),
         })
     }
 }
 
 #[cfg(feature = "mock_base")]
 impl ApprovedPeer {
+    pub fn is_approved(&self) -> bool {
+        self.stage.approved().is_some()
+    }
+
     pub fn chain(&self) -> Option<&Chain> {
         self.stage.approved().map(|stage| &stage.chain)
     }
