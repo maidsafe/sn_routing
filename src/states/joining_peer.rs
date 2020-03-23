@@ -365,6 +365,7 @@ mod tests {
                         full_id: node_b_full_id,
                         transport,
                         msg_filter: Default::default(),
+                        msg_queue: Default::default(),
                         timer,
                         rng,
                     },

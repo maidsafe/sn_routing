@@ -123,6 +123,7 @@ impl Builder {
                     full_id,
                     transport,
                     msg_filter: Default::default(),
+                    msg_queue: Default::default(),
                     timer,
                     rng,
                 };

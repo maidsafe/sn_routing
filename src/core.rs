@@ -10,7 +10,7 @@ use crate::{
     id::{FullId, PublicId},
     location::DstLocation,
     message_filter::MessageFilter,
-    messages::{Message, Variant},
+    messages::{Message, QueuedMessage, Variant},
     quic_p2p::Token,
     rng::MainRng,
     time::Duration,
@@ -19,13 +19,14 @@ use crate::{
     xor_space::XorName,
 };
 use bytes::Bytes;
-use std::{net::SocketAddr, slice};
+use std::{collections::VecDeque, net::SocketAddr, slice};
 
 // Core components of the node.
 pub struct Core {
     pub full_id: FullId,
     pub transport: Transport,
     pub msg_filter: MessageFilter,
+    pub msg_queue: VecDeque<QueuedMessage>,
     pub timer: Timer,
     pub rng: MainRng,
 }
