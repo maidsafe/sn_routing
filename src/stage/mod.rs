@@ -25,6 +25,7 @@ pub enum Stage {
     Bootstrapping(Bootstrapping),
     Joining(Joining),
     Approved(Approved),
+    Terminated,
 }
 
 impl Stage {
