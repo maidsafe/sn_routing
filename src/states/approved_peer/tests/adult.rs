@@ -8,7 +8,7 @@
 
 use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{
-    id::FullId, messages::AccumulatingMessage, messages::PlainMessage,
+    chain::EldersInfo, id::FullId, messages::AccumulatingMessage, messages::PlainMessage,
     parsec::generate_bls_threshold_secret_key, rng::MainRng,
 };
 use mock_quic_p2p::Network;

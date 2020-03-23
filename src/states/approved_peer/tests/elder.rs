@@ -9,8 +9,8 @@
 use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{
     chain::{
-        AccumulatingEvent, AckMessagePayload, EventSigPayload, OnlinePayload, SectionKeyInfo,
-        SectionProofSlice, MIN_AGE,
+        AccumulatingEvent, AckMessagePayload, EldersInfo, EventSigPayload, OnlinePayload,
+        SectionKeyInfo, SectionProofSlice, MIN_AGE,
     },
     event::Connected,
     generate_bls_threshold_secret_key,

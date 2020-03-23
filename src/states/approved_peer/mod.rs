@@ -16,7 +16,7 @@ use super::{
 #[cfg(feature = "mock_base")]
 use crate::id::PublicId;
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, NetworkParams, MIN_AGE_COUNTER},
+    chain::{Chain, GenesisPfxInfo, NetworkParams},
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
@@ -25,18 +25,17 @@ use crate::{
     log_utils,
     messages::{Message, MessageHash, MessageWithBytes, QueuedMessage, Variant},
     outbox::EventBox,
-    parsec::{generate_first_dkg_result, ParsecMap},
+    parsec::ParsecMap,
     pause::PausedState,
     relocation::SignedRelocateDetails,
     rng,
-    signature_accumulator::SignatureAccumulator,
     stage::Approved,
     state_machine::{State, Transition},
     timer::Timer,
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
-use std::{collections::BTreeMap, iter, net::SocketAddr};
+use std::net::SocketAddr;
 
 pub struct ApprovedPeer {
     core: Core,
@@ -53,31 +52,12 @@ impl ApprovedPeer {
         mut core: Core,
         network_cfg: NetworkParams,
         outbox: &mut dyn EventBox,
-    ) -> Result<Self, RoutingError> {
-        let public_id = *core.full_id.public_id();
-        let connection_info = core.transport.our_connection_info()?;
-        let p2p_node = P2pNode::new(public_id, connection_info);
-        let mut ages = BTreeMap::new();
-        let _ = ages.insert(public_id, MIN_AGE_COUNTER);
-        let first_dkg_result = generate_first_dkg_result(&mut core.rng);
-        let gen_pfx_info = GenesisPfxInfo {
-            elders_info: create_first_elders_info(p2p_node)?,
-            public_keys: first_dkg_result.public_key_set,
-            state_serialized: Vec::new(),
-            ages,
-            parsec_version: 0,
-        };
-
-        let node = Self::new(
-            core,
-            network_cfg,
-            Connected::First,
-            gen_pfx_info,
-            first_dkg_result.secret_key_share,
-            outbox,
-        );
+    ) -> Result<Self> {
+        let stage = Approved::first(&mut core, network_cfg)?;
+        let node = Self { stage, core };
 
         info!("{} Started a new network as a seed node.", node.name());
+        outbox.send_event(Event::Connected(Connected::First));
         outbox.send_event(Event::Promoted);
 
         Ok(node)
@@ -102,7 +82,16 @@ impl ApprovedPeer {
         let parsec_map =
             ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
 
-        let node = Self::from_parts(core, chain, parsec_map, Default::default(), gen_pfx_info);
+        let node = Self {
+            stage: Approved::new(
+                &mut core,
+                Default::default(),
+                parsec_map,
+                chain,
+                gen_pfx_info,
+            ),
+            core,
+        };
 
         debug!("{} State changed to ApprovedPeer.", node.name());
         outbox.send_event(Event::Connected(connect_type));
@@ -138,7 +127,7 @@ impl ApprovedPeer {
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
-        let core = Core {
+        let mut core = Core {
             full_id: state.full_id,
             transport: state.transport,
             msg_filter: state.msg_filter,
@@ -147,24 +136,14 @@ impl ApprovedPeer {
             rng: rng::new(),
         };
 
-        Self::from_parts(
-            core,
-            state.chain,
-            state.parsec_map,
-            state.sig_accumulator,
-            state.gen_pfx_info,
-        )
-    }
-
-    fn from_parts(
-        mut core: Core,
-        chain: Chain,
-        parsec_map: ParsecMap,
-        sig_accumulator: SignatureAccumulator,
-        gen_pfx_info: GenesisPfxInfo,
-    ) -> Self {
         Self {
-            stage: Approved::new(&mut core, sig_accumulator, parsec_map, chain, gen_pfx_info),
+            stage: Approved::new(
+                &mut core,
+                state.sig_accumulator,
+                state.parsec_map,
+                state.chain,
+                state.gen_pfx_info,
+            ),
             core,
         }
     }
@@ -508,17 +487,4 @@ impl ApprovedPeer {
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
         self.stage.chain.in_src_location(src)
     }
-}
-
-// Create `EldersInfo` for the first node.
-fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo, RoutingError> {
-    let name = *p2p_node.name();
-    let node = (name, p2p_node);
-    EldersInfo::new(iter::once(node).collect(), Prefix::default(), iter::empty()).map_err(|err| {
-        error!(
-            "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
-            name, err
-        );
-        err
-    })
 }
