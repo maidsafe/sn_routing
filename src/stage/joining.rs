@@ -10,12 +10,14 @@ use crate::{
     chain::{EldersInfo, NetworkParams, SectionKeyInfo},
     core::Core,
     error::Result,
+    event::Connected,
     id::P2pNode,
-    messages::{self, BootstrapResponse, JoinRequest, Message, Variant, VerifyStatus},
+    messages::{self, BootstrapResponse, JoinRequest, Message, MessageHash, Variant, VerifyStatus},
     relocation::RelocatePayload,
     xor_space::{Prefix, XorName},
 };
-use std::time::Duration;
+use bytes::Bytes;
+use std::{net::SocketAddr, time::Duration};
 
 /// Time after which an attempt to joining a section is cancelled (and possibly retried).
 pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
@@ -77,17 +79,33 @@ impl Joining {
         }
     }
 
+    pub fn should_handle_message(&self, msg: &Message) -> bool {
+        match msg.variant {
+            Variant::NodeApproval(_)
+            | Variant::BootstrapResponse(BootstrapResponse::Join(_))
+            | Variant::Bounce { .. } => true,
+            Variant::NeighbourInfo(_)
+            | Variant::UserMessage(_)
+            | Variant::AckMessage { .. }
+            | Variant::GenesisUpdate(_)
+            | Variant::Relocate(_)
+            | Variant::MessageSignature(_)
+            | Variant::BootstrapRequest(_)
+            | Variant::BootstrapResponse(_)
+            | Variant::JoinRequest(_)
+            | Variant::MemberKnowledge { .. }
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..)
+            | Variant::Ping => false,
+        }
+    }
+
     pub fn handle_bootstrap_response(
         &mut self,
         core: &mut Core,
         sender: P2pNode,
-        response: BootstrapResponse,
+        new_elders_info: EldersInfo,
     ) -> Result<()> {
-        let new_elders_info = match response {
-            BootstrapResponse::Join(elders_info) => elders_info,
-            BootstrapResponse::Rebootstrap(_) => unreachable!(),
-        };
-
         if new_elders_info.version() <= self.elders_info.version() {
             return Ok(());
         }
@@ -109,6 +127,40 @@ impl Joining {
         }
 
         Ok(())
+    }
+
+    pub fn unhandled_message(
+        &mut self,
+        core: &mut Core,
+        sender: Option<SocketAddr>,
+        msg: Message,
+        msg_bytes: Bytes,
+    ) {
+        match msg.variant {
+            Variant::MemberKnowledge { .. }
+            | Variant::ParsecRequest(..)
+            | Variant::ParsecResponse(..)
+            | Variant::Ping => (),
+            Variant::NodeApproval(_)
+            | Variant::BootstrapResponse(BootstrapResponse::Join(_))
+            | Variant::Bounce { .. } => unreachable!(),
+            _ => {
+                let sender = sender.expect("sender missing");
+
+                debug!(
+                    "Unhandled message - bouncing: {:?}, hash: {:?}",
+                    msg,
+                    MessageHash::from_bytes(&msg_bytes)
+                );
+
+                let variant = Variant::Bounce {
+                    elders_version: None,
+                    message: msg_bytes,
+                };
+
+                core.send_direct_message(&sender, variant)
+            }
+        }
     }
 
     pub fn verify_message(&self, msg: &Message) -> Result<bool> {
@@ -135,8 +187,11 @@ impl Joining {
     }
 
     // Are we relocating or joining for the first time?
-    pub fn is_relocating(&self) -> bool {
-        matches!(self.join_type, JoinType::Relocate(_))
+    pub fn connect_type(&self) -> Connected {
+        match self.join_type {
+            JoinType::First { .. } => Connected::First,
+            JoinType::Relocate(_) => Connected::Relocate,
+        }
     }
 
     fn send_join_requests(&self, core: &mut Core) {

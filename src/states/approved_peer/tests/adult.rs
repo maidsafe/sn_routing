@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+/* TODO: re-enable these tests
+
 use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{
     chain::EldersInfo,
@@ -233,3 +235,5 @@ fn genesis_update_message_failed_trust_check_proof_too_new() {
     let msg = env.genesis_update_message(gen_pfx_info);
     let _ = env.handle_message(msg);
 }
+
+*/

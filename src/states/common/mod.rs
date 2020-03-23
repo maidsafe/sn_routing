@@ -9,7 +9,3 @@
 mod base;
 
 pub use self::base::Base;
-use crate::time::Duration;
-
-/// Delay after which a bounced message is resent.
-pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);

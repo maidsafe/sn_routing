@@ -8,14 +8,12 @@
 
 use crate::{
     action::Action,
-    chain::GenesisPfxInfo,
     error::RoutingError,
     id::{P2pNode, PublicId},
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::EventSenders,
-    relocation::SignedRelocateDetails,
-    states::{common::Base, ApprovedPeer, JoiningPeer},
+    states::{common::Base, ApprovedPeer},
     timer::Timer,
     transport::{Transport, TransportBuilder},
     xor_space::XorName,
@@ -25,12 +23,10 @@ use crate::{
 use crate::{
     chain::Chain,
     location::{DstLocation, SrcLocation},
-    rng::MainRng,
 };
 use crossbeam_channel as mpmc;
 use std::{
     fmt::{self, Debug, Formatter},
-    mem,
     net::SocketAddr,
 };
 
@@ -39,7 +35,6 @@ use std::{
 macro_rules! state_dispatch {
     ($self:expr, $state:pat => $expr:expr, Terminated => $term_expr:expr) => {
         match $self {
-            Self::JoiningPeer($state) => $expr,
             Self::ApprovedPeer($state) => $expr,
             Self::Terminated => $term_expr,
         }
@@ -59,7 +54,6 @@ pub struct StateMachine {
 // FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
 #[allow(clippy::large_enum_variant)]
 pub enum State {
-    JoiningPeer(JoiningPeer),
     ApprovedPeer(ApprovedPeer),
     Terminated,
 }
@@ -104,14 +98,20 @@ impl State {
     pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
         match self {
             Self::ApprovedPeer(state) => Some(state.our_elders()),
-            Self::JoiningPeer(_) | Self::Terminated => None,
+            Self::Terminated => None,
         }
     }
 
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
         match self {
-            Self::ApprovedPeer(state) => Ok(state.our_prefix().matches(name)),
-            Self::JoiningPeer(_) | Self::Terminated => Err(RoutingError::InvalidState),
+            Self::ApprovedPeer(state) => {
+                if let Some(prefix) = state.our_prefix() {
+                    Ok(prefix.matches(name))
+                } else {
+                    Err(RoutingError::InvalidState)
+                }
+            }
+            Self::Terminated => Err(RoutingError::InvalidState),
         }
     }
 
@@ -121,7 +121,7 @@ impl State {
     ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
         match self {
             Self::ApprovedPeer(state) => Ok(Box::new(state.closest_known_elders_to(name))),
-            Self::JoiningPeer(_) | Self::Terminated => Err(RoutingError::InvalidState),
+            Self::Terminated => Err(RoutingError::InvalidState),
         }
     }
 
@@ -140,27 +140,14 @@ impl State {
             _ => None,
         }
     }
-
-    fn replace_with<F, E>(&mut self, f: F)
-    where
-        F: FnOnce(Self) -> Result<Self, E>,
-        E: Debug,
-    {
-        let old_state = mem::replace(self, Self::Terminated);
-
-        match f(old_state) {
-            Ok(new_state) => *self = new_state,
-            Err(error) => error!("Failed state transition: {:?}", error),
-        }
-    }
 }
 
 #[cfg(feature = "mock_base")]
 impl State {
     pub fn chain(&self) -> Option<&Chain> {
         match self {
-            Self::ApprovedPeer(state) => Some(state.chain()),
-            Self::JoiningPeer(_) | Self::Terminated => None,
+            Self::ApprovedPeer(state) => state.chain(),
+            Self::Terminated => None,
         }
     }
 
@@ -182,14 +169,14 @@ impl State {
 
     pub fn has_unpolled_observations(&self) -> bool {
         match self {
-            Self::Terminated | Self::JoiningPeer(_) => false,
+            Self::Terminated => false,
             Self::ApprovedPeer(state) => state.has_unpolled_observations(),
         }
     }
 
     pub fn unpolled_observations_string(&self) -> String {
         match self {
-            Self::Terminated | Self::JoiningPeer(_) => String::new(),
+            Self::Terminated => String::new(),
             Self::ApprovedPeer(state) => state.unpolled_observations_string(),
         }
     }
@@ -208,14 +195,6 @@ impl State {
             Terminated => false
         )
     }
-
-    pub fn rng(&mut self) -> &mut MainRng {
-        state_dispatch!(
-            self,
-            state => &mut state.core_mut().rng,
-            Terminated => unreachable!()
-        )
-    }
 }
 
 /// Enum returned from many message handlers
@@ -224,15 +203,6 @@ impl State {
 #[derive(PartialEq, Eq)]
 pub enum Transition {
     Stay,
-    // Node getting relocated.
-    Relocate {
-        conn_infos: Vec<SocketAddr>,
-        details: SignedRelocateDetails,
-    },
-    // `JoiningPeer` state transitioning to `ApprovedPeer`.
-    Approve {
-        gen_pfx_info: GenesisPfxInfo,
-    },
     Terminate,
 }
 
@@ -240,8 +210,6 @@ impl Debug for Transition {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             Self::Stay => write!(f, "Stay"),
-            Self::Relocate { .. } => write!(f, "Relocate"),
-            Self::Approve { .. } => write!(f, "Approve"),
             Self::Terminate => write!(f, "Terminate"),
         }
     }
@@ -334,22 +302,11 @@ impl StateMachine {
         self.apply_transition(transition, outbox)
     }
 
-    pub fn apply_transition(&mut self, transition: Transition, outbox: &mut dyn EventBox) {
+    pub fn apply_transition(&mut self, transition: Transition, _outbox: &mut dyn EventBox) {
         use self::Transition::*;
         match transition {
             Stay => (),
             Terminate => self.terminate(),
-            Relocate {
-                details,
-                conn_infos,
-            } => self.state.replace_with(|state| match state {
-                State::ApprovedPeer(src) => src.relocate(conn_infos, details),
-                _ => unreachable!(),
-            }),
-            Approve { gen_pfx_info } => self.state.replace_with(|state| match state {
-                State::JoiningPeer(src) => src.approve(gen_pfx_info, outbox),
-                _ => unreachable!(),
-            }),
         }
     }
 

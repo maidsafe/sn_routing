@@ -222,6 +222,8 @@ impl ParsecMap {
     }
 
     // Enable test to simulate other members voting
+    // TODO: remove this allow(unused)
+    #[allow(unused)]
     #[cfg(all(test, feature = "mock"))]
     pub fn vote_for_as(
         &mut self,
@@ -234,6 +236,8 @@ impl ParsecMap {
     }
 
     // Enable test to simulate other members signing and getting the right pk_set
+    // TODO: remove this allow(unused)
+    #[allow(unused)]
     #[cfg(all(test, feature = "mock"))]
     pub fn get_dkg_result_as(
         &mut self,

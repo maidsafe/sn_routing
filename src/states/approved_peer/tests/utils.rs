@@ -13,6 +13,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+// TODO: remove this allow(unused)
+#![allow(unused)]
+
 use crate::{
     chain::{AgeCounter, EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER},
     id::{FullId, P2pNode, PublicId},

@@ -19,7 +19,7 @@ use crate::{
     quic_p2p::{OurType, Token},
     rng::{self, MainRng},
     state_machine::{State, StateMachine},
-    states::{self, JoiningPeer},
+    states::ApprovedPeer,
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
 };
@@ -130,12 +130,12 @@ impl Builder {
 
                 if first {
                     debug!("Creating the first node");
-                    states::ApprovedPeer::first(core, network_cfg, outbox)
+                    ApprovedPeer::first(core, network_cfg, outbox)
                         .map(State::ApprovedPeer)
                         .unwrap_or(State::Terminated)
                 } else {
                     debug!("Creating a regular node");
-                    State::JoiningPeer(JoiningPeer::new(core, network_cfg))
+                    State::ApprovedPeer(ApprovedPeer::new(core, network_cfg))
                 }
             },
             network_config,
@@ -329,17 +329,17 @@ impl Node {
     }
 
     /// Returns the underlying ApprovedPeer state.
-    pub fn approved_peer_state(&self) -> Option<&crate::states::ApprovedPeer> {
+    pub fn approved_peer_state(&self) -> Option<&ApprovedPeer> {
         self.machine.current().approved_peer_state()
     }
 
     /// Returns mutable reference to the underlying ApprovedPeer state.
-    pub fn approved_peer_state_mut(&mut self) -> Option<&mut crate::states::ApprovedPeer> {
+    pub fn approved_peer_state_mut(&mut self) -> Option<&mut ApprovedPeer> {
         self.machine.current_mut().approved_peer_state_mut()
     }
 
     /// Returns the underlying ApprovedPeer state unwrapped - panics if not ApprovedPeer.
-    pub fn approved_peer_state_unchecked(&self) -> &crate::states::ApprovedPeer {
+    pub fn approved_peer_state_unchecked(&self) -> &ApprovedPeer {
         self.approved_peer_state()
             .expect("should be State::ApprovedPeer")
     }

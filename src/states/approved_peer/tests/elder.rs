@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+/* TODO: re-enable these tests
+
 use super::{super::super::approved_peer::*, utils as test_utils};
 use crate::{
     chain::{
@@ -597,3 +599,5 @@ impl JoiningPeer {
             })
     }
 }
+
+*/
