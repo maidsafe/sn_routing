@@ -150,21 +150,22 @@ fn create_state(
         None,
         &mut (),
     );
-    assert!(!subject.stage.chain.is_self_elder());
+    assert!(!subject.stage.approved().chain.is_self_elder());
     subject
 }
 
 #[test]
 fn handle_genesis_update_on_parsec_prune() {
     let mut env = Env::new();
-    assert_eq!(env.subject.stage.parsec_map.last_version(), 0);
+    assert_eq!(env.subject.stage.approved().parsec_map.last_version(), 0);
 
     let gen_pfx_info = env.gen_pfx_info(1);
     env.subject
         .stage
+        .approved_mut()
         .handle_genesis_update(&mut env.subject.core, gen_pfx_info)
         .unwrap();
-    assert_eq!(env.subject.stage.parsec_map.last_version(), 1);
+    assert_eq!(env.subject.stage.approved().parsec_map.last_version(), 1);
 }
 
 #[test]
@@ -176,32 +177,36 @@ fn handle_genesis_update_ignore_old_vesions() {
 
     env.subject
         .stage
+        .approved_mut()
         .handle_genesis_update(&mut env.subject.core, gen_pfx_info_1.clone())
         .unwrap();
     env.subject
         .stage
+        .approved_mut()
         .handle_genesis_update(&mut env.subject.core, gen_pfx_info_2)
         .unwrap();
-    assert_eq!(env.subject.stage.parsec_map.last_version(), 2);
+    assert_eq!(env.subject.stage.approved().parsec_map.last_version(), 2);
 
     env.subject
         .stage
+        .approved_mut()
         .handle_genesis_update(&mut env.subject.core, gen_pfx_info_1)
         .unwrap();
-    assert_eq!(env.subject.stage.parsec_map.last_version(), 2);
+    assert_eq!(env.subject.stage.approved().parsec_map.last_version(), 2);
 }
 
 #[test]
 fn handle_genesis_update_allow_skipped_versions() {
     let mut env = Env::new();
-    assert_eq!(env.subject.stage.parsec_map.last_version(), 0);
+    assert_eq!(env.subject.stage.approved().parsec_map.last_version(), 0);
 
     let gen_pfx_info = env.gen_pfx_info(2);
     env.subject
         .stage
+        .approved_mut()
         .handle_genesis_update(&mut env.subject.core, gen_pfx_info)
         .unwrap();
-    assert_eq!(env.subject.stage.parsec_map.last_version(), 2);
+    assert_eq!(env.subject.stage.approved().parsec_map.last_version(), 2);
 }
 
 #[test]
@@ -211,7 +216,7 @@ fn genesis_update_message_successful_trust_check() {
     let msg = env.genesis_update_message(gen_pfx_info);
 
     env.handle_message(msg).unwrap();
-    assert_eq!(env.subject.stage.parsec_map.last_version(), 1);
+    assert_eq!(env.subject.stage.approved().parsec_map.last_version(), 1);
 }
 
 #[test]

@@ -20,9 +20,11 @@ pub use self::{
 pub use self::{bootstrapping::BOOTSTRAP_TIMEOUT, joining::JOIN_TIMEOUT};
 
 // Type to represent the various stages a node goes through during its lifetime.
+#[allow(clippy::large_enum_variant)]
 pub enum Stage {
     Bootstrapping(Bootstrapping),
     Joining(Joining),
+    Approved(Approved),
 }
 
 impl Stage {
@@ -32,5 +34,21 @@ impl Stage {
 
     pub fn is_joining(&self) -> bool {
         matches!(self, Self::Joining(_))
+    }
+
+    // TODO: return Option instead of panic.
+    pub fn approved(&self) -> &Approved {
+        match self {
+            Self::Approved(stage) => stage,
+            _ => unreachable!(),
+        }
+    }
+
+    // TODO: return Option instead of panic.
+    pub fn approved_mut(&mut self) -> &mut Approved {
+        match self {
+            Self::Approved(stage) => stage,
+            _ => unreachable!(),
+        }
     }
 }
