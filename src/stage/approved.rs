@@ -24,11 +24,13 @@ use crate::{
     },
     outbox::EventBox,
     parsec::{self, DkgResultWrapper, Observation, ParsecMap},
+    pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
-    rng::MainRng,
+    rng::{self, MainRng},
     signature_accumulator::SignatureAccumulator,
     state_machine::Transition,
     time::Duration,
+    timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
 };
 use bytes::Bytes;
@@ -125,6 +127,42 @@ impl Approved {
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
         }
+    }
+
+    pub fn pause(self, core: Core) -> PausedState {
+        PausedState {
+            chain: self.chain,
+            full_id: core.full_id,
+            gen_pfx_info: self.gen_pfx_info,
+            msg_filter: core.msg_filter,
+            msg_queue: core.msg_queue,
+            transport: core.transport,
+            network_rx: None,
+            sig_accumulator: self.sig_accumulator,
+            parsec_map: self.parsec_map,
+        }
+    }
+
+    // Create the approved stage by resuming a paused node.
+    pub fn resume(state: PausedState, timer: Timer) -> (Self, Core) {
+        let mut core = Core {
+            full_id: state.full_id,
+            transport: state.transport,
+            msg_filter: state.msg_filter,
+            msg_queue: state.msg_queue,
+            timer,
+            rng: rng::new(),
+        };
+
+        let stage = Approved::new(
+            &mut core,
+            state.sig_accumulator,
+            state.parsec_map,
+            state.chain,
+            state.gen_pfx_info,
+        );
+
+        (stage, core)
     }
 
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {

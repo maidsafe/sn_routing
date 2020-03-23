@@ -28,7 +28,6 @@ use crate::{
     parsec::ParsecMap,
     pause::PausedState,
     relocation::SignedRelocateDetails,
-    rng,
     stage::{Approved, Stage},
     state_machine::{State, Transition},
     timer::Timer,
@@ -124,37 +123,13 @@ impl ApprovedPeer {
             _ => unreachable!(),
         };
 
-        PausedState {
-            chain: stage.chain,
-            full_id: self.core.full_id,
-            gen_pfx_info: stage.gen_pfx_info,
-            msg_filter: self.core.msg_filter,
-            msg_queue: self.core.msg_queue,
-            transport: self.core.transport,
-            network_rx: None,
-            sig_accumulator: stage.sig_accumulator,
-            parsec_map: stage.parsec_map,
-        }
+        stage.pause(self.core)
     }
 
     pub fn resume(state: PausedState, timer: Timer) -> Self {
-        let mut core = Core {
-            full_id: state.full_id,
-            transport: state.transport,
-            msg_filter: state.msg_filter,
-            msg_queue: state.msg_queue,
-            timer,
-            rng: rng::new(),
-        };
-
+        let (stage, core) = Approved::resume(state, timer);
         Self {
-            stage: Stage::Approved(Approved::new(
-                &mut core,
-                state.sig_accumulator,
-                state.parsec_map,
-                state.chain,
-                state.gen_pfx_info,
-            )),
+            stage: Stage::Approved(stage),
             core,
         }
     }
