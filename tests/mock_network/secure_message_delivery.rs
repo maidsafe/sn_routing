@@ -28,8 +28,7 @@ fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
 
     let _ = nodes[src]
         .inner
-        .approved_peer_state_mut()
-        .send_msg_to_targets(&targets, 1, message);
+        .send_message_to_targets(&targets, 1, message);
 }
 
 enum FailType {

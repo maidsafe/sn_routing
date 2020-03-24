@@ -80,7 +80,7 @@ pub struct TestNode {
 impl TestNode {
     pub fn builder(env: &Environment) -> TestNodeBuilder {
         TestNodeBuilder {
-            inner: Node::builder(),
+            inner: Builder::new(),
             env,
         }
     }

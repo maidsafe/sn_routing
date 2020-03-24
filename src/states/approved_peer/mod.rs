@@ -42,6 +42,13 @@ use {
 /// Delay after which a bounced message is resent.
 pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
 
+/// Interface for sending and receiving messages to and from other nodes, in the role of a full
+/// routing node.
+///
+/// A node is a part of the network that can route messages and be a member of a section or group
+/// location. Its methods can be used to send requests and responses as either an individual
+/// `Node` or as a part of a section or group location. Their `src` argument indicates that
+/// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct ApprovedPeer {
     core: Core,
     stage: Stage,
@@ -120,6 +127,7 @@ impl ApprovedPeer {
         (node, user_event_rx, network_client_rx)
     }
 
+    /// Pauses the node in order to be upgraded and/or restarted.
     // TODO: return Result instead of panic
     pub fn pause(self) -> PausedState {
         let stage = match self.stage {
@@ -134,13 +142,14 @@ impl ApprovedPeer {
         state
     }
 
-    pub fn resume(mut state: PausedState) -> (Self, Sender<Action>, Receiver<Event>) {
+    /// Resume previously paused node.
+    pub fn resume(mut state: PausedState) -> (Self, Receiver<Event>) {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
         let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
-        let timer = Timer::new(action_tx.clone());
+        let timer = Timer::new(action_tx);
 
         let (stage, core) = Approved::resume(state, timer);
 
@@ -158,7 +167,7 @@ impl ApprovedPeer {
             interface_result_rx,
         };
 
-        (node, action_tx, user_event_rx)
+        (node, user_event_rx)
     }
 
     /// Register the node event channels with the provided [selector](mpmc::Select).
@@ -207,22 +216,27 @@ impl ApprovedPeer {
         }
     }
 
+    /// Returns whether this node is running or has been terminated.
     pub fn is_running(&self) -> bool {
         !matches!(self.stage, Stage::Terminated)
     }
 
+    /// Returns the `PublicId` of this node.
     pub fn id(&self) -> &PublicId {
         self.core.id()
     }
 
+    /// The name of this node.
     pub fn name(&self) -> &XorName {
         self.id().name()
     }
 
+    /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<SocketAddr> {
         self.core.our_connection_info()
     }
 
+    /// Our `Prefix` once we are a part of the section.
     pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
         if let Stage::Approved(stage) = &self.stage {
             Some(stage.chain.our_prefix())
@@ -241,6 +255,7 @@ impl ApprovedPeer {
         }
     }
 
+    /// Returns the information of all the current section elders.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.stage
             .approved()
@@ -248,6 +263,10 @@ impl ApprovedPeer {
             .flat_map(|stage| stage.chain.our_elders())
     }
 
+    /// Find out the closest Elders to a given XorName that we know of.
+    ///
+    /// Note that the Adults of a section only know about their section Elders. Hence they will
+    /// always return the section Elders' info.
     pub fn closest_known_elders_to<'a>(
         &'a self,
         name: &XorName,
@@ -259,6 +278,8 @@ impl ApprovedPeer {
             .flat_map(move |stage| stage.chain.closest_section_info(name).1.member_nodes())
     }
 
+    /// Returns the first `count` names of the nodes in the routing table which are closest
+    /// to the given one.
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
         let stage = if let Some(stage) = self.stage.approved() {
             stage
@@ -273,6 +294,7 @@ impl ApprovedPeer {
         stage.chain.closest_names(&name, count, &conn_peers)
     }
 
+    /// Checks whether the given location represents self.
     pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
         match &self.stage {
             Stage::Bootstrapping(_) | Stage::Joining(_) => match dst {
@@ -310,6 +332,7 @@ impl ApprovedPeer {
         self.perform_action(action)
     }
 
+    /// Send a message to a client peer.
     pub fn send_message_to_client(
         &mut self,
         peer_addr: SocketAddr,
@@ -952,6 +975,7 @@ impl ApprovedPeer {
             .unwrap_or(false)
     }
 
+    /// Indicates if there are any pending observations in the parsec object
     pub fn has_unpolled_observations(&self) -> bool {
         self.stage
             .approved()
@@ -959,6 +983,7 @@ impl ApprovedPeer {
             .unwrap_or(false)
     }
 
+    /// Indicates if there are any pending observations in the parsec object
     pub fn unpolled_observations_string(&self) -> String {
         self.stage
             .approved()
@@ -966,6 +991,7 @@ impl ApprovedPeer {
             .unwrap_or_else(String::new)
     }
 
+    /// Returns whether the given peer is an elder of our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.stage
             .approved()
@@ -973,7 +999,8 @@ impl ApprovedPeer {
             .unwrap_or(false)
     }
 
-    pub fn send_msg_to_targets(
+    /// Send a message to the given targets using the given delivery group size.
+    pub fn send_message_to_targets(
         &mut self,
         dst_targets: &[SocketAddr],
         dg_size: usize,
@@ -985,6 +1012,7 @@ impl ApprovedPeer {
         Ok(())
     }
 
+    /// Returns the version of the latest Parsec instance of this node.
     pub fn parsec_last_version(&self) -> u64 {
         self.stage
             .approved()
@@ -992,6 +1020,7 @@ impl ApprovedPeer {
             .unwrap_or(0)
     }
 
+    /// Checks whether the given location represents self.
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
         self.stage
             .approved()
