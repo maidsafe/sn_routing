@@ -9,7 +9,6 @@
 use crate::{quic_p2p::QuicP2pError, xor_space::XorName};
 use bincode::ErrorKind;
 use err_derive::Error;
-use std::sync::mpsc;
 
 /// The type returned by the routing message handling methods.
 pub type Result<T, E = RoutingError> = std::result::Result<T, E>;
@@ -46,6 +45,6 @@ pub enum RoutingError {
     InvalidRelocation,
     #[error(display = "An Elder DKG result is invalid.")]
     InvalidElderDkgResult,
-    #[error(display = "Error while trying to receive a message from a mpsc channel.")]
-    MpscRecvError(mpsc::RecvError),
+    #[error(display = "Error while trying to receive a message from a channel.")]
+    ChannelRecvError(crossbeam_channel::RecvError),
 }

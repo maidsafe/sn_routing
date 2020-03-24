@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    action::Action,
     chain::NetworkParams,
     core::{Core, CoreConfig},
     error::RoutingError,
@@ -24,7 +23,7 @@ use crate::{
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
 use rand::RngCore;
-use std::{net::SocketAddr, sync::mpsc};
+use std::net::SocketAddr;
 
 #[cfg(feature = "mock_base")]
 use {
@@ -73,7 +72,6 @@ impl Builder {
 
     /// Creates new `Node`.
     pub fn create(self) -> (Node, mpmc::Receiver<Event>, mpmc::Receiver<NetworkEvent>) {
-        let (interface_result_tx, interface_result_rx) = mpsc::channel();
         let (user_event_tx, user_event_rx) = mpmc::unbounded();
 
         let (action_tx, action_rx) = mpmc::unbounded();
@@ -106,11 +104,7 @@ impl Builder {
             )
         };
 
-        let node = Node {
-            interface_result_tx,
-            interface_result_rx,
-            state,
-        };
+        let node = Node { state };
 
         (node, user_event_rx, network_client_rx)
     }
@@ -124,8 +118,6 @@ impl Builder {
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Node {
-    interface_result_tx: mpsc::Sender<Result<(), RoutingError>>,
-    interface_result_rx: mpsc::Receiver<Result<(), RoutingError>>,
     state: ApprovedPeer,
 }
 
@@ -145,14 +137,9 @@ impl Node {
 
     /// Resume previously paused node.
     pub fn resume(state: PausedState) -> (Self, mpmc::Receiver<Event>) {
-        let (interface_result_tx, interface_result_rx) = mpsc::channel();
         let (state, _, user_event_rx) = ApprovedPeer::resume(state);
 
-        let node = Self {
-            interface_result_tx,
-            interface_result_rx,
-            state,
-        };
+        let node = Self { state };
 
         (node, user_event_rx)
     }
@@ -207,14 +194,7 @@ impl Node {
         dst: DstLocation,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        let action = Action::SendMessage {
-            src,
-            dst,
-            content,
-            result_tx: self.interface_result_tx.clone(),
-        };
-
-        self.perform_action(action)
+        self.state.send_message(src, dst, content)
     }
 
     /// Send a message to a client peer.
@@ -224,29 +204,12 @@ impl Node {
         msg: Bytes,
         token: Token,
     ) -> Result<(), RoutingError> {
-        let action = Action::SendMessageToClient {
-            peer_addr,
-            msg,
-            token,
-            result_tx: self.interface_result_tx.clone(),
-        };
-
-        self.perform_action(action)
+        self.state.send_message_to_client(peer_addr, msg, token)
     }
 
     /// Disconnect form a client peer.
     pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<(), RoutingError> {
-        let action = Action::DisconnectClient {
-            peer_addr,
-            result_tx: self.interface_result_tx.clone(),
-        };
-
-        self.perform_action(action)
-    }
-
-    fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
-        self.state.handle_action(action);
-        self.interface_result_rx.recv()?
+        self.state.disconnect_from_client(peer_addr)
     }
 
     /// Register the node event channels with the provided

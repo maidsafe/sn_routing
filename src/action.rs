@@ -11,12 +11,12 @@ use crate::{
     location::{DstLocation, SrcLocation},
 };
 use bytes::Bytes;
+use crossbeam_channel::Sender;
 use hex_fmt::HexFmt;
 use quic_p2p::Token;
 use std::{
     fmt::{self, Debug, Formatter},
     net::SocketAddr,
-    sync::mpsc::Sender,
 };
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
