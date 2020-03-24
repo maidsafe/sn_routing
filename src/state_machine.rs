@@ -8,46 +8,29 @@
 
 use crate::{
     action::Action, error::RoutingError, outbox::EventBox, pause::PausedState,
-    states::ApprovedPeer, timer::Timer, NetworkEvent,
+    states::ApprovedPeer, NetworkEvent,
 };
-use crossbeam_channel::{Receiver, RecvError, Select, Sender};
+use crossbeam_channel::{RecvError, Select, Sender};
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
     state: ApprovedPeer,
-    action_rx: Receiver<Action>,
-    action_rx_idx: usize,
 }
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    pub fn new(state: ApprovedPeer, action_rx: Receiver<Action>) -> Self {
-        Self {
-            state,
-            action_rx,
-            action_rx_idx: 0,
-        }
+    pub fn new(state: ApprovedPeer) -> Self {
+        Self { state }
     }
 
     pub fn pause(self) -> Result<PausedState, RoutingError> {
-        info!("Pause");
         Ok(self.state.pause())
     }
 
-    pub fn resume(state: PausedState) -> (Sender<Action>, Self) {
-        let (action_tx, action_rx) = crossbeam_channel::unbounded();
-        let timer = Timer::new(action_tx.clone());
-        let state = ApprovedPeer::resume(state, timer);
-
-        let machine = Self {
-            state,
-            action_rx,
-            action_rx_idx: 0,
-        };
-
-        info!("Resume");
-
-        (action_tx, machine)
+    pub fn resume(state: PausedState) -> (Self, Sender<Action>) {
+        let (state, action_tx) = ApprovedPeer::resume(state);
+        let machine = Self { state };
+        (machine, action_tx)
     }
 
     fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
@@ -60,13 +43,7 @@ impl StateMachine {
 
     /// Register the state machine event channels with the provided [selector](mpmc::Select).
     pub fn register<'a>(&'a mut self, select: &mut Select<'a>) {
-        // Populate action_rx timeouts
-        #[cfg(feature = "mock_base")]
-        self.state.process_timers();
         self.state.register(select);
-
-        let action_rx_idx = select.recv(&self.action_rx);
-        self.action_rx_idx = action_rx_idx;
     }
 
     /// Processes events received externally from one of the channels.
@@ -95,8 +72,8 @@ impl StateMachine {
                 self.handle_network_event(event, outbox);
                 Ok(true)
             }
-            idx if idx == self.action_rx_idx => {
-                let action = self.action_rx.recv()?;
+            idx if idx == self.state.action_rx_idx => {
+                let action = self.state.action_rx.recv()?;
 
                 let status = is_busy(&action);
                 self.handle_action(action, outbox);
