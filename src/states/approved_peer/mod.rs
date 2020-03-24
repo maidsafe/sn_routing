@@ -14,7 +14,7 @@ use crate::chain::Chain;
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
-    core::Core,
+    core::{Core, CoreConfig},
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
@@ -22,7 +22,7 @@ use crate::{
     log_utils,
     messages::{BootstrapResponse, Message, MessageHash, MessageWithBytes, QueuedMessage, Variant},
     pause::PausedState,
-    quic_p2p::{Peer, Token},
+    quic_p2p::{EventSenders, Peer, Token},
     relocation::{RelocatePayload, SignedRelocateDetails},
     stage::{Approved, Bootstrapping, BootstrappingStatus, Joining, RelocateParams, Stage},
     time::Duration,
@@ -55,68 +55,65 @@ pub struct ApprovedPeer {
 
 impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
-    // Construction
+    // Public API
     ////////////////////////////////////////////////////////////////////////////
 
-    // Create the first node in the network.
-    pub fn first(
-        mut core: Core,
-        network_params: NetworkParams,
-        action_rx: Receiver<Action>,
-        network_rx: Receiver<NetworkEvent>,
-        user_event_tx: Sender<Event>,
-    ) -> Self {
+    /// Create new node using the given config.
+    ///
+    /// If `first` is true, creates the first node of the network (the "seed node"), otherwise
+    /// creates regular node that will try to bootstrap to an existing section.
+    ///
+    /// Returns the node itself, the user event receiver and the client network
+    /// event receiver.
+    pub fn new(config: CoreConfig, first: bool) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
+        let (action_tx, action_rx) = crossbeam_channel::unbounded();
+        let (network_tx, network_node_rx, network_client_rx) = {
+            let (client_tx, client_rx) = crossbeam_channel::unbounded();
+            let (node_tx, node_rx) = crossbeam_channel::unbounded();
+            (EventSenders { node_tx, client_tx }, node_rx, client_rx)
+        };
+        let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
         let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
-        let stage = match Approved::first(&mut core, network_params) {
-            Ok(stage) => {
-                info!("{} Started a new network as a seed node.", core.name());
-                let _ = user_event_tx.send(Event::Connected(Connected::First));
-                let _ = user_event_tx.send(Event::Promoted);
-                Stage::Approved(stage)
+        let network_params = config.network_params;
+        let mut core = Core::new(config, action_tx, network_tx);
+
+        let stage = if first {
+            match Approved::first(&mut core, network_params) {
+                Ok(stage) => {
+                    info!("{} Started a new network as a seed node.", core.name());
+                    let _ = user_event_tx.send(Event::Connected(Connected::First));
+                    let _ = user_event_tx.send(Event::Promoted);
+                    Stage::Approved(stage)
+                }
+                Err(error) => {
+                    error!(
+                        "{} Failed to start the first node: {:?}",
+                        core.name(),
+                        error
+                    );
+                    Stage::Terminated
+                }
             }
-            Err(error) => {
-                error!("Failed to start the first node: {:?}", error);
-                Stage::Terminated
-            }
+        } else {
+            info!("{} Bootstrapping a new node.", core.name());
+            core.transport.bootstrap();
+            Stage::Bootstrapping(Bootstrapping::new(network_params, None))
         };
 
-        Self {
+        let node = Self {
             stage,
             core,
             action_rx,
             action_rx_idx: 0,
-            network_rx,
+            network_rx: network_node_rx,
             network_rx_idx: 0,
             user_event_tx,
             interface_result_tx,
             interface_result_rx,
-        }
-    }
+        };
 
-    // Create regular node.
-    pub fn new(
-        mut core: Core,
-        network_params: NetworkParams,
-        action_rx: Receiver<Action>,
-        network_rx: Receiver<NetworkEvent>,
-        user_event_tx: Sender<Event>,
-    ) -> Self {
-        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
-
-        core.transport.bootstrap();
-
-        Self {
-            core,
-            stage: Stage::Bootstrapping(Bootstrapping::new(network_params, None)),
-            action_rx,
-            action_rx_idx: 0,
-            network_rx,
-            network_rx_idx: 0,
-            user_event_tx,
-            interface_result_tx,
-            interface_result_rx,
-        }
+        (node, user_event_rx, network_client_rx)
     }
 
     // TODO: return Result instead of panic
@@ -160,15 +157,11 @@ impl ApprovedPeer {
         (node, action_tx, user_event_rx)
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Public API
-    ////////////////////////////////////////////////////////////////////////////
-
     /// Register the node event channels with the provided [selector](mpmc::Select).
     pub fn register<'a>(&'a mut self, select: &mut Select<'a>) {
         // Populate action_rx timeouts
         #[cfg(feature = "mock_base")]
-        self.process_timers();
+        self.core.timer.process_timers();
 
         self.action_rx_idx = select.recv(&self.action_rx);
         self.network_rx_idx = select.recv(&self.network_rx);
@@ -231,6 +224,16 @@ impl ApprovedPeer {
             Some(stage.chain.our_prefix())
         } else {
             None
+        }
+    }
+
+    /// Finds out if the given XorName matches our prefix. Returns error if we don't have a prefix
+    /// because we haven't joined any section yet.
+    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool> {
+        if let Some(prefix) = self.our_prefix() {
+            Ok(prefix.matches(name))
+        } else {
+            Err(RoutingError::InvalidState)
         }
     }
 
@@ -986,10 +989,6 @@ impl ApprovedPeer {
             .approved()
             .map(|stage| stage.chain.in_src_location(src))
             .unwrap_or(false)
-    }
-
-    pub fn process_timers(&mut self) {
-        self.core.timer.process_timers()
     }
 }
 
