@@ -9,8 +9,6 @@
 #[cfg(all(test, feature = "mock"))]
 mod tests;
 
-#[cfg(feature = "mock_base")]
-use crate::chain::Chain;
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
@@ -34,6 +32,12 @@ use crate::{
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 use std::net::SocketAddr;
+
+#[cfg(feature = "mock_base")]
+use {
+    crate::chain::{Chain, SectionProofSlice},
+    std::collections::{BTreeMap, BTreeSet},
+};
 
 /// Delay after which a bounced message is resent.
 pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
@@ -181,7 +185,7 @@ impl ApprovedPeer {
     ///
     /// The returned `bool` can be safely ignored by the consumers of this crate. It is for
     /// internal uses only and will always be `true` unless compiled with `feature=mock_base`.
-    pub fn step(&mut self, op_index: usize) -> Result<bool, RecvError> {
+    pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<bool, RecvError> {
         if !self.is_running() {
             return Err(RecvError);
         }
@@ -936,12 +940,16 @@ impl ApprovedPeer {
 
 #[cfg(feature = "mock_base")]
 impl ApprovedPeer {
+    /// Returns whether the node is approved member of a section.
     pub fn is_approved(&self) -> bool {
         self.stage.approved().is_some()
     }
 
-    pub fn chain(&self) -> Option<&Chain> {
-        self.stage.approved().map(|stage| &stage.chain)
+    /// Returns whether the node is Elder.
+    pub fn is_elder(&self) -> bool {
+        self.chain()
+            .map(|chain| chain.is_self_elder())
+            .unwrap_or(false)
     }
 
     pub fn has_unpolled_observations(&self) -> bool {
@@ -989,6 +997,109 @@ impl ApprovedPeer {
             .approved()
             .map(|stage| stage.chain.in_src_location(src))
             .unwrap_or(false)
+    }
+
+    /// Returns the prefixes of all our neighbours
+    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        self.chain()
+            .map(|chain| {
+                chain
+                    .neighbour_infos()
+                    .map(|info| info.prefix())
+                    .copied()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns the prefixes of all sections known to us
+    pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        self.chain().map(Chain::prefixes).unwrap_or_default()
+    }
+
+    /// Returns the elder info version of a section with the given prefix.
+    /// Prefix must be either our prefix or of one of our neighbours.
+    /// Returns 0 otherwise.
+    pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> u64 {
+        self.chain()
+            .and_then(|chain| chain.get_section(prefix))
+            .map(|info| info.version())
+            .unwrap_or_default()
+    }
+
+    /// Returns the elder of a section with the given prefix.
+    /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
+    pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
+        self.chain()
+            .and_then(|chain| chain.get_section(prefix))
+            .map(|info| info.member_names().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the elders in our and neighbouring sections.
+    pub fn elders(&self) -> impl Iterator<Item = &PublicId> {
+        self.elder_nodes().map(P2pNode::public_id)
+    }
+
+    /// Returns the elders in our and neighbouring sections.
+    pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.chain().into_iter().flat_map(Chain::elders)
+    }
+
+    /// Returns the members in our section and elders we know.
+    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.chain().into_iter().flat_map(Chain::known_nodes)
+    }
+
+    /// Returns whether the given `PublicId` is a member of our section.
+    pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
+        self.chain()
+            .map(|chain| chain.is_peer_our_member(id))
+            .unwrap_or(false)
+    }
+
+    /// Returns their knowledge
+    pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
+        self.chain()
+            .map(Chain::get_their_knowledge)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// If our section is the closest one to `name`, returns all names in our section *including
+    /// ours*, otherwise returns `None`.
+    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
+        self.chain().and_then(|chain| chain.close_names(name))
+    }
+
+    /// Returns the number of elders this node is using.
+    /// Only if we have a chain (meaning we are elders or adults) we will process this API
+    pub fn elder_size(&self) -> Option<usize> {
+        self.chain().map(Chain::elder_size)
+    }
+
+    /// Size at which our section splits. Since this is configurable, this method is used to
+    /// obtain it.
+    ///
+    /// Only if we have a chain (meaning we are elders) we will process this API
+    pub fn safe_section_size(&self) -> Option<usize> {
+        self.chain().map(|chain| chain.safe_section_size())
+    }
+
+    /// Provide a SectionProofSlice that proves the given signature to the given destination.
+    pub fn prove(&self, target: &DstLocation) -> Option<SectionProofSlice> {
+        self.chain().map(|chain| chain.prove(target, None))
+    }
+
+    /// Returns the age counter of the given node if it is member of the same section as this node,
+    /// `None` otherwise.
+    pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
+        self.chain()
+            .and_then(|chain| chain.member_age_counter(name))
+    }
+
+    fn chain(&self) -> Option<&Chain> {
+        self.stage.approved().map(|stage| &stage.chain)
     }
 }
 

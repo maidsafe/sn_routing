@@ -33,9 +33,6 @@ use std::{
     net::SocketAddr,
 };
 
-#[cfg(feature = "mock_base")]
-use crate::crypto::Digest256;
-
 /// Returns the delivery group size based on the section size `n`
 pub const fn delivery_group_size(n: usize) -> usize {
     // this is an integer that is ≥ n/3
@@ -1626,22 +1623,6 @@ impl Chain {
 
 #[cfg(feature = "mock_base")]
 impl Chain {
-    /// Returns the total number of entries in the routing table, excluding our own name.
-    pub fn len(&self) -> usize {
-        self.state
-            .neighbour_infos
-            .values()
-            .map(|info| info.len())
-            .sum::<usize>()
-            + self.state.our_info().len()
-            - 1
-    }
-
-    /// Returns our section info with the given hash, if it exists.
-    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
-        self.state.our_info_by_hash(hash)
-    }
-
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
     pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
@@ -1652,29 +1633,9 @@ impl Chain {
         }
     }
 
-    /// If our section is the closest one to `name`, returns all names in our section *excluding
-    /// ours*, otherwise returns `None`.
-    pub fn other_close_names(&self, name: &XorName) -> Option<BTreeSet<XorName>> {
-        if self.our_prefix().matches(name) {
-            let mut section: BTreeSet<_> = self.our_info().member_names().copied().collect();
-            let _ = section.remove(self.our_id().name());
-            Some(section)
-        } else {
-            None
-        }
-    }
-
     /// Returns their_knowledge
     pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
         self.state.get_their_knowledge()
-    }
-
-    /// Return a minimum length prefix, favouring our prefix if it is one of the shortest.
-    pub fn min_len_prefix(&self) -> Prefix<XorName> {
-        *iter::once(self.our_prefix())
-            .chain(self.state.neighbour_infos.keys())
-            .min_by_key(|prefix| prefix.bit_count())
-            .unwrap_or_else(|| self.our_prefix())
     }
 
     /// Returns the age counter of the given member or `None` if not a member.

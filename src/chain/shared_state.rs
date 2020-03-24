@@ -22,9 +22,6 @@ use std::{
     iter, mem,
 };
 
-#[cfg(feature = "mock_base")]
-use crate::crypto::Digest256;
-
 // Number of recent keys we keep: i.e how many other section churns we can handle before a
 // message send with a previous version of a section is no longer trusted.
 // With low churn rate, a ad hoc 20 should be big enough to avoid losing messages.
@@ -135,12 +132,6 @@ impl SharedState {
 
     pub fn our_version(&self) -> u64 {
         self.our_info().version()
-    }
-
-    /// Returns our section info with the given hash, if it exists.
-    #[cfg(feature = "mock_base")]
-    pub fn our_info_by_hash(&self, hash: &Digest256) -> Option<&EldersInfo> {
-        self.our_infos.iter().find(|info| info.hash() == hash)
     }
 
     /// Returns an iterator over the members that have not state == `Left`.
