@@ -16,8 +16,8 @@ use rand::{
 use routing::{
     event::{Connected, Event},
     mock::Environment,
-    test_consts, Builder, DstLocation, FullId, NetworkConfig, Node, PausedState, Prefix, PublicId,
-    RelocationOverrides, SrcLocation, XorName, Xorable,
+    test_consts, DstLocation, FullId, NetworkConfig, Node, NodeConfig, PausedState, Prefix,
+    PublicId, RelocationOverrides, SrcLocation, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -80,7 +80,7 @@ pub struct TestNode {
 impl TestNode {
     pub fn builder(env: &Environment) -> TestNodeBuilder {
         TestNodeBuilder {
-            inner: Builder::new(),
+            config: NodeConfig::default(),
             env,
         }
     }
@@ -166,38 +166,31 @@ pub fn current_sections<'a>(nodes: &'a [TestNode]) -> impl Iterator<Item = Prefi
 }
 
 pub struct TestNodeBuilder<'a> {
-    inner: Builder,
+    config: NodeConfig,
     env: &'a Environment,
 }
 
 impl<'a> TestNodeBuilder<'a> {
-    pub fn first(self) -> Self {
-        Self {
-            inner: self.inner.first(true),
-            ..self
-        }
+    pub fn first(mut self) -> Self {
+        self.config.first = true;
+        self
     }
 
-    pub fn network_config(self, config: NetworkConfig) -> Self {
-        Self {
-            inner: self.inner.network_config(config),
-            ..self
-        }
+    pub fn network_config(mut self, config: NetworkConfig) -> Self {
+        self.config.network_config = config;
+        self
     }
 
-    pub fn full_id(self, full_id: FullId) -> Self {
-        Self {
-            inner: self.inner.full_id(full_id),
-            ..self
-        }
+    pub fn full_id(mut self, full_id: FullId) -> Self {
+        self.config.full_id = Some(full_id);
+        self
     }
 
-    pub fn create(self) -> TestNode {
-        let (inner, user_event_rx, _client_rx) = self
-            .inner
-            .network_params(self.env.network_cfg())
-            .rng(&mut self.env.new_rng())
-            .create();
+    pub fn create(mut self) -> TestNode {
+        self.config.network_params = self.env.network_cfg();
+        self.config.rng = self.env.new_rng();
+
+        let (inner, user_event_rx, _client_rx) = Node::new(self.config);
 
         TestNode {
             inner,

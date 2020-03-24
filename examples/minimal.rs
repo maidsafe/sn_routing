@@ -38,7 +38,7 @@ use hex_fmt::HexFmt;
 use log::LevelFilter;
 use routing::{
     event::{Connected, Event},
-    Builder, NetworkConfig, Node,
+    NetworkConfig, Node, NodeConfig,
 };
 use std::{
     collections::HashSet,
@@ -210,10 +210,11 @@ fn start_node(
     // - The receiver for events that the node notifies the application about.
     // - The receiver for client network events. We don't support clients in this example, so we
     //   can ignore it
-    let (node, event_rx, _client_network_event_rx) = Builder::new()
-        .first(first)
-        .network_config(network_config)
-        .create();
+    let (node, event_rx, _client_network_event_rx) = Node::new(NodeConfig {
+        first,
+        network_config,
+        ..Default::default()
+    });
 
     run_node(index, node, event_rx, contact_tx)
 }
