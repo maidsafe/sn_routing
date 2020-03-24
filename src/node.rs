@@ -74,7 +74,7 @@ impl Builder {
     /// Creates new `Node`.
     pub fn create(self) -> (Node, mpmc::Receiver<Event>, mpmc::Receiver<NetworkEvent>) {
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
-        let (mut user_event_tx, user_event_rx) = mpmc::unbounded();
+        let (user_event_tx, user_event_rx) = mpmc::unbounded();
 
         let (action_tx, action_rx) = mpmc::unbounded();
 
@@ -93,15 +93,20 @@ impl Builder {
                 network_params,
                 action_rx,
                 network_node_rx,
-                &mut user_event_tx,
+                user_event_tx,
             )
         } else {
             debug!("Creating a regular node");
-            ApprovedPeer::new(core, network_params, action_rx, network_node_rx)
+            ApprovedPeer::new(
+                core,
+                network_params,
+                action_rx,
+                network_node_rx,
+                user_event_tx,
+            )
         };
 
         let node = Node {
-            user_event_tx,
             interface_result_tx,
             interface_result_rx,
             state,
@@ -119,7 +124,6 @@ impl Builder {
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
 pub struct Node {
-    user_event_tx: mpmc::Sender<Event>,
     interface_result_tx: mpsc::Sender<Result<(), RoutingError>>,
     interface_result_rx: mpsc::Receiver<Result<(), RoutingError>>,
     state: ApprovedPeer,
@@ -142,13 +146,11 @@ impl Node {
     /// Resume previously paused node.
     pub fn resume(state: PausedState) -> (Self, mpmc::Receiver<Event>) {
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
-        let (user_event_tx, user_event_rx) = mpmc::unbounded();
-        let (state, _) = ApprovedPeer::resume(state);
+        let (state, _, user_event_rx) = ApprovedPeer::resume(state);
 
         let node = Self {
             interface_result_tx,
             interface_result_rx,
-            user_event_tx,
             state,
         };
 
@@ -243,7 +245,7 @@ impl Node {
     }
 
     fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
-        self.state.handle_action(action, &mut self.user_event_tx);
+        self.state.handle_action(action);
         self.interface_result_rx.recv()?
     }
 
@@ -256,8 +258,7 @@ impl Node {
     /// Processes events received externally from one of the channels.
     /// For this function to work properly, the state machine event channels need to
     /// be registered by calling [`Node::register`].
-    /// [`Select::ready`] needs to be called to get `op_index`,
-    /// the event channel index. The resulting events are streamed into `outbox`.
+    /// [`Select::ready`] needs to be called to get `op_index`, the event channel index.
     ///
     /// This function is non-blocking.
     ///
@@ -268,7 +269,7 @@ impl Node {
     /// [`Node::register`]: #method.register
     /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
     pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<bool, mpmc::RecvError> {
-        self.state.step(op_index, &mut self.user_event_tx)
+        self.state.step(op_index)
     }
 
     /// Returns connection info of this node.
