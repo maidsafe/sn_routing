@@ -15,23 +15,15 @@ use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
     state: ApprovedPeer,
-    network_rx: Receiver<NetworkEvent>,
-    network_rx_idx: usize,
     action_rx: Receiver<Action>,
     action_rx_idx: usize,
 }
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    pub fn new(
-        state: ApprovedPeer,
-        action_rx: Receiver<Action>,
-        network_rx: Receiver<NetworkEvent>,
-    ) -> Self {
+    pub fn new(state: ApprovedPeer, action_rx: Receiver<Action>) -> Self {
         Self {
             state,
-            network_rx,
-            network_rx_idx: 0,
             action_rx,
             action_rx_idx: 0,
         }
@@ -39,24 +31,16 @@ impl StateMachine {
 
     pub fn pause(self) -> Result<PausedState, RoutingError> {
         info!("Pause");
-
-        let mut paused_state = self.state.pause();
-        paused_state.network_rx = Some(self.network_rx);
-
-        Ok(paused_state)
+        Ok(self.state.pause())
     }
 
-    pub fn resume(mut state: PausedState) -> (Sender<Action>, Self) {
+    pub fn resume(state: PausedState) -> (Sender<Action>, Self) {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
-        let network_rx = state.network_rx.take().expect("PausedState is incomplete");
-
         let timer = Timer::new(action_tx.clone());
         let state = ApprovedPeer::resume(state, timer);
 
         let machine = Self {
             state,
-            network_rx,
-            network_rx_idx: 0,
             action_rx,
             action_rx_idx: 0,
         };
@@ -79,10 +63,9 @@ impl StateMachine {
         // Populate action_rx timeouts
         #[cfg(feature = "mock_base")]
         self.state.process_timers();
+        self.state.register(select);
 
-        let network_rx_idx = select.recv(&self.network_rx);
         let action_rx_idx = select.recv(&self.action_rx);
-        self.network_rx_idx = network_rx_idx;
         self.action_rx_idx = action_rx_idx;
     }
 
@@ -107,8 +90,8 @@ impl StateMachine {
             return Err(RecvError);
         }
         match op_index {
-            idx if idx == self.network_rx_idx => {
-                let event = self.network_rx.recv()?;
+            idx if idx == self.state.network_rx_idx => {
+                let event = self.state.network_rx.recv()?;
                 self.handle_network_event(event, outbox);
                 Ok(true)
             }
