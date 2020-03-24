@@ -99,10 +99,9 @@ fn remove_unresponsive_node() {
                     return;
                 }
             }
-            let _ = node
-                .inner
+            node.inner
                 .approved_peer_state_mut()
-                .map(|state| state.vote_for_user_event(event.clone()));
+                .vote_for_user_event(event.clone());
         });
 
         // Required to avoid the case that the non-responsive node doesn't realize its removal,
@@ -120,7 +119,7 @@ fn remove_unresponsive_node() {
         .filter(|n| n.elders().any(|id| *id.name() == non_responsive_name))
         .map(|n| n.name())
         .collect_vec();
-    assert_eq!(still_has_unresponsibe_elder, Vec::<XorName>::new());
+    assert_eq!(still_has_unresponsibe_elder, Vec::<&XorName>::new());
 }
 
 // Parameters for the churn tests.

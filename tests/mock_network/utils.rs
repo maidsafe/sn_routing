@@ -99,11 +99,11 @@ impl TestNode {
     }
 
     pub fn id(&self) -> PublicId {
-        self.inner.id().unwrap()
+        *self.inner.id()
     }
 
     pub fn name(&self) -> XorName {
-        self.inner.name()
+        *self.inner.name()
     }
 
     pub fn close_names(&self) -> Vec<XorName> {

@@ -9,178 +9,23 @@
 use crate::{
     action::Action,
     error::RoutingError,
-    id::{P2pNode, PublicId},
     outbox::EventBox,
     pause::PausedState,
     quic_p2p::EventSenders,
     states::ApprovedPeer,
     timer::Timer,
     transport::{Transport, TransportBuilder},
-    xor_space::XorName,
     NetworkConfig, NetworkEvent,
 };
-#[cfg(feature = "mock_base")]
-use crate::{
-    chain::Chain,
-    location::{DstLocation, SrcLocation},
-};
 use crossbeam_channel as mpmc;
-use std::net::SocketAddr;
-
-// Execute $expr on the current variant of $self. Execute $term_expr if the current variant is
-// `Terminated`.
-macro_rules! state_dispatch {
-    ($self:expr, $state:pat => $expr:expr) => {
-        match $self {
-            Self::ApprovedPeer($state) => $expr,
-        }
-    };
-}
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
-    state: State,
+    state: ApprovedPeer,
     network_rx: mpmc::Receiver<NetworkEvent>,
     network_rx_idx: usize,
     action_rx: mpmc::Receiver<Action>,
     action_rx_idx: usize,
-}
-
-// FIXME - See https://maidsafe.atlassian.net/browse/MAID-2026 for info on removing this exclusion.
-#[allow(clippy::large_enum_variant)]
-pub enum State {
-    ApprovedPeer(ApprovedPeer),
-}
-
-impl State {
-    pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) {
-        state_dispatch!(
-            *self,
-            ref mut state => state.handle_action(action, outbox)
-        )
-    }
-
-    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
-        state_dispatch!(
-            *self,
-            ref mut state => state.handle_network_event(event, outbox)
-        )
-    }
-
-    pub fn id(&self) -> Option<PublicId> {
-        state_dispatch!(
-            *self,
-            ref state => Some(*state.id())
-        )
-    }
-
-    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        state_dispatch!(
-            *self,
-            ref state => state.close_group(name, count)
-        )
-    }
-
-    pub fn our_elders(&self) -> Option<impl Iterator<Item = &P2pNode>> {
-        match self {
-            Self::ApprovedPeer(state) => Some(state.our_elders()),
-        }
-    }
-
-    pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
-        match self {
-            Self::ApprovedPeer(state) => {
-                if let Some(prefix) = state.our_prefix() {
-                    Ok(prefix.matches(name))
-                } else {
-                    Err(RoutingError::InvalidState)
-                }
-            }
-        }
-    }
-
-    pub fn closest_known_elders_to<'a>(
-        &'a self,
-        name: &XorName,
-    ) -> Result<Box<dyn Iterator<Item = &P2pNode> + 'a>, RoutingError> {
-        match self {
-            Self::ApprovedPeer(state) => Ok(Box::new(state.closest_known_elders_to(name))),
-        }
-    }
-
-    pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
-        state_dispatch!(
-            self,
-            state => state.our_connection_info()
-        )
-    }
-
-    /// Returns this ApprovedPeer mut state.
-    pub fn approved_peer_state_mut(&mut self) -> Option<&mut ApprovedPeer> {
-        match self {
-            Self::ApprovedPeer(state) => Some(state),
-        }
-    }
-
-    // pub fn terminate(&mut self) {
-    //     match self {
-    //         Self::ApprovedPeer(state) => state.terminate(),
-    //     }
-    // }
-
-    pub fn is_running(&self) -> bool {
-        match self {
-            Self::ApprovedPeer(state) => state.is_running(),
-        }
-    }
-}
-
-#[cfg(feature = "mock_base")]
-impl State {
-    pub fn chain(&self) -> Option<&Chain> {
-        match self {
-            Self::ApprovedPeer(state) => state.chain(),
-        }
-    }
-
-    /// Returns this ApprovedPeer state.
-    pub fn approved_peer_state(&self) -> Option<&ApprovedPeer> {
-        match self {
-            Self::ApprovedPeer(state) => Some(state),
-        }
-    }
-
-    pub fn process_timers(&mut self) {
-        state_dispatch!(
-            self,
-            state => state.process_timers()
-        )
-    }
-
-    pub fn has_unpolled_observations(&self) -> bool {
-        match self {
-            Self::ApprovedPeer(state) => state.has_unpolled_observations(),
-        }
-    }
-
-    pub fn unpolled_observations_string(&self) -> String {
-        match self {
-            Self::ApprovedPeer(state) => state.unpolled_observations_string(),
-        }
-    }
-
-    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        match self {
-            Self::ApprovedPeer(state) => state.in_src_location(src),
-        }
-    }
-
-    pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
-        state_dispatch!(
-            *self,
-            ref state => state.in_dst_location(dst)
-        )
-    }
 }
 
 impl StateMachine {
@@ -192,7 +37,7 @@ impl StateMachine {
         outbox: &mut dyn EventBox,
     ) -> (mpmc::Sender<Action>, Self)
     where
-        F: FnOnce(Transport, Timer, &mut dyn EventBox) -> State,
+        F: FnOnce(Transport, Timer, &mut dyn EventBox) -> ApprovedPeer,
     {
         let (action_tx, action_rx) = mpmc::unbounded();
         let (network_tx, network_rx) = {
@@ -225,11 +70,9 @@ impl StateMachine {
     pub fn pause(self) -> Result<PausedState, RoutingError> {
         info!("Pause");
 
-        let mut paused_state = match self.state {
-            State::ApprovedPeer(state) => state.pause(),
-        };
-
+        let mut paused_state = self.state.pause();
         paused_state.network_rx = Some(self.network_rx);
+
         Ok(paused_state)
     }
 
@@ -238,7 +81,7 @@ impl StateMachine {
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
 
         let timer = Timer::new(action_tx.clone());
-        let state = State::ApprovedPeer(ApprovedPeer::resume(state, timer));
+        let state = ApprovedPeer::resume(state, timer);
 
         let machine = Self {
             state,
@@ -315,12 +158,12 @@ impl StateMachine {
     }
 
     /// Get reference to the current state.
-    pub fn current(&self) -> &State {
+    pub fn current(&self) -> &ApprovedPeer {
         &self.state
     }
 
     /// Get mutable reference to the current state.
-    pub fn current_mut(&mut self) -> &mut State {
+    pub fn current_mut(&mut self) -> &mut ApprovedPeer {
         &mut self.state
     }
 }
