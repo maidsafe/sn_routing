@@ -280,14 +280,13 @@ fn handle_event(
 ) -> bool {
     match event {
         Event::Connected(Connected::First) => {
-            let id = node.id().expect("failed to get node name");
             let contact_info = node
                 .our_connection_info()
                 .expect("failed to retrieve node contact info");
             log::info!(
                 "Node #{} connected - name: {}, contact: {}",
                 index,
-                id.name(),
+                node.name(),
                 contact_info
             );
 
@@ -298,8 +297,7 @@ fn handle_event(
             }
         }
         Event::Connected(Connected::Relocate) => {
-            let id = node.id().expect("failed to get node name");
-            log::info!("Node #{} relocated - new name: {}", index, id.name());
+            log::info!("Node #{} relocated - new name: {}", index, node.name());
         }
         Event::Promoted => {
             log::info!("Node #{} promoted", index);

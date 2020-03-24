@@ -18,7 +18,7 @@ use crate::{
     pause::PausedState,
     quic_p2p::{OurType, Token},
     rng::{self, MainRng},
-    state_machine::{State, StateMachine},
+    state_machine::StateMachine,
     states::ApprovedPeer,
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
@@ -130,10 +130,10 @@ impl Builder {
 
                 if first {
                     debug!("Creating the first node");
-                    State::ApprovedPeer(ApprovedPeer::first(core, network_cfg, outbox))
+                    ApprovedPeer::first(core, network_cfg, outbox)
                 } else {
                     debug!("Creating a regular node");
-                    State::ApprovedPeer(ApprovedPeer::new(core, network_cfg))
+                    ApprovedPeer::new(core, network_cfg)
                 }
             },
             network_config,
@@ -197,42 +197,40 @@ impl Node {
     }
 
     /// Returns the connection information of all the current section elders.
-    pub fn our_elders_info(&self) -> Option<impl Iterator<Item = &P2pNode>> {
+    pub fn our_elders_info(&self) -> impl Iterator<Item = &P2pNode> {
         self.machine.current().our_elders()
     }
 
     /// Find out if the given XorName matches our prefix.
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
-        self.machine.current().matches_our_prefix(name)
+        if let Some(prefix) = self.machine.current().our_prefix() {
+            Ok(prefix.matches(name))
+        } else {
+            Err(RoutingError::InvalidState)
+        }
     }
 
     /// Find out the closest Elders to a given XorName that we know of.
     ///
     /// Note that the Adults of a section only know about their section Elders. Hence they will
     /// always return the section Elders' info.
-    pub fn closest_known_elders_to(
-        &self,
-        name: &XorName,
-    ) -> Result<impl Iterator<Item = &P2pNode>, RoutingError> {
+    pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
         self.machine.current().closest_known_elders_to(name)
     }
 
     /// Returns the `PublicId` of this node.
-    pub fn id(&self) -> Result<PublicId, RoutingError> {
-        self.machine
-            .current()
-            .id()
-            .ok_or(RoutingError::InvalidState)
+    pub fn id(&self) -> &PublicId {
+        self.machine.current().id()
+    }
+
+    /// The name of this node.
+    pub fn name(&self) -> &XorName {
+        self.id().name()
     }
 
     /// Vote for a custom event.
     pub fn vote_for(&mut self, event: Vec<u8>) {
-        // TODO: Return interface error here
-        let _ = self
-            .machine
-            .current_mut()
-            .approved_peer_state_mut()
-            .map(|elder| elder.vote_for_user_event(event));
+        self.machine.current_mut().vote_for_user_event(event)
     }
 
     /// Send a message.
@@ -324,19 +322,13 @@ impl Node {
     }
 
     /// Returns the underlying ApprovedPeer state.
-    pub fn approved_peer_state(&self) -> Option<&ApprovedPeer> {
-        self.machine.current().approved_peer_state()
+    pub fn approved_peer_state(&self) -> &ApprovedPeer {
+        self.machine.current()
     }
 
     /// Returns mutable reference to the underlying ApprovedPeer state.
-    pub fn approved_peer_state_mut(&mut self) -> Option<&mut ApprovedPeer> {
-        self.machine.current_mut().approved_peer_state_mut()
-    }
-
-    /// Returns the underlying ApprovedPeer state unwrapped - panics if not ApprovedPeer.
-    pub fn approved_peer_state_unchecked(&self) -> &ApprovedPeer {
-        self.approved_peer_state()
-            .expect("should be State::ApprovedPeer")
+    pub fn approved_peer_state_mut(&mut self) -> &mut ApprovedPeer {
+        self.machine.current_mut()
     }
 
     /// Returns whether the node is Elder.
@@ -348,14 +340,7 @@ impl Node {
 
     /// Returns whether the node is approved member of a section (Infant, Adult or Elder).
     pub fn is_approved(&self) -> bool {
-        match self.machine.current() {
-            State::ApprovedPeer(state) => state.is_approved(),
-        }
-    }
-
-    /// The name of this node.
-    pub fn name(&self) -> XorName {
-        *self.id().expect("invalid node state").name()
+        self.machine.current().is_approved()
     }
 
     /// Our `Prefix` once we are a part of the section.

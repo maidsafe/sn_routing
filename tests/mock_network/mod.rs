@@ -545,7 +545,7 @@ fn carry_out_parsec_pruning() {
     let parsec_versions = |nodes: &Nodes| {
         nodes
             .iter()
-            .map(|node| unwrap!(node.inner.approved_peer_state()).parsec_last_version())
+            .map(|node| node.inner.approved_peer_state().parsec_last_version())
             .collect_vec()
     };
 
@@ -557,10 +557,9 @@ fn carry_out_parsec_pruning() {
     for _ in 0..max_gossips {
         let event = gen_vec(&mut rng, 10_000);
         nodes.iter_mut().for_each(|node| {
-            let _ = node
-                .inner
+            node.inner
                 .approved_peer_state_mut()
-                .map(|state| state.vote_for_user_event(event.clone()));
+                .vote_for_user_event(event.clone());
         });
         poll_and_resend(&mut nodes);
 
