@@ -33,7 +33,7 @@ use crate::{
     NetworkEvent,
 };
 use bytes::Bytes;
-use crossbeam_channel::{Receiver, Select};
+use crossbeam_channel::{Receiver, Select, Sender};
 use std::net::SocketAddr;
 
 /// Delay after which a bounced message is resent.
@@ -42,7 +42,11 @@ pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
 pub struct ApprovedPeer {
     core: Core,
     stage: Stage,
+
     // TODO: make private
+    pub action_rx: Receiver<Action>,
+    pub action_rx_idx: usize,
+
     pub network_rx: Receiver<NetworkEvent>,
     pub network_rx_idx: usize,
 }
@@ -56,6 +60,7 @@ impl ApprovedPeer {
     pub fn first(
         mut core: Core,
         network_params: NetworkParams,
+        action_rx: Receiver<Action>,
         network_rx: Receiver<NetworkEvent>,
         outbox: &mut dyn EventBox,
     ) -> Self {
@@ -75,6 +80,8 @@ impl ApprovedPeer {
         Self {
             stage,
             core,
+            action_rx,
+            action_rx_idx: 0,
             network_rx,
             network_rx_idx: 0,
         }
@@ -84,6 +91,7 @@ impl ApprovedPeer {
     pub fn new(
         mut core: Core,
         network_params: NetworkParams,
+        action_rx: Receiver<Action>,
         network_rx: Receiver<NetworkEvent>,
     ) -> Self {
         core.transport.bootstrap();
@@ -91,6 +99,8 @@ impl ApprovedPeer {
         Self {
             core,
             stage: Stage::Bootstrapping(Bootstrapping::new(network_params, None)),
+            action_rx,
+            action_rx_idx: 0,
             network_rx,
             network_rx_idx: 0,
         }
@@ -103,21 +113,32 @@ impl ApprovedPeer {
             _ => unreachable!(),
         };
 
+        info!("Pause");
+
         let mut state = stage.pause(self.core);
         state.network_rx = Some(self.network_rx);
         state
     }
 
-    pub fn resume(mut state: PausedState, timer: Timer) -> Self {
+    pub fn resume(mut state: PausedState) -> (Self, Sender<Action>) {
+        let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
+        let timer = Timer::new(action_tx.clone());
+
         let (stage, core) = Approved::resume(state, timer);
 
-        Self {
+        info!("Resume");
+
+        let node = Self {
             stage: Stage::Approved(stage),
             core,
+            action_rx,
+            action_rx_idx: 0,
             network_rx,
             network_rx_idx: 0,
-        }
+        };
+
+        (node, action_tx)
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -126,6 +147,11 @@ impl ApprovedPeer {
 
     /// Register the node event channels with the provided [selector](mpmc::Select).
     pub fn register<'a>(&'a mut self, select: &mut Select<'a>) {
+        // Populate action_rx timeouts
+        #[cfg(feature = "mock_base")]
+        self.process_timers();
+
+        self.action_rx_idx = select.recv(&self.action_rx);
         self.network_rx_idx = select.recv(&self.network_rx);
     }
 
