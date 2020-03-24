@@ -7,20 +7,43 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    action::Action,
+    chain::NetworkParams,
     error::Result,
     id::{FullId, PublicId},
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{Message, QueuedMessage, Variant},
-    quic_p2p::Token,
+    quic_p2p::{EventSenders, OurType, Token},
+    rng,
     rng::MainRng,
     time::Duration,
     timer::Timer,
-    transport::{PeerStatus, Transport},
+    transport::{PeerStatus, Transport, TransportBuilder},
     xor_space::XorName,
+    NetworkConfig,
 };
 use bytes::Bytes;
+use crossbeam_channel::Sender;
 use std::{collections::VecDeque, net::SocketAddr, slice};
+
+pub struct CoreConfig {
+    pub full_id: Option<FullId>,
+    pub network_config: NetworkConfig,
+    pub network_params: NetworkParams,
+    pub rng: MainRng,
+}
+
+impl Default for CoreConfig {
+    fn default() -> Self {
+        Self {
+            full_id: None,
+            network_config: NetworkConfig::default(),
+            network_params: NetworkParams::default(),
+            rng: rng::new(),
+        }
+    }
+}
 
 // Core components of the node.
 pub struct Core {
@@ -33,6 +56,35 @@ pub struct Core {
 }
 
 impl Core {
+    pub fn new(
+        mut config: CoreConfig,
+        action_tx: Sender<Action>,
+        network_event_tx: EventSenders,
+    ) -> Self {
+        let mut rng = config.rng;
+        let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
+
+        config.network_config.our_type = OurType::Node;
+        let transport = match TransportBuilder::new(network_event_tx)
+            .with_config(config.network_config)
+            .build()
+        {
+            Ok(transport) => transport,
+            Err(err) => panic!("Unable to start network transport: {:?}", err),
+        };
+
+        let timer = Timer::new(action_tx);
+
+        Self {
+            full_id,
+            transport,
+            msg_filter: Default::default(),
+            msg_queue: Default::default(),
+            timer,
+            rng,
+        }
+    }
+
     pub fn id(&self) -> &PublicId {
         self.full_id.public_id()
     }

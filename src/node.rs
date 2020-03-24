@@ -9,15 +9,14 @@
 use crate::{
     action::Action,
     chain::NetworkParams,
-    core::Core,
+    core::{Core, CoreConfig},
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    outbox::EventBox,
     pause::PausedState,
-    quic_p2p::{OurType, Token},
-    rng::{self, MainRng},
+    quic_p2p::{EventSenders, Token},
+    rng,
     state_machine::StateMachine,
     states::ApprovedPeer,
     xor_space::XorName,
@@ -40,10 +39,7 @@ use {
 /// A builder to configure and create a new `Node`.
 pub struct Builder {
     first: bool,
-    rng: Option<MainRng>,
-    network_config: Option<NetworkConfig>,
-    full_id: Option<FullId>,
-    network_cfg: NetworkParams,
+    config: CoreConfig,
 }
 
 impl Builder {
@@ -53,46 +49,53 @@ impl Builder {
     }
 
     /// The node will use the given network config rather than default.
-    pub fn network_config(self, config: NetworkConfig) -> Self {
-        Self {
-            network_config: Some(config),
-            ..self
-        }
+    pub fn network_config(mut self, config: NetworkConfig) -> Self {
+        self.config.network_config = config;
+        self
     }
 
     /// The node will use the given full id rather than default, randomly generated one.
-    pub fn full_id(self, full_id: FullId) -> Self {
-        Self {
-            full_id: Some(full_id),
-            ..self
-        }
+    pub fn full_id(mut self, full_id: FullId) -> Self {
+        self.config.full_id = Some(full_id);
+        self
     }
 
-    /// Override the default network config.
-    pub fn network_cfg(self, network_cfg: NetworkParams) -> Self {
-        Self {
-            network_cfg,
-            ..self
-        }
+    /// Override the default network params.
+    pub fn network_params(mut self, network_params: NetworkParams) -> Self {
+        self.config.network_params = network_params;
+        self
     }
 
     /// Use the supplied random number generator. If this is not called, a default `OsRng` is used.
-    pub fn rng<R: RngCore>(self, rng: &mut R) -> Self {
-        Self {
-            rng: Some(rng::new_from(rng)),
-            ..self
-        }
+    pub fn rng<R: RngCore>(mut self, rng: &mut R) -> Self {
+        self.config.rng = rng::new_from(rng);
+        self
     }
 
     /// Creates new `Node`.
     pub fn create(self) -> (Node, mpmc::Receiver<Event>, mpmc::Receiver<NetworkEvent>) {
-        // start the handler for routing without a restriction to become a full node
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
         let (mut user_event_tx, user_event_rx) = mpmc::unbounded();
-        let (client_tx, client_rx) = mpmc::unbounded();
 
-        let (_, machine) = self.make_state_machine(client_tx, &mut user_event_tx);
+        let (action_tx, action_rx) = mpmc::unbounded();
 
+        let (network_tx, network_node_rx, network_client_rx) = {
+            let (client_tx, client_rx) = mpmc::unbounded();
+            let (node_tx, node_rx) = mpmc::unbounded();
+            (EventSenders { node_tx, client_tx }, node_rx, client_rx)
+        };
+
+        let network_params = self.config.network_params;
+        let core = Core::new(self.config, action_tx, network_tx);
+        let state = if self.first {
+            debug!("Creating the first node");
+            ApprovedPeer::first(core, network_params, &mut user_event_tx)
+        } else {
+            debug!("Creating a regular node");
+            ApprovedPeer::new(core, network_params)
+        };
+
+        let machine = StateMachine::new(state, action_rx, network_node_rx);
         let node = Node {
             user_event_tx,
             interface_result_tx,
@@ -100,46 +103,7 @@ impl Builder {
             machine,
         };
 
-        (node, user_event_rx, client_rx)
-    }
-
-    fn make_state_machine(
-        self,
-        client_tx: mpmc::Sender<NetworkEvent>,
-        outbox: &mut dyn EventBox,
-    ) -> (mpmc::Sender<Action>, StateMachine) {
-        let mut rng = self.rng.unwrap_or_else(rng::new);
-
-        let full_id = self.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
-        let network_cfg = self.network_cfg;
-        let first = self.first;
-
-        let mut network_config = self.network_config.unwrap_or_default();
-        network_config.our_type = OurType::Node;
-
-        StateMachine::new(
-            move |transport, timer, outbox| {
-                let core = Core {
-                    full_id,
-                    transport,
-                    msg_filter: Default::default(),
-                    msg_queue: Default::default(),
-                    timer,
-                    rng,
-                };
-
-                if first {
-                    debug!("Creating the first node");
-                    ApprovedPeer::first(core, network_cfg, outbox)
-                } else {
-                    debug!("Creating a regular node");
-                    ApprovedPeer::new(core, network_cfg)
-                }
-            },
-            network_config,
-            client_tx,
-            outbox,
-        )
+        (node, user_event_rx, network_client_rx)
     }
 }
 
@@ -162,10 +126,7 @@ impl Node {
     pub fn builder() -> Builder {
         Builder {
             first: false,
-            rng: None,
-            network_config: None,
-            full_id: None,
-            network_cfg: Default::default(),
+            config: Default::default(),
         }
     }
 

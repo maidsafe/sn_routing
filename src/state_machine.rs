@@ -7,64 +7,34 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    action::Action,
-    error::RoutingError,
-    outbox::EventBox,
-    pause::PausedState,
-    quic_p2p::EventSenders,
-    states::ApprovedPeer,
-    timer::Timer,
-    transport::{Transport, TransportBuilder},
-    NetworkConfig, NetworkEvent,
+    action::Action, error::RoutingError, outbox::EventBox, pause::PausedState,
+    states::ApprovedPeer, timer::Timer, NetworkEvent,
 };
-use crossbeam_channel as mpmc;
+use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
     state: ApprovedPeer,
-    network_rx: mpmc::Receiver<NetworkEvent>,
+    network_rx: Receiver<NetworkEvent>,
     network_rx_idx: usize,
-    action_rx: mpmc::Receiver<Action>,
+    action_rx: Receiver<Action>,
     action_rx_idx: usize,
 }
 
 impl StateMachine {
     // Construct a new StateMachine by passing a function returning the initial state.
-    pub fn new<F>(
-        init_state: F,
-        network_config: NetworkConfig,
-        client_tx: mpmc::Sender<NetworkEvent>,
-        outbox: &mut dyn EventBox,
-    ) -> (mpmc::Sender<Action>, Self)
-    where
-        F: FnOnce(Transport, Timer, &mut dyn EventBox) -> ApprovedPeer,
-    {
-        let (action_tx, action_rx) = mpmc::unbounded();
-        let (network_tx, network_rx) = {
-            let (node_tx, node_rx) = mpmc::unbounded();
-            (EventSenders { node_tx, client_tx }, node_rx)
-        };
-
-        let transport = match TransportBuilder::new(network_tx)
-            .with_config(network_config)
-            .build()
-        {
-            Ok(transport) => transport,
-            Err(err) => panic!("Unable to start network service: {:?}", err),
-        };
-
-        let timer = Timer::new(action_tx.clone());
-        let state = init_state(transport, timer, outbox);
-
-        let machine = Self {
+    pub fn new(
+        state: ApprovedPeer,
+        action_rx: Receiver<Action>,
+        network_rx: Receiver<NetworkEvent>,
+    ) -> Self {
+        Self {
             state,
             network_rx,
             network_rx_idx: 0,
             action_rx,
             action_rx_idx: 0,
-        };
-
-        (action_tx, machine)
+        }
     }
 
     pub fn pause(self) -> Result<PausedState, RoutingError> {
@@ -76,8 +46,8 @@ impl StateMachine {
         Ok(paused_state)
     }
 
-    pub fn resume(mut state: PausedState) -> (mpmc::Sender<Action>, Self) {
-        let (action_tx, action_rx) = mpmc::unbounded();
+    pub fn resume(mut state: PausedState) -> (Sender<Action>, Self) {
+        let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
 
         let timer = Timer::new(action_tx.clone());
@@ -105,7 +75,7 @@ impl StateMachine {
     }
 
     /// Register the state machine event channels with the provided [selector](mpmc::Select).
-    pub fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
+    pub fn register<'a>(&'a mut self, select: &mut Select<'a>) {
         // Populate action_rx timeouts
         #[cfg(feature = "mock_base")]
         self.state.process_timers();
@@ -132,13 +102,9 @@ impl StateMachine {
     ///
     /// The returned `bool` can be safely ignored by the consumers of this crate. It is for
     /// internal uses only and will always be `true` unless compiled with `feature=mock_base`.
-    pub fn step(
-        &mut self,
-        op_index: usize,
-        outbox: &mut dyn EventBox,
-    ) -> Result<bool, mpmc::RecvError> {
+    pub fn step(&mut self, op_index: usize, outbox: &mut dyn EventBox) -> Result<bool, RecvError> {
         if !self.state.is_running() {
-            return Err(mpmc::RecvError);
+            return Err(RecvError);
         }
         match op_index {
             idx if idx == self.network_rx_idx => {
@@ -153,7 +119,7 @@ impl StateMachine {
                 self.handle_action(action, outbox);
                 Ok(status)
             }
-            _idx => Err(mpmc::RecvError),
+            _idx => Err(RecvError),
         }
     }
 
