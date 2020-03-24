@@ -9,14 +9,4 @@
 mod approved_peer;
 mod joining_peer;
 
-pub use self::approved_peer::ApprovedPeer;
-
-// # The state machine
-//
-//            START
-//              │
-//              ▼
-//      ┌──────────────┐
-//      │ ApprovedPeer │
-//      └──────────────┘
-//
+pub use self::approved_peer::Node;

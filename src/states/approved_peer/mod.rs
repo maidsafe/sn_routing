@@ -49,7 +49,7 @@ pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
 /// location. Its methods can be used to send requests and responses as either an individual
 /// `Node` or as a part of a section or group location. Their `src` argument indicates that
 /// role, and can be any [`SrcLocation`](enum.SrcLocation.html).
-pub struct ApprovedPeer {
+pub struct Node {
     core: Core,
     stage: Stage,
 
@@ -64,7 +64,7 @@ pub struct ApprovedPeer {
     interface_result_rx: Receiver<Result<()>>,
 }
 
-impl ApprovedPeer {
+impl Node {
     ////////////////////////////////////////////////////////////////////////////
     // Public API
     ////////////////////////////////////////////////////////////////////////////
@@ -962,7 +962,7 @@ impl ApprovedPeer {
 }
 
 #[cfg(feature = "mock_base")]
-impl ApprovedPeer {
+impl Node {
     /// Returns whether the node is approved member of a section.
     pub fn is_approved(&self) -> bool {
         self.stage.approved().is_some()

@@ -13,7 +13,7 @@ use crate::{
 use crossbeam_channel as mpmc;
 use rand::RngCore;
 
-pub use crate::states::ApprovedPeer as Node;
+pub use crate::states::Node;
 
 /// A builder to configure and create a new `Node`.
 #[derive(Default)]
