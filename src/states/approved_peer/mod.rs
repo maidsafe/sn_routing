@@ -47,6 +47,10 @@ pub struct ApprovedPeer {
     network_rx: Receiver<NetworkEvent>,
     network_rx_idx: usize,
     user_event_tx: Sender<Event>,
+
+    // TODO: remove these. Handle actions directly.
+    interface_result_tx: Sender<Result<()>>,
+    interface_result_rx: Receiver<Result<()>>,
 }
 
 impl ApprovedPeer {
@@ -62,6 +66,8 @@ impl ApprovedPeer {
         network_rx: Receiver<NetworkEvent>,
         user_event_tx: Sender<Event>,
     ) -> Self {
+        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
+
         let stage = match Approved::first(&mut core, network_params) {
             Ok(stage) => {
                 info!("{} Started a new network as a seed node.", core.name());
@@ -83,6 +89,8 @@ impl ApprovedPeer {
             network_rx,
             network_rx_idx: 0,
             user_event_tx,
+            interface_result_tx,
+            interface_result_rx,
         }
     }
 
@@ -94,6 +102,8 @@ impl ApprovedPeer {
         network_rx: Receiver<NetworkEvent>,
         user_event_tx: Sender<Event>,
     ) -> Self {
+        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
+
         core.transport.bootstrap();
 
         Self {
@@ -104,6 +114,8 @@ impl ApprovedPeer {
             network_rx,
             network_rx_idx: 0,
             user_event_tx,
+            interface_result_tx,
+            interface_result_rx,
         }
     }
 
@@ -125,6 +137,7 @@ impl ApprovedPeer {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
+        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
         let timer = Timer::new(action_tx.clone());
 
@@ -140,6 +153,8 @@ impl ApprovedPeer {
             network_rx,
             network_rx_idx: 0,
             user_event_tx,
+            interface_result_tx,
+            interface_result_rx,
         };
 
         (node, action_tx, user_event_rx)
@@ -263,12 +278,6 @@ impl ApprovedPeer {
         }
     }
 
-    pub fn send_message_to_client(&mut self, peer_addr: SocketAddr, msg: Bytes, token: Token) {
-        self.core
-            .transport
-            .send_message_to_client(peer_addr, msg, token)
-    }
-
     /// Vote for a user-defined event.
     // TODO: return error if not elder
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
@@ -277,12 +286,59 @@ impl ApprovedPeer {
         }
     }
 
+    /// Send a message.
+    pub fn send_message(
+        &mut self,
+        src: SrcLocation,
+        dst: DstLocation,
+        content: Vec<u8>,
+    ) -> Result<(), RoutingError> {
+        let action = Action::SendMessage {
+            src,
+            dst,
+            content,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        self.perform_action(action)
+    }
+
+    pub fn send_message_to_client(
+        &mut self,
+        peer_addr: SocketAddr,
+        msg: Bytes,
+        token: Token,
+    ) -> Result<()> {
+        let action = Action::SendMessageToClient {
+            peer_addr,
+            msg,
+            token,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        self.perform_action(action)
+    }
+
+    /// Disconnect form a client peer.
+    pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<()> {
+        let action = Action::DisconnectClient {
+            peer_addr,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        self.perform_action(action)
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
 
-    // TODO: make private
-    pub fn handle_action(&mut self, action: Action) {
+    fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
+        self.handle_action(action);
+        self.interface_result_rx.recv()?
+    }
+
+    fn handle_action(&mut self, action: Action) {
         let _log_ident = self.set_log_ident();
 
         match action {
@@ -309,7 +365,9 @@ impl ApprovedPeer {
                 token,
                 result_tx,
             } => {
-                self.send_message_to_client(peer_addr, msg, token);
+                self.core
+                    .transport
+                    .send_message_to_client(peer_addr, msg, token);
                 let _ = result_tx.send(Ok(()));
             }
         }
