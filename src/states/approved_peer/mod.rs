@@ -33,7 +33,7 @@ use crate::{
     NetworkEvent,
 };
 use bytes::Bytes;
-use crossbeam_channel::{Receiver, Select, Sender};
+use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 use std::net::SocketAddr;
 
 /// Delay after which a bounced message is resent.
@@ -43,12 +43,11 @@ pub struct ApprovedPeer {
     core: Core,
     stage: Stage,
 
-    // TODO: make private
-    pub action_rx: Receiver<Action>,
-    pub action_rx_idx: usize,
+    action_rx: Receiver<Action>,
+    action_rx_idx: usize,
 
-    pub network_rx: Receiver<NetworkEvent>,
-    pub network_rx_idx: usize,
+    network_rx: Receiver<NetworkEvent>,
+    network_rx_idx: usize,
 }
 
 impl ApprovedPeer {
@@ -155,6 +154,43 @@ impl ApprovedPeer {
         self.network_rx_idx = select.recv(&self.network_rx);
     }
 
+    /// Processes events received externally from one of the channels.
+    /// For this function to work properly, the node event channels need to
+    /// be registered by calling [`ApprovedPeer::register`](#method.register).
+    /// [`Select::ready`] needs to be called to get `op_index`, the event channel index.
+    /// The resulting events are streamed into `outbox`.
+    ///
+    /// This function is non-blocking.
+    ///
+    /// Errors are permanent failures due to either: node termination, the permanent closing of one
+    /// of the event channels, or an invalid (unknown) channel index.
+    ///
+    /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
+    ///
+    /// The returned `bool` can be safely ignored by the consumers of this crate. It is for
+    /// internal uses only and will always be `true` unless compiled with `feature=mock_base`.
+    pub fn step(&mut self, op_index: usize, outbox: &mut dyn EventBox) -> Result<bool, RecvError> {
+        if !self.is_running() {
+            return Err(RecvError);
+        }
+
+        match op_index {
+            idx if idx == self.network_rx_idx => {
+                let event = self.network_rx.recv()?;
+                self.handle_network_event(event, outbox);
+                Ok(true)
+            }
+            idx if idx == self.action_rx_idx => {
+                let action = self.action_rx.recv()?;
+
+                let status = is_busy(&action);
+                self.handle_action(action, outbox);
+                Ok(status)
+            }
+            _idx => Err(RecvError),
+        }
+    }
+
     pub fn is_running(&self) -> bool {
         !matches!(self.stage, Stage::Terminated)
     }
@@ -230,6 +266,7 @@ impl ApprovedPeer {
     }
 
     /// Vote for a user-defined event.
+    // TODO: return error if not elder
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
         if let Some(stage) = self.stage.approved_mut() {
             stage.vote_for_user_event(event)
@@ -240,6 +277,7 @@ impl ApprovedPeer {
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
 
+    // TODO: make private
     pub fn handle_action(&mut self, action: Action, outbox: &mut dyn EventBox) {
         let _log_ident = self.set_log_ident();
 
@@ -275,7 +313,7 @@ impl ApprovedPeer {
         self.finish_handle_input(outbox)
     }
 
-    pub fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
+    fn handle_network_event(&mut self, event: NetworkEvent, outbox: &mut dyn EventBox) {
         use crate::NetworkEvent::*;
 
         let _log_ident = self.set_log_ident();
@@ -913,5 +951,20 @@ impl ApprovedPeer {
 
     pub fn process_timers(&mut self) {
         self.core.timer.process_timers()
+    }
+}
+
+#[cfg(not(feature = "mock_base"))]
+fn is_busy(_: &Action) -> bool {
+    true
+}
+
+#[cfg(feature = "mock_base")]
+fn is_busy(action: &Action) -> bool {
+    match action {
+        // Don't consider handling a timeout as being busy. This is a workaround to prevent
+        // infinite polling.
+        Action::HandleTimeout(_) => false,
+        _ => true,
     }
 }

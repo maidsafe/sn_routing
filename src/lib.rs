@@ -149,7 +149,6 @@ mod relocation;
 mod rng;
 mod signature_accumulator;
 mod stage;
-mod state_machine;
 mod states;
 mod time;
 mod timer;

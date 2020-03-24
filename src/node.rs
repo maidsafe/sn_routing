@@ -17,7 +17,6 @@ use crate::{
     pause::PausedState,
     quic_p2p::{EventSenders, Token},
     rng,
-    state_machine::StateMachine,
     states::ApprovedPeer,
     xor_space::XorName,
     NetworkConfig, NetworkEvent,
@@ -101,12 +100,11 @@ impl Builder {
             ApprovedPeer::new(core, network_params, action_rx, network_node_rx)
         };
 
-        let machine = StateMachine::new(state);
         let node = Node {
             user_event_tx,
             interface_result_tx,
             interface_result_rx,
-            machine,
+            state,
         };
 
         (node, user_event_rx, network_client_rx)
@@ -124,7 +122,7 @@ pub struct Node {
     user_event_tx: mpmc::Sender<Event>,
     interface_result_tx: mpsc::Sender<Result<(), RoutingError>>,
     interface_result_rx: mpsc::Receiver<Result<(), RoutingError>>,
-    machine: StateMachine,
+    state: ApprovedPeer,
 }
 
 impl Node {
@@ -138,20 +136,20 @@ impl Node {
 
     /// Pauses the node in order to be upgraded and/or restarted.
     pub fn pause(self) -> Result<PausedState, RoutingError> {
-        self.machine.pause()
+        Ok(self.state.pause())
     }
 
     /// Resume previously paused node.
     pub fn resume(state: PausedState) -> (Self, mpmc::Receiver<Event>) {
         let (interface_result_tx, interface_result_rx) = mpsc::channel();
         let (user_event_tx, user_event_rx) = mpmc::unbounded();
-        let (machine, _) = StateMachine::resume(state);
+        let (state, _) = ApprovedPeer::resume(state);
 
         let node = Self {
             interface_result_tx,
             interface_result_rx,
             user_event_tx,
-            machine,
+            state,
         };
 
         (node, user_event_rx)
@@ -160,17 +158,17 @@ impl Node {
     /// Returns the first `count` names of the nodes in the routing table which are closest
     /// to the given one.
     pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        self.machine.current().close_group(name, count)
+        self.state.close_group(name, count)
     }
 
     /// Returns the connection information of all the current section elders.
     pub fn our_elders_info(&self) -> impl Iterator<Item = &P2pNode> {
-        self.machine.current().our_elders()
+        self.state.our_elders()
     }
 
     /// Find out if the given XorName matches our prefix.
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
-        if let Some(prefix) = self.machine.current().our_prefix() {
+        if let Some(prefix) = self.state.our_prefix() {
             Ok(prefix.matches(name))
         } else {
             Err(RoutingError::InvalidState)
@@ -182,12 +180,12 @@ impl Node {
     /// Note that the Adults of a section only know about their section Elders. Hence they will
     /// always return the section Elders' info.
     pub fn closest_known_elders_to(&self, name: &XorName) -> impl Iterator<Item = &P2pNode> {
-        self.machine.current().closest_known_elders_to(name)
+        self.state.closest_known_elders_to(name)
     }
 
     /// Returns the `PublicId` of this node.
     pub fn id(&self) -> &PublicId {
-        self.machine.current().id()
+        self.state.id()
     }
 
     /// The name of this node.
@@ -197,7 +195,7 @@ impl Node {
 
     /// Vote for a custom event.
     pub fn vote_for(&mut self, event: Vec<u8>) {
-        self.machine.current_mut().vote_for_user_event(event)
+        self.state.vote_for_user_event(event)
     }
 
     /// Send a message.
@@ -245,16 +243,14 @@ impl Node {
     }
 
     fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
-        self.machine
-            .current_mut()
-            .handle_action(action, &mut self.user_event_tx);
+        self.state.handle_action(action, &mut self.user_event_tx);
         self.interface_result_rx.recv()?
     }
 
     /// Register the node event channels with the provided
     /// [selector](https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html).
     pub fn register<'a>(&'a mut self, select: &mut mpmc::Select<'a>) {
-        self.machine.register(select)
+        self.state.register(select)
     }
 
     /// Processes events received externally from one of the channels.
@@ -272,12 +268,12 @@ impl Node {
     /// [`Node::register`]: #method.register
     /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
     pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<bool, mpmc::RecvError> {
-        self.machine.step(op_index, &mut self.user_event_tx)
+        self.state.step(op_index, &mut self.user_event_tx)
     }
 
     /// Returns connection info of this node.
     pub fn our_connection_info(&mut self) -> Result<SocketAddr, RoutingError> {
-        self.machine.current_mut().our_connection_info()
+        self.state.our_connection_info()
     }
 }
 
@@ -285,17 +281,17 @@ impl Node {
 impl Node {
     /// Returns the chain for this node.
     fn chain(&self) -> Option<&Chain> {
-        self.machine.current().chain()
+        self.state.chain()
     }
 
     /// Returns the underlying ApprovedPeer state.
     pub fn approved_peer_state(&self) -> &ApprovedPeer {
-        self.machine.current()
+        &self.state
     }
 
     /// Returns mutable reference to the underlying ApprovedPeer state.
     pub fn approved_peer_state_mut(&mut self) -> &mut ApprovedPeer {
-        self.machine.current_mut()
+        &mut self.state
     }
 
     /// Returns whether the node is Elder.
@@ -307,7 +303,7 @@ impl Node {
 
     /// Returns whether the node is approved member of a section (Infant, Adult or Elder).
     pub fn is_approved(&self) -> bool {
-        self.machine.current().is_approved()
+        self.state.is_approved()
     }
 
     /// Our `Prefix` once we are a part of the section.
@@ -403,12 +399,12 @@ impl Node {
 
     /// Indicates if there are any pending observations in the parsec object
     pub fn has_unpolled_observations(&self) -> bool {
-        self.machine.current().has_unpolled_observations()
+        self.state.has_unpolled_observations()
     }
 
     /// Indicates if there are any pending observations in the parsec object
     pub fn unpolled_observations_string(&self) -> String {
-        self.machine.current().unpolled_observations_string()
+        self.state.unpolled_observations_string()
     }
 
     /// Provide a SectionProofSlice that proves the given signature to the given destination.
@@ -418,12 +414,12 @@ impl Node {
 
     /// Checks whether the given location represents self.
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        self.machine.current().in_src_location(src)
+        self.state.in_src_location(src)
     }
 
     /// Checks whether the given location represents self.
     pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
-        self.machine.current().in_dst_location(dst)
+        self.state.in_dst_location(dst)
     }
 
     /// Returns the age counter of the given node if it is member of the same section as this node,
