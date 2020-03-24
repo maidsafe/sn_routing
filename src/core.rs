@@ -8,42 +8,22 @@
 
 use crate::{
     action::Action,
-    chain::NetworkParams,
     error::Result,
     id::{FullId, PublicId},
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{Message, QueuedMessage, Variant},
     quic_p2p::{EventSenders, OurType, Token},
-    rng,
     rng::MainRng,
+    states::NodeConfig,
     time::Duration,
     timer::Timer,
     transport::{PeerStatus, Transport, TransportBuilder},
     xor_space::XorName,
-    NetworkConfig,
 };
 use bytes::Bytes;
 use crossbeam_channel::Sender;
 use std::{collections::VecDeque, net::SocketAddr, slice};
-
-pub struct CoreConfig {
-    pub full_id: Option<FullId>,
-    pub network_config: NetworkConfig,
-    pub network_params: NetworkParams,
-    pub rng: MainRng,
-}
-
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            full_id: None,
-            network_config: NetworkConfig::default(),
-            network_params: NetworkParams::default(),
-            rng: rng::new(),
-        }
-    }
-}
 
 // Core components of the node.
 pub struct Core {
@@ -57,7 +37,7 @@ pub struct Core {
 
 impl Core {
     pub fn new(
-        mut config: CoreConfig,
+        mut config: NodeConfig,
         action_tx: Sender<Action>,
         network_event_tx: EventSenders,
     ) -> Self {

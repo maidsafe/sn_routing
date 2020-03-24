@@ -12,7 +12,7 @@ mod tests;
 use crate::{
     action::Action,
     chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
-    core::{Core, CoreConfig},
+    core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
     id::{FullId, P2pNode, PublicId},
@@ -22,12 +22,13 @@ use crate::{
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
     relocation::{RelocatePayload, SignedRelocateDetails},
+    rng::{self, MainRng},
     stage::{Approved, Bootstrapping, BootstrappingStatus, Joining, RelocateParams, Stage},
     time::Duration,
     timer::Timer,
     transport::PeerStatus,
     xor_space::{Prefix, XorName},
-    NetworkEvent,
+    NetworkConfig, NetworkEvent,
 };
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select, Sender};
@@ -41,6 +42,33 @@ use {
 
 /// Delay after which a bounced message is resent.
 pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
+
+/// Node configuration.
+pub struct NodeConfig {
+    /// If true, configures the node to start a new network instead of joining an existing one.
+    pub first: bool,
+    /// The ID of the node or `None` for randomly generated one.
+    pub full_id: Option<FullId>,
+    /// Configuration for the underlying network transport.
+    pub network_config: NetworkConfig,
+    /// Global network parameters. Must be identical for all nodes in the network.
+    pub network_params: NetworkParams,
+    /// Random number generator to be used by the node. Can be used to achieve repeatable tests by
+    /// providing a pre-seeded RNG. By default uses a random seed provided by the OS.
+    pub rng: MainRng,
+}
+
+impl Default for NodeConfig {
+    fn default() -> Self {
+        Self {
+            first: false,
+            full_id: None,
+            network_config: NetworkConfig::default(),
+            network_params: NetworkParams::default(),
+            rng: rng::new(),
+        }
+    }
+}
 
 /// Interface for sending and receiving messages to and from other nodes, in the role of a full
 /// routing node.
@@ -71,12 +99,9 @@ impl Node {
 
     /// Create new node using the given config.
     ///
-    /// If `first` is true, creates the first node of the network (the "seed node"), otherwise
-    /// creates regular node that will try to bootstrap to an existing section.
-    ///
     /// Returns the node itself, the user event receiver and the client network
     /// event receiver.
-    pub fn new(config: CoreConfig, first: bool) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
+    pub fn new(config: NodeConfig) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let (network_tx, network_node_rx, network_client_rx) = {
             let (client_tx, client_rx) = crossbeam_channel::unbounded();
@@ -86,6 +111,7 @@ impl Node {
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
         let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
+        let first = config.first;
         let network_params = config.network_params;
         let mut core = Core::new(config, action_tx, network_tx);
 

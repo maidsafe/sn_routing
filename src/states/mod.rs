@@ -9,4 +9,4 @@
 mod approved_peer;
 mod joining_peer;
 
-pub use self::approved_peer::Node;
+pub use self::approved_peer::{Node, NodeConfig};

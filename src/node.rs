@@ -6,20 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    chain::NetworkParams, core::CoreConfig, event::Event, id::FullId, rng, NetworkConfig,
-    NetworkEvent,
-};
+use crate::{chain::NetworkParams, event::Event, id::FullId, rng, NetworkConfig, NetworkEvent};
 use crossbeam_channel as mpmc;
 use rand::RngCore;
 
-pub use crate::states::Node;
+pub use crate::states::{Node, NodeConfig};
 
 /// A builder to configure and create a new `Node`.
 #[derive(Default)]
 pub struct Builder {
-    first: bool,
-    config: CoreConfig,
+    config: NodeConfig,
 }
 
 impl Builder {
@@ -29,8 +25,9 @@ impl Builder {
     }
 
     /// Configures the node to start a new network instead of joining an existing one.
-    pub fn first(self, first: bool) -> Self {
-        Self { first, ..self }
+    pub fn first(mut self, first: bool) -> Self {
+        self.config.first = first;
+        self
     }
 
     /// The node will use the given network config rather than default.
@@ -59,6 +56,6 @@ impl Builder {
 
     /// Creates new `Node`.
     pub fn create(self) -> (Node, mpmc::Receiver<Event>, mpmc::Receiver<NetworkEvent>) {
-        Node::new(self.config, self.first)
+        Node::new(self.config)
     }
 }
