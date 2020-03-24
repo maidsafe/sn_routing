@@ -33,6 +33,7 @@ use crate::{
     NetworkEvent,
 };
 use bytes::Bytes;
+use crossbeam_channel::{Receiver, Select};
 use std::net::SocketAddr;
 
 /// Delay after which a bounced message is resent.
@@ -41,6 +42,9 @@ pub const BOUNCE_RESEND_DELAY: Duration = Duration::from_secs(1);
 pub struct ApprovedPeer {
     core: Core,
     stage: Stage,
+    // TODO: make private
+    pub network_rx: Receiver<NetworkEvent>,
+    pub network_rx_idx: usize,
 }
 
 impl ApprovedPeer {
@@ -49,8 +53,13 @@ impl ApprovedPeer {
     ////////////////////////////////////////////////////////////////////////////
 
     // Create the first node in the network.
-    pub fn first(mut core: Core, network_cfg: NetworkParams, outbox: &mut dyn EventBox) -> Self {
-        let stage = match Approved::first(&mut core, network_cfg) {
+    pub fn first(
+        mut core: Core,
+        network_params: NetworkParams,
+        network_rx: Receiver<NetworkEvent>,
+        outbox: &mut dyn EventBox,
+    ) -> Self {
+        let stage = match Approved::first(&mut core, network_params) {
             Ok(stage) => {
                 info!("{} Started a new network as a seed node.", core.name());
                 outbox.send_event(Event::Connected(Connected::First));
@@ -63,16 +72,27 @@ impl ApprovedPeer {
             }
         };
 
-        Self { stage, core }
+        Self {
+            stage,
+            core,
+            network_rx,
+            network_rx_idx: 0,
+        }
     }
 
     // Create regular node.
-    pub fn new(mut core: Core, network_cfg: NetworkParams) -> Self {
+    pub fn new(
+        mut core: Core,
+        network_params: NetworkParams,
+        network_rx: Receiver<NetworkEvent>,
+    ) -> Self {
         core.transport.bootstrap();
 
         Self {
             core,
-            stage: Stage::Bootstrapping(Bootstrapping::new(network_cfg, None)),
+            stage: Stage::Bootstrapping(Bootstrapping::new(network_params, None)),
+            network_rx,
+            network_rx_idx: 0,
         }
     }
 
@@ -83,20 +103,31 @@ impl ApprovedPeer {
             _ => unreachable!(),
         };
 
-        stage.pause(self.core)
+        let mut state = stage.pause(self.core);
+        state.network_rx = Some(self.network_rx);
+        state
     }
 
-    pub fn resume(state: PausedState, timer: Timer) -> Self {
+    pub fn resume(mut state: PausedState, timer: Timer) -> Self {
+        let network_rx = state.network_rx.take().expect("PausedState is incomplete");
         let (stage, core) = Approved::resume(state, timer);
+
         Self {
             stage: Stage::Approved(stage),
             core,
+            network_rx,
+            network_rx_idx: 0,
         }
     }
 
     ////////////////////////////////////////////////////////////////////////////
     // Public API
     ////////////////////////////////////////////////////////////////////////////
+
+    /// Register the node event channels with the provided [selector](mpmc::Select).
+    pub fn register<'a>(&'a mut self, select: &mut Select<'a>) {
+        self.network_rx_idx = select.recv(&self.network_rx);
+    }
 
     pub fn is_running(&self) -> bool {
         !matches!(self.stage, Stage::Terminated)

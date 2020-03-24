@@ -89,13 +89,13 @@ impl Builder {
         let core = Core::new(self.config, action_tx, network_tx);
         let state = if self.first {
             debug!("Creating the first node");
-            ApprovedPeer::first(core, network_params, &mut user_event_tx)
+            ApprovedPeer::first(core, network_params, network_node_rx, &mut user_event_tx)
         } else {
             debug!("Creating a regular node");
-            ApprovedPeer::new(core, network_params)
+            ApprovedPeer::new(core, network_params, network_node_rx)
         };
 
-        let machine = StateMachine::new(state, action_rx, network_node_rx);
+        let machine = StateMachine::new(state, action_rx);
         let node = Node {
             user_event_tx,
             interface_result_tx,
