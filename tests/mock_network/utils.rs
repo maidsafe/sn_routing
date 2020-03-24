@@ -195,7 +195,7 @@ impl<'a> TestNodeBuilder<'a> {
     pub fn create(self) -> TestNode {
         let (inner, user_event_rx, _client_rx) = self
             .inner
-            .network_cfg(self.env.network_cfg())
+            .network_params(self.env.network_cfg())
             .rng(&mut self.env.new_rng())
             .create();
 
