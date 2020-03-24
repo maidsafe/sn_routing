@@ -81,10 +81,10 @@ pub use self::{
     error::RoutingError,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    node::{Node, NodeConfig},
     pause::PausedState,
     quic_p2p::Config as NetworkConfig,
     quic_p2p::Event as NetworkEvent,
+    states::{Node, NodeConfig},
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 /// Routing events.
@@ -140,7 +140,6 @@ mod id;
 mod location;
 mod message_filter;
 mod messages;
-mod node;
 mod outbox;
 mod parsec;
 mod pause;
