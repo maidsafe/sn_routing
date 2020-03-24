@@ -8,13 +8,13 @@
 
 use crate::{
     chain::NetworkParams,
-    core::{Core, CoreConfig},
+    core::CoreConfig,
     error::RoutingError,
     event::Event,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     pause::PausedState,
-    quic_p2p::{EventSenders, Token},
+    quic_p2p::Token,
     rng,
     states::ApprovedPeer,
     xor_space::XorName,
@@ -72,40 +72,8 @@ impl Builder {
 
     /// Creates new `Node`.
     pub fn create(self) -> (Node, mpmc::Receiver<Event>, mpmc::Receiver<NetworkEvent>) {
-        let (user_event_tx, user_event_rx) = mpmc::unbounded();
-
-        let (action_tx, action_rx) = mpmc::unbounded();
-
-        let (network_tx, network_node_rx, network_client_rx) = {
-            let (client_tx, client_rx) = mpmc::unbounded();
-            let (node_tx, node_rx) = mpmc::unbounded();
-            (EventSenders { node_tx, client_tx }, node_rx, client_rx)
-        };
-
-        let network_params = self.config.network_params;
-        let core = Core::new(self.config, action_tx, network_tx);
-        let state = if self.first {
-            debug!("Creating the first node");
-            ApprovedPeer::first(
-                core,
-                network_params,
-                action_rx,
-                network_node_rx,
-                user_event_tx,
-            )
-        } else {
-            debug!("Creating a regular node");
-            ApprovedPeer::new(
-                core,
-                network_params,
-                action_rx,
-                network_node_rx,
-                user_event_tx,
-            )
-        };
-
+        let (state, user_event_rx, network_client_rx) = ApprovedPeer::new(self.config, self.first);
         let node = Node { state };
-
         (node, user_event_rx, network_client_rx)
     }
 }
@@ -157,11 +125,7 @@ impl Node {
 
     /// Find out if the given XorName matches our prefix.
     pub fn matches_our_prefix(&self, name: &XorName) -> Result<bool, RoutingError> {
-        if let Some(prefix) = self.state.our_prefix() {
-            Ok(prefix.matches(name))
-        } else {
-            Err(RoutingError::InvalidState)
-        }
+        self.state.matches_our_prefix(name)
     }
 
     /// Find out the closest Elders to a given XorName that we know of.
