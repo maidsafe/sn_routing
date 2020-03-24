@@ -81,7 +81,7 @@ pub use self::{
     error::RoutingError,
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
-    node::{Builder, Node},
+    node::{Builder, Node, NodeConfig},
     pause::PausedState,
     quic_p2p::Config as NetworkConfig,
     quic_p2p::Event as NetworkEvent,
