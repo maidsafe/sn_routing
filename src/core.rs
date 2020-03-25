@@ -8,6 +8,7 @@
 
 use crate::{
     error::Result,
+    event::Event,
     id::{FullId, PublicId},
     location::DstLocation,
     message_filter::MessageFilter,
@@ -32,13 +33,15 @@ pub struct Core {
     pub msg_queue: VecDeque<QueuedMessage>,
     pub timer: Timer,
     pub rng: MainRng,
+    pub user_event_tx: Sender<Event>,
 }
 
 impl Core {
     pub fn new(
         mut config: NodeConfig,
-        action_tx: Sender<u64>,
+        timer_tx: Sender<u64>,
         network_event_tx: EventSenders,
+        user_event_tx: Sender<Event>,
     ) -> Self {
         let mut rng = config.rng;
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
@@ -57,8 +60,9 @@ impl Core {
             transport,
             msg_filter: Default::default(),
             msg_queue: Default::default(),
-            timer: Timer::new(action_tx),
+            timer: Timer::new(timer_tx),
             rng,
+            user_event_tx,
         }
     }
 

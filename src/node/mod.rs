@@ -34,7 +34,7 @@ use crate::{
     NetworkConfig, NetworkEvent,
 };
 use bytes::Bytes;
-use crossbeam_channel::{Receiver, RecvError, Select, Sender};
+use crossbeam_channel::{Receiver, RecvError, Select};
 use std::net::SocketAddr;
 
 #[cfg(all(test, feature = "mock"))]
@@ -90,7 +90,6 @@ pub struct Node {
     timer_rx_idx: usize,
     network_rx: Receiver<NetworkEvent>,
     network_rx_idx: usize,
-    user_event_tx: Sender<Event>,
 }
 
 impl Node {
@@ -109,14 +108,14 @@ impl Node {
 
         let first = config.first;
         let network_params = config.network_params;
-        let mut core = Core::new(config, timer_tx, network_tx);
+        let mut core = Core::new(config, timer_tx, network_tx, user_event_tx);
 
         let stage = if first {
             match Approved::first(&mut core, network_params) {
                 Ok(stage) => {
                     info!("{} Started a new network as a seed node.", core.name());
-                    let _ = user_event_tx.send(Event::Connected(Connected::First));
-                    let _ = user_event_tx.send(Event::Promoted);
+                    let _ = core.user_event_tx.send(Event::Connected(Connected::First));
+                    let _ = core.user_event_tx.send(Event::Promoted);
                     Stage::Approved(stage)
                 }
                 Err(error) => {
@@ -141,7 +140,6 @@ impl Node {
             timer_rx_idx: 0,
             network_rx: network_node_rx,
             network_rx_idx: 0,
-            user_event_tx,
         };
 
         (node, user_event_rx, network_client_rx)
@@ -170,7 +168,7 @@ impl Node {
 
         let timer = Timer::new(timer_tx);
 
-        let (stage, core) = Approved::resume(state, timer);
+        let (stage, core) = Approved::resume(state, timer, user_event_tx);
 
         info!("Resume");
 
@@ -181,7 +179,6 @@ impl Node {
             timer_rx_idx: 0,
             network_rx,
             network_rx_idx: 0,
-            user_event_tx,
         };
 
         (node, user_event_rx)
@@ -234,7 +231,7 @@ impl Node {
         self.handle_messages();
 
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.finish_handle_input(&mut self.core, &self.user_event_tx);
+            stage.finish_handle_input(&mut self.core);
         }
 
         Ok(handled)
@@ -422,7 +419,7 @@ impl Node {
         assert!(matches!(self.stage, Stage::Bootstrapping(_)));
 
         info!("Failed to bootstrap. Terminating.");
-        let _ = self.user_event_tx.send(Event::Terminated);
+        let _ = self.core.user_event_tx.send(Event::Terminated);
         self.stage = Stage::Terminated;
     }
 
@@ -692,7 +689,6 @@ impl Node {
                         version,
                         request,
                         msg.src.to_sender_node(sender)?,
-                        &self.user_event_tx,
                     )?;
                 }
                 Variant::ParsecResponse(version, response) => {
@@ -701,11 +697,10 @@ impl Node {
                         version,
                         response,
                         *msg.src.as_node()?,
-                        &self.user_event_tx,
                     )?;
                 }
                 Variant::UserMessage(content) => {
-                    let _ = self.user_event_tx.send(Event::MessageReceived {
+                    let _ = self.core.user_event_tx.send(Event::MessageReceived {
                         content,
                         src: msg.src.location(),
                         dst: msg.dst,
@@ -828,7 +823,7 @@ impl Node {
 
         let stage = Approved::new(&mut self.core, network_cfg, gen_pfx_info, None);
         self.stage = Stage::Approved(stage);
-        let _ = self.user_event_tx.send(Event::Connected(connect_type));
+        let _ = self.core.user_event_tx.send(Event::Connected(connect_type));
     }
 
     // Transition from Approved to Bootstrapping on relocation
@@ -1066,7 +1061,7 @@ impl Node {
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
         let network_params = config.network_params;
-        let mut core = Core::new(config, timer_tx, network_tx);
+        let mut core = Core::new(config, timer_tx, network_tx, user_event_tx);
 
         let stage = Stage::Approved(Approved::new(
             &mut core,
@@ -1082,7 +1077,6 @@ impl Node {
             timer_rx_idx: 0,
             network_rx: network_node_rx,
             network_rx_idx: 0,
-            user_event_tx,
         };
 
         (node, user_event_rx, network_client_rx)
