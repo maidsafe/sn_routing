@@ -54,7 +54,7 @@ impl Transport {
         let token = self.next_msg_token();
 
         trace!(
-            "Sending message ID {} to {:?}",
+            "Sending message with token {} to {:?}",
             token,
             &conn_infos[..dg_size.min(conn_infos.len())]
         );
@@ -99,7 +99,7 @@ impl Transport {
         match self.cache.target_failed(msg_token, failed_target) {
             Resend::Now(next_target) => {
                 trace!(
-                    "Sending message ID {} to {} failed - resending to {} now",
+                    "Sending message with token {} to {} failed - resending to {} now",
                     msg_token,
                     failed_target,
                     next_target
@@ -110,7 +110,7 @@ impl Transport {
             }
             Resend::Later(next_target, delay) => {
                 trace!(
-                    "Sending message ID {} to {} failed - resending to {} in {:?}",
+                    "Sending message with token {} to {} failed - resending to {} in {:?}",
                     msg_token,
                     failed_target,
                     next_target,
@@ -122,7 +122,7 @@ impl Transport {
             }
             Resend::Never => {
                 trace!(
-                    "Sending message ID {} to {} failed too many times - giving up.",
+                    "Sending message with token {} to {} failed too many times - giving up.",
                     msg_token,
                     failed_target,
                 );
