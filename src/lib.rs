@@ -140,7 +140,6 @@ mod location;
 mod message_filter;
 mod messages;
 mod node;
-mod outbox;
 mod parsec;
 mod pause;
 mod relocation;
