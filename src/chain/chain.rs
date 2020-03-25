@@ -14,9 +14,10 @@ use super::{
     SectionProofSlice,
 };
 use crate::{
-    error::RoutingError,
+    error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
+    messages::{AccumulatingMessage, PlainMessage, Variant},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
     xor_space::Xorable,
@@ -903,6 +904,26 @@ impl Chain {
             && self.is_new(elders_info)
     }
 
+    // Signs and proves the given message and wraps it in `AccumulatingMessage`.
+    pub fn to_accumulating_message(
+        &self,
+        dst: DstLocation,
+        variant: Variant,
+        node_knowledge_override: Option<u64>,
+    ) -> Result<AccumulatingMessage> {
+        let proof = self.prove(&dst, node_knowledge_override);
+        let pk_set = self.our_section_bls_keys().clone();
+        let secret_key = self.our_section_bls_secret_key_share()?;
+
+        let content = PlainMessage {
+            src: *self.our_prefix(),
+            dst,
+            variant,
+        };
+
+        AccumulatingMessage::new(content, secret_key, pk_set, proof)
+    }
+
     /// Provide a SectionProofSlice that proves the given signature to the given destination
     /// location.
     /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
@@ -1489,6 +1510,31 @@ impl Chain {
         } else {
             Err(RoutingError::CannotRoute)
         }
+    }
+
+    // Returns the set of peers that are responsible for collecting signatures to verify a message;
+    // this may contain us or only other nodes.
+    pub fn signature_targets(&self, dst: &DstLocation) -> Vec<P2pNode> {
+        let dst_name = match dst {
+            DstLocation::Node(name) => *name,
+            DstLocation::Section(name) => *name,
+            DstLocation::Prefix(prefix) => prefix.name(),
+            DstLocation::Direct => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "Invalid destination for signature targets: {:?}",
+                    dst
+                );
+                return vec![];
+            }
+        };
+
+        let mut list = self
+            .our_elders()
+            .cloned()
+            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+        list.truncate(delivery_group_size(list.len()));
+        list
     }
 
     /// Returns whether we are a part of the given source.
