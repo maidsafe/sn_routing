@@ -6,10 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    action::Action,
-    time::{Duration, Instant},
-};
+use crate::time::{Duration, Instant};
 use crossbeam_channel as mpmc;
 use itertools::Itertools;
 #[cfg(not(feature = "mock_base"))]
@@ -43,7 +40,7 @@ struct Inner {
 
 impl Timer {
     /// Creates a new timer, passing a channel sender used to send `Timeout` events.
-    pub fn new(sender: mpmc::Sender<Action>) -> Self {
+    pub fn new(sender: mpmc::Sender<u64>) -> Self {
         #[cfg(not(feature = "mock_base"))]
         let (tx, worker) = {
             let (tx, rx) = mpsc::sync_channel(1);
@@ -93,7 +90,7 @@ impl Timer {
     }
 
     #[cfg(not(feature = "mock_base"))]
-    fn run(sender: mpmc::Sender<Action>, rx: mpsc::Receiver<Detail>) {
+    fn run(sender: mpmc::Sender<u64>, rx: mpsc::Receiver<Detail>) {
         let mut deadlines: BTreeMap<Instant, Vec<u64>> = Default::default();
 
         loop {
@@ -124,10 +121,7 @@ impl Timer {
         }
     }
 
-    fn process_deadlines(
-        deadlines: &mut BTreeMap<Instant, Vec<u64>>,
-        sender: &mpmc::Sender<Action>,
-    ) {
+    fn process_deadlines(deadlines: &mut BTreeMap<Instant, Vec<u64>>, sender: &mpmc::Sender<u64>) {
         let now = Instant::now();
         let expired_list = deadlines
             .keys()
@@ -139,7 +133,7 @@ impl Timer {
             // `deadlines`.
             let tokens = deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
             for token in tokens {
-                let _ = sender.send(Action::HandleTimeout(token));
+                let _ = sender.send(token);
             }
         }
     }
@@ -154,7 +148,7 @@ impl Timer {
     #[cfg(feature = "mock_base")]
     fn do_process_timers(
         deadlines: &mut BTreeMap<Instant, Vec<u64>>,
-        sender: &mpmc::Sender<Action>,
+        sender: &mpmc::Sender<u64>,
         rx: &mut mpsc::Receiver<Detail>,
     ) {
         while let Ok(Detail { expiry, token }) = rx.try_recv() {
@@ -177,7 +171,6 @@ impl Drop for Timer {
 #[cfg(all(test, not(feature = "mock_base")))]
 mod tests {
     use super::*;
-    use crate::action::Action;
     use std::{
         thread,
         time::{Duration, Instant},
@@ -214,10 +207,10 @@ mod tests {
                 check_no_events_received();
                 thread::sleep(interval);
 
-                let action = action_rx.try_recv();
-                match action.expect("Should have received an action.") {
-                    Action::HandleTimeout(token) => assert_eq!(token, u64::from(count - i - 1)),
-                }
+                let token = action_rx
+                    .try_recv()
+                    .expect("Should have received a timer token.");
+                assert_eq!(token, u64::from(count - i - 1));
             }
 
             // Add deadline and check that dropping `timer` doesn't fire a timeout notification,

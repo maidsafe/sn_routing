@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    action::Action,
     error::Result,
     id::{FullId, PublicId},
     location::DstLocation,
@@ -38,7 +37,7 @@ pub struct Core {
 impl Core {
     pub fn new(
         mut config: NodeConfig,
-        action_tx: Sender<Action>,
+        action_tx: Sender<u64>,
         network_event_tx: EventSenders,
     ) -> Self {
         let mut rng = config.rng;

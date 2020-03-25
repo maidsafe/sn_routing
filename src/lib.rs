@@ -132,7 +132,6 @@ pub use self::mock::parsec::init_mock;
 // Private
 // ############################################################################
 
-mod action;
 mod chain;
 mod core;
 mod error;
