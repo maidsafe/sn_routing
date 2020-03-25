@@ -13,41 +13,17 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-// TODO: remove this allow(unused)
-#![allow(unused)]
-
 use crate::{
     chain::{AgeCounter, EldersInfo, GenesisPfxInfo, MIN_AGE_COUNTER},
+    error::Result,
     id::{FullId, P2pNode, PublicId},
-    quic_p2p,
+    messages::{Message, MessageWithBytes},
+    node::Node,
     rng::MainRng,
-    timer::Timer,
-    transport::{Transport, TransportBuilder},
-    unwrap,
     xor_space::{Prefix, XorName},
-    NetworkConfig,
 };
-use crossbeam_channel as mpmc;
 use mock_quic_p2p::Network;
-use std::collections::BTreeMap;
-
-pub fn create_transport(network: &Network) -> Transport {
-    let endpoint = network.gen_addr();
-    let network_config = NetworkConfig::node().with_hard_coded_contact(endpoint);
-    let network_tx = {
-        let (node_tx, _) = crossbeam_channel::unbounded();
-        let (client_tx, _) = crossbeam_channel::unbounded();
-        quic_p2p::EventSenders { node_tx, client_tx }
-    };
-    unwrap!(TransportBuilder::new(network_tx)
-        .with_config(network_config)
-        .build())
-}
-
-pub fn create_timer() -> Timer {
-    let (action_tx, _) = mpmc::unbounded();
-    Timer::new(action_tx)
-}
+use std::{collections::BTreeMap, net::SocketAddr};
 
 pub fn create_elders_info(
     rng: &mut MainRng,
@@ -71,7 +47,7 @@ pub fn create_elders_info(
         })
         .collect();
 
-    let elders_info = unwrap!(EldersInfo::new(members_map, Prefix::default(), prev));
+    let elders_info = EldersInfo::new(members_map, Prefix::default(), prev).unwrap();
     (elders_info, full_ids)
 }
 
@@ -99,4 +75,11 @@ where
         .into_iter()
         .map(|id| (*id, MIN_AGE_COUNTER))
         .collect()
+}
+
+pub fn handle_message(node: &mut Node, sender: Option<SocketAddr>, msg: Message) -> Result<()> {
+    let msg = MessageWithBytes::new(msg)?;
+    node.try_handle_message(sender, msg)?;
+    node.handle_messages();
+    Ok(())
 }

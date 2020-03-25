@@ -12,7 +12,7 @@ use crate::{
     error::Result,
     id::FullId,
     location::DstLocation,
-    messages::{AccumulatingMessage, Message, MessageWithBytes, PlainMessage, Variant},
+    messages::{AccumulatingMessage, Message, PlainMessage, Variant},
     node::{Node, NodeConfig},
     parsec::generate_bls_threshold_secret_key,
     rng::{self, MainRng},
@@ -83,7 +83,7 @@ impl Env {
                 gen_pfx_info.clone(),
             )?;
 
-            handle_message(&mut self.subject, Some(elder.addr), msg)?;
+            test_utils::handle_message(&mut self.subject, Some(elder.addr), msg)?;
         }
 
         Ok(())
@@ -162,13 +162,6 @@ fn to_message_signature(sender_id: &FullId, msg: AccumulatingMessage) -> Result<
     Message::single_src(sender_id, DstLocation::Direct, variant)
 }
 
-fn handle_message(node: &mut Node, sender: Option<SocketAddr>, msg: Message) -> Result<()> {
-    let msg = MessageWithBytes::new(msg)?;
-    node.try_handle_message(sender, msg)?;
-    node.handle_messages();
-    Ok(())
-}
-
 #[test]
 fn handle_genesis_update_on_parsec_prune() {
     let mut env = Env::new();
@@ -210,7 +203,7 @@ fn genesis_update_message_successful_trust_check() {
     let gen_pfx_info = env.gen_pfx_info(1);
     let msg = genesis_update_message_signature(&env.elders[0], *env.subject.name(), gen_pfx_info)
         .unwrap();
-    handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
     assert_eq!(env.subject.parsec_last_version(), 1);
 }
 
@@ -223,5 +216,5 @@ fn genesis_update_message_failed_trust_check_proof_too_new() {
     let gen_pfx_info = env.gen_pfx_info(1);
     let msg = genesis_update_message_signature(&env.elders[0], *env.subject.name(), gen_pfx_info)
         .unwrap();
-    handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
+    test_utils::handle_message(&mut env.subject, Some(env.elders[0].addr), msg).unwrap();
 }

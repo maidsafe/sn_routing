@@ -6,18 +6,18 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-/* TODO: re-enable these tests
-
-use super::{super::super::approved_peer::*, utils as test_utils};
+use super::utils as test_utils;
 use crate::{
     chain::{
         AccumulatingEvent, AckMessagePayload, EldersInfo, EventSigPayload, OnlinePayload,
         SectionKeyInfo, SectionProofSlice, MIN_AGE,
     },
-    event::Connected,
+    error::Result,
     generate_bls_threshold_secret_key,
-    id::FullId,
-    messages::{BootstrapResponse, MemberKnowledge, Variant},
+    id::{FullId, P2pNode, PublicId},
+    location::DstLocation,
+    messages::{BootstrapResponse, MemberKnowledge, Message, Variant},
+    node::{Node, NodeConfig},
     parsec, quic_p2p,
     rng::{self, MainRng},
     utils, ELDER_SIZE,
@@ -42,7 +42,7 @@ struct DkgToSectionInfo {
 struct Env {
     pub rng: MainRng,
     pub network: Network,
-    pub subject: ApprovedPeer,
+    pub subject: Node,
     pub other_ids: Vec<(FullId, bls::SecretKeyShare)>,
     pub elders_info: EldersInfo,
     pub candidate: P2pNode,
@@ -67,8 +67,17 @@ impl Env {
 
         let (full_id, secret_key_share) = full_and_bls_ids.remove(0);
         let other_ids = full_and_bls_ids;
-        let subject = create_state(&mut rng, &network, full_id, secret_key_share, gen_pfx_info);
-        let candidate = gen_p2p_node(&mut rng, &network);
+
+        let (subject, ..) = Node::approved(
+            NodeConfig {
+                full_id: Some(full_id),
+                ..Default::default()
+            },
+            gen_pfx_info,
+            Some(secret_key_share),
+        );
+
+        let candidate = Peer::gen(&mut rng, &network).to_p2p_node();
 
         let mut env = Self {
             rng,
@@ -88,7 +97,7 @@ impl Env {
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
         assert!(count <= self.other_ids.len());
 
-        let parsec = &mut self.subject.stage.approved_mut().parsec_map;
+        let parsec = self.subject.parsec_map_mut().unwrap();
         for event in events {
             self.other_ids
                 .iter()
@@ -114,7 +123,7 @@ impl Env {
     }
 
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
-        let parsec = &mut self.subject.stage.approved_mut().parsec_map;
+        let parsec = self.subject.parsec_map_mut().unwrap();
         let events = parsec.our_unpolled_observations().cloned().collect_vec();
         for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
@@ -128,10 +137,10 @@ impl Env {
         }
     }
 
-    fn create_gossip(&mut self) -> Result<(), RoutingError> {
+    fn create_gossip(&mut self) -> Result<()> {
         let other_full_id = &self.other_ids[0].0;
         let addr: SocketAddr = "127.0.0.3:9999".parse().unwrap();
-        let parsec = &mut self.subject.stage.approved_mut().parsec_map;
+        let parsec = self.subject.parsec_map_mut()?;
         let parsec_version = parsec.last_version();
         let request = parsec::Request::new();
         let message = Message::single_src(
@@ -141,17 +150,14 @@ impl Env {
         )
         .unwrap();
 
-        let _ = self
-            .subject
-            .dispatch_message(Some(addr), message, &mut ())?;
-        Ok(())
+        self.subject.dispatch_message(Some(addr), message)
     }
 
     fn n_vote_for_gossipped(
         &mut self,
         count: usize,
         events: impl IntoIterator<Item = AccumulatingEvent>,
-    ) -> Result<(), RoutingError> {
+    ) -> Result<()> {
         self.n_vote_for(count, events);
         self.create_gossip()
     }
@@ -169,7 +175,7 @@ impl Env {
 
     fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
         let participants: BTreeSet<_> = new_elders_info.member_ids().copied().collect();
-        let parsec = &mut self.subject.stage.approved_mut().parsec_map;
+        let parsec = self.subject.parsec_map_mut().unwrap();
 
         let dkg_results = self
             .other_ids
@@ -244,10 +250,7 @@ impl Env {
         });
 
         // This event needs total consensus.
-        self.subject
-            .stage
-            .approved_mut()
-            .vote_for_event(event.clone());
+        self.subject.vote_for_event(event.clone()).unwrap();
         let _ = self.n_vote_for_gossipped(self.other_ids.len(), iter::once(event));
     }
 
@@ -322,19 +325,15 @@ impl Env {
     }
 
     fn is_candidate_member(&self) -> bool {
-        self.subject
-            .chain()
-            .is_peer_our_member(self.candidate.public_id())
+        self.subject.is_peer_our_member(self.candidate.public_id())
     }
 
     fn is_candidate_elder(&self) -> bool {
-        self.subject
-            .chain()
-            .is_peer_our_elder(self.candidate.public_id())
+        self.subject.is_peer_our_elder(self.candidate.public_id())
     }
 
-    fn gen_p2p_node(&mut self) -> P2pNode {
-        gen_p2p_node(&mut self.rng, &self.network)
+    fn gen_peer(&mut self) -> Peer {
+        Peer::gen(&mut self.rng, &self.network)
     }
 
     // Drop an existing elder and promote an adult to take its place. Drive the whole process to
@@ -357,36 +356,22 @@ impl Env {
     }
 }
 
-fn create_state(
-    rng: &mut MainRng,
-    network: &Network,
+struct Peer {
     full_id: FullId,
-    secret_key_share: bls::SecretKeyShare,
-    gen_pfx_info: GenesisPfxInfo,
-) -> ApprovedPeer {
-    let core = Core {
-        full_id,
-        transport: test_utils::create_transport(network),
-        msg_filter: Default::default(),
-        msg_queue: Default::default(),
-        timer: test_utils::create_timer(),
-        rng: rng::new_from(rng),
-    };
-
-    let elder = ApprovedPeer::new(
-        core,
-        NetworkParams::default(),
-        Connected::First,
-        gen_pfx_info,
-        Some(secret_key_share),
-        &mut (),
-    );
-    assert!(elder.stage.approved().chain.is_self_elder());
-    elder
+    addr: SocketAddr,
 }
 
-fn gen_p2p_node(rng: &mut MainRng, network: &Network) -> P2pNode {
-    P2pNode::new(*FullId::gen(rng).public_id(), network.gen_addr())
+impl Peer {
+    fn gen(rng: &mut MainRng, network: &Network) -> Self {
+        Self {
+            full_id: FullId::gen(rng),
+            addr: network.gen_addr(),
+        }
+    }
+
+    fn to_p2p_node(&self) -> P2pNode {
+        P2pNode::new(*self.full_id.public_id(), self.addr)
+    }
 }
 
 #[test]
@@ -469,14 +454,10 @@ fn handle_bootstrap() {
     let mut env = Env::new(ELDER_SIZE);
     let mut new_node = JoiningPeer::new(&mut env.rng);
 
-    let p2p_node = P2pNode::new(*new_node.public_id(), new_node.our_connection_info());
-    let dst_name = *new_node.public_id().name();
+    let addr = new_node.our_connection_info();
+    let msg = new_node.bootstrap_request().unwrap();
 
-    env.subject.stage.approved_mut().handle_bootstrap_request(
-        &mut env.subject.core,
-        p2p_node,
-        dst_name,
-    );
+    test_utils::handle_message(&mut env.subject, Some(addr), msg).unwrap();
     env.network.poll(&mut env.rng);
 
     let response = new_node.expect_bootstrap_response();
@@ -492,38 +473,36 @@ fn send_genesis_update() {
 
     let orig_elders_version = env.elders_info.version();
 
-    let adult0 = env.gen_p2p_node();
-    let adult1 = env.gen_p2p_node();
+    let adult0 = env.gen_peer();
+    let adult1 = env.gen_peer();
 
-    env.accumulate_online(adult0.clone());
-    env.accumulate_online(adult1.clone());
+    env.accumulate_online(adult0.to_p2p_node());
+    env.accumulate_online(adult1.to_p2p_node());
 
     // Remove one existing elder and promote an adult to take its place. This increments the
     // section version.
     let dropped_id = *env.other_ids[0].0.public_id();
-    env.perform_offline_and_promote(&dropped_id, adult0);
+    env.perform_offline_and_promote(&dropped_id, adult0.to_p2p_node());
 
     // Create `GenesisUpdate` message and check its proof contains the version the adult is at.
-    let message = utils::exactly_one(env.subject.stage.approved().create_genesis_updates());
-    assert_eq!(message.0, adult1);
+    let message = utils::exactly_one(env.subject.create_genesis_updates());
+    assert_eq!(message.0, adult1.to_p2p_node());
 
     let proof = &message.1.proof;
     verify_proof_chain_contains(proof, orig_elders_version);
 
     // Receive MemberKnowledge from the adult
-    let parsec_version = env.subject.stage.approved().parsec_map.last_version();
-    env.subject.stage.approved_mut().handle_member_knowledge(
-        &mut env.subject.core,
-        adult1,
-        MemberKnowledge {
-            elders_version: env.elders_info.version(),
-            parsec_version,
-        },
-    );
+    let parsec_version = env.subject.parsec_last_version();
+    let variant = Variant::MemberKnowledge(MemberKnowledge {
+        elders_version: env.elders_info.version(),
+        parsec_version,
+    });
+    let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, variant).unwrap();
+    test_utils::handle_message(&mut env.subject, Some(adult0.addr), msg).unwrap();
 
     // Create another `GenesisUpdate` and check the proof contains the updated version and does not
     // contain the previous version.
-    let message = utils::exactly_one(env.subject.stage.approved().create_genesis_updates());
+    let message = utils::exactly_one(env.subject.create_genesis_updates());
     let proof = &message.1.proof;
     verify_proof_chain_contains(proof, env.elders_info.version());
     verify_proof_chain_does_not_contain(proof, orig_elders_version);
@@ -581,6 +560,11 @@ impl JoiningPeer {
         self.full_id.public_id()
     }
 
+    fn bootstrap_request(&self) -> Result<Message> {
+        let variant = Variant::BootstrapRequest(*self.public_id().name());
+        Message::single_src(&self.full_id, DstLocation::Direct, variant)
+    }
+
     fn expect_bootstrap_response(&self) -> BootstrapResponse {
         self.recv_messages()
             .find_map(|msg| match msg.variant {
@@ -599,5 +583,3 @@ impl JoiningPeer {
             })
     }
 }
-
-*/
