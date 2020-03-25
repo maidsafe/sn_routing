@@ -53,14 +53,12 @@ impl Core {
             Err(err) => panic!("Unable to start network transport: {:?}", err),
         };
 
-        let timer = Timer::new(action_tx);
-
         Self {
             full_id,
             transport,
             msg_filter: Default::default(),
             msg_queue: Default::default(),
-            timer,
+            timer: Timer::new(action_tx),
             rng,
         }
     }
