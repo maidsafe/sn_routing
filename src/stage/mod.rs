@@ -12,7 +12,7 @@ mod joining;
 
 pub use self::{
     approved::{Approved, RelocateParams},
-    bootstrapping::{Bootstrapping, BootstrappingStatus},
+    bootstrapping::{Bootstrapping, JoinParams},
     joining::Joining,
 };
 

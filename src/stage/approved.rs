@@ -52,18 +52,18 @@ const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
 pub struct Approved {
-    // TODO: make these fields non-pub eventually.
-    pub sig_accumulator: SignatureAccumulator,
     pub parsec_map: ParsecMap,
     pub chain: Chain,
-    pub gen_pfx_info: GenesisPfxInfo,
-    pub timer_token: u64,
+
+    sig_accumulator: SignatureAccumulator,
+    gen_pfx_info: GenesisPfxInfo,
+    timer_token: u64,
     // DKG cache
-    pub dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     // Messages we received but not accumulated yet, so may need to re-swarm.
-    pub pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
+    pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
     /// The knowledge of the non-elder members about our section.
-    pub members_knowledge: BTreeMap<XorName, MemberKnowledge>,
+    members_knowledge: BTreeMap<XorName, MemberKnowledge>,
 }
 
 impl Approved {
@@ -166,6 +166,10 @@ impl Approved {
         };
 
         (stage, core)
+    }
+
+    pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
+        self.parsec_map.vote_for(event.into_network_event())
     }
 
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
@@ -285,39 +289,6 @@ impl Approved {
             messages::log_verify_failure(msg, &error, self.chain.get_their_key_infos());
             error
         })
-    }
-
-    pub fn handle_accumulated_message(
-        &mut self,
-        core: &mut Core,
-        mut msg_with_bytes: MessageWithBytes,
-    ) -> Result<()> {
-        // TODO: this is almost the same as `Base::try_handle_message` - find a way
-        // to avoid the duplication.
-        self.try_relay_message(core, &msg_with_bytes)?;
-
-        if !self.chain.in_dst_location(msg_with_bytes.message_dst()) {
-            return Ok(());
-        }
-
-        if core.msg_filter.contains_incoming(&msg_with_bytes) {
-            trace!(
-                "not handling message - already handled: {:?}",
-                msg_with_bytes
-            );
-            return Ok(());
-        }
-
-        let msg = msg_with_bytes.take_or_deserialize_message()?;
-
-        if self.should_handle_message(&msg) && self.verify_message(&msg)? {
-            core.msg_filter.insert_incoming(&msg_with_bytes);
-            core.msg_queue.push_back(msg.into_queued(None));
-        } else {
-            self.unhandled_message(core, None, msg, msg_with_bytes.full_bytes().clone());
-        }
-
-        Ok(())
     }
 
     pub fn handle_neighbour_info(
@@ -674,6 +645,39 @@ impl Approved {
         } else {
             Ok(())
         }
+    }
+
+    fn handle_accumulated_message(
+        &mut self,
+        core: &mut Core,
+        mut msg_with_bytes: MessageWithBytes,
+    ) -> Result<()> {
+        // TODO: this is almost the same as `Node::try_handle_message` - find a way
+        // to avoid the duplication.
+        self.try_relay_message(core, &msg_with_bytes)?;
+
+        if !self.chain.in_dst_location(msg_with_bytes.message_dst()) {
+            return Ok(());
+        }
+
+        if core.msg_filter.contains_incoming(&msg_with_bytes) {
+            trace!(
+                "not handling message - already handled: {:?}",
+                msg_with_bytes
+            );
+            return Ok(());
+        }
+
+        let msg = msg_with_bytes.take_or_deserialize_message()?;
+
+        if self.should_handle_message(&msg) && self.verify_message(&msg)? {
+            core.msg_filter.insert_incoming(&msg_with_bytes);
+            core.msg_queue.push_back(msg.into_queued(None));
+        } else {
+            self.unhandled_message(core, None, msg, msg_with_bytes.full_bytes().clone());
+        }
+
+        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1382,11 +1386,6 @@ impl Approved {
         }
     }
 
-    // TODO: make private
-    pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        self.parsec_map.vote_for(event.into_network_event())
-    }
-
     ////////////////////////////////////////////////////////////////////////////
     // Message sending
     ////////////////////////////////////////////////////////////////////////////
@@ -1837,24 +1836,22 @@ impl Approved {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-// TODO: make non-pub
-pub enum PendingMessageKey {
+enum PendingMessageKey {
     NeighbourInfo {
         version: u64,
         prefix: Prefix<XorName>,
     },
 }
 
-// TODO: make non-pub
-pub struct CompleteParsecReset {
-    /// The new genesis prefix info.
-    pub gen_pfx_info: GenesisPfxInfo,
-    /// The cached events that should be revoted. Not shared state: only the ones we voted for.
-    /// Also contains our votes that never reached consensus.
-    pub to_vote_again: BTreeSet<NetworkEvent>,
-    /// The events to process. Not shared state: only the ones we voted for.
-    /// Also contains our votes that never reached consensus.
-    pub to_process: BTreeSet<NetworkEvent>,
+struct CompleteParsecReset {
+    // The new genesis prefix info.
+    gen_pfx_info: GenesisPfxInfo,
+    // The cached events that should be revoted. Not shared state: only the ones we voted for.
+    // Also contains our votes that never reached consensus.
+    to_vote_again: BTreeSet<NetworkEvent>,
+    // The events to process. Not shared state: only the ones we voted for.
+    // Also contains our votes that never reached consensus.
+    to_process: BTreeSet<NetworkEvent>,
 }
 
 pub struct RelocateParams {

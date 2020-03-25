@@ -11,7 +11,7 @@ mod tests;
 
 use crate::{
     action::Action,
-    chain::{EldersInfo, GenesisPfxInfo, NetworkParams},
+    chain::{GenesisPfxInfo, NetworkParams},
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
@@ -21,9 +21,9 @@ use crate::{
     messages::{BootstrapResponse, Message, MessageHash, MessageWithBytes, QueuedMessage, Variant},
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
-    relocation::{RelocatePayload, SignedRelocateDetails},
+    relocation::SignedRelocateDetails,
     rng::{self, MainRng},
-    stage::{Approved, Bootstrapping, BootstrappingStatus, Joining, RelocateParams, Stage},
+    stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage},
     time::Duration,
     timer::Timer,
     transport::PeerStatus,
@@ -152,18 +152,18 @@ impl Node {
     }
 
     /// Pauses the node in order to be upgraded and/or restarted.
-    // TODO: return Result instead of panic
-    pub fn pause(self) -> PausedState {
-        let stage = match self.stage {
-            Stage::Approved(stage) => stage,
-            _ => unreachable!(),
-        };
+    /// Returns `InvalidState` error if the node is not a member of any section yet.
+    pub fn pause(self) -> Result<PausedState> {
+        if let Stage::Approved(stage) = self.stage {
+            info!("Pause");
 
-        info!("Pause");
+            let mut state = stage.pause(self.core);
+            state.network_rx = Some(self.network_rx);
 
-        let mut state = stage.pause(self.core);
-        state.network_rx = Some(self.network_rx);
-        state
+            Ok(state)
+        } else {
+            Err(RoutingError::InvalidState)
+        }
     }
 
     /// Resume previously paused node.
@@ -332,10 +332,13 @@ impl Node {
     }
 
     /// Vote for a user-defined event.
-    // TODO: return error if not elder
-    pub fn vote_for_user_event(&mut self, event: Vec<u8>) {
+    /// Returns `InvalidState` error if the node is not a member of any section yet.
+    pub fn vote_for_user_event(&mut self, event: Vec<u8>) -> Result<()> {
         if let Some(stage) = self.stage.approved_mut() {
-            stage.vote_for_user_event(event)
+            stage.vote_for_user_event(event);
+            Ok(())
+        } else {
+            Err(RoutingError::InvalidState)
         }
     }
 
@@ -699,19 +702,12 @@ impl Node {
         match &mut self.stage {
             Stage::Bootstrapping(stage) => match msg.variant {
                 Variant::BootstrapResponse(response) => {
-                    match stage.handle_bootstrap_response(
+                    if let Some(params) = stage.handle_bootstrap_response(
                         &mut self.core,
                         msg.src.to_sender_node(sender)?,
                         response,
                     )? {
-                        BootstrappingStatus::Ongoing => (),
-                        BootstrappingStatus::Finished {
-                            elders_info,
-                            relocate_payload,
-                        } => {
-                            let network_cfg = stage.network_cfg;
-                            self.join(network_cfg, elders_info, relocate_payload);
-                        }
+                        self.join(params);
                     }
                 }
                 Variant::Bounce {
@@ -902,12 +898,13 @@ impl Node {
     ////////////////////////////////////////////////////////////////////////////
 
     // Transition from Bootstrapping to Joining
-    fn join(
-        &mut self,
-        network_cfg: NetworkParams,
-        elders_info: EldersInfo,
-        relocate_payload: Option<RelocatePayload>,
-    ) {
+    fn join(&mut self, params: JoinParams) {
+        let JoinParams {
+            network_cfg,
+            elders_info,
+            relocate_payload,
+        } = params;
+
         self.stage = Stage::Joining(Joining::new(
             &mut self.core,
             network_cfg,
