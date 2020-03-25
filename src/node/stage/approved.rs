@@ -8,10 +8,10 @@
 
 use crate::{
     chain::{
-        self, AccumulatedEvent, AccumulatingEvent, AckMessagePayload, Chain, EldersChange,
-        EldersInfo, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, MemberState,
-        NetworkEvent, NetworkParams, OnlinePayload, ParsecResetData, PollAccumulated, Proof,
-        SectionKeyInfo, SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
+        AccumulatedEvent, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
+        EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, MemberState, NetworkEvent,
+        NetworkParams, OnlinePayload, ParsecResetData, PollAccumulated, Proof, SectionKeyInfo,
+        SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -20,7 +20,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageHash, MessageWithBytes, PlainMessage, SrcAuthority, Variant, VerifyStatus,
+        MessageHash, MessageWithBytes, SrcAuthority, Variant, VerifyStatus,
     },
     parsec::{self, DkgResultWrapper, Observation, ParsecMap},
     pause::PausedState,
@@ -28,7 +28,7 @@ use crate::{
     rng::MainRng,
     signature_accumulator::SignatureAccumulator,
     time::Duration,
-    xor_space::{Prefix, XorName, Xorable},
+    xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
 use crossbeam_channel::Sender;
@@ -1447,7 +1447,10 @@ impl Approved {
                     .map(|knowledge| knowledge.elders_version)
                     .unwrap_or(0);
 
-                match self.to_accumulating_message(dst, variant, Some(version)) {
+                match self
+                    .chain
+                    .to_accumulating_message(dst, variant, Some(version))
+                {
                     Ok(msg) => Some((recipient, msg)),
                     Err(error) => {
                         error!("Failed to create signed message: {:?}", error);
@@ -1641,9 +1644,10 @@ impl Approved {
         }
 
         let accumulating_msg =
-            self.to_accumulating_message(dst, variant, node_knowledge_override)?;
+            self.chain
+                .to_accumulating_message(dst, variant, node_knowledge_override)?;
 
-        for target in self.get_signature_targets(&dst) {
+        for target in self.chain.signature_targets(&dst) {
             if target.name() == core.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
                     self.handle_accumulated_message(core, msg)?;
@@ -1662,54 +1666,6 @@ impl Approved {
         }
 
         Ok(())
-    }
-
-    // Returns the set of peers that are responsible for collecting signatures to verify a message;
-    // this may contain us or only other nodes.
-    // TODO: move this to Chain
-    fn get_signature_targets(&self, dst: &DstLocation) -> Vec<P2pNode> {
-        let dst_name = match dst {
-            DstLocation::Node(name) => *name,
-            DstLocation::Section(name) => *name,
-            DstLocation::Prefix(prefix) => prefix.name(),
-            DstLocation::Direct => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Invalid destination for signature targets: {:?}",
-                    dst
-                );
-                return vec![];
-            }
-        };
-
-        let mut list = self
-            .chain
-            .our_elders()
-            .cloned()
-            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        list.truncate(chain::delivery_group_size(list.len()));
-        list
-    }
-
-    // Signs and proves the given `RoutingMessage` and wraps it in `SignedRoutingMessage`.
-    // TODO: move this to Chain
-    fn to_accumulating_message(
-        &self,
-        dst: DstLocation,
-        variant: Variant,
-        node_knowledge_override: Option<u64>,
-    ) -> Result<AccumulatingMessage> {
-        let proof = self.chain.prove(&dst, node_knowledge_override);
-        let pk_set = self.chain.our_section_bls_keys().clone();
-        let secret_key = self.chain.our_section_bls_secret_key_share()?;
-
-        let content = PlainMessage {
-            src: *self.chain.our_prefix(),
-            dst,
-            variant,
-        };
-
-        AccumulatingMessage::new(content, secret_key, pk_set, proof)
     }
 
     ////////////////////////////////////////////////////////////////////////////
