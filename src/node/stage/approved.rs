@@ -22,7 +22,6 @@ use crate::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
         MessageHash, MessageWithBytes, PlainMessage, SrcAuthority, Variant, VerifyStatus,
     },
-    outbox::EventBox,
     parsec::{self, DkgResultWrapper, Observation, ParsecMap},
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -33,6 +32,7 @@ use crate::{
     xor_space::{Prefix, XorName, Xorable},
 };
 use bytes::Bytes;
+use crossbeam_channel::Sender;
 use itertools::Itertools;
 use rand::Rng;
 use std::{
@@ -216,7 +216,7 @@ impl Approved {
         }
     }
 
-    pub fn finish_handle_input(&mut self, core: &mut Core, outbox: &mut dyn EventBox) {
+    pub fn finish_handle_input(&mut self, core: &mut Core, outbox: &Sender<Event>) {
         if self.chain.our_info().len() == 1 {
             // If we're the only node then invoke parsec_poll directly
             if let Err(error) = self.parsec_poll(core, outbox) {
@@ -551,7 +551,7 @@ impl Approved {
         msg_version: u64,
         par_request: parsec::Request,
         p2p_node: P2pNode,
-        outbox: &mut dyn EventBox,
+        outbox: &Sender<Event>,
     ) -> Result<()> {
         trace!(
             "handle parsec request v{} from {} (last: v{})",
@@ -582,7 +582,7 @@ impl Approved {
         msg_version: u64,
         par_response: parsec::Response,
         pub_id: PublicId,
-        outbox: &mut dyn EventBox,
+        outbox: &Sender<Event>,
     ) -> Result<()> {
         trace!("handle parsec response v{} from {}", msg_version, pub_id);
 
@@ -684,7 +684,7 @@ impl Approved {
     // Accumulated events handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn parsec_poll(&mut self, core: &mut Core, outbox: &mut dyn EventBox) -> Result<()> {
+    fn parsec_poll(&mut self, core: &mut Core, outbox: &Sender<Event>) -> Result<()> {
         while let Some(block) = self.parsec_map.poll() {
             let parsec_version = self.parsec_map.last_version();
             match block.payload() {
@@ -765,7 +765,7 @@ impl Approved {
         Ok(())
     }
 
-    fn chain_poll(&mut self, core: &mut Core, outbox: &mut dyn EventBox) -> Result<()> {
+    fn chain_poll(&mut self, core: &mut Core, outbox: &Sender<Event>) -> Result<()> {
         let mut old_pfx = *self.chain.our_prefix();
         let mut was_elder = self.chain.is_self_elder();
 
@@ -795,7 +795,7 @@ impl Approved {
         event: AccumulatedEvent,
         old_pfx: Prefix<XorName>,
         was_elder: bool,
-        outbox: &mut dyn EventBox,
+        outbox: &Sender<Event>,
     ) -> Result<()> {
         trace!("Handle accumulated event: {:?}", event);
 
@@ -1004,7 +1004,7 @@ impl Approved {
         old_pfx: Prefix<XorName>,
         was_elder: bool,
         elders_change: EldersChange,
-        outbox: &mut dyn EventBox,
+        outbox: &Sender<Event>,
     ) -> Result<()> {
         let elders_info = self.chain.our_info();
         let info_prefix = *elders_info.prefix();
@@ -1034,7 +1034,7 @@ impl Approved {
             self.demote(core, complete_data.gen_pfx_info);
 
             info!("Demoted");
-            outbox.send_event(Event::Demoted);
+            let _ = outbox.send(Event::Demoted);
 
             return Ok(());
         }
@@ -1061,12 +1061,12 @@ impl Approved {
 
         if is_split {
             info!("Split");
-            outbox.send_event(Event::SectionSplit(*self.chain.our_prefix()));
+            let _ = outbox.send(Event::SectionSplit(*self.chain.our_prefix()));
         }
 
         if !was_elder {
             info!("Promoted");
-            outbox.send_event(Event::Promoted);
+            let _ = outbox.send(Event::Promoted);
         }
 
         Ok(())
@@ -1162,9 +1162,9 @@ impl Approved {
     fn handle_user_event(
         &mut self,
         payload: Vec<u8>,
-        outbox: &mut dyn EventBox,
+        outbox: &Sender<Event>,
     ) -> Result<(), RoutingError> {
-        outbox.send_event(Event::Consensus(payload));
+        let _ = outbox.send(Event::Consensus(payload));
         Ok(())
     }
 

@@ -234,7 +234,7 @@ impl Node {
         self.handle_messages();
 
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.finish_handle_input(&mut self.core, &mut self.user_event_tx);
+            stage.finish_handle_input(&mut self.core, &self.user_event_tx);
         }
 
         Ok(handled)
@@ -692,7 +692,7 @@ impl Node {
                         version,
                         request,
                         msg.src.to_sender_node(sender)?,
-                        &mut self.user_event_tx,
+                        &self.user_event_tx,
                     )?;
                 }
                 Variant::ParsecResponse(version, response) => {
@@ -701,7 +701,7 @@ impl Node {
                         version,
                         response,
                         *msg.src.as_node()?,
-                        &mut self.user_event_tx,
+                        &self.user_event_tx,
                     )?;
                 }
                 Variant::UserMessage(content) => {
