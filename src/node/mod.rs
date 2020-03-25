@@ -92,10 +92,6 @@ pub struct Node {
     network_rx: Receiver<NetworkEvent>,
     network_rx_idx: usize,
     user_event_tx: Sender<Event>,
-
-    // TODO: remove these. Handle actions directly.
-    interface_result_tx: Sender<Result<()>>,
-    interface_result_rx: Receiver<Result<()>>,
 }
 
 impl Node {
@@ -111,7 +107,6 @@ impl Node {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
-        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
         let first = config.first;
         let network_params = config.network_params;
@@ -148,8 +143,6 @@ impl Node {
             network_rx: network_node_rx,
             network_rx_idx: 0,
             user_event_tx,
-            interface_result_tx,
-            interface_result_rx,
         };
 
         (node, user_event_rx, network_client_rx)
@@ -175,7 +168,6 @@ impl Node {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
-        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
         let timer = Timer::new(action_tx);
 
@@ -191,8 +183,6 @@ impl Node {
             network_rx,
             network_rx_idx: 0,
             user_event_tx,
-            interface_result_tx,
-            interface_result_rx,
         };
 
         (node, user_event_rx)
@@ -341,14 +331,22 @@ impl Node {
         dst: DstLocation,
         content: Vec<u8>,
     ) -> Result<(), RoutingError> {
-        let action = Action::SendMessage {
-            src,
-            dst,
-            content,
-            result_tx: self.interface_result_tx.clone(),
-        };
+        if let DstLocation::Direct = dst {
+            return Err(RoutingError::BadLocation);
+        }
 
-        self.perform_action(action)
+        match &mut self.stage {
+            Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => {
+                Err(RoutingError::InvalidState)
+            }
+            Stage::Approved(stage) => stage.send_routing_message(
+                &mut self.core,
+                src,
+                dst,
+                Variant::UserMessage(content),
+                None,
+            ),
+        }
     }
 
     /// Send a message to a client peer.
@@ -358,67 +356,27 @@ impl Node {
         msg: Bytes,
         token: Token,
     ) -> Result<()> {
-        let action = Action::SendMessageToClient {
-            peer_addr,
-            msg,
-            token,
-            result_tx: self.interface_result_tx.clone(),
-        };
-
-        self.perform_action(action)
+        self.core
+            .transport
+            .send_message_to_client(peer_addr, msg, token);
+        Ok(())
     }
 
     /// Disconnect form a client peer.
     pub fn disconnect_from_client(&mut self, peer_addr: SocketAddr) -> Result<()> {
-        let action = Action::DisconnectClient {
-            peer_addr,
-            result_tx: self.interface_result_tx.clone(),
-        };
-
-        self.perform_action(action)
+        self.core.transport.disconnect(peer_addr);
+        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////////////////
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn perform_action(&mut self, action: Action) -> Result<(), RoutingError> {
-        self.handle_action(action);
-        self.interface_result_rx.recv()?
-    }
-
     fn handle_action(&mut self, action: Action) {
         let _log_ident = self.set_log_ident();
 
         match action {
-            Action::SendMessage {
-                src,
-                dst,
-                content,
-                result_tx,
-            } => {
-                let result = self.handle_send_message(src, dst, content);
-                let _ = result_tx.send(result);
-            }
             Action::HandleTimeout(token) => self.handle_timeout(token),
-            Action::DisconnectClient {
-                peer_addr,
-                result_tx,
-            } => {
-                self.core.transport.disconnect(peer_addr);
-                let _ = result_tx.send(Ok(()));
-            }
-            Action::SendMessageToClient {
-                peer_addr,
-                msg,
-                token,
-                result_tx,
-            } => {
-                self.core
-                    .transport
-                    .send_message_to_client(peer_addr, msg, token);
-                let _ = result_tx.send(Ok(()));
-            }
         }
 
         self.finish_handle_input()
@@ -463,33 +421,6 @@ impl Node {
 
         if let Stage::Approved(stage) = &mut self.stage {
             stage.finish_handle_input(&mut self.core, &mut self.user_event_tx);
-        }
-    }
-
-    fn handle_send_message(
-        &mut self,
-        src: SrcLocation,
-        dst: DstLocation,
-        content: Vec<u8>,
-    ) -> Result<(), RoutingError> {
-        if let DstLocation::Direct = dst {
-            return Err(RoutingError::BadLocation);
-        }
-
-        match &mut self.stage {
-            Stage::Bootstrapping(_) | Stage::Joining(_) | Stage::Terminated => {
-                warn!("Cannot handle SendMessage - not joined.");
-                // TODO: return Err here eventually. Returning Ok for now to
-                // preserve the pre-refactor behaviour.
-                Ok(())
-            }
-            Stage::Approved(stage) => stage.send_routing_message(
-                &mut self.core,
-                src,
-                dst,
-                Variant::UserMessage(content),
-                None,
-            ),
         }
     }
 
@@ -1150,7 +1081,6 @@ impl Node {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
         let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
-        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
         let network_params = config.network_params;
         let mut core = Core::new(config, action_tx, network_tx);
@@ -1170,8 +1100,6 @@ impl Node {
             network_rx: network_node_rx,
             network_rx_idx: 0,
             user_event_tx,
-            interface_result_tx,
-            interface_result_rx,
         };
 
         (node, user_event_rx, network_client_rx)
@@ -1214,7 +1142,6 @@ fn is_busy(action: &Action) -> bool {
         // Don't consider handling a timeout as being busy. This is a workaround to prevent
         // infinite polling.
         Action::HandleTimeout(_) => false,
-        _ => true,
     }
 }
 

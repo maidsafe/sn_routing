@@ -217,12 +217,6 @@ mod tests {
                 let action = action_rx.try_recv();
                 match action.expect("Should have received an action.") {
                     Action::HandleTimeout(token) => assert_eq!(token, u64::from(count - i - 1)),
-                    unexpected_action => {
-                        panic!(
-                            "Expected `Action::HandleTimeout`, but received {:?}",
-                            unexpected_action
-                        );
-                    }
                 }
             }
 
