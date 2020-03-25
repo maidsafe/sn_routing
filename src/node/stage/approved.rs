@@ -137,7 +137,7 @@ impl Approved {
     }
 
     // Create the approved stage by resuming a paused node.
-    pub fn resume(state: PausedState, timer: Timer) -> (Self, Core) {
+    pub fn resume(state: PausedState, timer: Timer, user_event_tx: Sender<Event>) -> (Self, Core) {
         let core = Core {
             full_id: state.full_id,
             transport: state.transport,
@@ -145,6 +145,7 @@ impl Approved {
             msg_queue: state.msg_queue,
             timer,
             rng: rng::new(),
+            user_event_tx,
         };
 
         let timer_token = if state.chain.is_self_elder() {
@@ -216,10 +217,10 @@ impl Approved {
         }
     }
 
-    pub fn finish_handle_input(&mut self, core: &mut Core, outbox: &Sender<Event>) {
+    pub fn finish_handle_input(&mut self, core: &mut Core) {
         if self.chain.our_info().len() == 1 {
             // If we're the only node then invoke parsec_poll directly
-            if let Err(error) = self.parsec_poll(core, outbox) {
+            if let Err(error) = self.parsec_poll(core) {
                 error!("Parsec poll failed: {:?}", error);
             }
         }
@@ -551,7 +552,6 @@ impl Approved {
         msg_version: u64,
         par_request: parsec::Request,
         p2p_node: P2pNode,
-        outbox: &Sender<Event>,
     ) -> Result<()> {
         trace!(
             "handle parsec request v{} from {} (last: v{})",
@@ -570,7 +570,7 @@ impl Approved {
         }
 
         if msg_version == self.parsec_map.last_version() {
-            self.parsec_poll(core, outbox)
+            self.parsec_poll(core)
         } else {
             Ok(())
         }
@@ -582,7 +582,6 @@ impl Approved {
         msg_version: u64,
         par_response: parsec::Response,
         pub_id: PublicId,
-        outbox: &Sender<Event>,
     ) -> Result<()> {
         trace!("handle parsec response v{} from {}", msg_version, pub_id);
 
@@ -590,7 +589,7 @@ impl Approved {
             .handle_response(msg_version, par_response, pub_id);
 
         if msg_version == self.parsec_map.last_version() {
-            self.parsec_poll(core, outbox)
+            self.parsec_poll(core)
         } else {
             Ok(())
         }
@@ -684,7 +683,7 @@ impl Approved {
     // Accumulated events handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn parsec_poll(&mut self, core: &mut Core, outbox: &Sender<Event>) -> Result<()> {
+    fn parsec_poll(&mut self, core: &mut Core) -> Result<()> {
         while let Some(block) = self.parsec_map.poll() {
             let parsec_version = self.parsec_map.last_version();
             match block.payload() {
@@ -757,7 +756,7 @@ impl Approved {
                 }
             }
 
-            self.chain_poll(core, outbox)?;
+            self.chain_poll(core)?;
         }
 
         self.check_voting_status();
@@ -765,14 +764,14 @@ impl Approved {
         Ok(())
     }
 
-    fn chain_poll(&mut self, core: &mut Core, outbox: &Sender<Event>) -> Result<()> {
+    fn chain_poll(&mut self, core: &mut Core) -> Result<()> {
         let mut old_pfx = *self.chain.our_prefix();
         let mut was_elder = self.chain.is_self_elder();
 
         while let Some(event) = self.chain.poll_accumulated()? {
             match event {
                 PollAccumulated::AccumulatedEvent(event) => {
-                    self.handle_accumulated_event(core, event, old_pfx, was_elder, outbox)?
+                    self.handle_accumulated_event(core, event, old_pfx, was_elder)?
                 }
                 PollAccumulated::RelocateDetails(details) => {
                     self.handle_relocate_polled(details)?;
@@ -795,7 +794,6 @@ impl Approved {
         event: AccumulatedEvent,
         old_pfx: Prefix<XorName>,
         was_elder: bool,
-        outbox: &Sender<Event>,
     ) -> Result<()> {
         trace!("Handle accumulated event: {:?}", event);
 
@@ -813,13 +811,7 @@ impl Approved {
                 self.handle_offline_event(core, pub_id)?;
             }
             AccumulatingEvent::SectionInfo(_, _) => {
-                self.handle_section_info_event(
-                    core,
-                    old_pfx,
-                    was_elder,
-                    event.elders_change,
-                    outbox,
-                )?;
+                self.handle_section_info_event(core, old_pfx, was_elder, event.elders_change)?;
             }
             AccumulatingEvent::NeighbourInfo(elders_info) => {
                 self.handle_neighbour_info_event(core, elders_info, event.elders_change)?;
@@ -838,7 +830,7 @@ impl Approved {
             AccumulatingEvent::RelocatePrepare(pub_id, count) => {
                 self.handle_relocate_prepare_event(pub_id, count);
             }
-            AccumulatingEvent::User(payload) => self.handle_user_event(payload, outbox)?,
+            AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
         }
 
         Ok(())
@@ -1004,7 +996,6 @@ impl Approved {
         old_pfx: Prefix<XorName>,
         was_elder: bool,
         elders_change: EldersChange,
-        outbox: &Sender<Event>,
     ) -> Result<()> {
         let elders_info = self.chain.our_info();
         let info_prefix = *elders_info.prefix();
@@ -1034,7 +1025,7 @@ impl Approved {
             self.demote(core, complete_data.gen_pfx_info);
 
             info!("Demoted");
-            let _ = outbox.send(Event::Demoted);
+            let _ = core.user_event_tx.send(Event::Demoted);
 
             return Ok(());
         }
@@ -1061,12 +1052,14 @@ impl Approved {
 
         if is_split {
             info!("Split");
-            let _ = outbox.send(Event::SectionSplit(*self.chain.our_prefix()));
+            let _ = core
+                .user_event_tx
+                .send(Event::SectionSplit(*self.chain.our_prefix()));
         }
 
         if !was_elder {
             info!("Promoted");
-            let _ = outbox.send(Event::Promoted);
+            let _ = core.user_event_tx.send(Event::Promoted);
         }
 
         Ok(())
@@ -1159,12 +1152,8 @@ impl Approved {
     }
 
     /// Handle an accumulated `User` event
-    fn handle_user_event(
-        &mut self,
-        payload: Vec<u8>,
-        outbox: &Sender<Event>,
-    ) -> Result<(), RoutingError> {
-        let _ = outbox.send(Event::Consensus(payload));
+    fn handle_user_event(&mut self, core: &mut Core, payload: Vec<u8>) -> Result<(), RoutingError> {
+        let _ = core.user_event_tx.send(Event::Consensus(payload));
         Ok(())
     }
 
