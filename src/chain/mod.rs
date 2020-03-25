@@ -17,6 +17,7 @@ mod member_info;
 mod network_event;
 mod proof;
 mod shared_state;
+mod stats;
 
 pub use self::{
     chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
