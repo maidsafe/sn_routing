@@ -124,8 +124,6 @@ where
         })
     }
 
-    // TODO: remove this allow(unused)
-    #[allow(unused)]
     #[cfg(test)]
     pub fn vote_for_as(&mut self, observation: Observation<T, S::PublicId>, vote_id: &S) {
         state::with(self.section_hash, |state| {
@@ -135,8 +133,6 @@ where
         });
     }
 
-    // TODO: remove this allow(unused)
-    #[allow(unused)]
     #[cfg(test)]
     pub fn get_dkg_result_as(
         &mut self,

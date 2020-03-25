@@ -41,8 +41,6 @@ impl Display for DisplayDurObj {
 // Test utils
 
 /// If the iterator yields exactly one element, returns it. Otherwise panics.
-// TODO: remove this allow(unused)
-#[allow(unused)]
 #[cfg(all(test, feature = "mock"))]
 pub fn exactly_one<I>(input: I) -> I::Item
 where

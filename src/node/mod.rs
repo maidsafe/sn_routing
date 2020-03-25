@@ -34,6 +34,8 @@ use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select, Sender};
 use std::net::SocketAddr;
 
+#[cfg(all(test, feature = "mock"))]
+use crate::{chain::AccumulatingEvent, messages::AccumulatingMessage, parsec::ParsecMap};
 #[cfg(feature = "mock_base")]
 use {
     crate::chain::{Chain, SectionProofSlice},
@@ -1190,6 +1192,31 @@ impl Node {
         };
 
         (node, user_event_rx, network_client_rx)
+    }
+
+    pub(crate) fn parsec_map_mut(&mut self) -> Result<&mut ParsecMap> {
+        if let Some(stage) = self.stage.approved_mut() {
+            Ok(&mut stage.parsec_map)
+        } else {
+            Err(RoutingError::InvalidState)
+        }
+    }
+
+    pub(crate) fn vote_for_event(&mut self, event: AccumulatingEvent) -> Result<()> {
+        if let Some(stage) = self.stage.approved_mut() {
+            stage.vote_for_event(event);
+            Ok(())
+        } else {
+            Err(RoutingError::InvalidState)
+        }
+    }
+
+    pub(crate) fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
+        if let Some(stage) = self.stage.approved() {
+            stage.create_genesis_updates()
+        } else {
+            Vec::new()
+        }
     }
 }
 
