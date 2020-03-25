@@ -15,7 +15,6 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
-    action::Action,
     chain::{GenesisPfxInfo, NetworkParams},
     core::Core,
     error::{Result, RoutingError},
@@ -87,8 +86,8 @@ pub struct Node {
     core: Core,
     stage: Stage,
 
-    action_rx: Receiver<Action>,
-    action_rx_idx: usize,
+    timer_rx: Receiver<u64>,
+    timer_rx_idx: usize,
     network_rx: Receiver<NetworkEvent>,
     network_rx_idx: usize,
     user_event_tx: Sender<Event>,
@@ -104,13 +103,13 @@ impl Node {
     /// Returns the node itself, the user event receiver and the client network
     /// event receiver.
     pub fn new(config: NodeConfig) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
-        let (action_tx, action_rx) = crossbeam_channel::unbounded();
+        let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
         let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
         let first = config.first;
         let network_params = config.network_params;
-        let mut core = Core::new(config, action_tx, network_tx);
+        let mut core = Core::new(config, timer_tx, network_tx);
 
         let stage = if first {
             match Approved::first(&mut core, network_params) {
@@ -138,8 +137,8 @@ impl Node {
         let node = Self {
             stage,
             core,
-            action_rx,
-            action_rx_idx: 0,
+            timer_rx,
+            timer_rx_idx: 0,
             network_rx: network_node_rx,
             network_rx_idx: 0,
             user_event_tx,
@@ -165,11 +164,11 @@ impl Node {
 
     /// Resume previously paused node.
     pub fn resume(mut state: PausedState) -> (Self, Receiver<Event>) {
-        let (action_tx, action_rx) = crossbeam_channel::unbounded();
+        let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
         let network_rx = state.network_rx.take().expect("PausedState is incomplete");
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
-        let timer = Timer::new(action_tx);
+        let timer = Timer::new(timer_tx);
 
         let (stage, core) = Approved::resume(state, timer);
 
@@ -178,8 +177,8 @@ impl Node {
         let node = Self {
             stage: Stage::Approved(stage),
             core,
-            action_rx,
-            action_rx_idx: 0,
+            timer_rx,
+            timer_rx_idx: 0,
             network_rx,
             network_rx_idx: 0,
             user_event_tx,
@@ -194,7 +193,7 @@ impl Node {
         #[cfg(feature = "mock_base")]
         self.core.timer.process_timers();
 
-        self.action_rx_idx = select.recv(&self.action_rx);
+        self.timer_rx_idx = select.recv(&self.timer_rx);
         self.network_rx_idx = select.recv(&self.network_rx);
     }
 
@@ -217,18 +216,19 @@ impl Node {
             return Err(RecvError);
         }
 
+        let _log_ident = self.set_log_ident();
+
         match op_index {
             idx if idx == self.network_rx_idx => {
                 let event = self.network_rx.recv()?;
                 self.handle_network_event(event);
                 Ok(true)
             }
-            idx if idx == self.action_rx_idx => {
-                let action = self.action_rx.recv()?;
+            idx if idx == self.timer_rx_idx => {
+                let action = self.timer_rx.recv()?;
 
-                let status = is_busy(&action);
                 self.handle_action(action);
-                Ok(status)
+                Ok(TIMEOUT_HANDLED)
             }
             _idx => Err(RecvError),
         }
@@ -372,20 +372,13 @@ impl Node {
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn handle_action(&mut self, action: Action) {
-        let _log_ident = self.set_log_ident();
-
-        match action {
-            Action::HandleTimeout(token) => self.handle_timeout(token),
-        }
-
+    fn handle_action(&mut self, timer_token: u64) {
+        self.handle_timeout(timer_token);
         self.finish_handle_input()
     }
 
     fn handle_network_event(&mut self, event: NetworkEvent) {
         use crate::NetworkEvent::*;
-
-        let _log_ident = self.set_log_ident();
 
         match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
@@ -1078,12 +1071,12 @@ impl Node {
         gen_pfx_info: GenesisPfxInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
-        let (action_tx, action_rx) = crossbeam_channel::unbounded();
+        let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
         let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
         let network_params = config.network_params;
-        let mut core = Core::new(config, action_tx, network_tx);
+        let mut core = Core::new(config, timer_tx, network_tx);
 
         let stage = Stage::Approved(Approved::new(
             &mut core,
@@ -1095,8 +1088,8 @@ impl Node {
         let node = Self {
             stage,
             core,
-            action_rx,
-            action_rx_idx: 0,
+            timer_rx,
+            timer_rx_idx: 0,
             network_rx: network_node_rx,
             network_rx_idx: 0,
             user_event_tx,
@@ -1132,18 +1125,11 @@ impl Node {
 }
 
 #[cfg(not(feature = "mock_base"))]
-fn is_busy(_: &Action) -> bool {
-    true
-}
+const TIMEOUT_HANDLED: bool = true;
 
+// HACK: Don't consider timeouts as being handled. This is a workaround to prevent infinite polling.
 #[cfg(feature = "mock_base")]
-fn is_busy(action: &Action) -> bool {
-    match action {
-        // Don't consider handling a timeout as being busy. This is a workaround to prevent
-        // infinite polling.
-        Action::HandleTimeout(_) => false,
-    }
-}
+const TIMEOUT_HANDLED: bool = false;
 
 // Create channels for the network event. Returs a triple of:
 // the composite node/client sender, node receiver, client receiver
