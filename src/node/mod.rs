@@ -103,11 +103,7 @@ impl Node {
     /// event receiver.
     pub fn new(config: NodeConfig) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
         let (action_tx, action_rx) = crossbeam_channel::unbounded();
-        let (network_tx, network_node_rx, network_client_rx) = {
-            let (client_tx, client_rx) = crossbeam_channel::unbounded();
-            let (node_tx, node_rx) = crossbeam_channel::unbounded();
-            (EventSenders { node_tx, client_tx }, node_rx, client_rx)
-        };
+        let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
         let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
 
@@ -1158,6 +1154,45 @@ impl Node {
     }
 }
 
+#[cfg(all(test, feature = "mock"))]
+impl Node {
+    // Create new node which is already an approved member of a section.
+    pub(crate) fn approved(
+        config: NodeConfig,
+        gen_pfx_info: GenesisPfxInfo,
+        secret_key_share: Option<bls::SecretKeyShare>,
+    ) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
+        let (action_tx, action_rx) = crossbeam_channel::unbounded();
+        let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
+        let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
+        let (interface_result_tx, interface_result_rx) = crossbeam_channel::bounded(1);
+
+        let network_params = config.network_params;
+        let mut core = Core::new(config, action_tx, network_tx);
+
+        let stage = Stage::Approved(Approved::new(
+            &mut core,
+            network_params,
+            gen_pfx_info,
+            secret_key_share,
+        ));
+
+        let node = Self {
+            stage,
+            core,
+            action_rx,
+            action_rx_idx: 0,
+            network_rx: network_node_rx,
+            network_rx_idx: 0,
+            user_event_tx,
+            interface_result_tx,
+            interface_result_rx,
+        };
+
+        (node, user_event_rx, network_client_rx)
+    }
+}
+
 #[cfg(not(feature = "mock_base"))]
 fn is_busy(_: &Action) -> bool {
     true
@@ -1171,4 +1206,12 @@ fn is_busy(action: &Action) -> bool {
         Action::HandleTimeout(_) => false,
         _ => true,
     }
+}
+
+// Create channels for the network event. Returs a triple of:
+// the composite node/client sender, node receiver, client receiver
+fn network_event_channels() -> (EventSenders, Receiver<NetworkEvent>, Receiver<NetworkEvent>) {
+    let (client_tx, client_rx) = crossbeam_channel::unbounded();
+    let (node_tx, node_rx) = crossbeam_channel::unbounded();
+    (EventSenders { node_tx, client_tx }, node_rx, client_rx)
 }
