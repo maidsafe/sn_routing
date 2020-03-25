@@ -25,10 +25,9 @@ use crate::{
     parsec::{self, DkgResultWrapper, Observation, ParsecMap},
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
-    rng::{self, MainRng},
+    rng::MainRng,
     signature_accumulator::SignatureAccumulator,
     time::Duration,
-    timer::Timer,
     xor_space::{Prefix, XorName, Xorable},
 };
 use bytes::Bytes;
@@ -137,16 +136,19 @@ impl Approved {
     }
 
     // Create the approved stage by resuming a paused node.
-    pub fn resume(state: PausedState, timer: Timer, user_event_tx: Sender<Event>) -> (Self, Core) {
-        let core = Core {
-            full_id: state.full_id,
-            transport: state.transport,
-            msg_filter: state.msg_filter,
-            msg_queue: state.msg_queue,
-            timer,
-            rng: rng::new(),
+    pub fn resume(
+        state: PausedState,
+        timer_tx: Sender<u64>,
+        user_event_tx: Sender<Event>,
+    ) -> (Self, Core) {
+        let core = Core::resume(
+            state.full_id,
+            state.transport,
+            state.msg_filter,
+            state.msg_queue,
+            timer_tx,
             user_event_tx,
-        };
+        );
 
         let timer_token = if state.chain.is_self_elder() {
             core.timer.schedule(state.parsec_map.gossip_period())
@@ -1025,7 +1027,7 @@ impl Approved {
             self.demote(core, complete_data.gen_pfx_info);
 
             info!("Demoted");
-            let _ = core.user_event_tx.send(Event::Demoted);
+            core.send_event(Event::Demoted);
 
             return Ok(());
         }
@@ -1052,14 +1054,12 @@ impl Approved {
 
         if is_split {
             info!("Split");
-            let _ = core
-                .user_event_tx
-                .send(Event::SectionSplit(*self.chain.our_prefix()));
+            core.send_event(Event::SectionSplit(*self.chain.our_prefix()));
         }
 
         if !was_elder {
             info!("Promoted");
-            let _ = core.user_event_tx.send(Event::Promoted);
+            core.send_event(Event::Promoted);
         }
 
         Ok(())
@@ -1153,7 +1153,7 @@ impl Approved {
 
     /// Handle an accumulated `User` event
     fn handle_user_event(&mut self, core: &mut Core, payload: Vec<u8>) -> Result<(), RoutingError> {
-        let _ = core.user_event_tx.send(Event::Consensus(payload));
+        core.send_event(Event::Consensus(payload));
         Ok(())
     }
 

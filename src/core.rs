@@ -15,7 +15,7 @@ use crate::{
     messages::{Message, QueuedMessage, Variant},
     node::NodeConfig,
     quic_p2p::{EventSenders, OurType, Token},
-    rng::MainRng,
+    rng::{self, MainRng},
     time::Duration,
     timer::Timer,
     transport::{PeerStatus, Transport, TransportBuilder},
@@ -33,7 +33,7 @@ pub struct Core {
     pub msg_queue: VecDeque<QueuedMessage>,
     pub timer: Timer,
     pub rng: MainRng,
-    pub user_event_tx: Sender<Event>,
+    user_event_tx: Sender<Event>,
 }
 
 impl Core {
@@ -62,6 +62,25 @@ impl Core {
             msg_queue: Default::default(),
             timer: Timer::new(timer_tx),
             rng,
+            user_event_tx,
+        }
+    }
+
+    pub fn resume(
+        full_id: FullId,
+        transport: Transport,
+        msg_filter: MessageFilter,
+        msg_queue: VecDeque<QueuedMessage>,
+        timer_tx: Sender<u64>,
+        user_event_tx: Sender<Event>,
+    ) -> Self {
+        Self {
+            full_id,
+            transport,
+            msg_filter,
+            msg_queue,
+            timer: Timer::new(timer_tx),
+            rng: rng::new(),
             user_event_tx,
         }
     }
@@ -129,5 +148,9 @@ impl Core {
     ) -> PeerStatus {
         self.transport
             .target_failed(msg, msg_token, addr, &self.timer)
+    }
+
+    pub fn send_event(&self, event: Event) {
+        let _ = self.user_event_tx.send(event);
     }
 }
