@@ -557,7 +557,7 @@ fn carry_out_parsec_pruning() {
     for _ in 0..max_gossips {
         let event = gen_vec(&mut rng, 10_000);
         nodes.iter_mut().for_each(|node| {
-            node.inner.vote_for_user_event(event.clone());
+            node.inner.vote_for_user_event(event.clone()).unwrap();
         });
         poll_and_resend(&mut nodes);
 
@@ -615,7 +615,7 @@ fn node_pause_and_resume_during_split() {
 fn node_pause_and_resume(env: Environment, mut nodes: Nodes, new_node_id: FullId) {
     let index = env.new_rng().gen_range(0, nodes.len());
     let paused_id = nodes[index].id();
-    let state = nodes.remove(index).inner.pause();
+    let state = nodes.remove(index).inner.pause().unwrap();
 
     // Verify the other nodes do not see the node as going offline.
     poll_and_resend(&mut nodes);

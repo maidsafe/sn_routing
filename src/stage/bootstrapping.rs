@@ -90,7 +90,7 @@ impl Bootstrapping {
         core: &mut Core,
         sender: P2pNode,
         response: BootstrapResponse,
-    ) -> Result<BootstrappingStatus> {
+    ) -> Result<Option<JoinParams>> {
         // Ignore messages from peers we didn't send `BootstrapRequest` to.
         if !self.pending_requests.contains(sender.peer_addr()) {
             debug!(
@@ -98,7 +98,7 @@ impl Bootstrapping {
                 sender,
             );
             core.transport.disconnect(*sender.peer_addr());
-            return Ok(BootstrappingStatus::Ongoing);
+            return Ok(None);
         }
 
         match response {
@@ -109,10 +109,11 @@ impl Bootstrapping {
                 );
 
                 let relocate_payload = self.join_section(core, &elders_info)?;
-                Ok(BootstrappingStatus::Finished {
+                Ok(Some(JoinParams {
+                    network_cfg: self.network_cfg,
                     elders_info,
                     relocate_payload,
-                })
+                }))
             }
             BootstrapResponse::Rebootstrap(new_conn_infos) => {
                 info!(
@@ -120,7 +121,7 @@ impl Bootstrapping {
                     new_conn_infos
                 );
                 self.reconnect_to_new_section(core, new_conn_infos);
-                Ok(BootstrappingStatus::Ongoing)
+                Ok(None)
             }
         }
     }
@@ -226,13 +227,8 @@ impl Bootstrapping {
     }
 }
 
-#[allow(clippy::large_enum_variant)]
-pub enum BootstrappingStatus {
-    // Bootstraping is still ongoing.
-    Ongoing,
-    // Bootstraping successfuly finished.
-    Finished {
-        elders_info: EldersInfo,
-        relocate_payload: Option<RelocatePayload>,
-    },
+pub struct JoinParams {
+    pub network_cfg: NetworkParams,
+    pub elders_info: EldersInfo,
+    pub relocate_payload: Option<RelocatePayload>,
 }

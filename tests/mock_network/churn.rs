@@ -99,7 +99,7 @@ fn remove_unresponsive_node() {
                     return;
                 }
             }
-            node.inner.vote_for_user_event(event.clone());
+            node.inner.vote_for_user_event(event.clone()).unwrap();
         });
 
         // Required to avoid the case that the non-responsive node doesn't realize its removal,
