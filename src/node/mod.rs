@@ -217,21 +217,27 @@ impl Node {
         }
 
         let _log_ident = self.set_log_ident();
-
-        match op_index {
+        let handled = match op_index {
             idx if idx == self.network_rx_idx => {
                 let event = self.network_rx.recv()?;
                 self.handle_network_event(event);
-                Ok(true)
+                true
             }
             idx if idx == self.timer_rx_idx => {
-                let action = self.timer_rx.recv()?;
-
-                self.handle_action(action);
-                Ok(TIMEOUT_HANDLED)
+                let token = self.timer_rx.recv()?;
+                self.handle_timeout(token);
+                TIMEOUT_HANDLED
             }
-            _idx => Err(RecvError),
+            _idx => return Err(RecvError),
+        };
+
+        self.handle_messages();
+
+        if let Stage::Approved(stage) = &mut self.stage {
+            stage.finish_handle_input(&mut self.core, &mut self.user_event_tx);
         }
+
+        Ok(handled)
     }
 
     /// Returns whether this node is running or has been terminated.
@@ -372,11 +378,6 @@ impl Node {
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn handle_action(&mut self, timer_token: u64) {
-        self.handle_timeout(timer_token);
-        self.finish_handle_input()
-    }
-
     fn handle_network_event(&mut self, event: NetworkEvent) {
         use crate::NetworkEvent::*;
 
@@ -402,18 +403,7 @@ impl Node {
             },
             Finish => {
                 self.stage = Stage::Terminated;
-                return;
             }
-        };
-
-        self.finish_handle_input()
-    }
-
-    fn finish_handle_input(&mut self) {
-        self.handle_messages();
-
-        if let Stage::Approved(stage) = &mut self.stage {
-            stage.finish_handle_input(&mut self.core, &mut self.user_event_tx);
         }
     }
 
