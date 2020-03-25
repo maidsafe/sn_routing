@@ -892,10 +892,9 @@ impl Approved {
 
             self.chain.increment_age_counters(&pub_id);
 
-            // TODO: return `P2pNode` of the removed peer from `remove_member`. Then use just
-            // normal `disconnect`.
-            let _ = self.chain.remove_member(&pub_id);
-            self.disconnect_by_id_lookup(core, &pub_id);
+            if let (Some(addr), _) = self.chain.remove_member(&pub_id) {
+                core.transport.disconnect(addr);
+            }
 
             let _ = self.members_knowledge.remove(pub_id.name());
         }
@@ -928,8 +927,8 @@ impl Approved {
         info!("handle Relocate: {:?}", details);
 
         let node_knowledge = match self.chain.remove_member(&details.pub_id) {
-            MemberState::Relocating { node_knowledge } => node_knowledge,
-            state => {
+            (_, MemberState::Relocating { node_knowledge }) => node_knowledge,
+            (_, state) => {
                 log_or_panic!(
                     log::Level::Error,
                     "Expected the state of {} to be Relocating, but was {:?}",
@@ -1742,19 +1741,6 @@ impl Approved {
                 core.transport.disconnect(*p2p_node.peer_addr());
             }
         }
-    }
-
-    fn disconnect_by_id_lookup(&self, core: &mut Core, pub_id: &PublicId) {
-        if let Some(node) = self.chain.get_p2p_node(pub_id.name()) {
-            let peer_addr = *node.peer_addr();
-            core.transport.disconnect(peer_addr);
-        } else {
-            log_or_panic!(
-                log::Level::Error,
-                "Can't disconnect from node we can't lookup in Chain: {}.",
-                pub_id
-            );
-        };
     }
 
     pub fn update_our_knowledge(&mut self, msg: &Message) {

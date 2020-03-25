@@ -526,8 +526,9 @@ impl Chain {
         }
     }
 
-    /// Remove a member from our section. Returns the state of the member before the removal.
-    pub fn remove_member(&mut self, pub_id: &PublicId) -> MemberState {
+    /// Remove a member from our section. Returns the SocketAddr and the state of the member before
+    /// the removal.
+    pub fn remove_member(&mut self, pub_id: &PublicId) -> (Option<SocketAddr>, MemberState) {
         self.assert_no_prefix_change("remove member");
         self.members_changed = true;
 
@@ -543,7 +544,7 @@ impl Chain {
             self.state
                 .relocate_queue
                 .retain(|details| &details.pub_id != pub_id);
-            member_state
+            (Some(*info.p2p_node.peer_addr()), member_state)
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -551,7 +552,7 @@ impl Chain {
                 pub_id
             );
 
-            MemberState::Left
+            (None, MemberState::Left)
         }
     }
 
