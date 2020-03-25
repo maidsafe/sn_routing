@@ -9,6 +9,7 @@
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{SectionKeyInfo, SectionProofBlock, SharedState},
+    stats::Stats,
     AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
     MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
     SectionProofSlice,
@@ -1595,6 +1596,17 @@ impl Chain {
                 false
             }
         })
+    }
+
+    /// Returns network statistics.
+    pub fn stats(&self) -> Stats {
+        let (total_elders, total_elders_exact) = self.network_size_estimate();
+
+        Stats {
+            known_elders: self.elders().count() as u64,
+            total_elders,
+            total_elders_exact,
+        }
     }
 }
 

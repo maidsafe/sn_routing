@@ -877,7 +877,7 @@ impl Approved {
 
             if self.chain.is_self_elder() {
                 self.send_node_approval(core, payload.p2p_node, payload.their_knowledge);
-                self.print_rt_size();
+                self.print_network_stats();
             }
         }
 
@@ -1049,7 +1049,7 @@ impl Approved {
             ack_version: info_version,
         });
 
-        self.print_rt_size();
+        self.print_network_stats();
 
         if is_split {
             info!("Split");
@@ -1747,22 +1747,8 @@ impl Approved {
             .is_ok()
     }
 
-    // TODO: move to Chain
-    fn print_rt_size(&self) {
-        const TABLE_LVL: log::Level = log::Level::Info;
-        if log::log_enabled!(TABLE_LVL) {
-            let status_str = format!("Routing Table size: {:3}", self.chain.elders().count());
-            let network_estimate = match self.chain.network_size_estimate() {
-                (n, true) => format!("Exact network size: {}", n),
-                (n, false) => format!("Estimated network size: {}", n),
-            };
-            let sep_len = cmp::max(status_str.len(), network_estimate.len());
-            let sep_str = iter::repeat('-').take(sep_len).collect::<String>();
-            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", status_str, sep_len);
-            log!(target: "routing_stats", TABLE_LVL, "| {:<1$} |", network_estimate, sep_len);
-            log!(target: "routing_stats", TABLE_LVL, " -{}- ", sep_str);
-        }
+    fn print_network_stats(&self) {
+        self.chain.stats().print()
     }
 }
 
