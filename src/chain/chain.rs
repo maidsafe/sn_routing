@@ -809,12 +809,11 @@ impl Chain {
         self.state.our_info().member_nodes()
     }
 
-    fn elders_and_adults(&self) -> impl Iterator<Item = &PublicId> {
+    /// Returns joined adults and elders from our section.
+    fn our_mature_members(&self) -> impl Iterator<Item = &PublicId> {
         self.state
             .our_joined_members()
-            // FIXME: we temporarily treat all section
-            // members as Adults
-            //.filter(|(_, info)| info.is_mature())
+            .filter(|(_, info)| info.is_mature())
             .map(|(_, info)| info.p2p_node.public_id())
     }
 
@@ -1294,7 +1293,7 @@ impl Chain {
         let our_name = self.our_id.name();
         let our_prefix_bit_count = self.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
-            .elders_and_adults()
+            .our_mature_members()
             .map(|id| our_name.common_prefix(id.name()) > our_prefix_bit_count)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
