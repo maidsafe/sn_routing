@@ -1024,12 +1024,12 @@ impl Node {
     pub fn send_message_to_targets(
         &mut self,
         dst_targets: &[SocketAddr],
-        dg_size: usize,
+        delivery_group_size: usize,
         message: Message,
     ) -> Result<(), RoutingError> {
         let message = message.to_bytes()?;
         self.core
-            .send_message_to_targets(dst_targets, dg_size, message);
+            .send_message_to_targets(dst_targets, delivery_group_size, message);
         Ok(())
     }
 
