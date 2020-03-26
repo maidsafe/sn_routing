@@ -320,9 +320,13 @@ impl Node {
     }
 
     /// Vote for a user-defined event.
-    /// Returns `InvalidState` error if the node is not a member of any section yet.
+    /// Returns `InvalidState` error if the node is not elder.
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) -> Result<()> {
-        if let Some(stage) = self.stage.approved_mut() {
+        if let Some(stage) = self
+            .stage
+            .approved_mut()
+            .filter(|stage| stage.chain.is_self_elder())
+        {
             stage.vote_for_user_event(event);
             Ok(())
         } else {
