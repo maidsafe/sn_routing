@@ -10,9 +10,8 @@ use crate::{
     event::Event,
     messages::{Message, Variant},
     mock::Environment,
-    node::{Node, NodeConfig},
+    node::{Node, NodeConfig, BOOTSTRAP_TIMEOUT},
     quic_p2p::{Builder, EventSenders, Peer},
-    stage::BOOTSTRAP_TIMEOUT,
     NetworkConfig, NetworkEvent,
 };
 use crossbeam_channel::{self as mpmc, TryRecvError};

@@ -6,9 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod stage;
 #[cfg(all(test, feature = "mock"))]
 mod tests;
 
+#[cfg(feature = "mock_base")]
+pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
+
+use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
     action::Action,
     chain::{GenesisPfxInfo, NetworkParams},
@@ -23,7 +28,6 @@ use crate::{
     quic_p2p::{EventSenders, Peer, Token},
     relocation::SignedRelocateDetails,
     rng::{self, MainRng},
-    stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage},
     time::Duration,
     timer::Timer,
     transport::PeerStatus,
