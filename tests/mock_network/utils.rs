@@ -725,7 +725,7 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
             let our_info = NodeSectionInfo {
                 node_name: our_name,
                 node_prefix: *our_prefix,
-                view_section_version: node.inner.section_elder_info_version(prefix),
+                view_section_version: node.inner.section_elder_info_version(prefix).unwrap(),
                 view_section_elders: node.inner.section_elders(prefix),
             };
 

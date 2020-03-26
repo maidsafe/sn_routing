@@ -1052,12 +1052,11 @@ impl Node {
 
     /// Returns the elder info version of a section with the given prefix.
     /// Prefix must be either our prefix or of one of our neighbours.
-    /// Returns 0 otherwise.
-    pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> u64 {
+    /// Returns `None` otherwise.
+    pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> Option<u64> {
         self.chain()
             .and_then(|chain| chain.get_section(prefix))
             .map(|info| info.version())
-            .unwrap_or_default()
     }
 
     /// Returns the elder of a section with the given prefix.
