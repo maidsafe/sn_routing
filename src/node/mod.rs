@@ -306,22 +306,6 @@ impl Node {
             .flat_map(move |stage| stage.chain.closest_section_info(name).1.member_nodes())
     }
 
-    /// Returns the first `count` names of the nodes in the routing table which are closest
-    /// to the given one.
-    pub fn close_group(&self, name: XorName, count: usize) -> Option<Vec<XorName>> {
-        let stage = if let Some(stage) = self.stage.approved() {
-            stage
-        } else {
-            return None;
-        };
-
-        let mut conn_peers: Vec<_> = stage.chain.elders().map(P2pNode::name).collect();
-        conn_peers.sort_unstable();
-        conn_peers.dedup();
-
-        stage.chain.closest_names(&name, count, &conn_peers)
-    }
-
     /// Checks whether the given location represents self.
     pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
         match &self.stage {
@@ -444,10 +428,7 @@ impl Node {
         match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
             BootstrapFailure => self.handle_bootstrap_failure(),
-            ConnectedTo { peer } => match peer {
-                Peer::Client(_) => (),
-                Peer::Node(peer_addr) => self.handle_connected_to(peer_addr),
-            },
+            ConnectedTo { .. } => (),
             ConnectionFailure { peer, .. } => match peer {
                 Peer::Client(_) => (),
                 Peer::Node(peer_addr) => self.handle_connection_failure(peer_addr),
@@ -526,8 +507,6 @@ impl Node {
         let _ = self.user_event_tx.send(Event::Terminated);
         self.stage = Stage::Terminated;
     }
-
-    fn handle_connected_to(&mut self, _addr: SocketAddr) {}
 
     fn handle_connection_failure(&mut self, addr: SocketAddr) {
         if let Stage::Approved(stage) = &mut self.stage {

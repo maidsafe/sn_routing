@@ -1332,42 +1332,6 @@ impl Chain {
         )))
     }
 
-    /// Finds the `count` names closest to `name` in the whole routing table.
-    fn closest_known_names(
-        &self,
-        name: &XorName,
-        count: usize,
-        connected_peers: &[&XorName],
-    ) -> Vec<XorName> {
-        self.all_sections()
-            .sorted_by(|&(pfx0, _), &(pfx1, _)| pfx0.cmp_distance(pfx1, name))
-            .into_iter()
-            .flat_map(|(_, si)| {
-                si.member_names()
-                    .sorted_by(|name0, name1| name.cmp_distance(name0, name1))
-            })
-            .filter(|name| connected_peers.contains(name))
-            .take(count)
-            .copied()
-            .collect_vec()
-    }
-
-    /// Returns the `count` closest entries to `name` in the routing table, including our own name,
-    /// sorted by ascending distance to `name`. If we are not close, returns `None`.
-    pub fn closest_names(
-        &self,
-        name: &XorName,
-        count: usize,
-        connected_peers: &[&XorName],
-    ) -> Option<Vec<XorName>> {
-        let result = self.closest_known_names(name, count, connected_peers);
-        if result.contains(self.our_id().name()) {
-            Some(result)
-        } else {
-            None
-        }
-    }
-
     /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
     /// belongs in that section or not, and the section itself.
     pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
