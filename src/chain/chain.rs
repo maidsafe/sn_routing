@@ -371,6 +371,8 @@ impl Chain {
         let our_section_size = self.state.our_joined_members().count();
         let safe_section_size = self.safe_section_size();
 
+        // As a measure against sybil attacks, we don't increment the age counters on infant churn
+        // once we reach safe_section_size.
         if our_section_size >= safe_section_size
             && self
                 .state
@@ -378,15 +380,11 @@ impl Chain {
                 .map(|persona| persona == MemberPersona::Infant)
                 .unwrap_or(true)
         {
-            // FIXME: skipping infants churn for ageing breaks tests for node ageing, as once a
-            // section reaches a safe size, nodes stop ageing at all, because all churn in tests
-            // is Infant churn.
-            // Temporarily ignore until we either find a better way of preventing churn spam,
-            // or we change the tests to provide some Adult churn at all times.
             trace!(
-                "FIXME: should do nothing for infants and unknown nodes {:?}",
-                trigger_node
+                "Not incrementing age counters on infant churn (section size: {})",
+                our_section_size,
             );
+            return;
         }
 
         let our_prefix = *self.state.our_prefix();
