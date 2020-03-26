@@ -1036,10 +1036,11 @@ impl Node {
         self.chain().map(|chain| chain.prove(target, None))
     }
 
-    /// Returns the age counter of the given node if it is member of the same section as this node,
-    /// `None` otherwise.
+    /// If this node is elder and `name` belongs to a member of our section, returns the age
+    /// counter of that member. Otherwise returns `None`.
     pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
         self.chain()
+            .filter(|chain| chain.is_self_elder())
             .and_then(|chain| chain.member_age_counter(name))
     }
 
