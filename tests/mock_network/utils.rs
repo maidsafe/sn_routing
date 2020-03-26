@@ -413,10 +413,10 @@ pub fn add_connected_nodes_until_split(
     clear_all_event_queues(nodes, |_, _| {});
 
     // Start enough new nodes under each target prefix to trigger a split eventually.
-    let safe_section_size = unwrap!(nodes[0].inner.safe_section_size());
+    let target_size = env.safe_section_size();
     let prefixes_new_count = prefixes
         .iter()
-        .map(|prefix| (*prefix, safe_section_size))
+        .map(|prefix| (*prefix, target_size))
         .collect_vec();
     add_nodes_to_prefixes(env, nodes, &prefixes_new_count);
 
