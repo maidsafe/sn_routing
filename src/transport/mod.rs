@@ -39,13 +39,13 @@ impl Transport {
     pub fn send_message_to_targets(
         &mut self,
         conn_infos: &[SocketAddr],
-        dg_size: usize,
+        delivery_group_size: usize,
         msg: Bytes,
     ) {
-        if conn_infos.len() < dg_size {
+        if conn_infos.len() < delivery_group_size {
             warn!(
-                "Less than dg_size valid targets! dg_size = {}; targets = {:?}; msg = {:?}",
-                dg_size,
+                "Less than delivery_group_size valid targets! delivery_group_size = {}; targets = {:?}; msg = {:?}",
+                delivery_group_size,
                 conn_infos,
                 HexFmt(&msg)
             );
@@ -56,16 +56,17 @@ impl Transport {
         trace!(
             "Sending message with token {} to {:?}",
             token,
-            &conn_infos[..dg_size.min(conn_infos.len())]
+            &conn_infos[..delivery_group_size.min(conn_infos.len())]
         );
 
-        // initially only send to dg_size targets
-        for addr in conn_infos.iter().take(dg_size) {
+        // initially only send to delivery_group_size targets
+        for addr in conn_infos.iter().take(delivery_group_size) {
             // NetworkBytes is refcounted and cheap to clone.
             self.send_now(*addr, msg.clone(), token);
         }
 
-        self.cache.insert_message(token, conn_infos, dg_size);
+        self.cache
+            .insert_message(token, conn_infos, delivery_group_size);
     }
 
     pub fn send_message_to_target_later(

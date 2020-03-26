@@ -39,18 +39,23 @@ pub struct SendingTargetsCache {
 }
 
 impl SendingTargetsCache {
-    pub fn insert_message(&mut self, token: Token, initial_targets: &[SocketAddr], dg_size: usize) {
-        // When a message is inserted into the cache initially, we are only sending it to `dg_size`
-        // targets with the highest priority - thus, we will set the first `dg_size` targets'
-        // states to Sending(0), and the rest to Failed(0) (indicating that we haven't sent to
-        // them, and so they haven't failed yet)
+    pub fn insert_message(
+        &mut self,
+        token: Token,
+        initial_targets: &[SocketAddr],
+        delivery_group_size: usize,
+    ) {
+        // When a message is inserted into the cache initially, we are only sending it to
+        // `delivery_group_size` targets with the highest priority - thus, we will set the first
+        // `delivery_group_size` targets' states to Sending(0), and the rest to Failed(0)
+        // (indicating that we haven't sent to them, and so they haven't failed yet)
         let targets = initial_targets
             .iter()
             .enumerate()
             .map(|(idx, tgt_info)| {
                 (
                     *tgt_info,
-                    if idx < dg_size {
+                    if idx < delivery_group_size {
                         TargetState::Sending(0)
                     } else {
                         TargetState::Failed(0)

@@ -81,11 +81,11 @@ impl Core {
     pub fn send_message_to_targets(
         &mut self,
         conn_infos: &[SocketAddr],
-        dg_size: usize,
+        delivery_group_size: usize,
         msg: Bytes,
     ) {
         self.transport
-            .send_message_to_targets(conn_infos, dg_size, msg)
+            .send_message_to_targets(conn_infos, delivery_group_size, msg)
     }
 
     pub fn send_message_to_target_later(
