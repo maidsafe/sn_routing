@@ -111,13 +111,13 @@ fn remove_unresponsive_node() {
         poll_and_resend(&mut nodes);
     }
 
-    let still_has_unresponsibe_elder = nodes
+    let still_has_unresponsive_elder = nodes
         .iter()
         .map(|n| &n.inner)
         .filter(|n| n.elders().any(|id| *id.name() == non_responsive_name))
         .map(|n| n.name())
         .collect_vec();
-    assert_eq!(still_has_unresponsibe_elder, Vec::<&XorName>::new());
+    assert_eq!(still_has_unresponsive_elder, Vec::<&XorName>::new());
 }
 
 // Parameters for the churn tests.
