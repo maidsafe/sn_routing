@@ -524,6 +524,7 @@ impl Chain {
             }
             Entry::Vacant(entry) => {
                 // Node joining for the first time.
+
                 let _ = entry.insert(MemberInfo::new(
                     age,
                     p2p_node.clone(),

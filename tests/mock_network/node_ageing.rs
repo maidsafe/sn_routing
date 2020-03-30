@@ -8,8 +8,9 @@
 
 use super::{
     add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
-    current_sections, nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
-    verify_invariant_for_all_nodes, PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    current_sections, node_age_counter, nodes_with_prefix, poll_and_resend,
+    poll_and_resend_with_options, verify_invariant_for_all_nodes, PollOptions, TestNode,
+    LOWERED_ELDER_SIZE,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -50,7 +51,7 @@ fn relocate_without_split() {
 
     // Create enough churn events so that the age of the oldest node increases which causes it to
     // be relocated.
-    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name());
+    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
     let num_increments = oldest_age_counter.next_power_of_two() - oldest_age_counter;
     churn_to_increment_age_counters(&env, &mut nodes, &source_prefix, num_increments);
     poll_and_resend(&mut nodes);
@@ -80,7 +81,7 @@ fn relocate_causing_split() {
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
 
-    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name());
+    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let source_prefix = *find_matching_prefix(&prefixes, &nodes[0].name());
@@ -135,7 +136,7 @@ fn relocate_during_split() {
 
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
-    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name());
+    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let source_prefix = *prefixes.choose(&mut rng).unwrap();
@@ -166,19 +167,6 @@ fn relocate_during_split() {
         PollOptions::default()
             .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix)),
     )
-}
-
-// Age counter of the node with the given name.
-fn node_age_counter(nodes: &[TestNode], name: &XorName) -> usize {
-    if let Some(counter) = nodes
-        .iter()
-        .filter_map(|node| node.inner.member_age_counter(name))
-        .max()
-    {
-        counter as usize
-    } else {
-        panic!("{} is not a member known to any node.", name)
-    }
 }
 
 fn find_matching_prefix<'a>(

@@ -271,6 +271,16 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
+fn single_split() {
+    let env = Environment::new(NetworkParams {
+        elder_size: 4,
+        safe_section_size: 4,
+    });
+    let mut nodes = Nodes(vec![]);
+    trigger_split(&env, &mut nodes, &Prefix::default());
+}
+
+#[test]
 fn multi_split() {
     let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
