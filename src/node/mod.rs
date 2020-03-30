@@ -30,7 +30,7 @@ use crate::{
     time::Duration,
     transport::PeerStatus,
     xor_space::{Prefix, XorName},
-    NetworkConfig, NetworkEvent,
+    TransportConfig, TransportEvent,
 };
 use bytes::Bytes;
 use crossbeam_channel::{Receiver, RecvError, Select};
@@ -54,7 +54,7 @@ pub struct NodeConfig {
     /// The ID of the node or `None` for randomly generated one.
     pub full_id: Option<FullId>,
     /// Configuration for the underlying network transport.
-    pub network_config: NetworkConfig,
+    pub transport_config: TransportConfig,
     /// Global network parameters. Must be identical for all nodes in the network.
     pub network_params: NetworkParams,
     /// Random number generator to be used by the node. Can be used to achieve repeatable tests by
@@ -67,7 +67,7 @@ impl Default for NodeConfig {
         Self {
             first: false,
             full_id: None,
-            network_config: NetworkConfig::default(),
+            transport_config: TransportConfig::default(),
             network_params: NetworkParams::default(),
             rng: rng::new(),
         }
@@ -87,8 +87,8 @@ pub struct Node {
 
     timer_rx: Receiver<u64>,
     timer_rx_idx: usize,
-    network_rx: Receiver<NetworkEvent>,
-    network_rx_idx: usize,
+    transport_rx: Receiver<TransportEvent>,
+    transport_rx_idx: usize,
 }
 
 impl Node {
@@ -100,14 +100,14 @@ impl Node {
     ///
     /// Returns the node itself, the user event receiver and the client network
     /// event receiver.
-    pub fn new(config: NodeConfig) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
+    pub fn new(config: NodeConfig) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
-        let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
+        let (transport_tx, transport_node_rx, transport_client_rx) = transport_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
         let first = config.first;
         let network_params = config.network_params;
-        let mut core = Core::new(config, timer_tx, network_tx, user_event_tx);
+        let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
         let stage = if first {
             match Approved::first(&mut core, network_params) {
@@ -137,11 +137,11 @@ impl Node {
             core,
             timer_rx,
             timer_rx_idx: 0,
-            network_rx: network_node_rx,
-            network_rx_idx: 0,
+            transport_rx: transport_node_rx,
+            transport_rx_idx: 0,
         };
 
-        (node, user_event_rx, network_client_rx)
+        (node, user_event_rx, transport_client_rx)
     }
 
     /// Pauses the node in order to be upgraded and/or restarted.
@@ -151,7 +151,7 @@ impl Node {
             info!("Pause");
 
             let mut state = stage.pause(self.core);
-            state.network_rx = Some(self.network_rx);
+            state.transport_rx = Some(self.transport_rx);
 
             Ok(state)
         } else {
@@ -162,7 +162,10 @@ impl Node {
     /// Resume previously paused node.
     pub fn resume(mut state: PausedState) -> (Self, Receiver<Event>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
-        let network_rx = state.network_rx.take().expect("PausedState is incomplete");
+        let transport_rx = state
+            .transport_rx
+            .take()
+            .expect("PausedState is incomplete");
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
         let (stage, core) = Approved::resume(state, timer_tx, user_event_tx);
@@ -174,8 +177,8 @@ impl Node {
             core,
             timer_rx,
             timer_rx_idx: 0,
-            network_rx,
-            network_rx_idx: 0,
+            transport_rx,
+            transport_rx_idx: 0,
         };
 
         (node, user_event_rx)
@@ -188,7 +191,7 @@ impl Node {
         self.core.timer.process_timers();
 
         self.timer_rx_idx = select.recv(&self.timer_rx);
-        self.network_rx_idx = select.recv(&self.network_rx);
+        self.transport_rx_idx = select.recv(&self.transport_rx);
     }
 
     /// Processes events received externally from one of the channels.
@@ -212,9 +215,9 @@ impl Node {
 
         let _log_ident = self.set_log_ident();
         let handled = match op_index {
-            idx if idx == self.network_rx_idx => {
-                let event = self.network_rx.recv()?;
-                self.handle_network_event(event);
+            idx if idx == self.transport_rx_idx => {
+                let event = self.transport_rx.recv()?;
+                self.handle_transport_event(event);
                 true
             }
             idx if idx == self.timer_rx_idx => {
@@ -372,8 +375,8 @@ impl Node {
     // Input handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn handle_network_event(&mut self, event: NetworkEvent) {
-        use crate::NetworkEvent::*;
+    fn handle_transport_event(&mut self, event: TransportEvent) {
+        use crate::TransportEvent::*;
 
         match event {
             BootstrappedTo { node } => self.handle_bootstrapped_to(node),
@@ -1052,13 +1055,13 @@ impl Node {
         config: NodeConfig,
         gen_pfx_info: GenesisPfxInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
-    ) -> (Self, Receiver<Event>, Receiver<NetworkEvent>) {
+    ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();
-        let (network_tx, network_node_rx, network_client_rx) = network_event_channels();
+        let (transport_tx, transport_node_rx, transport_client_rx) = transport_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
         let network_params = config.network_params;
-        let mut core = Core::new(config, timer_tx, network_tx, user_event_tx);
+        let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
         let stage = Stage::Approved(Approved::new(
             &mut core,
@@ -1072,11 +1075,11 @@ impl Node {
             core,
             timer_rx,
             timer_rx_idx: 0,
-            network_rx: network_node_rx,
-            network_rx_idx: 0,
+            transport_rx: transport_node_rx,
+            transport_rx_idx: 0,
         };
 
-        (node, user_event_rx, network_client_rx)
+        (node, user_event_rx, transport_client_rx)
     }
 
     pub(crate) fn parsec_map_mut(&mut self) -> Result<&mut ParsecMap> {
@@ -1114,7 +1117,11 @@ const TIMEOUT_HANDLED: bool = false;
 
 // Create channels for the network event. Returs a triple of:
 // the composite node/client sender, node receiver, client receiver
-fn network_event_channels() -> (EventSenders, Receiver<NetworkEvent>, Receiver<NetworkEvent>) {
+fn transport_channels() -> (
+    EventSenders,
+    Receiver<TransportEvent>,
+    Receiver<TransportEvent>,
+) {
     let (client_tx, client_rx) = crossbeam_channel::unbounded();
     let (node_tx, node_rx) = crossbeam_channel::unbounded();
     (EventSenders { node_tx, client_tx }, node_rx, client_rx)

@@ -18,8 +18,8 @@ pub use self::utils::*;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
-    event::Event, mock::Environment, FullId, NetworkConfig, NetworkParams, Prefix,
-    RelocationOverrides, XorName,
+    event::Event, mock::Environment, FullId, NetworkParams, Prefix, RelocationOverrides,
+    TransportConfig, XorName,
 };
 use std::collections::BTreeMap;
 
@@ -91,8 +91,8 @@ fn can_accept_node_without_split(
 }
 
 fn create_node_with_contact(env: &Environment, contact: &mut TestNode) -> TestNode {
-    let config = NetworkConfig::node().with_hard_coded_contact(contact.endpoint());
-    TestNode::builder(&env).network_config(config).create()
+    let config = TransportConfig::node().with_hard_coded_contact(contact.endpoint());
+    TestNode::builder(&env).transport_config(config).create()
 }
 
 #[test]
@@ -106,8 +106,8 @@ fn disconnect_on_rebootstrap() {
     let mut nodes = create_connected_nodes(&env, 2);
 
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
-    let config = NetworkConfig::node().with_hard_coded_contact(nodes[1].endpoint());
-    nodes.push(TestNode::builder(&env).network_config(config).create());
+    let config = TransportConfig::node().with_hard_coded_contact(nodes[1].endpoint());
+    nodes.push(TestNode::builder(&env).transport_config(config).create());
     let _ = poll_all(&mut nodes);
 
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
@@ -121,11 +121,11 @@ fn disconnect_on_rebootstrap() {
 // fn candidate_expiration() {
 // let env = Environment::new(LOWERED_ELDER_SIZE, LOWERED_ELDER_SIZE * 2, None);
 // let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
-// let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+// let transport_config = TransportConfig::node().with_hard_coded_contact(nodes[0].endpoint());
 // nodes.insert(
 // 0,
 // TestNode::builder(&env)
-// .network_config(network_config)
+// .transport_config(transport_config)
 // .create(),
 // );
 //
@@ -201,11 +201,11 @@ fn node_joins_in_front() {
         safe_section_size: LOWERED_ELDER_SIZE,
     });
     let mut nodes = create_connected_nodes(&env, 2 * LOWERED_ELDER_SIZE);
-    let network_config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+    let transport_config = TransportConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     nodes.insert(
         0,
         TestNode::builder(&env)
-            .network_config(network_config)
+            .transport_config(transport_config)
             .create(),
     );
     poll_and_resend(&mut nodes);
@@ -319,11 +319,11 @@ fn simultaneous_joining_nodes(
                         nodes_with_prefix_mut(&mut nodes, &setup.proxy_prefix).collect_vec();
                     compatible_proxies.shuffle(&mut rng);
 
-                    NetworkConfig::node()
+                    TransportConfig::node()
                         .with_hard_coded_contact(unwrap!(nodes.first_mut()).endpoint())
                 };
 
-                let node = TestNode::builder(&env).network_config(config).create();
+                let node = TestNode::builder(&env).transport_config(config).create();
                 if setup.src_section_prefix.matches(&node.name()) {
                     break node;
                 }
@@ -624,9 +624,9 @@ fn node_pause_and_resume(env: Environment, mut nodes: Nodes, new_node_id: FullId
         .all(|n| !n.inner.is_elder() || n.inner.is_peer_our_member(&paused_id)));
 
     // Do some work while the node is paused.
-    let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+    let config = TransportConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     let node = TestNode::builder(&env)
-        .network_config(config)
+        .transport_config(config)
         .full_id(new_node_id)
         .create();
     nodes.push(node);

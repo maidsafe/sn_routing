@@ -129,7 +129,7 @@ impl Approved {
             msg_filter: core.msg_filter,
             msg_queue: core.msg_queue,
             transport: core.transport,
-            network_rx: None,
+            transport_rx: None,
             sig_accumulator: self.sig_accumulator,
             parsec_map: self.parsec_map,
         }
