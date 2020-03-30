@@ -14,7 +14,7 @@ use crate::{
     quic_p2p::{Builder, EventSenders, Peer, QuicP2p, QuicP2pError, Token},
     time::Duration,
     timer::Timer,
-    NetworkConfig,
+    TransportConfig,
 };
 use bytes::Bytes;
 use hex_fmt::HexFmt;
@@ -191,7 +191,7 @@ impl TransportBuilder {
         }
     }
 
-    pub fn with_config(self, config: NetworkConfig) -> Self {
+    pub fn with_config(self, config: TransportConfig) -> Self {
         Self {
             quic_p2p: self.quic_p2p.with_config(config),
         }

@@ -38,7 +38,7 @@ use hex_fmt::HexFmt;
 use log::LevelFilter;
 use routing::{
     event::{Connected, Event},
-    NetworkConfig, Node, NodeConfig,
+    Node, NodeConfig, TransportConfig,
 };
 use std::{
     collections::HashSet,
@@ -196,7 +196,7 @@ fn start_node(
             .expect("port out of range")
     });
 
-    let network_config = NetworkConfig {
+    let transport_config = TransportConfig {
         hard_coded_contacts: contacts,
         ip: Some(ip),
         port,
@@ -210,9 +210,9 @@ fn start_node(
     // - The receiver for events that the node notifies the application about.
     // - The receiver for client network events. We don't support clients in this example, so we
     //   can ignore it
-    let (node, event_rx, _client_network_event_rx) = Node::new(NodeConfig {
+    let (node, event_rx, _client_event_rx) = Node::new(NodeConfig {
         first,
-        network_config,
+        transport_config,
         ..Default::default()
     });
 

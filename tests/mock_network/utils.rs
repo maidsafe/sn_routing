@@ -16,8 +16,8 @@ use rand::{
 use routing::{
     event::{Connected, Event},
     mock::Environment,
-    test_consts, DstLocation, FullId, NetworkConfig, Node, NodeConfig, PausedState, Prefix,
-    PublicId, RelocationOverrides, SrcLocation, XorName, Xorable,
+    test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
+    RelocationOverrides, SrcLocation, TransportConfig, XorName, Xorable,
 };
 use std::{
     cmp,
@@ -176,8 +176,8 @@ impl<'a> TestNodeBuilder<'a> {
         self
     }
 
-    pub fn network_config(mut self, config: NetworkConfig) -> Self {
-        self.config.network_config = config;
+    pub fn transport_config(mut self, config: TransportConfig) -> Self {
+        self.config.transport_config = config;
         self
     }
 
@@ -354,8 +354,8 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
-        let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
-        nodes.push(TestNode::builder(env).network_config(config).create());
+        let config = TransportConfig::node().with_hard_coded_contact(endpoint);
+        nodes.push(TestNode::builder(env).transport_config(config).create());
 
         poll_and_resend(&mut nodes);
         verify_invariant_for_all_nodes(&env, &mut nodes);
@@ -868,11 +868,11 @@ fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pr
     overrides.suppress_self_and_parents(*prefix);
 
     let mut rng = env.new_rng();
-    let config = NetworkConfig::node().with_hard_coded_contact(nodes[0].endpoint());
+    let config = TransportConfig::node().with_hard_coded_contact(nodes[0].endpoint());
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
     nodes.push(
         TestNode::builder(env)
-            .network_config(config)
+            .transport_config(config)
             .full_id(full_id)
             .create(),
     );

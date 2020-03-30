@@ -17,8 +17,8 @@ use rand::{
     Rng,
 };
 use routing::{
-    mock::Environment, FullId, NetworkConfig, NetworkParams, Prefix, PublicId, RelocationOverrides,
-    XorName,
+    mock::Environment, FullId, NetworkParams, Prefix, PublicId, RelocationOverrides,
+    TransportConfig, XorName,
 };
 use std::{iter, slice};
 
@@ -211,11 +211,11 @@ fn add_node_to_prefix(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pre
         .map(|_| rng.gen_range(0, nodes.len()))
         .find(|index| nodes[*index].inner.is_elder()));
 
-    let config = NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
+    let config = TransportConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
     nodes.push(
         TestNode::builder(env)
-            .network_config(config)
+            .transport_config(config)
             .full_id(full_id)
             .create(),
     )

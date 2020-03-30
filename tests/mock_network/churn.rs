@@ -21,7 +21,7 @@ use routing::{
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    DstLocation, FullId, NetworkConfig, NetworkParams, Prefix, SrcLocation, XorName, Xorable,
+    DstLocation, FullId, NetworkParams, Prefix, SrcLocation, TransportConfig, XorName, Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -412,10 +412,10 @@ fn add_nodes(
         } else {
             0
         };
-        let network_config =
-            NetworkConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
+        let transport_config =
+            TransportConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
         let node = TestNode::builder(env)
-            .network_config(network_config)
+            .transport_config(transport_config)
             .full_id(FullId::within_range(rng, &prefix.range_inclusive()))
             .create();
         added_nodes.push(node);

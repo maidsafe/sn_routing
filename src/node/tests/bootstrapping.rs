@@ -12,7 +12,7 @@ use crate::{
     mock::Environment,
     node::{Node, NodeConfig, BOOTSTRAP_TIMEOUT},
     quic_p2p::{Builder, EventSenders, Peer},
-    NetworkConfig, NetworkEvent,
+    TransportConfig, TransportEvent,
 };
 use crossbeam_channel::{self as mpmc, TryRecvError};
 use fake_clock::FakeClock;
@@ -30,7 +30,7 @@ fn lose_proxy_connection() {
         (EventSenders { node_tx, client_tx }, node_rx)
     };
     let node_a_endpoint = env.gen_addr();
-    let node_a_config = NetworkConfig::node().with_endpoint(node_a_endpoint);
+    let node_a_config = TransportConfig::node().with_endpoint(node_a_endpoint);
     let node_a_network_service = Builder::new(node_a_event_tx)
         .with_config(node_a_config)
         .build()
@@ -39,19 +39,19 @@ fn lose_proxy_connection() {
     // Construct a node "B" which will start in the bootstrapping stage and bootstrap off the
     // network service above.
     let node_b_endpoint = env.gen_addr();
-    let node_b_config = NetworkConfig::node()
+    let node_b_config = TransportConfig::node()
         .with_hard_coded_contact(node_a_endpoint)
         .with_endpoint(node_b_endpoint);
 
     let (mut node_b, node_b_event_rx, _) = Node::new(NodeConfig {
-        network_config: node_b_config,
+        transport_config: node_b_config,
         ..Default::default()
     });
 
     // Check that A received `ConnectedTo` from B.
     env.poll();
     match node_a_event_rx.try_recv().unwrap() {
-        NetworkEvent::ConnectedTo {
+        TransportEvent::ConnectedTo {
             peer: Peer::Node { .. },
         } => (),
         ev => panic!(
@@ -67,7 +67,7 @@ fn lose_proxy_connection() {
 
     // Check that A received the `BootstrapRequest` from B.
     env.poll();
-    if let NetworkEvent::NewMessage { peer, msg } = node_a_event_rx.try_recv().unwrap() {
+    if let TransportEvent::NewMessage { peer, msg } = node_a_event_rx.try_recv().unwrap() {
         assert_eq!(peer.peer_addr(), node_b_endpoint);
 
         let message = Message::from_bytes(&msg).unwrap();

@@ -40,15 +40,15 @@ impl Core {
     pub fn new(
         mut config: NodeConfig,
         timer_tx: Sender<u64>,
-        network_event_tx: EventSenders,
+        transport_event_tx: EventSenders,
         user_event_tx: Sender<Event>,
     ) -> Self {
         let mut rng = config.rng;
         let full_id = config.full_id.unwrap_or_else(|| FullId::gen(&mut rng));
 
-        config.network_config.our_type = OurType::Node;
-        let transport = match TransportBuilder::new(network_event_tx)
-            .with_config(config.network_config)
+        config.transport_config.our_type = OurType::Node;
+        let transport = match TransportBuilder::new(transport_event_tx)
+            .with_config(config.transport_config)
             .build()
         {
             Ok(transport) => transport,

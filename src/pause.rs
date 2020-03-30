@@ -14,7 +14,7 @@ use crate::{
     parsec::ParsecMap,
     signature_accumulator::SignatureAccumulator,
     transport::Transport,
-    NetworkEvent,
+    TransportEvent,
 };
 use crossbeam_channel as mpmc;
 use std::collections::VecDeque;
@@ -35,7 +35,7 @@ pub struct PausedState {
     pub(super) msg_queue: VecDeque<QueuedMessage>,
     // TODO: instead of storing both transport and network_rx, store only the network config.
     pub(super) transport: Transport,
-    pub(super) network_rx: Option<mpmc::Receiver<NetworkEvent>>,
+    pub(super) transport_rx: Option<mpmc::Receiver<TransportEvent>>,
     pub(super) sig_accumulator: SignatureAccumulator,
     pub(super) parsec_map: ParsecMap,
 }
