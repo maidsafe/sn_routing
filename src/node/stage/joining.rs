@@ -24,7 +24,7 @@ pub const JOIN_TIMEOUT: Duration = Duration::from_secs(600);
 
 // The joining stage - node is waiting to be approved by the section.
 pub struct Joining {
-    pub network_cfg: NetworkParams,
+    pub network_params: NetworkParams,
     // EldersInfo of the section we are joining.
     elders_info: EldersInfo,
     // Whether we are joining as infant or relocating.
@@ -34,7 +34,7 @@ pub struct Joining {
 impl Joining {
     pub fn new(
         core: &mut Core,
-        network_cfg: NetworkParams,
+        network_params: NetworkParams,
         elders_info: EldersInfo,
         relocate_payload: Option<RelocatePayload>,
     ) -> Self {
@@ -47,7 +47,7 @@ impl Joining {
         };
 
         let stage = Self {
-            network_cfg,
+            network_params,
             elders_info,
             join_type,
         };
