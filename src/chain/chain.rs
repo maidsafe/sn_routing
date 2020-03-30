@@ -44,7 +44,7 @@ pub const fn delivery_group_size(n: usize) -> usize {
 /// Data chain.
 pub struct Chain {
     /// Network parameters
-    network_cfg: NetworkParams,
+    network_params: NetworkParams,
     /// This node's public ID.
     our_id: PublicId,
     /// Our current Section BLS keys.
@@ -78,17 +78,17 @@ pub struct Chain {
 impl Chain {
     /// Returns the number of elders per section
     pub fn elder_size(&self) -> usize {
-        self.network_cfg.elder_size
+        self.network_params.elder_size
     }
 
     /// Returns the safe section size.
     pub fn safe_section_size(&self) -> usize {
-        self.network_cfg.safe_section_size
+        self.network_params.safe_section_size
     }
 
     /// Returns the full `NetworkParams` structure (if present)
-    pub fn network_cfg(&self) -> NetworkParams {
-        self.network_cfg
+    pub fn network_params(&self) -> NetworkParams {
+        self.network_params
     }
 
     pub fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
@@ -113,7 +113,7 @@ impl Chain {
 
     /// Create a new chain given genesis information
     pub fn new(
-        network_cfg: NetworkParams,
+        network_params: NetworkParams,
         our_id: PublicId,
         gen_info: GenesisPfxInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
@@ -122,7 +122,7 @@ impl Chain {
         let secret_key_share = secret_key_share
             .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.elders_info));
         Self {
-            network_cfg,
+            network_params,
             our_id,
             our_section_bls_keys: SectionKeys {
                 public_key_set: gen_info.public_keys.clone(),

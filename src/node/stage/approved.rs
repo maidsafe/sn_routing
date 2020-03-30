@@ -67,7 +67,7 @@ pub struct Approved {
 
 impl Approved {
     // Create the approved stage for the first node in the network.
-    pub fn first(core: &mut Core, network_cfg: NetworkParams) -> Result<Self> {
+    pub fn first(core: &mut Core, network_params: NetworkParams) -> Result<Self> {
         let public_id = *core.full_id.public_id();
         let connection_info = core.transport.our_connection_info()?;
         let p2p_node = P2pNode::new(public_id, connection_info);
@@ -84,7 +84,7 @@ impl Approved {
 
         Ok(Self::new(
             core,
-            network_cfg,
+            network_params,
             gen_pfx_info,
             first_dkg_result.secret_key_share,
         ))
@@ -93,14 +93,14 @@ impl Approved {
     // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
-        network_cfg: NetworkParams,
+        network_params: NetworkParams,
         gen_pfx_info: GenesisPfxInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         let chain = Chain::new(
-            network_cfg,
+            network_params,
             *core.full_id.public_id(),
             gen_pfx_info.clone(),
             secret_key_share,
@@ -351,7 +351,7 @@ impl Approved {
         self.gen_pfx_info = gen_pfx_info.clone();
         self.parsec_map
             .init(&mut core.rng, core.full_id.clone(), &self.gen_pfx_info);
-        self.chain = Chain::new(self.chain.network_cfg(), *core.id(), gen_pfx_info, None);
+        self.chain = Chain::new(self.chain.network_params(), *core.id(), gen_pfx_info, None);
 
         Ok(())
     }
@@ -388,7 +388,7 @@ impl Approved {
         }
 
         Some(RelocateParams {
-            network_cfg: self.chain.network_cfg(),
+            network_params: self.chain.network_params(),
             details: signed_msg,
             conn_infos,
         })
@@ -1320,7 +1320,7 @@ impl Approved {
         self.gen_pfx_info = gen_pfx_info.clone();
         self.init_parsec(core);
         self.chain = Chain::new(
-            self.chain.network_cfg(),
+            self.chain.network_params(),
             *core.full_id.public_id(),
             gen_pfx_info,
             None,
@@ -1772,7 +1772,7 @@ struct CompleteParsecReset {
 }
 
 pub struct RelocateParams {
-    pub network_cfg: NetworkParams,
+    pub network_params: NetworkParams,
     pub conn_infos: Vec<SocketAddr>,
     pub details: SignedRelocateDetails,
 }

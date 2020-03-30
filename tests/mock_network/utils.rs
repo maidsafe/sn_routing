@@ -187,7 +187,7 @@ impl<'a> TestNodeBuilder<'a> {
     }
 
     pub fn create(mut self) -> TestNode {
-        self.config.network_params = self.env.network_cfg();
+        self.config.network_params = self.env.network_params();
         self.config.rng = self.env.new_rng();
 
         let (inner, user_event_rx, _client_rx) = Node::new(self.config);

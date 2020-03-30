@@ -466,8 +466,8 @@ impl Node {
             Stage::Bootstrapping(stage) => stage.handle_timeout(&mut self.core, token),
             Stage::Joining(stage) => {
                 if stage.handle_timeout(&mut self.core, token) {
-                    let network_cfg = stage.network_cfg;
-                    self.rebootstrap(network_cfg)
+                    let network_params = stage.network_params;
+                    self.rebootstrap(network_params)
                 }
             }
             Stage::Approved(stage) => stage.handle_timeout(&mut self.core, token),
@@ -622,9 +622,9 @@ impl Node {
                         elders_info,
                     )?,
                 Variant::NodeApproval(gen_pfx_info) => {
-                    let network_cfg = stage.network_cfg;
+                    let network_params = stage.network_params;
                     let connect_type = stage.connect_type();
-                    self.approve(network_cfg, connect_type, *gen_pfx_info)
+                    self.approve(network_params, connect_type, *gen_pfx_info)
                 }
                 Variant::Bounce {
                     elders_version,
@@ -796,14 +796,14 @@ impl Node {
     // Transition from Bootstrapping to Joining
     fn join(&mut self, params: JoinParams) {
         let JoinParams {
-            network_cfg,
+            network_params,
             elders_info,
             relocate_payload,
         } = params;
 
         self.stage = Stage::Joining(Joining::new(
             &mut self.core,
-            network_cfg,
+            network_params,
             elders_info,
             relocate_payload,
         ));
@@ -812,7 +812,7 @@ impl Node {
     // Transition from Joining to Approved
     fn approve(
         &mut self,
-        network_cfg: NetworkParams,
+        network_params: NetworkParams,
         connect_type: Connected,
         gen_pfx_info: GenesisPfxInfo,
     ) {
@@ -821,7 +821,7 @@ impl Node {
             gen_pfx_info.elders_info.prefix(),
         );
 
-        let stage = Approved::new(&mut self.core, network_cfg, gen_pfx_info, None);
+        let stage = Approved::new(&mut self.core, network_params, gen_pfx_info, None);
         self.stage = Stage::Approved(stage);
         self.core.send_event(Event::Connected(connect_type));
     }
@@ -829,12 +829,12 @@ impl Node {
     // Transition from Approved to Bootstrapping on relocation
     fn relocate(&mut self, params: RelocateParams) {
         let RelocateParams {
-            network_cfg,
+            network_params,
             conn_infos,
             details,
         } = params;
 
-        let mut stage = Bootstrapping::new(network_cfg, Some(details));
+        let mut stage = Bootstrapping::new(network_params, Some(details));
 
         for conn_info in conn_infos {
             stage.send_bootstrap_request(&mut self.core, conn_info)
@@ -844,9 +844,9 @@ impl Node {
     }
 
     // Transition from Joining to Bootstrapping on join failure
-    fn rebootstrap(&mut self, network_cfg: NetworkParams) {
+    fn rebootstrap(&mut self, network_params: NetworkParams) {
         // TODO: preserve relocation details
-        self.stage = Stage::Bootstrapping(Bootstrapping::new(network_cfg, None));
+        self.stage = Stage::Bootstrapping(Bootstrapping::new(network_params, None));
         self.core.full_id = FullId::gen(&mut self.core.rng);
         self.core.transport.bootstrap();
     }

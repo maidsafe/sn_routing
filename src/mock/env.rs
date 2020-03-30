@@ -27,13 +27,13 @@ static LOG_INIT: Once = Once::new();
 pub struct Environment {
     rng: RefCell<MainRng>,
     network: Network,
-    network_cfg: NetworkParams,
+    network_params: NetworkParams,
     seed_printer: Option<SeedPrinter>,
 }
 
 impl Environment {
     /// Construct new mock network.
-    pub fn new(network_cfg: NetworkParams) -> Self {
+    pub fn new(network_params: NetworkParams) -> Self {
         LOG_INIT.call_once(|| {
             env_logger::builder()
                 // the test framework will capture the log output and show it only on failure.
@@ -61,24 +61,24 @@ impl Environment {
         Self {
             rng: RefCell::new(MainRng::from_seed(seed)),
             network,
-            network_cfg,
+            network_params,
             seed_printer: Some(SeedPrinter::on_failure(seed)),
         }
     }
 
     /// Get the chain network config.
-    pub fn network_cfg(&self) -> NetworkParams {
-        self.network_cfg
+    pub fn network_params(&self) -> NetworkParams {
+        self.network_params
     }
 
     /// Get the number of elders
     pub fn elder_size(&self) -> usize {
-        self.network_cfg.elder_size
+        self.network_params.elder_size
     }
 
     /// Get the safe section size
     pub fn safe_section_size(&self) -> usize {
-        self.network_cfg.safe_section_size
+        self.network_params.safe_section_size
     }
 
     /// Poll the mock network.
@@ -105,7 +105,7 @@ impl Clone for Environment {
         Self {
             rng: RefCell::new(self.new_rng()),
             network: self.network.clone(),
-            network_cfg: self.network_cfg,
+            network_params: self.network_params,
             seed_printer: None,
         }
     }

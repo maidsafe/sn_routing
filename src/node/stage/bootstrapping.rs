@@ -25,7 +25,7 @@ pub const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 
 // The bootstrapping stage - node is trying to find the section to join.
 pub struct Bootstrapping {
-    pub network_cfg: NetworkParams,
+    pub network_params: NetworkParams,
     // Using `FxHashSet` for deterministic iteration order.
     pending_requests: FxHashSet<SocketAddr>,
     timeout_tokens: HashMap<u64, SocketAddr>,
@@ -34,11 +34,11 @@ pub struct Bootstrapping {
 
 impl Bootstrapping {
     pub fn new(
-        network_cfg: NetworkParams,
+        network_params: NetworkParams,
         relocate_details: Option<SignedRelocateDetails>,
     ) -> Self {
         Self {
-            network_cfg,
+            network_params,
             pending_requests: Default::default(),
             timeout_tokens: Default::default(),
             relocate_details,
@@ -110,7 +110,7 @@ impl Bootstrapping {
 
                 let relocate_payload = self.join_section(core, &elders_info)?;
                 Ok(Some(JoinParams {
-                    network_cfg: self.network_cfg,
+                    network_params: self.network_params,
                     elders_info,
                     relocate_payload,
                 }))
@@ -228,7 +228,7 @@ impl Bootstrapping {
 }
 
 pub struct JoinParams {
-    pub network_cfg: NetworkParams,
+    pub network_params: NetworkParams,
     pub elders_info: EldersInfo,
     pub relocate_payload: Option<RelocatePayload>,
 }
