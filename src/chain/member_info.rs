@@ -54,15 +54,18 @@ pub struct MemberInfo {
     pub age_counter: AgeCounter,
     pub state: MemberState,
     pub p2p_node: P2pNode,
+    // Section version at the time this node joined.
+    pub section_version: u64,
 }
 
 impl MemberInfo {
     /// Create new `MemberInfo` in the `Joined` state.
-    pub fn new(age: u8, p2p_node: P2pNode) -> Self {
+    pub fn new(age: u8, p2p_node: P2pNode, section_version: u64) -> Self {
         Self {
             age_counter: AgeCounter::from_age(age),
             state: MemberState::Joined,
             p2p_node,
+            section_version,
         }
     }
 
