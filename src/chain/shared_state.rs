@@ -38,6 +38,9 @@ pub struct SharedState {
     pub our_infos: NonEmptyList<EldersInfo>,
     /// Info about all members of our section - elders, adults and infants.
     pub our_members: BTreeMap<XorName, MemberInfo>,
+    /// Number that gets incremented every time a node joins or leaves our section - that is, every
+    /// time `our_members` changes.
+    pub section_version: u64,
     /// Maps our neighbours' prefixes to their latest signed elders infos.
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
@@ -74,6 +77,7 @@ impl SharedState {
                     age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
                     p2p_node: p2p_node.clone(),
+                    section_version: 0,
                 };
                 (*p2p_node.name(), info)
             })
@@ -84,6 +88,7 @@ impl SharedState {
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
             our_members,
+            section_version: 0,
             our_history,
             their_keys,
             their_knowledge: Default::default(),
@@ -309,6 +314,10 @@ impl SharedState {
         } else {
             index
         }
+    }
+
+    pub fn increment_section_version(&mut self) {
+        self.section_version = self.section_version.wrapping_add(1);
     }
 }
 

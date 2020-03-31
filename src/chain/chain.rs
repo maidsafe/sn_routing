@@ -510,6 +510,9 @@ impl Chain {
                     // new age to max(old_age, new_age)
                     entry.get_mut().state = MemberState::Joined;
                     entry.get_mut().set_age(age);
+                    entry.get_mut().section_version = self.state.section_version;
+
+                    self.state.increment_section_version();
                 } else {
                     // Node already joined - this should not happen.
                     log_or_panic!(
@@ -521,7 +524,12 @@ impl Chain {
             }
             Entry::Vacant(entry) => {
                 // Node joining for the first time.
-                let _ = entry.insert(MemberInfo::new(age, p2p_node.clone()));
+                let _ = entry.insert(MemberInfo::new(
+                    age,
+                    p2p_node.clone(),
+                    self.state.section_version,
+                ));
+                self.state.increment_section_version();
             }
         }
     }
@@ -540,11 +548,16 @@ impl Chain {
             .filter(|info| info.state != MemberState::Left)
         {
             let member_state = info.state;
+            let member_addr = *info.p2p_node.peer_addr();
+
             info.state = MemberState::Left;
+
             self.state
                 .relocate_queue
                 .retain(|details| &details.pub_id != pub_id);
-            (Some(*info.p2p_node.peer_addr()), member_state)
+            self.state.increment_section_version();
+
+            (Some(member_addr), member_state)
         } else {
             log_or_panic!(
                 log::Level::Error,
@@ -809,7 +822,7 @@ impl Chain {
         let mut elders: BTreeMap<_, _> = self
             .state
             .our_joined_members()
-            .sorted_by(|&(_, info1), &(_, info2)| Ord::cmp(&info2.age_counter, &info1.age_counter))
+            .sorted_by(|(_, info1), (_, info2)| self.cmp_elder_candidates(info1, info2))
             .into_iter()
             .map(|(name, info)| (*name, info.p2p_node.clone()))
             .take(self.elder_size())
@@ -831,6 +844,15 @@ impl Chain {
         );
 
         elders
+    }
+
+    // Compare candidates for the next elders. The one comparing `Less` is more likely to become
+    // elder.
+    fn cmp_elder_candidates(&self, lhs: &MemberInfo, rhs: &MemberInfo) -> Ordering {
+        // Older nodes are preferred. In case of a tie, nodes joining earlier are preferred.
+        rhs.age_counter
+            .cmp(&lhs.age_counter)
+            .then(lhs.section_version.cmp(&rhs.section_version))
     }
 
     fn eldest_members_matching_prefix(
