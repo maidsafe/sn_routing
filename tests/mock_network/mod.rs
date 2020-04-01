@@ -23,7 +23,7 @@ use routing::{
 };
 use std::collections::BTreeMap;
 
-pub const LOWERED_ELDER_SIZE: usize = 3;
+pub const LOWERED_ELDER_SIZE: usize = 4;
 
 // -----  Miscellaneous tests below  -----
 
@@ -39,7 +39,7 @@ fn test_nodes(percentage_size: usize) {
     let size = LOWERED_ELDER_SIZE * percentage_size / 100;
     let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
-        safe_section_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE + 1,
     });
     let mut nodes = create_connected_nodes(&env, size);
     verify_invariant_for_all_nodes(&env, &mut nodes);
@@ -273,8 +273,8 @@ fn multiple_joining_nodes() {
 #[test]
 fn single_split() {
     let env = Environment::new(NetworkParams {
-        elder_size: 4,
-        safe_section_size: 4,
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE + 3,
     });
     let mut nodes = Nodes(vec![]);
     trigger_split(&env, &mut nodes, &Prefix::default());
@@ -284,7 +284,7 @@ fn single_split() {
 fn multi_split() {
     let env = Environment::new(NetworkParams {
         elder_size: LOWERED_ELDER_SIZE,
-        safe_section_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE + 1,
     });
     let mut nodes = create_connected_nodes_until_split(&env, &[2, 2, 2, 2]);
     verify_invariant_for_all_nodes(&env, &mut nodes);

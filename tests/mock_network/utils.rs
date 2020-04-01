@@ -381,65 +381,37 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
 }
 
 pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: &[usize]) -> Nodes {
-    // Start first node.
-    let mut nodes = vec![TestNode::builder(env).first().create()];
-    let _ = nodes[0].poll();
-    expect_next_event!(nodes[0], Event::Connected(_));
-
-    add_connected_nodes_until_split(env, &mut nodes, prefix_lengths);
-    Nodes(nodes)
-}
-
-// This adds new nodes until the specified disjoint sections have formed.
-//
-// `prefix_lengths` is an array representing the required `bit_count`s of the section prefixes.  For
-// example passing [1, 2, 3, 3] could yield a network comprising sections [0, 100, 101, 11], or
-// passing [2, 2, 3, 3, 3, 3] could yield [000, 001, 01, 100, 101, 11], while passing [1, 1] will
-// always yield sections [0, 1].
-//
-// The array is sanity checked (e.g. it would be an error to pass [1, 1, 1]), must comprise at
-// least two elements, and every element must be no more than `8`.
-pub fn add_connected_nodes_until_split(
-    env: &Environment,
-    nodes: &mut Vec<TestNode>,
-    prefix_lengths: &[usize],
-) {
     let mut rng = env.new_rng();
-    let prefixes = gen_prefixes(&mut rng, &prefix_lengths);
 
-    // Cleanup the previous event queue
-    clear_all_event_queues(nodes, |_, _| {});
+    // The prefixes we want to create.
+    let final_prefixes = gen_prefixes(&mut rng, prefix_lengths);
 
-    // Start enough new nodes under each target prefix to trigger a split eventually.
-    let target_size = env.safe_section_size();
-    let prefixes_new_count = prefixes
+    // The sequence of prefixes to split in order to reach `final_prefixes`.
+    let mut split_sequence = final_prefixes
         .iter()
-        .map(|prefix| (*prefix, target_size))
-        .collect_vec();
-    add_nodes_to_prefixes(env, nodes, &prefixes_new_count);
+        .flat_map(|prefix| prefix.ancestors())
+        .sorted_by(|lhs, rhs| lhs.cmp_breadth_first(rhs));
+    split_sequence.dedup();
+
+    let mut nodes = Vec::new();
+
+    for prefix_to_split in split_sequence {
+        trigger_split(env, &mut nodes, &prefix_to_split)
+    }
 
     // Gather all the actual prefixes and check they are as expected.
-    let mut actual_prefixes = BTreeSet::<Prefix<XorName>>::new();
-    for node in nodes.iter() {
-        actual_prefixes.append(&mut node.inner.prefixes());
-    }
-    assert_eq!(
-        prefixes.iter().cloned().collect::<BTreeSet<_>>(),
-        actual_prefixes
-    );
+    let actual_prefixes: BTreeSet<_> = nodes
+        .iter()
+        .flat_map(|node| node.inner.prefixes())
+        .collect();
+    assert_eq!(actual_prefixes, final_prefixes.iter().copied().collect(),);
 
-    let actual_prefix_lengths: Vec<_> = prefixes.iter().map(Prefix::bit_count).collect();
-    assert_eq!(prefix_lengths, &actual_prefix_lengths[..]);
+    let actual_prefix_lengths: Vec<_> = actual_prefixes.iter().map(Prefix::bit_count).collect();
+    assert_eq!(&actual_prefix_lengths[..], prefix_lengths);
 
-    clear_all_event_queues(nodes, |node, event| match event {
-        Event::SectionSplit(..)
-        | Event::Connected(Connected::Relocate)
-        | Event::Promoted
-        | Event::Demoted => (),
-        event => panic!("Got unexpected event for {}: {:?}", node.name(), event),
-    });
+    trace!("Created testnet comprising {:?}", actual_prefixes);
 
-    trace!("Created testnet comprising {:?}", prefixes);
+    Nodes(nodes)
 }
 
 // Add connected nodes to the given prefixes until adding one extra node in any of the
