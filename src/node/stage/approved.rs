@@ -243,6 +243,7 @@ impl Approved {
     pub fn should_handle_message(&self, msg: &Message) -> bool {
         match &msg.variant {
             Variant::BootstrapRequest(_)
+            | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Bounce { .. } => true,
@@ -250,8 +251,7 @@ impl Approved {
             Variant::NeighbourInfo(_)
             | Variant::UserMessage(_)
             | Variant::AckMessage { .. }
-            | Variant::JoinRequest(_)
-            | Variant::MemberKnowledge(_) => self.chain.is_self_elder(),
+            | Variant::JoinRequest(_) => self.chain.is_self_elder(),
 
             Variant::GenesisUpdate(info) => {
                 !self.chain.is_self_elder() && self.is_genesis_update_new(info)
