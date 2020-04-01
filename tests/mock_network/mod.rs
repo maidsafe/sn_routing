@@ -45,51 +45,6 @@ fn test_nodes(percentage_size: usize) {
     verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
-pub fn count_sections_members_if_split(nodes: &[TestNode]) -> BTreeMap<Prefix<XorName>, usize> {
-    let mut counts = BTreeMap::new();
-    for pfx in nodes.iter().map(node_prefix_if_split) {
-        // Populate both sub-prefixes so the map keys cover the full address space.
-        // Needed as we use the keys to match sub-prefix of new node and we need to find it.
-        *counts.entry(pfx).or_default() += 1;
-        let _ = counts.entry(pfx.sibling()).or_default();
-    }
-    counts
-}
-
-pub fn node_prefix_if_split(node: &TestNode) -> Prefix<XorName> {
-    let prefix = node.our_prefix();
-
-    let sub_prefix = [prefix.pushed(false), prefix.pushed(true)]
-        .iter()
-        .find(|ref pfx| pfx.matches(&node.name()))
-        .cloned();
-    unwrap!(sub_prefix)
-}
-
-fn new_node_prefix_without_split(
-    node: &TestNode,
-    count_if_split_node: &BTreeMap<Prefix<XorName>, usize>,
-    safe_section_size: usize,
-) -> Option<Prefix<XorName>> {
-    let (sub_prefix, count) = unwrap!(count_if_split_node
-        .iter()
-        .find(|(pfx, _)| pfx.matches(&node.name())));
-
-    if *count < safe_section_size * 2 - 1 {
-        return Some(*sub_prefix);
-    }
-    None
-}
-
-fn can_accept_node_without_split(
-    count_if_split_node: &BTreeMap<Prefix<XorName>, usize>,
-    safe_section_size: usize,
-) -> bool {
-    count_if_split_node
-        .values()
-        .any(|count| *count < safe_section_size * 2 - 1)
-}
-
 fn create_node_with_contact(env: &Environment, contact: &mut TestNode) -> TestNode {
     let config = TransportConfig::node().with_hard_coded_contact(contact.endpoint());
     TestNode::builder(&env).transport_config(config).create()
@@ -219,54 +174,32 @@ fn multiple_joining_nodes() {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
+
+    let iterations = 10;
+    let min_adds_per_iteration = 2;
+    let max_adds_per_iteration = 10;
+
+    let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
 
-    while nodes.len() < 25 {
-        let initial_size = nodes.len();
-        info!("Size {}", nodes.len());
-
-        let mut count_if_split_node = count_sections_members_if_split(&nodes);
-        let safe_section_size = unwrap!(nodes[0].inner.safe_section_size());
-
-        // Try adding five nodes at once, possibly to the same section. This makes sure one section
-        // can handle this, either by adding the nodes in sequence or by rejecting some.
-        // Ensure we do not create a situation when a recursive split will occur.
-        let count = 5;
-        for _ in 0..count {
-            if !can_accept_node_without_split(&count_if_split_node, safe_section_size) {
-                break;
-            }
-
-            loop {
-                let node = create_node_with_contact(&env, &mut nodes[0]);
-                let valid_sub_prefix =
-                    new_node_prefix_without_split(&node, &count_if_split_node, safe_section_size);
-
-                if let Some(sub_prefix) = valid_sub_prefix {
-                    *unwrap!(count_if_split_node.get_mut(&sub_prefix)) += 1;
-                    nodes.push(node);
-                    break;
-                } else {
-                    info!("Invalid node {:?}, {:?}", node.name(), count_if_split_node);
-                }
-            }
-        }
-        let count = nodes.len() - initial_size;
-
-        poll_and_resend(&mut nodes);
-        let removed_count = remove_nodes_which_failed_to_connect(&mut nodes, count);
-        let nodes_added: Vec<_> = nodes
-            .iter()
-            .rev()
-            .take(count - removed_count)
-            .map(TestNode::name)
+    for _ in 0..iterations {
+        let adds = rng.gen_range(min_adds_per_iteration, max_adds_per_iteration + 1);
+        let mut nodes_to_add: Vec<_> = (0..adds)
+            .map(|_| create_node_with_contact(&env, &mut nodes[0]))
             .collect();
-        info!("Added Nodes: {:?}", nodes_added);
-        verify_invariant_for_all_nodes(&env, &mut nodes);
-        assert!(
-            !nodes_added.is_empty(),
-            "Should always handle at least one node"
+
+        info!(
+            "Simultaneously adding nodes: {}",
+            nodes_to_add.iter().map(|node| node.name()).format(", ")
         );
+
+        nodes.append(&mut nodes_to_add);
+        poll_and_resend(&mut nodes);
+    }
+
+    // Verify all nodes joined.
+    for node in nodes.iter() {
+        assert!(node.inner.is_approved());
     }
 }
 
