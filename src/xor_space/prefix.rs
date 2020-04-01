@@ -120,6 +120,15 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         }
     }
 
+    /// Compares the prefixes using breadth-first order. That is, shorter prefixes are ordered
+    /// before longer. This is in contrast with the default `Ord` impl of `Prefix` which uses
+    /// depth-first order.
+    pub fn cmp_breadth_first(&self, other: &Self) -> Ordering {
+        self.bit_count
+            .cmp(&other.bit_count)
+            .then_with(|| self.name.cmp(&other.name))
+    }
+
     /// Returns the smallest name matching the prefix
     pub fn lower_bound(&self) -> T {
         self.name.set_remaining(self.bit_count(), false)
@@ -194,6 +203,24 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
             self.with_flipped_bit((self.bit_count - 1) as usize)
         } else {
             *self
+        }
+    }
+
+    /// Returns the ancestors of this prefix that has the given bit count.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `bit_count` is not less than the bit count of this prefix.
+    pub fn ancestor(&self, bit_count: usize) -> Prefix<T> {
+        assert!(bit_count < self.bit_count());
+        Self::new(bit_count, self.name)
+    }
+
+    /// Returns an iterator that yields all ancestors of this prefix.
+    pub fn ancestors(&self) -> Ancestors<T> {
+        Ancestors {
+            target: *self,
+            current_len: 0,
         }
     }
 }
@@ -285,53 +312,108 @@ impl FromStr for Prefix<XorName> {
     }
 }
 
+/// Iterator that yields the ancestors of the given prefix starting at the root prefix.
+/// Does not include the prefix itself.
+pub struct Ancestors<T: Clone + Copy + Default + Binary + Xorable> {
+    target: Prefix<T>,
+    current_len: usize,
+}
+
+impl<T> Iterator for Ancestors<T>
+where
+    T: Clone + Copy + Default + Binary + Xorable,
+{
+    type Item = Prefix<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_len < self.target.bit_count() {
+            let output = self.target.ancestor(self.current_len);
+            self.current_len += 1;
+            Some(output)
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::unwrap;
+    use crate::rng;
+    use rand::seq::SliceRandom;
 
     #[test]
     fn prefix() {
-        assert_eq!(
-            unwrap!(Prefix::<u8>::from_str("101")).pushed(true),
-            unwrap!(Prefix::<u8>::from_str("1011"))
-        );
-        assert_eq!(
-            unwrap!(Prefix::<u8>::from_str("101")).pushed(false),
-            unwrap!(Prefix::<u8>::from_str("1010"))
-        );
-        assert_eq!(
-            unwrap!(Prefix::<u8>::from_str("1011")).popped(),
-            unwrap!(Prefix::<u8>::from_str("101"))
-        );
-        assert!(unwrap!(Prefix::<u8>::from_str("101"))
-            .is_compatible(&unwrap!(Prefix::<u8>::from_str("1010"))));
-        assert!(unwrap!(Prefix::<u8>::from_str("1010"))
-            .is_compatible(&unwrap!(Prefix::<u8>::from_str("101"))));
-        assert!(!unwrap!(Prefix::<u8>::from_str("1010"))
-            .is_compatible(&unwrap!(Prefix::<u8>::from_str("1011"))));
-        assert!(unwrap!(Prefix::<u8>::from_str("101"))
-            .is_neighbour(&unwrap!(Prefix::<u8>::from_str("1111"))));
-        assert!(!unwrap!(Prefix::<u8>::from_str("1010"))
-            .is_neighbour(&unwrap!(Prefix::<u8>::from_str("1111"))));
-        assert!(unwrap!(Prefix::<u8>::from_str("1010"))
-            .is_neighbour(&unwrap!(Prefix::<u8>::from_str("10111"))));
-        assert!(!unwrap!(Prefix::<u8>::from_str("101"))
-            .is_neighbour(&unwrap!(Prefix::<u8>::from_str("10111"))));
-        assert!(unwrap!(Prefix::<u8>::from_str("101")).matches(&0b1010_1100));
-        assert!(!unwrap!(Prefix::<u8>::from_str("1011")).matches(&0b1010_1100));
+        assert_eq!(parse("101").pushed(true), parse("1011"));
+        assert_eq!(parse("101").pushed(false), parse("1010"));
+        assert_eq!(parse("1011").popped(), parse("101"));
+        assert!(parse("101").is_compatible(&parse("1010")));
+        assert!(parse("1010").is_compatible(&parse("101")));
+        assert!(!parse("1010").is_compatible(&parse("1011")));
+        assert!(parse("101").is_neighbour(&parse("1111")));
+        assert!(!parse("1010").is_neighbour(&parse("1111")));
+        assert!(parse("1010").is_neighbour(&parse("10111")));
+        assert!(!parse("101").is_neighbour(&parse("10111")));
+        assert!(parse("101").matches(&0b1010_1100));
+        assert!(!parse("1011").matches(&0b1010_1100));
 
-        assert_eq!(
-            unwrap!(Prefix::<u8>::from_str("0101")).lower_bound(),
-            0b0101_0000
-        );
-        assert_eq!(
-            unwrap!(Prefix::<u8>::from_str("0101")).upper_bound(),
-            0b0101_1111
-        );
+        assert_eq!(parse("0101").lower_bound(), 0b0101_0000);
+        assert_eq!(parse("0101").upper_bound(), 0b0101_1111);
 
         // Check we handle passing an excessive `bit_count` to `new()`.
         assert_eq!(Prefix::<u64>::new(64, 0).bit_count(), 64);
         assert_eq!(Prefix::<u64>::new(65, 0).bit_count(), 64);
+    }
+
+    #[test]
+    fn breadth_first_order() {
+        let expected = [
+            parse(""),
+            parse("0"),
+            parse("1"),
+            parse("00"),
+            parse("01"),
+            parse("10"),
+            parse("11"),
+            parse("000"),
+            parse("001"),
+            parse("010"),
+            parse("011"),
+            parse("100"),
+            parse("101"),
+            parse("110"),
+            parse("111"),
+        ];
+
+        let mut rng = rng::new();
+
+        for _ in 0..100 {
+            let mut actual = expected;
+            actual.shuffle(&mut rng);
+            actual.sort_by(|lhs, rhs| lhs.cmp_breadth_first(rhs));
+
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn ancestors() {
+        assert_eq!(parse("").ancestors().collect::<Vec<_>>(), vec![]);
+
+        assert_eq!(parse("0").ancestors().collect::<Vec<_>>(), vec![parse("")]);
+
+        assert_eq!(
+            parse("01").ancestors().collect::<Vec<_>>(),
+            vec![parse(""), parse("0")]
+        );
+
+        assert_eq!(
+            parse("011").ancestors().collect::<Vec<_>>(),
+            vec![parse(""), parse("0"), parse("01")]
+        );
+    }
+
+    fn parse(input: &str) -> Prefix<u8> {
+        Prefix::from_str(input).unwrap()
     }
 }
