@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode};
+use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode, LOWERED_ELDER_SIZE};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
     section_proof_slice_for_test, AccumulatingMessage, DstLocation, FullId, Message, NetworkParams,
@@ -15,15 +15,18 @@ use routing::{
 use std::{collections::BTreeMap, iter, net::SocketAddr};
 
 fn get_prefix(node: &TestNode) -> Prefix<XorName> {
-    *unwrap!(node.inner.our_prefix())
+    *node.inner.our_prefix().unwrap()
 }
 
 fn get_position_with_other_prefix(nodes: &Nodes, prefix: &Prefix<XorName>) -> usize {
-    unwrap!(nodes.iter().position(|node| get_prefix(node) != *prefix))
+    nodes
+        .iter()
+        .position(|node| get_prefix(node) != *prefix)
+        .unwrap()
 }
 
 fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
-    let connection_info = unwrap!(nodes[dst].inner.our_connection_info());
+    let connection_info = nodes[dst].inner.our_connection_info().unwrap();
     let targets = vec![connection_info];
 
     let _ = nodes[src]
@@ -43,11 +46,9 @@ enum FailType {
 fn message_with_invalid_security(fail_type: FailType) {
     // Arrange
     //
-    let elder_size = 3;
-    let safe_section_size = 3;
     let mut env = Environment::new(NetworkParams {
-        elder_size,
-        safe_section_size,
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
     });
     env.expect_panic();
     let mut rng = env.new_rng();
@@ -64,13 +65,13 @@ fn message_with_invalid_security(fail_type: FailType) {
     let bls_keys = generate_bls_threshold_secret_key(&mut rng, 1);
     let bls_secret_key_share = SectionKeyShare::new_with_position(0, bls_keys.secret_key_share(0));
 
-    let socket_addr: SocketAddr = unwrap!("127.0.0.1:9999".parse());
+    let socket_addr: SocketAddr = "127.0.0.1:9999".parse().unwrap();
     let members: BTreeMap<_, _> = iter::once((
         *fake_full.public_id(),
         P2pNode::new(*fake_full.public_id(), socket_addr),
     ))
     .collect();
-    let new_info = unwrap!(elders_info_for_test(members, our_prefix, 10001));
+    let new_info = elders_info_for_test(members, our_prefix, 10001).unwrap();
 
     let content = PlainMessage {
         src: our_prefix,
@@ -80,9 +81,10 @@ fn message_with_invalid_security(fail_type: FailType) {
 
     let message = {
         let proof = match fail_type {
-            FailType::TrustedProofInvalidSig => unwrap!(nodes[our_node_pos]
+            FailType::TrustedProofInvalidSig => nodes[our_node_pos]
                 .inner
-                .prove(&DstLocation::Prefix(their_prefix))),
+                .prove(&DstLocation::Prefix(their_prefix))
+                .unwrap(),
             FailType::UntrustedProofValidSig => {
                 let invalid_prefix = our_prefix;
                 section_proof_slice_for_test(0, invalid_prefix, bls_keys.public_keys().public_key())
@@ -90,13 +92,8 @@ fn message_with_invalid_security(fail_type: FailType) {
         };
         let pk_set = bls_keys.public_keys();
 
-        let msg = unwrap!(AccumulatingMessage::new(
-            content,
-            &bls_secret_key_share,
-            pk_set,
-            proof
-        ));
-        unwrap!(msg.combine_signatures())
+        let msg = AccumulatingMessage::new(content, &bls_secret_key_share, pk_set, proof).unwrap();
+        msg.combine_signatures().unwrap()
     };
 
     // Act/Assert:
