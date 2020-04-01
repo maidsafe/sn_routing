@@ -34,9 +34,6 @@ use std::{
 // anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
 const MAX_POLL_CALLS: usize = 2000;
 
-// ----- Types -----
-type PrefixAndSize = (Prefix<XorName>, usize);
-
 // -----  Random number generation  -----
 
 pub fn gen_range<T: Rng>(rng: &mut T, low: usize, high: usize) -> usize {
@@ -388,130 +385,60 @@ pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: &[u
     Nodes(nodes)
 }
 
-// Add connected nodes to the given prefixes until adding one extra node in any of the
-// returned sub-prefixes would trigger a split in the parent prefix.
+// Add connected nodes to the given prefix until adding one extra node into the
+// returned sub-prefix would trigger a split.
 pub fn add_connected_nodes_until_one_away_from_split(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    prefixes_to_nearly_split: &[Prefix<XorName>],
-) -> Vec<Prefix<XorName>> {
-    let (prefixes_and_counts, prefixes_to_add_to_split) =
-        prefixes_and_count_to_split_with_only_one_extra_node(nodes, prefixes_to_nearly_split);
+    prefix_to_nearly_split: &Prefix<XorName>,
+) -> Prefix<XorName> {
+    let sub_prefix_last_bit = env.new_rng().gen();
+    let sub_prefix = prefix_to_nearly_split.pushed(sub_prefix_last_bit);
+    let (count0, count1) = if sub_prefix_last_bit {
+        (env.safe_section_size(), env.safe_section_size() - 1)
+    } else {
+        (env.safe_section_size() - 1, env.safe_section_size())
+    };
 
-    add_connected_nodes_until_sized(env, nodes, &prefixes_and_counts);
-    prefixes_to_add_to_split
-}
+    add_mature_nodes(env, nodes, prefix_to_nearly_split, count0, count1);
 
-// Add connected nodes until reaching the requested size for each prefix. No split expected.
-fn add_connected_nodes_until_sized(
-    env: &Environment,
-    nodes: &mut Vec<TestNode>,
-    prefixes_new_count: &[PrefixAndSize],
-) {
-    clear_all_event_queues(nodes, |_, _| {});
-    add_nodes_to_prefixes(env, nodes, prefixes_new_count);
-    clear_all_event_queues(nodes, |_, _| {});
-
-    trace!(
-        "Filled prefixes until ready to split {:?}",
-        prefixes_new_count
-    );
-}
-
-// Start the target number of new nodes under each target prefix.
-fn add_nodes_to_prefixes(
-    env: &Environment,
-    nodes: &mut Vec<TestNode>,
-    prefixes_new_count: &[PrefixAndSize],
-) {
-    for (prefix, target_count) in prefixes_new_count {
-        let num_in_section = nodes
-            .iter()
-            .filter(|node| prefix.matches(&node.name()))
-            .count();
-        // To ensure you don't hit this assert, don't have more than `safe_section_size()` entries in
-        // `nodes` when calling this function.
-        assert!(
-            num_in_section <= *target_count,
-            "The existing nodes' names disallow creation of the requested prefixes. There are {} \
-             nodes which all belong in {:?} which exceeds the limit here of {}.",
-            num_in_section,
-            prefix,
-            target_count
-        );
-        let to_add_count = target_count - num_in_section;
-        for _ in 0..to_add_count {
-            add_node_to_section_and_poll(env, nodes, prefix);
-        }
-    }
-}
-
-// Clear all event queues applying check_event to them.
-fn clear_all_event_queues(nodes: &mut Vec<TestNode>, check_event: impl Fn(&TestNode, Event)) {
-    for node in nodes.iter_mut() {
-        trace!("Start Check with {}", node.name());
-        while let Some(event) = node.try_recv_event() {
-            check_event(node, event)
-        }
-    }
-}
-
-// Returns sub-prefixes target size to reach so we would split with one extra node.
-// The second returned field contains the sub-prefixes to add the final node to trigger the splits.
-fn prefixes_and_count_to_split_with_only_one_extra_node(
-    nodes: &[TestNode],
-    prefixes: &[Prefix<XorName>],
-) -> (Vec<PrefixAndSize>, Vec<Prefix<XorName>>) {
-    let prefixes_to_add_to_split = prefixes
-        .iter()
-        .map(|prefix| prefix_half_with_fewer_nodes(nodes, prefix))
-        .collect_vec();
-
-    let safe_section_size = unwrap!(nodes[0].inner.safe_section_size());
-
-    let mut prefixes_and_counts = Vec::new();
-    for small_prefix in &prefixes_to_add_to_split {
-        prefixes_and_counts.push((*small_prefix, safe_section_size - 1));
-        prefixes_and_counts.push((small_prefix.sibling(), safe_section_size));
-    }
-
-    (prefixes_and_counts, prefixes_to_add_to_split)
-}
-
-// Return the sub-prefix with fewer nodes.
-fn prefix_half_with_fewer_nodes(nodes: &[TestNode], prefix: &Prefix<XorName>) -> Prefix<XorName> {
-    let sub_prefixes = [prefix.pushed(false), prefix.pushed(true)];
-
-    let smaller_prefix = sub_prefixes.iter().min_by_key(|prefix| {
-        nodes
-            .iter()
-            .filter(|node| prefix.matches(&node.name()))
-            .count()
-    });
-    *unwrap!(smaller_prefix)
+    sub_prefix
 }
 
 /// Split the section by adding and/or removing nodes to/from it.
 pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     // To trigger split, we need the section to contain at least `safe_section_size` *mature* nodes
-    // from each sub-prefix. Newly added nodes start as infants and so don't count towards split.
-    // To make them mature, we need to increment their age counters 16 times (they start at age 4
-    // (age counter 16) and we need them to reach at least age 5 (age counter 32)). Age counters
-    // are incremented only when a mature node joins or leaves the section. Joining a mature node
-    // would require relocating it from another section, so to keep things simple (and also to
-    // allow splitting the root section too where there is no other section to relocate from), we
-    // will be only removing mature nodes here. So we need to remove 16 mature nodes and still
-    // remain with enough nodes at the end.
-    //
-    // This algorithm consist of three phases:
-    //
-    // 1. Add nodes to the section until it has exactly 16 nodes. These are the nodes that will be
-    //    removed in phase 3.
-    // 2. Add 2 * `safe_section_size` more nodes. Half from one sub-prefix, other half from the
-    //    other. These are the nodes that will remain in the two sub-sections.
-    // 3. Remove the first 16 nodes in order to make the last 2 * safe_section_size nodes age and
-    //    become mature. This is done carefully so that we only remove nodes that are mature and
-    //    never remove any of the last 2 * safe_section_size nodes.
+    // from each sub-prefix.
+    add_mature_nodes(
+        env,
+        nodes,
+        prefix,
+        env.safe_section_size(),
+        env.safe_section_size(),
+    );
+
+    // Verify the split actually happened.
+    poll_until_split(nodes, prefix);
+    info!("Split finished");
+}
+
+/// Add/remove nodes to the given section until it has exactly `count0` mature nodes from the
+/// 0-ending subprefix and `count1` mature nodes from the 1-ending subprefix.
+/// Note: if `count0` and `count1` are both at least `safe_section_size`, this causes the section
+/// to split.
+pub fn add_mature_nodes(
+    env: &Environment,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+    count0: usize,
+    count1: usize,
+) {
+    // New nodes start as infants at age counter 16. We need to increase their age counters to 32
+    // in order for them to become adults. To do that, we need to add or remove 16 other mature
+    // nodes. Adding mature node can be done only by relocating it from another section, so for
+    // simplicity we will be only removing nodes here.
+
+    // TODO: consider using relocations from other sections (if there are any) too.
 
     assert!(
         env.elder_size() > 3,
@@ -521,9 +448,6 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
 
     let sub_prefix0 = prefix.pushed(false);
     let sub_prefix1 = prefix.pushed(true);
-
-    // The desired number of nodes in each sub-prefix.
-    let target_size = env.safe_section_size();
 
     // Number of times to increment the age counters so all nodes are mature. That is, the number
     // of mature nodes to remove.
@@ -548,8 +472,7 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
     // promoted to replace previously removed elders and thus themselves being removed too. We want
     // to first add the nodes that will be removed and then the nodes that will remain.
 
-    // These nodes can go into any sub-prefix because they will be removed anyway, together with the
-    // nodes already in the section (if any).
+    // First add the nodes that will be removed later. These can go into any sub-prefix.
     let temp_count = remove_count.saturating_sub(current_count);
     info!("Adding {} temporary nodes", temp_count);
     for _ in 0..temp_count {
@@ -558,11 +481,12 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
 
     poll_and_resend(nodes);
 
-    // Of the remaining nodes, half must go to one sub-prefix and half to the other. Add them in
-    // random order to avoid accidentally relying on them being in any particular order.
-    info!("Adding {} final nodes", 2 * target_size);
-    let mut remaining0 = target_size;
-    let mut remaining1 = target_size;
+    // Of the remaining nodes, `count0` goes to the 0-ending sub-prefix and `count` to the
+    // 1-ending. Add them in random order to avoid accidentally relying on them being in any
+    // particular order.
+    info!("Adding {} final nodes", count0 + count1);
+    let mut remaining0 = count0;
+    let mut remaining1 = count1;
 
     loop {
         let bit = if remaining0 > 0 && remaining1 > 0 {
@@ -590,21 +514,17 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
     info!("Removing {} mature nodes", remove_count);
     for _ in 0..remove_count {
         // Note: removing only elders for simplicity. Also making sure we don't remove any of the
-        // last `2 * safe_section_size` nodes.
-        remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - 2 * target_size);
+        // last `count0 + count1` nodes.
+        remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
         poll_and_resend(nodes);
     }
 
     // Count the number of nodes in each sub-prefix and verify they are as expected.
-    let new_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
-    assert_eq!(new_count0, target_size);
+    let actual_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
+    assert_eq!(actual_count0, count0);
 
-    let new_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
-    assert_eq!(new_count1, target_size);
-
-    // Verify the split actually happened.
-    poll_until_split(nodes, prefix);
-    info!("Split finished");
+    let actual_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
+    assert_eq!(actual_count1, count1);
 }
 
 fn poll_until_split(nodes: &mut [TestNode], prefix: &Prefix<XorName>) {
@@ -922,35 +842,6 @@ pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix:
 
     info!("Add node {} to {:?}", node.name(), prefix);
     nodes.push(node);
-}
-
-fn add_node_to_section_and_poll(
-    env: &Environment,
-    nodes: &mut Vec<TestNode>,
-    prefix: &Prefix<XorName>,
-) {
-    // Suppress relocations to prevent unwanted splits of other sections.
-    let mut overrides = RelocationOverrides::new();
-    overrides.suppress_self_and_parents(*prefix);
-
-    add_node_to_section(env, nodes, prefix);
-
-    // Poll until the new node transitions to the `Elder` state.
-    let elder_size = env.elder_size();
-    poll_and_resend_with_options(
-        nodes,
-        PollOptions::default().continue_if(move |nodes| {
-            nodes.len() >= elder_size
-                && nodes.iter().filter(|node| node.inner.is_elder()).count() < elder_size
-        }),
-    );
-    expect_any_event!(nodes[nodes.len() - 1], Event::Connected(_));
-    assert!(
-        prefix.matches(&nodes[nodes.len() - 1].name()),
-        "Prefix {:?} doesn't match the name {}!",
-        prefix,
-        nodes[nodes.len() - 1].name()
-    );
 }
 
 // Remove one elder node from the given prefix but only from nodes in the given index range.
