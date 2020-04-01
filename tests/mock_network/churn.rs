@@ -194,7 +194,7 @@ fn churn(params: Params) {
     let mut nodes = if params.initial_prefix_lens.is_empty() {
         create_connected_nodes(&env, env.elder_size())
     } else {
-        create_connected_nodes_until_split(&env, params.initial_prefix_lens)
+        create_connected_nodes_until_split(&env, &params.initial_prefix_lens)
     };
 
     // Grow phase - adding nodes

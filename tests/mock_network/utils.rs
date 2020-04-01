@@ -16,6 +16,7 @@ use rand::{
 use routing::{
     event::{Connected, Event},
     mock::Environment,
+    rng::MainRng,
     test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
     RelocationOverrides, SrcLocation, TransportConfig, XorName, Xorable,
 };
@@ -379,7 +380,7 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
     Nodes(nodes)
 }
 
-pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: Vec<usize>) -> Nodes {
+pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: &[usize]) -> Nodes {
     // Start first node.
     let mut nodes = vec![TestNode::builder(env).first().create()];
     let _ = nodes[0].poll();
@@ -401,13 +402,10 @@ pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: Vec
 pub fn add_connected_nodes_until_split(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
-    mut prefix_lengths: Vec<usize>,
+    prefix_lengths: &[usize],
 ) {
-    // Get sorted list of prefixes to suit requested lengths.
-    sanity_check(&prefix_lengths);
-    prefix_lengths.sort();
     let mut rng = env.new_rng();
-    let prefixes = prefixes(&prefix_lengths, &mut rng);
+    let prefixes = gen_prefixes(&mut rng, &prefix_lengths);
 
     // Cleanup the previous event queue
     clear_all_event_queues(nodes, |_, _| {});
@@ -429,10 +427,9 @@ pub fn add_connected_nodes_until_split(
         prefixes.iter().cloned().collect::<BTreeSet<_>>(),
         actual_prefixes
     );
-    assert_eq!(
-        prefix_lengths,
-        prefixes.iter().map(Prefix::bit_count).collect::<Vec<_>>()
-    );
+
+    let actual_prefix_lengths: Vec<_> = prefixes.iter().map(Prefix::bit_count).collect();
+    assert_eq!(prefix_lengths, &actual_prefix_lengths[..]);
 
     clear_all_event_queues(nodes, |node, event| match event {
         Event::SectionSplit(..)
@@ -975,59 +972,6 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
     gen_vec(rng, size)
 }
 
-fn sanity_check(prefix_lengths: &[usize]) {
-    assert!(
-        prefix_lengths.len() > 1,
-        "There should be at least two specified prefix lengths"
-    );
-    let sum = prefix_lengths.iter().fold(0, |accumulated, &bit_count| {
-        assert!(
-            bit_count <= 8,
-            "The specified prefix lengths {:?} must each be no more than 8",
-            prefix_lengths
-        );
-        accumulated + (1 << (8 - bit_count))
-    });
-
-    match sum.cmp(&256) {
-        cmp::Ordering::Less => {
-            panic!(
-                "The specified prefix lengths {:?} would not cover the entire address space",
-                prefix_lengths
-            );
-        }
-        cmp::Ordering::Greater => {
-            panic!(
-                "The specified prefix lengths {:?} would require overlapping sections",
-                prefix_lengths
-            );
-        }
-        cmp::Ordering::Equal => (),
-    }
-}
-
-fn prefixes<T: Rng>(prefix_lengths: &[usize], rng: &mut T) -> Vec<Prefix<XorName>> {
-    let _ = prefix_lengths.iter().fold(0, |previous, &current| {
-        assert!(
-            previous <= current,
-            "Slice {:?} should be sorted.",
-            prefix_lengths
-        );
-        current
-    });
-    let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen())];
-    while prefixes.len() < prefix_lengths.len() {
-        let new_prefix = Prefix::new(prefix_lengths[prefixes.len()], rng.gen());
-        if prefixes
-            .iter()
-            .all(|prefix| !prefix.is_compatible(&new_prefix))
-        {
-            prefixes.push(new_prefix);
-        }
-    }
-    prefixes
-}
-
 fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     let mut rng = env.new_rng();
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
@@ -1090,37 +1034,99 @@ fn remove_elder_from_section_in_range(
     let _ = nodes.remove(index);
 }
 
+// Generate random prefixes with the given lengths.
+fn gen_prefixes(rng: &mut MainRng, prefix_lengths: &[usize]) -> Vec<Prefix<XorName>> {
+    validate_prefix_lenghts(&prefix_lengths);
+
+    let _ = prefix_lengths.iter().fold(0, |previous, &current| {
+        assert!(
+            previous <= current,
+            "Slice {:?} should be sorted.",
+            prefix_lengths
+        );
+        current
+    });
+
+    let mut prefixes = vec![Prefix::new(prefix_lengths[0], rng.gen())];
+    while prefixes.len() < prefix_lengths.len() {
+        let new_prefix = Prefix::new(prefix_lengths[prefixes.len()], rng.gen());
+        if prefixes
+            .iter()
+            .all(|prefix| !prefix.is_compatible(&new_prefix))
+        {
+            prefixes.push(new_prefix);
+        }
+    }
+    prefixes
+}
+
+// Validate the prefixes generated with the given lengths. That is:
+// - there are at least two prefixes
+// - no prefix is longer than 8 bits
+// - the prefixes cover the whole xor-name space
+// - the prefixes don't overlap
+fn validate_prefix_lenghts(prefix_lengths: &[usize]) {
+    assert!(
+        prefix_lengths.len() > 1,
+        "There should be at least two specified prefix lengths"
+    );
+    let sum = prefix_lengths.iter().fold(0, |accumulated, &bit_count| {
+        assert!(
+            bit_count <= 8,
+            "The specified prefix lengths {:?} must each be no more than 8",
+            prefix_lengths
+        );
+        accumulated + (1 << (8 - bit_count))
+    });
+
+    match sum.cmp(&256) {
+        cmp::Ordering::Less => {
+            panic!(
+                "The specified prefix lengths {:?} would not cover the entire address space",
+                prefix_lengths
+            );
+        }
+        cmp::Ordering::Greater => {
+            panic!(
+                "The specified prefix lengths {:?} would require overlapping sections",
+                prefix_lengths
+            );
+        }
+        cmp::Ordering::Equal => (),
+    }
+}
+
 mod tests {
-    use super::sanity_check;
+    use super::*;
 
     #[test]
-    fn sanity_check_valid() {
-        sanity_check(&[1, 1]);
-        sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 8]);
-        sanity_check(&[8; 256]);
+    fn validate_prefix_lenghts_valid() {
+        validate_prefix_lenghts(&[1, 1]);
+        validate_prefix_lenghts(&[1, 2, 3, 4, 5, 6, 7, 8, 8]);
+        validate_prefix_lenghts(&[8; 256]);
     }
 
     #[test]
     #[should_panic(expected = "There should be at least two specified prefix lengths")]
-    fn sanity_check_no_split() {
-        sanity_check(&[0]);
+    fn validate_prefix_lenghts_no_split() {
+        validate_prefix_lenghts(&[0]);
     }
 
     #[test]
     #[should_panic(expected = "would require overlapping sections")]
-    fn sanity_check_overlapping_sections() {
-        sanity_check(&[1, 2, 2, 2]);
+    fn validate_prefix_lenghts_overlapping_sections() {
+        validate_prefix_lenghts(&[1, 2, 2, 2]);
     }
 
     #[test]
     #[should_panic(expected = "would not cover the entire address space")]
-    fn sanity_check_missing_sections() {
-        sanity_check(&[1, 2]);
+    fn validate_prefix_lenghts_missing_sections() {
+        validate_prefix_lenghts(&[1, 2]);
     }
 
     #[test]
     #[should_panic(expected = "must each be no more than 8")]
-    fn sanity_check_too_many_sections() {
-        sanity_check(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 9]);
+    fn validate_prefix_lenghts_too_many_sections() {
+        validate_prefix_lenghts(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 9]);
     }
 }
