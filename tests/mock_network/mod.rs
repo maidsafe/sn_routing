@@ -394,11 +394,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
     let long_prefix_1 = long_prefix_0.sibling();
 
     // Setup the network so the small_prefix will split with one more node in small_prefix_to_add.
-    let _ =
-        *unwrap!(
-            add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &[small_prefix],)
-                .first()
-        );
+    let _ = add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &small_prefix);
 
     // First node will trigger the split: src, destination and proxy together.
     // Other nodes validate getting relocated to a section with a proxy from section splitting
@@ -547,7 +543,7 @@ fn node_pause_and_resume_during_split() {
 
     let mut nodes = create_connected_nodes(&env, env.safe_section_size());
     let prefix =
-        add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &[Prefix::default()])[0];
+        add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &Prefix::default());
 
     let new_node_id = FullId::within_range(&mut env.new_rng(), &prefix.range_inclusive());
     node_pause_and_resume(env, nodes, new_node_id)

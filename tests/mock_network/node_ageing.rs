@@ -20,7 +20,7 @@ use rand::{
 use routing::{
     mock::Environment, rng::MainRng, NetworkParams, Prefix, PublicId, RelocationOverrides, XorName,
 };
-use std::{iter, slice};
+use std::iter;
 
 // These params are selected such that there can be a section size which allows relocation and at the same time
 // allows churn to happen which doesn't trigger split or allow churn to not increase age.
@@ -78,19 +78,14 @@ fn relocate_causing_split() {
     let source_prefix = *prefixes.choose(&mut rng).unwrap();
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
+    let trigger_prefix =
+        add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &target_prefix);
+
     add_node_to_section(&env, &mut nodes, &source_prefix);
     poll_and_resend(&mut nodes);
     let relocate_index = nodes.len() - 1;
 
-    overrides.suppress(target_prefix);
-
-    let trigger_prefixes = add_connected_nodes_until_one_away_from_split(
-        &env,
-        &mut nodes,
-        slice::from_ref(&target_prefix),
-    );
-
-    let destination = trigger_prefixes[0].substituted_in(rng.gen());
+    let destination = trigger_prefix.substituted_in(rng.gen());
     overrides.set(source_prefix, destination);
 
     // Trigger relocation.
@@ -134,11 +129,7 @@ fn relocate_during_split() {
     poll_and_resend(&mut nodes);
     let mut relocate_index = nodes.len() - 1;
 
-    let _ = add_connected_nodes_until_one_away_from_split(
-        &env,
-        &mut nodes,
-        slice::from_ref(&target_prefix),
-    );
+    let _ = add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &target_prefix);
 
     let destination = target_prefix.substituted_in(rng.gen());
     overrides.set(source_prefix, destination);
@@ -303,6 +294,10 @@ fn node_relocated(
     let relocated_id = nodes[node_index].id();
 
     for node in nodes_with_prefix(nodes, source_prefix) {
+        if !node.inner.is_elder() {
+            continue;
+        }
+
         if node.inner.is_peer_our_member(&relocated_id) {
             trace!(
                 "Node {} is member of the source section {:?} according to {}",
@@ -315,6 +310,16 @@ fn node_relocated(
     }
 
     for node in nodes_with_prefix(nodes, target_prefix) {
+        if !node.inner.is_elder() {
+            continue;
+        }
+
+        let node_prefix = node.inner.our_prefix().unwrap();
+        if node_prefix.is_extension_of(target_prefix) && !node_prefix.matches(relocated_id.name()) {
+            // Target section has split and the relocated node is in the other sub-section than this node.
+            continue;
+        }
+
         if !node.inner.is_peer_our_member(&relocated_id) {
             trace!(
                 "Node {} is not member of the target section {:?} according to {}",

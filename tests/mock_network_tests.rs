@@ -79,28 +79,6 @@ macro_rules! expect_next_event {
     };
 }
 
-/// Expects that any event raised by the node matches the given pattern
-/// (with optional pattern guard). Ignores events that do not match the pattern.
-/// Panics if the event channel is exhausted before matching event is found.
-macro_rules! expect_any_event {
-    ($node:expr, $pattern:pat) => {
-        expect_any_event!($node, $pattern if true)
-    };
-    ($node:expr, $pattern:pat if $guard:expr) => {
-        loop {
-            match $node.try_recv_event() {
-                Some($pattern) if $guard => break,
-                Some(_) => (),
-                None => panic!(
-                    "Expected Some({}) at {}, got None",
-                    stringify!($pattern),
-                    $node.name(),
-                ),
-            }
-        }
-    };
-}
-
 /// Expects that the node did not raise an even matching the given pattern, panics otherwise
 /// (ignores ticks). If no pattern given, expects that no event (except ticks) were raised.
 macro_rules! expect_no_event {
