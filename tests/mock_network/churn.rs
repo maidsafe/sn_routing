@@ -32,7 +32,6 @@ use std::{
 fn aggressive_churn() {
     churn(Params {
         message_schedule: MessageSchedule::AfterChurn,
-        grow_target_section_num: 5,
         churn_max_iterations: 20,
         ..Default::default()
     });
@@ -43,7 +42,7 @@ fn messages_during_churn() {
     churn(Params {
         initial_prefix_lens: vec![2, 2, 2, 3, 3],
         message_schedule: MessageSchedule::DuringChurn,
-        grow_target_section_num: 5,
+        grow_target_network_size: 50,
         churn_probability: 0.8,
         churn_max_section_num: 10,
         churn_max_iterations: 50,
@@ -139,8 +138,8 @@ struct Params {
     // Probability that a node is added to a section during a single iteration of the grow phase.
     // Evaluated per each section.
     grow_add_probability: f64,
-    // The grow phase lasts until the number of sections reaches this number.
-    grow_target_section_num: usize,
+    // The grow phase lasts until the number of nodes reaches at least this number.
+    grow_target_network_size: usize,
     // Maximum number of iterations for the churn phase.
     churn_max_iterations: usize,
     // Probability that any churn occurs for each iteration of the churn phase. Evaluated once per
@@ -170,7 +169,7 @@ impl Default for Params {
             initial_prefix_lens: vec![],
             message_schedule: MessageSchedule::AfterChurn,
             grow_add_probability: 1.0,
-            grow_target_section_num: 5,
+            grow_target_network_size: 10,
             churn_max_iterations: 20,
             churn_probability: 1.0,
             churn_add_probability: 0.2,
@@ -200,12 +199,13 @@ fn churn(params: Params) {
     // Grow phase - adding nodes
     //
     warn!(
-        "Churn [{} nodes, {} sections]: adding nodes",
+        "Churn [{} nodes, {} sections]: adding {} nodes",
         nodes.len(),
-        count_sections(&nodes)
+        count_sections(&nodes),
+        params.grow_target_network_size.saturating_sub(nodes.len()),
     );
     loop {
-        if count_sections(&nodes) >= params.grow_target_section_num {
+        if nodes.len() >= params.grow_target_network_size {
             break;
         }
 
@@ -222,10 +222,11 @@ fn churn(params: Params) {
 
     // Churn phase - simultaneously adding and dropping nodes
     //
+    let num_sections = count_sections(&nodes);
     warn!(
         "Churn [{} nodes, {} sections]: simultaneous adding and dropping nodes",
         nodes.len(),
-        count_sections(&nodes)
+        num_sections,
     );
     for i in 0..params.churn_max_iterations {
         warn!("Iteration {}/{}", i, params.churn_max_iterations);
@@ -237,7 +238,7 @@ fn churn(params: Params) {
                 &mut nodes,
                 params.churn_add_probability,
                 params.churn_drop_probability,
-                params.grow_target_section_num,
+                num_sections,
                 params.churn_max_section_num,
             )
         } else {
@@ -407,7 +408,7 @@ fn add_nodes(
             continue;
         }
 
-        let bootstrap_index = if nodes.len() > unwrap!(nodes[0].inner.elder_size()) {
+        let bootstrap_index = if nodes.len() > env.elder_size() {
             gen_elder_index(rng, nodes)
         } else {
             0
@@ -418,6 +419,8 @@ fn add_nodes(
             .transport_config(transport_config)
             .full_id(FullId::within_range(rng, &prefix.range_inclusive()))
             .create();
+
+        trace!("Add node {} to {:?}", node.name(), prefix);
         added_nodes.push(node);
     }
 
