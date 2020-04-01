@@ -52,7 +52,7 @@ fn message_with_invalid_security(fail_type: FailType) {
     env.expect_panic();
     let mut rng = env.new_rng();
 
-    let mut nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
+    let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
 
     let their_node_pos = 0;
     let their_prefix = get_prefix(&nodes[their_node_pos]);

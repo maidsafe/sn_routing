@@ -36,7 +36,7 @@ fn relocate_without_split() {
     let mut overrides = RelocationOverrides::new();
 
     let mut rng = env.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
+    let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
     verify_invariant_for_all_nodes(&env, &mut nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
@@ -79,7 +79,7 @@ fn relocate_causing_split() {
     let mut overrides = RelocationOverrides::new();
 
     let mut rng = env.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
+    let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
 
     let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
 
@@ -135,7 +135,7 @@ fn relocate_during_split() {
     let mut overrides = RelocationOverrides::new();
 
     let mut rng = env.new_rng();
-    let mut nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
+    let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
     let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();

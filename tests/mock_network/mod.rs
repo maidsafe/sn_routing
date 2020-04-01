@@ -286,7 +286,7 @@ fn multi_split() {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let mut nodes = create_connected_nodes_until_split(&env, vec![2, 2, 2, 2]);
+    let mut nodes = create_connected_nodes_until_split(&env, &[2, 2, 2, 2]);
     verify_invariant_for_all_nodes(&env, &mut nodes);
 }
 
@@ -391,7 +391,7 @@ fn simultaneous_joining_nodes_two_sections() {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
+    let nodes = create_connected_nodes_until_split(&env, &[1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -419,7 +419,7 @@ fn simultaneous_joining_nodes_two_sections_switch_section() {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE,
     });
-    let nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
+    let nodes = create_connected_nodes_until_split(&env, &[1, 1]);
 
     let prefix_0 = Prefix::default().pushed(false);
     let prefix_1 = Prefix::default().pushed(true);
@@ -452,7 +452,7 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
         elder_size,
         safe_section_size,
     });
-    let mut nodes = create_connected_nodes_until_split(&env, vec![1, 2, 2]);
+    let mut nodes = create_connected_nodes_until_split(&env, &[1, 2, 2]);
 
     // The created sections
     let sections = current_sections(&nodes).collect_vec();
@@ -519,7 +519,7 @@ fn check_section_info_ack() {
 
     // Act
     //
-    let nodes = create_connected_nodes_until_split(&env, vec![1, 1]);
+    let nodes = create_connected_nodes_until_split(&env, &[1, 1]);
     let node_with_sibling_knowledge: Vec<_> = nodes
         .iter()
         .filter(|node| {
