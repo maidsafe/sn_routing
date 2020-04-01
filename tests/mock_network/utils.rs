@@ -318,32 +318,6 @@ fn advance_time(duration: Duration) {
     FakeClock::advance_time(duration.as_millis().try_into().expect("time step too long"));
 }
 
-/// Checks each of the last `count` members of `nodes` for a `Connected` event, and removes those
-/// which don't fire one. Returns the number of removed nodes.
-pub fn remove_nodes_which_failed_to_connect(nodes: &mut Vec<TestNode>, count: usize) -> usize {
-    let failed_to_join: Vec<_> = nodes
-        .iter_mut()
-        .enumerate()
-        .rev()
-        .take(count)
-        .filter_map(|(index, ref mut node)| {
-            while let Some(event) = node.try_recv_event() {
-                if let Event::Connected(_) = event {
-                    return None;
-                }
-            }
-            Some(index)
-        })
-        .collect();
-    let removed_nodes: Vec<_> = failed_to_join
-        .iter()
-        .map(|index| nodes.remove(*index).name())
-        .collect();
-    info!("Failed to be Added as Nodes: {:?}", removed_nodes);
-    poll_and_resend(nodes);
-    failed_to_join.len()
-}
-
 pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
     let mut nodes = Vec::new();
 
