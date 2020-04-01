@@ -7,10 +7,10 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    add_connected_nodes_until_one_away_from_split, create_connected_nodes_until_split,
-    current_sections, node_age_counter, nodes_with_prefix, poll_and_resend,
-    poll_and_resend_with_options, verify_invariant_for_all_nodes, PollOptions, TestNode,
-    LOWERED_ELDER_SIZE,
+    add_connected_nodes_until_one_away_from_split, add_node_to_section,
+    create_connected_nodes_until_split, current_sections, indexed_nodes_with_prefix,
+    nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
+    verify_invariant_for_all_nodes, PollOptions, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -18,8 +18,7 @@ use rand::{
     Rng,
 };
 use routing::{
-    mock::Environment, rng::MainRng, FullId, NetworkParams, Prefix, PublicId, RelocationOverrides,
-    TransportConfig, XorName,
+    mock::Environment, rng::MainRng, NetworkParams, Prefix, PublicId, RelocationOverrides, XorName,
 };
 use std::{iter, slice};
 
@@ -40,28 +39,22 @@ fn relocate_without_split() {
     verify_invariant_for_all_nodes(&env, &mut nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-
-    // `nodes[0]` is the oldest node, so it's the first one to be relocated when its age increases.
-    // So let's pick the prefix it is in as the source prefix.
-    let source_prefix = *find_matching_prefix(&prefixes, &nodes[0].name());
+    let source_prefix = *prefixes.choose(&mut rng).unwrap();
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
+
+    // Add another node to the source prefix. This is the node that will be relocated.
+    add_node_to_section(&env, &mut nodes, &source_prefix);
+    poll_and_resend(&mut nodes);
+    let mut relocate_index = nodes.len() - 1;
 
     let destination = target_prefix.substituted_in(rng.gen());
     overrides.set(source_prefix, destination);
 
-    // Create enough churn events so that the age of the oldest node increases which causes it to
+    // Create enough churn events so that the age of the new node increases which causes it to
     // be relocated.
-    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
-    let num_increments = oldest_age_counter.next_power_of_two() - oldest_age_counter;
-    churn_to_increment_age_counters(&env, &mut nodes, &source_prefix, num_increments);
+    relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
     poll_and_resend(&mut nodes);
-
-    assert!(
-        target_prefix.matches(&nodes[0].name()),
-        "Verify the Node {}, got relocated to prefix {:?}",
-        nodes[0].name(),
-        target_prefix
-    );
+    verify_node_relocated(&nodes, relocate_index, &source_prefix, &target_prefix)
 }
 
 #[test]
@@ -81,11 +74,13 @@ fn relocate_causing_split() {
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
 
-    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
-
     let prefixes: Vec<_> = current_sections(&nodes).collect();
-    let source_prefix = *find_matching_prefix(&prefixes, &nodes[0].name());
+    let source_prefix = *prefixes.choose(&mut rng).unwrap();
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
+
+    add_node_to_section(&env, &mut nodes, &source_prefix);
+    poll_and_resend(&mut nodes);
+    let relocate_index = nodes.len() - 1;
 
     overrides.suppress(target_prefix);
 
@@ -99,16 +94,10 @@ fn relocate_causing_split() {
     overrides.set(source_prefix, destination);
 
     // Trigger relocation.
-    let num_increments = oldest_age_counter.next_power_of_two() - oldest_age_counter;
-    churn_to_increment_age_counters(&env, &mut nodes, &source_prefix, num_increments);
+    let relocate_index =
+        churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
     poll_and_resend(&mut nodes);
-
-    assert!(
-        target_prefix.matches(&nodes[0].name()),
-        "Verify the Node {}, got relocated to prefix {:?}",
-        nodes[0].name(),
-        target_prefix
-    );
+    verify_node_relocated(&nodes, relocate_index, &source_prefix, &target_prefix);
 
     // Check whether the destination section split.
     let split = nodes_with_prefix(&nodes, &target_prefix)
@@ -136,11 +125,14 @@ fn relocate_during_split() {
 
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
-    let oldest_age_counter = node_age_counter(&nodes, &nodes[0].name()) as usize;
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let source_prefix = *prefixes.choose(&mut rng).unwrap();
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
+
+    add_node_to_section(&env, &mut nodes, &source_prefix);
+    poll_and_resend(&mut nodes);
+    let mut relocate_index = nodes.len() - 1;
 
     let _ = add_connected_nodes_until_one_away_from_split(
         &env,
@@ -152,28 +144,21 @@ fn relocate_during_split() {
     overrides.set(source_prefix, destination);
 
     // Create churn so we are one churn away from relocation.
-    let num_increments = oldest_age_counter.next_power_of_two() - oldest_age_counter - 1;
-    churn_to_increment_age_counters(&env, &mut nodes, &source_prefix, num_increments);
+    relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 31);
 
     // Add new node, but do not poll yet.
-    add_node_to_prefix(&env, &mut nodes, &target_prefix);
+    add_node_to_section(&env, &mut nodes, &target_prefix);
 
     // One more churn to trigger the relocation.
-    churn_to_increment_age_counters(&env, &mut nodes, &source_prefix, 1);
+    relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
 
     // Poll now, so the add and the relocation happen simultaneously.
     poll_and_resend_with_options(
         &mut nodes,
-        PollOptions::default()
-            .continue_if(move |nodes| !node_relocated(nodes, 0, &source_prefix, &target_prefix)),
+        PollOptions::default().continue_if(move |nodes| {
+            !node_relocated(nodes, relocate_index, &source_prefix, &target_prefix)
+        }),
     )
-}
-
-fn find_matching_prefix<'a>(
-    prefixes: &'a [Prefix<XorName>],
-    name: &XorName,
-) -> &'a Prefix<XorName> {
-    prefixes.iter().find(|prefix| prefix.matches(name)).unwrap()
 }
 
 fn choose_other_prefix<'a, R: Rng>(
@@ -189,58 +174,39 @@ fn choose_other_prefix<'a, R: Rng>(
         .unwrap()
 }
 
-fn add_node_to_prefix(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
-    let mut rng = env.new_rng();
-
-    let bootstrap_index = iter::repeat(())
-        .map(|_| rng.gen_range(0, nodes.len()))
-        .find(|index| nodes[*index].inner.is_elder())
-        .unwrap();
-
-    let config = TransportConfig::node().with_hard_coded_contact(nodes[bootstrap_index].endpoint());
-    let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
-
-    info!("adding {} to {:?}", full_id.public_id().name(), prefix);
-    nodes.push(
-        TestNode::builder(env)
-            .transport_config(config)
-            .full_id(full_id)
-            .create(),
-    )
-}
-
-fn remove_random_non_elder_from_prefix(
+// Removes random node from the given section but makes sure it's not the node at the given index.
+// Returns the index and the id of the removed node.
+fn remove_random_node_from_section_except(
     rng: &mut MainRng,
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
-) -> TestNode {
-    if let Some(index) = nodes
-        .iter()
-        .enumerate()
-        .filter(|(_, node)| prefix.matches(&node.name()) && !node.inner.is_elder())
+    index_to_not_remove: usize,
+) -> (usize, PublicId) {
+    if let Some(index) = indexed_nodes_with_prefix(nodes, prefix)
+        .filter(|(index, _)| *index != index_to_not_remove)
         .map(|(index, _)| index)
         .choose(rng)
     {
-        info!("removing {} from {:?}", nodes[index].name(), prefix);
-        nodes.remove(index)
+        let node = nodes.remove(index);
+        info!("Remove node {} from {:?}", node.name(), prefix);
+        (index, node.id())
     } else {
-        panic!("section {:?} does not have any non-elder to remove", prefix);
+        panic!(
+            "Section {:?} does not have any nodes that can be removed",
+            prefix
+        );
     }
 }
 
-// Generate the given number of age-counter-incrementing churn events in the given section while
-// mantaining the section size such that relocation can happen but split can't.
-fn churn_to_increment_age_counters(
+// Keep adding and removing nodes until the node at the given index reaches the given age counter.
+// Returns the new index of the node in case it changed due to some nodes being removed.
+fn churn_until_age_counter(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
-    age_counter_increments: usize,
-) {
-    info!(
-        "churn_to_increment_age_counters: start (count: {}, prefix: {:?})",
-        age_counter_increments, prefix
-    );
-
+    mut node_index: usize,
+    target_age_counter: u32,
+) -> usize {
     // Keep the section size such that relocations can happen but splits can't.
     // We need NETWORK_PARAMS.elder_size + 1 excluding relocating node for it to be demoted.
     let min_section_size = (NETWORK_PARAMS.elder_size + 1) + 1;
@@ -249,12 +215,22 @@ fn churn_to_increment_age_counters(
     let max_section_size = NETWORK_PARAMS.safe_section_size - 1;
     assert!(min_section_size < max_section_size);
 
-    // Counter of performed churn events but only those that caused age counters increment.
-    // We stop iterating when this reaches `age_counter_increments`.
-    let mut useful_churns = 0;
     let mut rng = env.new_rng();
 
-    while useful_churns < age_counter_increments {
+    loop {
+        let current_age_counter = node_age_counter(nodes, &nodes[node_index].name());
+
+        info!(
+            "churn_until_age_counter - node {}, age_counter {}/{}",
+            nodes[node_index].name(),
+            current_age_counter,
+            target_age_counter
+        );
+
+        if current_age_counter >= target_age_counter {
+            break;
+        }
+
         let section_size = nodes_with_prefix(nodes, prefix).count();
         let churn = if section_size <= min_section_size {
             Churn::Add
@@ -264,18 +240,9 @@ fn churn_to_increment_age_counters(
             rng.gen()
         };
 
-        if section_size < NETWORK_PARAMS.safe_section_size {
-            useful_churns += 1;
-        }
-
-        info!(
-            "churn_to_increment_age_counters: {:?} ({}/{})",
-            churn, useful_churns, age_counter_increments
-        );
-
         match churn {
             Churn::Add => {
-                add_node_to_prefix(env, nodes, prefix);
+                add_node_to_section(env, nodes, prefix);
                 poll_and_resend_with_options(
                     nodes,
                     PollOptions::default()
@@ -283,10 +250,13 @@ fn churn_to_increment_age_counters(
                 );
             }
             Churn::Remove => {
-                // NOTE: as elder_size is only 3 here, we can't remove any elder otherwise the
-                // section would become disfunctional. For the purposes of these tests it's
-                // perfectly OK to remove just non-elders though.
-                let id = remove_random_non_elder_from_prefix(&mut rng, nodes, prefix).id();
+                let (removed_index, id) =
+                    remove_random_node_from_section_except(&mut rng, nodes, prefix, node_index);
+
+                if removed_index < node_index {
+                    node_index -= 1;
+                }
+
                 poll_and_resend_with_options(
                     nodes,
                     PollOptions::default().continue_if(move |nodes| !node_left(nodes, &id)),
@@ -295,7 +265,7 @@ fn churn_to_increment_age_counters(
         }
     }
 
-    info!("churn_to_increment_age_counters: done");
+    node_index
 }
 
 // Returns whether all nodes from its section recognize the node at the given index as joined.
@@ -330,34 +300,61 @@ fn node_relocated(
     source_prefix: &Prefix<XorName>,
     target_prefix: &Prefix<XorName>,
 ) -> bool {
-    let node_name = nodes[node_index].name();
-    for node in nodes {
-        let prefixes = node.inner.prefixes();
+    let relocated_id = nodes[node_index].id();
 
-        let in_source = prefixes
-            .iter()
-            .filter(|prefix| prefix.is_compatible(source_prefix))
-            .any(|prefix| {
-                // TODO: check all members, not just elders.
-                node.inner.section_elders(prefix).contains(&node_name)
-            });
-        if in_source {
+    for node in nodes_with_prefix(nodes, source_prefix) {
+        if node.inner.is_peer_our_member(&relocated_id) {
+            trace!(
+                "Node {} is member of the source section {:?} according to {}",
+                relocated_id.name(),
+                source_prefix,
+                node.name()
+            );
             return false;
         }
+    }
 
-        let in_target = prefixes
-            .iter()
-            .filter(|prefix| prefix.is_compatible(target_prefix))
-            .any(|prefix| {
-                // TODO: check all members, not just elders.
-                node.inner.section_elders(prefix).contains(&node_name)
-            });
-        if !in_target {
+    for node in nodes_with_prefix(nodes, target_prefix) {
+        if !node.inner.is_peer_our_member(&relocated_id) {
+            trace!(
+                "Node {} is not member of the target section {:?} according to {}",
+                relocated_id.name(),
+                target_prefix,
+                node.name()
+            );
             return false;
         }
     }
 
     true
+}
+
+fn verify_node_relocated(
+    nodes: &[TestNode],
+    node_index: usize,
+    source_prefix: &Prefix<XorName>,
+    target_prefix: &Prefix<XorName>,
+) {
+    assert!(
+        node_relocated(nodes, node_index, source_prefix, target_prefix),
+        "Node {} did not get relocated from {:?} to {:?}",
+        nodes[node_index].name(),
+        source_prefix,
+        target_prefix
+    );
+}
+
+// Returns the age counter of the node with the given name.
+fn node_age_counter(nodes: &[TestNode], name: &XorName) -> u32 {
+    if let Some(counter) = nodes
+        .iter()
+        .filter_map(|node| node.inner.member_age_counter(name))
+        .max()
+    {
+        counter
+    } else {
+        panic!("{} is not a member known to any node", name)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

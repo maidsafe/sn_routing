@@ -700,19 +700,6 @@ pub fn indexed_nodes_with_prefix<'a>(
         .filter(move |(_, node)| prefix.matches(&node.name()))
 }
 
-/// Returns the age counter of the node with the given name.
-pub fn node_age_counter(nodes: &[TestNode], name: &XorName) -> u32 {
-    if let Some(counter) = nodes
-        .iter()
-        .filter_map(|node| node.inner.member_age_counter(name))
-        .max()
-    {
-        counter
-    } else {
-        panic!("{} is not a member known to any node.", name)
-    }
-}
-
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     let our_prefix = node.our_prefix();
     let our_name = node.name();
@@ -944,7 +931,8 @@ pub fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
     gen_vec(rng, size)
 }
 
-fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
+// Create new node in the given section.
+pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Prefix<XorName>) {
     let mut rng = env.new_rng();
     let full_id = FullId::within_range(&mut rng, &prefix.range_inclusive());
 

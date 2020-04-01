@@ -421,6 +421,7 @@ impl Chain {
             details_to_add.push(PartialRelocateDetails {
                 pub_id: *member_info.p2p_node.public_id(),
                 destination,
+                // TODO: why the +1 ?
                 age: member_info.age() + 1,
             })
         }
