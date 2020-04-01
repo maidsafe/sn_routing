@@ -380,7 +380,7 @@ pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: &[u
         .collect();
     assert_eq!(actual_prefixes, final_prefixes.iter().copied().collect(),);
 
-    let actual_prefix_lengths: Vec<_> = actual_prefixes.iter().map(Prefix::bit_count).collect();
+    let actual_prefix_lengths: Vec<_> = actual_prefixes.iter().map(Prefix::bit_count).sorted();
     assert_eq!(&actual_prefix_lengths[..], prefix_lengths);
 
     trace!("Created testnet comprising {:?}", actual_prefixes);
