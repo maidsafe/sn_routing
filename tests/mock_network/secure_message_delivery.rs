@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes_until_split, poll_all, Nodes, TestNode, LOWERED_ELDER_SIZE};
+use super::{create_connected_nodes_until_split, poll_all, TestNode, LOWERED_ELDER_SIZE};
 use routing::{
     elders_info_for_test, generate_bls_threshold_secret_key, mock::Environment,
     section_proof_slice_for_test, AccumulatingMessage, DstLocation, FullId, Message, NetworkParams,
@@ -18,14 +18,14 @@ fn get_prefix(node: &TestNode) -> Prefix<XorName> {
     *node.inner.our_prefix().unwrap()
 }
 
-fn get_position_with_other_prefix(nodes: &Nodes, prefix: &Prefix<XorName>) -> usize {
+fn get_position_with_other_prefix(nodes: &[TestNode], prefix: &Prefix<XorName>) -> usize {
     nodes
         .iter()
         .position(|node| get_prefix(node) != *prefix)
         .unwrap()
 }
 
-fn send_message(nodes: &mut Nodes, src: usize, dst: usize, message: Message) {
+fn send_message(nodes: &mut [TestNode], src: usize, dst: usize, message: Message) {
     let connection_info = nodes[dst].inner.our_connection_info().unwrap();
     let targets = vec![connection_info];
 
