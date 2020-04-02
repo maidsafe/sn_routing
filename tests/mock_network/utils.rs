@@ -245,7 +245,7 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], options: PollOptions
 
     // When all nodes become idle, run a couple more iterations, advancing the time a bit after
     // each one. This should allow the nodes to process failed or bounced messages.
-    let max_final_iterations = 16;
+    let max_final_iterations = 19;
     let mut final_iterations = 0;
 
     for _ in 0..MAX_POLL_CALLS {
@@ -360,7 +360,7 @@ pub fn create_connected_nodes_until_split(
         .iter()
         .flat_map(|node| node.inner.prefixes())
         .collect();
-    assert_eq!(actual_prefixes, final_prefixes.iter().copied().collect(),);
+    assert_eq!(actual_prefixes, final_prefixes.iter().copied().collect());
 
     let actual_prefix_lengths: Vec<_> = actual_prefixes.iter().map(Prefix::bit_count).sorted();
     assert_eq!(&actual_prefix_lengths[..], prefix_lengths);
