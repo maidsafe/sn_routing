@@ -209,7 +209,7 @@ fn single_split() {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE + 3,
     });
-    let mut nodes = Nodes(vec![]);
+    let mut nodes = vec![];
     trigger_split(&env, &mut nodes, &Prefix::default());
 }
 
@@ -235,7 +235,7 @@ struct SimultaneousJoiningNode {
 // Proceed with testing joining nodes at the same time with the given configuration.
 fn simultaneous_joining_nodes(
     env: Environment,
-    mut nodes: Nodes,
+    mut nodes: Vec<TestNode>,
     nodes_to_add_setup: &[SimultaneousJoiningNode],
 ) {
     // Arrange
@@ -481,7 +481,7 @@ fn carry_out_parsec_pruning() {
     let mut nodes = create_connected_nodes(&env, init_network_size);
     poll_and_resend(&mut nodes);
 
-    let parsec_versions = |nodes: &Nodes| {
+    let parsec_versions = |nodes: &[TestNode]| {
         nodes
             .iter()
             .map(|node| node.inner.parsec_last_version())
@@ -551,7 +551,7 @@ fn node_pause_and_resume_during_split() {
 
 // Pause a random node, then add new node with the given id, then resume the paused node and verify
 // everything still works as expected.
-fn node_pause_and_resume(env: Environment, mut nodes: Nodes, new_node_id: FullId) {
+fn node_pause_and_resume(env: Environment, mut nodes: Vec<TestNode>, new_node_id: FullId) {
     let index = env.new_rng().gen_range(0, nodes.len());
     let paused_id = nodes[index].id();
     let state = nodes.remove(index).inner.pause().unwrap();

@@ -26,7 +26,7 @@ use std::{
     convert::TryInto,
     iter,
     net::SocketAddr,
-    ops::{Deref, DerefMut, Range},
+    ops::Range,
     time::Duration,
 };
 
@@ -46,24 +46,6 @@ pub fn gen_elder_index<R: Rng>(rng: &mut R, nodes: &[TestNode]) -> usize {
         if nodes[index].inner.is_elder() {
             break index;
         }
-    }
-}
-
-/// Wraps a `Vec<TestNode>`s and prints the nodes' routing tables when dropped in a panicking
-/// thread.
-pub struct Nodes(pub Vec<TestNode>);
-
-impl Deref for Nodes {
-    type Target = Vec<TestNode>;
-
-    fn deref(&self) -> &Vec<TestNode> {
-        &self.0
-    }
-}
-
-impl DerefMut for Nodes {
-    fn deref_mut(&mut self) -> &mut Vec<TestNode> {
-        &mut self.0
     }
 }
 
@@ -315,7 +297,7 @@ fn advance_time(duration: Duration) {
     FakeClock::advance_time(duration.as_millis().try_into().expect("time step too long"));
 }
 
-pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
+pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -348,10 +330,13 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Nodes {
         }
     }
 
-    Nodes(nodes)
+    nodes
 }
 
-pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: &[usize]) -> Nodes {
+pub fn create_connected_nodes_until_split(
+    env: &Environment,
+    prefix_lengths: &[usize],
+) -> Vec<TestNode> {
     let mut rng = env.new_rng();
 
     // The prefixes we want to create.
@@ -382,7 +367,7 @@ pub fn create_connected_nodes_until_split(env: &Environment, prefix_lengths: &[u
 
     trace!("Created testnet comprising {:?}", actual_prefixes);
 
-    Nodes(nodes)
+    nodes
 }
 
 // Add connected nodes to the given prefix until adding one extra node into the
