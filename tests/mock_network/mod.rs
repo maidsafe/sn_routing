@@ -267,7 +267,7 @@ fn simultaneous_joining_nodes(
                 };
 
                 let node = TestNode::builder(&env).transport_config(config).create();
-                if setup.src_section_prefix.matches(&node.name()) {
+                if setup.src_section_prefix.matches(node.name()) {
                     break node;
                 }
             }
@@ -431,7 +431,7 @@ fn check_close_names_for_elder_size_nodes() {
 
     let close_sections_complete = nodes
         .iter()
-        .all(|n| nodes.iter().all(|m| m.close_names().contains(&n.name())));
+        .all(|n| nodes.iter().all(|m| m.close_names().contains(n.name())));
     assert!(close_sections_complete);
 }
 
@@ -553,7 +553,7 @@ fn node_pause_and_resume_during_split() {
 // everything still works as expected.
 fn node_pause_and_resume(env: Environment, mut nodes: Vec<TestNode>, new_node_id: FullId) {
     let index = env.new_rng().gen_range(0, nodes.len());
-    let paused_id = nodes[index].id();
+    let paused_id = *nodes[index].id();
     let state = nodes.remove(index).inner.pause().unwrap();
 
     // Verify the other nodes do not see the node as going offline.

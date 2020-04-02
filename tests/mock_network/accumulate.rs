@@ -40,7 +40,7 @@ fn messages_accumulate_with_quorum() {
         .next()
         .unwrap();
 
-    let dst = DstLocation::Node(nodes[closest_elder_index].name()); // The closest node.
+    let dst = DstLocation::Node(*nodes[closest_elder_index].name()); // The closest node.
     let content = gen_bytes(&mut rng, 8);
 
     // The BLS scheme will require more than `participants / 3`

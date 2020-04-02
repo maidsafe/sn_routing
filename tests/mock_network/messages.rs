@@ -25,7 +25,7 @@ fn send() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = SrcLocation::Node(nodes[sender_index].id());
+    let src = SrcLocation::Node(*nodes[sender_index].id());
     let dst = DstLocation::Section(rng.gen());
     let content = gen_vec(&mut rng, 1024);
     assert!(nodes[sender_index]
@@ -73,7 +73,7 @@ fn send_and_receive() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = SrcLocation::Node(nodes[sender_index].id());
+    let src = SrcLocation::Node(*nodes[sender_index].id());
     let dst = DstLocation::Section(rng.gen());
 
     let req_content = gen_vec(&mut rng, 10);

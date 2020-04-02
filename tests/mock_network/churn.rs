@@ -75,7 +75,7 @@ fn remove_unresponsive_node() {
     // Pause a node to act as non-responsive.
     let mut rng = env.new_rng();
     let non_responsive_index = gen_elder_index(&mut rng, &nodes);
-    let non_responsive_name = nodes[non_responsive_index].name();
+    let non_responsive_name = *nodes[non_responsive_index].name();
     info!(
         "{:?} chosen as non-responsive.",
         nodes[non_responsive_index].name()
@@ -87,7 +87,7 @@ fn remove_unresponsive_node() {
     for i in 0..UNRESPONSIVE_WINDOW {
         let event = gen_vec(&mut rng, 100);
         nodes.iter_mut().for_each(|node| {
-            if node.name() == non_responsive_name {
+            if *node.name() == non_responsive_name {
                 // `chain_accumulator` gets reset during parsec pruning, which will reset the
                 // tracking of unresponsiveness as well. So this test has to assume there is no
                 // parsec pruning being carried out.
@@ -345,7 +345,7 @@ fn drop_random_nodes<R: Rng>(
     // Must drop from the end, so the indices are not invalidated.
     dropped_indices.sort();
     for index in dropped_indices.into_iter().rev() {
-        assert!(dropped_names.insert(nodes.remove(index).name()));
+        assert!(dropped_names.insert(*nodes.remove(index).name()));
     }
 
     dropped_names
@@ -448,11 +448,11 @@ fn check_added_indices(nodes: &mut [TestNode], new_indices: BTreeSet<usize>) -> 
         loop {
             match node.try_recv_event() {
                 None => {
-                    failed.push(node.name());
+                    failed.push(*node.name());
                     break;
                 }
                 Some(Event::Connected(_)) => {
-                    assert!(added.insert(node.name()));
+                    assert!(added.insert(*node.name()));
                     break;
                 }
                 _ => (),
@@ -621,6 +621,7 @@ impl Expectations {
                 .iter()
                 .filter(is_recipient)
                 .map(TestNode::name)
+                .copied()
                 .collect();
             let _ = self.sections.insert(dst, section);
         }
@@ -644,6 +645,7 @@ impl Expectations {
                     .iter()
                     .filter(in_dst_location)
                     .map(TestNode::name)
+                    .copied()
                     .collect();
                 section.extend(new_section.clone());
 
@@ -657,7 +659,7 @@ impl Expectations {
         let mut section_msgs_received = HashMap::new(); // The count of received section messages.
         for node in nodes.iter_mut() {
             let curr_name = node.name();
-            let orig_name = new_to_old_map.get(&curr_name).copied().unwrap_or(curr_name);
+            let orig_name = new_to_old_map.get(curr_name).copied().unwrap_or(*curr_name);
 
             while let Some(event) = node.try_recv_event() {
                 if let Event::MessageReceived { content, src, dst } = event {
@@ -707,7 +709,7 @@ impl Expectations {
             if let DstLocation::Node(dst_name) = key.dst {
                 // Verify that if the message destination is a single node, then that node either
                 // received it, or if not it's only because it got dropped, relocated or demoted.
-                if let Some(node) = nodes.iter().find(|node| node.name() == dst_name) {
+                if let Some(node) = nodes.iter().find(|node| *node.name() == dst_name) {
                     assert!(
                         !node.inner.is_elder(),
                         "{} failed to receive message {:?}",
@@ -749,11 +751,11 @@ fn setup_expectations<R: Rng>(
     let prefix: Prefix<XorName> = unwrap!(current_sections(nodes).choose(rng));
     let section_name = prefix.substituted_in(rng.gen());
 
-    let src_n0 = SrcLocation::Node(nodes[index0].id());
+    let src_n0 = SrcLocation::Node(*nodes[index0].id());
     let src_s0 = SrcLocation::Section(prefix);
 
-    let dst_n0 = DstLocation::Node(nodes[index0].name());
-    let dst_n1 = DstLocation::Node(nodes[index1].name());
+    let dst_n0 = DstLocation::Node(*nodes[index0].name());
+    let dst_n1 = DstLocation::Node(*nodes[index1].name());
     let dst_s0 = DstLocation::Section(section_name);
     // this makes sure we have two different sections if there exists more than one
     let dst_s1 = DstLocation::Section(!section_name);
@@ -782,7 +784,7 @@ struct RelocationMapBuilder {
 
 impl RelocationMapBuilder {
     fn new(nodes: &[TestNode]) -> Self {
-        let initial_names = nodes.iter().map(|node| node.name()).collect();
+        let initial_names = nodes.iter().map(|node| *node.name()).collect();
         Self { initial_names }
     }
 
@@ -790,7 +792,7 @@ impl RelocationMapBuilder {
         nodes
             .iter()
             .zip(self.initial_names)
-            .map(|(node, old_name)| (node.name(), old_name))
+            .map(|(node, old_name)| (*node.name(), old_name))
             .filter(|(new_name, old_name)| old_name != new_name)
             .collect()
     }
