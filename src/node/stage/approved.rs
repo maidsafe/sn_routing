@@ -625,7 +625,8 @@ impl Approved {
         if bounce {
             if let Some(sender) = sender {
                 debug!(
-                    "Unhandled message - bouncing: {:?}, hash: {:?}",
+                    "Unhandled message from {} - bouncing: {:?}, hash: {:?}",
+                    sender,
                     msg,
                     MessageHash::from_bytes(&msg_bytes)
                 );
