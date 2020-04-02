@@ -180,7 +180,7 @@ fn remove_random_node_from_section_except(
     {
         let node = nodes.remove(index);
         info!("Remove node {} from {:?}", node.name(), prefix);
-        (index, node.id())
+        (index, *node.id())
     } else {
         panic!(
             "Section {:?} does not have any nodes that can be removed",
@@ -209,7 +209,7 @@ fn churn_until_age_counter(
     let mut rng = env.new_rng();
 
     loop {
-        let current_age_counter = node_age_counter(nodes, &nodes[node_index].name());
+        let current_age_counter = node_age_counter(nodes, nodes[node_index].name());
 
         info!(
             "churn_until_age_counter - node {}, age_counter {}/{}",

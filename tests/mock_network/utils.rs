@@ -78,12 +78,12 @@ impl TestNode {
         unwrap!(self.inner.our_connection_info(), "{}", self.name())
     }
 
-    pub fn id(&self) -> PublicId {
-        *self.inner.id()
+    pub fn id(&self) -> &PublicId {
+        self.inner.id()
     }
 
-    pub fn name(&self) -> XorName {
-        *self.inner.name()
+    pub fn name(&self) -> &XorName {
+        self.inner.name()
     }
 
     pub fn close_names(&self) -> Vec<XorName> {
@@ -522,8 +522,8 @@ fn poll_until_split(nodes: &mut [TestNode], prefix: &Prefix<XorName>) {
             let mut pending = nodes
                 .iter()
                 .filter(|node| {
-                    (sub_prefix0.matches(&node.name()) && *node.our_prefix() != sub_prefix0)
-                        || (sub_prefix1.matches(&node.name()) && *node.our_prefix() != sub_prefix1)
+                    (sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0)
+                        || (sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1)
                 })
                 .map(|node| node.name())
                 .peekable();
@@ -545,7 +545,7 @@ fn poll_until_split(nodes: &mut [TestNode], prefix: &Prefix<XorName>) {
 /// events have been processed before sorting.
 pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     let _ = poll_all(nodes); // Poll
-    nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
+    nodes.sort_by(|node0, node1| name.cmp_distance(node0.name(), node1.name()));
 }
 
 /// Iterator over all nodes that belong to the given prefix.
@@ -553,9 +553,7 @@ pub fn nodes_with_prefix<'a>(
     nodes: &'a [TestNode],
     prefix: &'a Prefix<XorName>,
 ) -> impl Iterator<Item = &'a TestNode> {
-    nodes
-        .iter()
-        .filter(move |node| prefix.matches(&node.name()))
+    nodes.iter().filter(move |node| prefix.matches(node.name()))
 }
 
 /// Mutable iterator over all nodes that belong to the given prefix.
@@ -565,7 +563,7 @@ pub fn nodes_with_prefix_mut<'a>(
 ) -> impl Iterator<Item = &'a mut TestNode> {
     nodes
         .iter_mut()
-        .filter(move |node| prefix.matches(&node.name()))
+        .filter(move |node| prefix.matches(node.name()))
 }
 
 /// Iterator over all nodes that belong to the given prefix + their indices
@@ -576,7 +574,7 @@ pub fn indexed_nodes_with_prefix<'a>(
     nodes
         .iter()
         .enumerate()
-        .filter(move |(_, node)| prefix.matches(&node.name()))
+        .filter(move |(_, node)| prefix.matches(node.name()))
 }
 
 pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
@@ -585,7 +583,7 @@ pub fn verify_section_invariants_for_node(node: &TestNode, elder_size: usize) {
     let our_section_elders = node.inner.section_elders(our_prefix);
 
     assert!(
-        our_prefix.matches(&our_name),
+        our_prefix.matches(our_name),
         "{} Our prefix doesn't match our name: {:?}, {:?}",
         node.name(),
         our_prefix,
@@ -724,7 +722,7 @@ pub fn verify_section_invariants_between_nodes(nodes: &[TestNode]) {
         // Is this a problem?
         for prefix in iter::once(our_prefix).chain(node.inner.neighbour_prefixes().iter()) {
             let our_info = NodeSectionInfo {
-                node_name: our_name,
+                node_name: *our_name,
                 node_prefix: *our_prefix,
                 view_section_version: node.inner.section_elder_info_version(prefix).unwrap(),
                 view_section_elders: node.inner.section_elders(prefix),
