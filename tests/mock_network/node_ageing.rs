@@ -9,8 +9,8 @@
 use super::{
     add_connected_nodes_until_one_away_from_split, add_node_to_section,
     create_connected_nodes_until_split, current_sections, indexed_nodes_with_prefix,
-    nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
-    verify_invariant_for_all_nodes, TestNode, LOWERED_ELDER_SIZE,
+    nodes_with_prefix, poll_and_resend, poll_and_resend_with_options, verify_invariants_for_nodes,
+    TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -36,7 +36,7 @@ fn relocate_without_split() {
 
     let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    verify_invariants_for_nodes(&env, &nodes);
 
     let prefixes: Vec<_> = current_sections(&nodes).collect();
     let source_prefix = *prefixes.choose(&mut rng).unwrap();

@@ -35,8 +35,8 @@ fn test_nodes(percentage_size: usize) {
         // Require at least one non-elder to make things more interesting.
         safe_section_size: LOWERED_ELDER_SIZE + 1,
     });
-    let mut nodes = create_connected_nodes(&env, size);
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    let nodes = create_connected_nodes(&env, size);
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
 fn create_node_with_contact(env: &Environment, contact: &mut TestNode) -> TestNode {
@@ -72,8 +72,8 @@ fn single_section() {
         elder_size: sec_size,
         safe_section_size: sec_size,
     });
-    let mut nodes = create_connected_nodes(&env, sec_size);
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    let nodes = create_connected_nodes(&env, sec_size);
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn node_joins_in_front() {
     );
     poll_and_resend(&mut nodes);
 
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
 #[test]
@@ -164,8 +164,8 @@ fn multi_split() {
         elder_size: LOWERED_ELDER_SIZE,
         safe_section_size: LOWERED_ELDER_SIZE + 1,
     });
-    let mut nodes = create_connected_nodes_until_split(&env, &[2, 2, 2, 2]);
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    let nodes = create_connected_nodes_until_split(&env, &[2, 2, 2, 2]);
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
 struct SimultaneousJoiningNode {
@@ -259,7 +259,7 @@ fn simultaneous_joining_nodes(
         "Prefixes with too few elders: {:?}",
         prefixes_not_enough_elders
     );
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
 #[test]
@@ -464,7 +464,7 @@ fn carry_out_parsec_pruning() {
 
     poll_and_resend(&mut nodes);
 
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
 // The paused node does not participate until resumed, so we need enough elders to reach
@@ -524,5 +524,5 @@ fn node_pause_and_resume(env: Environment, mut nodes: Vec<TestNode>, new_node_id
     // Resume the node and verify it caugh up to the changes in the network.
     nodes.push(TestNode::resume(&env, state));
     poll_and_resend(&mut nodes);
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    verify_invariants_for_nodes(&env, &nodes);
 }

@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    create_connected_nodes, poll_all, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+    create_connected_nodes, poll_all, poll_and_resend, verify_invariants_for_nodes, TestNode,
 };
 use routing::{mock::Environment, NetworkParams};
 
@@ -34,5 +34,5 @@ fn node_drops() {
     // Trigger poll_and_resend to allow remaining nodes to gossip and
     // update their chain accordingly.
     poll_and_resend(&mut nodes);
-    verify_invariant_for_all_nodes(&env, &mut nodes);
+    verify_invariants_for_nodes(&env, &nodes);
 }
