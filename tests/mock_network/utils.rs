@@ -222,15 +222,6 @@ where
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode]) {
-    poll_and_resend_with_options(nodes, |_| false)
-}
-
-/// Polls the network until all the nodes become idle.
-/// If `continue_if` is set, keeps polling until the predicate returns `false`.
-pub fn poll_and_resend_with_options<F>(nodes: &mut [TestNode], mut continue_if: F)
-where
-    F: FnMut(&[TestNode]) -> bool,
-{
     let env = nodes[0].env.clone();
 
     let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
@@ -242,10 +233,6 @@ where
 
     poll_until(&env, nodes, |nodes| {
         if nodes.iter().any(node_busy) {
-            return false;
-        }
-
-        if continue_if(nodes) {
             return false;
         }
 
