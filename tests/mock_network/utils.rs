@@ -262,6 +262,64 @@ fn advance_time(duration: Duration) {
     FakeClock::advance_time(duration.as_millis().try_into().expect("time step too long"));
 }
 
+// Returns whether all nodes from its section recognize the node at the given index as joined.
+pub fn node_joined(nodes: &[TestNode], index: usize) -> bool {
+    if !nodes[index].inner.is_approved() {
+        return false;
+    }
+
+    let id = nodes[index].id();
+
+    nodes
+        .iter()
+        .filter(|node| node.inner.is_elder())
+        .filter(|node| {
+            node.inner
+                .our_prefix()
+                .map(|prefix| prefix.matches(id.name()))
+                .unwrap_or(false)
+        })
+        .all(|node| node.inner.is_peer_our_member(&id))
+}
+
+pub fn all_nodes_joined(nodes: &[TestNode], indices: impl IntoIterator<Item = usize>) -> bool {
+    indices.into_iter().all(|index| node_joined(nodes, index))
+}
+
+// Returns whether all nodes recognize the node with the given id as left.
+pub fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
+    nodes
+        .iter()
+        .filter(|node| node.inner.is_elder())
+        .all(|node| {
+            // Note: need both checks because even if a node has been consensused as offline, it
+            // can stil be considered as elder until the new `SectionInfo` accumulates.
+            !node.inner.is_peer_our_member(id) && !node.inner.is_peer_our_elder(id)
+        })
+}
+
+// Returns whether the section with the given prefix did split.
+pub fn section_split(nodes: &[TestNode], prefix: &Prefix<XorName>) -> bool {
+    let sub_prefix0 = prefix.pushed(false);
+    let sub_prefix1 = prefix.pushed(true);
+
+    let mut pending = nodes
+        .iter()
+        .filter(|node| {
+            (sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0)
+                || (sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1)
+        })
+        .map(|node| node.name())
+        .peekable();
+
+    if pending.peek().is_none() {
+        true
+    } else {
+        debug!("Pending split: {}", pending.format(", "));
+        false
+    }
+}
+
 pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
@@ -276,7 +334,7 @@ pub fn create_connected_nodes(env: &Environment, size: usize) -> Vec<TestNode> {
         let config = TransportConfig::node().with_hard_coded_contact(endpoint);
         nodes.push(TestNode::builder(env).transport_config(config).create());
 
-        poll_and_resend(&mut nodes);
+        poll_until(env, &mut nodes, |nodes| node_joined(nodes, nodes.len() - 1));
         verify_invariants_for_nodes(&env, &nodes);
     }
 
@@ -368,7 +426,7 @@ pub fn trigger_split(env: &Environment, nodes: &mut Vec<TestNode>, prefix: &Pref
     );
 
     // Verify the split actually happened.
-    poll_until_split(nodes, prefix);
+    poll_until(env, nodes, |nodes| section_split(nodes, prefix));
     info!("Split finished");
 }
 
@@ -424,12 +482,15 @@ pub fn add_mature_nodes(
 
     // First add the nodes that will be removed later. These can go into any sub-prefix.
     let temp_count = remove_count.saturating_sub(current_count);
+    let first_index = nodes.len();
     info!("Adding {} temporary nodes", temp_count);
     for _ in 0..temp_count {
         add_node_to_section(env, nodes, &prefix);
     }
 
-    poll_and_resend(nodes);
+    poll_until(env, nodes, |nodes| {
+        all_nodes_joined(nodes, first_index..nodes.len())
+    });
 
     // Of the remaining nodes, `count0` goes to the 0-ending sub-prefix and `count` to the
     // 1-ending. Add them in random order to avoid accidentally relying on them being in any
@@ -437,6 +498,7 @@ pub fn add_mature_nodes(
     info!("Adding {} final nodes", count0 + count1);
     let mut remaining0 = count0;
     let mut remaining1 = count1;
+    let first_index = nodes.len();
 
     loop {
         let bit = if remaining0 > 0 && remaining1 > 0 {
@@ -458,14 +520,18 @@ pub fn add_mature_nodes(
         }
     }
 
-    poll_and_resend(nodes);
+    poll_until(env, nodes, |nodes| {
+        all_nodes_joined(nodes, first_index..nodes.len())
+    });
 
     // Remove 16 mature nodes to trigger 16 age increments.
     info!("Removing {} mature nodes", remove_count);
     for _ in 0..remove_count {
         // Note: removing only elders for simplicity. Also making sure we don't remove any of the
         // last `count0 + count1` nodes.
-        remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
+        let _removed_id =
+            remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
+        // poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
         poll_and_resend(nodes);
     }
 
@@ -475,29 +541,6 @@ pub fn add_mature_nodes(
 
     let actual_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
     assert_eq!(actual_count1, count1);
-}
-
-fn poll_until_split(nodes: &mut [TestNode], prefix: &Prefix<XorName>) {
-    let sub_prefix0 = prefix.pushed(false);
-    let sub_prefix1 = prefix.pushed(true);
-
-    poll_and_resend_with_options(nodes, move |nodes| {
-        let mut pending = nodes
-            .iter()
-            .filter(|node| {
-                (sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0)
-                    || (sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1)
-            })
-            .map(|node| node.name())
-            .peekable();
-
-        if pending.peek().is_some() {
-            debug!("Pending split: {}", pending.format(", "));
-            true
-        } else {
-            false
-        }
-    })
 }
 
 // -----  Small misc functions  -----
@@ -699,19 +742,20 @@ pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix:
     nodes.push(node);
 }
 
-// Remove one elder node from the given prefix but only from nodes in the given index range.
+// Removes one elder node from the given prefix but only from nodes in the given index range.
+// Returns the id of the removed node.
 fn remove_elder_from_section_in_range(
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
     index_range: Range<usize>,
-) {
+) -> PublicId {
     let index = indexed_nodes_with_prefix(&nodes[index_range], prefix)
         .find(|(_, node)| node.inner.is_elder())
         .map(|(index, _)| index)
         .unwrap();
 
     info!("Remove node {} from {:?}", nodes[index].name(), prefix);
-    let _ = nodes.remove(index);
+    *nodes.remove(index).id()
 }
 
 // Generate random prefixes with the given lengths.

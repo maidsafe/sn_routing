@@ -7,32 +7,23 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    create_connected_nodes, poll_all, poll_and_resend, verify_invariants_for_nodes, TestNode,
+    create_connected_nodes, node_left, poll_until, verify_invariants_for_nodes, LOWERED_ELDER_SIZE,
 };
+use rand::Rng;
 use routing::{mock::Environment, NetworkParams};
-
-// Drop node at index and verify its own section detected it.
-fn drop_node(env: &Environment, nodes: &mut Vec<TestNode>, index: usize) {
-    let _ = nodes.remove(index);
-
-    // Using poll_all instead of poll_and_resend here to only let the other nodes realise the node
-    // got disconnected, but not make more progress.
-    let _ = poll_all(env, nodes);
-}
 
 #[test]
 fn node_drops() {
-    let elder_size = 8;
-    let safe_section_size = 8;
     let env = Environment::new(NetworkParams {
-        elder_size,
-        safe_section_size,
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE + 1,
     });
-    let mut nodes = create_connected_nodes(&env, elder_size + 2);
-    drop_node(&env, &mut nodes, 0);
+    let mut rng = env.new_rng();
+    let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE + 2);
 
-    // Trigger poll_and_resend to allow remaining nodes to gossip and
-    // update their chain accordingly.
-    poll_and_resend(&mut nodes);
+    let index = rng.gen_range(0, nodes.len());
+    let dropped_id = *nodes.remove(index).id();
+
+    poll_until(&env, &mut nodes, |nodes| node_left(nodes, &dropped_id));
     verify_invariants_for_nodes(&env, &nodes);
 }

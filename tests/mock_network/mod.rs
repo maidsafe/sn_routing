@@ -15,13 +15,14 @@ mod secure_message_delivery;
 mod utils;
 
 pub use self::utils::*;
+use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
     event::Event, mock::Environment, FullId, NetworkParams, Prefix, RelocationOverrides,
     TransportConfig, XorName,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 // The smallest number of elders which allows to reach consensus when one of them goes offline.
 pub const LOWERED_ELDER_SIZE: usize = 4;
@@ -105,8 +106,8 @@ fn node_joins_in_front() {
             .transport_config(transport_config)
             .create(),
     );
-    poll_and_resend(&mut nodes);
 
+    poll_until(&env, &mut nodes, |nodes| node_joined(nodes, 0));
     verify_invariants_for_nodes(&env, &nodes);
 }
 
@@ -135,13 +136,13 @@ fn multiple_joining_nodes() {
             nodes_to_add.iter().map(|node| node.name()).format(", ")
         );
 
-        nodes.append(&mut nodes_to_add);
-        poll_and_resend(&mut nodes);
-    }
+        let first_index = nodes.len();
 
-    // Verify all nodes joined.
-    for node in nodes.iter() {
-        assert!(node.inner.is_approved());
+        nodes.append(&mut nodes_to_add);
+
+        poll_until(&env, &mut nodes, |nodes| {
+            all_nodes_joined(nodes, first_index..nodes.len())
+        });
     }
 }
 
@@ -183,7 +184,6 @@ fn simultaneous_joining_nodes(
     mut nodes: Vec<TestNode>,
     nodes_to_add_setup: &[SimultaneousJoiningNode],
 ) {
-    // Arrange
     // Setup nodes so relocation will happen as specified by nodes_to_add_setup.
     //
     let mut rng = env.new_rng();
@@ -220,46 +220,42 @@ fn simultaneous_joining_nodes(
         nodes_to_add.push(node_to_add);
     }
 
-    // Act
-    // Add new nodes and process until complete
-    //
+    let first_index = nodes.len();
     nodes.extend(nodes_to_add);
-    poll_and_resend(&mut nodes);
 
-    // Assert
-    // Verify that the sections all have enough elders and other invariants
-    //
-    let non_approved = nodes
+    poll_until(&env, &mut nodes, |nodes| {
+        all_nodes_joined(nodes, first_index..nodes.len())
+            && all_sections_have_enough_elders(&env, nodes)
+    });
+
+    verify_invariants_for_nodes(&env, &nodes);
+}
+
+fn all_sections_have_enough_elders(env: &Environment, nodes: &[TestNode]) -> bool {
+    let elders_count_by_prefix = nodes
         .iter()
-        .filter(|node| !node.inner.is_approved())
-        .map(TestNode::name)
-        .collect_vec();
-    assert!(
-        non_approved.is_empty(),
-        "Should be approved: {:?}",
-        non_approved
-    );
+        .filter(|node| node.inner.is_elder())
+        .filter_map(|node| node.inner.our_prefix())
+        .fold(BTreeMap::<_, usize>::new(), |mut counts, prefix| {
+            *counts.entry(*prefix).or_default() += 1;
+            counts
+        });
 
-    let mut elders_count_by_prefix = BTreeMap::new();
-    for node in nodes.iter() {
-        if let Some(prefix) = node.inner.our_prefix() {
-            let entry = elders_count_by_prefix.entry(*prefix).or_insert(0);
-            if node.inner.is_elder() {
-                *entry += 1;
-            }
-        }
-    }
-    let prefixes_not_enough_elders = elders_count_by_prefix
+    let mut prefixes_not_enough_elders = elders_count_by_prefix
         .into_iter()
         .filter(|(_, num_elders)| *num_elders < env.elder_size())
         .map(|(prefix, _)| prefix)
-        .collect::<Vec<_>>();
-    assert!(
-        prefixes_not_enough_elders.is_empty(),
-        "Prefixes with too few elders: {:?}",
-        prefixes_not_enough_elders
-    );
-    verify_invariants_for_nodes(&env, &nodes);
+        .peekable();
+
+    if prefixes_not_enough_elders.peek().is_none() {
+        true
+    } else {
+        trace!(
+            "Prefixes with too few elders: {:?}",
+            prefixes_not_enough_elders.format(", ")
+        );
+        false
+    }
 }
 
 #[test]
@@ -366,18 +362,17 @@ fn simultaneous_joining_nodes_three_section_with_one_ready_to_split() {
 
 #[test]
 fn check_close_names_for_elder_size_nodes() {
-    let nodes = create_connected_nodes(
-        &Environment::new(NetworkParams {
-            elder_size: LOWERED_ELDER_SIZE,
-            safe_section_size: LOWERED_ELDER_SIZE,
-        }),
-        LOWERED_ELDER_SIZE,
-    );
+    let env = Environment::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE,
+    });
+    let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE);
 
-    let close_sections_complete = nodes
-        .iter()
-        .all(|n| nodes.iter().all(|m| m.close_names().contains(n.name())));
-    assert!(close_sections_complete);
+    poll_until(&env, &mut nodes, |nodes| {
+        nodes
+            .iter()
+            .all(|n| nodes.iter().all(|m| m.close_names().contains(n.name())))
+    })
 }
 
 #[test]
@@ -423,8 +418,8 @@ fn carry_out_parsec_pruning() {
         elder_size,
         safe_section_size,
     });
+    let mut rng = env.new_rng();
     let mut nodes = create_connected_nodes(&env, init_network_size);
-    poll_and_resend(&mut nodes);
 
     let parsec_versions = |nodes: &[TestNode]| {
         nodes
@@ -433,37 +428,57 @@ fn carry_out_parsec_pruning() {
             .collect_vec()
     };
 
+    let consensus_reached = |nodes: &[TestNode], expected_content: &[u8], counter: &mut usize| {
+        for node in nodes {
+            if let Some(Event::Consensus(actual_content)) = node.try_recv_event() {
+                if &actual_content[..] == expected_content {
+                    *counter += 1;
+                }
+            }
+        }
+
+        *counter == nodes.len()
+    };
+
+    // There is less than `elder_size` nodes so everyone should become elder.
+    poll_until(&env, &mut nodes, |nodes| {
+        nodes.iter().all(|node| node.inner.is_elder())
+    });
+
     let initial_parsec_versions = parsec_versions(&nodes);
 
-    let mut rng = env.new_rng();
     // Keeps polling and dispatching user data till trigger a pruning.
     let max_gossips = 1_000;
+    let mut all_parsec_versions_increased = false;
     for _ in 0..max_gossips {
         let event = gen_vec(&mut rng, 10_000);
         nodes.iter_mut().for_each(|node| {
             node.inner.vote_for_user_event(event.clone()).unwrap();
         });
-        poll_and_resend(&mut nodes);
+
+        let mut consensus_counter = 0;
+        poll_until(&env, &mut nodes, |nodes| {
+            consensus_reached(nodes, &event, &mut consensus_counter)
+        });
 
         let new_parsec_versions = parsec_versions(&nodes);
         if initial_parsec_versions
             .iter()
-            .zip(new_parsec_versions.iter())
-            .all(|(vi, vn)| vi < vn)
+            .zip(new_parsec_versions)
+            .all(|(&vi, vn)| vi < vn)
         {
+            all_parsec_versions_increased = true;
             break;
         }
     }
 
-    let expected = initial_parsec_versions.iter().map(|v| v + 1).collect_vec();
-    let actual = parsec_versions(&nodes);
-    assert_eq!(expected, actual);
+    assert!(all_parsec_versions_increased);
 
     let node = create_node_with_contact(&env, &mut nodes[0]);
     nodes.push(node);
-
-    poll_and_resend(&mut nodes);
-
+    poll_until(&env, &mut nodes, |nodes| {
+        node_joined(nodes, nodes.len() - 1)
+    });
     verify_invariants_for_nodes(&env, &nodes);
 }
 
@@ -501,8 +516,12 @@ fn node_pause_and_resume(env: Environment, mut nodes: Vec<TestNode>, new_node_id
     let paused_id = *nodes[index].id();
     let state = nodes.remove(index).inner.pause().unwrap();
 
-    // Verify the other nodes do not see the node as going offline.
-    poll_and_resend(&mut nodes);
+    // Poll the network for a while and verify the other nodes do not see the node as going offline.
+    let start_time = FakeClock::now();
+    poll_until(&env, &mut nodes, |_| {
+        start_time.elapsed() >= Duration::from_secs(60)
+    });
+
     assert!(nodes
         .iter()
         .all(|n| !n.inner.is_elder() || n.inner.is_peer_our_member(&paused_id)));
@@ -519,7 +538,9 @@ fn node_pause_and_resume(env: Environment, mut nodes: Vec<TestNode>, new_node_id
         nodes.last().unwrap().name()
     );
 
-    poll_and_resend(&mut nodes);
+    poll_until(&env, &mut nodes, |nodes| {
+        node_joined(nodes, nodes.len() - 1)
+    });
 
     // Resume the node and verify it caugh up to the changes in the network.
     nodes.push(TestNode::resume(&env, state));
