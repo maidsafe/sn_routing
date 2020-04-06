@@ -8,7 +8,7 @@
 
 use super::{
     count_sections, create_connected_nodes, create_connected_nodes_until_split, current_sections,
-    gen_elder_index, gen_range, gen_vec, poll_and_resend, verify_invariant_for_all_nodes, TestNode,
+    gen_elder_index, gen_range, gen_vec, poll_and_resend, verify_invariants_for_nodes, TestNode,
 };
 use itertools::Itertools;
 use rand::{
@@ -523,7 +523,7 @@ fn progress_and_verify<R: Rng>(
     };
 
     expectations.verify(nodes);
-    verify_invariant_for_all_nodes(env, nodes);
+    verify_invariants_for_nodes(env, nodes);
     shuffle_nodes(rng, nodes);
 }
 
