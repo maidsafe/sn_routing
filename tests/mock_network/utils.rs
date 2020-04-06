@@ -208,36 +208,15 @@ pub fn poll_all(nodes: &mut [TestNode]) -> bool {
 
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode]) {
-    poll_and_resend_with_options(nodes, PollOptions::default())
+    poll_and_resend_with_options(nodes, |_| false)
 }
 
-/// Options for polling nodes in the test network.
-pub struct PollOptions {
-    /// If set, polling continues while this predicate returns true even if all nodes are idle.
-    pub continue_predicate: Option<Box<dyn Fn(&[TestNode]) -> bool>>,
-}
-
-impl Default for PollOptions {
-    fn default() -> Self {
-        Self {
-            continue_predicate: None,
-        }
-    }
-}
-
-impl PollOptions {
-    pub fn continue_if<F>(self, pred: F) -> Self
-    where
-        F: Fn(&[TestNode]) -> bool + 'static,
-    {
-        Self {
-            continue_predicate: Some(Box::new(pred)),
-        }
-    }
-}
-
-/// Polls and processes all events, until there are no unacknowledged messages left.
-pub fn poll_and_resend_with_options(nodes: &mut [TestNode], options: PollOptions) {
+/// Polls the network until all the nodes become idle.
+/// If `continue_if` is set, keeps polling until the predicate returns `false`.
+pub fn poll_and_resend_with_options<F>(nodes: &mut [TestNode], mut continue_if: F)
+where
+    F: FnMut(&[TestNode]) -> bool,
+{
     let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
 
     // Duration to advance the time after each iteration.
@@ -255,12 +234,10 @@ pub fn poll_and_resend_with_options(nodes: &mut [TestNode], options: PollOptions
             continue;
         }
 
-        if let Some(continue_predicate) = options.continue_predicate.as_ref() {
-            if continue_predicate(nodes) {
-                // Advance time in case the predicate is timeout-triggered.
-                advance_time(time_step);
-                continue;
-            }
+        if continue_if(nodes) {
+            // Advance time in case the predicate is timeout-triggered.
+            advance_time(time_step);
+            continue;
         }
 
         if final_iterations < max_final_iterations {
@@ -516,26 +493,23 @@ fn poll_until_split(nodes: &mut [TestNode], prefix: &Prefix<XorName>) {
     let sub_prefix0 = prefix.pushed(false);
     let sub_prefix1 = prefix.pushed(true);
 
-    poll_and_resend_with_options(
-        nodes,
-        PollOptions::default().continue_if(move |nodes| {
-            let mut pending = nodes
-                .iter()
-                .filter(|node| {
-                    (sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0)
-                        || (sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1)
-                })
-                .map(|node| node.name())
-                .peekable();
+    poll_and_resend_with_options(nodes, move |nodes| {
+        let mut pending = nodes
+            .iter()
+            .filter(|node| {
+                (sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0)
+                    || (sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1)
+            })
+            .map(|node| node.name())
+            .peekable();
 
-            if pending.peek().is_some() {
-                debug!("Pending split: {}", pending.format(", "));
-                true
-            } else {
-                false
-            }
-        }),
-    )
+        if pending.peek().is_some() {
+            debug!("Pending split: {}", pending.format(", "));
+            true
+        } else {
+            false
+        }
+    })
 }
 
 // -----  Small misc functions  -----

@@ -10,7 +10,7 @@ use super::{
     add_connected_nodes_until_one_away_from_split, add_node_to_section,
     create_connected_nodes_until_split, current_sections, indexed_nodes_with_prefix,
     nodes_with_prefix, poll_and_resend, poll_and_resend_with_options,
-    verify_invariant_for_all_nodes, PollOptions, TestNode, LOWERED_ELDER_SIZE,
+    verify_invariant_for_all_nodes, TestNode, LOWERED_ELDER_SIZE,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -144,12 +144,9 @@ fn relocate_during_split() {
     relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
 
     // Poll now, so the add and the relocation happen simultaneously.
-    poll_and_resend_with_options(
-        &mut nodes,
-        PollOptions::default().continue_if(move |nodes| {
-            !node_relocated(nodes, relocate_index, &source_prefix, &target_prefix)
-        }),
-    )
+    poll_and_resend_with_options(&mut nodes, move |nodes| {
+        !node_relocated(nodes, relocate_index, &source_prefix, &target_prefix)
+    })
 }
 
 fn choose_other_prefix<'a, R: Rng>(
@@ -234,11 +231,7 @@ fn churn_until_age_counter(
         match churn {
             Churn::Add => {
                 add_node_to_section(env, nodes, prefix);
-                poll_and_resend_with_options(
-                    nodes,
-                    PollOptions::default()
-                        .continue_if(|nodes| !node_joined(nodes, nodes.len() - 1)),
-                );
+                poll_and_resend_with_options(nodes, |nodes| !node_joined(nodes, nodes.len() - 1));
             }
             Churn::Remove => {
                 let (removed_index, id) =
@@ -248,10 +241,7 @@ fn churn_until_age_counter(
                     node_index -= 1;
                 }
 
-                poll_and_resend_with_options(
-                    nodes,
-                    PollOptions::default().continue_if(move |nodes| !node_left(nodes, &id)),
-                );
+                poll_and_resend_with_options(nodes, move |nodes| !node_left(nodes, &id));
             }
         }
     }
