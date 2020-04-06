@@ -33,7 +33,7 @@ fn send() {
         .send_message(src, dst, content.clone())
         .is_ok());
 
-    let _ = poll_all(&mut nodes);
+    let _ = poll_all(&env, &mut nodes);
 
     let mut message_received_count = 0;
     for node in nodes
@@ -84,7 +84,7 @@ fn send_and_receive() {
         .send_message(src, dst, req_content.clone())
         .is_ok());
 
-    let _ = poll_all(&mut nodes);
+    let _ = poll_all(&env, &mut nodes);
 
     let mut request_received_count = 0;
 
@@ -120,7 +120,7 @@ fn send_and_receive() {
 
     assert!(request_received_count >= quorum);
 
-    let _ = poll_all(&mut nodes);
+    let _ = poll_all(&env, &mut nodes);
 
     let mut response_received_count = 0;
 
