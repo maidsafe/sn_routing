@@ -8,9 +8,9 @@
 
 use super::{
     add_connected_nodes_until_one_away_from_split, add_node_to_section,
-    create_connected_nodes_until_split, current_sections, indexed_nodes_with_prefix,
-    nodes_with_prefix, poll_and_resend, poll_and_resend_with_options, verify_invariants_for_nodes,
-    TestNode, LOWERED_ELDER_SIZE,
+    create_connected_nodes_until_split, current_sections, indexed_nodes_with_prefix, node_joined,
+    node_left, nodes_with_prefix, poll_until, verify_invariants_for_nodes, TestNode,
+    LOWERED_ELDER_SIZE,
 };
 use rand::{
     distributions::{Distribution, Standard},
@@ -44,8 +44,8 @@ fn relocate_without_split() {
 
     // Add another node to the source prefix. This is the node that will be relocated.
     add_node_to_section(&env, &mut nodes, &source_prefix);
-    poll_and_resend(&mut nodes);
     let mut relocate_index = nodes.len() - 1;
+    poll_until(&env, &mut nodes, |nodes| node_joined(nodes, relocate_index));
 
     let destination = target_prefix.substituted_in(rng.gen());
     overrides.set(source_prefix, destination);
@@ -53,8 +53,9 @@ fn relocate_without_split() {
     // Create enough churn events so that the age of the new node increases which causes it to
     // be relocated.
     relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
-    poll_and_resend(&mut nodes);
-    verify_node_relocated(&nodes, relocate_index, &source_prefix, &target_prefix)
+    poll_until(&env, &mut nodes, |nodes| {
+        node_relocated(nodes, relocate_index, &source_prefix, &target_prefix)
+    });
 }
 
 #[test]
@@ -82,17 +83,17 @@ fn relocate_causing_split() {
         add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &target_prefix);
 
     add_node_to_section(&env, &mut nodes, &source_prefix);
-    poll_and_resend(&mut nodes);
-    let relocate_index = nodes.len() - 1;
+    let mut relocate_index = nodes.len() - 1;
+    poll_until(&env, &mut nodes, |nodes| node_joined(nodes, relocate_index));
 
     let destination = trigger_prefix.substituted_in(rng.gen());
     overrides.set(source_prefix, destination);
 
     // Trigger relocation.
-    let relocate_index =
-        churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
-    poll_and_resend(&mut nodes);
-    verify_node_relocated(&nodes, relocate_index, &source_prefix, &target_prefix);
+    relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
+    poll_until(&env, &mut nodes, |nodes| {
+        node_relocated(&nodes, relocate_index, &source_prefix, &target_prefix)
+    });
 
     // Check whether the destination section split.
     let split = nodes_with_prefix(&nodes, &target_prefix)
@@ -126,8 +127,8 @@ fn relocate_during_split() {
     let target_prefix = *choose_other_prefix(&mut rng, &prefixes, &source_prefix);
 
     add_node_to_section(&env, &mut nodes, &source_prefix);
-    poll_and_resend(&mut nodes);
     let mut relocate_index = nodes.len() - 1;
+    poll_until(&env, &mut nodes, |nodes| node_joined(nodes, relocate_index));
 
     let _ = add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &target_prefix);
 
@@ -144,8 +145,8 @@ fn relocate_during_split() {
     relocate_index = churn_until_age_counter(&env, &mut nodes, &source_prefix, relocate_index, 32);
 
     // Poll now, so the add and the relocation happen simultaneously.
-    poll_and_resend_with_options(&mut nodes, move |nodes| {
-        !node_relocated(nodes, relocate_index, &source_prefix, &target_prefix)
+    poll_until(&env, &mut nodes, |nodes| {
+        node_relocated(nodes, relocate_index, &source_prefix, &target_prefix)
     })
 }
 
@@ -231,7 +232,7 @@ fn churn_until_age_counter(
         match churn {
             Churn::Add => {
                 add_node_to_section(env, nodes, prefix);
-                poll_and_resend_with_options(nodes, |nodes| !node_joined(nodes, nodes.len() - 1));
+                poll_until(env, nodes, |nodes| node_joined(nodes, nodes.len() - 1));
             }
             Churn::Remove => {
                 let (removed_index, id) =
@@ -241,36 +242,12 @@ fn churn_until_age_counter(
                     node_index -= 1;
                 }
 
-                poll_and_resend_with_options(nodes, move |nodes| !node_left(nodes, &id));
+                poll_until(env, nodes, |nodes| node_left(nodes, &id));
             }
         }
     }
 
     node_index
-}
-
-// Returns whether all nodes from its section recognize the node at the given index as joined.
-fn node_joined(nodes: &[TestNode], node_index: usize) -> bool {
-    let id = nodes[node_index].id();
-
-    nodes
-        .iter()
-        .filter(|node| node.inner.is_elder())
-        .filter(|node| {
-            node.inner
-                .our_prefix()
-                .map(|prefix| prefix.matches(id.name()))
-                .unwrap_or(false)
-        })
-        .all(|node| node.inner.is_peer_our_member(&id))
-}
-
-// Returns whether all nodes recognize the node with the given id as left.
-fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
-    nodes
-        .iter()
-        .filter(|node| node.inner.is_elder())
-        .all(|node| !node.inner.is_peer_our_member(id))
 }
 
 // Returns whether the relocation of node at `node_index` from `source_prefix` to `target_prefix`
@@ -322,21 +299,6 @@ fn node_relocated(
     }
 
     true
-}
-
-fn verify_node_relocated(
-    nodes: &[TestNode],
-    node_index: usize,
-    source_prefix: &Prefix<XorName>,
-    target_prefix: &Prefix<XorName>,
-) {
-    assert!(
-        node_relocated(nodes, node_index, source_prefix, target_prefix),
-        "Node {} did not get relocated from {:?} to {:?}",
-        nodes[node_index].name(),
-        source_prefix,
-        target_prefix
-    );
 }
 
 // Returns the age counter of the node with the given name.
