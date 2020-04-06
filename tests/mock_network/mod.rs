@@ -57,7 +57,7 @@ fn disconnect_on_rebootstrap() {
     // Try to bootstrap to another than the first node. With network size 2, this should fail.
     let config = TransportConfig::node().with_hard_coded_contact(nodes[1].endpoint());
     nodes.push(TestNode::builder(&env).transport_config(config).create());
-    let _ = poll_all(&mut nodes);
+    let _ = poll_all(&env, &mut nodes);
 
     // When retrying to bootstrap, we should have disconnected from the bootstrap node.
     assert!(!env.is_connected(&nodes[2].endpoint(), &nodes[1].endpoint()));

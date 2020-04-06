@@ -102,10 +102,6 @@ impl TestNode {
         self.inner.in_dst_location(dst)
     }
 
-    pub fn env(&self) -> &Environment {
-        &self.env
-    }
-
     pub fn poll(&mut self) -> bool {
         let mut result = false;
 
@@ -183,8 +179,7 @@ impl<'a> TestNodeBuilder<'a> {
 // -----  poll_all, create_connected_...  -----
 
 /// Process all events. Returns whether there were any events.
-pub fn poll_all(nodes: &mut [TestNode]) -> bool {
-    let env = nodes[0].env().clone();
+pub fn poll_all(env: &Environment, nodes: &mut [TestNode]) -> bool {
     let mut result = false;
 
     for _ in 0..MAX_POLL_CALLS {
@@ -206,6 +201,31 @@ pub fn poll_all(nodes: &mut [TestNode]) -> bool {
     panic!("poll_all has been called {} times.", MAX_POLL_CALLS);
 }
 
+/// Polls the network until the given predicate returns `true`.
+pub fn poll_until<F>(env: &Environment, nodes: &mut [TestNode], mut predicate: F)
+where
+    F: FnMut(&[TestNode]) -> bool,
+{
+    // Duration to advance the time after each iteration.
+    let time_step = test_consts::GOSSIP_PERIOD + Duration::from_millis(1);
+
+    for _ in 0..MAX_POLL_CALLS {
+        if poll_all(env, nodes) {
+            advance_time(time_step);
+            continue;
+        }
+
+        if !predicate(nodes) {
+            advance_time(time_step);
+            continue;
+        }
+
+        return;
+    }
+
+    panic!("poll_until has been called {} times.", MAX_POLL_CALLS);
+}
+
 /// Polls and processes all events, until there are no unacknowledged messages left.
 pub fn poll_and_resend(nodes: &mut [TestNode]) {
     poll_and_resend_with_options(nodes, |_| false)
@@ -217,57 +237,31 @@ pub fn poll_and_resend_with_options<F>(nodes: &mut [TestNode], mut continue_if: 
 where
     F: FnMut(&[TestNode]) -> bool,
 {
-    let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
+    let env = nodes[0].env.clone();
 
-    // Duration to advance the time after each iteration.
-    let time_step = test_consts::GOSSIP_PERIOD + Duration::from_millis(1);
+    let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
 
     // When all nodes become idle, run a couple more iterations, advancing the time a bit after
     // each one. This should allow the nodes to process failed or bounced messages.
     let max_final_iterations = 19;
     let mut final_iterations = 0;
 
-    for _ in 0..MAX_POLL_CALLS {
-        if poll_all(nodes) || nodes.iter().any(node_busy) {
-            // Advance time for next route/gossip iter.
-            advance_time(time_step);
-            continue;
+    poll_until(&env, nodes, |nodes| {
+        if nodes.iter().any(node_busy) {
+            return false;
         }
 
         if continue_if(nodes) {
-            // Advance time in case the predicate is timeout-triggered.
-            advance_time(time_step);
-            continue;
+            return false;
         }
 
         if final_iterations < max_final_iterations {
             final_iterations += 1;
-            advance_time(time_step);
-            continue;
+            return false;
         }
 
-        return;
-    }
-
-    for node in nodes.iter().filter(|node| node_busy(node)) {
-        let unpolled_string = node.inner.unpolled_observations_string();
-        error!("Still busy: {}: {}", node.name(), unpolled_string);
-    }
-
-    if let Some(first_node_busy) = nodes.iter().find(|node| node_busy(node)) {
-        let unpolled_string = first_node_busy.inner.unpolled_observations_string();
-        panic!(
-            "poll_and_resend has been called {} times. first busy: {} : {}",
-            MAX_POLL_CALLS,
-            first_node_busy.name(),
-            unpolled_string
-        );
-    }
-
-    panic!(
-        "poll_and_resend has been called {} times. No busy nodes",
-        MAX_POLL_CALLS
-    );
+        true
+    })
 }
 
 fn advance_time(duration: Duration) {
@@ -517,8 +511,8 @@ fn poll_until_split(nodes: &mut [TestNode], prefix: &Prefix<XorName>) {
 /// Sorts the given nodes by their distance to `name`. Note that this will call the `name()`
 /// function on them which causes polling, so it calls `poll_all` to make sure that all other
 /// events have been processed before sorting.
-pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
-    let _ = poll_all(nodes); // Poll
+pub fn sort_nodes_by_distance_to(env: &Environment, nodes: &mut [TestNode], name: &XorName) {
+    let _ = poll_all(env, nodes); // Poll
     nodes.sort_by(|node0, node1| name.cmp_distance(node0.name(), node1.name()));
 }
 

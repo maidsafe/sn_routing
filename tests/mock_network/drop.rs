@@ -12,12 +12,12 @@ use super::{
 use routing::{mock::Environment, NetworkParams};
 
 // Drop node at index and verify its own section detected it.
-fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
+fn drop_node(env: &Environment, nodes: &mut Vec<TestNode>, index: usize) {
     let _ = nodes.remove(index);
 
     // Using poll_all instead of poll_and_resend here to only let the other nodes realise the node
     // got disconnected, but not make more progress.
-    let _ = poll_all(nodes);
+    let _ = poll_all(env, nodes);
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn node_drops() {
         safe_section_size,
     });
     let mut nodes = create_connected_nodes(&env, elder_size + 2);
-    drop_node(&mut nodes, 0);
+    drop_node(&env, &mut nodes, 0);
 
     // Trigger poll_and_resend to allow remaining nodes to gossip and
     // update their chain accordingly.
