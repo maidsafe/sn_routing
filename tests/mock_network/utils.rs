@@ -252,6 +252,10 @@ fn advance_time(duration: Duration) {
 // Returns whether all nodes from its section recognize the node at the given index as joined.
 pub fn node_joined(nodes: &[TestNode], index: usize) -> bool {
     if !nodes[index].inner.is_approved() {
+        trace!(
+            "Node {} is not yet member according to itself",
+            nodes[index].name()
+        );
         return false;
     }
 
@@ -266,7 +270,18 @@ pub fn node_joined(nodes: &[TestNode], index: usize) -> bool {
                 .map(|prefix| prefix.matches(id.name()))
                 .unwrap_or(false)
         })
-        .all(|node| node.inner.is_peer_our_member(&id))
+        .all(|node| {
+            if node.inner.is_peer_our_member(&id) {
+                true
+            } else {
+                trace!(
+                    "Node {} is not yet member according to {}",
+                    id.name(),
+                    node.name()
+                );
+                false
+            }
+        })
 }
 
 pub fn all_nodes_joined(nodes: &[TestNode], indices: impl IntoIterator<Item = usize>) -> bool {
