@@ -248,14 +248,13 @@ impl Approved {
             | Variant::ParsecResponse(..)
             | Variant::Bounce { .. } => true,
 
-            Variant::NeighbourInfo(_)
-            | Variant::UserMessage(_)
-            | Variant::AckMessage { .. }
-            | Variant::JoinRequest(_) => self.chain.is_self_elder(),
+            Variant::JoinRequest(req) => self.should_handle_join_request(req),
 
-            Variant::GenesisUpdate(info) => {
-                !self.chain.is_self_elder() && self.is_genesis_update_new(info)
+            Variant::NeighbourInfo(_) | Variant::UserMessage(_) | Variant::AckMessage { .. } => {
+                self.chain.is_self_elder()
             }
+
+            Variant::GenesisUpdate(info) => self.should_handle_genesis_update(info),
             Variant::Relocate(_) => !self.chain.is_self_elder(),
 
             Variant::MessageSignature(accumulating_msg) => {
@@ -266,9 +265,7 @@ impl Approved {
                     | Variant::AckMessage { .. }
                     | Variant::Relocate(_) => true,
 
-                    Variant::GenesisUpdate(info) => {
-                        !self.chain.is_self_elder() && self.is_genesis_update_new(info)
-                    }
+                    Variant::GenesisUpdate(info) => self.should_handle_genesis_update(info),
 
                     // These variants are not be signature-accumulated
                     Variant::MessageSignature(_)
@@ -343,10 +340,6 @@ impl Approved {
         gen_pfx_info: GenesisPfxInfo,
     ) -> Result<()> {
         info!("Received GenesisUpdate: {:?}", gen_pfx_info);
-
-        if !self.is_genesis_update_new(&gen_pfx_info) {
-            return Ok(());
-        }
 
         self.gen_pfx_info = gen_pfx_info.clone();
         self.init_parsec(core);
@@ -465,6 +458,7 @@ impl Approved {
 
         if join_request.elders_version < self.chain.our_info().version() {
             self.resend_bootstrap_response_join(core, &p2p_node);
+            return;
         }
 
         let pub_id = *p2p_node.public_id();
@@ -603,13 +597,10 @@ impl Approved {
         msg: Message,
         msg_bytes: Bytes,
     ) {
-        let bounce = match msg.variant {
-            Variant::MessageSignature(_) => true,
+        let bounce = match &msg.variant {
+            Variant::MessageSignature(_) | Variant::JoinRequest(_) => true,
             Variant::Relocate(_) if self.chain.is_self_elder() => true,
-            Variant::JoinRequest(_)
-            | Variant::NeighbourInfo(_)
-            | Variant::UserMessage(_)
-            | Variant::AckMessage { .. }
+            Variant::NeighbourInfo(_) | Variant::UserMessage(_) | Variant::AckMessage { .. }
                 if !self.chain.is_self_elder() =>
             {
                 true
@@ -1673,8 +1664,15 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     // Ignore stale GenesisUpdates
-    fn is_genesis_update_new(&self, gen_pfx_info: &GenesisPfxInfo) -> bool {
-        gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
+    fn should_handle_genesis_update(&self, gen_pfx_info: &GenesisPfxInfo) -> bool {
+        !self.chain.is_self_elder()
+            && gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
+    }
+
+    // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
+    // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
+    fn should_handle_join_request(&self, req: &JoinRequest) -> bool {
+        self.chain.is_self_elder() || req.elders_version < self.chain.our_info().version()
     }
 
     // Connect to all elders from our section or neighbour sections that we are not yet connected
