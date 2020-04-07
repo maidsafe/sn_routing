@@ -280,8 +280,18 @@ pub fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
         .filter(|node| node.inner.is_elder())
         .all(|node| {
             // Note: need both checks because even if a node has been consensused as offline, it
-            // can stil be considered as elder until the new `SectionInfo` accumulates.
-            !node.inner.is_peer_our_member(id) && !node.inner.is_peer_our_elder(id)
+            // can still be considered as elder until the new `SectionInfo`.
+            if node.inner.is_peer_our_member(id) {
+                trace!("Node {} is still member according to {}", id, node.name());
+                return false;
+            }
+
+            if node.inner.is_peer_elder(id) {
+                trace!("Node {} is still elder according to {}", id, node.name());
+                return false;
+            }
+
+            true
         })
 }
 
@@ -293,8 +303,19 @@ pub fn section_split(nodes: &[TestNode], prefix: &Prefix<XorName>) -> bool {
     let mut pending = nodes
         .iter()
         .filter(|node| {
-            (sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0)
-                || (sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1)
+            if sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0 {
+                return true;
+            }
+
+            if sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1 {
+                return true;
+            }
+
+            if node.inner.prefixes().contains(prefix) {
+                return true;
+            }
+
+            false
         })
         .map(|node| node.name())
         .peekable();
@@ -516,10 +537,9 @@ pub fn add_mature_nodes(
     for _ in 0..remove_count {
         // Note: removing only elders for simplicity. Also making sure we don't remove any of the
         // last `count0 + count1` nodes.
-        let _removed_id =
+        let removed_id =
             remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
-        // poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
-        poll_and_resend(nodes);
+        poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
     }
 
     // Count the number of nodes in each sub-prefix and verify they are as expected.
@@ -607,7 +627,9 @@ pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
     if !node.inner.is_elder() {
         assert!(
             neighbour_prefixes.is_empty(),
-            "No neighbour info for Adults"
+            "{} is not elder so should not have neighbour infos, but has: {:?}",
+            node.name(),
+            neighbour_prefixes,
         );
         return;
     }

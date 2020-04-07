@@ -349,8 +349,7 @@ impl Approved {
         }
 
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.parsec_map
-            .init(&mut core.rng, core.full_id.clone(), &self.gen_pfx_info);
+        self.init_parsec(core);
         self.chain = Chain::new(self.chain.network_params(), *core.id(), gen_pfx_info, None);
 
         Ok(())
