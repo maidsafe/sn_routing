@@ -916,14 +916,6 @@ impl Node {
             .unwrap_or_else(String::new)
     }
 
-    /// Returns whether the given peer is an elder of our section.
-    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.stage
-            .approved()
-            .map(|stage| stage.chain.is_peer_our_elder(pub_id))
-            .unwrap_or(false)
-    }
-
     /// Send a message to the given targets using the given delivery group size.
     pub fn send_message_to_targets(
         &mut self,
@@ -997,6 +989,20 @@ impl Node {
     /// Returns the elders in our and neighbouring sections.
     pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.chain().into_iter().flat_map(Chain::elders)
+    }
+
+    /// Returns whether the given peer is an elder known to us.
+    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+        self.chain()
+            .map(|chain| chain.is_peer_elder(pub_id))
+            .unwrap_or(false)
+    }
+
+    /// Returns whether the given peer is an elder of our section.
+    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
+        self.chain()
+            .map(|chain| chain.is_peer_our_elder(pub_id))
+            .unwrap_or(false)
     }
 
     /// Returns the members in our section and elders we know.

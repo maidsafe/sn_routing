@@ -194,25 +194,10 @@ mod overrides {
         /// relocated from that prefix will be relocated to the given destination.
         /// The override applies only to the exact prefix, not to its parents / children.
         pub fn set(&mut self, src_prefix: Prefix<XorName>, dst: XorName) {
-            let rc = if self.prefixes.insert(src_prefix) {
-                1
-            } else {
-                0
-            };
+            let _ = self.prefixes.insert(src_prefix);
 
             OVERRIDES.with(|map| {
-                let _ = map
-                    .borrow_mut()
-                    .entry(src_prefix)
-                    .and_modify(|info| {
-                        info.next = dst;
-                        info.rc += rc;
-                    })
-                    .or_insert_with(|| OverrideInfo {
-                        next: dst,
-                        used: HashMap::new(),
-                        rc,
-                    });
+                map.borrow_mut().entry(src_prefix).or_default().next = Some(dst);
             })
         }
 
@@ -237,15 +222,8 @@ mod overrides {
                 let mut map = map.borrow_mut();
 
                 for prefix in self.prefixes.drain() {
-                    match map.entry(prefix) {
-                        Entry::Occupied(mut entry) => {
-                            if entry.get().rc <= 1 {
-                                let _ = entry.remove();
-                            } else {
-                                entry.get_mut().rc -= 1;
-                            }
-                        }
-                        Entry::Vacant(_) => panic!("Unexpected missing overrides for {:?}", prefix),
+                    if let Some(info) = map.get_mut(&prefix) {
+                        info.next = None;
                     }
                 }
             });
@@ -264,20 +242,28 @@ mod overrides {
         }
     }
 
+    #[derive(Default)]
     struct OverrideInfo {
         // Name that will be used as the next relocation destination.
-        next: XorName,
+        next: Option<XorName>,
         // Map of original relocation destinations to the overridden ones. As this map is shared
         // among all nodes in the network, this assures that every node will pick the same
         // destination name for a given relocated node no matter when the calculation is performed.
         used: HashMap<XorName, XorName>,
-        // Reference counter (number of `Overrides` instances that share this entry).
-        rc: usize,
     }
 
     impl OverrideInfo {
         fn get(&mut self, original_dst: XorName) -> XorName {
-            *self.used.entry(original_dst).or_insert(self.next)
+            match self.used.entry(original_dst) {
+                Entry::Vacant(entry) => {
+                    if let Some(next) = self.next {
+                        *entry.insert(next)
+                    } else {
+                        original_dst
+                    }
+                }
+                Entry::Occupied(entry) => *entry.get(),
+            }
         }
     }
 
@@ -308,32 +294,36 @@ mod overrides {
             let p0 = Prefix::default().pushed(false);
             let p1 = Prefix::default().pushed(true);
 
-            let original: XorName = rng.gen();
-            let overriden0: XorName = rng.gen();
-            let overriden1: XorName = rng.gen();
+            let a_orig: XorName = rng.gen();
+            let b_orig: XorName = rng.gen();
+            let a_overriden0: XorName = rng.gen();
+            let a_overriden1: XorName = rng.gen();
 
-            assert_eq!(get(&p0, original), original);
-            assert_eq!(get(&p1, original), original);
+            assert_eq!(get(&p0, a_orig), a_orig);
+            assert_eq!(get(&p1, a_orig), a_orig);
 
             {
                 let mut overrides = Overrides::new();
-                overrides.set(p0, overriden0);
-                assert_eq!(get(&p0, original), overriden0);
-                assert_eq!(get(&p1, original), original);
+                overrides.set(p0, a_overriden0);
+                assert_eq!(get(&p0, a_orig), a_overriden0);
+                assert_eq!(get(&p1, a_orig), a_orig);
 
                 {
                     let mut overrides = Overrides::new();
-                    overrides.set(p1, overriden1);
-                    assert_eq!(get(&p0, original), overriden0);
-                    assert_eq!(get(&p1, original), overriden1);
+                    overrides.set(p1, a_overriden1);
+                    assert_eq!(get(&p0, a_orig), a_overriden0);
+                    assert_eq!(get(&p1, a_orig), a_overriden1);
                 }
 
-                assert_eq!(get(&p0, original), overriden0);
-                assert_eq!(get(&p1, original), original);
+                assert_eq!(get(&p0, a_orig), a_overriden0);
+                assert_eq!(get(&p1, a_orig), a_overriden1);
+                assert_eq!(get(&p1, b_orig), b_orig);
             }
 
-            assert_eq!(get(&p0, original), original);
-            assert_eq!(get(&p1, original), original);
+            assert_eq!(get(&p0, a_orig), a_overriden0);
+            assert_eq!(get(&p1, a_orig), a_overriden1);
+            assert_eq!(get(&p0, b_orig), b_orig);
+            assert_eq!(get(&p1, b_orig), b_orig);
         }
     }
 }
