@@ -19,7 +19,7 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
-    event::Event, mock::Environment, FullId, NetworkParams, Prefix, RelocationOverrides,
+    event::Event, mock::Environment, NetworkParams, PausedState, Prefix, RelocationOverrides,
     TransportConfig, XorName,
 };
 use std::{collections::BTreeMap, time::Duration};
@@ -480,68 +480,76 @@ fn carry_out_parsec_pruning() {
     verify_invariants_for_nodes(&env, &nodes);
 }
 
-// The paused node does not participate until resumed, so we need enough elders to reach
-// consensus even without it.
-const NODE_PAUSE_AND_RESUME_PARAMS: NetworkParams = NetworkParams {
-    elder_size: 4,
-    safe_section_size: 4,
-};
-
 #[test]
 fn node_pause_and_resume_simple() {
-    let env = Environment::new(NODE_PAUSE_AND_RESUME_PARAMS);
-    let nodes = create_connected_nodes(&env, 2 * env.safe_section_size() - 2);
-    let new_node_id = FullId::gen(&mut env.new_rng());
-    node_pause_and_resume(env, nodes, new_node_id)
+    let env = Environment::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE + 1,
+    });
+
+    let mut nodes = create_connected_nodes(&env, env.safe_section_size());
+    let paused_state = pause_node_and_poll(&env, &mut nodes);
+
+    add_node_to_section(&env, &mut nodes, &Prefix::default());
+    poll_until(&env, &mut nodes, |nodes| {
+        node_joined(nodes, nodes.len() - 1)
+    });
+    let new_id = *nodes.last().unwrap().id();
+
+    nodes.push(TestNode::resume(&env, paused_state));
+
+    // If the paused node is elder, verify it caught up to the new node joining.
+    if nodes.last().unwrap().inner.is_elder() {
+        poll_until(&env, &mut nodes, |nodes| {
+            nodes.last().unwrap().inner.is_peer_our_member(&new_id)
+        })
+    }
+
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
 #[test]
 fn node_pause_and_resume_during_split() {
-    let env = Environment::new(NODE_PAUSE_AND_RESUME_PARAMS);
+    let env = Environment::new(NetworkParams {
+        elder_size: LOWERED_ELDER_SIZE,
+        safe_section_size: LOWERED_ELDER_SIZE + 1,
+    });
 
-    let mut nodes = create_connected_nodes(&env, env.safe_section_size());
-    let prefix =
-        add_connected_nodes_until_one_away_from_split(&env, &mut nodes, &Prefix::default());
+    let mut nodes = vec![];
+    add_mature_nodes(
+        &env,
+        &mut nodes,
+        &Prefix::default(),
+        env.safe_section_size(),
+        env.safe_section_size(),
+    );
 
-    let new_node_id = FullId::within_range(&mut env.new_rng(), &prefix.range_inclusive());
-    node_pause_and_resume(env, nodes, new_node_id)
+    let paused_state = pause_node_and_poll(&env, &mut nodes);
+    nodes.push(TestNode::resume(&env, paused_state));
+
+    poll_until(&env, &mut nodes, |nodes| {
+        section_split(nodes, &Prefix::default())
+    });
+
+    verify_invariants_for_nodes(&env, &nodes);
 }
 
-// Pause a random node, then add new node with the given id, then resume the paused node and verify
-// everything still works as expected.
-fn node_pause_and_resume(env: Environment, mut nodes: Vec<TestNode>, new_node_id: FullId) {
+// Pauses a random node and poll the network for a while. Returns the paused state.
+fn pause_node_and_poll(env: &Environment, nodes: &mut Vec<TestNode>) -> PausedState {
     let index = env.new_rng().gen_range(0, nodes.len());
-    let paused_id = *nodes[index].id();
+    let id = *nodes[index].id();
     let state = nodes.remove(index).inner.pause().unwrap();
 
     // Poll the network for a while and verify the other nodes do not see the node as going offline.
     let start_time = FakeClock::now();
-    poll_until(&env, &mut nodes, |_| {
+    poll_until(&env, nodes, |_| {
         start_time.elapsed() >= Duration::from_secs(60)
     });
 
     assert!(nodes
         .iter()
-        .all(|n| !n.inner.is_elder() || n.inner.is_peer_our_member(&paused_id)));
+        .filter(|node| node.our_prefix().matches(id.name()) && node.inner.is_elder())
+        .all(|node| node.inner.is_peer_our_member(&id)));
 
-    // Do some work while the node is paused.
-    let config = TransportConfig::node().with_hard_coded_contact(nodes[0].endpoint());
-    let node = TestNode::builder(&env)
-        .transport_config(config)
-        .full_id(new_node_id)
-        .create();
-    nodes.push(node);
-    info!(
-        "node_pause_and_resume: adding node {}",
-        nodes.last().unwrap().name()
-    );
-
-    poll_until(&env, &mut nodes, |nodes| {
-        node_joined(nodes, nodes.len() - 1)
-    });
-
-    // Resume the node and verify it caugh up to the changes in the network.
-    nodes.push(TestNode::resume(&env, state));
-    poll_and_resend(&mut nodes);
-    verify_invariants_for_nodes(&env, &nodes);
+    state
 }
