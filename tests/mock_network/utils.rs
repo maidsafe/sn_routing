@@ -28,6 +28,10 @@ use std::{
 // anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
 const MAX_POLL_CALLS: usize = 2000;
 
+// Maximum number of nodes that can join the network simultaneously. Trying to add more nodes might
+// cause some of them to timeout.
+const MAX_SIMULTANEOUS_JOINS: usize = 16;
+
 // -----  Random number generation  -----
 
 pub fn gen_range<T: Rng>(rng: &mut T, low: usize, high: usize) -> usize {
@@ -494,7 +498,7 @@ pub fn add_mature_nodes(
         current_count,
     );
 
-    let mut rng = env.new_rng();
+    info!("Starting with {} initial nodes", current_count);
 
     let mut overrides = RelocationOverrides::new();
     overrides.suppress(*prefix);
@@ -505,23 +509,68 @@ pub fn add_mature_nodes(
 
     // First add the nodes that will be removed later. These can go into any sub-prefix.
     let temp_count = remove_count.saturating_sub(current_count);
-    let first_index = nodes.len();
     info!("Adding {} temporary nodes", temp_count);
-    for _ in 0..temp_count {
-        add_node_to_section(env, nodes, &prefix);
+    add_nodes_to_section_and_poll(env, nodes, &prefix, temp_count);
+
+    // Of the remaining nodes, `count0` goes to the 0-ending sub-prefix and `count1` to the
+    // 1-ending.
+    info!("Adding {} final nodes", count0 + count1);
+    add_nodes_to_subsections_and_poll(env, nodes, &prefix, count0, count1);
+
+    // Remove 16 mature nodes to trigger 16 age increments.
+    info!("Removing {} mature nodes", remove_count);
+    for _ in 0..remove_count {
+        // Note: removing only elders for simplicity. Also making sure we don't remove any of the
+        // last `count0 + count1` nodes.
+        let removed_id =
+            remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
+        poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
     }
 
-    poll_until(env, nodes, |nodes| {
-        all_nodes_joined(nodes, first_index..nodes.len())
-    });
+    // Count the number of nodes in each sub-prefix and verify they are as expected.
+    let actual_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
+    let actual_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
+    assert_eq!((actual_count0, actual_count1), (count0, count1));
+}
 
-    // Of the remaining nodes, `count0` goes to the 0-ending sub-prefix and `count` to the
-    // 1-ending. Add them in random order to avoid accidentally relying on them being in any
-    // particular order.
-    info!("Adding {} final nodes", count0 + count1);
+// Add `count` nodes to the section with `prefix` and poll the network until all of them joined.
+fn add_nodes_to_section_and_poll(
+    env: &Environment,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+    count: usize,
+) {
+    let mut first_index = nodes.len();
+
+    for i in 0..count {
+        add_node_to_section(env, nodes, prefix);
+
+        if (i + 1) % MAX_SIMULTANEOUS_JOINS == 0 {
+            poll_until_last_nodes_joined(env, nodes, first_index);
+            first_index = nodes.len();
+        }
+    }
+
+    poll_until_last_nodes_joined(env, nodes, first_index);
+}
+
+// Add `count0` nodes to the sub-prefix of `prefix` ending in 0 and `count1` nodes to the subprefix
+// ending in 1. Add the nodes in random order to avoid accidentally relying on them being in any
+// particular order. Poll the network until all the new nodes joined.
+fn add_nodes_to_subsections_and_poll(
+    env: &Environment,
+    nodes: &mut Vec<TestNode>,
+    prefix: &Prefix<XorName>,
+    count0: usize,
+    count1: usize,
+) {
+    let mut rng = env.new_rng();
+    let sub_prefix0 = prefix.pushed(false);
+    let sub_prefix1 = prefix.pushed(true);
+
     let mut remaining0 = count0;
     let mut remaining1 = count1;
-    let first_index = nodes.len();
+    let mut first_index = nodes.len();
 
     loop {
         let bit = if remaining0 > 0 && remaining1 > 0 {
@@ -541,28 +590,21 @@ pub fn add_mature_nodes(
             add_node_to_section(env, nodes, &sub_prefix0);
             remaining0 -= 1;
         }
+
+        let i = count0 + count1 - remaining0 - remaining1;
+        if i % MAX_SIMULTANEOUS_JOINS == 0 {
+            poll_until_last_nodes_joined(env, nodes, first_index);
+            first_index = nodes.len();
+        }
     }
 
+    poll_until_last_nodes_joined(env, nodes, first_index);
+}
+
+fn poll_until_last_nodes_joined(env: &Environment, nodes: &mut [TestNode], first_index: usize) {
     poll_until(env, nodes, |nodes| {
         all_nodes_joined(nodes, first_index..nodes.len())
-    });
-
-    // Remove 16 mature nodes to trigger 16 age increments.
-    info!("Removing {} mature nodes", remove_count);
-    for _ in 0..remove_count {
-        // Note: removing only elders for simplicity. Also making sure we don't remove any of the
-        // last `count0 + count1` nodes.
-        let removed_id =
-            remove_elder_from_section_in_range(nodes, &prefix, 0..nodes.len() - count0 - count1);
-        poll_until(env, nodes, |nodes| node_left(nodes, &removed_id));
-    }
-
-    // Count the number of nodes in each sub-prefix and verify they are as expected.
-    let actual_count0 = nodes_with_prefix(nodes, &sub_prefix0).count();
-    assert_eq!(actual_count0, count0);
-
-    let actual_count1 = nodes_with_prefix(nodes, &sub_prefix1).count();
-    assert_eq!(actual_count1, count1);
+    })
 }
 
 // -----  Small misc functions  -----
