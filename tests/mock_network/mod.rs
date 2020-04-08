@@ -377,8 +377,6 @@ fn check_close_names_for_elder_size_nodes() {
 
 #[test]
 fn check_section_info_ack() {
-    // Arrange
-    //
     let elder_size = 8;
     let safe_section_size = 8;
     let env = Environment::new(NetworkParams {
@@ -386,27 +384,27 @@ fn check_section_info_ack() {
         safe_section_size,
     });
 
-    // Act
-    //
-    let nodes = create_connected_nodes_until_split(&env, &[1, 1]);
-    let node_with_sibling_knowledge: Vec<_> = nodes
-        .iter()
-        .filter(|node| {
-            node.inner
+    let mut nodes = create_connected_nodes_until_split(&env, &[1, 1]);
+
+    poll_until(&env, &mut nodes, |nodes| {
+        for node in nodes {
+            if !node.inner.is_elder() {
+                trace!("Node {} is not elder yet", node.name());
+                return false;
+            }
+
+            if !node
+                .inner
                 .get_their_knowledge()
                 .contains_key(&node.our_prefix().sibling())
-        })
-        .map(|node| node.id())
-        .collect();
+            {
+                trace!("Node {} does not have sibling knowledge yet", node.name());
+                return false;
+            }
+        }
 
-    // Assert
-    //
-    let expected_all_elder: Vec<_> = nodes
-        .iter()
-        .filter(|node| node.inner.is_elder())
-        .map(|node| node.id())
-        .collect();
-    assert_eq!(node_with_sibling_knowledge, expected_all_elder);
+        true
+    });
 }
 
 #[test]
