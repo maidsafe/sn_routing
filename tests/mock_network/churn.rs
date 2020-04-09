@@ -7,8 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    count_sections, create_connected_nodes, create_connected_nodes_until_split, current_sections,
-    gen_elder_index, gen_range, gen_vec, poll_and_resend, verify_invariants_for_nodes, TestNode,
+    consensus_reached, count_sections, create_connected_nodes, create_connected_nodes_until_split,
+    current_sections, gen_elder_index, gen_range, gen_vec, node_joined, node_left, poll_and_resend,
+    poll_until, verify_invariants_for_nodes, TestNode,
 };
 use itertools::Itertools;
 use rand::{
@@ -21,7 +22,8 @@ use routing::{
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    DstLocation, FullId, NetworkParams, Prefix, SrcLocation, TransportConfig, XorName, Xorable,
+    DstLocation, FullId, NetworkParams, Prefix, PublicId, SrcLocation, TransportConfig, XorName,
+    Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -71,7 +73,6 @@ fn remove_unresponsive_node() {
     });
 
     let mut nodes = create_connected_nodes(&env, safe_section_size);
-    poll_and_resend(&mut nodes);
     // Pause a node to act as non-responsive.
     let mut rng = env.new_rng();
     let non_responsive_index = gen_elder_index(&mut rng, &nodes);
@@ -107,7 +108,10 @@ fn remove_unresponsive_node() {
             _non_responsive_node = Some(nodes.remove(non_responsive_index));
         }
 
-        poll_and_resend(&mut nodes);
+        let mut consensus_counter = 0;
+        poll_until(&env, &mut nodes, |nodes| {
+            consensus_reached(nodes, &event, nodes.len(), &mut consensus_counter)
+        });
     }
 
     let still_has_unresponsive_elder = nodes
@@ -216,7 +220,7 @@ fn churn(params: Params) {
             &mut nodes,
             params.message_schedule,
             added_indices,
-            BTreeSet::new(),
+            Default::default(),
         )
     }
 
@@ -231,7 +235,7 @@ fn churn(params: Params) {
     for i in 0..params.churn_max_iterations {
         warn!("Iteration {}/{}", i, params.churn_max_iterations);
 
-        let (added_indices, dropped_names) = if rng.gen_range(0.0, 1.0) < params.churn_probability {
+        let (added_indices, dropped_ids) = if rng.gen_range(0.0, 1.0) < params.churn_probability {
             random_churn(
                 &mut rng,
                 &env,
@@ -242,7 +246,7 @@ fn churn(params: Params) {
                 params.churn_max_section_num,
             )
         } else {
-            (BTreeSet::new(), BTreeSet::new())
+            Default::default()
         };
 
         progress_and_verify(
@@ -251,7 +255,7 @@ fn churn(params: Params) {
             &mut nodes,
             params.message_schedule,
             added_indices,
-            dropped_names,
+            dropped_ids,
         );
 
         warn!(
@@ -269,9 +273,9 @@ fn churn(params: Params) {
             count_sections(&nodes)
         );
         loop {
-            let dropped_names =
+            let dropped_ids =
                 drop_random_nodes(&mut rng, &mut nodes, params.shrink_drop_probability);
-            if dropped_names.is_empty() {
+            if dropped_ids.is_empty() {
                 break;
             }
 
@@ -280,8 +284,8 @@ fn churn(params: Params) {
                 &env,
                 &mut nodes,
                 params.message_schedule,
-                BTreeSet::new(),
-                dropped_names,
+                Default::default(),
+                dropped_ids,
             );
 
             warn!(
@@ -311,10 +315,10 @@ fn drop_random_nodes<R: Rng>(
     rng: &mut R,
     nodes: &mut Vec<TestNode>,
     drop_probability: f64,
-) -> BTreeSet<XorName> {
+) -> HashSet<PublicId> {
     let mut sections = count_nodes_by_section(nodes);
     let mut dropped_indices = Vec::new();
-    let mut dropped_names = BTreeSet::new();
+    let mut dropped_ids = HashSet::new();
 
     for (index, node) in nodes.iter().enumerate() {
         if rng.gen_range(0.0, 1.0) >= drop_probability {
@@ -345,10 +349,10 @@ fn drop_random_nodes<R: Rng>(
     // Must drop from the end, so the indices are not invalidated.
     dropped_indices.sort();
     for index in dropped_indices.into_iter().rev() {
-        assert!(dropped_names.insert(*nodes.remove(index).name()));
+        assert!(dropped_ids.insert(*nodes.remove(index).id()));
     }
 
-    dropped_names
+    dropped_ids
 }
 
 #[derive(Default)]
@@ -399,7 +403,7 @@ fn add_nodes(
     env: &Environment,
     nodes: &mut Vec<TestNode>,
     add_probability: f64,
-) -> BTreeSet<usize> {
+) -> HashSet<usize> {
     let mut added_nodes = Vec::new();
     let prefixes: BTreeSet<_> = sub_perfixes_for_balanced_add(nodes);
 
@@ -425,7 +429,7 @@ fn add_nodes(
     }
 
     let mut min_index = 1;
-    let mut added_indices = BTreeSet::new();
+    let mut added_indices = HashSet::new();
     for added_node in added_nodes {
         let index = gen_range(rng, min_index, nodes.len() + 1);
         nodes.insert(index, added_node);
@@ -436,42 +440,13 @@ fn add_nodes(
     added_indices
 }
 
-/// Checks if the given indices have been accepted to the network.
-/// Returns the names of added nodes.
-fn check_added_indices(nodes: &mut [TestNode], new_indices: BTreeSet<usize>) -> BTreeSet<XorName> {
-    let mut added = BTreeSet::new();
-    let mut failed = Vec::new();
-
-    for index in new_indices {
-        let node = &mut nodes[index];
-
-        loop {
-            match node.try_recv_event() {
-                None => {
-                    failed.push(*node.name());
-                    break;
-                }
-                Some(Event::Connected(_)) => {
-                    assert!(added.insert(*node.name()));
-                    break;
-                }
-                _ => (),
-            }
-        }
-    }
-
-    assert!(failed.is_empty(), "Unable to add new nodes: {:?}", failed);
-
-    added
-}
-
 // Shuffle nodes excluding the first node
 fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut [TestNode]) {
     nodes[1..].shuffle(rng);
 }
 
 // Churns the given network randomly. Returns any newly added indices and the
-// dropped node names.
+// dropped node ids.
 fn random_churn(
     rng: &mut MainRng,
     env: &Environment,
@@ -480,24 +455,24 @@ fn random_churn(
     drop_probability: f64,
     min_section_num: usize,
     max_section_num: usize,
-) -> (BTreeSet<usize>, BTreeSet<XorName>) {
+) -> (HashSet<usize>, HashSet<PublicId>) {
     assert!(min_section_num <= max_section_num);
 
     let section_num = count_sections(nodes);
 
-    let dropped_names = if section_num > min_section_num {
+    let dropped_ids = if section_num > min_section_num {
         drop_random_nodes(rng, nodes, drop_probability)
     } else {
-        BTreeSet::new()
+        Default::default()
     };
 
     let added_indices = if section_num < max_section_num {
         add_nodes(rng, &env, nodes, add_probability)
     } else {
-        BTreeSet::new()
+        Default::default()
     };
 
-    (added_indices, dropped_names)
+    (added_indices, dropped_ids)
 }
 
 fn progress_and_verify<R: Rng>(
@@ -505,46 +480,59 @@ fn progress_and_verify<R: Rng>(
     env: &Environment,
     nodes: &mut [TestNode],
     message_schedule: MessageSchedule,
-    added_indices: BTreeSet<usize>,
-    dropped_names: BTreeSet<XorName>,
+    added_indices: HashSet<usize>,
+    dropped_ids: HashSet<PublicId>,
 ) {
     let expectations = match message_schedule {
         MessageSchedule::AfterChurn => {
-            poll_after_churn(nodes, added_indices, dropped_names);
-            let expectations = setup_expectations(rng, nodes, env.elder_size());
-            poll_and_resend(nodes);
-            expectations
+            poll_until_churn_complete(env, nodes, added_indices, dropped_ids);
+            setup_expectations(rng, nodes, env.elder_size())
         }
         MessageSchedule::DuringChurn => {
             let expectations = setup_expectations(rng, nodes, env.elder_size());
-            poll_after_churn(nodes, added_indices, dropped_names);
+            poll_until_churn_complete(env, nodes, added_indices, dropped_ids);
             expectations
         }
     };
 
-    expectations.verify(nodes);
+    poll_until_expectations_met(env, nodes, expectations);
     verify_invariants_for_nodes(env, nodes);
     shuffle_nodes(rng, nodes);
 }
 
-fn poll_after_churn(
+// Poll until all the nodes at `added_indices` are added and all the nodes from `dropped_ids` are
+// removed.
+fn poll_until_churn_complete(
+    env: &Environment,
     nodes: &mut [TestNode],
-    added_indices: BTreeSet<usize>,
-    dropped_names: BTreeSet<XorName>,
+    mut added_indices: HashSet<usize>,
+    mut dropped_ids: HashSet<PublicId>,
 ) {
     trace!(
-        "Adding {{{:?}}}, dropping {:?}",
+        "Add {{{}}}, drop {{{}}}",
         added_indices
             .iter()
             .map(|index| nodes[*index].name())
             .format(", "),
-        dropped_names
+        dropped_ids.iter().map(|id| id.name()).format(", ")
     );
 
-    poll_and_resend(nodes);
-    let added_names = check_added_indices(nodes, added_indices);
+    poll_until(env, nodes, |nodes| {
+        added_indices.retain(|&index| !node_joined(nodes, index));
+        dropped_ids.retain(|id| !node_left(nodes, id));
 
-    warn!("Added {:?}, dropped {:?}", added_names, dropped_names);
+        added_indices.is_empty() && dropped_ids.is_empty()
+    })
+}
+
+// Poll until all messages from `expectations` are delivered to their intended recipients.
+fn poll_until_expectations_met(
+    _env: &Environment,
+    nodes: &mut [TestNode],
+    expectations: Expectations,
+) {
+    poll_and_resend(nodes);
+    expectations.verify(nodes);
 }
 
 #[derive(Eq, PartialEq, Hash, Debug)]

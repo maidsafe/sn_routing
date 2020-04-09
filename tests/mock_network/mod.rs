@@ -426,18 +426,6 @@ fn carry_out_parsec_pruning() {
             .collect_vec()
     };
 
-    let consensus_reached = |nodes: &[TestNode], expected_content: &[u8], counter: &mut usize| {
-        for node in nodes {
-            if let Some(Event::Consensus(actual_content)) = node.try_recv_event() {
-                if &actual_content[..] == expected_content {
-                    *counter += 1;
-                }
-            }
-        }
-
-        *counter == nodes.len()
-    };
-
     // There is less than `elder_size` nodes so everyone should become elder.
     poll_until(&env, &mut nodes, |nodes| {
         nodes.iter().all(|node| node.inner.is_elder())
@@ -456,7 +444,7 @@ fn carry_out_parsec_pruning() {
 
         let mut consensus_counter = 0;
         poll_until(&env, &mut nodes, |nodes| {
-            consensus_reached(nodes, &event, &mut consensus_counter)
+            consensus_reached(nodes, &event, nodes.len(), &mut consensus_counter)
         });
 
         let new_parsec_versions = parsec_versions(&nodes);
