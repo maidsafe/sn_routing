@@ -17,8 +17,8 @@ use routing::{
     event::{Connected, Event},
     mock::Environment,
     rng::MainRng,
-    test_consts, DstLocation, FullId, Node, NodeConfig, PausedState, Prefix, PublicId,
-    RelocationOverrides, SrcLocation, TransportConfig, XorName, Xorable,
+    test_consts, FullId, Node, NodeConfig, PausedState, Prefix, PublicId, RelocationOverrides,
+    TransportConfig, XorName, Xorable,
 };
 use std::{
     cmp, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, ops::Range, time::Duration,
@@ -88,14 +88,6 @@ impl TestNode {
 
     pub fn our_prefix(&self) -> &Prefix<XorName> {
         unwrap!(self.inner.our_prefix(), "{}", self.name())
-    }
-
-    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        self.inner.in_src_location(src)
-    }
-
-    pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
-        self.inner.in_dst_location(dst)
     }
 
     pub fn poll(&mut self) -> bool {
@@ -205,17 +197,12 @@ where
     let time_step = test_consts::GOSSIP_PERIOD + Duration::from_millis(1);
 
     for _ in 0..MAX_POLL_CALLS {
-        if poll_all(env, nodes) {
-            advance_time(time_step);
-            continue;
+        if predicate(nodes) {
+            return;
         }
 
-        if !predicate(nodes) {
-            advance_time(time_step);
-            continue;
-        }
-
-        return;
+        let _ = poll_all(env, nodes);
+        advance_time(time_step);
     }
 
     panic!("poll_until has been called {} times.", MAX_POLL_CALLS);
