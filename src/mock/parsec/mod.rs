@@ -262,24 +262,6 @@ where
         }) || self.our_unpolled_observations().next().is_some()
     }
 
-    pub fn unpolled_observations_string(&self) -> String {
-        use itertools::Itertools;
-        let value = state::with::<T, S::PublicId, _, _>(self.section_hash, |state| {
-            format!(
-                "unconsensused_observations_for_peers: {:?}, first_unconsensused block: {:?}",
-                state
-                    .unconsensused_observations_for_peers(&self.peer_list)
-                    .format(", "),
-                state.get_block(self.first_unconsensused),
-            )
-        });
-        format!(
-            "{}, our_unpolled_observations: {:?}",
-            value,
-            self.our_unpolled_observations().format(", "),
-        )
-    }
-
     pub fn our_unpolled_observations(&self) -> impl Iterator<Item = &Observation<T, S::PublicId>> {
         self.observations
             .iter()

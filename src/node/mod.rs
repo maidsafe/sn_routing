@@ -908,14 +908,6 @@ impl Node {
             .unwrap_or(false)
     }
 
-    /// Indicates if there are any pending observations in the parsec object
-    pub fn unpolled_observations_string(&self) -> String {
-        self.stage
-            .approved()
-            .map(|stage| stage.parsec_map.unpolled_observations_string())
-            .unwrap_or_else(String::new)
-    }
-
     /// Send a message to the given targets using the given delivery group size.
     pub fn send_message_to_targets(
         &mut self,

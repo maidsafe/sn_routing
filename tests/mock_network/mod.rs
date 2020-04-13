@@ -484,7 +484,7 @@ fn node_pause_and_resume_simple() {
     });
     let new_id = *nodes.last().unwrap().id();
 
-    nodes.push(TestNode::resume(&env, paused_state));
+    nodes.push(TestNode::resume(paused_state));
 
     // If the paused node is elder, verify it caught up to the new node joining.
     if nodes.last().unwrap().inner.is_elder() {
@@ -513,7 +513,7 @@ fn node_pause_and_resume_during_split() {
     );
 
     let paused_state = pause_node_and_poll(&env, &mut nodes);
-    nodes.push(TestNode::resume(&env, paused_state));
+    nodes.push(TestNode::resume(paused_state));
 
     poll_until(&env, &mut nodes, |nodes| {
         section_split(nodes, &Prefix::default())
