@@ -51,7 +51,7 @@ pub fn gen_elder_index<R: Rng>(rng: &mut R, nodes: &[TestNode]) -> usize {
 
 pub struct TestNode {
     pub inner: Node,
-    env: Environment,
+    _env: Environment,
     user_event_rx: mpmc::Receiver<Event>,
 }
 
@@ -67,7 +67,7 @@ impl TestNode {
         let (inner, user_event_rx) = Node::resume(state);
         Self {
             inner,
-            env: env.clone(),
+            _env: env.clone(),
             user_event_rx,
         }
     }
@@ -168,7 +168,7 @@ impl<'a> TestNodeBuilder<'a> {
 
         TestNode {
             inner,
-            env: self.env.clone(),
+            _env: self.env.clone(),
             user_event_rx,
         }
     }
@@ -222,31 +222,6 @@ where
     }
 
     panic!("poll_until has been called {} times.", MAX_POLL_CALLS);
-}
-
-/// Polls and processes all events, until there are no unacknowledged messages left.
-pub fn poll_and_resend(nodes: &mut [TestNode]) {
-    let env = nodes[0].env.clone();
-
-    let node_busy = |node: &TestNode| node.inner.has_unpolled_observations();
-
-    // When all nodes become idle, run a couple more iterations, advancing the time a bit after
-    // each one. This should allow the nodes to process failed or bounced messages.
-    let max_final_iterations = 19;
-    let mut final_iterations = 0;
-
-    poll_until(&env, nodes, |nodes| {
-        if nodes.iter().any(node_busy) {
-            return false;
-        }
-
-        if final_iterations < max_final_iterations {
-            final_iterations += 1;
-            return false;
-        }
-
-        true
-    })
 }
 
 fn advance_time(duration: Duration) {

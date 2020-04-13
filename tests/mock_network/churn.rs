@@ -8,9 +8,10 @@
 
 use super::{
     consensus_reached, count_sections, create_connected_nodes, create_connected_nodes_until_split,
-    current_sections, gen_elder_index, gen_range, gen_vec, node_joined, node_left, poll_and_resend,
-    poll_until, verify_invariants_for_nodes, TestNode,
+    current_sections, gen_elder_index, gen_range, gen_vec, node_joined, node_left, poll_until,
+    verify_invariants_for_nodes, TestNode,
 };
+use hex_fmt::HexFmt;
 use itertools::Itertools;
 use rand::{
     seq::{IteratorRandom, SliceRandom},
@@ -27,6 +28,7 @@ use routing::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    fmt::{self, Display, Formatter},
     usize,
 };
 
@@ -527,12 +529,11 @@ fn poll_until_churn_complete(
 
 // Poll until all messages from `expectations` are delivered to their intended recipients.
 fn poll_until_expectations_met(
-    _env: &Environment,
+    env: &Environment,
     nodes: &mut [TestNode],
-    expectations: Expectations,
+    mut expectations: Expectations,
 ) {
-    poll_and_resend(nodes);
-    expectations.verify(nodes);
+    poll_until(env, nodes, |nodes| expectations.verify(nodes))
 }
 
 #[derive(Eq, PartialEq, Hash, Debug)]
@@ -542,44 +543,55 @@ struct MessageKey {
     dst: DstLocation,
 }
 
-/// A set of expectations: Which nodes, groups and sections are supposed to receive a message.
+impl Display for MessageKey {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{:?} {:?} -> {:?}",
+            HexFmt(&self.content),
+            self.src,
+            self.dst
+        )
+    }
+}
+
+// A set of expectations: Which nodes, groups and sections are supposed to receive a message.
 struct Expectations {
-    /// The message expected to be received.
-    messages: HashSet<MessageKey>,
-    /// The section or section members of receiving groups or sections, at the time of sending.
-    sections: HashMap<DstLocation, HashSet<XorName>>,
-    /// Helper to build the map of new names to old names by which we can track even relocated
-    /// nodes.
-    relocation_map_builder: RelocationMapBuilder,
+    messages: HashMap<MessageKey, HashMap<XorName, bool>>,
 }
 
 impl Expectations {
-    fn new(nodes: &[TestNode]) -> Self {
+    fn new() -> Self {
         Self {
-            messages: HashSet::new(),
-            sections: HashMap::new(),
-            relocation_map_builder: RelocationMapBuilder::new(nodes),
+            messages: HashMap::new(),
         }
     }
 
-    /// Sends a message using the nodes specified by `src`, and adds the expectation. Panics if not
-    /// enough nodes sent a section message, or if an individual sending node could not be found.
+    // Sends a message using the nodes specified by `src`, and adds the expectation. Panics if not
+    // enough nodes sent a section message, or if an individual sending node could not be found.
     fn send_and_expect(
         &mut self,
-        content: &[u8],
+        content: Vec<u8>,
         src: SrcLocation,
         dst: DstLocation,
         nodes: &mut [TestNode],
         elder_size: usize,
     ) {
+        let key = MessageKey { content, src, dst };
+
         let mut sent_count = 0;
         for node in nodes
             .iter_mut()
-            .filter(|node| node.inner.is_elder() && node.in_src_location(&src))
+            .filter(|node| node.inner.is_elder() && node.in_src_location(&key.src))
         {
-            unwrap!(node.inner.send_message(src, dst, content.to_vec()));
+            trace!("send message {} from {}", key, node.name());
+
+            node.inner
+                .send_message(key.src, key.dst, key.content.clone())
+                .unwrap();
             sent_count += 1;
         }
+
         if src.is_multiple() {
             assert!(
                 sent_count >= quorum_count(elder_size),
@@ -590,139 +602,113 @@ impl Expectations {
         } else {
             assert_eq!(sent_count, 1);
         }
-        self.expect(
-            nodes,
-            dst,
-            MessageKey {
-                content: content.to_vec(),
-                src,
-                dst,
-            },
-        )
-    }
 
-    /// Adds the expectation that the nodes belonging to `dst` receive the message.
-    fn expect(&mut self, nodes: &mut [TestNode], dst: DstLocation, key: MessageKey) {
-        if dst.is_multiple() && !self.sections.contains_key(&dst) {
-            let is_recipient = |n: &&TestNode| n.inner.is_elder() && n.in_dst_location(&dst);
-            let section = nodes
-                .iter()
-                .filter(is_recipient)
-                .map(TestNode::name)
-                .copied()
-                .collect();
-            let _ = self.sections.insert(dst, section);
-        }
-        let _ = self.messages.insert(key);
-    }
-
-    /// Verifies that all sent messages have been received by the appropriate nodes.
-    fn verify(mut self, nodes: &mut [TestNode]) {
-        let new_to_old_map = self.relocation_map_builder.build(nodes);
-
-        // The minimum of the section lengths when sending and now. If a churn event happened, both
-        // cases are valid: that the message was received before or after that. The number of
-        // recipients thus only needs to reach a quorum for the minimum number of node at one point.
-        let section_size_added_removed: HashMap<_, _> = self
-            .sections
-            .iter_mut()
-            .map(|(dst, section)| {
-                let in_dst_location = |n: &&TestNode| n.inner.is_elder() && n.in_dst_location(dst);
-                let old_section = section.clone();
-                let new_section: HashSet<_> = nodes
-                    .iter()
-                    .filter(in_dst_location)
-                    .map(TestNode::name)
-                    .copied()
-                    .collect();
-                section.extend(new_section.clone());
-
-                let added: BTreeSet<_> = new_section.difference(&old_section).copied().collect();
-                let removed: BTreeSet<_> = old_section.difference(&new_section).copied().collect();
-                let count = old_section.len() - removed.len();
-
-                (*dst, (count, added, removed))
-            })
+        let recipients = nodes
+            .iter()
+            .filter(|node| is_expected_recipient(node, &dst))
+            .map(|node| (*node.name(), false))
             .collect();
-        let mut section_msgs_received = HashMap::new(); // The count of received section messages.
-        for node in nodes.iter_mut() {
-            let curr_name = node.name();
-            let orig_name = new_to_old_map.get(curr_name).copied().unwrap_or(*curr_name);
+        let _ = self.messages.insert(key, recipients);
+    }
 
-            while let Some(event) = node.try_recv_event() {
-                if let Event::MessageReceived { content, src, dst } = event {
-                    let key = MessageKey { content, src, dst };
-
-                    if dst.is_multiple() {
-                        let checker = |entry: &HashSet<XorName>| entry.contains(&orig_name);
-                        if !self.sections.get(&key.dst).map_or(false, checker) {
-                            if let DstLocation::Section(_) = dst {
-                                trace!(
-                                    "Unexpected message for node {}: {:?} / {:?}",
-                                    orig_name,
-                                    key,
-                                    self.sections
-                                );
-                            } else {
-                                panic!(
-                                    "Unexpected message for node {}: {:?} / {:?}",
-                                    orig_name, key, self.sections
-                                );
-                            }
-                        } else {
-                            *section_msgs_received.entry(key).or_insert(0usize) += 1;
-                        }
-                    } else {
-                        let expected_dst = DstLocation::Node(orig_name);
-                        assert_eq!(
-                            expected_dst,
-                            dst,
-                            "Receiver does not match destination {}: {:?}, {:?}",
-                            node.name(),
-                            expected_dst,
-                            dst,
-                        );
-                        assert!(
-                            self.messages.remove(&key),
-                            "Unexpected message for node {}: {:?}",
-                            node.name(),
-                            key
-                        );
-                    }
-                }
+    // Returns whether all expectations have been met.
+    fn verify(&mut self, nodes: &[TestNode]) -> bool {
+        for node in nodes {
+            if let Some(Event::MessageReceived { content, src, dst }) = node.try_recv_event() {
+                self.handle_message_received(node, content, src, dst);
             }
         }
 
-        for key in self.messages {
-            if let DstLocation::Node(dst_name) = key.dst {
-                // Verify that if the message destination is a single node, then that node either
-                // received it, or if not it's only because it got dropped, relocated or demoted.
-                if let Some(node) = nodes.iter().find(|node| *node.name() == dst_name) {
-                    assert!(
-                        !node.inner.is_elder(),
-                        "{} failed to receive message {:?}",
-                        node.name(),
-                        key
-                    );
-                }
+        self.prune_expected_recipients(nodes);
 
-                continue;
+        for (key, recipients) in &self.messages {
+            let required = if key.dst.is_single() {
+                recipients.len().min(1)
+            } else {
+                quorum_count(recipients.len())
+            };
+
+            let received = recipients.values().filter(|&&r| r).count();
+
+            if received < required {
+                trace!(
+                    "message {} delivered to only {}/{} of {{{}}}",
+                    key,
+                    received,
+                    required,
+                    recipients.keys().format(", ")
+                );
+                return false;
             }
+        }
 
-            let (section_size, added, removed) = &section_size_added_removed[&key.dst];
+        true
+    }
 
-            let count = section_msgs_received.remove(&key).unwrap_or(0);
-            assert!(
-                count >= quorum_count(*section_size),
-                "Only received {} out of {} (added: {:?}, removed: {:?}) messages {:?}.",
-                count,
-                section_size,
-                added,
-                removed,
-                key
-            );
+    fn handle_message_received(
+        &mut self,
+        node: &TestNode,
+        content: Vec<u8>,
+        src: SrcLocation,
+        dst: DstLocation,
+    ) {
+        let key = MessageKey { content, src, dst };
+
+        match &dst {
+            DstLocation::Node(name) => assert_eq!(
+                node.name(),
+                name,
+                "unexpected recipient name of message {}: {}",
+                key,
+                node.name(),
+            ),
+            DstLocation::Section(name) => assert!(
+                node.our_prefix().matches(name),
+                "unexpected recipient prefix of message {}: {:b}",
+                key,
+                node.our_prefix(),
+            ),
+            DstLocation::Prefix(prefix) => assert!(
+                node.our_prefix().is_compatible(prefix),
+                "unexpected recipient prefix of message {}: {:b}",
+                key,
+                node.our_prefix(),
+            ),
+            DstLocation::Direct => panic!("unexpected received direct message {}", key),
+        }
+
+        if let Some(recipients) = self.messages.get_mut(&key) {
+            if let Some(flag) = recipients.get_mut(node.name()) {
+                *flag = true;
+            } else {
+                trace!("unexpected recipient of {}: {}", key, node.name())
+            }
+        } else {
+            // This is not an error because we can receive messages from previous iterations.
+            trace!(
+                "unexpected received message {} by {}({:b})",
+                key,
+                node.name(),
+                node.our_prefix()
+            )
         }
     }
+
+    // Remove removed or relocated nodes from the map of expected recipients.
+    fn prune_expected_recipients(&mut self, nodes: &[TestNode]) {
+        for (key, recipients) in &mut self.messages {
+            let current: HashSet<_> = nodes
+                .iter()
+                .filter(|node| is_expected_recipient(node, &key.dst))
+                .map(|node| node.name())
+                .collect();
+            recipients.retain(|name, _| current.contains(name));
+        }
+    }
+}
+
+fn is_expected_recipient(node: &TestNode, dst: &DstLocation) -> bool {
+    node.inner.is_elder() && node.inner.in_dst_location(dst)
 }
 
 fn setup_expectations<R: Rng>(
@@ -748,40 +734,19 @@ fn setup_expectations<R: Rng>(
     // this makes sure we have two different sections if there exists more than one
     let dst_s1 = DstLocation::Section(!section_name);
 
-    let mut expectations = Expectations::new(nodes);
+    let mut expectations = Expectations::new();
 
     // Node to itself
-    expectations.send_and_expect(&content, src_n0, dst_n0, nodes, elder_size);
+    expectations.send_and_expect(content.clone(), src_n0, dst_n0, nodes, elder_size);
     // Node to another node
-    expectations.send_and_expect(&content, src_n0, dst_n1, nodes, elder_size);
+    expectations.send_and_expect(content.clone(), src_n0, dst_n1, nodes, elder_size);
     // Node to section
-    expectations.send_and_expect(&content, src_n0, dst_s0, nodes, elder_size);
+    expectations.send_and_expect(content.clone(), src_n0, dst_s0, nodes, elder_size);
     // Section to itself
-    expectations.send_and_expect(&content, src_s0, dst_s0, nodes, elder_size);
+    expectations.send_and_expect(content.clone(), src_s0, dst_s0, nodes, elder_size);
     // Section to another section
-    expectations.send_and_expect(&content, src_s0, dst_s1, nodes, elder_size);
+    expectations.send_and_expect(content.clone(), src_s0, dst_s1, nodes, elder_size);
     // Section to node
-    expectations.send_and_expect(&content, src_s0, dst_n0, nodes, elder_size);
+    expectations.send_and_expect(content, src_s0, dst_n0, nodes, elder_size);
     expectations
-}
-
-// Helper to build a map of new names to old names.
-struct RelocationMapBuilder {
-    initial_names: Vec<XorName>,
-}
-
-impl RelocationMapBuilder {
-    fn new(nodes: &[TestNode]) -> Self {
-        let initial_names = nodes.iter().map(|node| *node.name()).collect();
-        Self { initial_names }
-    }
-
-    fn build(self, nodes: &[TestNode]) -> BTreeMap<XorName, XorName> {
-        nodes
-            .iter()
-            .zip(self.initial_names)
-            .map(|(node, old_name)| (*node.name(), old_name))
-            .filter(|(new_name, old_name)| old_name != new_name)
-            .collect()
-    }
 }
