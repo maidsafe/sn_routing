@@ -59,7 +59,7 @@ fn messages_accumulate_with_quorum() {
     {
         send(node, &dst, content.clone());
     }
-    let _ = poll_all(&env, &mut nodes);
+    poll_all(&env, &mut nodes);
     expect_no_event!(nodes[closest_elder_index]);
     for node in nodes
         .iter_mut()
@@ -69,7 +69,7 @@ fn messages_accumulate_with_quorum() {
     {
         send(node, &dst, content.clone());
     }
-    let _ = poll_all(&env, &mut nodes);
+    poll_all(&env, &mut nodes);
     expect_next_event!(nodes[closest_elder_index], Event::MessageReceived { .. });
     for node in nodes
         .iter_mut()
@@ -80,7 +80,7 @@ fn messages_accumulate_with_quorum() {
     {
         send(node, &dst, content.clone());
     }
-    let _ = poll_all(&env, &mut nodes);
+    poll_all(&env, &mut nodes);
     expect_no_event!(nodes[closest_elder_index]);
 
     let dst_grp = DstLocation::Section(src_name); // The whole section.
@@ -95,7 +95,7 @@ fn messages_accumulate_with_quorum() {
     {
         send(node, &dst_grp, content.clone());
     }
-    let _ = poll_all(&env, &mut nodes);
+    poll_all(&env, &mut nodes);
     for node in &mut *nodes {
         expect_no_event!(node);
     }
@@ -107,7 +107,7 @@ fn messages_accumulate_with_quorum() {
     {
         send(node, &dst_grp, content.clone());
     }
-    let _ = poll_all(&env, &mut nodes);
+    poll_all(&env, &mut nodes);
     for node in nodes.iter_mut().filter(|node| node.inner.is_elder()) {
         expect_next_event!(node, Event::MessageReceived { .. });
     }
@@ -120,7 +120,7 @@ fn messages_accumulate_with_quorum() {
     {
         send(node, &dst_grp, content.clone());
     }
-    let _ = poll_all(&env, &mut nodes);
+    poll_all(&env, &mut nodes);
     for node in &mut *nodes {
         expect_no_event!(node);
     }

@@ -107,7 +107,7 @@ fn step_at_least_once(node: &mut Node) {
 
     // Step for the first one.
     let op_index = sel.try_ready().unwrap();
-    let _ = node.handle_selected_operation(op_index).unwrap();
+    node.handle_selected_operation(op_index).unwrap();
 
     // Exhaust any remaining steps
     loop {
@@ -115,7 +115,7 @@ fn step_at_least_once(node: &mut Node) {
         node.register(&mut sel);
 
         if let Ok(op_index) = sel.try_ready() {
-            let _ = node.handle_selected_operation(op_index).unwrap();
+            node.handle_selected_operation(op_index).unwrap();
         } else {
             break;
         }

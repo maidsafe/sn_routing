@@ -93,19 +93,12 @@ impl TestNode {
     pub fn poll(&mut self) -> bool {
         let mut result = false;
 
-        // Exhaust all the events/actions from the channels but return true only if at least one of
-        // those events/actions are considered as handled (that is there is at least one
-        // non-timeout).
         loop {
             let mut sel = mpmc::Select::new();
             self.inner.register(&mut sel);
 
             if let Ok(op_index) = sel.try_ready() {
-                if self
-                    .inner
-                    .handle_selected_operation(op_index)
-                    .unwrap_or(false)
-                {
+                if self.inner.handle_selected_operation(op_index).is_ok() {
                     result = true;
                 }
             } else {
@@ -165,24 +158,20 @@ impl<'a> TestNodeBuilder<'a> {
 
 // -----  poll_all, create_connected_...  -----
 
-/// Process all events. Returns whether there were any events.
-pub fn poll_all(env: &Environment, nodes: &mut [TestNode]) -> bool {
-    let mut result = false;
-
+/// Process all events
+pub fn poll_all(env: &Environment, nodes: &mut [TestNode]) {
     for _ in 0..MAX_POLL_CALLS {
         env.poll();
 
-        let mut handled_message = false;
+        let mut handled = false;
 
         for node in nodes.iter_mut() {
-            handled_message = node.poll() || handled_message;
+            handled = node.poll() || handled;
         }
 
-        if !handled_message {
-            return result;
+        if !handled {
+            return;
         }
-
-        result = true;
     }
 
     panic!("poll_all has been called {} times.", MAX_POLL_CALLS);
@@ -201,7 +190,7 @@ where
             return;
         }
 
-        let _ = poll_all(env, nodes);
+        poll_all(env, nodes);
         advance_time(time_step);
     }
 
@@ -592,7 +581,7 @@ fn poll_until_last_nodes_joined(env: &Environment, nodes: &mut [TestNode], first
 /// function on them which causes polling, so it calls `poll_all` to make sure that all other
 /// events have been processed before sorting.
 pub fn sort_nodes_by_distance_to(env: &Environment, nodes: &mut [TestNode], name: &XorName) {
-    let _ = poll_all(env, nodes); // Poll
+    poll_all(env, nodes); // Poll
     nodes.sort_by(|node0, node1| name.cmp_distance(node0.name(), node1.name()));
 }
 
