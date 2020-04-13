@@ -205,25 +205,20 @@ impl Node {
     /// of the event channels, or an invalid (unknown) channel index.
     ///
     /// [`Select::ready`]: https://docs.rs/crossbeam-channel/0.3/crossbeam_channel/struct.Select.html#method.ready
-    ///
-    /// The returned `bool` can be safely ignored by the consumers of this crate. It is for
-    /// internal uses only and will always be `true` unless compiled with `feature=mock_base`.
-    pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<bool, RecvError> {
+    pub fn handle_selected_operation(&mut self, op_index: usize) -> Result<(), RecvError> {
         if !self.is_running() {
             return Err(RecvError);
         }
 
         let _log_ident = self.set_log_ident();
-        let handled = match op_index {
+        match op_index {
             idx if idx == self.transport_rx_idx => {
                 let event = self.transport_rx.recv()?;
                 self.handle_transport_event(event);
-                true
             }
             idx if idx == self.timer_rx_idx => {
                 let token = self.timer_rx.recv()?;
                 self.handle_timeout(token);
-                TIMEOUT_HANDLED
             }
             _idx => return Err(RecvError),
         };
@@ -234,7 +229,7 @@ impl Node {
             stage.finish_handle_input(&mut self.core);
         }
 
-        Ok(handled)
+        Ok(())
     }
 
     /// Returns whether this node is running or has been terminated.
@@ -1114,13 +1109,6 @@ impl Node {
         }
     }
 }
-
-#[cfg(not(feature = "mock_base"))]
-const TIMEOUT_HANDLED: bool = true;
-
-// HACK: Don't consider timeouts as being handled. This is a workaround to prevent infinite polling.
-#[cfg(feature = "mock_base")]
-const TIMEOUT_HANDLED: bool = false;
 
 // Create channels for the network event. Returs a triple of:
 // the composite node/client sender, node receiver, client receiver
