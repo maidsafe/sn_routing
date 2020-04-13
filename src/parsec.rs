@@ -288,35 +288,6 @@ impl ParsecMap {
         parsec.has_unpolled_observations()
     }
 
-    #[cfg(feature = "mock")]
-    pub fn unpolled_observations_string(&self) -> String {
-        let parsec = if let Some(parsec) = self.map.values().last() {
-            parsec
-        } else {
-            return String::new();
-        };
-
-        parsec.unpolled_observations_string()
-    }
-
-    #[cfg(all(not(feature = "mock"), feature = "mock_base"))]
-    pub fn unpolled_observations_string(&self) -> String {
-        use itertools::Itertools;
-
-        let parsec = if let Some(parsec) = self.map.values().last() {
-            parsec
-        } else {
-            return String::new();
-        };
-
-        // This doesn't contain as much info as the `mock` version but it's better than
-        // nothing.
-        format!(
-            "our_unpolled_observations: {:?}",
-            parsec.our_unpolled_observations().format(", ")
-        )
-    }
-
     pub fn prune_if_needed(&mut self) {
         if self.size_counter.needs_pruning() {
             self.vote_for(AccumulatingEvent::ParsecPrune.into_network_event());

@@ -100,17 +100,6 @@ impl Environment {
     }
 }
 
-impl Clone for Environment {
-    fn clone(&self) -> Self {
-        Self {
-            rng: RefCell::new(self.new_rng()),
-            network: self.network.clone(),
-            network_params: self.network_params,
-            seed_printer: None,
-        }
-    }
-}
-
 impl Deref for Environment {
     type Target = Network;
 

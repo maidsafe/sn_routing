@@ -51,7 +51,6 @@ pub fn gen_elder_index<R: Rng>(rng: &mut R, nodes: &[TestNode]) -> usize {
 
 pub struct TestNode {
     pub inner: Node,
-    _env: Environment,
     user_event_rx: mpmc::Receiver<Event>,
 }
 
@@ -63,11 +62,10 @@ impl TestNode {
         }
     }
 
-    pub fn resume(env: &Environment, state: PausedState) -> Self {
+    pub fn resume(state: PausedState) -> Self {
         let (inner, user_event_rx) = Node::resume(state);
         Self {
             inner,
-            _env: env.clone(),
             user_event_rx,
         }
     }
@@ -168,7 +166,6 @@ impl<'a> TestNodeBuilder<'a> {
 
         TestNode {
             inner,
-            _env: self.env.clone(),
             user_event_rx,
         }
     }
