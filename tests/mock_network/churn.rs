@@ -582,7 +582,7 @@ impl Expectations {
         let mut sent_count = 0;
         for node in nodes
             .iter_mut()
-            .filter(|node| node.inner.is_elder() && node.in_src_location(&key.src))
+            .filter(|node| node.inner.is_elder() && node.inner.in_src_location(&key.src))
         {
             trace!("send message {} from {}", key, node.name());
 

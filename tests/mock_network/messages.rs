@@ -6,11 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_all};
+use super::{create_connected_nodes, gen_elder_index, gen_vec, poll_until, TestNode};
 use rand::Rng;
 use routing::{
     event::Event, mock::Environment, quorum_count, DstLocation, NetworkParams, SrcLocation,
 };
+use std::collections::HashMap;
 
 #[test]
 fn send() {
@@ -33,31 +34,20 @@ fn send() {
         .send_message(src, dst, content.clone())
         .is_ok());
 
-    let _ = poll_all(&env, &mut nodes);
+    let mut expected_recipients: HashMap<_, _> = expected_recipients(&nodes, &dst)
+        .map(|index| (index, false))
+        .collect();
+    assert!(expected_recipients.len() >= quorum);
 
-    let mut message_received_count = 0;
-    for node in nodes
-        .iter_mut()
-        .filter(|n| n.inner.is_elder() && n.in_dst_location(&dst))
-    {
-        loop {
-            match node.try_recv_event() {
-                Some(Event::MessageReceived {
-                    content: ref req_content,
-                    ..
-                }) => {
-                    message_received_count += 1;
-                    if content == *req_content {
-                        break;
-                    }
-                }
-                Some(_) => (),
-                _ => panic!("{} - Event::MessageReceived not received", node.name()),
+    poll_until(&env, &mut nodes, |nodes| {
+        for (index, node) in nodes.iter().enumerate() {
+            if let Some(received) = expected_recipients.get_mut(&index) {
+                *received = *received || message_received(node, &content);
             }
         }
-    }
 
-    assert!(message_received_count >= quorum);
+        expected_recipients.values().all(|&received| received)
+    });
 }
 
 #[test]
@@ -73,69 +63,58 @@ fn send_and_receive() {
     let mut nodes = create_connected_nodes(&env, elder_size + 1);
 
     let sender_index = gen_elder_index(&mut rng, &nodes);
-    let src = SrcLocation::Node(*nodes[sender_index].id());
-    let dst = DstLocation::Section(rng.gen());
-
+    let req_src = SrcLocation::Node(*nodes[sender_index].id());
+    let req_dst = DstLocation::Section(rng.gen());
     let req_content = gen_vec(&mut rng, 10);
     let res_content = gen_vec(&mut rng, 11);
 
     assert!(nodes[sender_index]
         .inner
-        .send_message(src, dst, req_content.clone())
+        .send_message(req_src, req_dst, req_content.clone())
         .is_ok());
 
-    let _ = poll_all(&env, &mut nodes);
+    // For all expected recipients, poll until it receives the request message and send
+    // the response
+    let expected_req_recipients: Vec<_> = expected_recipients(&nodes, &req_dst).collect();
+    assert!(expected_req_recipients.len() >= quorum);
 
-    let mut request_received_count = 0;
+    for index in expected_req_recipients {
+        poll_until(&env, &mut nodes, |nodes| {
+            message_received(&nodes[index], &req_content)
+        });
 
-    for node in nodes
-        .iter_mut()
-        .filter(|n| n.inner.is_elder() && n.in_dst_location(&dst))
-    {
-        loop {
-            match node.try_recv_event() {
-                Some(Event::MessageReceived { content, src, .. }) => {
-                    request_received_count += 1;
-                    if req_content == content {
-                        let res_src = SrcLocation::Section(*node.our_prefix());
-                        let res_dst = match src {
-                            SrcLocation::Node(id) => DstLocation::Node(*id.name()),
-                            _ => panic!("Unexpected src location: {:?}", src),
-                        };
+        let res_src = SrcLocation::Section(*nodes[index].our_prefix());
+        let res_dst = DstLocation::Node(*nodes[sender_index].name());
 
-                        if let Err(err) =
-                            node.inner
-                                .send_message(res_src, res_dst, res_content.clone())
-                        {
-                            trace!("Failed to send message: {:?}", err);
-                        }
-                        break;
-                    }
-                }
-                Some(_) => (),
-                _ => panic!("Event::MessageReceived not received"),
-            }
+        if let Err(err) = nodes[index]
+            .inner
+            .send_message(res_src, res_dst, res_content.clone())
+        {
+            trace!("Failed to send message: {:?}", err);
         }
     }
 
-    assert!(request_received_count >= quorum);
+    // Poll until the response is delivered.
+    poll_until(&env, &mut nodes, |nodes| {
+        message_received(&nodes[sender_index], &res_content)
+    })
+}
 
-    let _ = poll_all(&env, &mut nodes);
+fn expected_recipients<'a>(
+    nodes: &'a [TestNode],
+    dst: &'a DstLocation,
+) -> impl Iterator<Item = usize> + 'a {
+    nodes
+        .iter()
+        .enumerate()
+        .filter(move |(_, node)| node.inner.is_elder() && node.inner.in_dst_location(dst))
+        .map(|(index, _)| index)
+}
 
-    let mut response_received_count = 0;
-
-    loop {
-        match nodes[sender_index].try_recv_event() {
-            Some(Event::MessageReceived { content, .. }) => {
-                response_received_count += 1;
-                if res_content == content {
-                    break;
-                }
-            }
-            Some(_) => (),
-            _ => panic!("Event::MessageReceived not received"),
-        }
+fn message_received(node: &TestNode, expected_content: &[u8]) -> bool {
+    if let Some(Event::MessageReceived { content, .. }) = node.try_recv_event() {
+        content == expected_content
+    } else {
+        false
     }
-
-    assert_eq!(response_received_count, 1);
 }
