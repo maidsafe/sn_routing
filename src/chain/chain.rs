@@ -53,8 +53,6 @@ pub struct Chain {
     state: SharedState,
     /// Accumulate NetworkEvent that do not have yet enough vote/proofs.
     chain_accumulator: ChainAccumulator,
-    /// Pending events whose handling has been deferred due to an ongoing split or merge.
-    event_cache: BTreeSet<NetworkEvent>,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
     /// Is split of the section currently in progress.
@@ -130,7 +128,6 @@ impl Chain {
             },
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             chain_accumulator: Default::default(),
-            event_cache: Default::default(),
             churn_in_progress: false,
             split_in_progress: false,
             relocation_in_progress: false,
@@ -204,11 +201,6 @@ impl Chain {
         proof: Proof,
     ) -> Result<(), RoutingError> {
         if self.should_skip_accumulator(event) {
-            return Ok(());
-        }
-
-        if !self.can_handle_vote(event) {
-            self.cache_event(event, proof.pub_id())?;
             return Ok(());
         }
 
@@ -644,7 +636,6 @@ impl Chain {
         parsec_version: u64,
     ) -> Result<ParsecResetData, RoutingError> {
         let remaining = self.chain_accumulator.reset_accumulator(&self.our_id);
-        let event_cache = mem::take(&mut self.event_cache);
 
         self.state.handled_genesis_event = false;
 
@@ -656,11 +647,7 @@ impl Chain {
                 ages: self.get_age_counters(),
                 parsec_version,
             },
-            cached_events: remaining
-                .cached_events
-                .into_iter()
-                .chain(event_cache)
-                .collect(),
+            cached_events: remaining.cached_events,
             completed_events: remaining.completed_events,
         })
     }
@@ -1108,50 +1095,6 @@ impl Chain {
             .iter()
             .find(move |&(pfx, _)| pfx.is_compatible(si.prefix()))
             .map(|(_, info)| info)
-    }
-
-    /// Check if we can handle a given event immediately.
-    /// Returns `true` if we are not in the process of waiting for a pfx change
-    /// or if incoming event is a vote for the ongoing pfx change.
-    fn can_handle_vote(&self, event: &NetworkEvent) -> bool {
-        if !self.split_in_progress {
-            return true;
-        }
-
-        match &event.payload {
-            AccumulatingEvent::SectionInfo(elders_info, _)
-            | AccumulatingEvent::NeighbourInfo(elders_info) => {
-                if elders_info.prefix().is_compatible(self.our_prefix())
-                    && elders_info.version() > self.state.our_info().version() + 1
-                {
-                    log_or_panic!(
-                        log::Level::Error,
-                        "We shouldn't have progressed past the split/merged version."
-                    );
-                    return false;
-                }
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Store given event if created by us for use later on.
-    fn cache_event(
-        &mut self,
-        net_event: &NetworkEvent,
-        sender_id: &PublicId,
-    ) -> Result<(), RoutingError> {
-        if !self.split_in_progress {
-            log_or_panic!(
-                log::Level::Error,
-                "Shouldn't be caching events while not splitting."
-            );
-        }
-        if self.our_id == *sender_id {
-            let _ = self.event_cache.insert(net_event.clone());
-        }
-        Ok(())
     }
 
     /// Handles our own section info, or the section info of our sibling directly after a split.
