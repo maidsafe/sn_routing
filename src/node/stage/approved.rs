@@ -1582,9 +1582,6 @@ impl Approved {
     // Send message over the network.
     pub fn send_signed_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
         let (targets, dg_size) = self.chain.targets(msg.message_dst())?;
-
-        trace!("Sending {:?} via targets {:?}", msg, targets);
-
         let targets: Vec<_> = targets
             .into_iter()
             .filter(|p2p_node| {
@@ -1592,9 +1589,15 @@ impl Approved {
                     .filter_outgoing(msg, p2p_node.public_id())
                     .is_new()
             })
-            .map(|node| *node.peer_addr())
             .collect();
 
+        if targets.is_empty() {
+            return Ok(());
+        }
+
+        trace!("Sending {:?} via targets {:?}", msg, targets);
+
+        let targets: Vec<_> = targets.into_iter().map(|node| *node.peer_addr()).collect();
         let cheap_bytes_clone = msg.full_bytes().clone();
         core.send_message_to_targets(&targets, dg_size, cheap_bytes_clone);
 

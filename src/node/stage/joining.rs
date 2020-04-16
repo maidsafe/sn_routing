@@ -181,9 +181,9 @@ impl Joining {
         }
     }
 
-    // Prefix of the section we are joining.
-    pub fn target_section_prefix(&self) -> &Prefix<XorName> {
-        self.elders_info.prefix()
+    // The EldersInfo of the section we are joining.
+    pub fn target_section_elders_info(&self) -> &EldersInfo {
+        &self.elders_info
     }
 
     // Are we relocating or joining for the first time?
