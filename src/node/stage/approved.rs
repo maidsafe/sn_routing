@@ -341,6 +341,8 @@ impl Approved {
     ) -> Result<()> {
         info!("Received GenesisUpdate: {:?}", gen_pfx_info);
 
+        core.msg_filter.reset();
+
         self.gen_pfx_info = gen_pfx_info.clone();
         self.init_parsec(core);
         self.chain = Chain::new(self.chain.network_params(), *core.id(), gen_pfx_info, None);
@@ -994,6 +996,8 @@ impl Approved {
         let info_version = elders_info.version();
         let is_elder = elders_info.is_member(core.id());
         let is_split = info_prefix.is_extension_of(&old_pfx);
+
+        core.msg_filter.reset();
 
         if was_elder || is_elder {
             info!("handle SectionInfo: {:?}", elders_info);
