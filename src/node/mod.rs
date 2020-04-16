@@ -299,6 +299,14 @@ impl Node {
             .flat_map(move |stage| stage.chain.closest_section_info(name).1.member_nodes())
     }
 
+    /// Returns the information of all the current section adults.
+    pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
+        self.stage
+            .approved()
+            .into_iter()
+            .flat_map(|stage| stage.chain.our_adults())
+    }
+
     /// Checks whether the given location represents self.
     pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
         match &self.stage {
