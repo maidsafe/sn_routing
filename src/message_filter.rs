@@ -84,6 +84,12 @@ impl MessageFilter {
             FilteringResult::NewMessage
         }
     }
+
+    // Resets both incoming and outgoing filters.
+    pub fn reset(&mut self) {
+        self.incoming.clear();
+        self.outgoing.clear();
+    }
 }
 
 impl Default for MessageFilter {
