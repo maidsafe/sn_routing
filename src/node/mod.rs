@@ -857,26 +857,23 @@ impl Node {
     fn set_log_ident(&self) -> log_utils::Guard {
         use std::fmt::Write;
         log_utils::set_ident(|buffer| match &self.stage {
-            Stage::Bootstrapping(_) => write!(buffer, "Bootstrapping({}) ", self.name()),
+            Stage::Bootstrapping(_) => write!(buffer, "{}(?) ", self.name()),
             Stage::Joining(stage) => write!(
                 buffer,
-                "Joining({}({:b})) ",
+                "{}({:b}v{}?) ",
                 self.name(),
-                stage.target_section_prefix()
-            ),
-            Stage::Approved(stage) if !stage.chain.is_self_elder() => write!(
-                buffer,
-                "Adult({}({:b})) ",
-                self.core.name(),
-                stage.chain.our_prefix()
+                stage.target_section_elders_info().prefix(),
+                stage.target_section_elders_info().version(),
             ),
             Stage::Approved(stage) => write!(
                 buffer,
-                "Elder({}({:b})) ",
+                "{}({:b}v{}{}) ",
                 self.core.name(),
-                stage.chain.our_prefix()
+                stage.chain.our_prefix(),
+                stage.chain.our_info().version(),
+                if stage.chain.is_self_elder() { "!" } else { "" },
             ),
-            Stage::Terminated => write!(buffer, "Terminated"),
+            Stage::Terminated => write!(buffer, "[terminated]"),
         })
     }
 }
