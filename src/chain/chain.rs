@@ -811,12 +811,18 @@ impl Chain {
         self.state.our_info().member_nodes()
     }
 
+    /// Returns adults from our own section.
+    pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_mature_members()
+            .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.public_id()))
+    }
+
     /// Returns joined adults and elders from our section.
-    fn our_mature_members(&self) -> impl Iterator<Item = &PublicId> {
+    fn our_mature_members(&self) -> impl Iterator<Item = &P2pNode> {
         self.state
             .our_joined_members()
             .filter(|(_, info)| info.is_mature())
-            .map(|(_, info)| info.p2p_node.public_id())
+            .map(|(_, info)| &info.p2p_node)
     }
 
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
@@ -1296,7 +1302,7 @@ impl Chain {
         let our_prefix_bit_count = self.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
             .our_mature_members()
-            .map(|id| our_name.common_prefix(id.name()) > our_prefix_bit_count)
+            .map(|p2p_node| our_name.common_prefix(p2p_node.name()) > our_prefix_bit_count)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {
                     (ours + 1, siblings)
