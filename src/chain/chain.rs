@@ -10,9 +10,8 @@ use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{SectionKeyInfo, SectionProofBlock, SharedState},
     stats::Stats,
-    AccumulatedEvent, AccumulatingEvent, AgeCounter, EldersChange, EldersInfo, GenesisPfxInfo,
-    MemberInfo, MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet,
-    SectionProofSlice,
+    AccumulatedEvent, AccumulatingEvent, EldersChange, EldersInfo, GenesisPfxInfo, MemberInfo,
+    MemberPersona, MemberState, NetworkEvent, NetworkParams, Proof, ProofSet, SectionProofSlice,
 };
 use crate::{
     error::{Result, RoutingError},
@@ -31,7 +30,7 @@ use std::{
     cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug, Formatter},
-    iter, mem,
+    mem,
     net::SocketAddr,
 };
 
@@ -94,15 +93,6 @@ impl Chain {
             .secret_key_share
             .as_ref()
             .ok_or(RoutingError::InvalidElderDkgResult)
-    }
-
-    /// Collects prefixes of all sections known by the routing table into a `BTreeSet`.
-    pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.other_prefixes()
-            .iter()
-            .chain(iter::once(self.state.our_info().prefix()))
-            .cloned()
-            .collect()
     }
 
     /// Create a new chain given genesis information
@@ -178,14 +168,6 @@ impl Chain {
     /// parsec data
     pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
         Ok(serialize(&self.state)?)
-    }
-
-    fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
-        self.state
-            .our_members
-            .values()
-            .map(|member_info| (*member_info.p2p_node.public_id(), member_info.age_counter))
-            .collect()
     }
 
     /// Handles an opaque parsec Observation as a NetworkEvent.
@@ -502,7 +484,7 @@ impl Chain {
 
     /// Validate if can call remove_member on this node.
     pub fn can_remove_member(&self, pub_id: &PublicId) -> bool {
-        self.is_peer_our_member(pub_id)
+        self.state.is_peer_our_member(pub_id)
     }
 
     /// Adds a member to our section.
@@ -647,7 +629,7 @@ impl Chain {
                 elders_info: self.our_info().clone(),
                 public_keys: self.our_section_bls_keys().clone(),
                 state_serialized: self.get_genesis_related_info()?,
-                ages: self.get_age_counters(),
+                ages: self.state.get_age_counters(),
                 parsec_version,
             },
             cached_events: remaining.cached_events,
@@ -662,7 +644,7 @@ impl Chain {
         parsec_version: u64,
     ) -> Result<ParsecResetData, RoutingError> {
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
-        self.check_and_clean_neighbour_infos(None);
+        self.state.check_and_clean_neighbour_infos();
 
         info!("finalise_prefix_change: {:?}", self.our_prefix());
         trace!("finalise_prefix_change state: {:?}", self.state);
@@ -685,14 +667,19 @@ impl Chain {
         self.state.our_prefix()
     }
 
+    /// Collects prefixes of all sections known to us.
+    pub fn known_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        self.state.known_prefixes()
+    }
+
     /// Neighbour infos signed by our section
     pub fn neighbour_infos(&self) -> impl Iterator<Item = &EldersInfo> {
         self.state.neighbour_infos.values()
     }
 
     /// Return prefixes of all our neighbours
-    pub fn other_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.state.neighbour_infos.keys().cloned().collect()
+    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        self.state.neighbour_prefixes()
     }
 
     /// Neighbour infos signed by our section
@@ -702,32 +689,17 @@ impl Chain {
 
     /// Find section (prefix + version) which has member with the given name
     pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<(Prefix<XorName>, u64)> {
-        if self.is_peer_our_member(pub_id) {
-            return Some((*self.our_info().prefix(), self.our_info().version()));
-        }
-
-        self.state
-            .neighbour_infos
-            .values()
-            .find(|info| info.is_member(pub_id))
-            .map(|info| (*info.prefix(), info.version()))
+        self.state.find_section_by_member(pub_id)
     }
 
     /// Check if the given `PublicId` is a member of our section.
     pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
-        self.state
-            .our_members
-            .get(pub_id.name())
-            .map(|info| info.state != MemberState::Left)
-            .unwrap_or(false)
+        self.state.is_peer_our_member(pub_id)
     }
 
     /// Returns a section member `P2pNode`
     pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state
-            .our_members
-            .get(name)
-            .map(|member_info| &member_info.p2p_node)
+        self.state.get_member_p2p_node(name)
     }
 
     /// Returns an old section member `P2pNode`
@@ -739,101 +711,53 @@ impl Chain {
 
     /// Returns the `P2pNode` of all non-elders in the section
     pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state
-            .our_joined_members()
-            .filter(move |(_, info)| !self.state.our_info().is_member(info.p2p_node.public_id()))
-            .map(|(_, info)| &info.p2p_node)
-    }
-
-    pub fn get_our_info_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state.our_info().member_map().get(name)
-    }
-
-    /// Returns a neighbour `P2pNode`
-    pub fn get_neighbour_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state
-            .neighbour_infos
-            .iter()
-            .find(|(pfx, _)| pfx.matches(name))
-            .and_then(|(_, elders_info)| elders_info.member_map().get(name))
+        self.state.adults_and_infants_p2p_nodes()
     }
 
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.get_member_p2p_node(name)
-            .or_else(|| self.get_our_info_p2p_node(name))
-            .or_else(|| self.get_neighbour_p2p_node(name))
+        self.state
+            .get_member_p2p_node(name)
+            .or_else(|| self.state.get_our_elder_p2p_node(name))
+            .or_else(|| self.state.get_neighbour_p2p_node(name))
             .or_else(|| self.get_post_split_sibling_member_p2p_node(name))
     }
 
-    /// Returns a set of elders we should be connected to.
-    pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.neighbour_infos()
-            .chain(iter::once(self.state.our_info()))
-            .flat_map(EldersInfo::member_nodes)
-    }
-
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
-        self.known_nodes()
-            .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
+        self.state.find_p2p_node_from_addr(socket_addr)
     }
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
-        self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
+        self.state.is_peer_our_elder(pub_id) || self.state.is_peer_neighbour_elder(pub_id)
     }
 
     /// Returns whether we are elder in our section.
     pub fn is_self_elder(&self) -> bool {
-        self.is_peer_our_elder(&self.our_id)
+        self.state.is_peer_our_elder(&self.our_id)
     }
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.our_info().is_member(pub_id)
-    }
-
-    /// Returns whether the given peer is elder in one of our neighbour sections.
-    pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
-        self.neighbour_infos().any(|info| info.is_member(pub_id))
+        self.state.is_peer_our_elder(pub_id)
     }
 
     /// Returns whether the given peer is an active (not left) member of our section.
     pub fn is_peer_our_active_member(&self, pub_id: &PublicId) -> bool {
-        self.state
-            .our_members
-            .get(pub_id.name())
-            .map(|info| info.state != MemberState::Left)
-            .unwrap_or(false)
+        self.state.is_peer_our_active_member(pub_id)
     }
 
     /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
-        self.state.our_info().member_nodes()
+        self.state.our_elders()
     }
 
     /// Returns adults from our own section.
     pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_mature_members()
-            .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.public_id()))
-    }
-
-    /// Returns joined adults and elders from our section.
-    fn our_mature_members(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state
-            .our_joined_members()
-            .filter(|(_, info)| info.is_mature())
-            .map(|(_, info)| &info.p2p_node)
+        self.state.our_adults()
     }
 
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
-        let mut elders: BTreeMap<_, _> = self
-            .state
-            .our_joined_members()
-            .sorted_by(|(_, info1), (_, info2)| self.cmp_elder_candidates(info1, info2))
-            .into_iter()
-            .map(|(name, info)| (*name, info.p2p_node.clone()))
-            .take(self.elder_size())
-            .collect();
+        let mut elders: BTreeMap<_, _> = self.eldest_members(self.state.our_joined_members());
 
         // Ensure that we can still handle one node lost when relocating.
         // Ensure that the node we eject are the one we want to relocate first.
@@ -853,6 +777,30 @@ impl Chain {
         elders
     }
 
+    fn eldest_members_matching_prefix(
+        &self,
+        prefix: &Prefix<XorName>,
+    ) -> BTreeMap<XorName, P2pNode> {
+        self.eldest_members(
+            self.state
+                .our_joined_members()
+                .filter(|(name, _)| prefix.matches(name)),
+        )
+    }
+
+    fn eldest_members<'a, I>(&self, members: I) -> BTreeMap<XorName, P2pNode>
+    where
+        I: IntoIterator<Item = (&'a XorName, &'a MemberInfo)>,
+    {
+        members
+            .into_iter()
+            .sorted_by(|(_, info1), (_, info2)| self.cmp_elder_candidates(info1, info2))
+            .into_iter()
+            .map(|(name, info)| (*name, info.p2p_node.clone()))
+            .take(self.elder_size())
+            .collect()
+    }
+
     // Compare candidates for the next elders. The one comparing `Less` is more likely to become
     // elder.
     fn cmp_elder_candidates(&self, lhs: &MemberInfo, rhs: &MemberInfo) -> Ordering {
@@ -862,23 +810,9 @@ impl Chain {
             .then(lhs.section_version.cmp(&rhs.section_version))
     }
 
-    fn eldest_members_matching_prefix(
-        &self,
-        prefix: &Prefix<XorName>,
-    ) -> BTreeMap<XorName, P2pNode> {
-        self.state
-            .our_joined_members()
-            .filter(|(name, _)| prefix.matches(name))
-            .sorted_by(|&(_, info1), &(_, info2)| Ord::cmp(&info2.age_counter, &info1.age_counter))
-            .into_iter()
-            .map(|(name, info)| (*name, info.p2p_node.clone()))
-            .take(self.elder_size())
-            .collect()
-    }
-
     /// Returns all neighbour elders.
     pub fn neighbour_elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.neighbour_infos().flat_map(EldersInfo::member_nodes)
+        self.state.neighbour_elder_nodes()
     }
 
     /// Returns an iterator over the members that have not state == `Left`.
@@ -890,8 +824,7 @@ impl Chain {
 
     /// Returns the members in our section and elders we know.
     pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_active_members()
-            .chain(self.neighbour_elder_nodes())
+        self.state.known_nodes()
     }
 
     /// Return the keys we know
@@ -901,12 +834,7 @@ impl Chain {
 
     /// Returns the latest key info whose prefix is compatible with the given name.
     pub fn latest_compatible_their_key_info(&self, name: &XorName) -> &SectionKeyInfo {
-        self.state
-            .get_their_key_infos()
-            .filter(|(prefix, _)| prefix.matches(name))
-            .map(|(_, info)| info)
-            .max_by_key(|info| info.version())
-            .unwrap_or_else(|| self.state.our_history.first_key_info())
+        self.state.latest_compatible_their_key_info(name)
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
@@ -1138,7 +1066,7 @@ impl Chain {
         self.state.push_our_new_info(elders_info, proof_block);
         self.our_section_bls_keys = SectionKeys::new(our_new_key, self.our_id(), self.our_info());
         self.churn_in_progress = false;
-        self.check_and_clean_neighbour_infos(None);
+        self.state.check_and_clean_neighbour_infos();
         self.post_split_sibling_members = self.state.remove_our_members_not_matching_our_prefix();
         Ok(())
     }
@@ -1175,7 +1103,7 @@ impl Chain {
             let _ = self.state.neighbour_infos.insert(sibling_pfx, sinfo);
         }
 
-        self.check_and_clean_neighbour_infos(Some(&pfx));
+        self.state.check_and_clean_neighbour_infos();
         Ok(())
     }
 
@@ -1249,6 +1177,7 @@ impl Chain {
         let our_name = self.our_id.name();
         let our_prefix_bit_count = self.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
+            .state
             .our_mature_members()
             .map(|p2p_node| our_name.common_prefix(p2p_node.name()) > our_prefix_bit_count)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
@@ -1281,77 +1210,10 @@ impl Chain {
         Ok((our_new_info, other_info))
     }
 
-    /// Update our version which has signed the neighbour infos to whichever latest version
-    /// possible.
-    ///
-    /// If we want to do for a particular `NeighbourInfo` then supply that else we will go over the
-    /// entire list.
-    fn check_and_clean_neighbour_infos(&mut self, _for_pfx: Option<&Prefix<XorName>>) {
-        // Remove invalid neighbour pfx, older version of compatible pfx.
-        let to_remove: Vec<Prefix<XorName>> = self
-            .state
-            .neighbour_infos
-            .iter()
-            .filter_map(|(pfx, elders_info)| {
-                if !self.our_prefix().is_neighbour(pfx) {
-                    // we just split making old neighbour no longer needed
-                    return Some(*pfx);
-                }
-
-                // Remove older compatible neighbour prefixes.
-                // DO NOT SUPPORT MERGE: Not consider newer if the older one was extension (split).
-                let is_newer = |(other_pfx, other_elders_info): (&Prefix<XorName>, &EldersInfo)| {
-                    other_pfx.is_compatible(pfx)
-                        && other_elders_info.version() > elders_info.version()
-                        && !pfx.is_extension_of(other_pfx)
-                };
-
-                if self.state.neighbour_infos.iter().any(is_newer) {
-                    return Some(*pfx);
-                }
-
-                None
-            })
-            .collect();
-        for pfx in to_remove {
-            let _ = self.state.neighbour_infos.remove(&pfx);
-        }
-    }
-
-    // Set of methods ported over from routing_table mostly as-is. The idea is to refactor and
-    // restructure them after they've all been ported over.
-
-    /// Returns an iterator over all neighbouring sections and our own, together with their prefix
-    /// in the map.
-    pub fn all_sections(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
-        self.state.neighbour_infos.iter().chain(iter::once((
-            self.state.our_info().prefix(),
-            self.state.our_info(),
-        )))
-    }
-
-    /// Returns the prefix of the closest non-empty section to `name`, regardless of whether `name`
-    /// belongs in that section or not, and the section itself.
-    pub(crate) fn closest_section_info(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        let mut best_pfx = self.our_prefix();
-        let mut best_info = self.our_info();
-        for (pfx, info) in &self.state.neighbour_infos {
-            // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
-                best_pfx = pfx;
-                best_info = info;
-            }
-        }
-        (best_pfx, best_info)
-    }
-
-    /// Returns the known sections sorted by the distance from a given XorName.
-    fn closest_sections_info(&self, name: XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
-        let mut result: Vec<_> = iter::once((self.our_prefix(), self.our_info()))
-            .chain(self.state.neighbour_infos.iter())
-            .collect();
-        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, &name));
-        result
+    /// Returns the known section that is closest to the given name, regardless of whether `name`
+    /// belongs in that section or not.
+    pub(crate) fn closest_section(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
+        self.state.closest_section(name)
     }
 
     /// Returns a set of nodes to which a message for the given `DstLocation` could be sent
@@ -1396,7 +1258,7 @@ impl Chain {
                 self.candidates(target_name)?
             }
             DstLocation::Section(target_name) => {
-                let (prefix, section) = self.closest_section_info(*target_name);
+                let (prefix, section) = self.state.closest_section(*target_name);
                 if prefix == self.our_prefix() || prefix.is_neighbour(self.our_prefix()) {
                     // Exclude our name since we don't need to send to ourself
                     let our_name = self.our_id().name();
@@ -1420,7 +1282,7 @@ impl Chain {
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
                     if prefix.is_compatible(self.our_prefix())
-                        && !prefix.is_covered_by(self.prefixes().iter())
+                        && !prefix.is_covered_by(self.known_prefixes().iter())
                     {
                         return Err(RoutingError::CannotRoute);
                     }
@@ -1437,7 +1299,8 @@ impl Chain {
                     let our_name = self.our_id().name();
 
                     let targets: Vec<_> = self
-                        .all_sections()
+                        .state
+                        .known_sections()
                         .filter_map(is_compatible)
                         .flat_map(EldersInfo::member_nodes)
                         .filter(|node| node.name() != our_name)
@@ -1457,7 +1320,8 @@ impl Chain {
     // Obtain the delivery group candidates for this target
     fn candidates(&self, target_name: &XorName) -> Result<(Vec<P2pNode>, usize), RoutingError> {
         let filtered_sections = self
-            .closest_sections_info(*target_name)
+            .state
+            .closest_sections(*target_name)
             .into_iter()
             .map(|(prefix, members)| (prefix, members.len(), members.member_nodes()));
 
@@ -1536,7 +1400,7 @@ impl Chain {
     /// Return (estimate, exact), with exact = true iff we have the whole network in our
     /// routing table.
     pub fn network_size_estimate(&self) -> (u64, bool) {
-        let known_prefixes = self.prefixes();
+        let known_prefixes = self.state.known_prefixes();
         let is_exact = Prefix::default().is_covered_by(known_prefixes.iter());
 
         // Estimated fraction of the network that we have in our RT.
@@ -1547,7 +1411,7 @@ impl Chain {
             .sum();
 
         // Total size estimate = known_nodes / network_fraction
-        let network_size = self.elders().count() as f64 / network_fraction;
+        let network_size = self.state.known_elders().count() as f64 / network_fraction;
 
         (network_size.ceil() as u64, is_exact)
     }
@@ -1568,7 +1432,7 @@ impl Chain {
         let (total_elders, total_elders_exact) = self.network_size_estimate();
 
         Stats {
-            known_elders: self.elders().count() as u64,
+            known_elders: self.state.known_elders().count() as u64,
             total_elders,
             total_elders_exact,
         }
@@ -1631,6 +1495,11 @@ impl Chain {
             .our_members
             .get(name)
             .map(|member| member.age_counter_value())
+    }
+
+    /// Returns a set of elders we know.
+    pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
+        self.state.known_elders()
     }
 }
 

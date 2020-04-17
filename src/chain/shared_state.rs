@@ -11,15 +11,20 @@ use super::{
     MIN_AGE_COUNTER,
 };
 use crate::{
-    error::RoutingError, id::PublicId, location::DstLocation, relocation::RelocateDetails, Prefix,
-    XorName,
+    error::RoutingError,
+    id::{P2pNode, PublicId},
+    location::DstLocation,
+    relocation::RelocateDetails,
+    Prefix, XorName,
 };
 use bincode::serialize;
 use itertools::Itertools;
 use std::{
-    collections::{BTreeMap, VecDeque},
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::{self, Debug, Formatter},
     iter, mem,
+    net::SocketAddr,
 };
 
 // Number of recent keys we keep: i.e how many other section churns we can handle before a
@@ -160,6 +165,107 @@ impl SharedState {
             .filter(|(_, member)| member.state == MemberState::Joined)
     }
 
+    /// Returns joined adults and elders from our section.
+    pub fn our_mature_members(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_joined_members()
+            .filter(|(_, info)| info.is_mature())
+            .map(|(_, info)| &info.p2p_node)
+    }
+
+    /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
+    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
+        self.our_info().member_nodes()
+    }
+
+    /// Returns adults from our own section.
+    pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_mature_members()
+            .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.public_id()))
+    }
+
+    /// Returns all nodes we know (our members + neighbour elders).
+    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_active_members()
+            .map(|(_, info)| &info.p2p_node)
+            .chain(self.neighbour_elder_nodes())
+    }
+
+    /// Returns a set of elders we know.
+    pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
+        self.neighbour_infos
+            .values()
+            .chain(iter::once(self.our_info()))
+            .flat_map(EldersInfo::member_nodes)
+    }
+
+    /// Returns all neighbour elders.
+    pub fn neighbour_elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.neighbour_infos
+            .values()
+            .flat_map(EldersInfo::member_nodes)
+    }
+
+    /// Check if the given `PublicId` is a member of our section.
+    pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
+        self.our_members
+            .get(pub_id.name())
+            .map(|info| info.state != MemberState::Left)
+            .unwrap_or(false)
+    }
+
+    /// Returns whether the given peer is an active (not left) member of our section.
+    pub fn is_peer_our_active_member(&self, pub_id: &PublicId) -> bool {
+        self.our_members
+            .get(pub_id.name())
+            .map(|info| info.state != MemberState::Left)
+            .unwrap_or(false)
+    }
+
+    /// Returns whether the given peer is elder in our section.
+    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
+        self.our_info().is_member(pub_id)
+    }
+
+    /// Returns whether the given peer is elder in one of our neighbour sections.
+    pub fn is_peer_neighbour_elder(&self, pub_id: &PublicId) -> bool {
+        self.neighbour_infos
+            .values()
+            .any(|info| info.is_member(pub_id))
+    }
+
+    /// Returns a section member `P2pNode`
+    pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.our_members
+            .get(name)
+            .map(|member_info| &member_info.p2p_node)
+    }
+
+    /// Returns a `P2pNode` of our elder.
+    pub fn get_our_elder_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.our_info().member_map().get(name)
+    }
+
+    /// Returns a neighbour `P2pNode`
+    pub fn get_neighbour_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.neighbour_infos
+            .iter()
+            .find(|(pfx, _)| pfx.matches(name))
+            .and_then(|(_, elders_info)| elders_info.member_map().get(name))
+    }
+
+    pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
+        self.known_nodes()
+            .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
+    }
+
+    /// Returns the age counters of all our members.
+    pub fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
+        self.our_members
+            .values()
+            .map(|member_info| (*member_info.p2p_node.public_id(), member_info.age_counter))
+            .collect()
+    }
+
     /// Returns the current persona corresponding to the given PublicId or `None` if such a member
     /// doesn't exist
     pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {
@@ -185,12 +291,108 @@ impl SharedState {
         sibling_members
     }
 
+    /// Find section (prefix + version) which has member with the given name
+    pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<(Prefix<XorName>, u64)> {
+        if self.is_peer_our_member(pub_id) {
+            return Some((*self.our_info().prefix(), self.our_info().version()));
+        }
+
+        self.neighbour_infos
+            .values()
+            .find(|info| info.is_member(pub_id))
+            .map(|info| (*info.prefix(), info.version()))
+    }
+
+    /// Returns the `P2pNode` of all non-elders in the section
+    pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
+        self.our_joined_members()
+            .filter(move |(_, info)| !self.our_info().is_member(info.p2p_node.public_id()))
+            .map(|(_, info)| &info.p2p_node)
+    }
+
+    /// Return prefixes of all our neighbours
+    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        self.neighbour_infos.keys().cloned().collect()
+    }
+
+    /// Returns an iterator over all neighbouring sections and our own, together with their prefix
+    /// in the map.
+    pub fn known_sections(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
+        self.neighbour_infos
+            .iter()
+            .chain(iter::once((self.our_info().prefix(), self.our_info())))
+    }
+
+    /// Returns the known sections sorted by the distance from a given XorName.
+    pub fn closest_sections(&self, name: XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
+        let mut result: Vec<_> = iter::once((self.our_prefix(), self.our_info()))
+            .chain(&self.neighbour_infos)
+            .collect();
+        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, &name));
+        result
+    }
+
+    /// Returns the known section that is closest to the given name, regardless of whether `name`
+    /// belongs in that section or not.
+    pub fn closest_section(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
+        let mut best_pfx = self.our_prefix();
+        let mut best_info = self.our_info();
+        for (pfx, info) in &self.neighbour_infos {
+            // TODO: Remove the first check after verifying that section infos are never empty.
+            if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
+                best_pfx = pfx;
+                best_info = info;
+            }
+        }
+        (best_pfx, best_info)
+    }
+
+    /// Collects prefixes of all sections known to us.
+    pub fn known_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
+        let mut prefixes = self.neighbour_prefixes();
+        let _ = prefixes.insert(*self.our_prefix());
+        prefixes
+    }
+
     pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
         self.our_history.push(proof_block);
         self.our_infos.push(elders_info);
 
         let key_info = self.our_history.last_key_info().clone();
         self.update_their_keys(&key_info);
+    }
+
+    // Update our version which has signed the neighbour infos to whichever latest version
+    // possible.
+    pub fn check_and_clean_neighbour_infos(&mut self) {
+        // Remove invalid neighbour pfx, older version of compatible pfx.
+        let to_remove: Vec<Prefix<XorName>> = self
+            .neighbour_infos
+            .iter()
+            .filter_map(|(pfx, elders_info)| {
+                if !self.our_prefix().is_neighbour(pfx) {
+                    // we just split making old neighbour no longer needed
+                    return Some(*pfx);
+                }
+
+                // Remove older compatible neighbour prefixes.
+                // DO NOT SUPPORT MERGE: Not consider newer if the older one was extension (split).
+                let is_newer = |(other_pfx, other_elders_info): (&Prefix<XorName>, &EldersInfo)| {
+                    other_pfx.is_compatible(pfx)
+                        && other_elders_info.version() > elders_info.version()
+                        && !pfx.is_extension_of(other_pfx)
+                };
+
+                if self.neighbour_infos.iter().any(is_newer) {
+                    return Some(*pfx);
+                }
+
+                None
+            })
+            .collect();
+        for pfx in to_remove {
+            let _ = self.neighbour_infos.remove(&pfx);
+        }
     }
 
     /// Updates the entry in `their_keys` for `prefix` to the latest known key; if a split
@@ -284,6 +486,15 @@ impl SharedState {
         self.their_keys
             .iter()
             .chain(self.their_recent_keys.iter().map(|(p, k)| (p, k)))
+    }
+
+    /// Returns the latest key info whose prefix is compatible with the given name.
+    pub fn latest_compatible_their_key_info(&self, name: &XorName) -> &SectionKeyInfo {
+        self.get_their_key_infos()
+            .filter(|(prefix, _)| prefix.matches(name))
+            .map(|(_, info)| info)
+            .max_by_key(|info| info.version())
+            .unwrap_or_else(|| self.our_history.first_key_info())
     }
 
     #[cfg(feature = "mock_base")]
