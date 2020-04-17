@@ -55,8 +55,6 @@ pub struct Chain {
     chain_accumulator: ChainAccumulator,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
-    /// Is split of the section currently in progress.
-    split_in_progress: bool,
     /// Marker indicating we are processing a relocation.
     relocation_in_progress: bool,
     /// Marker indicating that elders may need to change,
@@ -129,7 +127,6 @@ impl Chain {
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             chain_accumulator: Default::default(),
             churn_in_progress: false,
-            split_in_progress: false,
             relocation_in_progress: false,
             members_changed: false,
             new_section_bls_keys: Default::default(),
@@ -309,11 +306,15 @@ impl Chain {
             AccumulatingEvent::Relocate(_) => {
                 self.relocation_in_progress = false;
             }
+            AccumulatingEvent::ParsecPrune => {
+                if self.churn_in_progress {
+                    return Ok(None);
+                }
+            }
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
-            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
@@ -341,7 +342,9 @@ impl Chain {
         event: AccumulatedEvent,
     ) -> Result<Option<AccumulatedEvent>, RoutingError> {
         let start_churn_event = match &event.content {
-            AccumulatingEvent::Online(_) | AccumulatingEvent::Offline(_) => true,
+            AccumulatingEvent::Online(_)
+            | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::Relocate(_) => true,
             _ => false,
         };
 
@@ -495,10 +498,7 @@ impl Chain {
     }
 
     fn can_poll_churn(&self) -> bool {
-        self.state.handled_genesis_event
-            && !self.churn_in_progress
-            && !self.relocation_in_progress
-            && !self.split_in_progress
+        self.state.handled_genesis_event && !self.churn_in_progress && !self.relocation_in_progress
     }
 
     /// Validate if can call add_member on this node.
@@ -512,8 +512,13 @@ impl Chain {
     }
 
     /// Adds a member to our section.
+    ///
+    /// # Panics
+    ///
+    /// Panics if churn is in progress
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
-        self.assert_no_prefix_change("add member");
+        assert!(!self.churn_in_progress);
+
         self.members_changed = true;
 
         match self.state.our_members.entry(*p2p_node.name()) {
@@ -551,8 +556,13 @@ impl Chain {
 
     /// Remove a member from our section. Returns the SocketAddr and the state of the member before
     /// the removal.
+    ///
+    /// # Panics
+    ///
+    /// Panics if churn is in progress
     pub fn remove_member(&mut self, pub_id: &PublicId) -> (Option<SocketAddr>, MemberState) {
-        self.assert_no_prefix_change("remove member");
+        assert!(!self.churn_in_progress);
+
         self.members_changed = true;
 
         if let Some(info) = self
@@ -592,9 +602,8 @@ impl Chain {
             return Ok(None);
         }
 
-        if self.should_split()? {
+        if self.should_split() {
             let (our_info, other_info) = self.split_self()?;
-            self.split_in_progress = true;
             self.members_changed = false;
             self.churn_in_progress = true;
             return Ok(Some(vec![our_info, other_info]));
@@ -660,7 +669,6 @@ impl Chain {
     ) -> Result<ParsecResetData, RoutingError> {
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.check_and_clean_neighbour_infos(None);
-        self.split_in_progress = false;
 
         info!("finalise_prefix_change: {:?}", self.our_prefix());
         trace!("finalise_prefix_change state: {:?}", self.state);
@@ -681,16 +689,6 @@ impl Chain {
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
         self.state.our_prefix()
-    }
-
-    /// Returns whether our section is in the process of splitting.
-    pub fn split_in_progress(&self) -> bool {
-        self.split_in_progress
-    }
-
-    /// Returns whether a churn (elders change) is in progress.
-    pub fn churn_in_progress(&self) -> bool {
-        self.churn_in_progress
     }
 
     /// Neighbour infos signed by our section
@@ -1067,24 +1065,20 @@ impl Chain {
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::TheirKeyInfo(_)
-            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::AckMessage(_)
-            | AccumulatingEvent::User(_)
+            | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::Relocate(_)
-            | AccumulatingEvent::RelocatePrepare(_, _) => {
-                !self.split_in_progress && self.our_info().is_quorum(proofs)
-            }
-            AccumulatingEvent::StartDkg(_) => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "StartDkg present in the chain accumulator - should never happen!"
-                );
-                false
-            }
+            | AccumulatingEvent::RelocatePrepare(_, _)
+            | AccumulatingEvent::User(_) => self.our_info().is_quorum(proofs),
+
             AccumulatingEvent::SendAckMessage(_) => {
                 // We may not reach consensus if malicious peer, but when we do we know all our
                 // nodes have updated `their_keys`.
-                !self.split_in_progress && self.our_info().is_total_consensus(proofs)
+                self.our_info().is_total_consensus(proofs)
+            }
+
+            AccumulatingEvent::StartDkg(_) => {
+                unreachable!("StartDkg present in the chain accumulator")
             }
         }
     }
@@ -1257,11 +1251,7 @@ impl Chain {
     }
 
     /// Returns whether we should split into two sections.
-    fn should_split(&self) -> Result<bool, RoutingError> {
-        if self.split_in_progress {
-            return Ok(false);
-        }
-
+    fn should_split(&self) -> bool {
         let our_name = self.our_id.name();
         let our_prefix_bit_count = self.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
@@ -1277,7 +1267,7 @@ impl Chain {
 
         // If either of the two new sections will not contain enough entries, return `false`.
         let safe_section_size = self.safe_section_size();
-        Ok(our_new_size >= safe_section_size && sibling_new_size >= safe_section_size)
+        our_new_size >= safe_section_size && sibling_new_size >= safe_section_size
     }
 
     /// Splits our section and generates new elders infos for the child sections.
@@ -1568,16 +1558,6 @@ impl Chain {
         (network_size.ceil() as u64, is_exact)
     }
 
-    fn assert_no_prefix_change(&self, label: &str) {
-        if self.split_in_progress {
-            log_or_panic!(
-                log::Level::Warn,
-                "attempt to {} during prefix change.",
-                label,
-            );
-        }
-    }
-
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
         self.state.churn_event_backlog.iter().any(|evt| {
@@ -1607,7 +1587,6 @@ impl Debug for Chain {
         writeln!(formatter, "\tour_id: {},", self.our_id)?;
         writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
         writeln!(formatter, "\tis_elder: {},", self.is_self_elder())?;
-        writeln!(formatter, "\tsplit_in_progress: {}", self.split_in_progress)?;
 
         writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
         for info in self.state.our_infos() {
