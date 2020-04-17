@@ -291,7 +291,7 @@ impl Node {
         self.stage
             .approved()
             .into_iter()
-            .flat_map(move |stage| stage.chain.closest_section_info(name).1.member_nodes())
+            .flat_map(move |stage| stage.chain.closest_section(name).1.member_nodes())
     }
 
     /// Returns the information of all the current section adults.
@@ -944,7 +944,7 @@ impl Node {
 
     /// Returns the prefixes of all sections known to us
     pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.chain().map(Chain::prefixes).unwrap_or_default()
+        self.chain().map(Chain::known_prefixes).unwrap_or_default()
     }
 
     /// Returns the elder info version of a section with the given prefix.
@@ -972,7 +972,7 @@ impl Node {
 
     /// Returns the elders in our and neighbouring sections.
     pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.chain().into_iter().flat_map(Chain::elders)
+        self.chain().into_iter().flat_map(Chain::known_elders)
     }
 
     /// Returns whether the given peer is an elder known to us.

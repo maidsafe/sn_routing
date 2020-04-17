@@ -435,7 +435,7 @@ impl Approved {
         } else {
             let conn_infos: Vec<_> = self
                 .chain
-                .closest_section_info(destination)
+                .closest_section(destination)
                 .1
                 .member_nodes()
                 .map(|p2p_node| *p2p_node.peer_addr())
@@ -1386,15 +1386,15 @@ impl Approved {
     }
 
     fn send_neighbour_infos(&mut self, core: &mut Core) {
-        self.chain.other_prefixes().iter().for_each(|pfx| {
+        for pfx in self.chain.neighbour_prefixes() {
             let src = SrcLocation::Section(*self.chain.our_prefix());
-            let dst = DstLocation::Prefix(*pfx);
+            let dst = DstLocation::Prefix(pfx);
             let variant = Variant::NeighbourInfo(self.chain.our_info().clone());
 
             if let Err(err) = self.send_routing_message(core, src, dst, variant, None) {
                 debug!("Failed to send NeighbourInfo: {:?}", err);
             }
-        });
+        }
     }
 
     // Send `GenesisUpdate` message to all non-elders.
