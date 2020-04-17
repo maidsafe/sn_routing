@@ -55,8 +55,6 @@ pub struct Chain {
     chain_accumulator: ChainAccumulator,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
-    /// Marker indicating we are processing a relocation.
-    relocation_in_progress: bool,
     /// Marker indicating that elders may need to change,
     members_changed: bool,
     /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
@@ -127,7 +125,6 @@ impl Chain {
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             chain_accumulator: Default::default(),
             churn_in_progress: false,
-            relocation_in_progress: false,
             members_changed: false,
             new_section_bls_keys: Default::default(),
             split_cache: None,
@@ -303,9 +300,6 @@ impl Chain {
             AccumulatingEvent::AckMessage(ref ack_payload) => {
                 self.update_their_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
-            AccumulatingEvent::Relocate(_) => {
-                self.relocation_in_progress = false;
-            }
             AccumulatingEvent::ParsecPrune => {
                 if self.churn_in_progress {
                     return Ok(None);
@@ -315,6 +309,7 @@ impl Chain {
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
+            | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::RelocatePrepare(_, _)
             | AccumulatingEvent::SendAckMessage(_) => (),
         }
@@ -492,13 +487,12 @@ impl Chain {
         }
 
         trace!("relocating member {}", details.pub_id);
-        self.relocation_in_progress = true;
 
         Some(details)
     }
 
     fn can_poll_churn(&self) -> bool {
-        self.state.handled_genesis_event && !self.churn_in_progress && !self.relocation_in_progress
+        self.state.handled_genesis_event && !self.churn_in_progress
     }
 
     /// Validate if can call add_member on this node.
