@@ -24,9 +24,14 @@ use std::{
     cmp, collections::BTreeSet, convert::TryInto, iter, net::SocketAddr, ops::Range, time::Duration,
 };
 
-// Maximum number of times to try and poll in a loop.  This is several orders higher than the
-// anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
-const MAX_POLL_CALLS: usize = 2000;
+// Maximum number of iterations of the `poll_until` function. This is several orders higher than
+// the anticipated upper limit for any test, and if hit is likely to indicate an infinite loop.
+const MAX_POLL_UNTIL_ITERATIONS: usize = 2000;
+
+// Maximum number of iterations of the `poll_all` function. Hitting this limit does not necessarily
+// indicate an error. It just prevents infinite loops in case the time needs to be advanced to make
+// progress.
+const MAX_POLL_ALL_ITERATIONS: usize = 100;
 
 // Maximum number of nodes that can join the network simultaneously. Trying to add more nodes might
 // cause some of them to timeout.
@@ -158,9 +163,9 @@ impl<'a> TestNodeBuilder<'a> {
 
 // -----  poll_all, create_connected_...  -----
 
-/// Process all events
+/// Polls the network until there are no more events to process.
 pub fn poll_all(env: &Environment, nodes: &mut [TestNode]) {
-    for _ in 0..MAX_POLL_CALLS {
+    for _ in 0..MAX_POLL_ALL_ITERATIONS {
         env.poll();
 
         let mut handled = false;
@@ -173,8 +178,6 @@ pub fn poll_all(env: &Environment, nodes: &mut [TestNode]) {
             return;
         }
     }
-
-    panic!("poll_all has been called {} times.", MAX_POLL_CALLS);
 }
 
 /// Polls the network until the given predicate returns `true`.
@@ -185,7 +188,7 @@ where
     // Duration to advance the time after each iteration.
     let time_step = test_consts::GOSSIP_PERIOD + Duration::from_millis(1);
 
-    for _ in 0..MAX_POLL_CALLS {
+    for _ in 0..MAX_POLL_UNTIL_ITERATIONS {
         if predicate(nodes) {
             return;
         }
@@ -194,7 +197,10 @@ where
         advance_time(time_step);
     }
 
-    panic!("poll_until has been called {} times.", MAX_POLL_CALLS);
+    panic!(
+        "poll_until has been called {} times.",
+        MAX_POLL_UNTIL_ITERATIONS
+    );
 }
 
 fn advance_time(duration: Duration) {
