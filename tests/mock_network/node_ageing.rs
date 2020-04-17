@@ -204,10 +204,13 @@ fn churn_until_age_counter(
     let max_section_size = NETWORK_PARAMS.safe_section_size - 1;
     assert!(min_section_size < max_section_size);
 
+    // Store the name here in case it changes due to relocation.
+    let node_name = *nodes[node_index].name();
+
     let mut rng = env.new_rng();
 
     loop {
-        let current_age_counter = node_age_counter(nodes, nodes[node_index].name());
+        let current_age_counter = node_age_counter(nodes, &node_name);
 
         info!(
             "churn_until_age_counter - node {}, age_counter {}/{}",
