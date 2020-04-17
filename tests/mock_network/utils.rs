@@ -276,15 +276,16 @@ pub fn section_split(nodes: &[TestNode], prefix: &Prefix<XorName>) -> bool {
     let mut pending = nodes
         .iter()
         .filter(|node| {
-            if sub_prefix0.matches(node.name()) && *node.our_prefix() != sub_prefix0 {
-                return true;
-            }
-
-            if sub_prefix1.matches(node.name()) && *node.our_prefix() != sub_prefix1 {
+            if prefix.matches(node.name())
+                && *node.our_prefix() != sub_prefix0
+                && *node.our_prefix() != sub_prefix1
+            {
+                // The node hasn't progressed through the split of its own section yet.
                 return true;
             }
 
             if node.inner.prefixes().contains(prefix) {
+                // The node still has the pre-split section among its neighbours.
                 return true;
             }
 
@@ -583,11 +584,8 @@ fn poll_until_last_nodes_joined(env: &Environment, nodes: &mut [TestNode], first
 
 // -----  Small misc functions  -----
 
-/// Sorts the given nodes by their distance to `name`. Note that this will call the `name()`
-/// function on them which causes polling, so it calls `poll_all` to make sure that all other
-/// events have been processed before sorting.
-pub fn sort_nodes_by_distance_to(env: &Environment, nodes: &mut [TestNode], name: &XorName) {
-    poll_all(env, nodes); // Poll
+/// Sorts the given nodes by their distance to `name`.
+pub fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
     nodes.sort_by(|node0, node1| name.cmp_distance(node0.name(), node1.name()));
 }
 

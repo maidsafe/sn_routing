@@ -39,6 +39,7 @@ fn send() {
         .collect();
     assert!(expected_recipients.len() >= quorum);
 
+    // Poll until every node that is expected to receive the message actually receives it.
     poll_until(&env, &mut nodes, |nodes| {
         for (index, node) in nodes.iter().enumerate() {
             if let Some(received) = expected_recipients.get_mut(&index) {
@@ -73,16 +74,18 @@ fn send_and_receive() {
         .send_message(req_src, req_dst, req_content.clone())
         .is_ok());
 
-    // For all expected recipients, poll until it receives the request message and send
+    // For all expected recipients, poll until it receives the request message and sends
     // the response
     let expected_req_recipients: Vec<_> = expected_recipients(&nodes, &req_dst).collect();
     assert!(expected_req_recipients.len() >= quorum);
 
     for index in expected_req_recipients {
+        // Poll until the node received the request...
         poll_until(&env, &mut nodes, |nodes| {
             message_received(&nodes[index], &req_content)
         });
 
+        // ...then send the response back.
         let res_src = SrcLocation::Section(*nodes[index].our_prefix());
         let res_dst = DstLocation::Node(*nodes[sender_index].name());
 
@@ -94,12 +97,14 @@ fn send_and_receive() {
         }
     }
 
-    // Poll until the response is delivered.
+    // Poll until the response is received by the sender of the request.
     poll_until(&env, &mut nodes, |nodes| {
         message_received(&nodes[sender_index], &res_content)
     })
 }
 
+// Returns the indices of the nodes that are expected to receive a message with the given
+// destination.
 fn expected_recipients<'a>(
     nodes: &'a [TestNode],
     dst: &'a DstLocation,
@@ -111,10 +116,18 @@ fn expected_recipients<'a>(
         .map(|(index, _)| index)
 }
 
+// Returns whether the given node received a message with the given content since the last time
+// this function was called, or since the beginning of the polling if this is the first call.
 fn message_received(node: &TestNode, expected_content: &[u8]) -> bool {
-    if let Some(Event::MessageReceived { content, .. }) = node.try_recv_event() {
-        content == expected_content
-    } else {
-        false
+    while let Some(event) = node.try_recv_event() {
+        if let Event::MessageReceived { content, .. } = event {
+            if content == expected_content {
+                return true;
+            }
+        }
+
+        // Ignore any other events
     }
+
+    false
 }

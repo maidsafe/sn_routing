@@ -19,10 +19,10 @@ use fake_clock::FakeClock;
 use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng};
 use routing::{
-    event::Event, mock::Environment, NetworkParams, PausedState, Prefix, RelocationOverrides,
-    TransportConfig, XorName,
+    event::Event, mock::Environment, test_consts, NetworkParams, PausedState, Prefix,
+    RelocationOverrides, TransportConfig, XorName,
 };
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::BTreeMap;
 
 // The smallest number of elders which allows to reach consensus when one of them goes offline.
 pub const LOWERED_ELDER_SIZE: usize = 4;
@@ -530,9 +530,11 @@ fn pause_node_and_poll(env: &Environment, nodes: &mut Vec<TestNode>) -> PausedSt
 
     // Poll the network for a while and verify the other nodes do not see the node as going offline.
     let start_time = FakeClock::now();
-    poll_until(&env, nodes, |_| {
-        start_time.elapsed() >= Duration::from_secs(60)
-    });
+
+    // Let at most this much time to pass to make sure the paused node is not detected as unresponsive.
+    let poll_duration = (test_consts::RESEND_MAX_ATTEMPTS - 1) as u32 * test_consts::RESEND_DELAY;
+
+    poll_until(&env, nodes, |_| start_time.elapsed() >= poll_duration);
 
     assert!(nodes
         .iter()

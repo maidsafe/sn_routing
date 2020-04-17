@@ -502,8 +502,8 @@ fn progress_and_verify<R: Rng>(
     shuffle_nodes(rng, nodes);
 }
 
-// Poll until all the nodes at `added_indices` are added and all the nodes from `dropped_ids` are
-// removed.
+// Poll until all the nodes at `added_indices` join the network and all the nodes from
+// `dropped_ids` leave it.
 fn poll_until_churn_complete(
     env: &Environment,
     nodes: &mut [TestNode],
@@ -555,8 +555,10 @@ impl Display for MessageKey {
     }
 }
 
-// A set of expectations: Which nodes, groups and sections are supposed to receive a message.
+// A set of message delivery expectations.
 struct Expectations {
+    // Maps the message to the nodes which are expected to receive it. Each node name is mapped to
+    // a flag indicating whether it already received it.
     messages: HashMap<MessageKey, HashMap<XorName, bool>>,
 }
 
