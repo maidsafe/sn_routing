@@ -1120,18 +1120,6 @@ impl Approved {
             return Ok(());
         }
 
-        if self.chain.split_in_progress() {
-            log_or_panic!(
-                log::Level::Warn,
-                "Tring to prune parsec during prefix change.",
-            );
-            return Ok(());
-        }
-        if self.chain.churn_in_progress() {
-            trace!("ignore ParsecPrune - churn in progress.");
-            return Ok(());
-        }
-
         info!("handle ParsecPrune");
         let complete_data = self.prepare_reset_parsec()?;
         self.reset_parsec_with_data(
@@ -1690,22 +1678,20 @@ impl Approved {
     // Connect to all elders from our section or neighbour sections that we are not yet connected
     // to and disconnect from peers that are no longer elders of neighbour sections.
     fn update_peer_connections(&mut self, core: &mut Core, change: &EldersChange) {
-        if !self.chain.split_in_progress() {
-            let our_needed_connections: HashSet<_> = self
-                .chain
-                .known_nodes()
-                .map(|node| *node.peer_addr())
-                .collect();
+        let our_needed_connections: HashSet<_> = self
+            .chain
+            .known_nodes()
+            .map(|node| *node.peer_addr())
+            .collect();
 
-            for p2p_node in &change.neighbour_removed {
-                // The peer might have been relocated from a neighbour to us - in that case do not
-                // disconnect from them.
-                if our_needed_connections.contains(p2p_node.peer_addr()) {
-                    continue;
-                }
-
-                core.transport.disconnect(*p2p_node.peer_addr());
+        for p2p_node in &change.neighbour_removed {
+            // The peer might have been relocated from a neighbour to us - in that case do not
+            // disconnect from them.
+            if our_needed_connections.contains(p2p_node.peer_addr()) {
+                continue;
             }
+
+            core.transport.disconnect(*p2p_node.peer_addr());
         }
     }
 
