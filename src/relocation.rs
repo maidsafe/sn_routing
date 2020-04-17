@@ -244,7 +244,8 @@ mod overrides {
 
     #[derive(Default)]
     struct OverrideInfo {
-        // Name that will be used as the next relocation destination.
+        // If `Some`, the relocation destinations are overridden with this name, otherwise they are
+        // not.
         next: Option<XorName>,
         // Map of original relocation destinations to the overridden ones. As this map is shared
         // among all nodes in the network, this assures that every node will pick the same

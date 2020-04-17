@@ -25,7 +25,7 @@ fn messages_accumulate_with_quorum() {
 
     let src_name: XorName = rng.gen();
     let src = SrcLocation::Section(Prefix::default());
-    sort_nodes_by_distance_to(&env, &mut nodes, &src_name);
+    sort_nodes_by_distance_to(&mut nodes, &src_name);
 
     let send = |node: &mut TestNode, dst: &DstLocation, content: Vec<u8>| {
         assert!(node.inner.send_message(src, *dst, content).is_ok());
