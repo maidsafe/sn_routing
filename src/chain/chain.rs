@@ -20,7 +20,7 @@ use crate::{
     messages::{AccumulatingMessage, PlainMessage, Variant},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    section::{MemberInfo, MemberState},
+    section::MemberState,
     xor_space::Xorable,
     Prefix, XorName,
 };
@@ -28,7 +28,6 @@ use bincode::serialize;
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Formatter},
     mem,
@@ -64,8 +63,6 @@ pub struct Chain {
     new_section_bls_keys: BTreeMap<XorName, DkgResult>,
     // The accumulated info during a split pfx change.
     split_cache: Option<SplitCache>,
-    // Members of our sibling section immediately after the last split.
-    post_split_sibling_members: BTreeMap<XorName, MemberInfo>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -124,7 +121,6 @@ impl Chain {
             members_changed: false,
             new_section_bls_keys: Default::default(),
             split_cache: None,
-            post_split_sibling_members: Default::default(),
         }
     }
 
@@ -607,20 +603,13 @@ impl Chain {
         &self.our_id
     }
 
-    /// Returns an old section member `P2pNode`
-    fn get_post_split_sibling_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.post_split_sibling_members
-            .get(name)
-            .map(|member_info| &member_info.p2p_node)
-    }
-
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state
             .our_members
             .get_p2p_node(name)
             .or_else(|| self.state.get_our_elder_p2p_node(name))
             .or_else(|| self.state.get_neighbour_p2p_node(name))
-            .or_else(|| self.get_post_split_sibling_member_p2p_node(name))
+            .or_else(|| self.state.our_members.get_post_split_sibling_p2p_node(name))
     }
 
     /// Returns whether we are elder in our section.
@@ -629,58 +618,13 @@ impl Chain {
     }
 
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
-        let mut elders: BTreeMap<_, _> = self.eldest_members(self.state.our_members.joined());
+        let mut elders = self.state.our_members.elder_candidates(self.elder_size());
 
         // Ensure that we can still handle one node lost when relocating.
         // Ensure that the node we eject are the one we want to relocate first.
-        let min_elders = self.elder_size();
-        let num_elders = elders.len();
-        elders.extend(
-            self.state
-                .relocate_queue
-                .iter()
-                .map(|details| details.pub_id.name())
-                .filter_map(|name| self.state.our_members.get(name))
-                .filter(|info| info.state != MemberState::Left)
-                .take(min_elders.saturating_sub(num_elders))
-                .map(|info| (*info.p2p_node.name(), info.p2p_node.clone())),
-        );
-
+        let missing = self.elder_size().saturating_sub(elders.len());
+        elders.extend(self.state.elder_candidates_from_relocating(missing));
         elders
-    }
-
-    fn eldest_members_matching_prefix(
-        &self,
-        prefix: &Prefix<XorName>,
-    ) -> BTreeMap<XorName, P2pNode> {
-        self.eldest_members(
-            self.state
-                .our_members
-                .joined()
-                .filter(|info| prefix.matches(info.p2p_node.name())),
-        )
-    }
-
-    fn eldest_members<'a, I>(&self, members: I) -> BTreeMap<XorName, P2pNode>
-    where
-        I: IntoIterator<Item = &'a MemberInfo>,
-    {
-        members
-            .into_iter()
-            .sorted_by(|info1, info2| self.cmp_elder_candidates(info1, info2))
-            .into_iter()
-            .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
-            .take(self.elder_size())
-            .collect()
-    }
-
-    // Compare candidates for the next elders. The one comparing `Less` is more likely to become
-    // elder.
-    fn cmp_elder_candidates(&self, lhs: &MemberInfo, rhs: &MemberInfo) -> Ordering {
-        // Older nodes are preferred. In case of a tie, nodes joining earlier are preferred.
-        rhs.age_counter
-            .cmp(&lhs.age_counter)
-            .then(lhs.section_version.cmp(&rhs.section_version))
     }
 
     /// Returns an iterator over the members that have not state == `Left`.
@@ -924,7 +868,7 @@ impl Chain {
             SectionKeys::new(our_new_key, self.our_id(), self.state.our_info());
         self.churn_in_progress = false;
         self.state.check_and_clean_neighbour_infos();
-        self.post_split_sibling_members = self.state.remove_our_members_not_matching_our_prefix();
+        self.state.remove_our_members_not_matching_our_prefix();
         Ok(())
     }
 
@@ -1058,8 +1002,14 @@ impl Chain {
         let our_prefix = self.state.our_prefix().pushed(next_bit);
         let other_prefix = self.state.our_prefix().pushed(!next_bit);
 
-        let our_new_section = self.eldest_members_matching_prefix(&our_prefix);
-        let other_section = self.eldest_members_matching_prefix(&other_prefix);
+        let our_new_section = self
+            .state
+            .our_members
+            .elder_candidates_matching_prefix(&our_prefix, self.elder_size());
+        let other_section = self
+            .state
+            .our_members
+            .elder_candidates_matching_prefix(&other_prefix, self.elder_size());
 
         let our_new_info =
             EldersInfo::new(our_new_section, our_prefix, Some(self.state.our_info()))?;

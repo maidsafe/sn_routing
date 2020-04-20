@@ -12,19 +12,26 @@ use crate::{
     id::{P2pNode, PublicId},
     xor_space::{Prefix, XorName},
 };
+use itertools::Itertools;
 use std::{
+    cmp::Ordering,
     collections::{btree_map::Entry, BTreeMap},
     mem,
     net::SocketAddr,
 };
 
 /// Container for storing information about members of our section.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Eq, Serialize, Deserialize)]
 pub struct SectionMembers {
     members: BTreeMap<XorName, MemberInfo>,
     // Number that gets incremented every time a node joins or leaves our section - that is, every
     // time `members` changes.
     section_version: u64,
+
+    // Members of our sibling section immediately after the last split.
+    // Note: this field is not part of the shared state.
+    #[serde(skip)]
+    post_split_siblings: BTreeMap<XorName, MemberInfo>,
 }
 
 impl SectionMembers {
@@ -46,6 +53,7 @@ impl SectionMembers {
         Self {
             members,
             section_version: 0,
+            post_split_siblings: Default::default(),
         }
     }
 
@@ -85,6 +93,31 @@ impl SectionMembers {
     /// Returns a section member `P2pNode`
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.members.get(name).map(|info| &info.p2p_node)
+    }
+
+    /// Returns an old section member `P2pNode`
+    pub fn get_post_split_sibling_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.post_split_siblings
+            .get(name)
+            .map(|member_info| &member_info.p2p_node)
+    }
+
+    /// Returns the candidates for elders out of all the nodes in this section.
+    pub fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
+        elder_candidates(elder_size, self.joined())
+    }
+
+    /// Returns the candidates for elders out of all nodes matching the prefix.
+    pub fn elder_candidates_matching_prefix(
+        &self,
+        prefix: &Prefix<XorName>,
+        elder_size: usize,
+    ) -> BTreeMap<XorName, P2pNode> {
+        elder_candidates(
+            elder_size,
+            self.joined()
+                .filter(|info| prefix.matches(info.p2p_node.name())),
+        )
     }
 
     /// Check if the given `PublicId` is a member of our section.
@@ -177,19 +210,46 @@ impl SectionMembers {
         }
     }
 
-    /// Remove all members whose name does not match our prefix and returns them.
-    pub fn remove_not_matching_prefix(
-        &mut self,
-        prefix: &Prefix<XorName>,
-    ) -> BTreeMap<XorName, MemberInfo> {
-        let (members, others) = mem::take(&mut self.members)
+    /// Remove all members whose name does not match our prefix and assigns them to
+    /// `post_split_siblings`.
+    pub fn remove_not_matching_our_prefix(&mut self, prefix: &Prefix<XorName>) {
+        let (members, siblings) = mem::take(&mut self.members)
             .into_iter()
             .partition(|(name, _)| prefix.matches(name));
         self.members = members;
-        others
+        self.post_split_siblings = siblings;
     }
 
     fn increment_section_version(&mut self) {
         self.section_version = self.section_version.wrapping_add(1);
     }
+}
+
+impl PartialEq for SectionMembers {
+    fn eq(&self, other: &Self) -> bool {
+        self.members == other.members && self.section_version == other.section_version
+    }
+}
+
+// Returns the nodes that should become the next elders out of the given members.
+fn elder_candidates<'a, I>(elder_size: usize, members: I) -> BTreeMap<XorName, P2pNode>
+where
+    I: IntoIterator<Item = &'a MemberInfo>,
+{
+    members
+        .into_iter()
+        .sorted_by(|info1, info2| cmp_elder_candidates(info1, info2))
+        .into_iter()
+        .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
+        .take(elder_size)
+        .collect()
+}
+
+// Compare candidates for the next elders. The one comparing `Less` is more likely to become
+// elder.
+fn cmp_elder_candidates(lhs: &MemberInfo, rhs: &MemberInfo) -> Ordering {
+    // Older nodes are preferred. In case of a tie, nodes joining earlier are preferred.
+    rhs.age_counter
+        .cmp(&lhs.age_counter)
+        .then(lhs.section_version.cmp(&rhs.section_version))
 }

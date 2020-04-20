@@ -12,7 +12,7 @@ use crate::{
     id::{P2pNode, PublicId},
     location::DstLocation,
     relocation::RelocateDetails,
-    section::{AgeCounter, MemberInfo, MemberState, SectionMembers},
+    section::{AgeCounter, MemberState, SectionMembers},
     Prefix, XorName,
 };
 use bincode::serialize;
@@ -163,6 +163,21 @@ impl SharedState {
             .flat_map(EldersInfo::member_nodes)
     }
 
+    /// Returns the `count` candidates for elders out of currently relocating nodes. Use this
+    /// method when we don't have enough non-relocating nodes in the section to become elders.
+    pub fn elder_candidates_from_relocating<'a>(
+        &'a self,
+        count: usize,
+    ) -> impl Iterator<Item = (XorName, P2pNode)> + 'a {
+        self.relocate_queue
+            .iter()
+            .map(|details| details.pub_id.name())
+            .filter_map(move |name| self.our_members.get(name))
+            .filter(|info| info.state != MemberState::Left)
+            .take(count)
+            .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
+    }
+
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
         self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
@@ -198,10 +213,10 @@ impl SharedState {
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
-    /// Remove all entries from `our_members` whose name does not match our prefix and returns them.
-    pub fn remove_our_members_not_matching_our_prefix(&mut self) -> BTreeMap<XorName, MemberInfo> {
+    /// Remove all entries from `our_members` whose name does not match our prefix.
+    pub fn remove_our_members_not_matching_our_prefix(&mut self) {
         self.our_members
-            .remove_not_matching_prefix(self.our_infos.last().prefix())
+            .remove_not_matching_our_prefix(self.our_infos.last().prefix())
     }
 
     /// Find section (prefix + version) which has member with the given name
