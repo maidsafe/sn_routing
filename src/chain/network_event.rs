@@ -6,12 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{EldersInfo, SectionKeyInfo};
+use super::SectionKeyInfo;
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     parsec,
     relocation::RelocateDetails,
+    section::EldersInfo,
     Prefix, XorName,
 };
 use hex_fmt::HexFmt;

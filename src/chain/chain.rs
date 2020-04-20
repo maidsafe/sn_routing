@@ -10,8 +10,8 @@ use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
     shared_state::{SectionKeyInfo, SectionProofBlock, SharedState},
     stats::Stats,
-    AccumulatedEvent, AccumulatingEvent, EldersChange, EldersInfo, GenesisPfxInfo, NetworkEvent,
-    NetworkParams, Proof, ProofSet, SectionProofSlice,
+    AccumulatedEvent, AccumulatingEvent, EldersChange, GenesisPfxInfo, NetworkEvent, NetworkParams,
+    Proof, ProofSet, SectionProofSlice,
 };
 use crate::{
     error::{Result, RoutingError},
@@ -20,7 +20,7 @@ use crate::{
     messages::{AccumulatingMessage, PlainMessage, Variant},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::RelocateDetails,
-    section::MemberState,
+    section::{EldersInfo, MemberState},
     xor_space::Xorable,
     Prefix, XorName,
 };
@@ -1324,15 +1324,12 @@ struct SplitCache {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        super::{EldersInfo, GenesisPfxInfo},
-        *,
-    };
+    use super::{super::GenesisPfxInfo, *};
     use crate::{
         id::{FullId, P2pNode, PublicId},
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        section::MIN_AGE_COUNTER,
+        section::{EldersInfo, MIN_AGE_COUNTER},
         unwrap,
         xor_space::{Prefix, XorName},
     };

@@ -14,13 +14,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{EldersInfo, GenesisPfxInfo},
+    chain::GenesisPfxInfo,
     error::Result,
     id::{FullId, P2pNode, PublicId},
     messages::{Message, MessageWithBytes},
     node::Node,
     rng::MainRng,
-    section::{AgeCounter, MIN_AGE_COUNTER},
+    section::{AgeCounter, EldersInfo, MIN_AGE_COUNTER},
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;

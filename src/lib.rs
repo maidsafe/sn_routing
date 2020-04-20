@@ -107,13 +107,13 @@ pub mod rng;
 #[cfg(feature = "mock_base")]
 pub use self::{
     chain::{
-        delivery_group_size, elders_info_for_test, quorum_count, section_proof_slice_for_test,
-        NetworkParams, SectionKeyShare,
+        delivery_group_size, elders_info_for_test, section_proof_slice_for_test, NetworkParams,
+        SectionKeyShare,
     },
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
-    section::MIN_AGE,
+    section::{quorum_count, MIN_AGE},
     xor_space::Xorable,
 };
 

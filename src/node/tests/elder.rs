@@ -9,8 +9,8 @@
 use super::utils as test_utils;
 use crate::{
     chain::{
-        AccumulatingEvent, AckMessagePayload, EldersInfo, EventSigPayload, OnlinePayload,
-        SectionKeyInfo, SectionProofSlice,
+        AccumulatingEvent, AckMessagePayload, EventSigPayload, OnlinePayload, SectionKeyInfo,
+        SectionProofSlice,
     },
     error::Result,
     generate_bls_threshold_secret_key,
@@ -20,6 +20,7 @@ use crate::{
     node::{Node, NodeConfig},
     parsec, quic_p2p,
     rng::{self, MainRng},
+    section::EldersInfo,
     section::MIN_AGE,
     utils, ELDER_SIZE,
 };

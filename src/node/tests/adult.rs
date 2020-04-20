@@ -8,7 +8,7 @@
 
 use super::utils as test_utils;
 use crate::{
-    chain::{Chain, EldersInfo, GenesisPfxInfo, NetworkParams},
+    chain::{Chain, GenesisPfxInfo, NetworkParams},
     error::Result,
     id::FullId,
     location::DstLocation,
@@ -16,6 +16,7 @@ use crate::{
     node::{Node, NodeConfig},
     parsec::generate_bls_threshold_secret_key,
     rng::{self, MainRng},
+    section::EldersInfo,
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
