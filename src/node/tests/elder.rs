@@ -8,10 +8,7 @@
 
 use super::utils as test_utils;
 use crate::{
-    chain::{
-        AccumulatingEvent, AckMessagePayload, EventSigPayload, OnlinePayload, SectionKeyInfo,
-        SectionProofSlice,
-    },
+    chain::{AccumulatingEvent, AckMessagePayload, EventSigPayload, OnlinePayload},
     error::Result,
     generate_bls_threshold_secret_key,
     id::{FullId, P2pNode, PublicId},
@@ -20,8 +17,8 @@ use crate::{
     node::{Node, NodeConfig},
     parsec, quic_p2p,
     rng::{self, MainRng},
-    section::EldersInfo,
     section::MIN_AGE,
+    section::{EldersInfo, SectionKeyInfo, SectionProofSlice},
     utils, ELDER_SIZE,
 };
 use crossbeam_channel::Receiver;

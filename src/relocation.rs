@@ -9,11 +9,12 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    chain::{AccumulatingEvent, IntoAccumulatingEvent, SectionKeyInfo},
+    chain::{AccumulatingEvent, IntoAccumulatingEvent},
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},
     messages::{Message, Variant},
+    section::SectionKeyInfo,
     xor_space::{Prefix, XorName, XOR_NAME_LEN},
 };
 use bincode::serialize;

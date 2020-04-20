@@ -8,10 +8,10 @@
 
 use super::{
     chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::{SectionKeyInfo, SectionProofBlock, SharedState},
+    shared_state::SharedState,
     stats::Stats,
     AccumulatedEvent, AccumulatingEvent, EldersChange, GenesisPfxInfo, NetworkEvent, NetworkParams,
-    Proof, ProofSet, SectionProofSlice,
+    Proof, ProofSet,
 };
 use crate::{
     error::{Result, RoutingError},
@@ -20,7 +20,7 @@ use crate::{
     messages::{AccumulatingMessage, PlainMessage, Variant},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::RelocateDetails,
-    section::{EldersInfo, MemberState},
+    section::{EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice},
     xor_space::Xorable,
     Prefix, XorName,
 };

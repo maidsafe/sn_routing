@@ -8,8 +8,9 @@
 
 use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
 use crate::{
-    chain::{SectionKeyShare, SectionProofSlice},
+    chain::SectionKeyShare,
     error::Result,
+    section::SectionProofSlice,
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
@@ -165,10 +166,10 @@ impl PlainMessage {
 mod tests {
     use super::*;
     use crate::{
-        chain::SectionKeyInfo,
         messages::VerifyStatus,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
+        section::SectionKeyInfo,
         unwrap, Prefix,
     };
     use rand::{self, Rng};

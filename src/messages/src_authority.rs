@@ -8,11 +8,11 @@
 
 use super::{Variant, VerifyStatus};
 use crate::{
-    chain::{SectionKeyInfo, SectionProofSlice, TrustStatus},
     crypto::signing::Signature as SimpleSignature,
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
+    section::{SectionKeyInfo, SectionProofSlice, TrustStatus},
     xor_space::{Prefix, XorName},
 };
 use std::net::SocketAddr;

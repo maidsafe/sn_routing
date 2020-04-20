@@ -26,8 +26,11 @@ pub use self::{
         IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
     },
     proof::{Proof, ProofSet},
-    shared_state::{SectionKeyInfo, SectionProofSlice, TrustStatus},
 };
+
+#[cfg(feature = "mock_base")]
+pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
+
 use crate::{
     section::{AgeCounter, EldersInfo},
     PublicId,
@@ -38,11 +41,12 @@ use std::{
 };
 
 #[cfg(feature = "mock_base")]
-pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
-#[cfg(test)]
-pub use self::shared_state::SectionProofBlock;
-#[cfg(feature = "mock_base")]
-use crate::{error::RoutingError, id::P2pNode, Prefix, XorName};
+use crate::{
+    error::RoutingError,
+    id::P2pNode,
+    section::{SectionKeyInfo, SectionProofSlice},
+    Prefix, XorName,
+};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
