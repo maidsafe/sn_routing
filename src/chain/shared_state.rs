@@ -12,7 +12,7 @@ use crate::{
     id::{P2pNode, PublicId},
     location::DstLocation,
     relocation::RelocateDetails,
-    section::{AgeCounter, MemberInfo, MemberPersona, MemberState, SectionMembers},
+    section::{AgeCounter, MemberInfo, MemberState, SectionMembers},
     Prefix, XorName,
 };
 use bincode::serialize;
@@ -196,22 +196,6 @@ impl SharedState {
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
         self.known_nodes()
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
-    }
-
-    /// Returns the current persona corresponding to the given PublicId or `None` if such a member
-    /// doesn't exist
-    pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {
-        if self.our_info().is_member(pub_id) {
-            Some(MemberPersona::Elder)
-        } else {
-            self.our_members.get(pub_id.name()).map(|member| {
-                if member.is_mature() {
-                    MemberPersona::Adult
-                } else {
-                    MemberPersona::Infant
-                }
-            })
-        }
     }
 
     /// Remove all entries from `our_members` whose name does not match our prefix and returns them.

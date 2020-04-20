@@ -20,7 +20,7 @@ use crate::{
     messages::{AccumulatingMessage, PlainMessage, Variant},
     parsec::{DkgResult, DkgResultWrapper},
     relocation::{self, RelocateDetails},
-    section::{MemberInfo, MemberPersona, MemberState},
+    section::{MemberInfo, MemberState},
     xor_space::Xorable,
     Prefix, XorName,
 };
@@ -356,11 +356,8 @@ impl Chain {
         // As a measure against sybil attacks, we don't increment the age counters on infant churn
         // once we completed the startup phase.
         if !startup
-            && self
-                .state
-                .get_persona(trigger_node)
-                .map(|persona| persona == MemberPersona::Infant)
-                .unwrap_or(true)
+            && !self.state.our_members.is_mature(trigger_node)
+            && !self.state.is_peer_our_elder(trigger_node)
         {
             trace!(
                 "Not incrementing age counters on infant churn (section size: {})",
