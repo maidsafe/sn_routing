@@ -103,6 +103,14 @@ impl SectionMembers {
             .unwrap_or(false)
     }
 
+    /// Returns whether the given peer is mature (adult or elder)
+    pub fn is_mature(&self, pub_id: &PublicId) -> bool {
+        self.members
+            .get(pub_id.name())
+            .map(|info| info.is_mature())
+            .unwrap_or(false)
+    }
+
     /// Returns the age counters of all our members.
     pub fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
         self.members

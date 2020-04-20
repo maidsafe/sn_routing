@@ -99,13 +99,6 @@ impl MemberInfo {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
-pub enum MemberPersona {
-    Infant,
-    Adult,
-    Elder,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum MemberState {
     Joined,
     Relocating {

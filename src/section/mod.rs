@@ -10,6 +10,6 @@ mod member_info;
 mod section_members;
 
 pub use self::{
-    member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
+    member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     section_members::SectionMembers,
 };
