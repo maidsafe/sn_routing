@@ -130,6 +130,11 @@ impl EldersInfo {
         self.prev_hash.as_ref() == Some(&other_info.hash)
     }
 
+    /// Returns whether this `EldersInfo` is compatible and newer than the other.
+    pub fn is_newer(&self, other: &Self) -> bool {
+        self.prefix().is_compatible(other.prefix()) && self.version() > other.version()
+    }
+
     #[cfg(any(test, feature = "mock_base"))]
     pub fn new_for_test(
         members: BTreeMap<PublicId, P2pNode>,
