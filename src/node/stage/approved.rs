@@ -876,37 +876,27 @@ impl Approved {
     }
 
     fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) -> Result<()> {
-        if !self.chain.can_add_member(payload.p2p_node.public_id()) {
-            info!("ignore Online: {:?}.", payload);
-        } else {
+        if self.chain.add_member(payload.p2p_node.clone(), payload.age) {
             info!("handle Online: {:?}.", payload);
-
-            let pub_id = *payload.p2p_node.public_id();
-            self.chain.add_member(payload.p2p_node.clone(), payload.age);
-            self.chain.increment_age_counters(&pub_id);
 
             if self.chain.is_self_elder() {
                 self.send_node_approval(core, payload.p2p_node, payload.their_knowledge);
                 self.print_network_stats();
             }
+        } else {
+            info!("ignore Online: {:?}.", payload);
         }
 
         Ok(())
     }
 
     fn handle_offline_event(&mut self, core: &mut Core, pub_id: PublicId) -> Result<()> {
-        if !self.chain.can_remove_member(&pub_id) {
-            info!("ignore Offline: {}", pub_id);
-        } else {
+        if let (Some(addr), _) = self.chain.remove_member(&pub_id) {
             info!("handle Offline: {}", pub_id);
-
-            self.chain.increment_age_counters(&pub_id);
-
-            if let (Some(addr), _) = self.chain.remove_member(&pub_id) {
-                core.transport.disconnect(addr);
-            }
-
+            core.transport.disconnect(addr);
             let _ = self.members_knowledge.remove(pub_id.name());
+        } else {
+            info!("ignore Offline: {}", pub_id);
         }
 
         Ok(())
@@ -929,21 +919,20 @@ impl Approved {
         core: &mut Core,
         details: RelocateDetails,
     ) -> Result<(), RoutingError> {
-        if !self.chain.can_remove_member(&details.pub_id) {
-            info!("ignore Relocate: {:?} - not a member", details);
-            return Ok(());
-        }
-
-        info!("handle Relocate: {:?}", details);
-
-        let node_knowledge = match self.chain.remove_member(&details.pub_id) {
-            (_, MemberState::Relocating { node_knowledge }) => node_knowledge,
-            (_, state) => {
+        let node_knowledge = match self.chain.remove_member(&details.pub_id).1 {
+            MemberState::Relocating { node_knowledge } => {
+                info!("handle Relocate: {:?}", details);
+                node_knowledge
+            }
+            MemberState::Left => {
+                info!("ignore Relocate: {:?} - not a member", details);
+                return Ok(());
+            }
+            MemberState::Joined => {
                 log_or_panic!(
                     log::Level::Error,
-                    "Expected the state of {} to be Relocating, but was {:?}",
+                    "Expected the state of {} to be Relocating, but was Joined",
                     details.pub_id,
-                    state,
                 );
                 return Ok(());
             }

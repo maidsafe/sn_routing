@@ -11,7 +11,7 @@ use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     location::DstLocation,
-    relocation::RelocateDetails,
+    relocation::{self, RelocateDetails},
     section::{AgeCounter, MemberState, SectionMembers},
     Prefix, XorName,
 };
@@ -211,6 +211,46 @@ impl SharedState {
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
         self.known_nodes()
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
+    }
+
+    /// Adds new member if its name matches our prefix and it's not already joined.
+    /// Returns whether the member was actually added.
+    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8, safe_section_size: usize) -> bool {
+        if !self.our_prefix().matches(p2p_node.name()) {
+            trace!("not adding node {} - not matching our prefix", p2p_node);
+            return false;
+        }
+
+        if self.our_members.contains(p2p_node.public_id()) {
+            trace!("not adding node {} - already a member", p2p_node);
+            return false;
+        }
+
+        let pub_id = *p2p_node.public_id();
+
+        self.our_members.add(p2p_node, age);
+        self.increment_age_counters(&pub_id, safe_section_size);
+
+        true
+    }
+
+    pub fn remove_member(
+        &mut self,
+        pub_id: &PublicId,
+        safe_section_size: usize,
+    ) -> (Option<SocketAddr>, MemberState) {
+        match self.our_members.get(pub_id.name()).map(|info| &info.state) {
+            Some(MemberState::Left) | None => {
+                trace!("not removing node {} - not a member", pub_id);
+                return (None, MemberState::Left);
+            }
+            Some(MemberState::Relocating { .. }) => (),
+            Some(MemberState::Joined) => self.increment_age_counters(pub_id, safe_section_size),
+        }
+
+        self.relocate_queue
+            .retain(|details| &details.pub_id != pub_id);
+        self.our_members.remove(pub_id)
     }
 
     /// Remove all entries from `our_members` whose name does not match our prefix.
@@ -453,6 +493,92 @@ impl SharedState {
             index.min(*sibling_index)
         } else {
             index
+        }
+    }
+
+    // Increment the age counters of the members.
+    fn increment_age_counters(&mut self, trigger_node: &PublicId, safe_section_size: usize) {
+        let our_section_size = self.our_members.joined().count();
+        let our_prefix = self.our_infos.last().prefix();
+
+        // Is network startup in progress?
+        let startup = *our_prefix == Prefix::default() && our_section_size < safe_section_size;
+
+        // As a measure against sybil attacks, we don't increment the age counters on infant churn
+        // once we completed the startup phase.
+        if !startup
+            && !self.our_members.is_mature(trigger_node)
+            && !self.is_peer_our_elder(trigger_node)
+        {
+            trace!(
+                "Not incrementing age counters on infant churn (section size: {})",
+                our_section_size,
+            );
+            return;
+        }
+
+        let relocating_state = self.create_relocating_state();
+        let mut details_to_add = Vec::new();
+
+        struct PartialRelocateDetails {
+            pub_id: PublicId,
+            destination: XorName,
+            age: u8,
+        }
+
+        for member_info in self.our_members.joined_mut() {
+            if member_info.p2p_node.public_id() == trigger_node {
+                continue;
+            }
+
+            // During network startup we go through accelerated ageing.
+            if startup {
+                member_info.increment_age();
+                continue;
+            }
+
+            if !member_info.increment_age_counter() {
+                continue;
+            }
+
+            let destination = relocation::compute_destination(
+                our_prefix,
+                member_info.p2p_node.name(),
+                trigger_node.name(),
+            );
+            if our_prefix.matches(&destination) {
+                // Relocation destination inside the current section - ignoring.
+                trace!(
+                    "increment_age_counters: Ignoring relocation for {:?}",
+                    member_info.p2p_node.public_id()
+                );
+                continue;
+            }
+
+            member_info.state = relocating_state;
+            details_to_add.push(PartialRelocateDetails {
+                pub_id: *member_info.p2p_node.public_id(),
+                destination,
+                // TODO: why the +1 ?
+                age: member_info.age() + 1,
+            })
+        }
+
+        trace!("increment_age_counters: {:?}", self.our_members);
+
+        for details in details_to_add {
+            trace!("Change state to Relocating {}", details.pub_id);
+
+            let destination_key_info = self
+                .latest_compatible_their_key_info(&details.destination)
+                .clone();
+            let details = RelocateDetails {
+                pub_id: details.pub_id,
+                destination: details.destination,
+                destination_key_info,
+                age: details.age,
+            };
+            self.relocate_queue.push_front(details);
         }
     }
 }
