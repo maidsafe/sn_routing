@@ -936,9 +936,9 @@ impl Node {
             .map(|chain| {
                 chain
                     .state()
-                    .neighbour_infos
-                    .values()
-                    .map(|info| info.prefix())
+                    .other_sections
+                    .iter()
+                    .map(|(_, info)| info.prefix())
                     .copied()
                     .collect()
             })
@@ -1013,7 +1013,7 @@ impl Node {
     /// Returns their knowledge
     pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
         self.chain()
-            .map(|chain| chain.state().get_their_knowledge())
+            .map(|chain| chain.state().other_sections.knowledge())
             .cloned()
             .unwrap_or_default()
     }
