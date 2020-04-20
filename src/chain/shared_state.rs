@@ -124,10 +124,6 @@ impl SharedState {
         self.our_info().prefix()
     }
 
-    pub fn our_version(&self) -> u64 {
-        self.our_info().version()
-    }
-
     /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
         self.our_info().member_nodes()

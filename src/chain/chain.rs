@@ -29,7 +29,7 @@ use itertools::Itertools;
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::{self, Debug, Formatter},
+    fmt::Debug,
     mem,
     net::SocketAddr,
 };
@@ -1142,27 +1142,6 @@ impl Chain {
             total_elders,
             total_elders_exact,
         }
-    }
-}
-
-impl Debug for Chain {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        writeln!(formatter, "Chain {{")?;
-        writeln!(formatter, "\tour_id: {},", self.our_id)?;
-        writeln!(formatter, "\tour_version: {}", self.state.our_version())?;
-        writeln!(formatter, "\tis_elder: {},", self.is_self_elder())?;
-
-        writeln!(formatter, "\tour_infos: len {}", self.state.our_infos.len())?;
-        for info in self.state.our_infos() {
-            writeln!(formatter, "\t{}", info)?;
-        }
-
-        writeln!(formatter, "\tneighbour_infos:")?;
-        for (pfx, info) in &self.state.neighbour_infos {
-            writeln!(formatter, "\t {:?}\t {}", pfx, info)?;
-        }
-
-        writeln!(formatter, "}}")
     }
 }
 

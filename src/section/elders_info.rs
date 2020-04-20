@@ -18,7 +18,7 @@ use itertools::Itertools;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::BTreeMap,
-    fmt::{self, Debug, Display, Formatter},
+    fmt::{self, Debug, Formatter},
 };
 
 /// The information about all elders of a section at one point in time. Each elder is always a
@@ -173,20 +173,6 @@ impl Debug for EldersInfo {
             self.version,
             self.member_nodes().format(", "),
         )
-    }
-}
-
-impl Display for EldersInfo {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        writeln!(formatter, "EldersInfo {{")?;
-        writeln!(formatter, "\t\tprefix: ({:b}),", self.prefix)?;
-        writeln!(formatter, "\t\tversion: {},", self.version)?;
-        writeln!(
-            formatter,
-            "members: {{{}}}",
-            self.members.values().map(P2pNode::name).format(", ")
-        )?;
-        writeln!(formatter, "\t}}")
     }
 }
 
