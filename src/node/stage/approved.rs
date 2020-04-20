@@ -193,7 +193,7 @@ impl Approved {
     }
 
     pub fn handle_peer_lost(&mut self, peer_addr: SocketAddr) {
-        let pub_id = if let Some(node) = self.chain.find_p2p_node_from_addr(&peer_addr) {
+        let pub_id = if let Some(node) = self.chain.state().find_p2p_node_from_addr(&peer_addr) {
             debug!("Lost known peer {}", node);
             *node.public_id()
         } else {
@@ -201,7 +201,7 @@ impl Approved {
             return;
         };
 
-        if self.chain.is_self_elder() && self.chain.is_peer_our_member(&pub_id) {
+        if self.chain.is_self_elder() && self.chain.state().is_peer_our_member(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
     }
@@ -220,7 +220,7 @@ impl Approved {
     }
 
     pub fn finish_handle_input(&mut self, core: &mut Core) {
-        if self.chain.our_info().len() == 1 {
+        if self.chain.state().our_info().len() == 1 {
             // If we're the only node then invoke parsec_poll directly
             if let Err(error) = self.parsec_poll(core) {
                 error!("Parsec poll failed: {:?}", error);
@@ -285,7 +285,7 @@ impl Approved {
 
     pub fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {
         self.verify_message_quiet(msg).map_err(|error| {
-            messages::log_verify_failure(msg, &error, self.chain.get_their_key_infos());
+            messages::log_verify_failure(msg, &error, self.chain.state().get_their_key_infos());
             error
         })
     }
@@ -371,12 +371,18 @@ impl Approved {
 
         let conn_infos: Vec<_> = self
             .chain
+            .state()
             .our_elders()
             .map(|p2p_node| *p2p_node.peer_addr())
             .collect();
 
         // Disconnect from everyone we know.
-        for addr in self.chain.known_nodes().map(|node| *node.peer_addr()) {
+        for addr in self
+            .chain
+            .state()
+            .known_nodes()
+            .map(|node| *node.peer_addr())
+        {
             core.transport.disconnect(addr);
         }
 
@@ -395,7 +401,7 @@ impl Approved {
         msg: AccumulatingMessage,
         src: PublicId,
     ) -> Result<()> {
-        if !self.chain.is_peer_elder(&src) {
+        if !self.chain.state().is_peer_elder(&src) {
             debug!(
                 "Received message signature from not known elder (still use it) {}, {:?}",
                 src, msg
@@ -425,8 +431,8 @@ impl Approved {
             destination, p2p_node
         );
 
-        let response = if self.chain.our_prefix().matches(&destination) {
-            let our_info = self.chain.our_info().clone();
+        let response = if self.chain.state().our_prefix().matches(&destination) {
+            let our_info = self.chain.state().our_info().clone();
             debug!(
                 "Sending BootstrapResponse::Join to {:?} ({:?})",
                 p2p_node, our_info
@@ -435,6 +441,7 @@ impl Approved {
         } else {
             let conn_infos: Vec<_> = self
                 .chain
+                .state()
                 .closest_section(destination)
                 .1
                 .member_nodes()
@@ -457,22 +464,22 @@ impl Approved {
             p2p_node, join_request.elders_version
         );
 
-        if join_request.elders_version < self.chain.our_info().version() {
+        if join_request.elders_version < self.chain.state().our_info().version() {
             self.resend_bootstrap_response_join(core, &p2p_node);
             return;
         }
 
         let pub_id = *p2p_node.public_id();
-        if !self.chain.our_prefix().matches(pub_id.name()) {
+        if !self.chain.state().our_prefix().matches(pub_id.name()) {
             debug!(
                 "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
                 pub_id,
-                self.chain.our_prefix()
+                self.chain.state().our_prefix()
             );
             return;
         }
 
-        if self.chain.is_peer_our_member(&pub_id) {
+        if self.chain.state().is_peer_our_member(&pub_id) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
                 pub_id
@@ -497,13 +504,18 @@ impl Approved {
 
             let details = payload.relocate_details();
 
-            if !self.chain.our_prefix().matches(&details.destination) {
+            if !self
+                .chain
+                .state()
+                .our_prefix()
+                .matches(&details.destination)
+            {
                 debug!(
                     "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                      our prefix {:?}.",
                     pub_id,
                     details.destination,
-                    self.chain.our_prefix()
+                    self.chain.state().our_prefix()
                 );
                 return;
             }
@@ -532,7 +544,11 @@ impl Approved {
     ) {
         trace!("Received {:?} from {:?}", payload, p2p_node);
 
-        if self.chain.is_peer_our_active_member(p2p_node.public_id()) {
+        if self
+            .chain
+            .state()
+            .is_peer_our_active_member(p2p_node.public_id())
+        {
             self.members_knowledge
                 .entry(*p2p_node.name())
                 .or_default()
@@ -759,7 +775,7 @@ impl Approved {
     }
 
     fn chain_poll(&mut self, core: &mut Core) -> Result<()> {
-        let mut old_pfx = *self.chain.our_prefix();
+        let mut old_pfx = *self.chain.state().our_prefix();
         let mut was_elder = self.chain.is_self_elder();
 
         while let Some(event) = self.chain.poll_accumulated()? {
@@ -775,7 +791,7 @@ impl Approved {
                 }
             }
 
-            old_pfx = *self.chain.our_prefix();
+            old_pfx = *self.chain.state().our_prefix();
             was_elder = self.chain.is_self_elder();
         }
 
@@ -953,7 +969,7 @@ impl Approved {
                 .knowledge_index(&DstLocation::Section(details.destination), None),
         );
 
-        let src = SrcLocation::Section(*self.chain.our_prefix());
+        let src = SrcLocation::Section(*self.chain.state().our_prefix());
         let dst = DstLocation::Node(*details.pub_id.name());
         let content = Variant::Relocate(Box::new(details));
 
@@ -990,7 +1006,7 @@ impl Approved {
         was_elder: bool,
         elders_change: EldersChange,
     ) -> Result<()> {
-        let elders_info = self.chain.our_info();
+        let elders_info = self.chain.state().our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
         let is_elder = elders_info.is_member(core.id());
@@ -1047,7 +1063,7 @@ impl Approved {
 
         if is_split {
             info!("Split");
-            core.send_event(Event::SectionSplit(*self.chain.our_prefix()));
+            core.send_event(Event::SectionSplit(*self.chain.state().our_prefix()));
         }
 
         if !was_elder {
@@ -1104,10 +1120,10 @@ impl Approved {
             return Ok(());
         }
 
-        let src = SrcLocation::Section(*self.chain.our_prefix());
+        let src = SrcLocation::Section(*self.chain.state().our_prefix());
         let dst = DstLocation::Section(ack_payload.ack_prefix.name());
         let variant = Variant::AckMessage {
-            src_prefix: *self.chain.our_prefix(),
+            src_prefix: *self.chain.state().our_prefix(),
             ack_version: ack_payload.ack_version,
         };
 
@@ -1191,7 +1207,7 @@ impl Approved {
             .filter(|event| !completed_events.contains(&event.payload))
             .collect();
 
-        let our_pfx = *self.chain.our_prefix();
+        let our_pfx = *self.chain.state().our_prefix();
 
         let to_process = cached_events
             .iter()
@@ -1347,7 +1363,7 @@ impl Approved {
     }
 
     fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys = self.chain.get_their_key_infos().any(|(_, info)| {
+        let has_their_keys = self.chain.state().get_their_key_infos().any(|(_, info)| {
             *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
         });
 
@@ -1371,7 +1387,7 @@ impl Approved {
     ) {
         info!(
             "Our section with {:?} has approved candidate {}.",
-            self.chain.our_prefix(),
+            self.chain.state().our_prefix(),
             p2p_node
         );
 
@@ -1386,10 +1402,10 @@ impl Approved {
     }
 
     fn send_neighbour_infos(&mut self, core: &mut Core) {
-        for pfx in self.chain.neighbour_prefixes() {
-            let src = SrcLocation::Section(*self.chain.our_prefix());
+        for pfx in self.chain.state().neighbour_prefixes() {
+            let src = SrcLocation::Section(*self.chain.state().our_prefix());
             let dst = DstLocation::Prefix(pfx);
-            let variant = Variant::NeighbourInfo(self.chain.our_info().clone());
+            let variant = Variant::NeighbourInfo(self.chain.state().our_info().clone());
 
             if let Err(err) = self.send_routing_message(core, src, dst, variant, None) {
                 debug!("Failed to send NeighbourInfo: {:?}", err);
@@ -1418,6 +1434,7 @@ impl Approved {
         let payload = self.gen_pfx_info.trimmed();
 
         self.chain
+            .state()
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
@@ -1488,7 +1505,7 @@ impl Approved {
 
         let mut p2p_recipients: Vec<_> = recipients
             .into_iter()
-            .filter_map(|pub_id| self.chain.get_member_p2p_node(pub_id.name()))
+            .filter_map(|pub_id| self.chain.state().get_member_p2p_node(pub_id.name()))
             .cloned()
             .collect();
 
@@ -1506,11 +1523,11 @@ impl Approved {
 
     fn send_member_knowledge(&mut self, core: &mut Core) {
         let payload = MemberKnowledge {
-            elders_version: self.chain.our_info().version(),
+            elders_version: self.chain.state().our_info().version(),
             parsec_version: self.parsec_map.last_version(),
         };
 
-        for recipient in self.chain.our_info().member_nodes() {
+        for recipient in self.chain.state().our_info().member_nodes() {
             if recipient.public_id() == core.id() {
                 continue;
             }
@@ -1522,7 +1539,7 @@ impl Approved {
 
     fn send_bounce(&mut self, core: &mut Core, recipient: &SocketAddr, msg_bytes: Bytes) {
         let variant = Variant::Bounce {
-            elders_version: Some(self.chain.our_info().version()),
+            elders_version: Some(self.chain.state().our_info().version()),
             message: msg_bytes,
         };
 
@@ -1531,11 +1548,16 @@ impl Approved {
 
     // Resend the response with ours or our sibling's info in case of split.
     fn resend_bootstrap_response_join(&mut self, core: &mut Core, p2p_node: &P2pNode) {
-        let our_info = self.chain.our_info();
+        let our_info = self.chain.state().our_info();
 
         let response_section = Some(our_info)
             .filter(|info| info.prefix().matches(p2p_node.name()))
-            .or_else(|| self.chain.get_neighbour_info(&our_info.prefix().sibling()))
+            .or_else(|| {
+                self.chain
+                    .state()
+                    .neighbour_infos
+                    .get(&our_info.prefix().sibling())
+            })
             .filter(|info| info.prefix().matches(p2p_node.name()))
             .cloned();
 
@@ -1666,7 +1688,7 @@ impl Approved {
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
     fn should_handle_join_request(&self, req: &JoinRequest) -> bool {
-        self.chain.is_self_elder() || req.elders_version < self.chain.our_info().version()
+        self.chain.is_self_elder() || req.elders_version < self.chain.state().our_info().version()
     }
 
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
@@ -1680,6 +1702,7 @@ impl Approved {
     fn update_peer_connections(&mut self, core: &mut Core, change: &EldersChange) {
         let our_needed_connections: HashSet<_> = self
             .chain
+            .state()
             .known_nodes()
             .map(|node| *node.peer_addr())
             .collect();
@@ -1704,6 +1727,7 @@ impl Approved {
 
         let new_key_info = self
             .chain
+            .state()
             .get_their_key_infos()
             .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
             .map_or(false, |(_, info)| info.version() < key_info.version());
@@ -1715,7 +1739,7 @@ impl Approved {
 
     // Verifies message but doesn't log anything on failure, only returns result.
     fn verify_message_quiet(&self, msg: &Message) -> Result<bool> {
-        match msg.verify(self.chain.get_their_key_infos()) {
+        match msg.verify(self.chain.state().get_their_key_infos()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::ProofTooNew) if msg.dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are
@@ -1730,13 +1754,13 @@ impl Approved {
 
     fn check_signed_relocation_details(&self, msg: &SignedRelocateDetails) -> bool {
         msg.signed_msg()
-            .verify(self.chain.get_their_key_infos())
+            .verify(self.chain.state().get_their_key_infos())
             .and_then(VerifyStatus::require_full)
             .map_err(|error| {
                 messages::log_verify_failure(
                     msg.signed_msg(),
                     &error,
-                    self.chain.get_their_key_infos(),
+                    self.chain.state().get_their_key_infos(),
                 );
                 error
             })

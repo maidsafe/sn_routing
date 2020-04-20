@@ -255,7 +255,7 @@ impl Node {
     /// Our `Prefix` once we are a part of the section.
     pub fn our_prefix(&self) -> Option<&Prefix<XorName>> {
         if let Stage::Approved(stage) = &self.stage {
-            Some(stage.chain.our_prefix())
+            Some(stage.chain.state().our_prefix())
         } else {
             None
         }
@@ -276,7 +276,7 @@ impl Node {
         self.stage
             .approved()
             .into_iter()
-            .flat_map(|stage| stage.chain.our_elders())
+            .flat_map(|stage| stage.chain.state().our_elders())
     }
 
     /// Find out the closest Elders to a given XorName that we know of.
@@ -291,7 +291,7 @@ impl Node {
         self.stage
             .approved()
             .into_iter()
-            .flat_map(move |stage| stage.chain.closest_section(name).1.member_nodes())
+            .flat_map(move |stage| stage.chain.state().closest_section(name).1.member_nodes())
     }
 
     /// Returns the information of all the current section adults.
@@ -299,7 +299,7 @@ impl Node {
         self.stage
             .approved()
             .into_iter()
-            .flat_map(|stage| stage.chain.our_adults())
+            .flat_map(|stage| stage.chain.state().our_adults())
     }
 
     /// Checks whether the given location represents self.
@@ -740,6 +740,7 @@ impl Node {
             }
             Stage::Approved(stage) => stage
                 .chain
+                .state()
                 .find_section_by_member(sender.public_id())
                 .map(|(_, version)| version),
             Stage::Terminated => unreachable!(),
@@ -869,8 +870,8 @@ impl Node {
                 buffer,
                 "{}({:b}v{}{}) ",
                 self.core.name(),
-                stage.chain.our_prefix(),
-                stage.chain.our_info().version(),
+                stage.chain.state().our_prefix(),
+                stage.chain.state().our_info().version(),
                 if stage.chain.is_self_elder() { "!" } else { "" },
             ),
             Stage::Terminated => write!(buffer, "[terminated]"),
@@ -934,7 +935,9 @@ impl Node {
         self.chain()
             .map(|chain| {
                 chain
-                    .neighbour_infos()
+                    .state()
+                    .neighbour_infos
+                    .values()
                     .map(|info| info.prefix())
                     .copied()
                     .collect()
@@ -944,7 +947,9 @@ impl Node {
 
     /// Returns the prefixes of all sections known to us
     pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.chain().map(Chain::known_prefixes).unwrap_or_default()
+        self.chain()
+            .map(|chain| chain.state().known_prefixes())
+            .unwrap_or_default()
     }
 
     /// Returns the elder info version of a section with the given prefix.
@@ -972,39 +977,43 @@ impl Node {
 
     /// Returns the elders in our and neighbouring sections.
     pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.chain().into_iter().flat_map(Chain::known_elders)
+        self.chain()
+            .into_iter()
+            .flat_map(|chain| chain.state().known_elders())
     }
 
     /// Returns whether the given peer is an elder known to us.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
         self.chain()
-            .map(|chain| chain.is_peer_elder(pub_id))
+            .map(|chain| chain.state().is_peer_elder(pub_id))
             .unwrap_or(false)
     }
 
     /// Returns whether the given peer is an elder of our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.chain()
-            .map(|chain| chain.is_peer_our_elder(pub_id))
+            .map(|chain| chain.state().is_peer_our_elder(pub_id))
             .unwrap_or(false)
     }
 
     /// Returns the members in our section and elders we know.
     pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.chain().into_iter().flat_map(Chain::known_nodes)
+        self.chain()
+            .into_iter()
+            .flat_map(|chain| chain.state().known_nodes())
     }
 
     /// Returns whether the given `PublicId` is a member of our section.
     pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
         self.chain()
-            .map(|chain| chain.is_peer_our_member(id))
+            .map(|chain| chain.state().is_peer_our_member(id))
             .unwrap_or(false)
     }
 
     /// Returns their knowledge
     pub fn get_their_knowledge(&self) -> BTreeMap<Prefix<XorName>, u64> {
         self.chain()
-            .map(Chain::get_their_knowledge)
+            .map(|chain| chain.state().get_their_knowledge())
             .cloned()
             .unwrap_or_default()
     }

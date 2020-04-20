@@ -136,6 +136,7 @@ impl SharedState {
         self.our_infos.last()
     }
 
+    /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
         self.our_info().prefix()
     }
@@ -219,6 +220,11 @@ impl SharedState {
             .get(pub_id.name())
             .map(|info| info.state != MemberState::Left)
             .unwrap_or(false)
+    }
+
+    /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
+    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+        self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
     }
 
     /// Returns whether the given peer is elder in our section.
