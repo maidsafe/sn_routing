@@ -270,12 +270,12 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
-    use super::{super::SectionKeyInfo, *};
+    use super::*;
     use crate::{
         id::FullId,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
-        section::EldersInfo,
+        section::{EldersInfo, SectionKeyInfo},
         unwrap,
     };
     use parsec::SecretId;

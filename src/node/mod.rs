@@ -40,7 +40,7 @@ use std::net::SocketAddr;
 use crate::{chain::AccumulatingEvent, messages::AccumulatingMessage, parsec::ParsecMap};
 #[cfg(feature = "mock_base")]
 use {
-    crate::chain::{Chain, SectionProofSlice},
+    crate::{chain::Chain, section::SectionProofSlice},
     std::collections::{BTreeMap, BTreeSet},
 };
 

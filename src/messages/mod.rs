@@ -20,10 +20,10 @@ pub use self::{
     with_bytes::MessageWithBytes,
 };
 use crate::{
-    chain::SectionKeyInfo,
     error::{Result, RoutingError},
     id::{FullId, PublicId},
     location::DstLocation,
+    section::SectionKeyInfo,
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;
