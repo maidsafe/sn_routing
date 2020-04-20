@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatedEvent, AgeCounter, EldersInfo, MemberInfo, MemberPersona, MemberState};
+use super::{AccumulatedEvent, EldersInfo};
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     location::DstLocation,
     relocation::RelocateDetails,
-    section::SectionMembers,
+    section::{AgeCounter, MemberInfo, MemberPersona, MemberState, SectionMembers},
     Prefix, XorName,
 };
 use bincode::serialize;

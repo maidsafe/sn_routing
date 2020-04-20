@@ -433,9 +433,10 @@ where
 mod tests {
     use super::*;
     use crate::{
-        chain::{EldersInfo, MIN_AGE_COUNTER},
+        chain::EldersInfo,
         id::P2pNode,
         rng::MainRng,
+        section::MIN_AGE_COUNTER,
         unwrap,
         xor_space::{Prefix, XorName},
     };

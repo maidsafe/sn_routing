@@ -13,7 +13,6 @@ mod chain;
 mod chain_accumulator;
 mod config;
 mod elders_info;
-mod member_info;
 mod network_event;
 mod proof;
 mod shared_state;
@@ -24,7 +23,6 @@ pub use self::{
     chain_accumulator::AccumulatingProof,
     config::NetworkParams,
     elders_info::{quorum_count, EldersInfo},
-    member_info::{AgeCounter, MemberInfo, MemberPersona, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_event::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
         IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
@@ -32,7 +30,7 @@ pub use self::{
     proof::{Proof, ProofSet},
     shared_state::{SectionKeyInfo, SectionProofSlice, TrustStatus},
 };
-use crate::PublicId;
+use crate::{section::AgeCounter, PublicId};
 use std::{
     collections::BTreeMap,
     fmt::{self, Debug, Formatter},

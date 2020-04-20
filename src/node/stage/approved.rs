@@ -9,9 +9,9 @@
 use crate::{
     chain::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, Chain, EldersChange, EldersInfo,
-        EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, MemberState, NetworkEvent,
-        NetworkParams, OnlinePayload, ParsecResetData, PollAccumulated, Proof, SectionKeyInfo,
-        SendAckMessagePayload, MIN_AGE, MIN_AGE_COUNTER,
+        EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
+        OnlinePayload, ParsecResetData, PollAccumulated, Proof, SectionKeyInfo,
+        SendAckMessagePayload,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -26,6 +26,7 @@ use crate::{
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
+    section::{MemberState, MIN_AGE, MIN_AGE_COUNTER},
     signature_accumulator::SignatureAccumulator,
     time::Duration,
     xor_space::{Prefix, XorName},
