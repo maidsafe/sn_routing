@@ -108,11 +108,12 @@ pub mod rng;
 pub use self::{
     chain::{
         delivery_group_size, elders_info_for_test, quorum_count, section_proof_slice_for_test,
-        NetworkParams, SectionKeyShare, MIN_AGE,
+        NetworkParams, SectionKeyShare,
     },
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
     parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
+    section::MIN_AGE,
     xor_space::Xorable,
 };
 
