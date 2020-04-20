@@ -6,15 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    AccumulatedEvent, AgeCounter, EldersInfo, MemberInfo, MemberPersona, MemberState,
-    MIN_AGE_COUNTER,
-};
+use super::{AccumulatedEvent, AgeCounter, EldersInfo, MemberInfo, MemberPersona, MemberState};
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     location::DstLocation,
     relocation::RelocateDetails,
+    section_members::SectionMembers,
     Prefix, XorName,
 };
 use bincode::serialize;
@@ -41,11 +39,8 @@ pub struct SharedState {
     /// The latest few fully signed infos of our own sections.
     /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
     pub our_infos: NonEmptyList<EldersInfo>,
-    /// Info about all members of our section - elders, adults and infants.
-    pub our_members: BTreeMap<XorName, MemberInfo>,
-    /// Number that gets incremented every time a node joins or leaves our section - that is, every
-    /// time `our_members` changes.
-    pub section_version: u64,
+    /// Info about all members of our section.
+    pub our_members: SectionMembers,
     /// Maps our neighbours' prefixes to their latest signed elders infos.
     /// Note that after a split, the neighbour's latest section info could be the one from the
     /// pre-split parent section, so the value's prefix doesn't always match the key.
@@ -75,25 +70,13 @@ impl SharedState {
         let their_key_info = our_history.last_key_info();
         let their_keys = iter::once((*their_key_info.prefix(), their_key_info.clone())).collect();
 
-        let our_members = elders_info
-            .member_nodes()
-            .map(|p2p_node| {
-                let info = MemberInfo {
-                    age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
-                    state: MemberState::Joined,
-                    p2p_node: p2p_node.clone(),
-                    section_version: 0,
-                };
-                (*p2p_node.name(), info)
-            })
-            .collect();
+        let our_members = SectionMembers::new(&elders_info, &ages);
 
         Self {
             handled_genesis_event: false,
             our_infos: NonEmptyList::new(elders_info),
             neighbour_infos: Default::default(),
             our_members,
-            section_version: 0,
             our_history,
             their_keys,
             their_knowledge: Default::default(),
@@ -145,34 +128,6 @@ impl SharedState {
         self.our_info().version()
     }
 
-    /// Returns an iterator over the members that have not state == `Left`.
-    pub fn our_active_members(&self) -> impl Iterator<Item = (&XorName, &MemberInfo)> {
-        self.our_members
-            .iter()
-            .filter(|(_, member)| member.state != MemberState::Left)
-    }
-
-    /// Returns an iterator over the members that have state == `Joined`.
-    pub fn our_joined_members(&self) -> impl Iterator<Item = (&XorName, &MemberInfo)> {
-        self.our_members
-            .iter()
-            .filter(|(_, member)| member.state == MemberState::Joined)
-    }
-
-    /// Returns mutable iterator over the members that have state == `Joined`.
-    pub fn our_joined_members_mut(&mut self) -> impl Iterator<Item = (&XorName, &mut MemberInfo)> {
-        self.our_members
-            .iter_mut()
-            .filter(|(_, member)| member.state == MemberState::Joined)
-    }
-
-    /// Returns joined adults and elders from our section.
-    pub fn our_mature_members(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_joined_members()
-            .filter(|(_, info)| info.is_mature())
-            .map(|(_, info)| &info.p2p_node)
-    }
-
     /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
         self.our_info().member_nodes()
@@ -180,14 +135,16 @@ impl SharedState {
 
     /// Returns adults from our own section.
     pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_mature_members()
+        self.our_members
+            .mature()
             .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.public_id()))
     }
 
     /// Returns all nodes we know (our members + neighbour elders).
     pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_active_members()
-            .map(|(_, info)| &info.p2p_node)
+        self.our_members
+            .active()
+            .map(|info| &info.p2p_node)
             .chain(self.neighbour_elder_nodes())
     }
 
@@ -206,22 +163,6 @@ impl SharedState {
             .flat_map(EldersInfo::member_nodes)
     }
 
-    /// Check if the given `PublicId` is a member of our section.
-    pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
-        self.our_members
-            .get(pub_id.name())
-            .map(|info| info.state != MemberState::Left)
-            .unwrap_or(false)
-    }
-
-    /// Returns whether the given peer is an active (not left) member of our section.
-    pub fn is_peer_our_active_member(&self, pub_id: &PublicId) -> bool {
-        self.our_members
-            .get(pub_id.name())
-            .map(|info| info.state != MemberState::Left)
-            .unwrap_or(false)
-    }
-
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
         self.is_peer_our_elder(pub_id) || self.is_peer_neighbour_elder(pub_id)
@@ -237,13 +178,6 @@ impl SharedState {
         self.neighbour_infos
             .values()
             .any(|info| info.is_member(pub_id))
-    }
-
-    /// Returns a section member `P2pNode`
-    pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.our_members
-            .get(name)
-            .map(|member_info| &member_info.p2p_node)
     }
 
     /// Returns a `P2pNode` of our elder.
@@ -264,14 +198,6 @@ impl SharedState {
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)
     }
 
-    /// Returns the age counters of all our members.
-    pub fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
-        self.our_members
-            .values()
-            .map(|member_info| (*member_info.p2p_node.public_id(), member_info.age_counter))
-            .collect()
-    }
-
     /// Returns the current persona corresponding to the given PublicId or `None` if such a member
     /// doesn't exist
     pub fn get_persona(&self, pub_id: &PublicId) -> Option<MemberPersona> {
@@ -290,16 +216,13 @@ impl SharedState {
 
     /// Remove all entries from `our_members` whose name does not match our prefix and returns them.
     pub fn remove_our_members_not_matching_our_prefix(&mut self) -> BTreeMap<XorName, MemberInfo> {
-        let (our_members, sibling_members) = mem::take(&mut self.our_members)
-            .into_iter()
-            .partition(|(name, _)| self.our_prefix().matches(name));
-        self.our_members = our_members;
-        sibling_members
+        self.our_members
+            .remove_not_matching_prefix(self.our_infos.last().prefix())
     }
 
     /// Find section (prefix + version) which has member with the given name
     pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<(Prefix<XorName>, u64)> {
-        if self.is_peer_our_member(pub_id) {
+        if self.our_members.contains(pub_id) {
             return Some((*self.our_info().prefix(), self.our_info().version()));
         }
 
@@ -311,9 +234,10 @@ impl SharedState {
 
     /// Returns the `P2pNode` of all non-elders in the section
     pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.our_joined_members()
-            .filter(move |(_, info)| !self.our_info().is_member(info.p2p_node.public_id()))
-            .map(|(_, info)| &info.p2p_node)
+        self.our_members
+            .joined()
+            .filter(move |info| !self.our_info().is_member(info.p2p_node.public_id()))
+            .map(|info| &info.p2p_node)
     }
 
     /// Return prefixes of all our neighbours
@@ -531,10 +455,6 @@ impl SharedState {
         } else {
             index
         }
-    }
-
-    pub fn increment_section_version(&mut self) {
-        self.section_version = self.section_version.wrapping_add(1);
     }
 }
 

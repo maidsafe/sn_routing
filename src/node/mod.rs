@@ -1006,7 +1006,7 @@ impl Node {
     /// Returns whether the given `PublicId` is a member of our section.
     pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
         self.chain()
-            .map(|chain| chain.state().is_peer_our_member(id))
+            .map(|chain| chain.state().our_members.contains(id))
             .unwrap_or(false)
     }
 
