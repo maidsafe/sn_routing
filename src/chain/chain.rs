@@ -19,7 +19,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{AccumulatingMessage, PlainMessage, Variant},
     parsec::{DkgResult, DkgResultWrapper},
-    relocation::{self, RelocateDetails},
+    relocation::RelocateDetails,
     section::MemberState,
     xor_space::Xorable,
     Prefix, XorName,
@@ -340,106 +340,6 @@ impl Chain {
         Ok(Some(event))
     }
 
-    // Increment the age counters of the members.
-    pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
-        let our_section_size = self.state.our_members.joined().count();
-        let our_prefix = *self.state.our_prefix();
-
-        // Is network startup in progress?
-        let startup =
-            our_prefix == Prefix::default() && our_section_size < self.safe_section_size();
-
-        // As a measure against sybil attacks, we don't increment the age counters on infant churn
-        // once we completed the startup phase.
-        if !startup
-            && !self.state.our_members.is_mature(trigger_node)
-            && !self.state.is_peer_our_elder(trigger_node)
-        {
-            trace!(
-                "Not incrementing age counters on infant churn (section size: {})",
-                our_section_size,
-            );
-            return;
-        }
-
-        let relocating_state = self.state.create_relocating_state();
-        let mut details_to_add = Vec::new();
-
-        struct PartialRelocateDetails {
-            pub_id: PublicId,
-            destination: XorName,
-            age: u8,
-        }
-
-        for member_info in self.state.our_members.joined_mut() {
-            if member_info.p2p_node.public_id() == trigger_node {
-                continue;
-            }
-
-            // During network startup we go through accelerated ageing.
-            if startup {
-                member_info.increment_age();
-                continue;
-            }
-
-            if !member_info.increment_age_counter() {
-                continue;
-            }
-
-            let destination = relocation::compute_destination(
-                &our_prefix,
-                member_info.p2p_node.name(),
-                trigger_node.name(),
-            );
-            if our_prefix.matches(&destination) {
-                // Relocation destination inside the current section - ignoring.
-                trace!(
-                    "increment_age_counters: Ignoring relocation for {:?}",
-                    member_info.p2p_node.public_id()
-                );
-                continue;
-            }
-
-            member_info.state = relocating_state;
-            details_to_add.push(PartialRelocateDetails {
-                pub_id: *member_info.p2p_node.public_id(),
-                destination,
-                // TODO: why the +1 ?
-                age: member_info.age() + 1,
-            })
-        }
-
-        trace!(
-            "increment_age_counters: {}",
-            self.state
-                .our_members
-                .active()
-                .map(|info| format!(
-                    "{}: ({:?}, {:?})",
-                    info.p2p_node.name(),
-                    info.state,
-                    info.age_counter
-                ))
-                .format(", ")
-        );
-
-        for details in details_to_add {
-            trace!("Change state to Relocating {}", details.pub_id);
-
-            let destination_key_info = self
-                .state
-                .latest_compatible_their_key_info(&details.destination)
-                .clone();
-            let details = RelocateDetails {
-                pub_id: details.pub_id,
-                destination: details.destination,
-                destination_key_info,
-                age: details.age,
-            };
-            self.state.relocate_queue.push_front(details);
-        }
-    }
-
     /// Returns the details of the next scheduled relocation to be voted for, if any.
     fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until all backlogged churn events have been handled and no
@@ -480,25 +380,23 @@ impl Chain {
         self.state.handled_genesis_event && !self.churn_in_progress
     }
 
-    /// Validate if can call add_member on this node.
-    pub fn can_add_member(&self, pub_id: &PublicId) -> bool {
-        self.state.our_prefix().matches(pub_id.name()) && !self.state.our_members.contains(pub_id)
-    }
-
-    /// Validate if can call remove_member on this node.
-    pub fn can_remove_member(&self, pub_id: &PublicId) -> bool {
-        self.state.our_members.contains(pub_id)
-    }
-
     /// Adds a member to our section.
     ///
     /// # Panics
     ///
     /// Panics if churn is in progress
-    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
+    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) -> bool {
         assert!(!self.churn_in_progress);
-        self.members_changed = true;
-        self.state.our_members.add(p2p_node, age)
+
+        let added = self
+            .state
+            .add_member(p2p_node, age, self.safe_section_size());
+
+        if added {
+            self.members_changed = true;
+        }
+
+        added
     }
 
     /// Remove a member from our section. Returns the SocketAddr and the state of the member before
@@ -509,11 +407,14 @@ impl Chain {
     /// Panics if churn is in progress
     pub fn remove_member(&mut self, pub_id: &PublicId) -> (Option<SocketAddr>, MemberState) {
         assert!(!self.churn_in_progress);
-        self.members_changed = true;
-        self.state
-            .relocate_queue
-            .retain(|details| &details.pub_id != pub_id);
-        self.state.our_members.remove(pub_id)
+
+        let (addr, state) = self.state.remove_member(pub_id, self.safe_section_size());
+
+        if addr.is_some() {
+            self.members_changed = true;
+        }
+
+        (addr, state)
     }
 
     /// Generate a new section info based on the current set of members.
