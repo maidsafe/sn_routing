@@ -28,7 +28,7 @@ use itertools::Itertools;
 use serde::Serialize;
 use std::{
     cmp::Ordering,
-    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::{self, Debug, Formatter},
     mem,
     net::SocketAddr,
@@ -345,7 +345,7 @@ impl Chain {
 
     // Increment the age counters of the members.
     pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
-        let our_section_size = self.state.our_joined_members().count();
+        let our_section_size = self.state.our_members.joined().count();
         let our_prefix = *self.state.our_prefix();
 
         // Is network startup in progress?
@@ -377,7 +377,7 @@ impl Chain {
             age: u8,
         }
 
-        for (name, member_info) in self.state.our_joined_members_mut() {
+        for member_info in self.state.our_members.joined_mut() {
             if member_info.p2p_node.public_id() == trigger_node {
                 continue;
             }
@@ -392,8 +392,11 @@ impl Chain {
                 continue;
             }
 
-            let destination =
-                relocation::compute_destination(&our_prefix, name, trigger_node.name());
+            let destination = relocation::compute_destination(
+                &our_prefix,
+                member_info.p2p_node.name(),
+                trigger_node.name(),
+            );
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
                 trace!(
@@ -416,7 +419,7 @@ impl Chain {
             "increment_age_counters: {}",
             self.state
                 .our_members
-                .values()
+                .active()
                 .map(|info| format!(
                     "{}: ({:?}, {:?})",
                     info.p2p_node.name(),
@@ -453,7 +456,7 @@ impl Chain {
 
         let details = loop {
             if let Some(details) = self.state.relocate_queue.pop_back() {
-                if self.state.is_peer_our_member(&details.pub_id) {
+                if self.state.our_members.contains(&details.pub_id) {
                     break details;
                 } else {
                     trace!("Not relocating {} - not a member", details.pub_id);
@@ -485,12 +488,12 @@ impl Chain {
 
     /// Validate if can call add_member on this node.
     pub fn can_add_member(&self, pub_id: &PublicId) -> bool {
-        self.state.our_prefix().matches(pub_id.name()) && !self.state.is_peer_our_member(pub_id)
+        self.state.our_prefix().matches(pub_id.name()) && !self.state.our_members.contains(pub_id)
     }
 
     /// Validate if can call remove_member on this node.
     pub fn can_remove_member(&self, pub_id: &PublicId) -> bool {
-        self.state.is_peer_our_member(pub_id)
+        self.state.our_members.contains(pub_id)
     }
 
     /// Adds a member to our section.
@@ -500,40 +503,8 @@ impl Chain {
     /// Panics if churn is in progress
     pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) {
         assert!(!self.churn_in_progress);
-
         self.members_changed = true;
-
-        match self.state.our_members.entry(*p2p_node.name()) {
-            Entry::Occupied(mut entry) => {
-                if entry.get().state == MemberState::Left {
-                    // Node rejoining
-                    // TODO: To properly support rejoining, either keep the previous age or set the
-                    // new age to max(old_age, new_age)
-                    entry.get_mut().state = MemberState::Joined;
-                    entry.get_mut().set_age(age);
-                    entry.get_mut().section_version = self.state.section_version;
-
-                    self.state.increment_section_version();
-                } else {
-                    // Node already joined - this should not happen.
-                    log_or_panic!(
-                        log::Level::Error,
-                        "Adding member that already exists: {}",
-                        p2p_node,
-                    );
-                }
-            }
-            Entry::Vacant(entry) => {
-                // Node joining for the first time.
-
-                let _ = entry.insert(MemberInfo::new(
-                    age,
-                    p2p_node.clone(),
-                    self.state.section_version,
-                ));
-                self.state.increment_section_version();
-            }
-        }
+        self.state.our_members.add(p2p_node, age)
     }
 
     /// Remove a member from our section. Returns the SocketAddr and the state of the member before
@@ -544,36 +515,11 @@ impl Chain {
     /// Panics if churn is in progress
     pub fn remove_member(&mut self, pub_id: &PublicId) -> (Option<SocketAddr>, MemberState) {
         assert!(!self.churn_in_progress);
-
         self.members_changed = true;
-
-        if let Some(info) = self
-            .state
-            .our_members
-            .get_mut(pub_id.name())
-            // TODO: Probably should actually remove them
-            .filter(|info| info.state != MemberState::Left)
-        {
-            let member_state = info.state;
-            let member_addr = *info.p2p_node.peer_addr();
-
-            info.state = MemberState::Left;
-
-            self.state
-                .relocate_queue
-                .retain(|details| &details.pub_id != pub_id);
-            self.state.increment_section_version();
-
-            (Some(member_addr), member_state)
-        } else {
-            log_or_panic!(
-                log::Level::Error,
-                "Removing member that doesn't exist: {}",
-                pub_id
-            );
-
-            (None, MemberState::Left)
-        }
+        self.state
+            .relocate_queue
+            .retain(|details| &details.pub_id != pub_id);
+        self.state.our_members.remove(pub_id)
     }
 
     /// Generate a new section info based on the current set of members.
@@ -635,7 +581,7 @@ impl Chain {
                 elders_info: self.state.our_info().clone(),
                 public_keys: self.our_section_bls_keys().clone(),
                 state_serialized: self.get_genesis_related_info()?,
-                ages: self.state.get_age_counters(),
+                ages: self.state.our_members.get_age_counters(),
                 parsec_version,
             },
             cached_events: remaining.cached_events,
@@ -672,7 +618,8 @@ impl Chain {
 
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.state
-            .get_member_p2p_node(name)
+            .our_members
+            .get_p2p_node(name)
             .or_else(|| self.state.get_our_elder_p2p_node(name))
             .or_else(|| self.state.get_neighbour_p2p_node(name))
             .or_else(|| self.get_post_split_sibling_member_p2p_node(name))
@@ -684,7 +631,7 @@ impl Chain {
     }
 
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
-        let mut elders: BTreeMap<_, _> = self.eldest_members(self.state.our_joined_members());
+        let mut elders: BTreeMap<_, _> = self.eldest_members(self.state.our_members.joined());
 
         // Ensure that we can still handle one node lost when relocating.
         // Ensure that the node we eject are the one we want to relocate first.
@@ -710,20 +657,21 @@ impl Chain {
     ) -> BTreeMap<XorName, P2pNode> {
         self.eldest_members(
             self.state
-                .our_joined_members()
-                .filter(|(name, _)| prefix.matches(name)),
+                .our_members
+                .joined()
+                .filter(|info| prefix.matches(info.p2p_node.name())),
         )
     }
 
     fn eldest_members<'a, I>(&self, members: I) -> BTreeMap<XorName, P2pNode>
     where
-        I: IntoIterator<Item = (&'a XorName, &'a MemberInfo)>,
+        I: IntoIterator<Item = &'a MemberInfo>,
     {
         members
             .into_iter()
-            .sorted_by(|(_, info1), (_, info2)| self.cmp_elder_candidates(info1, info2))
+            .sorted_by(|info1, info2| self.cmp_elder_candidates(info1, info2))
             .into_iter()
-            .map(|(name, info)| (*name, info.p2p_node.clone()))
+            .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
             .take(self.elder_size())
             .collect()
     }
@@ -739,9 +687,7 @@ impl Chain {
 
     /// Returns an iterator over the members that have not state == `Left`.
     pub fn our_active_members(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state
-            .our_active_members()
-            .map(|(_, info)| &info.p2p_node)
+        self.state.our_members.active().map(|info| &info.p2p_node)
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
@@ -1091,7 +1037,8 @@ impl Chain {
         let our_prefix_bit_count = self.state.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
             .state
-            .our_mature_members()
+            .our_members
+            .mature()
             .map(|p2p_node| our_name.common_prefix(p2p_node.name()) > our_prefix_bit_count)
             .fold((0, 0), |(ours, siblings), is_our_prefix| {
                 if is_our_prefix {

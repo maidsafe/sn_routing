@@ -201,7 +201,7 @@ impl Approved {
             return;
         };
 
-        if self.chain.is_self_elder() && self.chain.state().is_peer_our_member(&pub_id) {
+        if self.chain.is_self_elder() && self.chain.state().our_members.contains(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
     }
@@ -479,7 +479,7 @@ impl Approved {
             return;
         }
 
-        if self.chain.state().is_peer_our_member(&pub_id) {
+        if self.chain.state().our_members.contains(&pub_id) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
                 pub_id
@@ -547,7 +547,8 @@ impl Approved {
         if self
             .chain
             .state()
-            .is_peer_our_active_member(p2p_node.public_id())
+            .our_members
+            .is_active(p2p_node.public_id())
         {
             self.members_knowledge
                 .entry(*p2p_node.name())
@@ -1505,7 +1506,7 @@ impl Approved {
 
         let mut p2p_recipients: Vec<_> = recipients
             .into_iter()
-            .filter_map(|pub_id| self.chain.state().get_member_p2p_node(pub_id.name()))
+            .filter_map(|pub_id| self.chain.state().our_members.get_p2p_node(pub_id.name()))
             .cloned()
             .collect();
 
