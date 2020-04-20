@@ -12,7 +12,7 @@ use crate::{
     id::{P2pNode, PublicId},
     location::DstLocation,
     relocation::RelocateDetails,
-    section_members::SectionMembers,
+    section::SectionMembers,
     Prefix, XorName,
 };
 use bincode::serialize;
