@@ -17,8 +17,7 @@ use bincode::serialize;
 use itertools::Itertools;
 use serde::{de::Error as SerdeDeError, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
-    cmp,
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fmt::{self, Debug, Display, Formatter},
 };
 
@@ -34,9 +33,8 @@ pub struct EldersInfo {
     version: u64,
     /// The section prefix. It matches all the members' names.
     prefix: Prefix<XorName>,
-    /// The predecessor sections' hashes. This has exactly one entry, except that it is empty for
-    /// the network's genesis section, and contains both halves after a merge.
-    prev_hash: BTreeSet<Digest256>,
+    /// The hash of the predecessor section, except if this is the network's genesis section.
+    prev_hash: Option<Digest256>,
     /// The hash of the above fields. This is not serialized, and computed after deserialization.
     hash: Digest256,
 }
@@ -49,12 +47,7 @@ impl Serialize for EldersInfo {
 
 impl<'de> Deserialize<'de> for EldersInfo {
     fn deserialize<D: Deserializer<'de>>(deserialiser: D) -> Result<Self, D::Error> {
-        let (members, version, prefix, prev_hash): (
-            BTreeMap<XorName, P2pNode>,
-            u64,
-            Prefix<XorName>,
-            BTreeSet<Digest256>,
-        ) = Deserialize::deserialize(deserialiser)?;
+        let (members, version, prefix, prev_hash) = Deserialize::deserialize(deserialiser)?;
         Self::new_with_fields(members, version, prefix, prev_hash)
             .map_err(|err| D::Error::custom(format!("failed to construct elders info: {:?}", err)))
     }
@@ -63,18 +56,18 @@ impl<'de> Deserialize<'de> for EldersInfo {
 impl EldersInfo {
     /// Creates a `SectionInfo` with the given members, prefix and predecessors.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<'a, I: IntoIterator<Item = &'a Self>>(
+    pub fn new(
         members: BTreeMap<XorName, P2pNode>,
         prefix: Prefix<XorName>,
-        prev: I,
+        prev: Option<&Self>,
     ) -> Result<Self, RoutingError> {
-        let mut version = 0;
-        let mut prev_hash = BTreeSet::new();
-        for prev_info in prev {
-            version = cmp::max(version, prev_info.version() + 1);
-            let _ = prev_hash.insert(prev_info.hash);
-        }
-        Self::new_with_fields(members, version, prefix, prev_hash)
+        let version = if let Some(prev) = prev {
+            prev.version() + 1
+        } else {
+            0
+        };
+
+        Self::new_with_fields(members, version, prefix, prev.map(Self::hash).copied())
     }
 
     pub fn member_map(&self) -> &BTreeMap<XorName, P2pNode> {
@@ -114,11 +107,10 @@ impl EldersInfo {
     }
 
     #[cfg(feature = "mock_base")]
-    pub fn prev_hash(&self) -> &BTreeSet<Digest256> {
-        &self.prev_hash
+    pub fn prev_hash(&self) -> Option<&Digest256> {
+        self.prev_hash.as_ref()
     }
 
-    #[cfg(feature = "mock_base")]
     pub fn hash(&self) -> &Digest256 {
         &self.hash
     }
@@ -135,7 +127,7 @@ impl EldersInfo {
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
     pub fn is_successor_of(&self, other_info: &Self) -> bool {
-        self.prev_hash.contains(&other_info.hash)
+        self.prev_hash.as_ref() == Some(&other_info.hash)
     }
 
     #[cfg(any(test, feature = "mock_base"))]
@@ -148,7 +140,7 @@ impl EldersInfo {
             .into_iter()
             .map(|(pub_id, node)| (*pub_id.name(), node))
             .collect();
-        Self::new_with_fields(members, version, prefix, BTreeSet::new())
+        Self::new_with_fields(members, version, prefix, None)
     }
 
     /// Creates a new instance with the given fields, and computes its hash.
@@ -156,7 +148,7 @@ impl EldersInfo {
         members: BTreeMap<XorName, P2pNode>,
         version: u64,
         prefix: Prefix<XorName>,
-        prev_hash: BTreeSet<Digest256>,
+        prev_hash: Option<Digest256>,
     ) -> Result<Self, RoutingError> {
         let hash = {
             let fields = (&members, version, &prefix, &prev_hash);
@@ -176,11 +168,10 @@ impl Debug for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "EldersInfo(prefix: {:?}, members: {{{:?}}}, prev_hash_len: {}, version: {})",
+            "EldersInfo {{ prefix: ({:b}), version: {}, members: {{{}}} }}",
             self.prefix,
+            self.version,
             self.member_nodes().format(", "),
-            self.prev_hash.len(),
-            self.version
         )
     }
 }
@@ -188,12 +179,11 @@ impl Debug for EldersInfo {
 impl Display for EldersInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         writeln!(formatter, "EldersInfo {{")?;
-        writeln!(formatter, "\t\tprefix: {:?},", self.prefix)?;
-        writeln!(formatter, "\t\tversion: {:?},", self.version)?;
-        writeln!(formatter, "\t\tprev_hash_len: {},", self.prev_hash.len())?;
+        writeln!(formatter, "\t\tprefix: ({:b}),", self.prefix)?;
+        writeln!(formatter, "\t\tversion: {},", self.version)?;
         writeln!(
             formatter,
-            "members: [{}]",
+            "members: {{{}}}",
             self.members.values().map(P2pNode::name).format(", ")
         )?;
         writeln!(formatter, "\t}}")

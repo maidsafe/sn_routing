@@ -1792,7 +1792,7 @@ pub struct RelocateParams {
 fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo> {
     let name = *p2p_node.name();
     let node = (name, p2p_node);
-    EldersInfo::new(iter::once(node).collect(), Prefix::default(), iter::empty()).map_err(|err| {
+    EldersInfo::new(iter::once(node).collect(), Prefix::default(), None).map_err(|err| {
         error!(
             "FirstNode({:?}) - Failed to create first EldersInfo: {:?}",
             name, err
