@@ -6,8 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, EldersInfo, EventSigPayload, NetworkEvent, Proof, ProofSet};
-use crate::id::PublicId;
+use super::{AccumulatingEvent, EventSigPayload, NetworkEvent, Proof, ProofSet};
+use crate::{id::PublicId, section::EldersInfo};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     mem,
@@ -270,14 +270,12 @@ pub struct RemainingEvents {
 
 #[cfg(test)]
 mod test {
-    use super::{
-        super::{EldersInfo, SectionKeyInfo},
-        *,
-    };
+    use super::{super::SectionKeyInfo, *};
     use crate::{
         id::FullId,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
+        section::EldersInfo,
         unwrap,
     };
     use parsec::SecretId;

@@ -6,13 +6,13 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatedEvent, EldersInfo};
+use super::AccumulatedEvent;
 use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     location::DstLocation,
     relocation::{self, RelocateDetails},
-    section::{AgeCounter, MemberState, SectionMembers},
+    section::{AgeCounter, EldersInfo, MemberState, SectionMembers},
     Prefix, XorName,
 };
 use bincode::serialize;
@@ -919,10 +919,10 @@ pub enum TrustStatus<'a> {
 mod test {
     use super::*;
     use crate::{
-        chain::EldersInfo,
         id::P2pNode,
         parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
+        section::EldersInfo,
         unwrap, FullId, Prefix, XorName,
     };
     use rand::Rng;

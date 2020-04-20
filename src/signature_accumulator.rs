@@ -74,12 +74,14 @@ impl SignatureAccumulator {
 mod tests {
     use super::*;
     use crate::{
-        chain::{EldersInfo, SectionKeyInfo, SectionKeyShare, SectionProofSlice},
+        chain::{SectionKeyInfo, SectionKeyShare, SectionProofSlice},
         id::{FullId, P2pNode},
         location::{DstLocation, SrcLocation},
         messages::{Message, PlainMessage, Variant},
         parsec::generate_bls_threshold_secret_key,
-        rng, unwrap, Prefix, XorName,
+        rng,
+        section::EldersInfo,
+        unwrap, Prefix, XorName,
     };
     use itertools::Itertools;
     use rand;

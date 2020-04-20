@@ -8,9 +8,10 @@
 
 use super::{AccumulatingMessage, MessageHash};
 use crate::{
-    chain::{EldersInfo, GenesisPfxInfo},
+    chain::GenesisPfxInfo,
     parsec,
     relocation::{RelocateDetails, RelocatePayload},
+    section::EldersInfo,
     xor_space::{Prefix, XorName},
 };
 use bytes::Bytes;

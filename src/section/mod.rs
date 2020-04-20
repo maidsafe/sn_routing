@@ -6,10 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod elders_info;
 mod member_info;
 mod section_members;
 
 pub use self::{
+    elders_info::{quorum_count, EldersInfo},
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     section_members::SectionMembers,
 };
