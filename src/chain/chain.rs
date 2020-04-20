@@ -84,6 +84,11 @@ impl Chain {
         self.network_params
     }
 
+    /// Returns the shared section state.
+    pub fn state(&self) -> &SharedState {
+        &self.state
+    }
+
     pub fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
         &self.our_section_bls_keys.public_key_set
     }
@@ -246,7 +251,7 @@ impl Chain {
 
         opt_event.and_then(|event| {
             self.chain_accumulator
-                .poll_event(event, self.our_info().member_ids().cloned().collect())
+                .poll_event(event, self.state.our_info().member_ids().cloned().collect())
         })
     }
 
@@ -425,6 +430,7 @@ impl Chain {
             trace!("Change state to Relocating {}", details.pub_id);
 
             let destination_key_info = self
+                .state
                 .latest_compatible_their_key_info(&details.destination)
                 .clone();
             let details = RelocateDetails {
@@ -447,7 +453,7 @@ impl Chain {
 
         let details = loop {
             if let Some(details) = self.state.relocate_queue.pop_back() {
-                if self.is_peer_our_member(&details.pub_id) {
+                if self.state.is_peer_our_member(&details.pub_id) {
                     break details;
                 } else {
                     trace!("Not relocating {} - not a member", details.pub_id);
@@ -457,7 +463,7 @@ impl Chain {
             }
         };
 
-        if self.is_peer_our_elder(&details.pub_id) {
+        if self.state.is_peer_our_elder(&details.pub_id) {
             warn!(
                 "Not relocating {} - The peer is still our elder.",
                 details.pub_id,
@@ -479,7 +485,7 @@ impl Chain {
 
     /// Validate if can call add_member on this node.
     pub fn can_add_member(&self, pub_id: &PublicId) -> bool {
-        self.our_prefix().matches(pub_id.name()) && !self.is_peer_our_member(pub_id)
+        self.state.our_prefix().matches(pub_id.name()) && !self.state.is_peer_our_member(pub_id)
     }
 
     /// Validate if can call remove_member on this node.
@@ -626,7 +632,7 @@ impl Chain {
 
         Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
-                elders_info: self.our_info().clone(),
+                elders_info: self.state.our_info().clone(),
                 public_keys: self.our_section_bls_keys().clone(),
                 state_serialized: self.get_genesis_related_info()?,
                 ages: self.state.get_age_counters(),
@@ -646,7 +652,7 @@ impl Chain {
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.state.check_and_clean_neighbour_infos();
 
-        info!("finalise_prefix_change: {:?}", self.our_prefix());
+        info!("finalise_prefix_change: {:?}", self.state.our_prefix());
         trace!("finalise_prefix_change state: {:?}", self.state);
 
         self.prepare_parsec_reset(parsec_version)
@@ -657,61 +663,11 @@ impl Chain {
         &self.our_id
     }
 
-    /// Returns our own current section info.
-    pub fn our_info(&self) -> &EldersInfo {
-        self.state.our_info()
-    }
-
-    /// Returns our own current section's prefix.
-    pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.state.our_prefix()
-    }
-
-    /// Collects prefixes of all sections known to us.
-    pub fn known_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.state.known_prefixes()
-    }
-
-    /// Neighbour infos signed by our section
-    pub fn neighbour_infos(&self) -> impl Iterator<Item = &EldersInfo> {
-        self.state.neighbour_infos.values()
-    }
-
-    /// Return prefixes of all our neighbours
-    pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.state.neighbour_prefixes()
-    }
-
-    /// Neighbour infos signed by our section
-    pub fn get_neighbour_info(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        self.state.neighbour_infos.get(prefix)
-    }
-
-    /// Find section (prefix + version) which has member with the given name
-    pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<(Prefix<XorName>, u64)> {
-        self.state.find_section_by_member(pub_id)
-    }
-
-    /// Check if the given `PublicId` is a member of our section.
-    pub fn is_peer_our_member(&self, pub_id: &PublicId) -> bool {
-        self.state.is_peer_our_member(pub_id)
-    }
-
-    /// Returns a section member `P2pNode`
-    pub fn get_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state.get_member_p2p_node(name)
-    }
-
     /// Returns an old section member `P2pNode`
     fn get_post_split_sibling_member_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.post_split_sibling_members
             .get(name)
             .map(|member_info| &member_info.p2p_node)
-    }
-
-    /// Returns the `P2pNode` of all non-elders in the section
-    pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state.adults_and_infants_p2p_nodes()
     }
 
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
@@ -722,38 +678,9 @@ impl Chain {
             .or_else(|| self.get_post_split_sibling_member_p2p_node(name))
     }
 
-    pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
-        self.state.find_p2p_node_from_addr(socket_addr)
-    }
-
-    /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
-    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.is_peer_our_elder(pub_id) || self.state.is_peer_neighbour_elder(pub_id)
-    }
-
     /// Returns whether we are elder in our section.
     pub fn is_self_elder(&self) -> bool {
         self.state.is_peer_our_elder(&self.our_id)
-    }
-
-    /// Returns whether the given peer is elder in our section.
-    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.state.is_peer_our_elder(pub_id)
-    }
-
-    /// Returns whether the given peer is an active (not left) member of our section.
-    pub fn is_peer_our_active_member(&self, pub_id: &PublicId) -> bool {
-        self.state.is_peer_our_active_member(pub_id)
-    }
-
-    /// Returns elders from our own section according to the latest accumulated `SectionInfo`.
-    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
-        self.state.our_elders()
-    }
-
-    /// Returns adults from our own section.
-    pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state.our_adults()
     }
 
     fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
@@ -810,31 +737,11 @@ impl Chain {
             .then(lhs.section_version.cmp(&rhs.section_version))
     }
 
-    /// Returns all neighbour elders.
-    pub fn neighbour_elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state.neighbour_elder_nodes()
-    }
-
     /// Returns an iterator over the members that have not state == `Left`.
     pub fn our_active_members(&self) -> impl Iterator<Item = &P2pNode> {
         self.state
             .our_active_members()
             .map(|(_, info)| &info.p2p_node)
-    }
-
-    /// Returns the members in our section and elders we know.
-    pub fn known_nodes(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state.known_nodes()
-    }
-
-    /// Return the keys we know
-    pub fn get_their_key_infos(&self) -> impl Iterator<Item = (&Prefix<XorName>, &SectionKeyInfo)> {
-        self.state.get_their_key_infos()
-    }
-
-    /// Returns the latest key info whose prefix is compatible with the given name.
-    pub fn latest_compatible_their_key_info(&self, name: &XorName) -> &SectionKeyInfo {
-        self.state.latest_compatible_their_key_info(name)
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
@@ -847,13 +754,13 @@ impl Chain {
         if elders_info.prefix().matches(self.our_id.name()) {
             !self.state.our_infos().any(is_newer)
         } else {
-            !self.neighbour_infos().any(is_newer)
+            !self.state.neighbour_infos.values().any(is_newer)
         }
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet and is a neighbouring section.
     pub fn is_new_neighbour(&self, elders_info: &EldersInfo) -> bool {
-        let our_prefix = self.our_prefix();
+        let our_prefix = self.state.our_prefix();
         let other_prefix = elders_info.prefix();
 
         (our_prefix.is_neighbour(other_prefix) || other_prefix.is_extension_of(our_prefix))
@@ -872,7 +779,7 @@ impl Chain {
         let secret_key = self.our_section_bls_secret_key_share()?;
 
         let content = PlainMessage {
-            src: *self.our_prefix(),
+            src: *self.state.our_prefix(),
             dst,
             variant,
         };
@@ -910,7 +817,7 @@ impl Chain {
 
     /// Check which nodes are unresponsive.
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
-        let members = self.our_info().member_ids();
+        let members = self.state.our_info().member_ids();
         self.chain_accumulator.check_vote_status(members)
     }
 
@@ -924,7 +831,9 @@ impl Chain {
         };
 
         // we can ignore self SI additional votes we do not require.
-        if si.prefix().matches(self.our_id.name()) && self.our_info().version() >= si.version() {
+        if si.prefix().matches(self.our_id.name())
+            && self.state.our_info().version() >= si.version()
+        {
             return true;
         }
 
@@ -948,16 +857,16 @@ impl Chain {
     fn is_valid_transition(&self, network_event: &AccumulatingEvent, proofs: &ProofSet) -> bool {
         match *network_event {
             AccumulatingEvent::SectionInfo(ref info, _) => {
-                if !self.our_info().is_quorum(proofs) {
+                if !self.state.our_info().is_quorum(proofs) {
                     return false;
                 }
 
-                if !info.is_successor_of(self.our_info()) {
+                if !info.is_successor_of(self.state.our_info()) {
                     log_or_panic!(
                         log::Level::Error,
                         "We shouldn't have a SectionInfo that is not a direct descendant. our: \
                          {:?}, new: {:?}",
-                        self.our_info(),
+                        self.state.our_info(),
                         info
                     );
                 }
@@ -965,7 +874,7 @@ impl Chain {
                 true
             }
             AccumulatingEvent::NeighbourInfo(ref info) => {
-                if !self.our_info().is_quorum(proofs) {
+                if !self.state.our_info().is_quorum(proofs) {
                     return false;
                 }
 
@@ -991,12 +900,12 @@ impl Chain {
             | AccumulatingEvent::ParsecPrune
             | AccumulatingEvent::Relocate(_)
             | AccumulatingEvent::RelocatePrepare(_, _)
-            | AccumulatingEvent::User(_) => self.our_info().is_quorum(proofs),
+            | AccumulatingEvent::User(_) => self.state.our_info().is_quorum(proofs),
 
             AccumulatingEvent::SendAckMessage(_) => {
                 // We may not reach consensus if malicious peer, but when we do we know all our
                 // nodes have updated `their_keys`.
-                self.our_info().is_total_consensus(proofs)
+                self.state.our_info().is_total_consensus(proofs)
             }
 
             AccumulatingEvent::StartDkg(_) => {
@@ -1022,7 +931,10 @@ impl Chain {
         proofs: AccumulatingProof,
     ) -> Result<bool, RoutingError> {
         // Split handling alone. wouldn't cater to merge
-        if elders_info.prefix().is_extension_of(self.our_prefix()) {
+        if elders_info
+            .prefix()
+            .is_extension_of(self.state.our_prefix())
+        {
             match self.split_cache.take() {
                 None => {
                     self.split_cache = Some(SplitCache {
@@ -1064,7 +976,8 @@ impl Chain {
             key_matching_first_elder_name(&elders_info, mem::take(&mut self.new_section_bls_keys))?;
 
         self.state.push_our_new_info(elders_info, proof_block);
-        self.our_section_bls_keys = SectionKeys::new(our_new_key, self.our_id(), self.our_info());
+        self.our_section_bls_keys =
+            SectionKeys::new(our_new_key, self.our_id(), self.state.our_info());
         self.churn_in_progress = false;
         self.state.check_and_clean_neighbour_infos();
         self.post_split_sibling_members = self.state.remove_our_members_not_matching_our_prefix();
@@ -1095,7 +1008,7 @@ impl Chain {
             .get(&parent_pfx)
             .filter(|pinfo| {
                 pinfo.version() < new_elders_info_version
-                    && self.our_prefix().is_neighbour(&sibling_pfx)
+                    && self.state.our_prefix().is_neighbour(&sibling_pfx)
                     && !self.state.neighbour_infos.contains_key(&sibling_pfx)
             })
             .cloned()
@@ -1137,7 +1050,7 @@ impl Chain {
 
         proofs
             .check_and_combine_signatures(
-                self.our_info(),
+                self.state.our_info(),
                 self.our_section_bls_keys(),
                 &signed_bytes,
             )
@@ -1175,7 +1088,7 @@ impl Chain {
     /// Returns whether we should split into two sections.
     fn should_split(&self) -> bool {
         let our_name = self.our_id.name();
-        let our_prefix_bit_count = self.our_prefix().bit_count();
+        let our_prefix_bit_count = self.state.our_prefix().bit_count();
         let (our_new_size, sibling_new_size) = self
             .state
             .our_mature_members()
@@ -1195,10 +1108,10 @@ impl Chain {
 
     /// Splits our section and generates new elders infos for the child sections.
     fn split_self(&mut self) -> Result<(EldersInfo, EldersInfo), RoutingError> {
-        let next_bit = self.our_id.name().bit(self.our_prefix().bit_count());
+        let next_bit = self.our_id.name().bit(self.state.our_prefix().bit_count());
 
-        let our_prefix = self.our_prefix().pushed(next_bit);
-        let other_prefix = self.our_prefix().pushed(!next_bit);
+        let our_prefix = self.state.our_prefix().pushed(next_bit);
+        let other_prefix = self.state.our_prefix().pushed(!next_bit);
 
         let our_new_section = self.eldest_members_matching_prefix(&our_prefix);
         let other_section = self.eldest_members_matching_prefix(&other_prefix);
@@ -1208,12 +1121,6 @@ impl Chain {
         let other_info = EldersInfo::new(other_section, other_prefix, Some(self.state.our_info()))?;
 
         Ok((our_new_info, other_info))
-    }
-
-    /// Returns the known section that is closest to the given name, regardless of whether `name`
-    /// belongs in that section or not.
-    pub(crate) fn closest_section(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        self.state.closest_section(name)
     }
 
     /// Returns a set of nodes to which a message for the given `DstLocation` could be sent
@@ -1242,7 +1149,7 @@ impl Chain {
         if !self.is_self_elder() {
             // We are not Elder - return all the elders of our section, so the message can be properly
             // relayed through them.
-            let targets: Vec<_> = self.our_info().member_nodes().cloned().collect();
+            let targets: Vec<_> = self.state.our_info().member_nodes().cloned().collect();
             let dg_size = targets.len();
             return Ok((targets, dg_size));
         }
@@ -1259,7 +1166,8 @@ impl Chain {
             }
             DstLocation::Section(target_name) => {
                 let (prefix, section) = self.state.closest_section(*target_name);
-                if prefix == self.our_prefix() || prefix.is_neighbour(self.our_prefix()) {
+                if prefix == self.state.our_prefix() || prefix.is_neighbour(self.state.our_prefix())
+                {
                     // Exclude our name since we don't need to send to ourself
                     let our_name = self.our_id().name();
 
@@ -1276,13 +1184,14 @@ impl Chain {
                 self.candidates(target_name)?
             }
             DstLocation::Prefix(prefix) => {
-                if prefix.is_compatible(self.our_prefix()) || prefix.is_neighbour(self.our_prefix())
+                if prefix.is_compatible(self.state.our_prefix())
+                    || prefix.is_neighbour(self.state.our_prefix())
                 {
                     // only route the message when we have all the targets in our chain -
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
-                    if prefix.is_compatible(self.our_prefix())
-                        && !prefix.is_covered_by(self.known_prefixes().iter())
+                    if prefix.is_compatible(self.state.our_prefix())
+                        && !prefix.is_covered_by(self.state.known_prefixes().iter())
                     {
                         return Err(RoutingError::CannotRoute);
                     }
@@ -1331,7 +1240,7 @@ impl Chain {
             nodes_to_send.extend(connected.cloned());
             dg_size = delivery_group_size(len);
 
-            if prefix == self.our_prefix() {
+            if prefix == self.state.our_prefix() {
                 // Send to all connected targets so they can forward the message
                 let our_name = self.our_id().name();
                 nodes_to_send.retain(|node| node.name() != our_name);
@@ -1370,6 +1279,7 @@ impl Chain {
         };
 
         let mut list = self
+            .state
             .our_elders()
             .cloned()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
@@ -1389,8 +1299,8 @@ impl Chain {
     pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
         match dst {
             DstLocation::Node(name) => self.our_id().name() == name,
-            DstLocation::Section(name) => self.our_prefix().matches(name),
-            DstLocation::Prefix(prefix) => self.our_prefix().is_compatible(prefix),
+            DstLocation::Section(name) => self.state.our_prefix().matches(name),
+            DstLocation::Prefix(prefix) => self.state.our_prefix().is_compatible(prefix),
             DstLocation::Direct => true,
         }
     }
@@ -1464,8 +1374,8 @@ impl Debug for Chain {
 impl Chain {
     /// Returns the members of the section with the given prefix (if it exists)
     pub fn get_section(&self, pfx: &Prefix<XorName>) -> Option<&EldersInfo> {
-        if self.our_prefix() == pfx {
-            Some(self.our_info())
+        if self.state.our_prefix() == pfx {
+            Some(self.state.our_info())
         } else {
             self.state.neighbour_infos.get(pfx)
         }
@@ -1477,16 +1387,11 @@ impl Chain {
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
     pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
-        if self.our_prefix().matches(name) {
-            Some(self.our_info().member_names().copied().collect())
+        if self.state.our_prefix().matches(name) {
+            Some(self.state.our_info().member_names().copied().collect())
         } else {
             None
         }
-    }
-
-    /// Returns their_knowledge
-    pub fn get_their_knowledge(&self) -> &BTreeMap<Prefix<XorName>, u64> {
-        self.state.get_their_knowledge()
     }
 
     /// Returns the age counter of the given member or `None` if not a member.
@@ -1495,11 +1400,6 @@ impl Chain {
             .our_members
             .get(name)
             .map(|member| member.age_counter_value())
-    }
-
-    /// Returns a set of elders we know.
-    pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state.known_elders()
     }
 }
 
@@ -1598,12 +1498,12 @@ struct EldersChangeBuilder {
 impl EldersChangeBuilder {
     fn new(chain: &Chain) -> Self {
         Self {
-            old_neighbour: chain.neighbour_elder_nodes().cloned().collect(),
+            old_neighbour: chain.state.neighbour_elder_nodes().cloned().collect(),
         }
     }
 
     fn build(self, chain: &Chain) -> EldersChange {
-        let new_neighbour: BTreeSet<_> = chain.neighbour_elder_nodes().cloned().collect();
+        let new_neighbour: BTreeSet<_> = chain.state.neighbour_elder_nodes().cloned().collect();
 
         EldersChange {
             neighbour_added: new_neighbour
@@ -1772,7 +1672,7 @@ mod tests {
 
     fn check_infos_for_duplication(chain: &Chain) {
         let mut prefixes: Vec<Prefix<XorName>> = vec![];
-        for info in chain.neighbour_infos() {
+        for info in chain.state.neighbour_infos.values() {
             if let Some(pfx) = prefixes.iter().find(|x| x.is_compatible(info.prefix())) {
                 panic!(
                     "Found compatible prefixes! {:?} and {:?}",
@@ -1808,7 +1708,7 @@ mod tests {
         let (mut chain, _, _) = gen_00_chain(&mut rng);
         for _ in 0..100 {
             let (new_info, _new_ids) = {
-                let old_info: Vec<_> = chain.neighbour_infos().collect();
+                let old_info: Vec<_> = chain.state.neighbour_infos.values().collect();
                 let info = old_info.choose(&mut rng).expect("neighbour infos");
                 if rng.gen_bool(0.5) {
                     gen_section_info(&mut rng, SecInfoGen::Add(info))
