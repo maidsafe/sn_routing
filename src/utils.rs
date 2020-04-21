@@ -6,6 +6,53 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use itertools::Itertools;
+use std::{
+    fmt::{self, Debug, Formatter},
+    iter, mem,
+};
+
+/// Vec-like container that is guaranteed to contain at least one element.
+#[derive(PartialEq, Eq, Serialize, Deserialize)]
+pub struct NonEmptyList<T> {
+    head: Vec<T>,
+    tail: T,
+}
+
+impl<T> NonEmptyList<T> {
+    pub fn new(first: T) -> Self {
+        Self {
+            head: Vec::new(),
+            tail: first,
+        }
+    }
+
+    pub fn push(&mut self, item: T) {
+        self.head.push(mem::replace(&mut self.tail, item))
+    }
+
+    pub fn len(&self) -> usize {
+        self.head.len() + 1
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> + DoubleEndedIterator {
+        self.head.iter().chain(iter::once(&self.tail))
+    }
+
+    pub fn last(&self) -> &T {
+        &self.tail
+    }
+}
+
+impl<T> Debug for NonEmptyList<T>
+where
+    T: Debug,
+{
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "[{:?}]", self.iter().format(", "))
+    }
+}
+
 // Test utils
 
 /// If the iterator yields exactly one element, returns it. Otherwise panics.

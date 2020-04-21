@@ -14,14 +14,14 @@ use crate::{
         AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
         SectionProofBlock, SectionProofChain,
     },
+    utils::NonEmptyList,
     Prefix, XorName,
 };
-use itertools::Itertools;
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
-    fmt::{self, Debug, Formatter},
-    iter, mem,
+    fmt::Debug,
+    iter,
     net::SocketAddr,
 };
 
@@ -382,47 +382,6 @@ impl SharedState {
             };
             self.relocate_queue.push_front(details);
         }
-    }
-}
-
-/// Vec-like container that is guaranteed to contain at least one element.
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
-pub struct NonEmptyList<T> {
-    head: Vec<T>,
-    tail: T,
-}
-
-impl<T> NonEmptyList<T> {
-    pub fn new(first: T) -> Self {
-        Self {
-            head: Vec::new(),
-            tail: first,
-        }
-    }
-
-    pub fn push(&mut self, item: T) {
-        self.head.push(mem::replace(&mut self.tail, item))
-    }
-
-    pub fn len(&self) -> usize {
-        self.head.len() + 1
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> + DoubleEndedIterator {
-        self.head.iter().chain(iter::once(&self.tail))
-    }
-
-    pub fn last(&self) -> &T {
-        &self.tail
-    }
-}
-
-impl<T> Debug for NonEmptyList<T>
-where
-    T: Debug,
-{
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "[{:?}]", self.iter().format(", "))
     }
 }
 
