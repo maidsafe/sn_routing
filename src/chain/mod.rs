@@ -10,7 +10,6 @@
 
 #[allow(clippy::module_inception)]
 mod chain;
-mod chain_accumulator;
 mod config;
 mod network_event;
 mod proof;
@@ -19,7 +18,6 @@ mod stats;
 
 pub use self::{
     chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
-    chain_accumulator::AccumulatingProof,
     config::NetworkParams,
     network_event::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
@@ -27,9 +25,6 @@ pub use self::{
     },
     proof::{Proof, ProofSet},
 };
-
-#[cfg(feature = "mock_base")]
-pub use self::chain_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
 
 use crate::{
     section::{AgeCounter, EldersInfo},

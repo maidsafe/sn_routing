@@ -7,14 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    chain_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
-    shared_state::SharedState,
-    stats::Stats,
-    AccumulatedEvent, AccumulatingEvent, EldersChange, GenesisPfxInfo, NetworkEvent, NetworkParams,
-    Proof, ProofSet,
+    shared_state::SharedState, stats::Stats, AccumulatedEvent, AccumulatingEvent, EldersChange,
+    GenesisPfxInfo, NetworkEvent, NetworkParams, Proof, ProofSet,
 };
 use crate::{
-    consensus::{DkgResult, DkgResultWrapper},
+    consensus::{AccumulatingProof, ChainAccumulator, DkgResult, DkgResultWrapper, InsertError},
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
