@@ -231,29 +231,13 @@ impl SharedState {
 
     /// Collects prefixes of all sections known to us.
     pub fn known_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        let mut prefixes = self.neighbour_prefixes();
-        let _ = prefixes.insert(*self.our_prefix());
-        prefixes
+        self.sections.all().map(|(prefix, _)| *prefix).collect()
     }
 
     pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
         self.our_history.push(proof_block);
         self.sections.push_our(elders_info);
         self.sections.update_keys(self.our_history.last_key_info());
-    }
-
-    /// Return a relocating state of a node relocating now.
-    /// Ensure that node knows enough to trust node_knowledge proving index.
-    pub fn create_relocating_state(&self) -> MemberState {
-        let node_knowledge = self.sections.get_knowledge(self.our_prefix()).unwrap_or(0);
-        MemberState::Relocating { node_knowledge }
-    }
-
-    /// Returns the latest key info whose prefix is compatible with the given name.
-    pub fn latest_compatible_their_key_info(&self, name: &XorName) -> &SectionKeyInfo {
-        self.sections
-            .latest_compatible_key(name)
-            .unwrap_or_else(|| self.our_history.first_key_info())
     }
 
     // Increment the age counters of the members.
@@ -329,9 +313,7 @@ impl SharedState {
         for details in details_to_add {
             trace!("Change state to Relocating {}", details.pub_id);
 
-            let destination_key_info = self
-                .latest_compatible_their_key_info(&details.destination)
-                .clone();
+            let destination_key_info = self.latest_compatible_key(&details.destination).clone();
             let details = RelocateDetails {
                 pub_id: details.pub_id,
                 destination: details.destination,
@@ -340,6 +322,20 @@ impl SharedState {
             };
             self.relocate_queue.push_front(details);
         }
+    }
+
+    // Return a relocating state of a node relocating now.
+    // Ensure that node knows enough to trust node_knowledge proving index.
+    fn create_relocating_state(&self) -> MemberState {
+        let node_knowledge = self.sections.get_knowledge(self.our_prefix()).unwrap_or(0);
+        MemberState::Relocating { node_knowledge }
+    }
+
+    // Returns the latest key info whose prefix is compatible with the given name.
+    fn latest_compatible_key(&self, name: &XorName) -> &SectionKeyInfo {
+        self.sections
+            .latest_compatible_key(name)
+            .unwrap_or_else(|| self.our_history.first_key_info())
     }
 }
 
