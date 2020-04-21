@@ -376,7 +376,7 @@ impl Chain {
             our_prefix == Prefix::default() && our_section_size < self.safe_section_size();
 
         // As a measure against sybil attacks, we don't increment the age counters on infant churn
-        // once we are past the startup phase.
+        // once we completed the startup phase.
         if !startup
             && self
                 .state

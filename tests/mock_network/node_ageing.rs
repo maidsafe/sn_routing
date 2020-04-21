@@ -172,7 +172,7 @@ fn startup_phase() {
     }
 }
 
-// Verify that the age counters of all the nodes in the root section are as expected assuming we
+// Verify that the age counters of all the nodes in the root section are as expected, assuming we
 // were only adding nodes, not removing.
 fn check_root_section_age_counters_after_only_adds(env: &Environment, nodes: &[TestNode]) -> bool {
     // Maximum number of churn events a node can experience during the startup phase:
@@ -191,7 +191,7 @@ fn check_root_section_age_counters_after_only_adds(env: &Environment, nodes: &[T
             "the root section has split"
         );
 
-        // The number of churn events the i-th node experienced during the startup phase.
+        // The number of churn events that the i-th node experienced during the startup phase.
         let startup_churn_events = max_startup_churn_events.saturating_sub(i) as u8;
 
         let expected_age = (MIN_AGE + startup_churn_events) as u32;
