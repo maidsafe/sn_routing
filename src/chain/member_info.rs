@@ -16,7 +16,7 @@ impl AgeCounter {
     /// Create `AgeCounter` with the given age. Minimal valid age is `MIN_AGE` so if a smaller
     /// value is passed in, it's silently changed to `MIN_AGE`.
     pub fn from_age(age: u8) -> Self {
-        Self(2_u32.pow(u32::from(age.max(MIN_AGE))))
+        Self(2_u32.saturating_pow(u32::from(age.max(MIN_AGE))))
     }
 
     pub fn age(self) -> u8 {
@@ -80,6 +80,10 @@ impl MemberInfo {
     // Increment the age counter and return whether the age increased.
     pub fn increment_age_counter(&mut self) -> bool {
         self.age_counter.increment()
+    }
+
+    pub fn increment_age(&mut self) {
+        self.age_counter = AgeCounter::from_age(self.age_counter.age().saturating_add(1))
     }
 
     pub fn is_mature(&self) -> bool {
