@@ -10,9 +10,11 @@ use super::{elders_info::EldersInfo, section_proof_chain::SectionKeyInfo};
 use crate::{
     id::{P2pNode, PublicId},
     location::DstLocation,
+    utils::NonEmptyList,
     xor_space::{Prefix, XorName},
 };
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, VecDeque},
     iter,
 };
@@ -26,7 +28,9 @@ const MAX_RECENT_KEYS: usize = 20;
 /// Note: currently does not store our section, but that may change.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SectionMap {
-    // Maps section prefixes to their latest signed elders infos.
+    // Our section including its whole history.
+    our: NonEmptyList<EldersInfo>,
+    // Other sections: maps section prefixes to their latest signed elders infos.
     // Note that after a split, the section's latest section info could be the one from the
     // pre-split parent section, so the value's prefix doesn't always match the key.
     other: BTreeMap<Prefix<XorName>, EldersInfo>,
@@ -39,8 +43,9 @@ pub struct SectionMap {
 }
 
 impl SectionMap {
-    pub fn new(our_key: SectionKeyInfo) -> Self {
+    pub fn new(our_info: EldersInfo, our_key: SectionKeyInfo) -> Self {
         Self {
+            our: NonEmptyList::new(our_info),
             other: Default::default(),
             keys: iter::once((*our_key.prefix(), our_key)).collect(),
             recent_keys: Default::default(),
@@ -48,56 +53,117 @@ impl SectionMap {
         }
     }
 
+    /// Get our section info
+    pub fn our(&self) -> &EldersInfo {
+        self.our.last()
+    }
+
+    // Returns whether we have the history of our infos or just the latest one.
+    pub fn has_our_history(&self) -> bool {
+        self.our.len() > 1
+    }
+
     /// Get `EldersInfo` of a known section with the given prefix.
     pub fn get(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        self.other.get(prefix)
+        if prefix == self.our.last().prefix() {
+            Some(self.our.last())
+        } else {
+            self.other.get(prefix)
+        }
     }
 
     /// Returns a known section whose prefix is compatible with the given prefix, if any.
     pub fn compatible(&self, prefix: &Prefix<XorName>) -> Option<&EldersInfo> {
-        self.other
-            .iter()
+        self.all()
             .find(move |(pfx, _)| pfx.is_compatible(prefix))
             .map(|(_, info)| info)
     }
 
-    /// Find section containing the given member.
-    pub fn find_by_member(&self, pub_id: &PublicId) -> Option<(Prefix<XorName>, u64)> {
+    /// Find other section containing the given elder.
+    pub fn find_other_by_member(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
         self.other
-            .values()
-            .find(|info| info.is_member(pub_id))
-            .map(|info| (*info.prefix(), info.version()))
+            .iter()
+            .find(|(_, info)| info.is_member(pub_id))
+            .map(|(_, info)| info)
+    }
+
+    /// Returns the known section that is closest to the given name, regardless of whether `name`
+    /// belongs in that section or not.
+    pub fn closest(&self, name: &XorName) -> (&Prefix<XorName>, &EldersInfo) {
+        let mut best_pfx = self.our().prefix();
+        let mut best_info = self.our();
+        for (pfx, info) in self.all() {
+            // TODO: Remove the first check after verifying that section infos are never empty.
+            if !info.is_empty() && best_pfx.cmp_distance(pfx, name) == Ordering::Greater {
+                best_pfx = pfx;
+                best_info = info;
+            }
+        }
+
+        (best_pfx, best_info)
     }
 
     /// Returns iterator over all known sections.
-    pub fn iter(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
+    pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
+        iter::once((self.our.last().prefix(), self.our.last())).chain(&self.other)
+    }
+
+    /// Returns iterator over all known sections excluding ours.
+    pub fn other(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
         self.other.iter()
     }
 
-    /// Returns all known section prefixes.
-    pub fn prefixes(&self) -> impl Iterator<Item = &Prefix<XorName>> {
-        self.other.keys()
+    /// Returns the known sections sorted by the distance from a given XorName.
+    pub fn sorted_by_distance_to(&self, name: &XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
+        let mut result: Vec<_> = self.all().collect();
+        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, name));
+        result
+    }
+
+    /// Returns `true` if the `EldersInfo` isn't known to us yet.
+    pub fn is_new(&self, elders_info: &EldersInfo) -> bool {
+        !self.all().any(|(_, info)| info.is_newer(elders_info))
+    }
+
+    /// Returns `true` if the `EldersInfo` isn't known to us yet and is a neighbouring section.
+    pub fn is_new_neighbour(&self, elders_info: &EldersInfo) -> bool {
+        let our_prefix = self.our().prefix();
+        let other_prefix = elders_info.prefix();
+
+        (our_prefix.is_neighbour(other_prefix) || other_prefix.is_extension_of(our_prefix))
+            && self.is_new(elders_info)
     }
 
     /// Returns all elders from all known sections.
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
+        self.all()
+            .map(|(_, info)| info)
+            .flat_map(EldersInfo::member_nodes)
+    }
+
+    /// Returns all elders only from other sections.
+    pub fn other_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.other.values().flat_map(EldersInfo::member_nodes)
     }
 
     /// Returns a `P2pNode` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
-        self.other
-            .iter()
+        self.all()
             .find(|(pfx, _)| pfx.matches(name))
             .and_then(|(_, elders_info)| elders_info.member_map().get(name))
     }
 
     /// Returns whether the given peer is elder in a known sections.
     pub fn is_elder(&self, pub_id: &PublicId) -> bool {
-        self.other.values().any(|info| info.is_member(pub_id))
+        self.get_elder(pub_id.name()).is_some()
     }
 
-    pub fn add_neighbour(&mut self, elders_info: EldersInfo, our_prefix: &Prefix<XorName>) {
+    /// Push the new version of our section.
+    pub fn push_our(&mut self, elders_info: EldersInfo) {
+        self.our.push(elders_info)
+    }
+
+    pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
         let pfx = *elders_info.prefix();
         let parent_pfx = elders_info.prefix().popped();
         let sibling_pfx = elders_info.prefix().sibling();
@@ -120,7 +186,7 @@ impl SectionMap {
             .get(&parent_pfx)
             .filter(|pinfo| {
                 pinfo.version() < new_elders_info_version
-                    && our_prefix.is_neighbour(&sibling_pfx)
+                    && self.our().prefix().is_neighbour(&sibling_pfx)
                     && !self.other.contains_key(&sibling_pfx)
             })
             .cloned()
@@ -128,17 +194,17 @@ impl SectionMap {
             let _ = self.other.insert(sibling_pfx, sinfo);
         }
 
-        self.prune_neighbours(our_prefix);
+        self.prune_neighbours();
     }
 
     /// Remove outdated neighbour infos.
-    pub fn prune_neighbours(&mut self, our_prefix: &Prefix<XorName>) {
+    pub fn prune_neighbours(&mut self) {
         // Remove invalid neighbour pfx, older version of compatible pfx.
         let to_remove: Vec<_> = self
             .other
             .iter()
             .filter_map(|(pfx, elders_info)| {
-                if !our_prefix.is_neighbour(pfx) {
+                if !self.our().prefix().is_neighbour(pfx) {
                     // we just split making old neighbour no longer needed
                     return Some(*pfx);
                 }
