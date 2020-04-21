@@ -80,21 +80,21 @@ impl VoteStatuses {
 }
 
 #[derive(Default)]
-pub struct ChainAccumulator {
+pub struct EventAccumulator {
     /// A map containing network events that have not been handled yet, together with their proofs
     /// that have been collected so far. We are still waiting for more proofs, or to reach a state
     /// where we can handle the event.
     // FIXME: Purge votes that are older than a given period.
-    chain_accumulator: BTreeMap<AccumulatingEvent, AccumulatingProof>,
+    incomplete_events: BTreeMap<AccumulatingEvent, AccumulatingProof>,
     /// Events that were handled: Further incoming proofs for these can be ignored.
-    /// When an event is completed, it cannot be or inserted in chain_accumulator.
+    /// When an event is completed, it cannot be polled or inserted again.
     completed_events: BTreeSet<AccumulatingEvent>,
     /// A struct retains the order of insertion, and keeps tracking of which node has not involved.
     /// Entry will be created when an event reached consensus.
     vote_statuses: VoteStatuses,
 }
 
-impl ChainAccumulator {
+impl EventAccumulator {
     #[cfg(test)]
     pub fn insert_with_proof_set(
         &mut self,
@@ -106,7 +106,7 @@ impl ChainAccumulator {
         }
 
         let proof = AccumulatingProof::from_proof_set(proof_set);
-        if self.chain_accumulator.insert(event, proof).is_some() {
+        if self.incomplete_events.insert(event, proof).is_some() {
             return Err(InsertError::ReplacedAlreadyInserted);
         }
 
@@ -125,7 +125,7 @@ impl ChainAccumulator {
         }
 
         if !self
-            .chain_accumulator
+            .incomplete_events
             .entry(event)
             .or_insert_with(AccumulatingProof::default)
             .add_proof(proof, signature)
@@ -141,7 +141,7 @@ impl ChainAccumulator {
         event: AccumulatingEvent,
         all_voters: BTreeSet<PublicId>,
     ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
-        let proofs = self.chain_accumulator.remove(&event)?;
+        let proofs = self.incomplete_events.remove(&event)?;
 
         if !self.completed_events.insert(event.clone()) {
             log_or_panic!(log::Level::Warn, "Duplicate insert in completed events.");
@@ -155,18 +155,18 @@ impl ChainAccumulator {
     pub fn incomplete_events(
         &self,
     ) -> impl Iterator<Item = (&AccumulatingEvent, &AccumulatingProof)> {
-        self.chain_accumulator.iter()
+        self.incomplete_events.iter()
     }
 
     pub fn reset_accumulator(&mut self, our_id: &PublicId) -> RemainingEvents {
         let completed_events = std::mem::take(&mut self.completed_events);
-        let chain_acc = std::mem::take(&mut self.chain_accumulator);
+        let incomplete_events = std::mem::take(&mut self.incomplete_events);
         self.vote_statuses = Default::default();
 
         RemainingEvents {
-            cached_events: chain_acc
+            cached_events: incomplete_events
                 .into_iter()
-                .filter(|&(_, ref proofs)| proofs.parsec_proofs.contains_id(our_id))
+                .filter(|(_, proofs)| proofs.parsec_proofs.contains_id(our_id))
                 .map(|(event, proofs)| {
                     event.into_network_event_with(proofs.into_sig_shares().remove(our_id))
                 })
@@ -376,13 +376,13 @@ mod test {
         }
     }
 
-    fn incomplete_events(acc: &ChainAccumulator) -> Vec<(AccumulatingEvent, AccumulatingProof)> {
+    fn incomplete_events(acc: &EventAccumulator) -> Vec<(AccumulatingEvent, AccumulatingProof)> {
         acc.incomplete_events()
             .map(|(e, p)| (e.clone(), p.clone()))
             .collect()
     }
 
-    fn completed_events(acc: &ChainAccumulator) -> Vec<AccumulatingEvent> {
+    fn completed_events(acc: &EventAccumulator) -> Vec<AccumulatingEvent> {
         acc.completed_events.iter().cloned().collect()
     }
 
@@ -395,7 +395,7 @@ mod test {
     }
 
     fn insert_with_proof_set(data: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let result = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
 
         assert_eq!(result, Ok(()));
@@ -411,7 +411,7 @@ mod test {
     }
 
     fn poll_proof(data: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
 
         let event_to_poll = unwrap!(acc.incomplete_events().next()).0.clone();
@@ -431,7 +431,7 @@ mod test {
     }
 
     fn re_insert_with_proof_set(data: TestData, data2: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
 
         let result = acc.insert_with_proof_set(data.event.clone(), data2.proofs.clone());
@@ -453,7 +453,7 @@ mod test {
     }
 
     fn re_insert_with_proof_set_after_poll(data: TestData, data2: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
         let _ = acc.poll_event(data.event.clone(), Default::default());
 
@@ -480,7 +480,7 @@ mod test {
     }
 
     fn add_proof(data: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let result = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
 
         assert_eq!(result, Ok(()));
@@ -504,7 +504,7 @@ mod test {
     }
 
     fn re_add_proof(data: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
 
         let result = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
@@ -526,7 +526,7 @@ mod test {
     }
 
     fn re_add_proof_after_poll(data: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
         let _ = acc.poll_event(data.event.clone(), Default::default());
 
@@ -549,7 +549,7 @@ mod test {
     }
 
     fn reset_all_completed(data: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
         let _ = acc.poll_event(data.event.clone(), Default::default());
 
@@ -579,7 +579,7 @@ mod test {
     }
 
     fn reset_none_completed(data: TestData) {
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature.clone());
 
         let result = acc.reset_accumulator(&data.our_id);
@@ -611,7 +611,7 @@ mod test {
 
     fn reset_none_completed_none_our_id(rng: &mut MainRng, data: TestData) {
         let our_id = *FullId::gen(rng).public_id();
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
         let _ = acc.add_proof(data.event.clone(), data.first_proof, data.signature);
 
         let result = acc.reset_accumulator(&our_id);
@@ -635,7 +635,7 @@ mod test {
         let polling_point = 6;
         let unresponsive_node = ids_and_proofs[5].0;
 
-        let mut acc = ChainAccumulator::default();
+        let mut acc = EventAccumulator::default();
 
         for i in 0..UNRESPONSIVE_WINDOW {
             let event = AccumulatingEvent::User([i as u8].to_vec());

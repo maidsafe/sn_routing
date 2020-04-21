@@ -10,7 +10,7 @@ mod event_accumulator;
 mod parsec;
 
 pub use self::{
-    event_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
+    event_accumulator::{AccumulatingProof, EventAccumulator, InsertError},
     parsec::{
         generate_bls_threshold_secret_key, generate_first_dkg_result, DkgResult, DkgResultWrapper,
         NetworkEvent as ParsecNetworkEvent, Observation, ParsecMap, Request as ParsecRequest,
