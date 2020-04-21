@@ -20,7 +20,9 @@ impl AgeCounter {
     }
 
     pub fn age(self) -> u8 {
-        f64::from(self.0).log2() as u8
+        // This is the same as `(self.0 as f64).log2() as u8` but without floating point
+        // arithmetic.
+        (32 - self.0.leading_zeros() - 1) as u8
     }
 
     /// Increment the counter and return whether the age increased.
@@ -126,9 +128,10 @@ mod tests {
 
     #[test]
     fn age_counter_to_age() {
+        let max_age = 16;
         let mut age_counter = AgeCounter::default();
 
-        for age in MIN_AGE..16 {
+        for age in MIN_AGE..max_age {
             for _ in 0..2u32.pow(u32::from(age)) - 1 {
                 assert_eq!(age_counter.age(), age);
                 assert!(!age_counter.increment());
@@ -136,5 +139,7 @@ mod tests {
 
             assert!(age_counter.increment());
         }
+
+        assert_eq!(age_counter.age(), max_age);
     }
 }
