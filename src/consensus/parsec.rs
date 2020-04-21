@@ -116,16 +116,6 @@ impl Default for ParsecMap {
 }
 
 impl ParsecMap {
-    pub fn with_init(
-        mut self,
-        rng: &mut MainRng,
-        full_id: FullId,
-        gen_pfx_info: &GenesisPfxInfo,
-    ) -> Self {
-        self.init(rng, full_id, gen_pfx_info);
-        self
-    }
-
     pub fn init(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) {
         self.add_new(rng, full_id, gen_pfx_info);
         self.remove_old();

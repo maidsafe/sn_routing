@@ -96,7 +96,7 @@ impl Env {
     fn n_vote_for(&mut self, count: usize, events: impl IntoIterator<Item = AccumulatingEvent>) {
         assert!(count <= self.other_ids.len());
 
-        let parsec = self.subject.parsec_map_mut().unwrap();
+        let engine = self.subject.consensus_engine_mut().unwrap();
         for event in events {
             self.other_ids
                 .iter()
@@ -113,7 +113,7 @@ impl Env {
                         };
 
                     info!("Vote as {:?} for event {:?}", full_id.public_id(), event);
-                    parsec.vote_for_as(
+                    engine.vote_for_as(
                         event.clone().into_network_event_with(sig_event).into_obs(),
                         full_id,
                     );
@@ -122,8 +122,8 @@ impl Env {
     }
 
     fn n_vote_for_unconsensused_events(&mut self, count: usize) {
-        let parsec = self.subject.parsec_map_mut().unwrap();
-        let events = parsec.our_unpolled_observations().cloned().collect_vec();
+        let engine = self.subject.consensus_engine_mut().unwrap();
+        let events = engine.our_unpolled_observations().cloned().collect_vec();
         for event in events {
             self.other_ids.iter().take(count).for_each(|(full_id, _)| {
                 info!(
@@ -131,7 +131,7 @@ impl Env {
                     full_id.public_id(),
                     event
                 );
-                parsec.vote_for_as(event.clone(), full_id);
+                engine.vote_for_as(event.clone(), full_id);
             });
         }
     }
@@ -139,8 +139,8 @@ impl Env {
     fn create_gossip(&mut self) -> Result<()> {
         let other_full_id = &self.other_ids[0].0;
         let addr: SocketAddr = "127.0.0.3:9999".parse().unwrap();
-        let parsec = self.subject.parsec_map_mut()?;
-        let parsec_version = parsec.last_version();
+        let engine = self.subject.consensus_engine_mut()?;
+        let parsec_version = engine.parsec_version();
         let request = ParsecRequest::new();
         let message = Message::single_src(
             other_full_id,
@@ -174,7 +174,7 @@ impl Env {
 
     fn updated_other_ids(&mut self, new_elders_info: EldersInfo) -> DkgToSectionInfo {
         let participants: BTreeSet<_> = new_elders_info.member_ids().copied().collect();
-        let parsec = self.subject.parsec_map_mut().unwrap();
+        let engine = self.subject.consensus_engine_mut().unwrap();
 
         let dkg_results = self
             .other_ids
@@ -182,7 +182,7 @@ impl Env {
             .map(|(full_id, _)| {
                 (
                     full_id.clone(),
-                    parsec
+                    engine
                         .get_dkg_result_as(participants.clone(), full_id)
                         .expect("failed to get DKG result"),
                 )
