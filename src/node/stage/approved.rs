@@ -12,7 +12,7 @@ use crate::{
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
         OnlinePayload, ParsecResetData, PollAccumulated, Proof, SendAckMessagePayload,
     },
-    consensus::{self, DkgResultWrapper, Observation, ParsecMap, ParsecRequest, ParsecResponse},
+    consensus::{self, DkgResultWrapper, Observation, ParsecRequest, ParsecResponse},
     core::Core,
     error::{Result, RoutingError},
     event::Event,
@@ -51,7 +51,6 @@ const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
 pub struct Approved {
-    pub parsec_map: ParsecMap,
     pub chain: Chain,
 
     sig_accumulator: SignatureAccumulator,
@@ -100,18 +99,15 @@ impl Approved {
         let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
         let chain = Chain::new(
+            &mut core.rng,
             network_params,
-            *core.full_id.public_id(),
+            core.full_id.clone(),
             gen_pfx_info.clone(),
             secret_key_share,
         );
 
-        let parsec_map =
-            ParsecMap::default().with_init(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
-
         Self {
             sig_accumulator: Default::default(),
-            parsec_map,
             chain,
             gen_pfx_info,
             timer_token,
@@ -131,7 +127,6 @@ impl Approved {
             transport: core.transport,
             transport_rx: None,
             sig_accumulator: self.sig_accumulator,
-            parsec_map: self.parsec_map,
         }
     }
 
@@ -151,14 +146,14 @@ impl Approved {
         );
 
         let timer_token = if state.chain.is_self_elder() {
-            core.timer.schedule(state.parsec_map.gossip_period())
+            core.timer
+                .schedule(state.chain.consensus_engine.gossip_period())
         } else {
             core.timer.schedule(KNOWLEDGE_TIMEOUT)
         };
 
         let stage = Self {
             sig_accumulator: state.sig_accumulator,
-            parsec_map: state.parsec_map,
             chain: state.chain,
             gen_pfx_info: state.gen_pfx_info,
             timer_token,
@@ -172,7 +167,9 @@ impl Approved {
     }
 
     pub fn vote_for_event(&mut self, event: AccumulatingEvent) {
-        self.parsec_map.vote_for(event.into_network_event())
+        self.chain
+            .consensus_engine
+            .vote_for(event.into_network_event())
     }
 
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
@@ -209,8 +206,10 @@ impl Approved {
     pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
         if self.timer_token == token {
             if self.chain.is_self_elder() {
-                self.timer_token = core.timer.schedule(self.parsec_map.gossip_period());
-                self.parsec_map.reset_gossip_period();
+                self.timer_token = core
+                    .timer
+                    .schedule(self.chain.consensus_engine.gossip_period());
+                self.chain.consensus_engine.reset_gossip_period();
             } else {
                 // TODO: send this only when the knowledge changes, not periodically.
                 self.send_member_knowledge(core);
@@ -227,7 +226,7 @@ impl Approved {
             }
         }
 
-        self.parsec_map.prune_if_needed();
+        self.chain.consensus_engine.prune_if_needed();
         self.send_parsec_gossip(core, None);
     }
 
@@ -344,7 +343,13 @@ impl Approved {
 
         self.gen_pfx_info = gen_pfx_info.clone();
         self.init_parsec(core);
-        self.chain = Chain::new(self.chain.network_params(), *core.id(), gen_pfx_info, None);
+        self.chain = Chain::new(
+            &mut core.rng,
+            self.chain.network_params(),
+            core.full_id.clone(),
+            gen_pfx_info,
+            None,
+        );
 
         Ok(())
     }
@@ -571,19 +576,21 @@ impl Approved {
             "handle parsec request v{} from {} (last: v{})",
             msg_version,
             p2p_node.public_id(),
-            self.parsec_map.last_version(),
+            self.chain.consensus_engine.parsec_version(),
         );
 
-        let response =
-            self.parsec_map
-                .handle_request(msg_version, par_request, *p2p_node.public_id());
+        let response = self.chain.consensus_engine.handle_parsec_request(
+            msg_version,
+            par_request,
+            *p2p_node.public_id(),
+        );
 
         if let Some(response) = response {
             trace!("send parsec response v{} to {:?}", msg_version, p2p_node,);
             core.send_direct_message(p2p_node.peer_addr(), response);
         }
 
-        if msg_version == self.parsec_map.last_version() {
+        if msg_version == self.chain.consensus_engine.parsec_version() {
             self.parsec_poll(core)
         } else {
             Ok(())
@@ -599,10 +606,11 @@ impl Approved {
     ) -> Result<()> {
         trace!("handle parsec response v{} from {}", msg_version, pub_id);
 
-        self.parsec_map
-            .handle_response(msg_version, par_response, pub_id);
+        self.chain
+            .consensus_engine
+            .handle_parsec_response(msg_version, par_response, pub_id);
 
-        if msg_version == self.parsec_map.last_version() {
+        if msg_version == self.chain.consensus_engine.parsec_version() {
             self.parsec_poll(core)
         } else {
             Ok(())
@@ -696,8 +704,8 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     fn parsec_poll(&mut self, core: &mut Core) -> Result<()> {
-        while let Some(block) = self.parsec_map.poll() {
-            let parsec_version = self.parsec_map.last_version();
+        while let Some(block) = self.chain.consensus_engine.parsec_poll() {
+            let parsec_version = self.chain.consensus_engine.parsec_version();
             match block.payload() {
                 Observation::Accusation { .. } => {
                     // FIXME: Handle properly
@@ -1150,22 +1158,31 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     fn init_parsec(&mut self, core: &mut Core) {
-        self.parsec_map
-            .init(&mut core.rng, core.full_id.clone(), &self.gen_pfx_info)
+        self.chain.consensus_engine.parsec_init(
+            &mut core.rng,
+            core.full_id.clone(),
+            &self.gen_pfx_info,
+        )
     }
 
     fn prepare_reset_parsec(&mut self) -> Result<CompleteParsecReset> {
-        let reset_data = self
-            .chain
-            .prepare_parsec_reset(self.parsec_map.last_version().saturating_add(1))?;
+        let reset_data = self.chain.prepare_parsec_reset(
+            self.chain
+                .consensus_engine
+                .parsec_version()
+                .saturating_add(1),
+        )?;
         let complete_data = self.complete_parsec_reset_data(reset_data);
         Ok(complete_data)
     }
 
     fn prepare_finalise_split(&mut self) -> Result<CompleteParsecReset, RoutingError> {
-        let reset_data = self
-            .chain
-            .finalise_prefix_change(self.parsec_map.last_version().saturating_add(1))?;
+        let reset_data = self.chain.finalise_prefix_change(
+            self.chain
+                .consensus_engine
+                .parsec_version()
+                .saturating_add(1),
+        )?;
         let complete_data = self.complete_parsec_reset_data(reset_data);
         Ok(complete_data)
     }
@@ -1180,7 +1197,8 @@ impl Approved {
         let cached_events: BTreeSet<_> = cached_events
             .into_iter()
             .chain(
-                self.parsec_map
+                self.chain
+                    .consensus_engine
                     .our_unpolled_observations()
                     .filter_map(|obs| match obs {
                         parsec::Observation::OpaquePayload(event) => Some(event),
@@ -1271,7 +1289,7 @@ impl Approved {
         self.init_parsec(core);
 
         to_vote_again.iter().for_each(|event| {
-            self.parsec_map.vote_for(event.clone());
+            self.chain.consensus_engine.vote_for(event.clone());
         });
 
         Ok(())
@@ -1309,8 +1327,9 @@ impl Approved {
         self.gen_pfx_info = gen_pfx_info.clone();
         self.init_parsec(core);
         self.chain = Chain::new(
+            &mut core.rng,
             self.chain.network_params(),
-            *core.full_id.public_id(),
+            core.full_id.clone(),
             gen_pfx_info,
             None,
         );
@@ -1321,18 +1340,21 @@ impl Approved {
         let unresponsive_nodes = self.chain.check_vote_status();
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
-            self.parsec_map
+            self.chain
+                .consensus_engine
                 .vote_for(AccumulatingEvent::Offline(*pub_id).into_network_event());
         }
     }
 
     fn vote_for_relocate(&mut self, details: RelocateDetails) {
-        self.parsec_map
+        self.chain
+            .consensus_engine
             .vote_for(details.into_accumulating_event().into_network_event())
     }
 
     fn vote_for_relocate_prepare(&mut self, details: RelocateDetails, count_down: i32) {
-        self.parsec_map
+        self.chain
+            .consensus_engine
             .vote_for(AccumulatingEvent::RelocatePrepare(details, count_down).into_network_event());
     }
 
@@ -1349,7 +1371,7 @@ impl Approved {
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
 
         let event = acc_event.into_network_event_with(Some(signature_payload));
-        self.parsec_map.vote_for(event);
+        self.chain.consensus_engine.vote_for(event);
         Ok(())
     }
 
@@ -1455,12 +1477,12 @@ impl Approved {
         let (version, gossip_target) = match target {
             Some((v, p)) => (v, p),
             None => {
-                if !self.parsec_map.should_send_gossip() {
+                if !self.chain.consensus_engine.should_send_gossip() {
                     return;
                 }
 
                 if let Some(recipient) = self.choose_gossip_recipient(&mut core.rng) {
-                    let version = self.parsec_map.last_version();
+                    let version = self.chain.consensus_engine.parsec_version();
                     (version, recipient)
                 } else {
                     return;
@@ -1469,7 +1491,8 @@ impl Approved {
         };
 
         match self
-            .parsec_map
+            .chain
+            .consensus_engine
             .create_gossip(version, gossip_target.public_id())
         {
             Ok(msg) => {
@@ -1488,7 +1511,7 @@ impl Approved {
     }
 
     fn choose_gossip_recipient(&mut self, rng: &mut MainRng) -> Option<P2pNode> {
-        let recipients = self.parsec_map.gossip_recipients();
+        let recipients = self.chain.consensus_engine.gossip_recipients();
         if recipients.is_empty() {
             trace!("not sending parsec request: no recipients");
             return None;
@@ -1515,7 +1538,7 @@ impl Approved {
     fn send_member_knowledge(&mut self, core: &mut Core) {
         let payload = MemberKnowledge {
             elders_version: self.chain.state().our_info().version(),
-            parsec_version: self.parsec_map.last_version(),
+            parsec_version: self.chain.consensus_engine.parsec_version(),
         };
 
         for recipient in self.chain.state().our_info().member_nodes() {

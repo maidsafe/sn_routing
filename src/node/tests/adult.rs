@@ -114,8 +114,9 @@ fn create_elders(
         .enumerate()
         .map(|(index, (_, full_id))| {
             let chain = Chain::new(
+                rng,
                 NETWORK_PARAMS,
-                *full_id.public_id(),
+                full_id.clone(),
                 gen_pfx_info.clone(),
                 Some(secret_key_set.secret_key_share(index)),
             );

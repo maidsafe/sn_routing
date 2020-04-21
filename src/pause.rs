@@ -8,7 +8,6 @@
 
 use crate::{
     chain::{Chain, GenesisPfxInfo},
-    consensus::ParsecMap,
     id::FullId,
     message_filter::MessageFilter,
     messages::QueuedMessage,
@@ -37,5 +36,4 @@ pub struct PausedState {
     pub(super) transport: Transport,
     pub(super) transport_rx: Option<mpmc::Receiver<TransportEvent>>,
     pub(super) sig_accumulator: SignatureAccumulator,
-    pub(super) parsec_map: ParsecMap,
 }

@@ -37,7 +37,7 @@ use crossbeam_channel::{Receiver, RecvError, Select};
 use std::net::SocketAddr;
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{chain::AccumulatingEvent, consensus::ParsecMap, messages::AccumulatingMessage};
+use crate::{chain::AccumulatingEvent, consensus::ConsensusEngine, messages::AccumulatingMessage};
 #[cfg(feature = "mock_base")]
 use {
     crate::{chain::Chain, section::SectionProofSlice},
@@ -896,7 +896,7 @@ impl Node {
     pub fn has_unpolled_observations(&self) -> bool {
         self.stage
             .approved()
-            .map(|stage| stage.parsec_map.has_unpolled_observations())
+            .map(|stage| stage.chain.consensus_engine.has_unpolled_observations())
             .unwrap_or(false)
     }
 
@@ -917,7 +917,7 @@ impl Node {
     pub fn parsec_last_version(&self) -> u64 {
         self.stage
             .approved()
-            .map(|stage| stage.parsec_map.last_version())
+            .map(|stage| stage.chain.consensus_engine.parsec_version())
             .unwrap_or(0)
     }
 
@@ -1089,9 +1089,9 @@ impl Node {
         (node, user_event_rx, transport_client_rx)
     }
 
-    pub(crate) fn parsec_map_mut(&mut self) -> Result<&mut ParsecMap> {
+    pub(crate) fn consensus_engine_mut(&mut self) -> Result<&mut ConsensusEngine> {
         if let Some(stage) = self.stage.approved_mut() {
-            Ok(&mut stage.parsec_map)
+            Ok(&mut stage.chain.consensus_engine)
         } else {
             Err(RoutingError::InvalidState)
         }

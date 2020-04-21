@@ -11,12 +11,13 @@ use super::{
     GenesisPfxInfo, NetworkEvent, NetworkParams, Proof, ProofSet,
 };
 use crate::{
-    consensus::{AccumulatingProof, DkgResult, DkgResultWrapper, EventAccumulator, InsertError},
+    consensus::{AccumulatingProof, ConsensusEngine, DkgResult, DkgResultWrapper, InsertError},
     error::{Result, RoutingError},
-    id::{P2pNode, PublicId},
+    id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{AccumulatingMessage, PlainMessage, Variant},
     relocation::RelocateDetails,
+    rng::MainRng,
     section::{EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice},
     xor_space::Xorable,
     Prefix, XorName,
@@ -39,6 +40,8 @@ pub const fn delivery_group_size(n: usize) -> usize {
 
 /// Data chain.
 pub struct Chain {
+    /// The consensus engine.
+    pub consensus_engine: ConsensusEngine,
     /// Network parameters
     network_params: NetworkParams,
     /// This node's public ID.
@@ -47,8 +50,6 @@ pub struct Chain {
     our_section_bls_keys: SectionKeys,
     /// The shared state of the section.
     state: SharedState,
-    /// Accumulate NetworkEvent that do not have yet enough vote/proofs.
-    accumulator: EventAccumulator,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
     /// Marker indicating that elders may need to change,
@@ -97,14 +98,18 @@ impl Chain {
 
     /// Create a new chain given genesis information
     pub fn new(
+        rng: &mut MainRng,
         network_params: NetworkParams,
-        our_id: PublicId,
+        our_full_id: FullId,
         gen_info: GenesisPfxInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
+        let our_id = *our_full_id.public_id();
         let secret_key_share = secret_key_share
             .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.elders_info));
+        let consensus_engine = ConsensusEngine::new(rng, our_full_id, &gen_info);
+
         Self {
             network_params,
             our_id,
@@ -113,7 +118,7 @@ impl Chain {
                 secret_key_share,
             },
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
-            accumulator: Default::default(),
+            consensus_engine,
             churn_in_progress: false,
             members_changed: false,
             new_section_bls_keys: Default::default(),
@@ -176,7 +181,7 @@ impl Chain {
         proof: Proof,
     ) -> Result<(), RoutingError> {
         let (acc_event, signature) = AccumulatingEvent::from_network_event(event.clone());
-        match self.accumulator.add_proof(acc_event, proof, signature) {
+        match self.consensus_engine.add_proof(acc_event, proof, signature) {
             Ok(()) | Err(InsertError::AlreadyComplete) => {
                 // Proof added or event already completed.
             }
@@ -186,7 +191,7 @@ impl Chain {
                     log::Level::Warn,
                     "Duplicate proof for {:?} in accumulator. [{:?}]",
                     event,
-                    self.accumulator.incomplete_events().format(", ")
+                    self.consensus_engine.incomplete_events().format(", ")
                 );
             }
         }
@@ -231,13 +236,13 @@ impl Chain {
 
     fn poll_accumulator(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
         let opt_event = self
-            .accumulator
+            .consensus_engine
             .incomplete_events()
             .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
             .map(|(event, _)| event.clone());
 
         opt_event.and_then(|event| {
-            self.accumulator
+            self.consensus_engine
                 .poll_event(event, self.state.our_info().member_ids().cloned().collect())
         })
     }
@@ -459,7 +464,7 @@ impl Chain {
         &mut self,
         parsec_version: u64,
     ) -> Result<ParsecResetData, RoutingError> {
-        let remaining = self.accumulator.reset_accumulator(&self.our_id);
+        let remaining = self.consensus_engine.reset_accumulator(&self.our_id);
 
         self.state.handled_genesis_event = false;
 
@@ -576,7 +581,7 @@ impl Chain {
     /// Check which nodes are unresponsive.
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
         let members = self.state.our_info().member_ids();
-        self.accumulator.check_vote_status(members)
+        self.consensus_engine.check_vote_status(members)
     }
 
     /// If given `NetworkEvent` is a `EldersInfo`, returns `true` if we have the previous
@@ -1293,8 +1298,9 @@ mod tests {
         };
 
         let mut chain = Chain::new(
+            rng,
             Default::default(),
-            *our_id.public_id(),
+            our_id,
             genesis_info,
             Some(secret_key_share),
         );
