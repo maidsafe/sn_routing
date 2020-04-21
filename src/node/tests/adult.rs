@@ -9,12 +9,12 @@
 use super::utils as test_utils;
 use crate::{
     chain::{Chain, GenesisPfxInfo, NetworkParams},
+    consensus::generate_bls_threshold_secret_key,
     error::Result,
     id::FullId,
     location::DstLocation,
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
     node::{Node, NodeConfig},
-    parsec::generate_bls_threshold_secret_key,
     rng::{self, MainRng},
     section::EldersInfo,
     xor_space::{Prefix, XorName},

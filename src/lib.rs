@@ -110,8 +110,8 @@ pub use self::{
         delivery_group_size, elders_info_for_test, section_proof_slice_for_test, NetworkParams,
         SectionKeyShare,
     },
+    consensus::generate_bls_threshold_secret_key,
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
-    parsec::generate_bls_threshold_secret_key,
     relocation::Overrides as RelocationOverrides,
     section::{quorum_count, MIN_AGE},
     xor_space::Xorable,
@@ -122,8 +122,8 @@ pub use self::{
 pub mod test_consts {
     pub use crate::{
         chain::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
+        consensus::GOSSIP_PERIOD,
         node::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT},
-        parsec::GOSSIP_PERIOD,
         transport::{RESEND_DELAY, RESEND_MAX_ATTEMPTS},
     };
 }
@@ -136,6 +136,7 @@ pub use self::mock::parsec::init_mock;
 // ############################################################################
 
 mod chain;
+mod consensus;
 mod core;
 mod error;
 mod id;
@@ -143,7 +144,6 @@ mod location;
 mod message_filter;
 mod messages;
 mod node;
-mod parsec;
 mod pause;
 mod relocation;
 #[cfg(not(feature = "mock_base"))]

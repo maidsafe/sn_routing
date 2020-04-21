@@ -272,8 +272,8 @@ pub struct RemainingEvents {
 mod test {
     use super::*;
     use crate::{
+        consensus::generate_bls_threshold_secret_key,
         id::FullId,
-        parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
         section::{EldersInfo, SectionKeyInfo},
         unwrap,

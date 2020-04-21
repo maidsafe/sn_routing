@@ -7,9 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
+    consensus::{Observation, ParsecNetworkEvent},
     error::RoutingError,
     id::{P2pNode, PublicId},
-    parsec,
     relocation::RelocateDetails,
     section::{EldersInfo, SectionKeyInfo},
     Prefix, XorName,
@@ -168,7 +168,7 @@ pub struct NetworkEvent {
 
 impl NetworkEvent {
     /// Convert `NetworkEvent` into a Parsec Observation
-    pub fn into_obs(self) -> parsec::Observation<Self, PublicId> {
+    pub fn into_obs(self) -> Observation<Self, PublicId> {
         match self {
             Self {
                 payload: AccumulatingEvent::StartDkg(participants),
@@ -179,7 +179,7 @@ impl NetworkEvent {
     }
 }
 
-impl parsec::NetworkEvent for NetworkEvent {}
+impl ParsecNetworkEvent for NetworkEvent {}
 
 impl Debug for NetworkEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {

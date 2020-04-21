@@ -9,7 +9,7 @@
 use super::{AccumulatingMessage, MessageHash};
 use crate::{
     chain::GenesisPfxInfo,
-    parsec,
+    consensus::{ParsecRequest, ParsecResponse},
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
     xor_space::{Prefix, XorName},
@@ -61,9 +61,9 @@ pub enum Variant {
     /// own section.
     MemberKnowledge(MemberKnowledge),
     /// Parsec request message
-    ParsecRequest(u64, parsec::Request),
+    ParsecRequest(u64, ParsecRequest),
     /// Parsec response message
-    ParsecResponse(u64, parsec::Response),
+    ParsecResponse(u64, ParsecResponse),
     /// Message sent to a disconnected peer to trigger lost peer detection.
     Ping,
     /// Response to a message that the recipient cannot handle at this time but might be able to

@@ -8,7 +8,6 @@
 
 use crate::{
     crypto::{encryption, signing},
-    parsec,
     rng::{self, MainRng, RngCompat},
     xor_space::XorName,
 };

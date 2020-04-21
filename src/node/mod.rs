@@ -37,7 +37,7 @@ use crossbeam_channel::{Receiver, RecvError, Select};
 use std::net::SocketAddr;
 
 #[cfg(all(test, feature = "mock"))]
-use crate::{chain::AccumulatingEvent, messages::AccumulatingMessage, parsec::ParsecMap};
+use crate::{chain::AccumulatingEvent, consensus::ParsecMap, messages::AccumulatingMessage};
 #[cfg(feature = "mock_base")]
 use {
     crate::{chain::Chain, section::SectionProofSlice},

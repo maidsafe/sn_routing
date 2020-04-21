@@ -343,9 +343,9 @@ impl SharedState {
 mod test {
     use super::*;
     use crate::{
+        consensus::generate_bls_threshold_secret_key,
         id::P2pNode,
         location::DstLocation,
-        parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
         section::EldersInfo,
         unwrap, FullId, Prefix, XorName,

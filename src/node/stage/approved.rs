@@ -12,6 +12,7 @@ use crate::{
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
         OnlinePayload, ParsecResetData, PollAccumulated, Proof, SendAckMessagePayload,
     },
+    consensus::{self, DkgResultWrapper, Observation, ParsecMap, ParsecRequest, ParsecResponse},
     core::Core,
     error::{Result, RoutingError},
     event::Event,
@@ -21,7 +22,6 @@ use crate::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
         MessageHash, MessageWithBytes, SrcAuthority, Variant, VerifyStatus,
     },
-    parsec::{self, DkgResultWrapper, Observation, ParsecMap},
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
@@ -73,7 +73,7 @@ impl Approved {
         let p2p_node = P2pNode::new(public_id, connection_info);
         let mut ages = BTreeMap::new();
         let _ = ages.insert(public_id, MIN_AGE_COUNTER);
-        let first_dkg_result = parsec::generate_first_dkg_result(&mut core.rng);
+        let first_dkg_result = consensus::generate_first_dkg_result(&mut core.rng);
         let gen_pfx_info = GenesisPfxInfo {
             elders_info: create_first_elders_info(p2p_node)?,
             public_keys: first_dkg_result.public_key_set,
@@ -564,7 +564,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         msg_version: u64,
-        par_request: parsec::Request,
+        par_request: ParsecRequest,
         p2p_node: P2pNode,
     ) -> Result<()> {
         trace!(
@@ -594,7 +594,7 @@ impl Approved {
         &mut self,
         core: &mut Core,
         msg_version: u64,
-        par_response: parsec::Response,
+        par_response: ParsecResponse,
         pub_id: PublicId,
     ) -> Result<()> {
         trace!("handle parsec response v{} from {}", msg_version, pub_id);
