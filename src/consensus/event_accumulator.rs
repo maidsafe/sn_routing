@@ -6,8 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatingEvent, EventSigPayload, NetworkEvent, Proof, ProofSet};
-use crate::{id::PublicId, section::EldersInfo};
+use crate::{
+    chain::{AccumulatingEvent, EventSigPayload, NetworkEvent, Proof, ProofSet},
+    id::PublicId,
+    section::EldersInfo,
+};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     mem,
@@ -77,7 +80,7 @@ impl VoteStatuses {
 }
 
 #[derive(Default)]
-pub(super) struct ChainAccumulator {
+pub struct ChainAccumulator {
     /// A map containing network events that have not been handled yet, together with their proofs
     /// that have been collected so far. We are still waiting for more proofs, or to reach a state
     /// where we can handle the event.

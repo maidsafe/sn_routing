@@ -6,10 +6,17 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+mod event_accumulator;
 mod parsec;
 
-pub use self::parsec::{
-    generate_bls_threshold_secret_key, generate_first_dkg_result, DkgResult, DkgResultWrapper,
-    NetworkEvent as ParsecNetworkEvent, Observation, ParsecMap, Request as ParsecRequest,
-    Response as ParsecResponse, GOSSIP_PERIOD,
+pub use self::{
+    event_accumulator::{AccumulatingProof, ChainAccumulator, InsertError},
+    parsec::{
+        generate_bls_threshold_secret_key, generate_first_dkg_result, DkgResult, DkgResultWrapper,
+        NetworkEvent as ParsecNetworkEvent, Observation, ParsecMap, Request as ParsecRequest,
+        Response as ParsecResponse, GOSSIP_PERIOD,
+    },
 };
+
+#[cfg(feature = "mock_base")]
+pub use self::event_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
