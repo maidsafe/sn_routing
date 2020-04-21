@@ -369,11 +369,15 @@ impl Chain {
     // Increment the age counters of the members.
     pub fn increment_age_counters(&mut self, trigger_node: &PublicId) {
         let our_section_size = self.state.our_joined_members().count();
-        let safe_section_size = self.safe_section_size();
+        let our_prefix = *self.state.our_prefix();
+
+        // Is network startup in progress?
+        let startup =
+            our_prefix == Prefix::default() && our_section_size < self.safe_section_size();
 
         // As a measure against sybil attacks, we don't increment the age counters on infant churn
-        // once we reach safe_section_size.
-        if our_section_size >= safe_section_size
+        // once we are past the startup phase.
+        if !startup
             && self
                 .state
                 .get_persona(trigger_node)
@@ -387,7 +391,6 @@ impl Chain {
             return;
         }
 
-        let our_prefix = *self.state.our_prefix();
         let relocating_state = self.state.create_relocating_state();
         let mut details_to_add = Vec::new();
 
@@ -399,6 +402,12 @@ impl Chain {
 
         for (name, member_info) in self.state.our_joined_members_mut() {
             if member_info.p2p_node.public_id() == trigger_node {
+                continue;
+            }
+
+            // During network startup we go through accelerated ageing.
+            if startup {
+                member_info.increment_age();
                 continue;
             }
 
@@ -426,7 +435,19 @@ impl Chain {
             })
         }
 
-        trace!("increment_age_counters: {:?}", self.state.our_members);
+        trace!(
+            "increment_age_counters: {}",
+            self.state
+                .our_members
+                .values()
+                .map(|info| format!(
+                    "{}: ({:?}, {:?})",
+                    info.p2p_node.name(),
+                    info.state,
+                    info.age_counter
+                ))
+                .format(", ")
+        );
 
         for details in details_to_add {
             trace!("Change state to Relocating {}", details.pub_id);

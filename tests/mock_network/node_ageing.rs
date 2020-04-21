@@ -19,6 +19,7 @@ use rand::{
 };
 use routing::{
     mock::Environment, rng::MainRng, NetworkParams, Prefix, PublicId, RelocationOverrides, XorName,
+    MIN_AGE,
 };
 use std::iter;
 
@@ -148,6 +149,68 @@ fn relocate_during_split() {
     poll_until(&env, &mut nodes, |nodes| {
         node_relocated(nodes, relocate_index, &source_prefix, &target_prefix)
     })
+}
+
+// Test that during startup phase all churn events cause age increments.
+#[test]
+fn startup_phase() {
+    let env = Environment::new(NETWORK_PARAMS);
+    let mut nodes = vec![];
+
+    // Only the first `safe_section_size - 1` adds cause age increments, the rest does not.
+    for i in 0..(env.safe_section_size() + 1) {
+        trace!("add node {}", i);
+        add_node_to_section(&env, &mut nodes, &Prefix::default());
+
+        poll_until(&env, &mut nodes, |nodes| {
+            node_joined(nodes, nodes.len() - 1)
+        });
+
+        poll_until(&env, &mut nodes, |nodes| {
+            check_root_section_age_counters_after_only_adds(&env, nodes)
+        })
+    }
+}
+
+// Verify that the age counters of all the nodes in the root section are as expected assuming we
+// were only adding nodes, not removing.
+fn check_root_section_age_counters_after_only_adds(env: &Environment, nodes: &[TestNode]) -> bool {
+    // Maximum number of churn events a node can experience during the startup phase:
+    // The startup phase last only while the section has less than safe_section_size nodes which
+    // means it has been through at most safe_section_size - 1 adds. We need to subtract one to
+    // discount the node itself because its age is not affected by its own churn.
+    let max_startup_churn_events = nodes.len().min(env.safe_section_size() - 1) - 1;
+
+    for i in 0..nodes.len() {
+        assert!(
+            nodes[i]
+                .inner
+                .our_prefix()
+                .map(|prefix| *prefix == Prefix::default())
+                .unwrap_or(true),
+            "the root section has split"
+        );
+
+        // The number of churn events the i-th node experienced during the startup phase.
+        let startup_churn_events = max_startup_churn_events.saturating_sub(i) as u8;
+
+        let expected_age = (MIN_AGE + startup_churn_events) as u32;
+        let expected_age_counter = 2u32.pow(expected_age);
+        let actual_age_counter = node_age_counter(&nodes, nodes[i].name());
+
+        if actual_age_counter != expected_age_counter {
+            trace!(
+                "node {} (name: {}) age counter: {} (expected: {})",
+                i,
+                nodes[i].name(),
+                actual_age_counter,
+                expected_age_counter,
+            );
+            return false;
+        }
+    }
+
+    true
 }
 
 fn choose_other_prefix<'a, R: Rng>(
