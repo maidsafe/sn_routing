@@ -9,13 +9,13 @@
 use super::utils as test_utils;
 use crate::{
     chain::{AccumulatingEvent, AckMessagePayload, EventSigPayload, OnlinePayload},
+    consensus::{generate_bls_threshold_secret_key, ParsecRequest},
     error::Result,
-    generate_bls_threshold_secret_key,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
     messages::{BootstrapResponse, MemberKnowledge, Message, Variant},
     node::{Node, NodeConfig},
-    parsec, quic_p2p,
+    quic_p2p,
     rng::{self, MainRng},
     section::MIN_AGE,
     section::{EldersInfo, SectionKeyInfo, SectionProofSlice},
@@ -141,7 +141,7 @@ impl Env {
         let addr: SocketAddr = "127.0.0.3:9999".parse().unwrap();
         let parsec = self.subject.parsec_map_mut()?;
         let parsec_version = parsec.last_version();
-        let request = parsec::Request::new();
+        let request = ParsecRequest::new();
         let message = Message::single_src(
             other_full_id,
             DstLocation::Direct,

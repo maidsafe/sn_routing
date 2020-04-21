@@ -166,8 +166,8 @@ impl PlainMessage {
 mod tests {
     use super::*;
     use crate::{
+        consensus::generate_bls_threshold_secret_key,
         messages::VerifyStatus,
-        parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
         section::SectionKeyInfo,
         unwrap, Prefix,

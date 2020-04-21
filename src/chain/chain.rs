@@ -14,11 +14,11 @@ use super::{
     Proof, ProofSet,
 };
 use crate::{
+    consensus::{DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
     messages::{AccumulatingMessage, PlainMessage, Variant},
-    parsec::{DkgResult, DkgResultWrapper},
     relocation::RelocateDetails,
     section::{EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice},
     xor_space::Xorable,
@@ -1189,8 +1189,8 @@ struct SplitCache {
 mod tests {
     use super::{super::GenesisPfxInfo, *};
     use crate::{
+        consensus::generate_bls_threshold_secret_key,
         id::{FullId, P2pNode, PublicId},
-        parsec::generate_bls_threshold_secret_key,
         rng::{self, MainRng},
         section::{EldersInfo, MIN_AGE_COUNTER},
         unwrap,

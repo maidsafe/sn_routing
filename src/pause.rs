@@ -8,10 +8,10 @@
 
 use crate::{
     chain::{Chain, GenesisPfxInfo},
+    consensus::ParsecMap,
     id::FullId,
     message_filter::MessageFilter,
     messages::QueuedMessage,
-    parsec::ParsecMap,
     signature_accumulator::SignatureAccumulator,
     transport::Transport,
     TransportEvent,
