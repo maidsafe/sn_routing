@@ -296,7 +296,7 @@ impl Approved {
         src: SrcAuthority,
         dst: DstLocation,
     ) -> Result<()> {
-        if self.chain.is_new_neighbour(&elders_info) {
+        if self.chain.state().sections.is_new_neighbour(&elders_info) {
             let _ = self
                 .pending_voted_msgs
                 .entry(PendingMessageKey::NeighbourInfo {
@@ -442,7 +442,8 @@ impl Approved {
             let conn_infos: Vec<_> = self
                 .chain
                 .state()
-                .closest_section(destination)
+                .sections
+                .closest(&destination)
                 .1
                 .member_nodes()
                 .map(|p2p_node| *p2p_node.peer_addr())

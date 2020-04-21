@@ -285,13 +285,12 @@ impl Node {
     /// always return the section Elders' info.
     pub fn closest_known_elders_to<'a>(
         &'a self,
-        name: &XorName,
+        name: &'a XorName,
     ) -> impl Iterator<Item = &'a P2pNode> + 'a {
-        let name = *name;
         self.stage
             .approved()
             .into_iter()
-            .flat_map(move |stage| stage.chain.state().closest_section(name).1.member_nodes())
+            .flat_map(move |stage| stage.chain.state().sections.closest(name).1.member_nodes())
     }
 
     /// Returns the information of all the current section adults.
@@ -742,7 +741,7 @@ impl Node {
                 .chain
                 .state()
                 .find_section_by_member(sender.public_id())
-                .map(|(_, version)| version),
+                .map(|info| info.version()),
             Stage::Terminated => unreachable!(),
         };
 
@@ -937,7 +936,7 @@ impl Node {
                 chain
                     .state()
                     .sections
-                    .iter()
+                    .other()
                     .map(|(_, info)| info.prefix())
                     .copied()
                     .collect()

@@ -14,14 +14,11 @@ use crate::{
         AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
         SectionProofBlock, SectionProofChain,
     },
-    utils::NonEmptyList,
     Prefix, XorName,
 };
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
-    iter,
     net::SocketAddr,
 };
 
@@ -31,9 +28,6 @@ pub struct SharedState {
     /// Indicate whether nodes are shared state because genesis event was seen
     #[serde(skip)]
     pub handled_genesis_event: bool,
-    /// The latest few fully signed infos of our own sections.
-    /// This is not a `BTreeSet` as it is ordered according to the sequence of pushes into it.
-    pub our_infos: NonEmptyList<EldersInfo>,
     /// Our section's key history for Secure Message Delivery
     pub our_history: SectionProofChain,
     /// Info about all members of our section.
@@ -59,9 +53,8 @@ impl SharedState {
 
         Self {
             handled_genesis_event: false,
-            our_infos: NonEmptyList::new(elders_info),
             our_history,
-            sections: SectionMap::new(our_key_info),
+            sections: SectionMap::new(elders_info, our_key_info),
             our_members,
             churn_event_backlog: Default::default(),
             relocate_queue: VecDeque::new(),
@@ -77,7 +70,7 @@ impl SharedState {
         }
 
         if let Some(new) = new {
-            if self.our_infos.len() > 1 && *self != new {
+            if self.sections.has_our_history() && *self != new {
                 log_or_panic!(
                     log::Level::Error,
                     "shared state update - mismatch: old: {:?} --- new: {:?}",
@@ -94,7 +87,7 @@ impl SharedState {
 
     /// Returns our own current section info.
     pub fn our_info(&self) -> &EldersInfo {
-        self.our_infos.last()
+        self.sections.our()
     }
 
     /// Returns our own current section's prefix.
@@ -119,16 +112,12 @@ impl SharedState {
         self.our_members
             .active()
             .map(|info| &info.p2p_node)
-            .chain(self.sections.elders())
+            .chain(self.sections.other_elders())
     }
 
     /// Returns a set of elders we know.
     pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.sections
-            .iter()
-            .map(|(_, info)| info)
-            .chain(iter::once(self.our_info()))
-            .flat_map(EldersInfo::member_nodes)
+        self.sections.elders()
     }
 
     /// Returns the `count` candidates for elders out of currently relocating nodes. Use this
@@ -148,7 +137,7 @@ impl SharedState {
 
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
-        self.is_peer_our_elder(pub_id) || self.sections.is_elder(pub_id)
+        self.sections.is_elder(pub_id)
     }
 
     /// Returns whether the given peer is elder in our section.
@@ -209,15 +198,15 @@ impl SharedState {
     /// Remove all entries from `our_members` whose name does not match our prefix.
     pub fn remove_our_members_not_matching_our_prefix(&mut self) {
         self.our_members
-            .remove_not_matching_our_prefix(self.our_infos.last().prefix())
+            .remove_not_matching_our_prefix(self.sections.our().prefix())
     }
 
-    /// Find section (prefix + version) which has member with the given name
-    pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<(Prefix<XorName>, u64)> {
+    /// Find section which has member with the given id
+    pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
         if self.our_members.contains(pub_id) {
-            Some((*self.our_info().prefix(), self.our_info().version()))
+            Some(self.sections.our())
         } else {
-            self.sections.find_by_member(pub_id)
+            self.sections.find_other_by_member(pub_id)
         }
     }
 
@@ -231,39 +220,13 @@ impl SharedState {
 
     /// Return prefixes of all our neighbours
     pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.sections.prefixes().copied().collect()
+        self.sections.other().map(|(prefix, _)| *prefix).collect()
     }
 
     /// Returns an iterator over all neighbouring sections and our own, together with their prefix
     /// in the map.
     pub fn known_sections(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
-        self.sections
-            .iter()
-            .chain(iter::once((self.our_info().prefix(), self.our_info())))
-    }
-
-    /// Returns the known sections sorted by the distance from a given XorName.
-    pub fn closest_sections(&self, name: XorName) -> Vec<(&Prefix<XorName>, &EldersInfo)> {
-        let mut result: Vec<_> = iter::once((self.our_prefix(), self.our_info()))
-            .chain(self.sections.iter())
-            .collect();
-        result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, &name));
-        result
-    }
-
-    /// Returns the known section that is closest to the given name, regardless of whether `name`
-    /// belongs in that section or not.
-    pub fn closest_section(&self, name: XorName) -> (&Prefix<XorName>, &EldersInfo) {
-        let mut best_pfx = self.our_prefix();
-        let mut best_info = self.our_info();
-        for (pfx, info) in self.sections.iter() {
-            // TODO: Remove the first check after verifying that section infos are never empty.
-            if !info.is_empty() && best_pfx.cmp_distance(pfx, &name) == Ordering::Greater {
-                best_pfx = pfx;
-                best_info = info;
-            }
-        }
-        (best_pfx, best_info)
+        self.sections.all()
     }
 
     /// Collects prefixes of all sections known to us.
@@ -275,10 +238,8 @@ impl SharedState {
 
     pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
         self.our_history.push(proof_block);
-        self.our_infos.push(elders_info);
-
-        let key_info = self.our_history.last_key_info();
-        self.sections.update_keys(key_info);
+        self.sections.push_our(elders_info);
+        self.sections.update_keys(self.our_history.last_key_info());
     }
 
     /// Return a relocating state of a node relocating now.
@@ -298,7 +259,7 @@ impl SharedState {
     // Increment the age counters of the members.
     fn increment_age_counters(&mut self, trigger_node: &PublicId, safe_section_size: usize) {
         let our_section_size = self.our_members.joined().count();
-        let our_prefix = self.our_infos.last().prefix();
+        let our_prefix = self.sections.our().prefix();
 
         // Is network startup in progress?
         let startup = *our_prefix == Prefix::default() && our_section_size < safe_section_size;
