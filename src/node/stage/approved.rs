@@ -285,7 +285,7 @@ impl Approved {
 
     pub fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {
         self.verify_message_quiet(msg).map_err(|error| {
-            messages::log_verify_failure(msg, &error, self.chain.state().other_sections.keys());
+            messages::log_verify_failure(msg, &error, self.chain.state().sections.keys());
             error
         })
     }
@@ -1353,7 +1353,7 @@ impl Approved {
     }
 
     fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys = self.chain.state().other_sections.keys().any(|(_, info)| {
+        let has_their_keys = self.chain.state().sections.keys().any(|(_, info)| {
             *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
         });
 
@@ -1545,7 +1545,7 @@ impl Approved {
             .or_else(|| {
                 self.chain
                     .state()
-                    .other_sections
+                    .sections
                     .get(&our_info.prefix().sibling())
             })
             .filter(|info| info.prefix().matches(p2p_node.name()))
@@ -1718,7 +1718,7 @@ impl Approved {
         let new_key_info = self
             .chain
             .state()
-            .other_sections
+            .sections
             .keys()
             .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
             .map_or(false, |(_, info)| info.version() < key_info.version());
@@ -1730,7 +1730,7 @@ impl Approved {
 
     // Verifies message but doesn't log anything on failure, only returns result.
     fn verify_message_quiet(&self, msg: &Message) -> Result<bool> {
-        match msg.verify(self.chain.state().other_sections.keys()) {
+        match msg.verify(self.chain.state().sections.keys()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::ProofTooNew) if msg.dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are
@@ -1745,13 +1745,13 @@ impl Approved {
 
     fn check_signed_relocation_details(&self, msg: &SignedRelocateDetails) -> bool {
         msg.signed_msg()
-            .verify(self.chain.state().other_sections.keys())
+            .verify(self.chain.state().sections.keys())
             .and_then(VerifyStatus::require_full)
             .map_err(|error| {
                 messages::log_verify_failure(
                     msg.signed_msg(),
                     &error,
-                    self.chain.state().other_sections.keys(),
+                    self.chain.state().sections.keys(),
                 );
                 error
             })

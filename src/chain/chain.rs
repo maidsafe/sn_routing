@@ -272,7 +272,7 @@ impl Chain {
             AccumulatingEvent::NeighbourInfo(ref info) => {
                 let change = EldersChangeBuilder::new(self);
                 self.state
-                    .other_sections
+                    .sections
                     .add_neighbour(info.clone(), self.state.our_infos.last().prefix());
                 let change = change.build(self);
 
@@ -281,11 +281,11 @@ impl Chain {
                 ));
             }
             AccumulatingEvent::TheirKeyInfo(ref key_info) => {
-                self.state.other_sections.update_keys(key_info);
+                self.state.sections.update_keys(key_info);
             }
             AccumulatingEvent::AckMessage(ref ack_payload) => {
                 self.state
-                    .other_sections
+                    .sections
                     .update_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
             }
             AccumulatingEvent::ParsecPrune => {
@@ -496,7 +496,7 @@ impl Chain {
     ) -> Result<ParsecResetData, RoutingError> {
         // TODO: Bring back using their_knowledge to clean_older section in our_infos
         self.state
-            .other_sections
+            .sections
             .prune_neighbours(self.state.our_infos.last().prefix());
 
         info!("finalise_prefix_change: {:?}", self.state.our_prefix());
@@ -515,7 +515,7 @@ impl Chain {
             .our_members
             .get_p2p_node(name)
             .or_else(|| self.state.get_our_elder_p2p_node(name))
-            .or_else(|| self.state.other_sections.get_elder(name))
+            .or_else(|| self.state.sections.get_elder(name))
             .or_else(|| self.state.our_members.get_post_split_sibling_p2p_node(name))
     }
 
@@ -547,7 +547,7 @@ impl Chain {
         } else {
             !self
                 .state
-                .other_sections
+                .sections
                 .iter()
                 .any(|(_, info)| info.is_newer(elders_info))
         }
@@ -606,7 +606,7 @@ impl Chain {
     ) -> u64 {
         match (target, node_knowledge_override) {
             (DstLocation::Node(_), Some(knowledge)) => knowledge,
-            _ => self.state.other_sections.proving_index(target),
+            _ => self.state.sections.proving_index(target),
         }
     }
 
@@ -635,7 +635,7 @@ impl Chain {
         // we can skip neighbour infos we've already accumulated
         if self
             .state
-            .other_sections
+            .sections
             .iter()
             .any(|(pfx, elders_info)| pfx == si.prefix() && elders_info.version() >= si.version())
         {
@@ -679,7 +679,7 @@ impl Chain {
                 };
                 if self
                     .state
-                    .other_sections
+                    .sections
                     .compatible(info.prefix())
                     .into_iter()
                     .any(not_follow)
@@ -741,12 +741,12 @@ impl Chain {
                     if cache_pfx.matches(self.our_id.name()) {
                         self.do_add_elders_info(cache.elders_info, cache.key_info, cache.proofs)?;
                         self.state
-                            .other_sections
+                            .sections
                             .add_neighbour(elders_info, self.state.our_infos.last().prefix());
                     } else {
                         self.do_add_elders_info(elders_info, key_info, proofs)?;
                         self.state
-                            .other_sections
+                            .sections
                             .add_neighbour(cache.elders_info, self.state.our_infos.last().prefix());
                     }
                     Ok(true)
@@ -773,7 +773,7 @@ impl Chain {
             SectionKeys::new(our_new_key, self.our_id(), self.state.our_info());
         self.churn_in_progress = false;
         self.state
-            .other_sections
+            .sections
             .prune_neighbours(self.state.our_infos.last().prefix());
         self.state.remove_our_members_not_matching_our_prefix();
         Ok(())
@@ -1101,7 +1101,7 @@ impl Chain {
         if self.state.our_prefix() == pfx {
             Some(self.state.our_info())
         } else {
-            self.state.other_sections.get(pfx)
+            self.state.sections.get(pfx)
         }
     }
 }
@@ -1222,12 +1222,12 @@ struct EldersChangeBuilder {
 impl EldersChangeBuilder {
     fn new(chain: &Chain) -> Self {
         Self {
-            old_neighbour: chain.state.other_sections.elders().cloned().collect(),
+            old_neighbour: chain.state.sections.elders().cloned().collect(),
         }
     }
 
     fn build(self, chain: &Chain) -> EldersChange {
-        let new_neighbour: BTreeSet<_> = chain.state.other_sections.elders().cloned().collect();
+        let new_neighbour: BTreeSet<_> = chain.state.sections.elders().cloned().collect();
 
         EldersChange {
             neighbour_added: new_neighbour
@@ -1320,7 +1320,7 @@ mod tests {
         );
         chain
             .state
-            .other_sections
+            .sections
             .add_neighbour(neighbour_info, chain.state.our_infos.last().prefix())
     }
 
@@ -1394,7 +1394,7 @@ mod tests {
 
     fn check_infos_for_duplication(chain: &Chain) {
         let mut prefixes: Vec<Prefix<XorName>> = vec![];
-        for (_, info) in chain.state.other_sections.iter() {
+        for (_, info) in chain.state.sections.iter() {
             if let Some(pfx) = prefixes.iter().find(|x| x.is_compatible(info.prefix())) {
                 panic!(
                     "Found compatible prefixes! {:?} and {:?}",
@@ -1430,12 +1430,7 @@ mod tests {
         let (mut chain, _, _) = gen_00_chain(&mut rng);
         for _ in 0..100 {
             let (new_info, _new_ids) = {
-                let old_info: Vec<_> = chain
-                    .state
-                    .other_sections
-                    .iter()
-                    .map(|(_, info)| info)
-                    .collect();
+                let old_info: Vec<_> = chain.state.sections.iter().map(|(_, info)| info).collect();
                 let info = old_info.choose(&mut rng).expect("neighbour infos");
                 if rng.gen_bool(0.5) {
                     gen_section_info(&mut rng, SecInfoGen::Add(info))
