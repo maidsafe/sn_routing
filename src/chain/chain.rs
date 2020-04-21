@@ -178,10 +178,6 @@ impl Chain {
         event: &NetworkEvent,
         proof: Proof,
     ) -> Result<(), RoutingError> {
-        if self.should_skip_accumulator(event) {
-            return Ok(());
-        }
-
         let (acc_event, signature) = AccumulatingEvent::from_network_event(event.clone());
         match self
             .chain_accumulator
@@ -587,35 +583,6 @@ impl Chain {
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
         let members = self.state.our_info().member_ids();
         self.chain_accumulator.check_vote_status(members)
-    }
-
-    /// Returns `true` if the given `NetworkEvent` is already accumulated and can be skipped.
-    fn should_skip_accumulator(&self, event: &NetworkEvent) -> bool {
-        // FIXME: may also need to handle non SI votes to not get handled multiple times
-        let si = match event.payload {
-            AccumulatingEvent::SectionInfo(ref si, _)
-            | AccumulatingEvent::NeighbourInfo(ref si) => si,
-            _ => return false,
-        };
-
-        // we can ignore self SI additional votes we do not require.
-        if si.prefix().matches(self.our_id.name())
-            && self.state.our_info().version() >= si.version()
-        {
-            return true;
-        }
-
-        // we can skip neighbour infos we've already accumulated
-        if self
-            .state
-            .sections
-            .all()
-            .any(|(pfx, elders_info)| pfx == si.prefix() && elders_info.version() >= si.version())
-        {
-            return true;
-        }
-
-        false
     }
 
     /// If given `NetworkEvent` is a `EldersInfo`, returns `true` if we have the previous
