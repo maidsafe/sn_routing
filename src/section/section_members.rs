@@ -94,14 +94,10 @@ impl SectionMembers {
 
     /// Returns a section member `P2pNode`
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.members.get(name).map(|info| &info.p2p_node)
-    }
-
-    /// Returns an old section member `P2pNode`
-    pub fn get_post_split_sibling_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.post_split_siblings
+        self.members
             .get(name)
-            .map(|member_info| &member_info.p2p_node)
+            .or_else(|| self.post_split_siblings.get(name))
+            .map(|info| &info.p2p_node)
     }
 
     /// Returns the candidates for elders out of all the nodes in this section.

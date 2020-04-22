@@ -1662,7 +1662,7 @@ impl Approved {
     }
 
     fn print_network_stats(&self) {
-        self.chain.stats().print()
+        self.chain.state().sections.network_stats().print()
     }
 }
 

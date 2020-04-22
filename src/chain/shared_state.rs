@@ -116,11 +116,6 @@ impl SharedState {
             .chain(self.sections.other_elders())
     }
 
-    /// Returns a set of elders we know.
-    pub fn known_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.sections.elders()
-    }
-
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
         self.sections.is_elder(pub_id)
@@ -135,14 +130,7 @@ impl SharedState {
     pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
         self.our_members
             .get_p2p_node(name)
-            .or_else(|| self.get_our_elder_p2p_node(name))
             .or_else(|| self.sections.get_elder(name))
-            .or_else(|| self.our_members.get_post_split_sibling_p2p_node(name))
-    }
-
-    /// Returns a `P2pNode` of our elder.
-    pub fn get_our_elder_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.our_info().member_map().get(name)
     }
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
@@ -216,17 +204,6 @@ impl SharedState {
     /// Return prefixes of all our neighbours
     pub fn neighbour_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         self.sections.other().map(|(prefix, _)| *prefix).collect()
-    }
-
-    /// Returns an iterator over all neighbouring sections and our own, together with their prefix
-    /// in the map.
-    pub fn known_sections(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
-        self.sections.all()
-    }
-
-    /// Collects prefixes of all sections known to us.
-    pub fn known_prefixes(&self) -> BTreeSet<Prefix<XorName>> {
-        self.sections.all().map(|(prefix, _)| *prefix).collect()
     }
 
     /// Generate a new section info(s) based on the current set of members.

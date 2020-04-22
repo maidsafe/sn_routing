@@ -953,7 +953,7 @@ impl Node {
     /// Returns the prefixes of all sections known to us
     pub fn prefixes(&self) -> BTreeSet<Prefix<XorName>> {
         self.chain()
-            .map(|chain| chain.state().known_prefixes())
+            .map(|chain| chain.state().sections.prefixes().copied().collect())
             .unwrap_or_default()
     }
 
@@ -962,7 +962,7 @@ impl Node {
     /// Returns `None` otherwise.
     pub fn section_elder_info_version(&self, prefix: &Prefix<XorName>) -> Option<u64> {
         self.chain()
-            .and_then(|chain| chain.get_section(prefix))
+            .and_then(|chain| chain.state().sections.get(prefix))
             .map(|info| info.version())
     }
 
@@ -970,7 +970,7 @@ impl Node {
     /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
     pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.chain()
-            .and_then(|chain| chain.get_section(prefix))
+            .and_then(|chain| chain.state().sections.get(prefix))
             .map(|info| info.member_names().copied().collect())
             .unwrap_or_default()
     }
@@ -984,7 +984,7 @@ impl Node {
     pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.chain()
             .into_iter()
-            .flat_map(|chain| chain.state().known_elders())
+            .flat_map(|chain| chain.state().sections.elders())
     }
 
     /// Returns whether the given peer is an elder known to us.

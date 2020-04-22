@@ -6,7 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{elders_info::EldersInfo, section_proof_chain::SectionKeyInfo};
+use super::{
+    elders_info::EldersInfo, network_stats::NetworkStats, section_proof_chain::SectionKeyInfo,
+};
 use crate::{
     id::{P2pNode, PublicId},
     location::DstLocation,
@@ -108,7 +110,7 @@ impl SectionMap {
     }
 
     /// Returns iterator over all known sections.
-    pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> {
+    pub fn all(&self) -> impl Iterator<Item = (&Prefix<XorName>, &EldersInfo)> + Clone {
         iter::once((self.our.last().prefix(), self.our.last())).chain(&self.other)
     }
 
@@ -122,6 +124,11 @@ impl SectionMap {
         let mut result: Vec<_> = self.all().collect();
         result.sort_by(|lhs, rhs| lhs.0.cmp_distance(rhs.0, name));
         result
+    }
+
+    /// Returns prefixes of all known sections.
+    pub fn prefixes(&self) -> impl Iterator<Item = &Prefix<XorName>> + Clone {
+        self.all().map(|(prefix, _)| prefix)
     }
 
     /// Returns `true` if the `EldersInfo` isn't known to us yet.
@@ -393,6 +400,37 @@ impl SectionMap {
             }
         }
         let _ = self.knowledge.insert(prefix, version);
+    }
+
+    /// Compute an estimate of the size of the network from the size of our routing table.
+    ///
+    /// Return (estimate, exact), with exact = true iff we have the whole network in our
+    /// routing table.
+    pub fn network_size_estimate(&self) -> (u64, bool) {
+        let known_prefixes = self.prefixes();
+        let is_exact = Prefix::default().is_covered_by(known_prefixes.clone());
+
+        // Estimated fraction of the network that we have in our RT.
+        // Computed as the sum of 1 / 2^(prefix.bit_count) for all known section prefixes.
+        let network_fraction: f64 = known_prefixes
+            .map(|p| 1.0 / (p.bit_count() as f64).exp2())
+            .sum();
+
+        // Total size estimate = known_nodes / network_fraction
+        let network_size = self.elders().count() as f64 / network_fraction;
+
+        (network_size.ceil() as u64, is_exact)
+    }
+
+    /// Returns network statistics.
+    pub fn network_stats(&self) -> NetworkStats {
+        let (total_elders, total_elders_exact) = self.network_size_estimate();
+
+        NetworkStats {
+            known_elders: self.elders().count() as u64,
+            total_elders,
+            total_elders_exact,
+        }
     }
 
     #[cfg(feature = "mock_base")]
