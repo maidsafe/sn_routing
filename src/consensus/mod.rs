@@ -234,8 +234,44 @@ impl ConsensusEngine {
         }
     }
 
-    pub fn reset_accumulator(&mut self, our_id: &PublicId) -> RemainingEvents {
-        self.accumulator.reset_accumulator(our_id)
+    // Prepares for reset of the consensus engine. Returns all events voted by us that have not
+    // accumulated yet, so they can be voted for again.
+    pub fn prepare_reset(&mut self, our_id: &PublicId) -> Vec<NetworkEvent> {
+        let RemainingEvents {
+            cached_events,
+            completed_events,
+        } = self.accumulator.reset_accumulator(our_id);
+
+        cached_events
+            .into_iter()
+            .chain(
+                self.parsec_map
+                    .our_unpolled_observations()
+                    .filter_map(|obs| match obs {
+                        parsec::Observation::OpaquePayload(event) => Some(event),
+
+                        parsec::Observation::Genesis { .. }
+                        | parsec::Observation::Add { .. }
+                        | parsec::Observation::Remove { .. }
+                        | parsec::Observation::Accusation { .. }
+                        | parsec::Observation::StartDkg(_)
+                        | parsec::Observation::DkgResult { .. }
+                        | parsec::Observation::DkgMessage(_) => None,
+                    })
+                    .cloned(),
+            )
+            .filter(|event| !completed_events.contains(&event.payload))
+            .collect()
+    }
+
+    // Completes the reset of the consensus engine.
+    pub fn complete_reset(
+        &mut self,
+        rng: &mut MainRng,
+        full_id: FullId,
+        gen_pfx_info: &GenesisPfxInfo,
+    ) {
+        self.parsec_map.init(rng, full_id, gen_pfx_info)
     }
 
     pub fn check_vote_status<'a>(
@@ -243,15 +279,6 @@ impl ConsensusEngine {
         members: impl Iterator<Item = &'a PublicId>,
     ) -> BTreeSet<PublicId> {
         self.accumulator.check_vote_status(members)
-    }
-
-    pub fn parsec_init(
-        &mut self,
-        rng: &mut MainRng,
-        full_id: FullId,
-        gen_pfx_info: &GenesisPfxInfo,
-    ) {
-        self.parsec_map.init(rng, full_id, gen_pfx_info)
     }
 
     pub fn vote_for(&mut self, event: NetworkEvent) {
@@ -293,12 +320,6 @@ impl ConsensusEngine {
         self.parsec_map.last_version()
     }
 
-    pub fn our_unpolled_observations(
-        &self,
-    ) -> impl Iterator<Item = &Observation<NetworkEvent, PublicId>> {
-        self.parsec_map.our_unpolled_observations()
-    }
-
     pub fn gossip_period(&self) -> Duration {
         self.parsec_map.gossip_period()
     }
@@ -316,21 +337,12 @@ impl ConsensusEngine {
     }
 
     #[cfg(feature = "mock_base")]
-    pub fn has_unpolled_observations(&self) -> bool {
-        self.parsec_map.has_unpolled_observations()
+    pub fn parsec_map(&self) -> &ParsecMap {
+        &self.parsec_map
     }
 
     #[cfg(all(test, feature = "mock"))]
-    pub fn vote_for_as(&mut self, obs: Observation<NetworkEvent, PublicId>, vote_id: &FullId) {
-        self.parsec_map.vote_for_as(obs, vote_id)
-    }
-
-    #[cfg(all(test, feature = "mock"))]
-    pub fn get_dkg_result_as(
-        &mut self,
-        participants: BTreeSet<PublicId>,
-        vote_id: &FullId,
-    ) -> Option<DkgResult> {
-        self.parsec_map.get_dkg_result_as(participants, vote_id)
+    pub fn parsec_map_mut(&mut self) -> &mut ParsecMap {
+        &mut self.parsec_map
     }
 }

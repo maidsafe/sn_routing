@@ -896,7 +896,13 @@ impl Node {
     pub fn has_unpolled_observations(&self) -> bool {
         self.stage
             .approved()
-            .map(|stage| stage.chain.consensus_engine.has_unpolled_observations())
+            .map(|stage| {
+                stage
+                    .chain
+                    .consensus_engine
+                    .parsec_map()
+                    .has_unpolled_observations()
+            })
             .unwrap_or(false)
     }
 
@@ -1087,6 +1093,14 @@ impl Node {
         };
 
         (node, user_event_rx, transport_client_rx)
+    }
+
+    pub(crate) fn consensus_engine(&self) -> Result<&ConsensusEngine> {
+        if let Some(stage) = self.stage.approved() {
+            Ok(&stage.chain.consensus_engine)
+        } else {
+            Err(RoutingError::InvalidState)
+        }
     }
 
     pub(crate) fn consensus_engine_mut(&mut self) -> Result<&mut ConsensusEngine> {

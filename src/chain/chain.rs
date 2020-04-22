@@ -437,13 +437,10 @@ impl Chain {
     }
 
     /// Gets the data needed to initialise a new Parsec instance
-    pub fn prepare_parsec_reset(
-        &mut self,
-        parsec_version: u64,
-    ) -> Result<ParsecResetData, RoutingError> {
-        let remaining = self.consensus_engine.reset_accumulator(&self.our_id);
-
+    pub fn prepare_parsec_reset(&mut self) -> Result<ParsecResetData, RoutingError> {
         self.state.handled_genesis_event = false;
+        self.state.sections.prune_neighbours();
+        let cached_events = self.consensus_engine.prepare_reset(&self.our_id);
 
         Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
@@ -451,26 +448,10 @@ impl Chain {
                 public_keys: self.our_section_bls_keys().clone(),
                 state_serialized: self.get_genesis_related_info()?,
                 ages: self.state.our_members.get_age_counters(),
-                parsec_version,
+                parsec_version: self.consensus_engine.parsec_version() + 1,
             },
-            cached_events: remaining.cached_events,
-            completed_events: remaining.completed_events,
+            cached_events,
         })
-    }
-
-    /// Finalises a split or merge - creates a `GenesisPfxInfo` for the new graph and returns the
-    /// cached and currently accumulated events.
-    pub fn finalise_prefix_change(
-        &mut self,
-        parsec_version: u64,
-    ) -> Result<ParsecResetData, RoutingError> {
-        // TODO: Bring back using their_knowledge to clean_older section in our_infos
-        self.state.sections.prune_neighbours();
-
-        info!("finalise_prefix_change: {:?}", self.state.our_prefix());
-        trace!("finalise_prefix_change state: {:?}", self.state);
-
-        self.prepare_parsec_reset(parsec_version)
     }
 
     /// Returns our public ID
@@ -1006,9 +987,7 @@ pub struct ParsecResetData {
     /// The new genesis prefix info.
     pub gen_pfx_info: GenesisPfxInfo,
     /// The cached events that should be revoted.
-    pub cached_events: BTreeSet<NetworkEvent>,
-    /// The completed events.
-    pub completed_events: BTreeSet<AccumulatingEvent>,
+    pub cached_events: Vec<NetworkEvent>,
 }
 
 /// The secret share of the section key.

@@ -342,7 +342,6 @@ impl Approved {
         core.msg_filter.reset();
 
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.init_parsec(core);
         self.chain = Chain::new(
             &mut core.rng,
             self.chain.network_params(),
@@ -943,13 +942,11 @@ impl Approved {
             return Ok(());
         }
 
-        let complete_data = if is_split {
-            self.prepare_finalise_split()?
-        } else if old_pfx.is_extension_of(&info_prefix) {
-            panic!("Merge not supported: {:?} -> {:?}", old_pfx, info_prefix,);
-        } else {
-            self.prepare_reset_parsec()?
-        };
+        if old_pfx.is_extension_of(&info_prefix) {
+            panic!("Merge not supported: {:?} -> {:?}", old_pfx, info_prefix);
+        }
+
+        let complete_data = self.prepare_parsec_reset()?;
 
         if !is_elder {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
@@ -963,7 +960,7 @@ impl Approved {
             return Ok(());
         }
 
-        self.reset_parsec_with_data(
+        self.complete_parsec_reset(
             core,
             complete_data.gen_pfx_info,
             complete_data.to_vote_again,
@@ -1059,8 +1056,8 @@ impl Approved {
         }
 
         info!("handle ParsecPrune");
-        let complete_data = self.prepare_reset_parsec()?;
-        self.reset_parsec_with_data(
+        let complete_data = self.prepare_parsec_reset()?;
+        self.complete_parsec_reset(
             core,
             complete_data.gen_pfx_info,
             complete_data.to_vote_again,
@@ -1080,64 +1077,11 @@ impl Approved {
     // Parsec and Chain management
     ////////////////////////////////////////////////////////////////////////////
 
-    fn init_parsec(&mut self, core: &mut Core) {
-        self.chain.consensus_engine.parsec_init(
-            &mut core.rng,
-            core.full_id.clone(),
-            &self.gen_pfx_info,
-        )
-    }
-
-    fn prepare_reset_parsec(&mut self) -> Result<CompleteParsecReset> {
-        let reset_data = self.chain.prepare_parsec_reset(
-            self.chain
-                .consensus_engine
-                .parsec_version()
-                .saturating_add(1),
-        )?;
-        let complete_data = self.complete_parsec_reset_data(reset_data);
-        Ok(complete_data)
-    }
-
-    fn prepare_finalise_split(&mut self) -> Result<CompleteParsecReset, RoutingError> {
-        let reset_data = self.chain.finalise_prefix_change(
-            self.chain
-                .consensus_engine
-                .parsec_version()
-                .saturating_add(1),
-        )?;
-        let complete_data = self.complete_parsec_reset_data(reset_data);
-        Ok(complete_data)
-    }
-
-    fn complete_parsec_reset_data(&mut self, reset_data: ParsecResetData) -> CompleteParsecReset {
+    fn prepare_parsec_reset(&mut self) -> Result<CompleteParsecReset> {
         let ParsecResetData {
             gen_pfx_info,
             cached_events,
-            completed_events,
-        } = reset_data;
-
-        let cached_events: BTreeSet<_> = cached_events
-            .into_iter()
-            .chain(
-                self.chain
-                    .consensus_engine
-                    .our_unpolled_observations()
-                    .filter_map(|obs| match obs {
-                        parsec::Observation::OpaquePayload(event) => Some(event),
-
-                        parsec::Observation::Genesis { .. }
-                        | parsec::Observation::Add { .. }
-                        | parsec::Observation::Remove { .. }
-                        | parsec::Observation::Accusation { .. }
-                        | parsec::Observation::StartDkg(_)
-                        | parsec::Observation::DkgResult { .. }
-                        | parsec::Observation::DkgMessage(_) => None,
-                    })
-                    .cloned(),
-            )
-            .filter(|event| !completed_events.contains(&event.payload))
-            .collect();
+        } = self.chain.prepare_parsec_reset()?;
 
         let our_pfx = *self.chain.state().our_prefix();
 
@@ -1200,27 +1144,11 @@ impl Approved {
             })
             .collect();
 
-        CompleteParsecReset {
+        Ok(CompleteParsecReset {
             gen_pfx_info,
             to_vote_again,
             to_process,
-        }
-    }
-
-    fn reset_parsec_with_data(
-        &mut self,
-        core: &mut Core,
-        gen_pfx_info: GenesisPfxInfo,
-        to_vote_again: BTreeSet<NetworkEvent>,
-    ) -> Result<()> {
-        self.gen_pfx_info = gen_pfx_info;
-        self.init_parsec(core);
-
-        to_vote_again.iter().for_each(|event| {
-            self.chain.consensus_engine.vote_for(event.clone());
-        });
-
-        Ok(())
+        })
     }
 
     fn process_post_reset_events(
@@ -1253,9 +1181,30 @@ impl Approved {
         self.resend_pending_voted_messages(core, old_pfx);
     }
 
+    // Completes parsec reset and revotes for all previously unaccumulated events.
+    fn complete_parsec_reset(
+        &mut self,
+        core: &mut Core,
+        gen_pfx_info: GenesisPfxInfo,
+        to_vote_again: BTreeSet<NetworkEvent>,
+    ) -> Result<()> {
+        self.gen_pfx_info = gen_pfx_info;
+        self.chain.consensus_engine.complete_reset(
+            &mut core.rng,
+            core.full_id.clone(),
+            &self.gen_pfx_info,
+        );
+
+        to_vote_again.iter().for_each(|event| {
+            self.chain.consensus_engine.vote_for(event.clone());
+        });
+
+        Ok(())
+    }
+
+    // Demotes this node from elder to adult.
     fn demote(&mut self, core: &mut Core, gen_pfx_info: GenesisPfxInfo) {
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.init_parsec(core);
         self.chain = Chain::new(
             &mut core.rng,
             self.chain.network_params(),
