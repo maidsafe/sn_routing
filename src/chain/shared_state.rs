@@ -240,6 +240,40 @@ impl SharedState {
         self.sections.update_keys(self.our_history.last_key_info());
     }
 
+    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
+        // Delay relocation until all backlogged churn events have been handled. Only allow one
+        // relocation at a time.
+        if !self.churn_event_backlog.is_empty() {
+            return None;
+        }
+
+        let details = loop {
+            if let Some(details) = self.relocate_queue.pop_back() {
+                if self.our_members.contains(&details.pub_id) {
+                    break details;
+                } else {
+                    trace!("Not relocating {} - not a member", details.pub_id);
+                }
+            } else {
+                return None;
+            }
+        };
+
+        if self.is_peer_our_elder(&details.pub_id) {
+            warn!(
+                "Not relocating {} - The peer is still our elder.",
+                details.pub_id,
+            );
+
+            // Keep the details in the queue so when the node is demoted we can relocate it.
+            self.relocate_queue.push_back(details);
+            return None;
+        }
+
+        trace!("relocating member {}", details.pub_id);
+        Some(details)
+    }
+
     // Increment the age counters of the members.
     fn increment_age_counters(&mut self, trigger_node: &PublicId, safe_section_size: usize) {
         let our_section_size = self.our_members.joined().count();
