@@ -316,38 +316,12 @@ impl Chain {
 
     /// Returns the details of the next scheduled relocation to be voted for, if any.
     fn poll_relocation(&mut self) -> Option<RelocateDetails> {
-        // Delay relocation until all backlogged churn events have been handled and no
-        // additional churn is in progress. Only allow one relocation at a time.
-        if !self.can_poll_churn() || !self.state.churn_event_backlog.is_empty() {
+        // Delay relocation until no additional churn is in progress.
+        if !self.can_poll_churn() {
             return None;
         }
 
-        let details = loop {
-            if let Some(details) = self.state.relocate_queue.pop_back() {
-                if self.state.our_members.contains(&details.pub_id) {
-                    break details;
-                } else {
-                    trace!("Not relocating {} - not a member", details.pub_id);
-                }
-            } else {
-                return None;
-            }
-        };
-
-        if self.state.is_peer_our_elder(&details.pub_id) {
-            warn!(
-                "Not relocating {} - The peer is still our elder.",
-                details.pub_id,
-            );
-
-            // Keep the details in the queue so when the node is demoted we can relocate it.
-            self.state.relocate_queue.push_back(details);
-            return None;
-        }
-
-        trace!("relocating member {}", details.pub_id);
-
-        Some(details)
+        self.state.poll_relocation()
     }
 
     fn can_poll_churn(&self) -> bool {
