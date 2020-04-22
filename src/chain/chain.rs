@@ -65,11 +65,6 @@ pub struct Chain {
 
 #[allow(clippy::len_without_is_empty)]
 impl Chain {
-    /// Returns the number of elders per section
-    pub fn elder_size(&self) -> usize {
-        self.network_params.elder_size
-    }
-
     /// Returns the safe section size.
     pub fn safe_section_size(&self) -> usize {
         self.network_params.safe_section_size
@@ -166,12 +161,6 @@ impl Chain {
         }
 
         Ok(())
-    }
-
-    /// Get the serialized shared state that will be the starting point when processing
-    /// parsec data
-    pub fn get_genesis_related_info(&self) -> Result<Vec<u8>, RoutingError> {
-        Ok(serialize(&self.state)?)
     }
 
     /// Returns the next accumulated event.
@@ -373,43 +362,13 @@ impl Chain {
             return Ok(None);
         }
 
-        if let Some((our_info, other_info)) = self
+        let new_infos = self
             .state
-            .try_split(self.our_id.name(), &self.network_params)?
-        {
-            self.members_changed = false;
-            self.churn_in_progress = true;
-            return Ok(Some(vec![our_info, other_info]));
-        }
+            .promote_and_demote_elders(self.our_id.name(), &self.network_params)?;
+        self.churn_in_progress = new_infos.is_some();
+        self.members_changed = false;
 
-        let expected_elders_map = self.our_expected_elders();
-        let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
-        let current_elders: BTreeSet<_> = self.state.our_info().member_nodes().cloned().collect();
-
-        if expected_elders == current_elders {
-            self.members_changed = false;
-            Ok(None)
-        } else {
-            let old_size = self.state.our_info().len();
-
-            let new_info = EldersInfo::new(
-                expected_elders_map,
-                *self.state.our_info().prefix(),
-                Some(self.state.our_info()),
-            )?;
-
-            if self.state.our_info().len() < self.elder_size() && old_size >= self.elder_size() {
-                panic!(
-                    "Merging situation encountered! Not supported: {:?}: {:?}",
-                    self.our_id(),
-                    self.state.our_info()
-                );
-            }
-
-            self.members_changed = false;
-            self.churn_in_progress = true;
-            Ok(Some(vec![new_info]))
-        }
+        Ok(new_infos)
     }
 
     /// Gets the data needed to initialise a new Parsec instance
@@ -422,7 +381,7 @@ impl Chain {
             gen_pfx_info: GenesisPfxInfo {
                 elders_info: self.state.our_info().clone(),
                 public_keys: self.our_section_bls_keys().clone(),
-                state_serialized: self.get_genesis_related_info()?,
+                state_serialized: serialize(&self.state)?,
                 ages: self.state.our_members.get_age_counters(),
                 parsec_version: self.consensus_engine.parsec_version() + 1,
             },
@@ -435,28 +394,9 @@ impl Chain {
         &self.our_id
     }
 
-    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.state
-            .our_members
-            .get_p2p_node(name)
-            .or_else(|| self.state.get_our_elder_p2p_node(name))
-            .or_else(|| self.state.sections.get_elder(name))
-            .or_else(|| self.state.our_members.get_post_split_sibling_p2p_node(name))
-    }
-
     /// Returns whether we are elder in our section.
     pub fn is_self_elder(&self) -> bool {
         self.state.is_peer_our_elder(&self.our_id)
-    }
-
-    fn our_expected_elders(&self) -> BTreeMap<XorName, P2pNode> {
-        let mut elders = self.state.our_members.elder_candidates(self.elder_size());
-
-        // Ensure that we can still handle one node lost when relocating.
-        // Ensure that the node we eject are the one we want to relocate first.
-        let missing = self.elder_size().saturating_sub(elders.len());
-        elders.extend(self.state.elder_candidates_from_relocating(missing));
-        elders
     }
 
     /// Returns an iterator over the members that have not state == `Left`.
@@ -660,7 +600,7 @@ impl Chain {
                 if target_name == self.our_id().name() {
                     return Ok((Vec::new(), 0));
                 }
-                if let Some(node) = self.get_p2p_node(target_name) {
+                if let Some(node) = self.state.get_p2p_node(target_name) {
                     return Ok((vec![node.clone()], 1));
                 }
                 self.candidates(target_name)?
@@ -865,6 +805,11 @@ impl Chain {
 
 #[cfg(feature = "mock_base")]
 impl Chain {
+    /// Returns the number of elders per section
+    pub fn elder_size(&self) -> usize {
+        self.network_params.elder_size
+    }
+
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
     pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
