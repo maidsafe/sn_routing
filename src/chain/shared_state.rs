@@ -262,13 +262,7 @@ impl SharedState {
         }
 
         let relocating_state = self.create_relocating_state();
-        let mut details_to_add = Vec::new();
-
-        struct PartialRelocateDetails {
-            pub_id: PublicId,
-            destination: XorName,
-            age: u8,
-        }
+        let first_key_info = self.our_history.first_key_info();
 
         for member_info in self.our_members.joined_mut() {
             if member_info.p2p_node.public_id() == trigger_node {
@@ -299,29 +293,30 @@ impl SharedState {
                 continue;
             }
 
+            trace!(
+                "Change state to Relocating {}",
+                member_info.p2p_node.public_id()
+            );
             member_info.state = relocating_state;
-            details_to_add.push(PartialRelocateDetails {
+
+            let destination_key_info = self
+                .sections
+                .latest_compatible_key(&destination)
+                .unwrap_or(first_key_info)
+                .clone();
+
+            let details = RelocateDetails {
                 pub_id: *member_info.p2p_node.public_id(),
                 destination,
+                destination_key_info,
                 // TODO: why the +1 ?
                 age: member_info.age() + 1,
-            })
+            };
+
+            self.relocate_queue.push_front(details);
         }
 
         trace!("increment_age_counters: {:?}", self.our_members);
-
-        for details in details_to_add {
-            trace!("Change state to Relocating {}", details.pub_id);
-
-            let destination_key_info = self.latest_compatible_key(&details.destination).clone();
-            let details = RelocateDetails {
-                pub_id: details.pub_id,
-                destination: details.destination,
-                destination_key_info,
-                age: details.age,
-            };
-            self.relocate_queue.push_front(details);
-        }
     }
 
     // Return a relocating state of a node relocating now.
@@ -329,13 +324,6 @@ impl SharedState {
     fn create_relocating_state(&self) -> MemberState {
         let node_knowledge = self.sections.get_knowledge(self.our_prefix()).unwrap_or(0);
         MemberState::Relocating { node_knowledge }
-    }
-
-    // Returns the latest key info whose prefix is compatible with the given name.
-    fn latest_compatible_key(&self, name: &XorName) -> &SectionKeyInfo {
-        self.sections
-            .latest_compatible_key(name)
-            .unwrap_or_else(|| self.our_history.first_key_info())
     }
 }
 
