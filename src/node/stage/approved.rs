@@ -242,7 +242,8 @@ impl Approved {
 
     pub fn should_handle_message(&self, msg: &Message) -> bool {
         match &msg.variant {
-            Variant::BootstrapRequest(_)
+            Variant::Relocate(_)
+            | Variant::BootstrapRequest(_)
             | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
@@ -255,7 +256,6 @@ impl Approved {
             }
 
             Variant::GenesisUpdate(info) => self.should_handle_genesis_update(info),
-            Variant::Relocate(_) => !self.chain.is_self_elder(),
 
             Variant::MessageSignature(accumulating_msg) => {
                 match &accumulating_msg.content.variant {
