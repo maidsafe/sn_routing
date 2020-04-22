@@ -11,17 +11,12 @@
 #[allow(clippy::module_inception)]
 mod chain;
 mod config;
-mod network_event;
 mod proof;
 mod shared_state;
 
 pub use self::{
     chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
     config::NetworkParams,
-    network_event::{
-        AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
-        IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
-    },
     proof::{Proof, ProofSet},
 };
 

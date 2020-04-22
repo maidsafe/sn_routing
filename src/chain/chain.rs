@@ -6,12 +6,12 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{
-    shared_state::SharedState, AccumulatedEvent, AccumulatingEvent, EldersChange, GenesisPfxInfo,
-    NetworkEvent, NetworkParams,
-};
+use super::{shared_state::SharedState, GenesisPfxInfo, NetworkParams};
 use crate::{
-    consensus::{AccumulatingProof, ConsensusEngine, DkgResult, DkgResultWrapper},
+    consensus::{
+        AccumulatedEvent, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResult,
+        DkgResultWrapper, EldersChange, NetworkEvent,
+    },
     error::{Result, RoutingError},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},

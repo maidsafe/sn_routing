@@ -6,8 +6,9 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{AccumulatedEvent, NetworkParams};
+use super::NetworkParams;
 use crate::{
+    consensus::AccumulatedEvent,
     error::Result,
     id::{P2pNode, PublicId},
     relocation::{self, RelocateDetails},
