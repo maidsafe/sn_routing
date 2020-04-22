@@ -207,7 +207,7 @@ pub struct AccumulatingProof {
 }
 
 impl AccumulatingProof {
-    #[allow(unused)]
+    #[cfg(test)]
     pub fn from_proof_set(parsec_proofs: ProofSet) -> Self {
         Self {
             parsec_proofs,

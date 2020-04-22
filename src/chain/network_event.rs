@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{Observation, ParsecNetworkEvent},
+    consensus::{DkgResultWrapper, Observation, ParsecNetworkEvent},
     error::RoutingError,
     id::{P2pNode, PublicId},
     relocation::RelocateDetails,
@@ -79,8 +79,20 @@ pub struct OnlinePayload {
 #[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum AccumulatingEvent {
-    /// Vote to start a DKG instance
+    /// Genesis event. This is output-only event.
+    Genesis {
+        group: BTreeSet<PublicId>,
+        related_info: Vec<u8>,
+    },
+
+    /// Vote to start a DKG instance. This is input-only event.
     StartDkg(BTreeSet<PublicId>),
+
+    /// Result of a DKG. This is output-only event.
+    DkgResult {
+        participants: BTreeSet<PublicId>,
+        dkg_result: DkgResultWrapper,
+    },
 
     /// Voted for node that is about to join our section
     Online(OnlinePayload),
@@ -137,7 +149,21 @@ impl AccumulatingEvent {
 impl Debug for AccumulatingEvent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match self {
+            Self::Genesis {
+                group,
+                related_info,
+            } => write!(
+                formatter,
+                "Genesis {{ group: {:?}, related_info: {:?} }}",
+                group,
+                HexFmt(related_info)
+            ),
             Self::StartDkg(participants) => write!(formatter, "StartDkg({:?})", participants),
+            Self::DkgResult { participants, .. } => write!(
+                formatter,
+                "DkgResult {{ participants: {:?}, .. }}",
+                participants
+            ),
             Self::Online(payload) => write!(formatter, "Online({:?})", payload),
             Self::Offline(id) => write!(formatter, "Offline({})", id),
             Self::SectionInfo(info, _) => write!(formatter, "SectionInfo({:?})", info),
