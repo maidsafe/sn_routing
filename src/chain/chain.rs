@@ -8,7 +8,7 @@
 
 use super::{
     shared_state::SharedState, stats::Stats, AccumulatedEvent, AccumulatingEvent, EldersChange,
-    GenesisPfxInfo, NetworkEvent, NetworkParams, Proof, ProofSet,
+    GenesisPfxInfo, NetworkEvent, NetworkParams, Proof,
 };
 use crate::{
     consensus::{AccumulatingProof, ConsensusEngine, DkgResult, DkgResultWrapper, InsertError},
@@ -189,9 +189,8 @@ impl Chain {
                 // TODO: If detecting duplicate vote from peer, penalise.
                 log_or_panic!(
                     log::Level::Warn,
-                    "Duplicate proof for {:?} in accumulator. [{:?}]",
+                    "Duplicate proof for {:?} in accumulator",
                     event,
-                    self.consensus_engine.incomplete_events().format(", ")
                 );
             }
         }
@@ -235,16 +234,7 @@ impl Chain {
     }
 
     fn poll_accumulator(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
-        let opt_event = self
-            .consensus_engine
-            .incomplete_events()
-            .find(|(event, proofs)| self.is_valid_transition(event, proofs.parsec_proof_set()))
-            .map(|(event, _)| event.clone());
-
-        opt_event.and_then(|event| {
-            self.consensus_engine
-                .poll_event(event, self.state.our_info().member_ids().cloned().collect())
-        })
+        self.consensus_engine.poll(self.state.sections.our())
     }
 
     fn process_accumulating(
@@ -582,72 +572,6 @@ impl Chain {
     pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
         let members = self.state.our_info().member_ids();
         self.consensus_engine.check_vote_status(members)
-    }
-
-    /// If given `NetworkEvent` is a `EldersInfo`, returns `true` if we have the previous
-    /// `EldersInfo` in our_infos/neighbour_infos OR if its a valid neighbour pfx
-    /// we do not currently have in our chain.
-    /// Returns `true` for other types of `NetworkEvent`.
-    fn is_valid_transition(&self, network_event: &AccumulatingEvent, proofs: &ProofSet) -> bool {
-        match *network_event {
-            AccumulatingEvent::SectionInfo(ref info, _) => {
-                if !self.state.our_info().is_quorum(proofs) {
-                    return false;
-                }
-
-                if !info.is_successor_of(self.state.our_info()) {
-                    log_or_panic!(
-                        log::Level::Error,
-                        "We shouldn't have a SectionInfo that is not a direct descendant. our: \
-                         {:?}, new: {:?}",
-                        self.state.our_info(),
-                        info
-                    );
-                }
-
-                true
-            }
-            AccumulatingEvent::NeighbourInfo(ref info) => {
-                if !self.state.our_info().is_quorum(proofs) {
-                    return false;
-                }
-
-                // Do not process yet any version that is not the immediate follower of the one we have.
-                let not_follow = |i: &EldersInfo| {
-                    info.prefix().is_compatible(i.prefix()) && info.version() != (i.version() + 1)
-                };
-                if self
-                    .state
-                    .sections
-                    .compatible(info.prefix())
-                    .into_iter()
-                    .any(not_follow)
-                {
-                    return false;
-                }
-
-                true
-            }
-
-            AccumulatingEvent::Online(_)
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::TheirKeyInfo(_)
-            | AccumulatingEvent::AckMessage(_)
-            | AccumulatingEvent::ParsecPrune
-            | AccumulatingEvent::Relocate(_)
-            | AccumulatingEvent::RelocatePrepare(_, _)
-            | AccumulatingEvent::User(_) => self.state.our_info().is_quorum(proofs),
-
-            AccumulatingEvent::SendAckMessage(_) => {
-                // We may not reach consensus if malicious peer, but when we do we know all our
-                // nodes have updated `their_keys`.
-                self.state.our_info().is_total_consensus(proofs)
-            }
-
-            AccumulatingEvent::StartDkg(_) => {
-                unreachable!("StartDkg present in the chain accumulator")
-            }
-        }
     }
 
     /// Handles our own section info, or the section info of our sibling directly after a split.
