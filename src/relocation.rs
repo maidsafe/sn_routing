@@ -9,7 +9,7 @@
 //! Relocation related types and utilities.
 
 use crate::{
-    chain::{AccumulatingEvent, IntoAccumulatingEvent},
+    consensus::{AccumulatingEvent, IntoAccumulatingEvent},
     crypto::{self, signing::Signature},
     error::RoutingError,
     id::{FullId, PublicId},

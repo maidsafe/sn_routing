@@ -7,14 +7,19 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod event_accumulator;
+mod network_event;
 mod parsec;
 
 pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
+    network_event::{
+        AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
+        IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
+    },
     parsec::{
         generate_bls_threshold_secret_key, generate_first_dkg_result, Block, CreateGossipError,
-        DkgResult, DkgResultWrapper, NetworkEvent as ParsecNetworkEvent, Observation,
-        Request as ParsecRequest, Response as ParsecResponse, GOSSIP_PERIOD,
+        DkgResult, DkgResultWrapper, Observation, ParsecNetworkEvent, Request as ParsecRequest,
+        Response as ParsecResponse, GOSSIP_PERIOD,
     },
 };
 
@@ -26,7 +31,7 @@ use self::{
     parsec::ParsecMap,
 };
 use crate::{
-    chain::{AccumulatingEvent, GenesisPfxInfo, NetworkEvent, Proof, ProofSet},
+    chain::{GenesisPfxInfo, Proof, ProofSet},
     id::{FullId, PublicId},
     messages::Variant,
     rng::MainRng,

@@ -8,8 +8,10 @@
 
 use super::utils as test_utils;
 use crate::{
-    chain::{AccumulatingEvent, AckMessagePayload, EventSigPayload, OnlinePayload},
-    consensus::{generate_bls_threshold_secret_key, ParsecRequest},
+    consensus::{
+        generate_bls_threshold_secret_key, AccumulatingEvent, AckMessagePayload, EventSigPayload,
+        OnlinePayload, ParsecRequest,
+    },
     error::Result,
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,

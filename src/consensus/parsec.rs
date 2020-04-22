@@ -7,8 +7,9 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{self, AccumulatingEvent, GenesisPfxInfo},
-    id::{self, FullId},
+    chain::GenesisPfxInfo,
+    consensus::{AccumulatingEvent, NetworkEvent},
+    id::{FullId, PublicId},
     messages::Variant,
     rng::{self, MainRng, RngCompat},
     time::Duration,
@@ -28,15 +29,18 @@ use std::{
 
 #[cfg(feature = "mock")]
 pub use crate::mock::parsec::{
-    init_mock, ConsensusMode, Error, NetworkEvent, Observation, Proof, PublicId, SecretId,
+    init_mock, ConsensusMode, Error, NetworkEvent as ParsecNetworkEvent, Observation, Proof,
+    SecretId,
 };
 #[cfg(not(feature = "mock"))]
-pub use parsec::{ConsensusMode, Error, NetworkEvent, Observation, Proof, PublicId, SecretId};
+pub use parsec::{
+    ConsensusMode, Error, NetworkEvent as ParsecNetworkEvent, Observation, Proof, SecretId,
+};
 
-pub type Block = inner::Block<chain::NetworkEvent, id::PublicId>;
-pub type Parsec = inner::Parsec<chain::NetworkEvent, FullId>;
-pub type Request = inner::Request<chain::NetworkEvent, id::PublicId>;
-pub type Response = inner::Response<chain::NetworkEvent, id::PublicId>;
+pub type Block = inner::Block<NetworkEvent, PublicId>;
+pub type Parsec = inner::Parsec<NetworkEvent, FullId>;
+pub type Request = inner::Request<NetworkEvent, PublicId>;
+pub type Response = inner::Response<NetworkEvent, PublicId>;
 pub use inner::{DkgResult, DkgResultWrapper};
 
 // The maximum number of parsec instances to store.
@@ -125,7 +129,7 @@ impl ParsecMap {
         &mut self,
         msg_version: u64,
         request: Request,
-        pub_id: id::PublicId,
+        pub_id: PublicId,
     ) -> Option<Variant> {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&request) {
@@ -154,7 +158,7 @@ impl ParsecMap {
         }
     }
 
-    pub fn handle_response(&mut self, msg_version: u64, response: Response, pub_id: id::PublicId) {
+    pub fn handle_response(&mut self, msg_version: u64, response: Response, pub_id: PublicId) {
         // Increase the size before fetching the parsec to satisfy the borrow checker
         let ser_size = if let Ok(size) = bincode::serialized_size(&response) {
             size
@@ -177,7 +181,7 @@ impl ParsecMap {
     pub fn create_gossip(
         &mut self,
         version: u64,
-        target: &id::PublicId,
+        target: &PublicId,
     ) -> Result<Variant, CreateGossipError> {
         let request = self
             .map
@@ -192,7 +196,7 @@ impl ParsecMap {
         Ok(Variant::ParsecRequest(version, request))
     }
 
-    pub fn vote_for(&mut self, event: chain::NetworkEvent) {
+    pub fn vote_for(&mut self, event: NetworkEvent) {
         trace!("Vote for Event {:?}", event);
 
         if let Some(parsec) = self.map.values_mut().last() {
@@ -209,11 +213,7 @@ impl ParsecMap {
 
     // Enable test to simulate other members voting
     #[cfg(all(test, feature = "mock"))]
-    pub fn vote_for_as(
-        &mut self,
-        obs: Observation<chain::NetworkEvent, id::PublicId>,
-        vote_id: &FullId,
-    ) {
+    pub fn vote_for_as(&mut self, obs: Observation<NetworkEvent, PublicId>, vote_id: &FullId) {
         if let Some(ref mut parsec) = self.map.values_mut().last() {
             parsec.vote_for_as(obs, vote_id)
         }
@@ -223,7 +223,7 @@ impl ParsecMap {
     #[cfg(all(test, feature = "mock"))]
     pub fn get_dkg_result_as(
         &mut self,
-        participants: BTreeSet<id::PublicId>,
+        participants: BTreeSet<PublicId>,
         vote_id: &FullId,
     ) -> Option<DkgResult> {
         if let Some(ref mut parsec) = self.map.values_mut().last() {
@@ -241,7 +241,7 @@ impl ParsecMap {
         }
     }
 
-    pub fn gossip_recipients(&self) -> Vec<&id::PublicId> {
+    pub fn gossip_recipients(&self) -> Vec<&PublicId> {
         self.map
             .values()
             .last()
@@ -255,7 +255,7 @@ impl ParsecMap {
 
     pub fn our_unpolled_observations(
         &self,
-    ) -> impl Iterator<Item = &Observation<chain::NetworkEvent, id::PublicId>> {
+    ) -> impl Iterator<Item = &Observation<NetworkEvent, PublicId>> {
         self.map
             .values()
             .last()
@@ -501,17 +501,17 @@ mod tests {
     }
 
     trait HandleRequestResponse {
-        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &id::PublicId);
+        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &PublicId);
     }
 
     impl HandleRequestResponse for Request {
-        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &id::PublicId) {
+        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &PublicId) {
             let _ = parsec_map.handle_request(msg_version, self.clone(), *pub_id);
         }
     }
 
     impl HandleRequestResponse for Response {
-        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &id::PublicId) {
+        fn handle(&self, parsec_map: &mut ParsecMap, msg_version: u64, pub_id: &PublicId) {
             parsec_map.handle_response(msg_version, self.clone(), *pub_id);
         }
     }
@@ -520,7 +520,7 @@ mod tests {
         parsec_map: &mut ParsecMap,
         msg_version: u64,
         msg: &T,
-        pub_id: &id::PublicId,
+        pub_id: &PublicId,
     ) {
         let msg_size = unwrap!(bincode::serialized_size(&msg));
         let msg_size_limit = PARSEC_SIZE_LIMIT / msg_size;

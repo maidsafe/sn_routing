@@ -7,7 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{AccumulatingEvent, EventSigPayload, NetworkEvent, Proof, ProofSet},
+    chain::{Proof, ProofSet},
+    consensus::{AccumulatingEvent, EventSigPayload, NetworkEvent},
     id::PublicId,
     section::EldersInfo,
 };
