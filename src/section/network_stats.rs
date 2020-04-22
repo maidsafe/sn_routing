@@ -8,13 +8,13 @@
 
 use std::{cmp, iter};
 
-pub struct Stats {
+pub struct NetworkStats {
     pub(super) known_elders: u64,
     pub(super) total_elders: u64,
     pub(super) total_elders_exact: bool,
 }
 
-impl Stats {
+impl NetworkStats {
     pub fn print(&self) {
         const LEVEL: log::Level = log::Level::Info;
 

@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    shared_state::SharedState, stats::Stats, AccumulatedEvent, AccumulatingEvent, EldersChange,
-    GenesisPfxInfo, NetworkEvent, NetworkParams,
+    shared_state::SharedState, AccumulatedEvent, AccumulatingEvent, EldersChange, GenesisPfxInfo,
+    NetworkEvent, NetworkParams,
 };
 use crate::{
     consensus::{AccumulatingProof, ConsensusEngine, DkgResult, DkgResultWrapper},
@@ -20,7 +20,7 @@ use crate::{
     rng::MainRng,
     section::{EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice},
     xor_space::Xorable,
-    Prefix, XorName,
+    XorName,
 };
 use bincode::serialize;
 use itertools::Itertools;
@@ -632,7 +632,7 @@ impl Chain {
                     // this is to prevent spamming the network by sending messages with
                     // intentionally short prefixes
                     if prefix.is_compatible(self.state.our_prefix())
-                        && !prefix.is_covered_by(self.state.known_prefixes().iter())
+                        && !prefix.is_covered_by(self.state.sections.prefixes())
                     {
                         return Err(RoutingError::CannotRoute);
                     }
@@ -650,7 +650,8 @@ impl Chain {
 
                     let targets: Vec<_> = self
                         .state
-                        .known_sections()
+                        .sections
+                        .all()
                         .filter_map(is_compatible)
                         .flat_map(EldersInfo::member_nodes)
                         .filter(|node| node.name() != our_name)
@@ -747,27 +748,6 @@ impl Chain {
         }
     }
 
-    /// Compute an estimate of the size of the network from the size of our routing table.
-    ///
-    /// Return (estimate, exact), with exact = true iff we have the whole network in our
-    /// routing table.
-    pub fn network_size_estimate(&self) -> (u64, bool) {
-        let known_prefixes = self.state.known_prefixes();
-        let is_exact = Prefix::default().is_covered_by(known_prefixes.iter());
-
-        // Estimated fraction of the network that we have in our RT.
-        // Computed as the sum of 1 / 2^(prefix.bit_count) for all known section prefixes.
-        let network_fraction: f64 = known_prefixes
-            .iter()
-            .map(|p| 1.0 / (p.bit_count() as f64).exp2())
-            .sum();
-
-        // Total size estimate = known_nodes / network_fraction
-        let network_size = self.state.known_elders().count() as f64 / network_fraction;
-
-        (network_size.ceil() as u64, is_exact)
-    }
-
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
         self.state.churn_event_backlog.iter().any(|evt| {
@@ -777,29 +757,6 @@ impl Chain {
                 false
             }
         })
-    }
-
-    /// Returns network statistics.
-    pub fn stats(&self) -> Stats {
-        let (total_elders, total_elders_exact) = self.network_size_estimate();
-
-        Stats {
-            known_elders: self.state.known_elders().count() as u64,
-            total_elders,
-            total_elders_exact,
-        }
-    }
-}
-
-#[cfg(any(test, feature = "mock_base"))]
-impl Chain {
-    /// Returns the members of the section with the given prefix (if it exists)
-    pub fn get_section(&self, pfx: &Prefix<XorName>) -> Option<&EldersInfo> {
-        if self.state.our_prefix() == pfx {
-            Some(self.state.our_info())
-        } else {
-            self.state.sections.get(pfx)
-        }
     }
 }
 
@@ -1113,11 +1070,16 @@ mod tests {
 
         assert_eq!(
             chain
-                .get_section(&Prefix::from_str("00").unwrap())
+                .state
+                .sections
+                .get(&Prefix::from_str("00").unwrap())
                 .map(|info| info.is_member(&chain_id)),
             Some(true)
         );
-        assert_eq!(chain.get_section(&Prefix::from_str("").unwrap()), None);
+        assert_eq!(
+            chain.state.sections.get(&Prefix::from_str("").unwrap()),
+            None
+        );
         assert!(chain.validate_our_history());
         check_infos_for_duplication(&chain);
     }
