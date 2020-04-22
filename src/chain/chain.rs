@@ -373,8 +373,10 @@ impl Chain {
             return Ok(None);
         }
 
-        if self.should_split() {
-            let (our_info, other_info) = self.split_self()?;
+        if let Some((our_info, other_info)) = self
+            .state
+            .try_split(self.our_id.name(), &self.network_params)?
+        {
             self.members_changed = false;
             self.churn_in_progress = true;
             return Ok(Some(vec![our_info, other_info]));
@@ -620,51 +622,6 @@ impl Chain {
                 );
                 None
             })
-    }
-
-    /// Returns whether we should split into two sections.
-    fn should_split(&self) -> bool {
-        let our_name = self.our_id.name();
-        let our_prefix_bit_count = self.state.our_prefix().bit_count();
-        let (our_new_size, sibling_new_size) = self
-            .state
-            .our_members
-            .mature()
-            .map(|p2p_node| our_name.common_prefix(p2p_node.name()) > our_prefix_bit_count)
-            .fold((0, 0), |(ours, siblings), is_our_prefix| {
-                if is_our_prefix {
-                    (ours + 1, siblings)
-                } else {
-                    (ours, siblings + 1)
-                }
-            });
-
-        // If either of the two new sections will not contain enough entries, return `false`.
-        let safe_section_size = self.safe_section_size();
-        our_new_size >= safe_section_size && sibling_new_size >= safe_section_size
-    }
-
-    /// Splits our section and generates new elders infos for the child sections.
-    fn split_self(&mut self) -> Result<(EldersInfo, EldersInfo), RoutingError> {
-        let next_bit = self.our_id.name().bit(self.state.our_prefix().bit_count());
-
-        let our_prefix = self.state.our_prefix().pushed(next_bit);
-        let other_prefix = self.state.our_prefix().pushed(!next_bit);
-
-        let our_new_section = self
-            .state
-            .our_members
-            .elder_candidates_matching_prefix(&our_prefix, self.elder_size());
-        let other_section = self
-            .state
-            .our_members
-            .elder_candidates_matching_prefix(&other_prefix, self.elder_size());
-
-        let our_new_info =
-            EldersInfo::new(our_new_section, our_prefix, Some(self.state.our_info()))?;
-        let other_info = EldersInfo::new(other_section, other_prefix, Some(self.state.our_info()))?;
-
-        Ok((our_new_info, other_info))
     }
 
     /// Returns a set of nodes to which a message for the given `DstLocation` could be sent

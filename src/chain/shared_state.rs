@@ -6,15 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::AccumulatedEvent;
+use super::{AccumulatedEvent, NetworkParams};
 use crate::{
+    error::Result,
     id::{P2pNode, PublicId},
     relocation::{self, RelocateDetails},
     section::{
         AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
         SectionProofBlock, SectionProofChain,
     },
-    Prefix, XorName,
+    xor_space::{Prefix, XorName, Xorable},
 };
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -238,6 +239,52 @@ impl SharedState {
         self.our_history.push(proof_block);
         self.sections.push_our(elders_info);
         self.sections.update_keys(self.our_history.last_key_info());
+    }
+
+    /// Tries to split our section.
+    /// If we have enough mature nodes for both subsections, returns the elders infos of the two
+    /// subsections. Otherwise returns `None`.
+    pub fn try_split(
+        &self,
+        our_name: &XorName,
+        network_params: &NetworkParams,
+    ) -> Result<Option<(EldersInfo, EldersInfo)>> {
+        let next_bit_index = self.our_prefix().bit_count();
+        let next_bit = our_name.bit(next_bit_index);
+
+        let (our_new_size, sibling_new_size) = self
+            .our_members
+            .mature()
+            .map(|p2p_node| p2p_node.name().bit(next_bit_index) == next_bit)
+            .fold((0, 0), |(ours, siblings), is_our_prefix| {
+                if is_our_prefix {
+                    (ours + 1, siblings)
+                } else {
+                    (ours, siblings + 1)
+                }
+            });
+
+        // If either of the two new sections will not contain enough entries, return `false`.
+        if our_new_size < network_params.safe_section_size
+            || sibling_new_size < network_params.safe_section_size
+        {
+            return Ok(None);
+        }
+
+        let our_prefix = self.our_prefix().pushed(next_bit);
+        let other_prefix = self.our_prefix().pushed(!next_bit);
+
+        let our_elders = self
+            .our_members
+            .elder_candidates_matching_prefix(&our_prefix, network_params.elder_size);
+        let other_elders = self
+            .our_members
+            .elder_candidates_matching_prefix(&other_prefix, network_params.elder_size);
+
+        let our_info = EldersInfo::new(our_elders, our_prefix, Some(self.our_info()))?;
+        let other_info = EldersInfo::new(other_elders, other_prefix, Some(self.our_info()))?;
+
+        Ok(Some((our_info, other_info)))
     }
 
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
