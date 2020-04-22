@@ -8,10 +8,10 @@
 
 use super::{
     shared_state::SharedState, stats::Stats, AccumulatedEvent, AccumulatingEvent, EldersChange,
-    GenesisPfxInfo, NetworkEvent, NetworkParams, Proof,
+    GenesisPfxInfo, NetworkEvent, NetworkParams,
 };
 use crate::{
-    consensus::{AccumulatingProof, ConsensusEngine, DkgResult, DkgResultWrapper, InsertError},
+    consensus::{AccumulatingProof, ConsensusEngine, DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
     id::{FullId, P2pNode, PublicId},
     location::{DstLocation, SrcLocation},
@@ -174,29 +174,6 @@ impl Chain {
         Ok(serialize(&self.state)?)
     }
 
-    /// Handles an opaque parsec Observation as a NetworkEvent.
-    pub fn handle_opaque_event(
-        &mut self,
-        event: &NetworkEvent,
-        proof: Proof,
-    ) -> Result<(), RoutingError> {
-        let (acc_event, signature) = AccumulatingEvent::from_network_event(event.clone());
-        match self.consensus_engine.add_proof(acc_event, proof, signature) {
-            Ok(()) | Err(InsertError::AlreadyComplete) => {
-                // Proof added or event already completed.
-            }
-            Err(InsertError::ReplacedAlreadyInserted) => {
-                // TODO: If detecting duplicate vote from peer, penalise.
-                log_or_panic!(
-                    log::Level::Warn,
-                    "Duplicate proof for {:?} in accumulator",
-                    event,
-                );
-            }
-        }
-        Ok(())
-    }
-
     /// Returns the next accumulated event.
     ///
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
@@ -216,7 +193,7 @@ impl Chain {
             return Ok(Some(PollAccumulated::RelocateDetails(details)));
         }
 
-        let (event, proofs) = match self.poll_accumulator() {
+        let (event, proofs) = match self.poll_consensus() {
             None => return Ok(None),
             Some((event, proofs)) => (event, proofs),
         };
@@ -233,7 +210,7 @@ impl Chain {
         Ok(None)
     }
 
-    fn poll_accumulator(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+    fn poll_consensus(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
         self.consensus_engine.poll(self.state.sections.our())
     }
 
@@ -243,6 +220,10 @@ impl Chain {
         proofs: AccumulatingProof,
     ) -> Result<Option<AccumulatedEvent>, RoutingError> {
         match event {
+            AccumulatingEvent::Genesis {
+                ref group,
+                ref related_info,
+            } => self.handle_genesis_event(group, related_info)?,
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = EldersChangeBuilder::new(self);
                 if self.add_elders_info(info.clone(), key_info.clone(), proofs)? {
@@ -275,6 +256,12 @@ impl Chain {
                 if self.churn_in_progress {
                     return Ok(None);
                 }
+            }
+            AccumulatingEvent::DkgResult {
+                ref participants,
+                ref dkg_result,
+            } => {
+                self.handle_dkg_result_event(participants, dkg_result)?;
             }
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)

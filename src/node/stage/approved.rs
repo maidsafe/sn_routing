@@ -10,9 +10,9 @@ use crate::{
     chain::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, Chain, EldersChange,
         EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent, NetworkParams,
-        OnlinePayload, ParsecResetData, PollAccumulated, Proof, SendAckMessagePayload,
+        OnlinePayload, ParsecResetData, PollAccumulated, SendAckMessagePayload,
     },
-    consensus::{self, DkgResultWrapper, Observation, ParsecRequest, ParsecResponse},
+    consensus::{self, DkgResultWrapper, ParsecRequest, ParsecResponse},
     core::Core,
     error::{Result, RoutingError},
     event::Event,
@@ -220,9 +220,9 @@ impl Approved {
 
     pub fn finish_handle_input(&mut self, core: &mut Core) {
         if self.chain.state().our_info().len() == 1 {
-            // If we're the only node then invoke parsec_poll directly
-            if let Err(error) = self.parsec_poll(core) {
-                error!("Parsec poll failed: {:?}", error);
+            // If we're the only node then invoke chain_poll directly
+            if let Err(error) = self.chain_poll(core) {
+                error!("poll failed: {:?}", error);
             }
         }
 
@@ -591,7 +591,7 @@ impl Approved {
         }
 
         if msg_version == self.chain.consensus_engine.parsec_version() {
-            self.parsec_poll(core)
+            self.chain_poll(core)
         } else {
             Ok(())
         }
@@ -611,7 +611,7 @@ impl Approved {
             .handle_parsec_response(msg_version, par_response, pub_id);
 
         if msg_version == self.chain.consensus_engine.parsec_version() {
-            self.parsec_poll(core)
+            self.chain_poll(core)
         } else {
             Ok(())
         }
@@ -703,87 +703,6 @@ impl Approved {
     // Accumulated events handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn parsec_poll(&mut self, core: &mut Core) -> Result<()> {
-        while let Some(block) = self.chain.consensus_engine.parsec_poll() {
-            let parsec_version = self.chain.consensus_engine.parsec_version();
-            match block.payload() {
-                Observation::Accusation { .. } => {
-                    // FIXME: Handle properly
-                    unreachable!("...")
-                }
-                Observation::Genesis {
-                    group,
-                    related_info,
-                } => {
-                    // FIXME: Validate with Chain info.
-
-                    trace!(
-                        "Parsec Genesis {}: group {:?} - related_info {}",
-                        parsec_version,
-                        group,
-                        related_info.len()
-                    );
-
-                    self.chain.handle_genesis_event(group, related_info)?;
-
-                    continue;
-                }
-                Observation::OpaquePayload(event) => {
-                    if let Some(proof) = block.proofs().iter().next().map(|p| Proof {
-                        pub_id: *p.public_id(),
-                        sig: *p.signature(),
-                    }) {
-                        trace!(
-                            "Parsec OpaquePayload {}: {} - {:?}",
-                            parsec_version,
-                            proof.pub_id(),
-                            event
-                        );
-                        self.chain.handle_opaque_event(event, proof)?;
-                    }
-                }
-                Observation::Add { peer_id, .. } => {
-                    log_or_panic!(
-                        log::Level::Error,
-                        "Unexpected Parsec Add {}: - {}",
-                        parsec_version,
-                        peer_id
-                    );
-                }
-                Observation::Remove { peer_id, .. } => {
-                    log_or_panic!(
-                        log::Level::Error,
-                        "Unexpected Parsec Remove {}: - {}",
-                        parsec_version,
-                        peer_id
-                    );
-                }
-                obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
-                    log_or_panic!(
-                        log::Level::Error,
-                        "parsec_poll polled internal Observation {}: {:?}",
-                        parsec_version,
-                        obs
-                    );
-                }
-                Observation::DkgResult {
-                    participants,
-                    dkg_result,
-                } => {
-                    self.chain
-                        .handle_dkg_result_event(participants, dkg_result)?;
-                    self.handle_dkg_result_event(participants, dkg_result)?;
-                }
-            }
-
-            self.chain_poll(core)?;
-        }
-
-        self.check_voting_status();
-
-        Ok(())
-    }
-
     fn chain_poll(&mut self, core: &mut Core) -> Result<()> {
         let mut old_pfx = *self.chain.state().our_prefix();
         let mut was_elder = self.chain.is_self_elder();
@@ -805,6 +724,8 @@ impl Approved {
             was_elder = self.chain.is_self_elder();
         }
 
+        self.check_voting_status();
+
         Ok(())
     }
 
@@ -818,23 +739,25 @@ impl Approved {
         trace!("Handle accumulated event: {:?}", event);
 
         match event.content {
+            AccumulatingEvent::Genesis { .. } => (),
             AccumulatingEvent::StartDkg(_) => {
                 log_or_panic!(
                     log::Level::Error,
-                    "StartDkg came out of Parsec - this shouldn't happen"
+                    "unexpected accumulated event: {:?}",
+                    event.content
                 );
             }
-            AccumulatingEvent::Online(payload) => {
-                self.handle_online_event(core, payload)?;
-            }
-            AccumulatingEvent::Offline(pub_id) => {
-                self.handle_offline_event(core, pub_id)?;
-            }
+            AccumulatingEvent::DkgResult {
+                participants,
+                dkg_result,
+            } => self.handle_dkg_result_event(&participants, &dkg_result)?,
+            AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload)?,
+            AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id)?,
             AccumulatingEvent::SectionInfo(_, _) => {
-                self.handle_section_info_event(core, old_pfx, was_elder, event.elders_change)?;
+                self.handle_section_info_event(core, old_pfx, was_elder, event.elders_change)?
             }
             AccumulatingEvent::NeighbourInfo(elders_info) => {
-                self.handle_neighbour_info_event(core, elders_info, event.elders_change)?;
+                self.handle_neighbour_info_event(core, elders_info, event.elders_change)?
             }
             AccumulatingEvent::TheirKeyInfo(key_info) => {
                 self.handle_their_key_info_event(key_info)?
@@ -1224,9 +1147,11 @@ impl Approved {
                 // Events to re-process
                 AccumulatingEvent::Online(_) => true,
                 // Events to re-insert
-                AccumulatingEvent::Offline(_)
+                AccumulatingEvent::Genesis { .. }
+                | AccumulatingEvent::Offline(_)
                 | AccumulatingEvent::AckMessage(_)
                 | AccumulatingEvent::StartDkg(_)
+                | AccumulatingEvent::DkgResult { .. }
                 | AccumulatingEvent::ParsecPrune
                 | AccumulatingEvent::Relocate(_)
                 | AccumulatingEvent::RelocatePrepare(_, _)
@@ -1256,7 +1181,10 @@ impl Approved {
                         our_pfx.matches(details.pub_id.name())
                     }
                     // Drop: no longer relevant after prefix change.
-                    AccumulatingEvent::StartDkg(_) | AccumulatingEvent::ParsecPrune => false,
+                    AccumulatingEvent::Genesis { .. }
+                    | AccumulatingEvent::StartDkg(_)
+                    | AccumulatingEvent::DkgResult { .. }
+                    | AccumulatingEvent::ParsecPrune => false,
 
                     // Keep: Additional signatures for neighbours for sec-msg-relay.
                     AccumulatingEvent::SectionInfo(ref elders_info, _)
@@ -1302,18 +1230,20 @@ impl Approved {
         to_process: BTreeSet<NetworkEvent>,
     ) {
         to_process.iter().for_each(|event| match &event.payload {
-            evt @ AccumulatingEvent::Offline(_)
-            | evt @ AccumulatingEvent::AckMessage(_)
-            | evt @ AccumulatingEvent::StartDkg(_)
-            | evt @ AccumulatingEvent::ParsecPrune
-            | evt @ AccumulatingEvent::Relocate(_)
-            | evt @ AccumulatingEvent::RelocatePrepare(_, _)
-            | evt @ AccumulatingEvent::SectionInfo(_, _)
-            | evt @ AccumulatingEvent::NeighbourInfo(_)
-            | evt @ AccumulatingEvent::TheirKeyInfo(_)
-            | evt @ AccumulatingEvent::SendAckMessage(_)
-            | evt @ AccumulatingEvent::User(_) => {
-                log_or_panic!(log::Level::Error, "unexpected event {:?}", evt);
+            AccumulatingEvent::Genesis { .. }
+            | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::AckMessage(_)
+            | AccumulatingEvent::StartDkg(_)
+            | AccumulatingEvent::DkgResult { .. }
+            | AccumulatingEvent::ParsecPrune
+            | AccumulatingEvent::Relocate(_)
+            | AccumulatingEvent::RelocatePrepare(_, _)
+            | AccumulatingEvent::SectionInfo(_, _)
+            | AccumulatingEvent::NeighbourInfo(_)
+            | AccumulatingEvent::TheirKeyInfo(_)
+            | AccumulatingEvent::SendAckMessage(_)
+            | AccumulatingEvent::User(_) => {
+                log_or_panic!(log::Level::Error, "unexpected event {:?}", event.payload);
             }
             AccumulatingEvent::Online(payload) => {
                 self.resend_bootstrap_response_join(core, &payload.p2p_node);

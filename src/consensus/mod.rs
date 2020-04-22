@@ -12,8 +12,8 @@ mod parsec;
 pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
     parsec::{
-        generate_bls_threshold_secret_key, generate_first_dkg_result, CreateGossipError, DkgResult,
-        DkgResultWrapper, NetworkEvent as ParsecNetworkEvent, Observation,
+        generate_bls_threshold_secret_key, generate_first_dkg_result, Block, CreateGossipError,
+        DkgResult, DkgResultWrapper, NetworkEvent as ParsecNetworkEvent, Observation,
         Request as ParsecRequest, Response as ParsecResponse, GOSSIP_PERIOD,
     },
 };
@@ -23,10 +23,10 @@ pub use self::event_accumulator::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW};
 
 use self::{
     event_accumulator::{EventAccumulator, RemainingEvents},
-    parsec::{Block, ParsecMap},
+    parsec::ParsecMap,
 };
 use crate::{
-    chain::{AccumulatingEvent, EventSigPayload, GenesisPfxInfo, NetworkEvent, Proof, ProofSet},
+    chain::{AccumulatingEvent, GenesisPfxInfo, NetworkEvent, Proof, ProofSet},
     id::{FullId, PublicId},
     messages::Variant,
     rng::MainRng,
@@ -35,7 +35,7 @@ use crate::{
 };
 use std::collections::BTreeSet;
 
-// Decentralized, Byzantine-fault-tolerant, Asynchronous, Permission-less consensus mechanism.
+// Distributed consensus mechanism backed by the Parsec algorithm.
 pub struct ConsensusEngine {
     parsec_map: ParsecMap,
     accumulator: EventAccumulator,
@@ -52,29 +52,136 @@ impl ConsensusEngine {
         }
     }
 
-    pub fn add_proof(
-        &mut self,
-        event: AccumulatingEvent,
-        proof: Proof,
-        signature: Option<EventSigPayload>,
-    ) -> Result<(), InsertError> {
-        self.accumulator.add_proof(event, proof, signature)
-    }
-
+    /// Returns the next consensused and accumulated event, if any.
     pub fn poll(
         &mut self,
         our_elders: &EldersInfo,
     ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
-        let event = self
-            .accumulator
-            .incomplete_events()
-            .find(|(event, proofs)| {
-                self.is_accumulated(event, proofs.parsec_proof_set(), our_elders)
-            })
-            .map(|(event, _)| event.clone())?;
+        while let Some(block) = self.parsec_map.poll() {
+            if let Some(output) = self.handle_parsec_block(block, our_elders) {
+                return Some(output);
+            }
+        }
 
-        self.accumulator
-            .poll_event(event, our_elders.member_ids().cloned().collect())
+        None
+    }
+
+    fn handle_parsec_block(
+        &mut self,
+        block: Block,
+        our_elders: &EldersInfo,
+    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+        // TODO: implement Block::into_payload in parsec to avoid cloning.
+        match block.payload() {
+            Observation::Accusation { .. } => {
+                // FIXME: Handle properly
+                unreachable!("...")
+            }
+            Observation::Genesis {
+                group,
+                related_info,
+            } => {
+                // FIXME: Validate with Chain info.
+
+                trace!(
+                    "Parsec Genesis v{}: group: {:?}, related_info: {}",
+                    self.parsec_map.last_version(),
+                    group,
+                    related_info.len()
+                );
+
+                Some((
+                    AccumulatingEvent::Genesis {
+                        group: group.clone(),
+                        related_info: related_info.clone(),
+                    },
+                    AccumulatingProof::default(),
+                ))
+            }
+            Observation::OpaquePayload(event) => {
+                let proof = block.proofs().iter().next()?;
+                let proof = Proof {
+                    pub_id: *proof.public_id(),
+                    sig: *proof.signature(),
+                };
+
+                trace!(
+                    "Parsec OpaquePayload v{}: {} - {:?}",
+                    self.parsec_map.last_version(),
+                    proof.pub_id(),
+                    event
+                );
+
+                let (event, signature) = AccumulatingEvent::from_network_event(event.clone());
+
+                // TODO: merge these three steps (add_proof, incomplete_events, poll_event) into a
+                // single one, to make the process less fragile.
+                match self.accumulator.add_proof(event, proof, signature) {
+                    Ok(()) | Err(InsertError::AlreadyComplete) => {
+                        // Proof added or event already completed.
+                    }
+                    Err(InsertError::ReplacedAlreadyInserted) => {
+                        // TODO: If detecting duplicate vote from peer, penalise.
+                        log_or_panic!(log::Level::Warn, "Duplicate proof in the accumulator");
+                    }
+                }
+
+                let event = self
+                    .accumulator
+                    .incomplete_events()
+                    .find(|(event, proofs)| {
+                        self.is_accumulated(event, proofs.parsec_proof_set(), our_elders)
+                    })
+                    .map(|(event, _)| event.clone())?;
+
+                self.accumulator
+                    .poll_event(event, our_elders.member_ids().cloned().collect())
+            }
+            Observation::Add { peer_id, .. } => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "unexpected Parsec Add v{}: {}",
+                    self.parsec_map.last_version(),
+                    peer_id
+                );
+                None
+            }
+            Observation::Remove { peer_id, .. } => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "unexpected Parsec Remove v{}: {}",
+                    self.parsec_map.last_version(),
+                    peer_id
+                );
+                None
+            }
+            obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "unexpected Parsec internal observation v{}: {:?}",
+                    self.parsec_map.last_version(),
+                    obs
+                );
+                None
+            }
+            Observation::DkgResult {
+                participants,
+                dkg_result,
+            } => {
+                trace!(
+                    "Parsec DkgResult v{}: {:?}",
+                    self.parsec_map.last_version(),
+                    participants
+                );
+                Some((
+                    AccumulatingEvent::DkgResult {
+                        participants: participants.clone(),
+                        dkg_result: dkg_result.clone(),
+                    },
+                    AccumulatingProof::default(),
+                ))
+            }
+        }
     }
 
     fn is_accumulated(
@@ -118,9 +225,12 @@ impl ConsensusEngine {
                 our_elders.is_total_consensus(proofs)
             }
 
-            AccumulatingEvent::StartDkg(_) => {
-                unreachable!("StartDkg present in the event accumulator")
-            }
+            AccumulatingEvent::Genesis { .. }
+            | AccumulatingEvent::StartDkg(_)
+            | AccumulatingEvent::DkgResult { .. } => unreachable!(
+                "unexpected event present in the event accumulator: {:?}",
+                event
+            ),
         }
     }
 
@@ -173,10 +283,6 @@ impl ConsensusEngine {
     ) {
         self.parsec_map
             .handle_response(msg_version, response, pub_id)
-    }
-
-    pub fn parsec_poll(&mut self) -> Option<Block> {
-        self.parsec_map.poll()
     }
 
     pub fn prune_if_needed(&mut self) {
