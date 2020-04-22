@@ -121,21 +121,6 @@ impl SharedState {
         self.sections.elders()
     }
 
-    /// Returns the `count` candidates for elders out of currently relocating nodes. Use this
-    /// method when we don't have enough non-relocating nodes in the section to become elders.
-    pub fn elder_candidates_from_relocating<'a>(
-        &'a self,
-        count: usize,
-    ) -> impl Iterator<Item = (XorName, P2pNode)> + 'a {
-        self.relocate_queue
-            .iter()
-            .map(|details| details.pub_id.name())
-            .filter_map(move |name| self.our_members.get(name))
-            .filter(|info| info.state != MemberState::Left)
-            .take(count)
-            .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
-    }
-
     /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
     pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
         self.sections.is_elder(pub_id)
@@ -144,6 +129,15 @@ impl SharedState {
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
         self.our_info().is_member(pub_id)
+    }
+
+    /// Returns a `P2pNode` for a known node.
+    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
+        self.our_members
+            .get_p2p_node(name)
+            .or_else(|| self.get_our_elder_p2p_node(name))
+            .or_else(|| self.sections.get_elder(name))
+            .or_else(|| self.our_members.get_post_split_sibling_p2p_node(name))
     }
 
     /// Returns a `P2pNode` of our elder.
@@ -235,16 +229,89 @@ impl SharedState {
         self.sections.all().map(|(prefix, _)| *prefix).collect()
     }
 
+    /// Generate a new section info(s) based on the current set of members.
+    /// Returns a set of EldersInfos to vote for.
+    pub fn promote_and_demote_elders(
+        &mut self,
+        our_name: &XorName,
+        network_params: &NetworkParams,
+    ) -> Result<Option<Vec<EldersInfo>>> {
+        if let Some((our_info, other_info)) = self.try_split(our_name, network_params)? {
+            return Ok(Some(vec![our_info, other_info]));
+        }
+
+        let expected_elders_map = self.elder_candidates(network_params.elder_size);
+        let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
+        let current_elders: BTreeSet<_> = self.our_info().member_nodes().cloned().collect();
+
+        if expected_elders == current_elders {
+            Ok(None)
+        } else {
+            let old_size = self.our_info().len();
+
+            let new_info = EldersInfo::new(
+                expected_elders_map,
+                *self.our_info().prefix(),
+                Some(self.our_info()),
+            )?;
+
+            if self.our_info().len() < network_params.elder_size
+                && old_size >= network_params.elder_size
+            {
+                panic!(
+                    "Merging situation encountered! Not supported: {:?}",
+                    self.our_info()
+                );
+            }
+
+            Ok(Some(vec![new_info]))
+        }
+    }
+
     pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
         self.our_history.push(proof_block);
         self.sections.push_our(elders_info);
         self.sections.update_keys(self.our_history.last_key_info());
     }
 
-    /// Tries to split our section.
-    /// If we have enough mature nodes for both subsections, returns the elders infos of the two
-    /// subsections. Otherwise returns `None`.
-    pub fn try_split(
+    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
+        // Delay relocation until all backlogged churn events have been handled. Only allow one
+        // relocation at a time.
+        if !self.churn_event_backlog.is_empty() {
+            return None;
+        }
+
+        let details = loop {
+            if let Some(details) = self.relocate_queue.pop_back() {
+                if self.our_members.contains(&details.pub_id) {
+                    break details;
+                } else {
+                    trace!("Not relocating {} - not a member", details.pub_id);
+                }
+            } else {
+                return None;
+            }
+        };
+
+        if self.is_peer_our_elder(&details.pub_id) {
+            warn!(
+                "Not relocating {} - The peer is still our elder.",
+                details.pub_id,
+            );
+
+            // Keep the details in the queue so when the node is demoted we can relocate it.
+            self.relocate_queue.push_back(details);
+            return None;
+        }
+
+        trace!("relocating member {}", details.pub_id);
+        Some(details)
+    }
+
+    // Tries to split our section.
+    // If we have enough mature nodes for both subsections, returns the elders infos of the two
+    // subsections. Otherwise returns `None`.
+    fn try_split(
         &self,
         our_name: &XorName,
         network_params: &NetworkParams,
@@ -287,38 +354,31 @@ impl SharedState {
         Ok(Some((our_info, other_info)))
     }
 
-    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
-        // Delay relocation until all backlogged churn events have been handled. Only allow one
-        // relocation at a time.
-        if !self.churn_event_backlog.is_empty() {
-            return None;
-        }
+    // Returns the candidates for elders out of all the nodes in the section, even out of the
+    // relocating nodes if there would not be enough instead.
+    fn elder_candidates(&self, elder_size: usize) -> BTreeMap<XorName, P2pNode> {
+        let mut elders = self.our_members.elder_candidates(elder_size);
 
-        let details = loop {
-            if let Some(details) = self.relocate_queue.pop_back() {
-                if self.our_members.contains(&details.pub_id) {
-                    break details;
-                } else {
-                    trace!("Not relocating {} - not a member", details.pub_id);
-                }
-            } else {
-                return None;
-            }
-        };
+        // Ensure that we can still handle one node lost when relocating.
+        // Ensure that the node we eject are the one we want to relocate first.
+        let missing = elder_size.saturating_sub(elders.len());
+        elders.extend(self.elder_candidates_from_relocating(missing));
+        elders
+    }
 
-        if self.is_peer_our_elder(&details.pub_id) {
-            warn!(
-                "Not relocating {} - The peer is still our elder.",
-                details.pub_id,
-            );
-
-            // Keep the details in the queue so when the node is demoted we can relocate it.
-            self.relocate_queue.push_back(details);
-            return None;
-        }
-
-        trace!("relocating member {}", details.pub_id);
-        Some(details)
+    /// Returns the `count` candidates for elders out of currently relocating nodes. Use this
+    /// method when we don't have enough non-relocating nodes in the section to become elders.
+    fn elder_candidates_from_relocating<'a>(
+        &'a self,
+        count: usize,
+    ) -> impl Iterator<Item = (XorName, P2pNode)> + 'a {
+        self.relocate_queue
+            .iter()
+            .map(|details| details.pub_id.name())
+            .filter_map(move |name| self.our_members.get(name))
+            .filter(|info| info.state != MemberState::Left)
+            .take(count)
+            .map(|info| (*info.p2p_node.name(), info.p2p_node.clone()))
     }
 
     // Increment the age counters of the members.
