@@ -26,10 +26,11 @@ use self::{
     parsec::{Block, ParsecMap},
 };
 use crate::{
-    chain::{AccumulatingEvent, EventSigPayload, GenesisPfxInfo, NetworkEvent, Proof},
+    chain::{AccumulatingEvent, EventSigPayload, GenesisPfxInfo, NetworkEvent, Proof, ProofSet},
     id::{FullId, PublicId},
     messages::Variant,
     rng::MainRng,
+    section::EldersInfo,
     time::Duration,
 };
 use std::collections::BTreeSet;
@@ -60,18 +61,67 @@ impl ConsensusEngine {
         self.accumulator.add_proof(event, proof, signature)
     }
 
-    pub fn incomplete_events(
-        &self,
-    ) -> impl Iterator<Item = (&AccumulatingEvent, &AccumulatingProof)> {
-        self.accumulator.incomplete_events()
+    pub fn poll(
+        &mut self,
+        our_elders: &EldersInfo,
+    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+        let event = self
+            .accumulator
+            .incomplete_events()
+            .find(|(event, proofs)| {
+                self.is_accumulated(event, proofs.parsec_proof_set(), our_elders)
+            })
+            .map(|(event, _)| event.clone())?;
+
+        self.accumulator
+            .poll_event(event, our_elders.member_ids().cloned().collect())
     }
 
-    pub fn poll_event(
-        &mut self,
-        event: AccumulatingEvent,
-        all_voters: BTreeSet<PublicId>,
-    ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
-        self.accumulator.poll_event(event, all_voters)
+    fn is_accumulated(
+        &self,
+        event: &AccumulatingEvent,
+        proofs: &ProofSet,
+        our_elders: &EldersInfo,
+    ) -> bool {
+        match event {
+            AccumulatingEvent::SectionInfo(info, _) => {
+                if !our_elders.is_quorum(proofs) {
+                    return false;
+                }
+
+                if !info.is_successor_of(our_elders) {
+                    log_or_panic!(
+                        log::Level::Error,
+                        "We shouldn't have a SectionInfo that is not a direct descendant. our: \
+                         {:?}, new: {:?}",
+                        our_elders,
+                        info
+                    );
+                }
+
+                true
+            }
+
+            AccumulatingEvent::Online(_)
+            | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::NeighbourInfo(_)
+            | AccumulatingEvent::TheirKeyInfo(_)
+            | AccumulatingEvent::AckMessage(_)
+            | AccumulatingEvent::ParsecPrune
+            | AccumulatingEvent::Relocate(_)
+            | AccumulatingEvent::RelocatePrepare(_, _)
+            | AccumulatingEvent::User(_) => our_elders.is_quorum(proofs),
+
+            AccumulatingEvent::SendAckMessage(_) => {
+                // We may not reach consensus if malicious peer, but when we do we know all our
+                // nodes have updated `their_keys`.
+                our_elders.is_total_consensus(proofs)
+            }
+
+            AccumulatingEvent::StartDkg(_) => {
+                unreachable!("StartDkg present in the event accumulator")
+            }
+        }
     }
 
     pub fn reset_accumulator(&mut self, our_id: &PublicId) -> RemainingEvents {
