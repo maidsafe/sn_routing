@@ -187,3 +187,13 @@ impl Debug for EldersInfo {
 pub const fn quorum_count(elder_size: usize) -> usize {
     1 + (elder_size * QUORUM_NUMERATOR) / QUORUM_DENOMINATOR
 }
+
+#[cfg(feature = "mock_base")]
+/// Test helper to create arbitrary elders nfo.
+pub fn elders_info_for_test(
+    members: BTreeMap<PublicId, P2pNode>,
+    prefix: Prefix<XorName>,
+    version: u64,
+) -> Result<EldersInfo, RoutingError> {
+    EldersInfo::new_for_test(members, prefix, version)
+}

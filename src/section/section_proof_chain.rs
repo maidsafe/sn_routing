@@ -305,3 +305,13 @@ pub enum TrustStatus<'a> {
     // our latest one.
     ProofTooNew,
 }
+
+#[cfg(feature = "mock_base")]
+/// Test helper to create arbitrary proof.
+pub fn section_proof_slice_for_test(
+    version: u64,
+    prefix: Prefix<XorName>,
+    key: bls::PublicKey,
+) -> SectionProofSlice {
+    SectionProofSlice::from_genesis(SectionKeyInfo::new(version, prefix, key))
+}

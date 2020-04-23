@@ -23,3 +23,8 @@ pub use self::{
         SectionKeyInfo, SectionProofBlock, SectionProofChain, SectionProofSlice, TrustStatus,
     },
 };
+
+#[cfg(feature = "mock_base")]
+pub use self::{
+    elders_info::elders_info_for_test, section_proof_chain::section_proof_slice_for_test,
+};
