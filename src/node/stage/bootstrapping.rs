@@ -7,11 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::NetworkParams,
     core::Core,
     error::Result,
     id::{FullId, P2pNode},
     messages::{BootstrapResponse, Message, MessageHash, Variant, VerifyStatus},
+    network_params::NetworkParams,
     relocation::{RelocatePayload, SignedRelocateDetails},
     section::EldersInfo,
     time::Duration,

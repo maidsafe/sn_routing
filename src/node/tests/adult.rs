@@ -8,12 +8,13 @@
 
 use super::utils as test_utils;
 use crate::{
-    chain::{Chain, NetworkParams},
+    chain::Chain,
     consensus::{generate_bls_threshold_secret_key, GenesisPfxInfo},
     error::Result,
     id::FullId,
     location::DstLocation,
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
+    network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
     section::EldersInfo,

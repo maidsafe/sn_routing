@@ -15,7 +15,6 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
-    chain::NetworkParams,
     consensus::GenesisPfxInfo,
     core::Core,
     error::{Result, RoutingError},
@@ -24,6 +23,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     log_utils,
     messages::{BootstrapResponse, Message, MessageHash, MessageWithBytes, QueuedMessage, Variant},
+    network_params::NetworkParams,
     pause::PausedState,
     quic_p2p::{EventSenders, Peer, Token},
     relocation::SignedRelocateDetails,

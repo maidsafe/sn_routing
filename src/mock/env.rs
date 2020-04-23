@@ -9,7 +9,7 @@
 #[cfg(feature = "mock")]
 use crate::mock::parsec;
 use crate::{
-    chain::NetworkParams,
+    network_params::NetworkParams,
     quic_p2p::Network,
     rng::{self, MainRng, Seed, SeedPrinter},
 };
