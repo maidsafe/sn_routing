@@ -18,15 +18,12 @@ use crate::{
     network_params::NetworkParams,
     relocation::RelocateDetails,
     rng::MainRng,
-    routing_table,
     section::{
         EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice, SharedState,
     },
-    xor_space::Xorable,
     XorName,
 };
 use bincode::serialize;
-use itertools::Itertools;
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -559,32 +556,6 @@ impl Chain {
                 );
                 None
             })
-    }
-
-    // Returns the set of peers that are responsible for collecting signatures to verify a message;
-    // this may contain us or only other nodes.
-    pub fn signature_targets(&self, dst: &DstLocation) -> Vec<P2pNode> {
-        let dst_name = match dst {
-            DstLocation::Node(name) => *name,
-            DstLocation::Section(name) => *name,
-            DstLocation::Prefix(prefix) => prefix.name(),
-            DstLocation::Direct => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Invalid destination for signature targets: {:?}",
-                    dst
-                );
-                return vec![];
-            }
-        };
-
-        let mut list = self
-            .state
-            .our_elders()
-            .cloned()
-            .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        list.truncate(routing_table::delivery_group_size(list.len()));
-        list
     }
 
     /// Returns whether we are a part of the given source.

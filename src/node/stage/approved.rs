@@ -378,6 +378,7 @@ impl Approved {
         let conn_infos: Vec<_> = self
             .chain
             .state()
+            .sections
             .our_elders()
             .map(|p2p_node| *p2p_node.peer_addr())
             .collect();
@@ -1422,7 +1423,7 @@ impl Approved {
             parsec_version: self.chain.consensus_engine.parsec_version(),
         };
 
-        for recipient in self.chain.state().our_info().member_nodes() {
+        for recipient in self.chain.state().sections.our_elders() {
             if recipient.public_id() == core.id() {
                 continue;
             }
@@ -1555,7 +1556,11 @@ impl Approved {
             self.chain
                 .to_accumulating_message(dst, variant, node_knowledge_override)?;
 
-        for target in self.chain.signature_targets(&dst) {
+        let targets = routing_table::signature_targets(
+            &dst,
+            self.chain.state().sections.our_elders().cloned(),
+        );
+        for target in targets {
             if target.name() == core.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
                     self.handle_accumulated_message(core, msg)?;

@@ -15,6 +15,7 @@ use crate::{
     section::{EldersInfo, SectionMap, SectionMembers},
     xor_space::{XorName, Xorable},
 };
+use itertools::Itertools;
 
 /// Returns the delivery group size based on the section size `n`
 pub const fn delivery_group_size(n: usize) -> usize {
@@ -53,7 +54,7 @@ pub fn delivery_targets(
     if !sections.is_elder(our_id) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
-        let targets: Vec<_> = sections.our().member_nodes().cloned().collect();
+        let targets: Vec<_> = sections.our_elders().cloned().collect();
         let dg_size = targets.len();
         return Ok((targets, dg_size));
     }
@@ -174,4 +175,31 @@ fn get_p2p_node<'a>(
     our_members
         .get_p2p_node(name)
         .or_else(|| sections.get_elder(name))
+}
+
+// Returns the set of peers that are responsible for collecting signatures to verify a message;
+// this may contain us or only other nodes.
+pub fn signature_targets<I>(dst: &DstLocation, our_elders: I) -> Vec<P2pNode>
+where
+    I: IntoIterator<Item = P2pNode>,
+{
+    let dst_name = match dst {
+        DstLocation::Node(name) => *name,
+        DstLocation::Section(name) => *name,
+        DstLocation::Prefix(prefix) => prefix.name(),
+        DstLocation::Direct => {
+            log_or_panic!(
+                log::Level::Error,
+                "Invalid destination for signature targets: {:?}",
+                dst
+            );
+            return vec![];
+        }
+    };
+
+    let mut list = our_elders
+        .into_iter()
+        .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
+    list.truncate(delivery_group_size(list.len()));
+    list
 }
