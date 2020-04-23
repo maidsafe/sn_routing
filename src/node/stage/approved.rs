@@ -1277,7 +1277,7 @@ impl Approved {
     ) -> Result<(), RoutingError> {
         let key_info = SectionKeyInfo::from_elders_info(&elders_info, section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
-            &self.chain.our_section_bls_secret_key_share()?.key,
+            &self.chain.section_keys_provider.secret_key_share()?.key,
             &key_info,
         )?;
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);

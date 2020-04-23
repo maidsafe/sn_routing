@@ -8,8 +8,8 @@
 
 use crate::{
     consensus::{
-        AccumulatedEvent, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResult,
-        DkgResultWrapper, EldersChange, GenesisPfxInfo, NetworkEvent,
+        AccumulatedEvent, AccumulatingEvent, AccumulatingProof, ConsensusEngine, EldersChange,
+        GenesisPfxInfo, NetworkEvent,
     },
     error::{Result, RoutingError},
     id::{FullId, P2pNode, PublicId},
@@ -19,37 +19,26 @@ use crate::{
     relocation::RelocateDetails,
     rng::MainRng,
     section::{
-        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionProofBlock,
-        SharedState,
+        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider,
+        SectionProofBlock, SharedState,
     },
-    XorName,
 };
 use bincode::serialize;
 use serde::Serialize;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Debug,
-    mem,
-    net::SocketAddr,
-};
+use std::{collections::BTreeSet, fmt::Debug, net::SocketAddr};
 
 /// Data chain.
 pub struct Chain {
     /// The consensus engine.
     pub consensus_engine: ConsensusEngine,
-    /// Our current Section BLS keys.
-    our_section_bls_keys: SectionKeys,
+    /// The section keys provider
+    pub section_keys_provider: SectionKeysProvider,
     /// The shared state of the section.
     state: SharedState,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
     /// Marker indicating that elders may need to change,
     members_changed: bool,
-    /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
-    /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
-    /// then members are disjoint. We are working around not having access to the prefix for the
-    /// DkgResult but only the list of participants.
-    new_section_bls_keys: BTreeMap<XorName, DkgResult>,
     // The accumulated info during a split pfx change.
     split_cache: Option<SplitCache>,
 }
@@ -61,17 +50,6 @@ impl Chain {
         &self.state
     }
 
-    pub fn our_section_bls_keys(&self) -> &bls::PublicKeySet {
-        &self.our_section_bls_keys.public_key_set
-    }
-
-    pub fn our_section_bls_secret_key_share(&self) -> Result<&SectionKeyShare, RoutingError> {
-        self.our_section_bls_keys
-            .secret_key_share
-            .as_ref()
-            .ok_or(RoutingError::InvalidElderDkgResult)
-    }
-
     /// Create a new chain given genesis information
     pub fn new(
         rng: &mut MainRng,
@@ -81,20 +59,22 @@ impl Chain {
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
         let our_id = *our_full_id.public_id();
+
         let secret_key_share = secret_key_share
             .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.elders_info));
+        let section_keys = SectionKeys {
+            public_key_set: gen_info.public_keys.clone(),
+            secret_key_share,
+        };
+
         let consensus_engine = ConsensusEngine::new(rng, our_full_id, &gen_info);
 
         Self {
-            our_section_bls_keys: SectionKeys {
-                public_key_set: gen_info.public_keys.clone(),
-                secret_key_share,
-            },
+            section_keys_provider: SectionKeysProvider::new(section_keys),
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             consensus_engine,
             churn_in_progress: false,
             members_changed: false,
-            new_section_bls_keys: Default::default(),
             split_cache: None,
         }
     }
@@ -118,25 +98,6 @@ impl Chain {
         // On split membership may need to be checked again.
         self.members_changed = true;
         self.state.update(new_state);
-
-        Ok(())
-    }
-
-    /// Handles a completed parsec DKG Observation.
-    pub fn handle_dkg_result_event(
-        &mut self,
-        participants: &BTreeSet<PublicId>,
-        dkg_result: &DkgResultWrapper,
-    ) -> Result<(), RoutingError> {
-        if let Some(first) = participants.iter().next() {
-            if self
-                .new_section_bls_keys
-                .insert(*first.name(), dkg_result.0.clone())
-                .is_some()
-            {
-                log_or_panic!(log::Level::Error, "Ejected previous DKG result");
-            }
-        }
 
         Ok(())
     }
@@ -233,7 +194,8 @@ impl Chain {
                 ref participants,
                 ref dkg_result,
             } => {
-                self.handle_dkg_result_event(participants, dkg_result)?;
+                self.section_keys_provider
+                    .handle_dkg_result_event(participants, dkg_result)?;
             }
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
@@ -372,7 +334,7 @@ impl Chain {
         Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
                 elders_info: self.state.our_info().clone(),
-                public_keys: self.our_section_bls_keys().clone(),
+                public_keys: self.section_keys_provider.public_key_set().clone(),
                 state_serialized: serialize(&self.state)?,
                 ages: self.state.our_members.get_age_counters(),
                 parsec_version: self.consensus_engine.parsec_version() + 1,
@@ -389,8 +351,8 @@ impl Chain {
         node_knowledge_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
         let proof = self.state.prove(&dst, node_knowledge_override);
-        let pk_set = self.our_section_bls_keys().clone();
-        let secret_key = self.our_section_bls_secret_key_share()?;
+        let pk_set = self.section_keys_provider.public_key_set().clone();
+        let secret_key = self.section_keys_provider.secret_key_share()?;
 
         let content = PlainMessage {
             src: *self.state.our_prefix(),
@@ -464,11 +426,9 @@ impl Chain {
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
         let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
-        let our_new_key =
-            key_matching_first_elder_name(&elders_info, mem::take(&mut self.new_section_bls_keys))?;
-
+        self.section_keys_provider
+            .finalise_dkg(our_id, &elders_info)?;
         self.state.push_our_new_info(elders_info, proof_block);
-        self.our_section_bls_keys = SectionKeys::new(our_new_key, our_id, self.state.our_info());
         self.churn_in_progress = false;
         self.state.sections.prune_neighbours();
         self.state.remove_our_members_not_matching_our_prefix();
@@ -506,7 +466,7 @@ impl Chain {
         proofs
             .check_and_combine_signatures(
                 self.state.our_info(),
-                self.our_section_bls_keys(),
+                self.section_keys_provider.public_key_set(),
                 &signed_bytes,
             )
             .or_else(|| {
@@ -518,19 +478,6 @@ impl Chain {
                 None
             })
     }
-}
-
-fn key_matching_first_elder_name(
-    elders_info: &EldersInfo,
-    mut name_to_key: BTreeMap<XorName, DkgResult>,
-) -> Result<DkgResult, RoutingError> {
-    let first_name = elders_info
-        .member_names()
-        .next()
-        .ok_or(RoutingError::InvalidElderDkgResult)?;
-    name_to_key
-        .remove(first_name)
-        .ok_or(RoutingError::InvalidElderDkgResult)
 }
 
 /// The outcome of successful accumulated poll

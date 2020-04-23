@@ -7,7 +7,13 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::elders_info::EldersInfo;
-use crate::{consensus::DkgResult, id::PublicId};
+use crate::{
+    consensus::{DkgResult, DkgResultWrapper},
+    error::{Result, RoutingError},
+    id::PublicId,
+    xor_space::XorName,
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The secret share of the section key.
 #[derive(Clone)]
@@ -55,5 +61,71 @@ impl SectionKeys {
                 .secret_key_share
                 .and_then(|key| SectionKeyShare::new(key, our_id, new_elders_info)),
         }
+    }
+}
+
+/// Struct that holds the current section keys and helps with new key generation.
+pub struct SectionKeysProvider {
+    /// Our current section BLS keys.
+    keys: SectionKeys,
+    /// The new dkg key to use when SectionInfo completes. For lookup, use the XorName of the
+    /// first member in DKG participants and new ElderInfo. We only store 2 items during split, and
+    /// then members are disjoint. We are working around not having access to the prefix for the
+    /// DkgResult but only the list of participants.
+    new_keys: BTreeMap<XorName, DkgResult>,
+}
+
+impl SectionKeysProvider {
+    pub fn new(keys: SectionKeys) -> Self {
+        Self {
+            keys,
+            new_keys: Default::default(),
+        }
+    }
+
+    pub fn public_key_set(&self) -> &bls::PublicKeySet {
+        &self.keys.public_key_set
+    }
+
+    pub fn secret_key_share(&self) -> Result<&SectionKeyShare> {
+        self.keys
+            .secret_key_share
+            .as_ref()
+            .ok_or(RoutingError::InvalidElderDkgResult)
+    }
+
+    /// Handles a completed parsec DKG Observation.
+    pub fn handle_dkg_result_event(
+        &mut self,
+        participants: &BTreeSet<PublicId>,
+        dkg_result: &DkgResultWrapper,
+    ) -> Result<()> {
+        if let Some(first) = participants.iter().next() {
+            if self
+                .new_keys
+                .insert(*first.name(), dkg_result.0.clone())
+                .is_some()
+            {
+                log_or_panic!(log::Level::Error, "Ejected previous DKG result");
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn finalise_dkg(&mut self, our_id: &PublicId, elders_info: &EldersInfo) -> Result<()> {
+        let first_name = elders_info
+            .member_names()
+            .next()
+            .ok_or(RoutingError::InvalidElderDkgResult)?;
+        let dkg_result = self
+            .new_keys
+            .remove(first_name)
+            .ok_or(RoutingError::InvalidElderDkgResult)?;
+
+        self.keys = SectionKeys::new(dkg_result, our_id, elders_info);
+        self.new_keys.clear();
+
+        Ok(())
     }
 }
