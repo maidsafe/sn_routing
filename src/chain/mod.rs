@@ -11,4 +11,4 @@
 #[allow(clippy::module_inception)]
 mod chain;
 
-pub use self::chain::{Chain, ParsecResetData, PollAccumulated};
+pub use self::chain::{Chain, ParsecResetData};

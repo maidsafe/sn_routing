@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{Chain, ParsecResetData, PollAccumulated},
+    chain::{Chain, ParsecResetData},
     consensus::{
         self, AccumulatedEvent, AccumulatingEvent, AckMessagePayload, DkgResultWrapper,
         EldersChange, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
@@ -22,7 +22,6 @@ use crate::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
         MessageHash, MessageWithBytes, SrcAuthority, Variant, VerifyStatus,
     },
-    network_params::NetworkParams,
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
@@ -226,7 +225,7 @@ impl Approved {
     pub fn finish_handle_input(&mut self, core: &mut Core) {
         if self.chain.state().our_info().len() == 1 {
             // If we're the only node then invoke chain_poll directly
-            if let Err(error) = self.poll(core) {
+            if let Err(error) = self.poll_all(core) {
                 error!("poll failed: {:?}", error);
             }
         }
@@ -594,7 +593,7 @@ impl Approved {
         }
 
         if msg_version == self.chain.consensus_engine.parsec_version() {
-            self.poll(core)
+            self.poll_all(core)
         } else {
             Ok(())
         }
@@ -614,7 +613,7 @@ impl Approved {
             .handle_parsec_response(msg_version, par_response, pub_id);
 
         if msg_version == self.chain.consensus_engine.parsec_version() {
-            self.poll(core)
+            self.poll_all(core)
         } else {
             Ok(())
         }
@@ -714,73 +713,58 @@ impl Approved {
     // Accumulated events handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn poll(&mut self, core: &mut Core) -> Result<()> {
-        let mut old_pfx = *self.chain.state().our_prefix();
-        let mut was_elder = self.is_our_elder(core.id());
-
-        while let Some(event) = self.poll_accumulated(&core.network_params, core.id())? {
-            match event {
-                PollAccumulated::AccumulatedEvent(event) => {
-                    self.handle_accumulated_event(core, event, old_pfx, was_elder)?
-                }
-                PollAccumulated::RelocateDetails(details) => {
-                    self.handle_relocate_polled(core, details)?;
-                }
-                PollAccumulated::PromoteDemoteElders(new_infos) => {
-                    self.handle_promote_and_demote_elders(core, new_infos)?;
-                }
-            }
-
-            old_pfx = *self.chain.state().our_prefix();
-            was_elder = self.is_our_elder(core.id());
-        }
-
+    // Polls and processes all accumulated events.
+    fn poll_all(&mut self, core: &mut Core) -> Result<()> {
+        while self.poll_one(core)? {}
         self.check_voting_status();
 
         Ok(())
     }
 
-    // Returns the next accumulated event.
+    // Polls and processes the next accumulated event. Returns whether any event was processed.
     //
     // If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     // containers.
-    fn poll_accumulated(
-        &mut self,
-        network_params: &NetworkParams,
-        our_id: &PublicId,
-    ) -> Result<Option<PollAccumulated>> {
+    fn poll_one(&mut self, core: &mut Core) -> Result<bool> {
+        let old_prefix = *self.chain.state().our_prefix();
+        let was_elder = self.is_our_elder(core.id());
+
         if let Some(event) = self.chain.poll_churn_event_backlog() {
-            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
+            self.handle_accumulated_event(core, event, old_prefix, was_elder)?;
+            return Ok(true);
         }
 
         // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
         // otherwise we might relocate a node that we still need.
         if let Some(new_infos) = self
             .chain
-            .promote_and_demote_elders(network_params, our_id)?
+            .promote_and_demote_elders(&core.network_params, core.id())?
         {
-            return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
+            self.handle_promote_and_demote_elders(core, new_infos)?;
+            return Ok(true);
         }
 
         if let Some(details) = self.chain.poll_relocation() {
-            return Ok(Some(PollAccumulated::RelocateDetails(details)));
+            self.handle_relocate_polled(core, details)?;
+            return Ok(true);
         }
 
         let (event, proofs) = match self.chain.poll_consensus() {
-            None => return Ok(None),
+            None => return Ok(false),
             Some((event, proofs)) => (event, proofs),
         };
 
-        let event = match self.chain.process_accumulating(our_id, event, proofs)? {
-            None => return Ok(None),
+        let event = match self.chain.process_accumulating(core.id(), event, proofs)? {
+            None => return Ok(false),
             Some(event) => event,
         };
 
         if let Some(event) = self.chain.check_ready_or_backlog_churn_event(event)? {
-            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
+            self.handle_accumulated_event(core, event, old_prefix, was_elder)?;
+            return Ok(true);
         }
 
-        Ok(None)
+        Ok(false)
     }
 
     fn handle_accumulated_event(
