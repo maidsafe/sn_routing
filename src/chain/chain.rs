@@ -101,51 +101,11 @@ impl Chain {
         Ok(())
     }
 
-    /// Returns the next accumulated event.
-    ///
-    /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
-    /// containers.
-    pub fn poll_accumulated(
-        &mut self,
-        network_params: &NetworkParams,
-        our_id: &PublicId,
-    ) -> Result<Option<PollAccumulated>, RoutingError> {
-        if let Some(event) = self.poll_churn_event_backlog() {
-            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
-        }
-
-        // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
-        // otherwise we might relocate a node that we still need.
-        if let Some(new_infos) = self.promote_and_demote_elders(network_params, our_id)? {
-            return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
-        }
-
-        if let Some(details) = self.poll_relocation() {
-            return Ok(Some(PollAccumulated::RelocateDetails(details)));
-        }
-
-        let (event, proofs) = match self.poll_consensus() {
-            None => return Ok(None),
-            Some((event, proofs)) => (event, proofs),
-        };
-
-        let event = match self.process_accumulating(our_id, event, proofs)? {
-            None => return Ok(None),
-            Some(event) => event,
-        };
-
-        if let Some(event) = self.check_ready_or_backlog_churn_event(event)? {
-            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
-        }
-
-        Ok(None)
-    }
-
-    fn poll_consensus(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
+    pub fn poll_consensus(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
         self.consensus_engine.poll(self.state.sections.our())
     }
 
-    fn process_accumulating(
+    pub fn process_accumulating(
         &mut self,
         our_id: &PublicId,
         event: AccumulatingEvent,
@@ -248,7 +208,7 @@ impl Chain {
     }
 
     /// Returns the details of the next scheduled relocation to be voted for, if any.
-    fn poll_relocation(&mut self) -> Option<RelocateDetails> {
+    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until no additional churn is in progress.
         if !self.can_poll_churn() {
             return None;
@@ -302,7 +262,7 @@ impl Chain {
 
     /// Generate a new section info based on the current set of members.
     /// Returns a set of EldersInfos to vote for.
-    fn promote_and_demote_elders(
+    pub fn promote_and_demote_elders(
         &mut self,
         network_params: &NetworkParams,
         our_id: &PublicId,

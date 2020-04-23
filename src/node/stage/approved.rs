@@ -22,6 +22,7 @@ use crate::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
         MessageHash, MessageWithBytes, SrcAuthority, Variant, VerifyStatus,
     },
+    network_params::NetworkParams,
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
@@ -225,7 +226,7 @@ impl Approved {
     pub fn finish_handle_input(&mut self, core: &mut Core) {
         if self.chain.state().our_info().len() == 1 {
             // If we're the only node then invoke chain_poll directly
-            if let Err(error) = self.chain_poll(core) {
+            if let Err(error) = self.poll(core) {
                 error!("poll failed: {:?}", error);
             }
         }
@@ -593,7 +594,7 @@ impl Approved {
         }
 
         if msg_version == self.chain.consensus_engine.parsec_version() {
-            self.chain_poll(core)
+            self.poll(core)
         } else {
             Ok(())
         }
@@ -613,7 +614,7 @@ impl Approved {
             .handle_parsec_response(msg_version, par_response, pub_id);
 
         if msg_version == self.chain.consensus_engine.parsec_version() {
-            self.chain_poll(core)
+            self.poll(core)
         } else {
             Ok(())
         }
@@ -713,14 +714,11 @@ impl Approved {
     // Accumulated events handling
     ////////////////////////////////////////////////////////////////////////////
 
-    fn chain_poll(&mut self, core: &mut Core) -> Result<()> {
+    fn poll(&mut self, core: &mut Core) -> Result<()> {
         let mut old_pfx = *self.chain.state().our_prefix();
         let mut was_elder = self.is_our_elder(core.id());
 
-        while let Some(event) = self
-            .chain
-            .poll_accumulated(&core.network_params, core.id())?
-        {
+        while let Some(event) = self.poll_accumulated(&core.network_params, core.id())? {
             match event {
                 PollAccumulated::AccumulatedEvent(event) => {
                     self.handle_accumulated_event(core, event, old_pfx, was_elder)?
@@ -740,6 +738,49 @@ impl Approved {
         self.check_voting_status();
 
         Ok(())
+    }
+
+    // Returns the next accumulated event.
+    //
+    // If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
+    // containers.
+    fn poll_accumulated(
+        &mut self,
+        network_params: &NetworkParams,
+        our_id: &PublicId,
+    ) -> Result<Option<PollAccumulated>> {
+        if let Some(event) = self.chain.poll_churn_event_backlog() {
+            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
+        }
+
+        // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
+        // otherwise we might relocate a node that we still need.
+        if let Some(new_infos) = self
+            .chain
+            .promote_and_demote_elders(network_params, our_id)?
+        {
+            return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
+        }
+
+        if let Some(details) = self.chain.poll_relocation() {
+            return Ok(Some(PollAccumulated::RelocateDetails(details)));
+        }
+
+        let (event, proofs) = match self.chain.poll_consensus() {
+            None => return Ok(None),
+            Some((event, proofs)) => (event, proofs),
+        };
+
+        let event = match self.chain.process_accumulating(our_id, event, proofs)? {
+            None => return Ok(None),
+            Some(event) => event,
+        };
+
+        if let Some(event) = self.chain.check_ready_or_backlog_churn_event(event)? {
+            return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
+        }
+
+        Ok(None)
     }
 
     fn handle_accumulated_event(
