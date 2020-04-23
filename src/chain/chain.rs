@@ -33,7 +33,7 @@ pub struct Chain {
     /// The section keys provider
     pub section_keys_provider: SectionKeysProvider,
     /// The shared state of the section.
-    state: SharedState,
+    pub state: SharedState,
     /// Marker indicating we are processing churn event
     churn_in_progress: bool,
     /// Marker indicating that elders may need to change,
@@ -168,45 +168,6 @@ impl Chain {
         Ok(Some(AccumulatedEvent::new(event)))
     }
 
-    pub fn poll_churn_event_backlog(&mut self) -> Option<AccumulatedEvent> {
-        if self.can_poll_churn() {
-            if let Some(event) = self.state.churn_event_backlog.pop_back() {
-                trace!(
-                    "churn backlog poll {:?}, Others: {:?}",
-                    event,
-                    self.state.churn_event_backlog
-                );
-                return Some(event);
-            }
-        }
-
-        None
-    }
-
-    pub fn check_ready_or_backlog_churn_event(
-        &mut self,
-        event: AccumulatedEvent,
-    ) -> Result<Option<AccumulatedEvent>, RoutingError> {
-        let start_churn_event = match &event.content {
-            AccumulatingEvent::Online(_)
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::Relocate(_) => true,
-            _ => false,
-        };
-
-        if start_churn_event && !self.can_poll_churn() {
-            trace!(
-                "churn backlog {:?}, Other: {:?}",
-                event,
-                self.state.churn_event_backlog
-            );
-            self.state.churn_event_backlog.push_front(event);
-            return Ok(None);
-        }
-
-        Ok(Some(event))
-    }
-
     /// Returns the details of the next scheduled relocation to be voted for, if any.
     pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
         // Delay relocation until no additional churn is in progress.
@@ -217,7 +178,7 @@ impl Chain {
         self.state.poll_relocation()
     }
 
-    fn can_poll_churn(&self) -> bool {
+    pub fn can_poll_churn(&self) -> bool {
         self.state.handled_genesis_event && !self.churn_in_progress
     }
 
