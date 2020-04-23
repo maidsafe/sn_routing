@@ -6,11 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{shared_state::SharedState, GenesisPfxInfo, NetworkParams};
+use super::{shared_state::SharedState, NetworkParams};
 use crate::{
     consensus::{
         AccumulatedEvent, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResult,
-        DkgResultWrapper, EldersChange, NetworkEvent,
+        DkgResultWrapper, EldersChange, GenesisPfxInfo, NetworkEvent,
     },
     error::{Result, RoutingError},
     id::{FullId, P2pNode, PublicId},
@@ -909,9 +909,9 @@ struct SplitCache {
 
 #[cfg(test)]
 mod tests {
-    use super::{super::GenesisPfxInfo, *};
+    use super::*;
     use crate::{
-        consensus::generate_bls_threshold_secret_key,
+        consensus::{generate_bls_threshold_secret_key, GenesisPfxInfo},
         id::{FullId, P2pNode, PublicId},
         rng::{self, MainRng},
         section::{EldersInfo, MIN_AGE_COUNTER},

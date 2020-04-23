@@ -7,12 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod event_accumulator;
+mod genesis_pfx_info;
 mod network_event;
 mod parsec;
 mod proof;
 
 pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
+    genesis_pfx_info::GenesisPfxInfo,
     network_event::{
         AccumulatedEvent, AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload,
         IntoAccumulatingEvent, NetworkEvent, OnlinePayload, SendAckMessagePayload,
@@ -33,7 +35,6 @@ use self::{
     parsec::ParsecMap,
 };
 use crate::{
-    chain::GenesisPfxInfo,
     id::{FullId, PublicId},
     messages::Variant,
     rng::MainRng,

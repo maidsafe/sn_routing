@@ -7,12 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{Chain, GenesisPfxInfo},
-    id::FullId,
-    message_filter::MessageFilter,
-    messages::QueuedMessage,
-    signature_accumulator::SignatureAccumulator,
-    transport::Transport,
+    chain::Chain, consensus::GenesisPfxInfo, id::FullId, message_filter::MessageFilter,
+    messages::QueuedMessage, signature_accumulator::SignatureAccumulator, transport::Transport,
     TransportEvent,
 };
 use crossbeam_channel as mpmc;

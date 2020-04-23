@@ -8,8 +8,7 @@
 
 use super::{AccumulatingMessage, MessageHash};
 use crate::{
-    chain::GenesisPfxInfo,
-    consensus::{ParsecRequest, ParsecResponse},
+    consensus::{GenesisPfxInfo, ParsecRequest, ParsecResponse},
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
     xor_space::{Prefix, XorName},

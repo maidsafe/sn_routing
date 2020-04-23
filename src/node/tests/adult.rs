@@ -8,8 +8,8 @@
 
 use super::utils as test_utils;
 use crate::{
-    chain::{Chain, GenesisPfxInfo, NetworkParams},
-    consensus::generate_bls_threshold_secret_key,
+    chain::{Chain, NetworkParams},
+    consensus::{generate_bls_threshold_secret_key, GenesisPfxInfo},
     error::Result,
     id::FullId,
     location::DstLocation,
