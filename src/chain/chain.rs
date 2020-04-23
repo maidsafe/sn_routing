@@ -36,8 +36,6 @@ pub struct Chain {
     pub consensus_engine: ConsensusEngine,
     /// Network parameters
     network_params: NetworkParams,
-    /// This node's public ID.
-    our_id: PublicId,
     /// Our current Section BLS keys.
     our_section_bls_keys: SectionKeys,
     /// The shared state of the section.
@@ -99,7 +97,6 @@ impl Chain {
 
         Self {
             network_params,
-            our_id,
             our_section_bls_keys: SectionKeys {
                 public_key_set: gen_info.public_keys.clone(),
                 secret_key_share,
@@ -159,14 +156,17 @@ impl Chain {
     ///
     /// If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     /// containers.
-    pub fn poll_accumulated(&mut self) -> Result<Option<PollAccumulated>, RoutingError> {
+    pub fn poll_accumulated(
+        &mut self,
+        our_id: &PublicId,
+    ) -> Result<Option<PollAccumulated>, RoutingError> {
         if let Some(event) = self.poll_churn_event_backlog() {
             return Ok(Some(PollAccumulated::AccumulatedEvent(event)));
         }
 
         // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
         // otherwise we might relocate a node that we still need.
-        if let Some(new_infos) = self.promote_and_demote_elders()? {
+        if let Some(new_infos) = self.promote_and_demote_elders(our_id)? {
             return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
         }
 
@@ -179,7 +179,7 @@ impl Chain {
             Some((event, proofs)) => (event, proofs),
         };
 
-        let event = match self.process_accumulating(event, proofs)? {
+        let event = match self.process_accumulating(our_id, event, proofs)? {
             None => return Ok(None),
             Some(event) => event,
         };
@@ -197,6 +197,7 @@ impl Chain {
 
     fn process_accumulating(
         &mut self,
+        our_id: &PublicId,
         event: AccumulatingEvent,
         proofs: AccumulatingProof,
     ) -> Result<Option<AccumulatedEvent>, RoutingError> {
@@ -207,7 +208,7 @@ impl Chain {
             } => self.handle_genesis_event(group, related_info)?,
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = EldersChangeBuilder::new(self);
-                if self.add_elders_info(info.clone(), key_info.clone(), proofs)? {
+                if self.add_elders_info(our_id, info.clone(), key_info.clone(), proofs)? {
                     let change = change.build(self);
                     return Ok(Some(
                         AccumulatedEvent::new(event).with_elders_change(change),
@@ -348,7 +349,10 @@ impl Chain {
 
     /// Generate a new section info based on the current set of members.
     /// Returns a set of EldersInfos to vote for.
-    fn promote_and_demote_elders(&mut self) -> Result<Option<Vec<EldersInfo>>, RoutingError> {
+    fn promote_and_demote_elders(
+        &mut self,
+        our_id: &PublicId,
+    ) -> Result<Option<Vec<EldersInfo>>, RoutingError> {
         if !self.members_changed || !self.can_poll_churn() {
             // Nothing changed that could impact elder set, or we cannot process it yet.
             return Ok(None);
@@ -356,7 +360,7 @@ impl Chain {
 
         let new_infos = self
             .state
-            .promote_and_demote_elders(self.our_id.name(), &self.network_params)?;
+            .promote_and_demote_elders(our_id.name(), &self.network_params)?;
         self.churn_in_progress = new_infos.is_some();
         self.members_changed = false;
 
@@ -364,10 +368,13 @@ impl Chain {
     }
 
     /// Gets the data needed to initialise a new Parsec instance
-    pub fn prepare_parsec_reset(&mut self) -> Result<ParsecResetData, RoutingError> {
+    pub fn prepare_parsec_reset(
+        &mut self,
+        our_id: &PublicId,
+    ) -> Result<ParsecResetData, RoutingError> {
         self.state.handled_genesis_event = false;
         self.state.sections.prune_neighbours();
-        let cached_events = self.consensus_engine.prepare_reset(&self.our_id);
+        let cached_events = self.consensus_engine.prepare_reset(our_id);
 
         Ok(ParsecResetData {
             gen_pfx_info: GenesisPfxInfo {
@@ -411,6 +418,7 @@ impl Chain {
     /// Returns whether the event should be handled by the caller.
     pub fn add_elders_info(
         &mut self,
+        our_id: &PublicId,
         elders_info: EldersInfo,
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
@@ -434,24 +442,30 @@ impl Chain {
 
                     // Add our_info first so when we add sibling info, its a valid neighbour prefix
                     // which does not get immediately purged.
-                    if cache_pfx.matches(self.our_id.name()) {
-                        self.do_add_elders_info(cache.elders_info, cache.key_info, cache.proofs)?;
+                    if cache_pfx.matches(our_id.name()) {
+                        self.do_add_elders_info(
+                            our_id,
+                            cache.elders_info,
+                            cache.key_info,
+                            cache.proofs,
+                        )?;
                         self.state.sections.add_neighbour(elders_info);
                     } else {
-                        self.do_add_elders_info(elders_info, key_info, proofs)?;
+                        self.do_add_elders_info(our_id, elders_info, key_info, proofs)?;
                         self.state.sections.add_neighbour(cache.elders_info);
                     }
                     Ok(true)
                 }
             }
         } else {
-            self.do_add_elders_info(elders_info, key_info, proofs)?;
+            self.do_add_elders_info(our_id, elders_info, key_info, proofs)?;
             Ok(true)
         }
     }
 
     fn do_add_elders_info(
         &mut self,
+        our_id: &PublicId,
         elders_info: EldersInfo,
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
@@ -461,8 +475,7 @@ impl Chain {
             key_matching_first_elder_name(&elders_info, mem::take(&mut self.new_section_bls_keys))?;
 
         self.state.push_our_new_info(elders_info, proof_block);
-        self.our_section_bls_keys =
-            SectionKeys::new(our_new_key, &self.our_id, self.state.our_info());
+        self.our_section_bls_keys = SectionKeys::new(our_new_key, our_id, self.state.our_info());
         self.churn_in_progress = false;
         self.state.sections.prune_neighbours();
         self.state.remove_our_members_not_matching_our_prefix();
@@ -636,7 +649,6 @@ mod tests {
         id::{FullId, P2pNode, PublicId},
         rng::{self, MainRng},
         section::{EldersInfo, MIN_AGE_COUNTER},
-        unwrap,
         xor_space::{Prefix, XorName},
     };
     use rand::{seq::SliceRandom, Rng};
@@ -691,9 +703,9 @@ mod tests {
         }
     }
 
-    fn add_neighbour_elders_info(chain: &mut Chain, neighbour_info: EldersInfo) {
+    fn add_neighbour_elders_info(chain: &mut Chain, our_id: &PublicId, neighbour_info: EldersInfo) {
         assert!(
-            !neighbour_info.prefix().matches(chain.our_id.name()),
+            !neighbour_info.prefix().matches(our_id.name()),
             "Only add neighbours."
         );
         chain.state.sections.add_neighbour(neighbour_info)
@@ -702,7 +714,12 @@ mod tests {
     fn gen_chain<T>(
         rng: &mut MainRng,
         sections: T,
-    ) -> (Chain, HashMap<PublicId, FullId>, bls::SecretKeySet)
+    ) -> (
+        Chain,
+        PublicId,
+        HashMap<PublicId, FullId>,
+        bls::SecretKeySet,
+    )
     where
         T: IntoIterator<Item = (Prefix<XorName>, usize)>,
     {
@@ -712,13 +729,14 @@ mod tests {
         for (pfx, size) in sections {
             let (info, ids) = gen_section_info(rng, SecInfoGen::New(pfx, size));
             if our_id.is_none() {
-                our_id = Some(unwrap!(ids.values().next()).clone());
+                our_id = ids.values().next().cloned();
             }
             full_ids.extend(ids);
             section_members.push(info);
         }
 
-        let our_id = unwrap!(our_id);
+        let our_id = our_id.expect("our id");
+        let our_pub_id = *our_id.public_id();
         let mut sections_iter = section_members.into_iter();
 
         let elders_info = sections_iter.next().expect("section members");
@@ -750,13 +768,20 @@ mod tests {
         );
 
         for neighbour_info in sections_iter {
-            add_neighbour_elders_info(&mut chain, neighbour_info);
+            add_neighbour_elders_info(&mut chain, &our_pub_id, neighbour_info);
         }
 
-        (chain, full_ids, secret_key_set)
+        (chain, our_pub_id, full_ids, secret_key_set)
     }
 
-    fn gen_00_chain(rng: &mut MainRng) -> (Chain, HashMap<PublicId, FullId>, bls::SecretKeySet) {
+    fn gen_00_chain(
+        rng: &mut MainRng,
+    ) -> (
+        Chain,
+        PublicId,
+        HashMap<PublicId, FullId>,
+        bls::SecretKeySet,
+    ) {
         let elder_size: usize = 7;
         gen_chain(
             rng,
@@ -786,15 +811,14 @@ mod tests {
     fn generate_chain() {
         let mut rng = rng::new();
 
-        let (chain, _, _) = gen_00_chain(&mut rng);
-        let chain_id = chain.our_id;
+        let (chain, our_id, _, _) = gen_00_chain(&mut rng);
 
         assert_eq!(
             chain
                 .state
                 .sections
                 .get(&Prefix::from_str("00").unwrap())
-                .map(|info| info.is_member(&chain_id)),
+                .map(|info| info.is_member(&our_id)),
             Some(true)
         );
         assert_eq!(
@@ -808,7 +832,7 @@ mod tests {
     #[test]
     fn neighbour_info_cleaning() {
         let mut rng = rng::new();
-        let (mut chain, _, _) = gen_00_chain(&mut rng);
+        let (mut chain, our_id, _, _) = gen_00_chain(&mut rng);
         for _ in 0..100 {
             let (new_info, _new_ids) = {
                 let old_info: Vec<_> = chain.state.sections.other().map(|(_, info)| info).collect();
@@ -820,7 +844,7 @@ mod tests {
                 }
             };
 
-            add_neighbour_elders_info(&mut chain, new_info);
+            add_neighbour_elders_info(&mut chain, &our_id, new_info);
             assert!(chain.state.our_history.validate());
             check_infos_for_duplication(&chain);
         }
