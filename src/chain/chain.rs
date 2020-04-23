@@ -74,29 +74,6 @@ impl Chain {
         }
     }
 
-    /// Handles an accumulated parsec Observation for genesis.
-    ///
-    /// The related_info is the serialized shared state that will be the starting
-    /// point when processing parsec data.
-    pub fn handle_genesis_event(
-        &mut self,
-        _group: &BTreeSet<PublicId>,
-        related_info: &[u8],
-    ) -> Result<(), RoutingError> {
-        // `related_info` is empty only if this is the `first` node.
-        let new_state = if !related_info.is_empty() {
-            Some(bincode::deserialize(related_info)?)
-        } else {
-            None
-        };
-
-        // On split membership may need to be checked again.
-        self.members_changed = true;
-        self.state.update(new_state);
-
-        Ok(())
-    }
-
     pub fn process_accumulating(
         &mut self,
         our_id: &PublicId,
@@ -104,10 +81,6 @@ impl Chain {
         proofs: AccumulatingProof,
     ) -> Result<Option<AccumulatedEvent>, RoutingError> {
         match event {
-            AccumulatingEvent::Genesis {
-                ref group,
-                ref related_info,
-            } => self.handle_genesis_event(group, related_info)?,
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
                 let change = EldersChangeBuilder::new(self);
                 if self.add_elders_info(our_id, info.clone(), key_info.clone(), proofs)? {
@@ -148,7 +121,9 @@ impl Chain {
                 self.section_keys_provider
                     .handle_dkg_result_event(participants, dkg_result)?;
             }
-            AccumulatingEvent::Online(_)
+
+            AccumulatingEvent::Genesis { .. }
+            | AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::StartDkg(_)
             | AccumulatingEvent::User(_)
