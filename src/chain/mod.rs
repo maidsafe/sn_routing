@@ -29,14 +29,6 @@ use std::{
     fmt::{self, Debug, Formatter},
 };
 
-#[cfg(feature = "mock_base")]
-use crate::{
-    error::RoutingError,
-    id::P2pNode,
-    section::{SectionKeyInfo, SectionProofSlice},
-    Prefix, XorName,
-};
-
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct GenesisPfxInfo {
     pub elders_info: EldersInfo,
@@ -68,24 +60,4 @@ impl Debug for GenesisPfxInfo {
             self.parsec_version,
         )
     }
-}
-
-#[cfg(feature = "mock_base")]
-/// Test helper to create arbitrary proof.
-pub fn section_proof_slice_for_test(
-    version: u64,
-    prefix: Prefix<XorName>,
-    key: bls::PublicKey,
-) -> SectionProofSlice {
-    SectionProofSlice::from_genesis(SectionKeyInfo::new(version, prefix, key))
-}
-
-#[cfg(feature = "mock_base")]
-/// Test helper to create arbitrary elders nfo.
-pub fn elders_info_for_test(
-    members: BTreeMap<PublicId, P2pNode>,
-    prefix: Prefix<XorName>,
-    version: u64,
-) -> Result<EldersInfo, RoutingError> {
-    EldersInfo::new_for_test(members, prefix, version)
 }
