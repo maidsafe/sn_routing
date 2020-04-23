@@ -18,7 +18,10 @@ use crate::{
     network_params::NetworkParams,
     relocation::RelocateDetails,
     rng::MainRng,
-    section::{EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SharedState},
+    section::{
+        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionProofBlock,
+        SharedState,
+    },
     XorName,
 };
 use bincode::serialize;
@@ -545,55 +548,6 @@ pub struct ParsecResetData {
     pub gen_pfx_info: GenesisPfxInfo,
     /// The cached events that should be revoted.
     pub cached_events: Vec<NetworkEvent>,
-}
-
-/// The secret share of the section key.
-#[derive(Clone)]
-pub struct SectionKeyShare {
-    /// Index used to combine signature share and get PublicKeyShare from PublicKeySet.
-    pub index: usize,
-    /// Secret Key share
-    pub key: bls::SecretKeyShare,
-}
-
-impl SectionKeyShare {
-    /// Create a new share with associated share index.
-    #[cfg(any(test, feature = "mock_base"))]
-    pub const fn new_with_position(index: usize, key: bls::SecretKeyShare) -> Self {
-        Self { index, key }
-    }
-
-    /// create a new share finding the position wihtin the elders.
-    pub fn new(
-        key: bls::SecretKeyShare,
-        our_id: &PublicId,
-        new_elders_info: &EldersInfo,
-    ) -> Option<Self> {
-        Some(Self {
-            index: new_elders_info.member_ids().position(|id| id == our_id)?,
-            key,
-        })
-    }
-}
-
-/// All the key material needed to sign or combine signature for our section key.
-#[derive(Clone)]
-pub struct SectionKeys {
-    /// Public key set to verify threshold signatures and combine shares.
-    pub public_key_set: bls::PublicKeySet,
-    /// Secret Key share and index. None if the node was not participating in the DKG.
-    pub secret_key_share: Option<SectionKeyShare>,
-}
-
-impl SectionKeys {
-    pub fn new(dkg_result: DkgResult, our_id: &PublicId, new_elders_info: &EldersInfo) -> Self {
-        Self {
-            public_key_set: dkg_result.public_key_set,
-            secret_key_share: dkg_result
-                .secret_key_share
-                .and_then(|key| SectionKeyShare::new(key, our_id, new_elders_info)),
-        }
-    }
 }
 
 struct EldersChangeBuilder {

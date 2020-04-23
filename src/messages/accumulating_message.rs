@@ -8,9 +8,8 @@
 
 use super::{DstLocation, Message, MessageHash, SrcAuthority, Variant};
 use crate::{
-    chain::SectionKeyShare,
     error::Result,
-    section::SectionProofSlice,
+    section::{SectionKeyShare, SectionProofSlice},
     xor_space::{Prefix, XorName},
 };
 use bincode::serialize;
