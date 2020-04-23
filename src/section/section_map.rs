@@ -152,7 +152,12 @@ impl SectionMap {
             .flat_map(EldersInfo::member_nodes)
     }
 
-    /// Returns all elders only from other sections.
+    /// Returns all elders from our section.
+    pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
+        self.our().member_nodes()
+    }
+
+    /// Returns all elders from other sections.
     pub fn other_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.other.values().flat_map(EldersInfo::member_nodes)
     }

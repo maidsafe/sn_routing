@@ -280,7 +280,7 @@ impl Node {
         self.stage
             .approved()
             .into_iter()
-            .flat_map(|stage| stage.chain.state().our_elders())
+            .flat_map(|stage| stage.chain.state().sections.our_elders())
     }
 
     /// Find out the closest Elders to a given XorName that we know of.
