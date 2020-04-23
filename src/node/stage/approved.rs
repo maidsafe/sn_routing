@@ -660,7 +660,11 @@ impl Approved {
     }
 
     fn try_relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
-        if !self.chain.in_dst_location(msg.message_dst()) || msg.message_dst().is_multiple() {
+        if !msg
+            .message_dst()
+            .contains(core.name(), self.chain.state().our_prefix())
+            || msg.message_dst().is_multiple()
+        {
             // Relay closer to the destination or broadcast to the rest of our section.
             self.send_signed_message(core, msg)
         } else {
@@ -677,7 +681,10 @@ impl Approved {
         // to avoid the duplication.
         self.try_relay_message(core, &msg_with_bytes)?;
 
-        if !self.chain.in_dst_location(msg_with_bytes.message_dst()) {
+        if !msg_with_bytes
+            .message_dst()
+            .contains(core.name(), self.chain.state().our_prefix())
+        {
             return Ok(());
         }
 
@@ -1534,7 +1541,7 @@ impl Approved {
         variant: Variant,
         node_knowledge_override: Option<u64>,
     ) -> Result<()> {
-        if !self.chain.in_src_location(&src) {
+        if !src.contains(core.name()) {
             log_or_panic!(
                 log::Level::Error,
                 "Not part of the source location. Not sending message {:?} -> {:?}: {:?}.",

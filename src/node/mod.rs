@@ -313,7 +313,9 @@ impl Node {
                 DstLocation::Section(_) | DstLocation::Prefix(_) => false,
                 DstLocation::Direct => true,
             },
-            Stage::Approved(stage) => stage.chain.in_dst_location(dst),
+            Stage::Approved(stage) => {
+                dst.contains(self.core.name(), stage.chain.state().our_prefix())
+            }
             Stage::Terminated => false,
         }
     }
@@ -933,10 +935,7 @@ impl Node {
 
     /// Checks whether the given location represents self.
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        self.stage
-            .approved()
-            .map(|stage| stage.chain.in_src_location(src))
-            .unwrap_or(false)
+        src.contains(self.core.name())
     }
 
     /// Returns the prefixes of all our neighbours

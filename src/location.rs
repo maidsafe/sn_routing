@@ -34,6 +34,14 @@ impl SrcLocation {
     pub fn is_multiple(&self) -> bool {
         !self.is_single()
     }
+
+    /// Returns whether the given name is part of this location
+    pub fn contains(&self, name: &XorName) -> bool {
+        match self {
+            SrcLocation::Node(self_name) => name == self_name,
+            SrcLocation::Section(self_prefix) => self_prefix.matches(name),
+        }
+    }
 }
 
 /// Message destination location.
@@ -93,6 +101,22 @@ impl DstLocation {
         match self {
             Self::Prefix(prefix) => Ok(prefix),
             Self::Node(_) | Self::Section(_) | Self::Direct => Err(RoutingError::BadLocation),
+        }
+    }
+
+    /// Returns whether the given name of the given prefix is part of this location.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `prefix` does not match `name`.
+    pub fn contains(&self, name: &XorName, prefix: &Prefix<XorName>) -> bool {
+        assert!(prefix.matches(name));
+
+        match self {
+            DstLocation::Node(self_name) => name == self_name,
+            DstLocation::Section(self_name) => prefix.matches(self_name),
+            DstLocation::Prefix(self_prefix) => prefix.is_compatible(self_prefix),
+            DstLocation::Direct => true,
         }
     }
 }
