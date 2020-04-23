@@ -25,11 +25,6 @@ pub struct Chain {
 
 #[allow(clippy::len_without_is_empty)]
 impl Chain {
-    /// Returns the shared section state.
-    pub fn state(&self) -> &SharedState {
-        &self.state
-    }
-
     /// Create a new chain given genesis information
     pub fn new(
         rng: &mut MainRng,
