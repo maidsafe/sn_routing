@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::ProofSet,
+    consensus::ProofSet,
     crypto::{self, Digest256},
     error::RoutingError,
     id::{P2pNode, PublicId},

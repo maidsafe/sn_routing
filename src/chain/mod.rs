@@ -11,13 +11,11 @@
 #[allow(clippy::module_inception)]
 mod chain;
 mod config;
-mod proof;
 mod shared_state;
 
 pub use self::{
     chain::{delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare},
     config::NetworkParams,
-    proof::{Proof, ProofSet},
 };
 
 use crate::{

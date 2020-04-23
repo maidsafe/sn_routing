@@ -6,12 +6,11 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    chain::{Proof, ProofSet},
-    consensus::{AccumulatingEvent, EventSigPayload, NetworkEvent},
-    id::PublicId,
-    section::EldersInfo,
+use super::{
+    network_event::{AccumulatingEvent, EventSigPayload, NetworkEvent},
+    proof::{Proof, ProofSet},
 };
+use crate::{id::PublicId, section::EldersInfo};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     mem,
