@@ -43,7 +43,11 @@ impl Env {
 
         let elders = create_elders(&mut rng, &network, None);
 
-        let public_key_set = elders[0].chain.our_section_bls_keys().clone();
+        let public_key_set = elders[0]
+            .chain
+            .section_keys_provider
+            .public_key_set()
+            .clone();
         let elders_info = elders[0].chain.state().our_info().clone();
         let gen_pfx_info = test_utils::create_gen_pfx_info(elders_info, public_key_set, 0);
 
@@ -67,7 +71,11 @@ impl Env {
     fn gen_pfx_info(&self, parsec_version: u64) -> GenesisPfxInfo {
         test_utils::create_gen_pfx_info(
             self.elders[0].chain.state().our_info().clone(),
-            self.elders[0].chain.our_section_bls_keys().clone(),
+            self.elders[0]
+                .chain
+                .section_keys_provider
+                .public_key_set()
+                .clone(),
             parsec_version,
         )
     }
@@ -152,8 +160,8 @@ fn genesis_update_accumulating_message(
         variant: Variant::GenesisUpdate(Box::new(gen_pfx_info)),
     };
 
-    let secret_key = sender.our_section_bls_secret_key_share().unwrap();
-    let public_key_set = sender.our_section_bls_keys().clone();
+    let secret_key = sender.section_keys_provider.secret_key_share().unwrap();
+    let public_key_set = sender.section_keys_provider.public_key_set().clone();
     let proof = sender.state().prove(&content.dst, None);
 
     AccumulatingMessage::new(content, secret_key, public_key_set, proof)
