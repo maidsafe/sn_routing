@@ -366,6 +366,21 @@ impl SectionMap {
         }
     }
 
+    /// Provide a start index of a SectionProofSlice that proves the given signature to the given
+    /// destination location.
+    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
+    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
+    pub fn knowledge_index(
+        &self,
+        target: &DstLocation,
+        node_knowledge_override: Option<u64>,
+    ) -> u64 {
+        match (target, node_knowledge_override) {
+            (DstLocation::Node(_), Some(knowledge)) => knowledge,
+            _ => self.proving_index(target),
+        }
+    }
+
     /// Updates the entry in `knowledge` for `prefix` to the `version`; if a split
     /// occurred in the meantime, the versions for sections covering the rest of the address space
     /// are initialised to the old version that was stored for their common ancestor

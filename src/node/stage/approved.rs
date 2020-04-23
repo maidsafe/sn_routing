@@ -177,7 +177,10 @@ impl Approved {
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
         let node = self
             .chain
-            .our_active_members()
+            .state()
+            .our_members
+            .active()
+            .map(|info| &info.p2p_node)
             .find(|node| *node.peer_addr() == addr);
 
         if let Some(node) = node {
@@ -495,7 +498,7 @@ impl Approved {
             return;
         }
 
-        if self.chain.is_in_online_backlog(&pub_id) {
+        if self.chain.state().is_in_online_backlog(&pub_id) {
             debug!("Ignoring JoinRequest from {} - already in backlog.", pub_id);
             return;
         }
@@ -897,6 +900,8 @@ impl Approved {
         let knowledge_index = cmp::min(
             node_knowledge,
             self.chain
+                .state()
+                .sections
                 .knowledge_index(&DstLocation::Section(details.destination), None),
         );
 
