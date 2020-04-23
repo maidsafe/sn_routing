@@ -8,10 +8,7 @@
 
 use crate::{
     consensus::{ConsensusEngine, GenesisPfxInfo},
-    error::Result,
     id::FullId,
-    location::DstLocation,
-    messages::{AccumulatingMessage, PlainMessage, Variant},
     rng::MainRng,
     section::{SectionKeyShare, SectionKeys, SectionKeysProvider, SharedState},
 };
@@ -24,10 +21,6 @@ pub struct Chain {
     pub section_keys_provider: SectionKeysProvider,
     /// The shared state of the section.
     pub state: SharedState,
-    /// Marker indicating we are processing churn event
-    pub churn_in_progress: bool,
-    /// Marker indicating that elders may need to change,
-    pub members_changed: bool,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -60,33 +53,7 @@ impl Chain {
             section_keys_provider: SectionKeysProvider::new(section_keys),
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             consensus_engine,
-            churn_in_progress: false,
-            members_changed: false,
         }
-    }
-
-    pub fn can_poll_churn(&self) -> bool {
-        self.state.handled_genesis_event && !self.churn_in_progress
-    }
-
-    // Signs and proves the given message and wraps it in `AccumulatingMessage`.
-    pub fn to_accumulating_message(
-        &self,
-        dst: DstLocation,
-        variant: Variant,
-        node_knowledge_override: Option<u64>,
-    ) -> Result<AccumulatingMessage> {
-        let proof = self.state.prove(&dst, node_knowledge_override);
-        let pk_set = self.section_keys_provider.public_key_set().clone();
-        let sk_share = self.section_keys_provider.secret_key_share()?;
-
-        let content = PlainMessage {
-            src: *self.state.our_prefix(),
-            dst,
-            variant,
-        };
-
-        AccumulatingMessage::new(content, sk_share, pk_set, proof)
     }
 }
 

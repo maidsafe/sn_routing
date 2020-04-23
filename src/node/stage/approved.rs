@@ -20,7 +20,7 @@ use crate::{
     location::{DstLocation, SrcLocation},
     messages::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
-        MessageHash, MessageWithBytes, SrcAuthority, Variant, VerifyStatus,
+        MessageHash, MessageWithBytes, PlainMessage, SrcAuthority, Variant, VerifyStatus,
     },
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
@@ -61,6 +61,10 @@ pub struct Approved {
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
     // The accumulated info during a split pfx change.
     split_cache: Option<SplitCache>,
+    // Marker indicating we are processing churn event
+    churn_in_progress: bool,
+    // Marker indicating that elders may need to change,
+    members_changed: bool,
     // Messages we received but not accumulated yet, so may need to re-swarm.
     pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
     /// The knowledge of the non-elder members about our section.
@@ -113,6 +117,8 @@ impl Approved {
             timer_token,
             dkg_cache: Default::default(),
             split_cache: None,
+            churn_in_progress: false,
+            members_changed: false,
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
         }
@@ -164,6 +170,8 @@ impl Approved {
             // TODO: these fields should come from PausedState too
             dkg_cache: Default::default(),
             split_cache: None,
+            churn_in_progress: false,
+            members_changed: false,
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
         };
@@ -761,9 +769,13 @@ impl Approved {
         Ok(false)
     }
 
+    pub fn can_poll_churn(&self) -> bool {
+        self.chain.state.handled_genesis_event && !self.churn_in_progress
+    }
+
     // Polls and processes a backlogged churn event, if any.
     fn poll_churn_event_backlog(&mut self, core: &mut Core) -> Result<bool> {
-        if !self.chain.can_poll_churn() {
+        if !self.can_poll_churn() {
             return Ok(false);
         }
 
@@ -792,7 +804,7 @@ impl Approved {
             _ => false,
         };
 
-        if start_churn_event && !self.chain.can_poll_churn() {
+        if start_churn_event && !self.can_poll_churn() {
             trace!(
                 "churn backlog {:?}, Other: {:?}",
                 event,
@@ -808,22 +820,22 @@ impl Approved {
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
     fn promote_and_demote_elders(&mut self, core: &Core) -> Result<bool> {
-        if !self.chain.members_changed || !self.chain.can_poll_churn() {
+        if !self.members_changed || !self.can_poll_churn() {
             // Nothing changed that could impact elder set, or we cannot process it yet.
             return Ok(false);
         }
 
-        self.chain.members_changed = false;
+        self.members_changed = false;
 
         let new_infos = if let Some(new_infos) = self
             .chain
             .state
             .promote_and_demote_elders(&core.network_params, core.name())?
         {
-            self.chain.churn_in_progress = true;
+            self.churn_in_progress = true;
             new_infos
         } else {
-            self.chain.churn_in_progress = false;
+            self.churn_in_progress = false;
             return Ok(false);
         };
 
@@ -843,7 +855,7 @@ impl Approved {
     /// Polls and handles the next scheduled relocation, if any.
     fn poll_relocation(&mut self, our_id: &PublicId) -> bool {
         // Delay relocation until no additional churn is in progress.
-        if !self.chain.can_poll_churn() {
+        if !self.can_poll_churn() {
             return false;
         }
 
@@ -925,14 +937,14 @@ impl Approved {
         };
 
         // On split membership may need to be checked again.
-        self.chain.members_changed = true;
+        self.members_changed = true;
         self.chain.state.update(new_state);
 
         Ok(())
     }
 
     fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) -> Result<()> {
-        assert!(!self.chain.churn_in_progress);
+        assert!(!self.churn_in_progress);
 
         if self.chain.state.add_member(
             payload.p2p_node.clone(),
@@ -941,7 +953,7 @@ impl Approved {
         ) {
             info!("handle Online: {:?}.", payload);
 
-            self.chain.members_changed = true;
+            self.members_changed = true;
 
             if self.is_our_elder(core.id()) {
                 self.send_node_approval(core, payload.p2p_node, payload.their_knowledge);
@@ -955,7 +967,7 @@ impl Approved {
     }
 
     fn handle_offline_event(&mut self, core: &mut Core, pub_id: PublicId) -> Result<()> {
-        assert!(!self.chain.churn_in_progress);
+        assert!(!self.churn_in_progress);
 
         if let (Some(addr), _) = self
             .chain
@@ -964,7 +976,7 @@ impl Approved {
         {
             info!("handle Offline: {}", pub_id);
 
-            self.chain.members_changed = true;
+            self.members_changed = true;
             core.transport.disconnect(addr);
             let _ = self.members_knowledge.remove(pub_id.name());
         } else {
@@ -1020,7 +1032,7 @@ impl Approved {
             }
         };
 
-        self.chain.members_changed = true;
+        self.members_changed = true;
         let _ = self.members_knowledge.remove(details.pub_id.name());
 
         if !self.is_our_elder(core.id()) {
@@ -1231,7 +1243,7 @@ impl Approved {
             .section_keys_provider
             .finalise_dkg(our_id, &elders_info)?;
         self.chain.state.push_our_new_info(elders_info, proof_block);
-        self.chain.churn_in_progress = false;
+        self.churn_in_progress = false;
         Ok(())
     }
 
@@ -1310,7 +1322,7 @@ impl Approved {
             return Ok(());
         }
 
-        if self.chain.churn_in_progress {
+        if self.churn_in_progress {
             debug!("ignore ParsecPrune event - churn in progress");
             return Ok(());
         }
@@ -1600,10 +1612,7 @@ impl Approved {
                     .map(|knowledge| knowledge.elders_version)
                     .unwrap_or(0);
 
-                match self
-                    .chain
-                    .to_accumulating_message(dst, variant, Some(version))
-                {
+                match self.to_accumulating_message(dst, variant, Some(version)) {
                     Ok(msg) => Some((recipient, msg)),
                     Err(error) => {
                         error!("Failed to create signed message: {:?}", error);
@@ -1812,8 +1821,7 @@ impl Approved {
         }
 
         let accumulating_msg =
-            self.chain
-                .to_accumulating_message(dst, variant, node_knowledge_override)?;
+            self.to_accumulating_message(dst, variant, node_knowledge_override)?;
 
         let targets = routing_table::signature_targets(
             &dst,
@@ -1838,6 +1846,26 @@ impl Approved {
         }
 
         Ok(())
+    }
+
+    // Signs and proves the given message and wraps it in `AccumulatingMessage`.
+    fn to_accumulating_message(
+        &self,
+        dst: DstLocation,
+        variant: Variant,
+        node_knowledge_override: Option<u64>,
+    ) -> Result<AccumulatingMessage> {
+        let proof = self.chain.state.prove(&dst, node_knowledge_override);
+        let pk_set = self.chain.section_keys_provider.public_key_set().clone();
+        let sk_share = self.chain.section_keys_provider.secret_key_share()?;
+
+        let content = PlainMessage {
+            src: *self.chain.state.our_prefix(),
+            dst,
+            variant,
+        };
+
+        AccumulatingMessage::new(content, sk_share, pk_set, proof)
     }
 
     ////////////////////////////////////////////////////////////////////////////
