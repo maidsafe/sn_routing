@@ -9,6 +9,7 @@
 mod event_accumulator;
 mod network_event;
 mod parsec;
+mod proof;
 
 pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
@@ -21,6 +22,7 @@ pub use self::{
         DkgResult, DkgResultWrapper, Observation, ParsecNetworkEvent, Request as ParsecRequest,
         Response as ParsecResponse, GOSSIP_PERIOD,
     },
+    proof::{Proof, ProofSet},
 };
 
 #[cfg(feature = "mock_base")]
@@ -31,7 +33,7 @@ use self::{
     parsec::ParsecMap,
 };
 use crate::{
-    chain::{GenesisPfxInfo, Proof, ProofSet},
+    chain::GenesisPfxInfo,
     id::{FullId, PublicId},
     messages::Variant,
     rng::MainRng,
