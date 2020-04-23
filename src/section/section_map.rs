@@ -176,7 +176,8 @@ impl SectionMap {
 
     /// Push the new version of our section.
     pub fn push_our(&mut self, elders_info: EldersInfo) {
-        self.our.push(elders_info)
+        self.our.push(elders_info);
+        self.prune_neighbours()
     }
 
     pub fn add_neighbour(&mut self, elders_info: EldersInfo) {
@@ -252,8 +253,8 @@ impl SectionMap {
         }
     }
 
-    /// Remove outdated neighbour infos.
-    pub fn prune_neighbours(&mut self) {
+    // Remove outdated neighbour infos.
+    fn prune_neighbours(&mut self) {
         // Remove invalid neighbour pfx, older version of compatible pfx.
         let to_remove: Vec<_> = self
             .other

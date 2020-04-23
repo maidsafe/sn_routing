@@ -168,12 +168,6 @@ impl SharedState {
         self.our_members.remove(pub_id)
     }
 
-    /// Remove all entries from `our_members` whose name does not match our prefix.
-    pub fn remove_our_members_not_matching_our_prefix(&mut self) {
-        self.our_members
-            .remove_not_matching_our_prefix(self.sections.our().prefix())
-    }
-
     /// Find section which has member with the given id
     pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
         if self.our_members.contains(pub_id) {
@@ -236,6 +230,8 @@ impl SharedState {
     }
 
     pub fn push_our_new_info(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
+        self.our_members
+            .remove_not_matching_our_prefix(elders_info.prefix());
         self.our_history.push(proof_block);
         self.sections.push_our(elders_info);
         self.sections.update_keys(self.our_history.last_key_info());

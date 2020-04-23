@@ -327,7 +327,6 @@ impl Chain {
         our_id: &PublicId,
     ) -> Result<ParsecResetData, RoutingError> {
         self.state.handled_genesis_event = false;
-        self.state.sections.prune_neighbours();
         let cached_events = self.consensus_engine.prepare_reset(our_id);
 
         Ok(ParsecResetData {
@@ -435,8 +434,6 @@ impl Chain {
             .finalise_dkg(our_id, &elders_info)?;
         self.state.push_our_new_info(elders_info, proof_block);
         self.churn_in_progress = false;
-        self.state.sections.prune_neighbours();
-        self.state.remove_our_members_not_matching_our_prefix();
         Ok(())
     }
 }
