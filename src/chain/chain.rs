@@ -13,7 +13,7 @@ use crate::{
     },
     error::{Result, RoutingError},
     id::{FullId, P2pNode, PublicId},
-    location::{DstLocation, SrcLocation},
+    location::DstLocation,
     messages::{AccumulatingMessage, PlainMessage, Variant},
     network_params::NetworkParams,
     relocation::RelocateDetails,
@@ -556,24 +556,6 @@ impl Chain {
                 );
                 None
             })
-    }
-
-    /// Returns whether we are a part of the given source.
-    pub fn in_src_location(&self, src: &SrcLocation) -> bool {
-        match src {
-            SrcLocation::Node(name) => self.our_id().name() == name,
-            SrcLocation::Section(prefix) => prefix.matches(self.our_id().name()),
-        }
-    }
-
-    /// Returns whether we are a part of the given destination.
-    pub fn in_dst_location(&self, dst: &DstLocation) -> bool {
-        match dst {
-            DstLocation::Node(name) => self.our_id().name() == name,
-            DstLocation::Section(name) => self.state.our_prefix().matches(name),
-            DstLocation::Prefix(prefix) => self.state.our_prefix().is_compatible(prefix),
-            DstLocation::Direct => true,
-        }
     }
 
     /// Check if we know this node but have not yet processed it.
