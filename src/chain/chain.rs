@@ -6,7 +6,6 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::shared_state::SharedState;
 use crate::{
     consensus::{
         AccumulatedEvent, AccumulatingEvent, AccumulatingProof, ConsensusEngine, DkgResult,
@@ -19,7 +18,9 @@ use crate::{
     network_params::NetworkParams,
     relocation::RelocateDetails,
     rng::MainRng,
-    section::{EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice},
+    section::{
+        EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice, SharedState,
+    },
     xor_space::Xorable,
     XorName,
 };

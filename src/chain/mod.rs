@@ -10,7 +10,6 @@
 
 #[allow(clippy::module_inception)]
 mod chain;
-mod shared_state;
 
 pub use self::chain::{
     delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare,
