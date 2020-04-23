@@ -9,7 +9,7 @@
 use crate::{
     consensus::{
         AccumulatedEvent, AccumulatingEvent, AccumulatingProof, ConsensusEngine, EldersChange,
-        GenesisPfxInfo, NetworkEvent,
+        GenesisPfxInfo,
     },
     error::{Result, RoutingError},
     id::{FullId, P2pNode, PublicId},
@@ -21,7 +21,6 @@ use crate::{
         SharedState,
     },
 };
-use bincode::serialize;
 use std::{collections::BTreeSet, fmt::Debug, net::SocketAddr};
 
 /// Data chain.
@@ -97,10 +96,6 @@ impl Chain {
         self.state.update(new_state);
 
         Ok(())
-    }
-
-    pub fn poll_consensus(&mut self) -> Option<(AccumulatingEvent, AccumulatingProof)> {
-        self.consensus_engine.poll(self.state.sections.our())
     }
 
     pub fn process_accumulating(
@@ -209,26 +204,6 @@ impl Chain {
         (addr, state)
     }
 
-    /// Gets the data needed to initialise a new Parsec instance
-    pub fn prepare_parsec_reset(
-        &mut self,
-        our_id: &PublicId,
-    ) -> Result<ParsecResetData, RoutingError> {
-        self.state.handled_genesis_event = false;
-        let cached_events = self.consensus_engine.prepare_reset(our_id);
-
-        Ok(ParsecResetData {
-            gen_pfx_info: GenesisPfxInfo {
-                elders_info: self.state.our_info().clone(),
-                public_keys: self.section_keys_provider.public_key_set().clone(),
-                state_serialized: serialize(&self.state)?,
-                ages: self.state.our_members.get_age_counters(),
-                parsec_version: self.consensus_engine.parsec_version() + 1,
-            },
-            cached_events,
-        })
-    }
-
     // Signs and proves the given message and wraps it in `AccumulatingMessage`.
     pub fn to_accumulating_message(
         &self,
@@ -247,12 +222,6 @@ impl Chain {
         };
 
         AccumulatingMessage::new(content, sk_share, pk_set, proof)
-    }
-
-    /// Check which nodes are unresponsive.
-    pub fn check_vote_status(&mut self) -> BTreeSet<PublicId> {
-        let members = self.state.our_info().member_ids();
-        self.consensus_engine.check_vote_status(members)
     }
 
     /// Handles our own section info, or the section info of our sibling directly after a split.
@@ -324,14 +293,6 @@ impl Chain {
         self.churn_in_progress = false;
         Ok(())
     }
-}
-
-/// The outcome of a prefix change.
-pub struct ParsecResetData {
-    /// The new genesis prefix info.
-    pub gen_pfx_info: GenesisPfxInfo,
-    /// The cached events that should be revoted.
-    pub cached_events: Vec<NetworkEvent>,
 }
 
 struct EldersChangeBuilder {
