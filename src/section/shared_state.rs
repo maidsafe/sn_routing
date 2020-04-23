@@ -11,7 +11,7 @@ use super::{
     SectionProofBlock, SectionProofChain, SectionProofSlice,
 };
 use crate::{
-    consensus::{AccumulatedEvent, AccumulatingEvent},
+    consensus::AccumulatingEvent,
     error::Result,
     id::{P2pNode, PublicId},
     location::DstLocation,
@@ -38,7 +38,7 @@ pub struct SharedState {
     /// Info about known sections in the network.
     pub sections: SectionMap,
     /// Backlog of completed events that need to be processed when churn completes.
-    pub churn_event_backlog: VecDeque<AccumulatedEvent>,
+    pub churn_event_backlog: VecDeque<AccumulatingEvent>,
     /// Queue of pending relocations.
     pub relocate_queue: VecDeque<RelocateDetails>,
 }
@@ -289,7 +289,7 @@ impl SharedState {
     /// Check if we know this node but have not yet processed it.
     pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
         self.churn_event_backlog.iter().any(|evt| {
-            if let AccumulatingEvent::Online(payload) = &evt.content {
+            if let AccumulatingEvent::Online(payload) = &evt {
                 payload.p2p_node.public_id() == pub_id
             } else {
                 false
