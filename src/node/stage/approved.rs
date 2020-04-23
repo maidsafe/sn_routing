@@ -740,8 +740,7 @@ impl Approved {
             return Ok(true);
         }
 
-        if let Some(details) = self.chain.poll_relocation() {
-            self.handle_relocate_polled(core, details)?;
+        if self.poll_relocation(core.id()) {
             return Ok(true);
         }
 
@@ -815,6 +814,24 @@ impl Approved {
         Some(event)
     }
 
+    /// Polls and handles the next scheduled relocation, if any.
+    fn poll_relocation(&mut self, our_id: &PublicId) -> bool {
+        // Delay relocation until no additional churn is in progress.
+        if !self.chain.can_poll_churn() {
+            return false;
+        }
+
+        if let Some(details) = self.chain.state.poll_relocation() {
+            if self.is_our_elder(our_id) {
+                self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
+            }
+
+            return true;
+        }
+
+        false
+    }
+
     fn handle_accumulated_event(
         &mut self,
         core: &mut Core,
@@ -861,20 +878,6 @@ impl Approved {
             }
             AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
         }
-
-        Ok(())
-    }
-
-    fn handle_relocate_polled(
-        &mut self,
-        core: &Core,
-        details: RelocateDetails,
-    ) -> Result<(), RoutingError> {
-        if !self.is_our_elder(core.id()) {
-            return Ok(());
-        }
-
-        self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
 
         Ok(())
     }
