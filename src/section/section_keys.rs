@@ -6,14 +6,21 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::elders_info::EldersInfo;
+use super::{
+    elders_info::EldersInfo,
+    section_proof_chain::{SectionKeyInfo, SectionProofBlock},
+};
 use crate::{
-    consensus::{DkgResult, DkgResultWrapper},
+    consensus::{AccumulatingProof, DkgResult, DkgResultWrapper},
     error::{Result, RoutingError},
     id::PublicId,
     xor_space::XorName,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use serde::Serialize;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Debug,
+};
 
 /// The secret share of the section key.
 #[derive(Clone)]
@@ -127,5 +134,47 @@ impl SectionKeysProvider {
         self.new_keys.clear();
 
         Ok(())
+    }
+
+    pub fn combine_signatures_for_section_proof_block(
+        &self,
+        our_elders: &EldersInfo,
+        key_info: SectionKeyInfo,
+        proofs: AccumulatingProof,
+    ) -> Result<SectionProofBlock, RoutingError> {
+        let signature = self
+            .check_and_combine_signatures(our_elders, &key_info, proofs)
+            .ok_or(RoutingError::InvalidNewSectionInfo)?;
+        Ok(SectionProofBlock::new(key_info, signature))
+    }
+
+    pub fn check_and_combine_signatures<S: Serialize + Debug>(
+        &self,
+        our_elders: &EldersInfo,
+        signed_payload: &S,
+        proofs: AccumulatingProof,
+    ) -> Option<bls::Signature> {
+        let signed_bytes = bincode::serialize(signed_payload)
+            .map_err(|err| {
+                log_or_panic!(
+                    log::Level::Error,
+                    "Failed to serialise accumulated event: {:?} for {:?}",
+                    err,
+                    signed_payload
+                );
+                err
+            })
+            .ok()?;
+
+        proofs
+            .check_and_combine_signatures(our_elders, self.public_key_set(), &signed_bytes)
+            .or_else(|| {
+                log_or_panic!(
+                    log::Level::Error,
+                    "Failed to combine signatures for accumulated event: {:?}",
+                    signed_payload
+                );
+                None
+            })
     }
 }
