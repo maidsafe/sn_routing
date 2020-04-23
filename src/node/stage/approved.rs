@@ -732,11 +732,7 @@ impl Approved {
 
         // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
         // otherwise we might relocate a node that we still need.
-        if let Some(new_infos) = self
-            .chain
-            .promote_and_demote_elders(&core.network_params, core.id())?
-        {
-            self.handle_promote_and_demote_elders(core, new_infos)?;
+        if self.promote_and_demote_elders(core)? {
             return Ok(true);
         }
 
@@ -814,6 +810,41 @@ impl Approved {
         Some(event)
     }
 
+    // Generate a new section info based on the current set of members and vote for it if it
+    // changed.
+    fn promote_and_demote_elders(&mut self, core: &Core) -> Result<bool> {
+        if !self.chain.members_changed || !self.chain.can_poll_churn() {
+            // Nothing changed that could impact elder set, or we cannot process it yet.
+            return Ok(false);
+        }
+
+        self.chain.members_changed = false;
+
+        let new_infos = if let Some(new_infos) = self
+            .chain
+            .state
+            .promote_and_demote_elders(&core.network_params, core.name())?
+        {
+            self.chain.churn_in_progress = true;
+            new_infos
+        } else {
+            self.chain.churn_in_progress = false;
+            return Ok(false);
+        };
+
+        if !self.is_our_elder(core.id()) {
+            return Ok(true);
+        }
+
+        for info in new_infos {
+            let participants: BTreeSet<_> = info.member_ids().copied().collect();
+            let _ = self.dkg_cache.insert(participants.clone(), info);
+            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
+        }
+
+        Ok(true)
+    }
+
     /// Polls and handles the next scheduled relocation, if any.
     fn poll_relocation(&mut self, our_id: &PublicId) -> bool {
         // Delay relocation until no additional churn is in progress.
@@ -877,24 +908,6 @@ impl Approved {
                 self.handle_relocate_prepare_event(core, pub_id, count);
             }
             AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
-        }
-
-        Ok(())
-    }
-
-    fn handle_promote_and_demote_elders(
-        &mut self,
-        core: &Core,
-        new_infos: Vec<EldersInfo>,
-    ) -> Result<(), RoutingError> {
-        if !self.is_our_elder(core.id()) {
-            return Ok(());
-        }
-
-        for info in new_infos {
-            let participants: BTreeSet<_> = info.member_ids().copied().collect();
-            let _ = self.dkg_cache.insert(participants.clone(), info);
-            self.vote_for_event(AccumulatingEvent::StartDkg(participants));
         }
 
         Ok(())

@@ -15,7 +15,6 @@ use crate::{
     id::{FullId, P2pNode, PublicId},
     location::DstLocation,
     messages::{AccumulatingMessage, PlainMessage, Variant},
-    network_params::NetworkParams,
     rng::MainRng,
     section::{
         EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider,
@@ -34,9 +33,9 @@ pub struct Chain {
     /// The shared state of the section.
     pub state: SharedState,
     /// Marker indicating we are processing churn event
-    churn_in_progress: bool,
+    pub churn_in_progress: bool,
     /// Marker indicating that elders may need to change,
-    members_changed: bool,
+    pub members_changed: bool,
     // The accumulated info during a split pfx change.
     split_cache: Option<SplitCache>,
 }
@@ -208,27 +207,6 @@ impl Chain {
         }
 
         (addr, state)
-    }
-
-    /// Generate a new section info based on the current set of members.
-    /// Returns a set of EldersInfos to vote for.
-    pub fn promote_and_demote_elders(
-        &mut self,
-        network_params: &NetworkParams,
-        our_id: &PublicId,
-    ) -> Result<Option<Vec<EldersInfo>>, RoutingError> {
-        if !self.members_changed || !self.can_poll_churn() {
-            // Nothing changed that could impact elder set, or we cannot process it yet.
-            return Ok(None);
-        }
-
-        let new_infos = self
-            .state
-            .promote_and_demote_elders(network_params, our_id.name())?;
-        self.churn_in_progress = new_infos.is_some();
-        self.members_changed = false;
-
-        Ok(new_infos)
     }
 
     /// Gets the data needed to initialise a new Parsec instance
