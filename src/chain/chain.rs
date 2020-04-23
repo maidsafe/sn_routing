@@ -12,7 +12,7 @@ use crate::{
         GenesisPfxInfo,
     },
     error::{Result, RoutingError},
-    id::{FullId, P2pNode, PublicId},
+    id::{FullId, PublicId},
     location::DstLocation,
     messages::{AccumulatingMessage, PlainMessage, Variant},
     rng::MainRng,
@@ -20,7 +20,7 @@ use crate::{
         EldersInfo, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider, SharedState,
     },
 };
-use std::{collections::BTreeSet, fmt::Debug};
+use std::fmt::Debug;
 
 /// Data chain.
 pub struct Chain {
@@ -82,9 +82,9 @@ impl Chain {
     ) -> Result<Option<AccumulatedEvent>, RoutingError> {
         match event {
             AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
-                let change = EldersChangeBuilder::new(self);
+                let change = EldersChange::builder(&self.state.sections);
                 if self.add_elders_info(our_id, info.clone(), key_info.clone(), proofs)? {
-                    let change = change.build(self);
+                    let change = change.build(&self.state.sections);
                     return Ok(Some(
                         AccumulatedEvent::new(event).with_elders_change(change),
                     ));
@@ -93,9 +93,9 @@ impl Chain {
                 }
             }
             AccumulatingEvent::NeighbourInfo(ref info) => {
-                let change = EldersChangeBuilder::new(self);
+                let change = EldersChange::builder(&self.state.sections);
                 self.state.sections.add_neighbour(info.clone());
-                let change = change.build(self);
+                let change = change.build(&self.state.sections);
 
                 return Ok(Some(
                     AccumulatedEvent::new(event).with_elders_change(change),
@@ -227,34 +227,6 @@ impl Chain {
         self.state.push_our_new_info(elders_info, proof_block);
         self.churn_in_progress = false;
         Ok(())
-    }
-}
-
-struct EldersChangeBuilder {
-    old_neighbour: BTreeSet<P2pNode>,
-}
-
-impl EldersChangeBuilder {
-    fn new(chain: &Chain) -> Self {
-        Self {
-            old_neighbour: chain.state.sections.other_elders().cloned().collect(),
-        }
-    }
-
-    fn build(self, chain: &Chain) -> EldersChange {
-        let new_neighbour: BTreeSet<_> = chain.state.sections.other_elders().cloned().collect();
-
-        EldersChange {
-            neighbour_added: new_neighbour
-                .difference(&self.old_neighbour)
-                .cloned()
-                .collect(),
-            neighbour_removed: self
-                .old_neighbour
-                .difference(&new_neighbour)
-                .cloned()
-                .collect(),
-        }
     }
 }
 

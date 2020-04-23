@@ -11,7 +11,7 @@ use crate::{
     error::RoutingError,
     id::{P2pNode, PublicId},
     relocation::RelocateDetails,
-    section::{EldersInfo, SectionKeyInfo},
+    section::{EldersInfo, SectionKeyInfo, SectionMap},
     Prefix, XorName,
 };
 use hex_fmt::HexFmt;
@@ -253,4 +253,34 @@ pub struct EldersChange {
     pub neighbour_added: BTreeSet<P2pNode>,
     // Neighbour peers that ceased to be elders.
     pub neighbour_removed: BTreeSet<P2pNode>,
+}
+
+impl EldersChange {
+    pub fn builder(sections: &SectionMap) -> EldersChangeBuilder {
+        EldersChangeBuilder {
+            old_neighbour: sections.other_elders().cloned().collect(),
+        }
+    }
+}
+
+pub struct EldersChangeBuilder {
+    old_neighbour: BTreeSet<P2pNode>,
+}
+
+impl EldersChangeBuilder {
+    pub fn build(self, sections: &SectionMap) -> EldersChange {
+        let new_neighbour: BTreeSet<_> = sections.other_elders().cloned().collect();
+
+        EldersChange {
+            neighbour_added: new_neighbour
+                .difference(&self.old_neighbour)
+                .cloned()
+                .collect(),
+            neighbour_removed: self
+                .old_neighbour
+                .difference(&new_neighbour)
+                .cloned()
+                .collect(),
+        }
+    }
 }
