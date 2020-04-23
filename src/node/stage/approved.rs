@@ -918,12 +918,16 @@ impl Approved {
     }
 
     fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) -> Result<()> {
-        if self.chain.add_member(
+        assert!(!self.chain.churn_in_progress);
+
+        if self.chain.state.add_member(
             payload.p2p_node.clone(),
             payload.age,
             core.network_params.safe_section_size,
         ) {
             info!("handle Online: {:?}.", payload);
+
+            self.chain.members_changed = true;
 
             if self.is_our_elder(core.id()) {
                 self.send_node_approval(core, payload.p2p_node, payload.their_knowledge);
@@ -937,11 +941,16 @@ impl Approved {
     }
 
     fn handle_offline_event(&mut self, core: &mut Core, pub_id: PublicId) -> Result<()> {
+        assert!(!self.chain.churn_in_progress);
+
         if let (Some(addr), _) = self
             .chain
+            .state
             .remove_member(&pub_id, core.network_params.safe_section_size)
         {
             info!("handle Offline: {}", pub_id);
+
+            self.chain.members_changed = true;
             core.transport.disconnect(addr);
             let _ = self.members_knowledge.remove(pub_id.name());
         } else {
@@ -975,6 +984,7 @@ impl Approved {
     ) -> Result<(), RoutingError> {
         let node_knowledge = match self
             .chain
+            .state
             .remove_member(&details.pub_id, core.network_params.safe_section_size)
             .1
         {
@@ -996,6 +1006,7 @@ impl Approved {
             }
         };
 
+        self.chain.members_changed = true;
         let _ = self.members_knowledge.remove(details.pub_id.name());
 
         if !self.is_our_elder(core.id()) {

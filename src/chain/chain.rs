@@ -17,11 +17,10 @@ use crate::{
     messages::{AccumulatingMessage, PlainMessage, Variant},
     rng::MainRng,
     section::{
-        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider,
-        SharedState,
+        EldersInfo, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider, SharedState,
     },
 };
-use std::{collections::BTreeSet, fmt::Debug, net::SocketAddr};
+use std::{collections::BTreeSet, fmt::Debug};
 
 /// Data chain.
 pub struct Chain {
@@ -163,45 +162,6 @@ impl Chain {
 
     pub fn can_poll_churn(&self) -> bool {
         self.state.handled_genesis_event && !self.churn_in_progress
-    }
-
-    /// Adds a member to our section.
-    ///
-    /// # Panics
-    ///
-    /// Panics if churn is in progress
-    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8, safe_section_size: usize) -> bool {
-        assert!(!self.churn_in_progress);
-
-        let added = self.state.add_member(p2p_node, age, safe_section_size);
-
-        if added {
-            self.members_changed = true;
-        }
-
-        added
-    }
-
-    /// Remove a member from our section. Returns the SocketAddr and the state of the member before
-    /// the removal.
-    ///
-    /// # Panics
-    ///
-    /// Panics if churn is in progress
-    pub fn remove_member(
-        &mut self,
-        pub_id: &PublicId,
-        safe_section_size: usize,
-    ) -> (Option<SocketAddr>, MemberState) {
-        assert!(!self.churn_in_progress);
-
-        let (addr, state) = self.state.remove_member(pub_id, safe_section_size);
-
-        if addr.is_some() {
-            self.members_changed = true;
-        }
-
-        (addr, state)
     }
 
     // Signs and proves the given message and wraps it in `AccumulatingMessage`.
