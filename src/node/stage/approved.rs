@@ -726,11 +726,7 @@ impl Approved {
     // If the event is a `SectionInfo` or `NeighbourInfo`, it also updates the corresponding
     // containers.
     fn poll_one(&mut self, core: &mut Core) -> Result<bool> {
-        let old_prefix = *self.chain.state().our_prefix();
-        let was_elder = self.is_our_elder(core.id());
-
-        if let Some(event) = self.chain.poll_churn_event_backlog() {
-            self.handle_accumulated_event(core, event, old_prefix, was_elder)?;
+        if self.poll_churn_event_backlog(core)? {
             return Ok(true);
         }
 
@@ -754,17 +750,69 @@ impl Approved {
             Some((event, proofs)) => (event, proofs),
         };
 
+        let old_prefix = *self.chain.state().our_prefix();
+        let was_elder = self.is_our_elder(core.id());
+
         let event = match self.chain.process_accumulating(core.id(), event, proofs)? {
             None => return Ok(false),
             Some(event) => event,
         };
 
-        if let Some(event) = self.chain.check_ready_or_backlog_churn_event(event)? {
+        if let Some(event) = self.check_ready_or_backlog_churn_event(event) {
             self.handle_accumulated_event(core, event, old_prefix, was_elder)?;
             return Ok(true);
         }
 
         Ok(false)
+    }
+
+    // Polls and processes a backlogged churn event, if any.
+    fn poll_churn_event_backlog(&mut self, core: &mut Core) -> Result<bool> {
+        if !self.chain.can_poll_churn() {
+            return Ok(false);
+        }
+
+        if let Some(event) = self.chain.state.churn_event_backlog.pop_back() {
+            trace!(
+                "churn backlog poll {:?}, Others: {:?}",
+                event,
+                self.chain.state().churn_event_backlog
+            );
+
+            self.handle_accumulated_event(
+                core,
+                event,
+                *self.chain.state().our_prefix(),
+                self.is_our_elder(core.id()),
+            )?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn check_ready_or_backlog_churn_event(
+        &mut self,
+        event: AccumulatedEvent,
+    ) -> Option<AccumulatedEvent> {
+        let start_churn_event = match &event.content {
+            AccumulatingEvent::Online(_)
+            | AccumulatingEvent::Offline(_)
+            | AccumulatingEvent::Relocate(_) => true,
+            _ => false,
+        };
+
+        if start_churn_event && !self.chain.can_poll_churn() {
+            trace!(
+                "churn backlog {:?}, Other: {:?}",
+                event,
+                self.chain.state.churn_event_backlog
+            );
+            self.chain.state.churn_event_backlog.push_front(event);
+            return None;
+        }
+
+        Some(event)
     }
 
     fn handle_accumulated_event(
