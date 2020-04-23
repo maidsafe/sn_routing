@@ -8,12 +8,13 @@
 
 use super::{
     AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
-    SectionProofBlock, SectionProofChain,
+    SectionProofBlock, SectionProofChain, SectionProofSlice,
 };
 use crate::{
-    consensus::AccumulatedEvent,
+    consensus::{AccumulatedEvent, AccumulatingEvent},
     error::Result,
     id::{P2pNode, PublicId},
+    location::DstLocation,
     network_params::NetworkParams,
     relocation::{self, RelocateDetails},
     xor_space::{Prefix, XorName, Xorable},
@@ -272,6 +273,32 @@ impl SharedState {
 
         trace!("relocating member {}", details.pub_id);
         Some(details)
+    }
+
+    /// Provide a SectionProofSlice that proves the given signature to the given destination
+    /// location.
+    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
+    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
+    pub fn prove(
+        &self,
+        target: &DstLocation,
+        node_knowledge_override: Option<u64>,
+    ) -> SectionProofSlice {
+        let first_index = self
+            .sections
+            .knowledge_index(target, node_knowledge_override);
+        self.our_history.slice_from(first_index as usize)
+    }
+
+    /// Check if we know this node but have not yet processed it.
+    pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
+        self.churn_event_backlog.iter().any(|evt| {
+            if let AccumulatingEvent::Online(payload) = &evt.content {
+                payload.p2p_node.public_id() == pub_id
+            } else {
+                false
+            }
+        })
     }
 
     // Tries to split our section.

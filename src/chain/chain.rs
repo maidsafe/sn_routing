@@ -18,9 +18,7 @@ use crate::{
     network_params::NetworkParams,
     relocation::RelocateDetails,
     rng::MainRng,
-    section::{
-        EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice, SharedState,
-    },
+    section::{EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SharedState},
     XorName,
 };
 use bincode::serialize;
@@ -383,19 +381,9 @@ impl Chain {
         })
     }
 
-    /// Returns our public ID
-    pub fn our_id(&self) -> &PublicId {
-        &self.our_id
-    }
-
     /// Returns whether we are elder in our section.
     pub fn is_self_elder(&self) -> bool {
         self.state.is_peer_our_elder(&self.our_id)
-    }
-
-    /// Returns an iterator over the members that have not state == `Left`.
-    pub fn our_active_members(&self) -> impl Iterator<Item = &P2pNode> {
-        self.state.our_members.active().map(|info| &info.p2p_node)
     }
 
     // Signs and proves the given message and wraps it in `AccumulatingMessage`.
@@ -405,7 +393,7 @@ impl Chain {
         variant: Variant,
         node_knowledge_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
-        let proof = self.prove(&dst, node_knowledge_override);
+        let proof = self.state.prove(&dst, node_knowledge_override);
         let pk_set = self.our_section_bls_keys().clone();
         let secret_key = self.our_section_bls_secret_key_share()?;
 
@@ -416,34 +404,6 @@ impl Chain {
         };
 
         AccumulatingMessage::new(content, secret_key, pk_set, proof)
-    }
-
-    /// Provide a SectionProofSlice that proves the given signature to the given destination
-    /// location.
-    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
-    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
-    pub fn prove(
-        &self,
-        target: &DstLocation,
-        node_knowledge_override: Option<u64>,
-    ) -> SectionProofSlice {
-        let first_index = self.knowledge_index(target, node_knowledge_override);
-        self.state.our_history.slice_from(first_index as usize)
-    }
-
-    /// Provide a start index of a SectionProofSlice that proves the given signature to the given
-    /// destination location.
-    /// If `node_knowledge_override` is `Some`, it is used when calculating proof for
-    /// `DstLocation::Node` instead of the stored knowledge. Has no effect for other location types.
-    pub fn knowledge_index(
-        &self,
-        target: &DstLocation,
-        node_knowledge_override: Option<u64>,
-    ) -> u64 {
-        match (target, node_knowledge_override) {
-            (DstLocation::Node(_), Some(knowledge)) => knowledge,
-            _ => self.state.sections.proving_index(target),
-        }
     }
 
     /// Check which nodes are unresponsive.
@@ -507,7 +467,7 @@ impl Chain {
 
         self.state.push_our_new_info(elders_info, proof_block);
         self.our_section_bls_keys =
-            SectionKeys::new(our_new_key, self.our_id(), self.state.our_info());
+            SectionKeys::new(our_new_key, &self.our_id, self.state.our_info());
         self.churn_in_progress = false;
         self.state.sections.prune_neighbours();
         self.state.remove_our_members_not_matching_our_prefix();
@@ -556,50 +516,6 @@ impl Chain {
                 );
                 None
             })
-    }
-
-    /// Check if we know this node but have not yet processed it.
-    pub fn is_in_online_backlog(&self, pub_id: &PublicId) -> bool {
-        self.state.churn_event_backlog.iter().any(|evt| {
-            if let AccumulatingEvent::Online(payload) = &evt.content {
-                payload.p2p_node.public_id() == pub_id
-            } else {
-                false
-            }
-        })
-    }
-}
-
-#[cfg(feature = "mock_base")]
-impl Chain {
-    /// Returns the number of elders per section
-    pub fn elder_size(&self) -> usize {
-        self.network_params.elder_size
-    }
-
-    /// If our section is the closest one to `name`, returns all names in our section *including
-    /// ours*, otherwise returns `None`.
-    pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
-        if self.state.our_prefix().matches(name) {
-            Some(self.state.our_info().member_names().copied().collect())
-        } else {
-            None
-        }
-    }
-
-    /// Returns the age counter of the given member or `None` if not a member.
-    pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
-        self.state
-            .our_members
-            .get(name)
-            .map(|member| member.age_counter_value())
-    }
-}
-
-#[cfg(test)]
-impl Chain {
-    pub fn validate_our_history(&self) -> bool {
-        self.state.our_history.validate()
     }
 }
 
@@ -876,7 +792,7 @@ mod tests {
         let mut rng = rng::new();
 
         let (chain, _, _) = gen_00_chain(&mut rng);
-        let chain_id = *chain.our_id();
+        let chain_id = chain.our_id;
 
         assert_eq!(
             chain
@@ -890,7 +806,7 @@ mod tests {
             chain.state.sections.get(&Prefix::from_str("").unwrap()),
             None
         );
-        assert!(chain.validate_our_history());
+        assert!(chain.state.our_history.validate());
         check_infos_for_duplication(&chain);
     }
 
@@ -910,7 +826,7 @@ mod tests {
             };
 
             add_neighbour_elders_info(&mut chain, new_info);
-            assert!(chain.validate_our_history());
+            assert!(chain.state.our_history.validate());
             check_infos_for_duplication(&chain);
         }
     }

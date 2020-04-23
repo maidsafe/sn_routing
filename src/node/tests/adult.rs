@@ -155,7 +155,7 @@ fn genesis_update_accumulating_message(
 
     let secret_key = sender.our_section_bls_secret_key_share().unwrap();
     let public_key_set = sender.our_section_bls_keys().clone();
-    let proof = sender.prove(&content.dst, None);
+    let proof = sender.state().prove(&content.dst, None);
 
     AccumulatingMessage::new(content, secret_key, public_key_set, proof)
 }

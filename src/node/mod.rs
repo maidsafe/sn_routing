@@ -1029,13 +1029,25 @@ impl Node {
     /// If our section is the closest one to `name`, returns all names in our section *including
     /// ours*, otherwise returns `None`.
     pub fn close_names(&self, name: &XorName) -> Option<Vec<XorName>> {
-        self.chain().and_then(|chain| chain.close_names(name))
+        let chain = self.chain()?;
+        if chain.state().our_prefix().matches(name) {
+            Some(
+                chain
+                    .state()
+                    .sections
+                    .our_elders()
+                    .map(|p2p_node| *p2p_node.name())
+                    .collect(),
+            )
+        } else {
+            None
+        }
     }
 
     /// Returns the number of elders this node is using.
     /// Only if we have a chain (meaning we are elders or adults) we will process this API
     pub fn elder_size(&self) -> Option<usize> {
-        self.chain().map(Chain::elder_size)
+        self.chain().map(|chain| chain.network_params().elder_size)
     }
 
     /// Size at which our section splits. Since this is configurable, this method is used to
@@ -1043,12 +1055,13 @@ impl Node {
     ///
     /// Only if we have a chain (meaning we are elders) we will process this API
     pub fn safe_section_size(&self) -> Option<usize> {
-        self.chain().map(|chain| chain.safe_section_size())
+        self.chain()
+            .map(|chain| chain.network_params().safe_section_size)
     }
 
     /// Provide a SectionProofSlice that proves the given signature to the given destination.
     pub fn prove(&self, target: &DstLocation) -> Option<SectionProofSlice> {
-        self.chain().map(|chain| chain.prove(target, None))
+        self.chain().map(|chain| chain.state().prove(target, None))
     }
 
     /// If this node is elder and `name` belongs to a member of our section, returns the age
@@ -1056,7 +1069,8 @@ impl Node {
     pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
         self.chain()
             .filter(|chain| chain.is_self_elder())
-            .and_then(|chain| chain.member_age_counter(name))
+            .and_then(|chain| chain.state().our_members.get(name))
+            .map(|info| info.age_counter_value())
     }
 
     fn chain(&self) -> Option<&Chain> {
