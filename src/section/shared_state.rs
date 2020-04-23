@@ -127,13 +127,6 @@ impl SharedState {
         self.our_info().is_member(pub_id)
     }
 
-    /// Returns a `P2pNode` for a known node.
-    pub fn get_p2p_node(&self, name: &XorName) -> Option<&P2pNode> {
-        self.our_members
-            .get_p2p_node(name)
-            .or_else(|| self.sections.get_elder(name))
-    }
-
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
         self.known_nodes()
             .find(|p2p_node| p2p_node.peer_addr() == socket_addr)

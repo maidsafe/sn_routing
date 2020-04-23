@@ -11,6 +11,4 @@
 #[allow(clippy::module_inception)]
 mod chain;
 
-pub use self::chain::{
-    delivery_group_size, Chain, ParsecResetData, PollAccumulated, SectionKeyShare,
-};
+pub use self::chain::{Chain, ParsecResetData, PollAccumulated, SectionKeyShare};

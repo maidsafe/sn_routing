@@ -26,6 +26,7 @@ use crate::{
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
+    routing_table,
     section::{EldersInfo, MemberState, SectionKeyInfo, MIN_AGE, MIN_AGE_COUNTER},
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -1488,7 +1489,13 @@ impl Approved {
 
     // Send message over the network.
     pub fn send_signed_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
-        let (targets, dg_size) = self.chain.targets(msg.message_dst())?;
+        let (targets, dg_size) = routing_table::delivery_targets(
+            msg.message_dst(),
+            core.id(),
+            &self.chain.state().our_members,
+            &self.chain.state().sections,
+        )?;
+
         let targets: Vec<_> = targets
             .into_iter()
             .filter(|p2p_node| {

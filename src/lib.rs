@@ -106,11 +106,12 @@ pub mod rng;
 /// Mock network
 #[cfg(feature = "mock_base")]
 pub use self::{
-    chain::{delivery_group_size, SectionKeyShare},
+    chain::SectionKeyShare,
     consensus::generate_bls_threshold_secret_key,
     messages::{AccumulatingMessage, Message, PlainMessage, Variant},
     network_params::NetworkParams,
     relocation::Overrides as RelocationOverrides,
+    routing_table::delivery_group_size,
     section::{elders_info_for_test, quorum_count, section_proof_slice_for_test, MIN_AGE},
     xor_space::Xorable,
 };
@@ -146,6 +147,7 @@ mod pause;
 mod relocation;
 #[cfg(not(feature = "mock_base"))]
 mod rng;
+mod routing_table;
 mod section;
 mod signature_accumulator;
 mod time;

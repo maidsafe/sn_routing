@@ -18,6 +18,7 @@ use crate::{
     network_params::NetworkParams,
     relocation::RelocateDetails,
     rng::MainRng,
+    routing_table,
     section::{
         EldersInfo, MemberState, SectionKeyInfo, SectionProofBlock, SectionProofSlice, SharedState,
     },
@@ -33,12 +34,6 @@ use std::{
     mem,
     net::SocketAddr,
 };
-
-/// Returns the delivery group size based on the section size `n`
-pub const fn delivery_group_size(n: usize) -> usize {
-    // this is an integer that is ≥ n/3
-    (n + 2) / 3
-}
 
 /// Data chain.
 pub struct Chain {
@@ -566,146 +561,6 @@ impl Chain {
             })
     }
 
-    /// Returns a set of nodes to which a message for the given `DstLocation` could be sent
-    /// onwards, sorted by priority, along with the number of targets the message should be sent to.
-    /// If the total number of targets returned is larger than this number, the spare targets can
-    /// be used if the message can't be delivered to some of the initial ones.
-    ///
-    /// * If the destination is an `DstLocation::Section`:
-    ///     - if our section is the closest on the network (i.e. our section's prefix is a prefix of
-    ///       the destination), returns all other members of our section; otherwise
-    ///     - returns the `N/3` closest members to the target
-    ///
-    /// * If the destination is an `DstLocation::PrefixSection`:
-    ///     - if the prefix is compatible with our prefix and is fully-covered by prefixes in our
-    ///       RT, returns all members in these prefixes except ourself; otherwise
-    ///     - if the prefix is compatible with our prefix and is *not* fully-covered by prefixes in
-    ///       our RT, returns `Err(Error::CannotRoute)`; otherwise
-    ///     - returns the `N/3` closest members of the RT to the lower bound of the target
-    ///       prefix
-    ///
-    /// * If the destination is an individual node:
-    ///     - if our name *is* the destination, returns an empty set; otherwise
-    ///     - if the destination name is an entry in the routing table, returns it; otherwise
-    ///     - returns the `N/3` closest members of the RT to the target
-    pub fn targets(&self, dst: &DstLocation) -> Result<(Vec<P2pNode>, usize), RoutingError> {
-        if !self.is_self_elder() {
-            // We are not Elder - return all the elders of our section, so the message can be properly
-            // relayed through them.
-            let targets: Vec<_> = self.state.our_info().member_nodes().cloned().collect();
-            let dg_size = targets.len();
-            return Ok((targets, dg_size));
-        }
-
-        let (best_section, dg_size) = match dst {
-            DstLocation::Node(target_name) => {
-                if target_name == self.our_id().name() {
-                    return Ok((Vec::new(), 0));
-                }
-                if let Some(node) = self.state.get_p2p_node(target_name) {
-                    return Ok((vec![node.clone()], 1));
-                }
-                self.candidates(target_name)?
-            }
-            DstLocation::Section(target_name) => {
-                let (prefix, section) = self.state.sections.closest(target_name);
-                if prefix == self.state.our_prefix() || prefix.is_neighbour(self.state.our_prefix())
-                {
-                    // Exclude our name since we don't need to send to ourself
-                    let our_name = self.our_id().name();
-
-                    // FIXME: only doing this for now to match RT.
-                    // should confirm if needed esp after msg_relay changes.
-                    let section: Vec<_> = section
-                        .member_nodes()
-                        .filter(|node| node.name() != our_name)
-                        .cloned()
-                        .collect();
-                    let dg_size = section.len();
-                    return Ok((section, dg_size));
-                }
-                self.candidates(target_name)?
-            }
-            DstLocation::Prefix(prefix) => {
-                if prefix.is_compatible(self.state.our_prefix())
-                    || prefix.is_neighbour(self.state.our_prefix())
-                {
-                    // only route the message when we have all the targets in our chain -
-                    // this is to prevent spamming the network by sending messages with
-                    // intentionally short prefixes
-                    if prefix.is_compatible(self.state.our_prefix())
-                        && !prefix.is_covered_by(self.state.sections.prefixes())
-                    {
-                        return Err(RoutingError::CannotRoute);
-                    }
-
-                    let is_compatible = |(pfx, section)| {
-                        if prefix.is_compatible(pfx) {
-                            Some(section)
-                        } else {
-                            None
-                        }
-                    };
-
-                    // Exclude our name since we don't need to send to ourself
-                    let our_name = self.our_id().name();
-
-                    let targets: Vec<_> = self
-                        .state
-                        .sections
-                        .all()
-                        .filter_map(is_compatible)
-                        .flat_map(EldersInfo::member_nodes)
-                        .filter(|node| node.name() != our_name)
-                        .cloned()
-                        .collect();
-                    let dg_size = targets.len();
-                    return Ok((targets, dg_size));
-                }
-                self.candidates(&prefix.lower_bound())?
-            }
-            DstLocation::Direct => return Err(RoutingError::CannotRoute),
-        };
-
-        Ok((best_section, dg_size))
-    }
-
-    // Obtain the delivery group candidates for this target
-    fn candidates(&self, target_name: &XorName) -> Result<(Vec<P2pNode>, usize), RoutingError> {
-        let filtered_sections = self
-            .state
-            .sections
-            .sorted_by_distance_to(target_name)
-            .into_iter()
-            .map(|(prefix, members)| (prefix, members.len(), members.member_nodes()));
-
-        let mut dg_size = 0;
-        let mut nodes_to_send = Vec::new();
-        for (idx, (prefix, len, connected)) in filtered_sections.enumerate() {
-            nodes_to_send.extend(connected.cloned());
-            dg_size = delivery_group_size(len);
-
-            if prefix == self.state.our_prefix() {
-                // Send to all connected targets so they can forward the message
-                let our_name = self.our_id().name();
-                nodes_to_send.retain(|node| node.name() != our_name);
-                dg_size = nodes_to_send.len();
-                break;
-            }
-            if idx == 0 && nodes_to_send.len() >= dg_size {
-                // can deliver to enough of the closest section
-                break;
-            }
-        }
-        nodes_to_send.sort_by(|lhs, rhs| target_name.cmp_distance(lhs.name(), rhs.name()));
-
-        if dg_size > 0 && nodes_to_send.len() >= dg_size {
-            Ok((nodes_to_send, dg_size))
-        } else {
-            Err(RoutingError::CannotRoute)
-        }
-    }
-
     // Returns the set of peers that are responsible for collecting signatures to verify a message;
     // this may contain us or only other nodes.
     pub fn signature_targets(&self, dst: &DstLocation) -> Vec<P2pNode> {
@@ -728,7 +583,7 @@ impl Chain {
             .our_elders()
             .cloned()
             .sorted_by(|lhs, rhs| dst_name.cmp_distance(lhs.name(), rhs.name()));
-        list.truncate(delivery_group_size(list.len()));
+        list.truncate(routing_table::delivery_group_size(list.len()));
         list
     }
 
