@@ -14,7 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::GenesisPfxInfo,
+    consensus::GenesisPfxInfo,
     error::Result,
     id::{FullId, P2pNode, PublicId},
     messages::{Message, MessageWithBytes},

@@ -15,7 +15,8 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
-    chain::{GenesisPfxInfo, NetworkParams},
+    chain::NetworkParams,
+    consensus::GenesisPfxInfo,
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},

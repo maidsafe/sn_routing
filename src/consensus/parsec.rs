@@ -7,8 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::GenesisPfxInfo,
-    consensus::{AccumulatingEvent, NetworkEvent},
+    consensus::{AccumulatingEvent, GenesisPfxInfo, NetworkEvent},
     id::{FullId, PublicId},
     messages::Variant,
     rng::{self, MainRng, RngCompat},

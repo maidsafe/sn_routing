@@ -7,11 +7,11 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{Chain, GenesisPfxInfo, NetworkParams, ParsecResetData, PollAccumulated},
+    chain::{Chain, NetworkParams, ParsecResetData, PollAccumulated},
     consensus::{
         self, AccumulatedEvent, AccumulatingEvent, AckMessagePayload, DkgResultWrapper,
-        EldersChange, EventSigPayload, IntoAccumulatingEvent, NetworkEvent, OnlinePayload,
-        ParsecRequest, ParsecResponse, SendAckMessagePayload,
+        EldersChange, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
+        OnlinePayload, ParsecRequest, ParsecResponse, SendAckMessagePayload,
     },
     core::Core,
     error::{Result, RoutingError},
