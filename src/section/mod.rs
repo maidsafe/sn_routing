@@ -9,6 +9,7 @@
 mod elders_info;
 mod member_info;
 mod network_stats;
+mod section_keys;
 mod section_map;
 mod section_members;
 mod section_proof_chain;
@@ -18,6 +19,7 @@ pub use self::{
     elders_info::{quorum_count, EldersInfo},
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE, MIN_AGE_COUNTER},
     network_stats::NetworkStats,
+    section_keys::{SectionKeyShare, SectionKeys},
     section_map::SectionMap,
     section_members::SectionMembers,
     section_proof_chain::{
