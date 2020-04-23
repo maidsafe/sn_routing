@@ -200,10 +200,10 @@ impl SharedState {
     /// Returns a set of EldersInfos to vote for.
     pub fn promote_and_demote_elders(
         &mut self,
-        our_name: &XorName,
         network_params: &NetworkParams,
+        our_name: &XorName,
     ) -> Result<Option<Vec<EldersInfo>>> {
-        if let Some((our_info, other_info)) = self.try_split(our_name, network_params)? {
+        if let Some((our_info, other_info)) = self.try_split(network_params, our_name)? {
             return Ok(Some(vec![our_info, other_info]));
         }
 
@@ -306,8 +306,8 @@ impl SharedState {
     // subsections. Otherwise returns `None`.
     fn try_split(
         &self,
-        our_name: &XorName,
         network_params: &NetworkParams,
+        our_name: &XorName,
     ) -> Result<Option<(EldersInfo, EldersInfo)>> {
         let next_bit_index = self.our_prefix().bit_count();
         let next_bit = our_name.bit(next_bit_index);

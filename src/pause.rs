@@ -8,8 +8,8 @@
 
 use crate::{
     chain::Chain, consensus::GenesisPfxInfo, id::FullId, message_filter::MessageFilter,
-    messages::QueuedMessage, signature_accumulator::SignatureAccumulator, transport::Transport,
-    TransportEvent,
+    messages::QueuedMessage, network_params::NetworkParams,
+    signature_accumulator::SignatureAccumulator, transport::Transport, TransportEvent,
 };
 use crossbeam_channel as mpmc;
 use std::collections::VecDeque;
@@ -23,6 +23,7 @@ use std::collections::VecDeque;
 // able to create a value of this type in routing version X and use it to resume the node in any
 // version >= X.
 pub struct PausedState {
+    pub(super) network_params: NetworkParams,
     pub(super) chain: Chain,
     pub(super) full_id: FullId,
     pub(super) gen_pfx_info: GenesisPfxInfo,

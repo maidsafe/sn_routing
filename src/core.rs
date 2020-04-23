@@ -13,6 +13,7 @@ use crate::{
     location::DstLocation,
     message_filter::MessageFilter,
     messages::{Message, QueuedMessage, Variant},
+    network_params::NetworkParams,
     node::NodeConfig,
     quic_p2p::{EventSenders, OurType, Token},
     rng::{self, MainRng},
@@ -27,6 +28,7 @@ use std::{collections::VecDeque, net::SocketAddr, slice};
 
 // Core components of the node.
 pub struct Core {
+    pub network_params: NetworkParams,
     pub full_id: FullId,
     pub transport: Transport,
     pub msg_filter: MessageFilter,
@@ -56,6 +58,7 @@ impl Core {
         };
 
         Self {
+            network_params: config.network_params,
             full_id,
             transport,
             msg_filter: Default::default(),
@@ -67,6 +70,7 @@ impl Core {
     }
 
     pub fn resume(
+        network_params: NetworkParams,
         full_id: FullId,
         transport: Transport,
         msg_filter: MessageFilter,
@@ -75,6 +79,7 @@ impl Core {
         user_event_tx: Sender<Event>,
     ) -> Self {
         Self {
+            network_params,
             full_id,
             transport,
             msg_filter,
