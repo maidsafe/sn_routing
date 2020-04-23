@@ -217,35 +217,6 @@ impl Debug for NetworkEvent {
     }
 }
 
-/// The outcome of polling the chain.
-#[derive(Eq, PartialEq, Serialize, Deserialize)]
-pub struct AccumulatedEvent {
-    pub content: AccumulatingEvent,
-    pub elders_change: EldersChange,
-}
-
-impl AccumulatedEvent {
-    pub fn new(content: AccumulatingEvent) -> Self {
-        Self {
-            content,
-            elders_change: EldersChange::default(),
-        }
-    }
-
-    pub fn with_elders_change(self, elders_change: EldersChange) -> Self {
-        Self {
-            elders_change,
-            ..self
-        }
-    }
-}
-
-impl Debug for AccumulatedEvent {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "AccumulatedEvent({:?})", self.content)
-    }
-}
-
 // Change to section elders.
 #[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EldersChange {

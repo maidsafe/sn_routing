@@ -7,20 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{
-        AccumulatedEvent, AccumulatingEvent, AccumulatingProof, ConsensusEngine, EldersChange,
-        GenesisPfxInfo,
-    },
-    error::{Result, RoutingError},
-    id::{FullId, PublicId},
+    consensus::{ConsensusEngine, GenesisPfxInfo},
+    error::Result,
+    id::FullId,
     location::DstLocation,
     messages::{AccumulatingMessage, PlainMessage, Variant},
     rng::MainRng,
-    section::{
-        EldersInfo, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider, SharedState,
-    },
+    section::{SectionKeyShare, SectionKeys, SectionKeysProvider, SharedState},
 };
-use std::fmt::Debug;
 
 /// Data chain.
 pub struct Chain {
@@ -34,8 +28,6 @@ pub struct Chain {
     pub churn_in_progress: bool,
     /// Marker indicating that elders may need to change,
     pub members_changed: bool,
-    // The accumulated info during a split pfx change.
-    split_cache: Option<SplitCache>,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -70,69 +62,7 @@ impl Chain {
             consensus_engine,
             churn_in_progress: false,
             members_changed: false,
-            split_cache: None,
         }
-    }
-
-    pub fn process_accumulating(
-        &mut self,
-        our_id: &PublicId,
-        event: AccumulatingEvent,
-        proofs: AccumulatingProof,
-    ) -> Result<Option<AccumulatedEvent>, RoutingError> {
-        match event {
-            AccumulatingEvent::SectionInfo(ref info, ref key_info) => {
-                let change = EldersChange::builder(&self.state.sections);
-                if self.add_elders_info(our_id, info.clone(), key_info.clone(), proofs)? {
-                    let change = change.build(&self.state.sections);
-                    return Ok(Some(
-                        AccumulatedEvent::new(event).with_elders_change(change),
-                    ));
-                } else {
-                    return Ok(None);
-                }
-            }
-            AccumulatingEvent::NeighbourInfo(ref info) => {
-                let change = EldersChange::builder(&self.state.sections);
-                self.state.sections.add_neighbour(info.clone());
-                let change = change.build(&self.state.sections);
-
-                return Ok(Some(
-                    AccumulatedEvent::new(event).with_elders_change(change),
-                ));
-            }
-            AccumulatingEvent::TheirKeyInfo(ref key_info) => {
-                self.state.sections.update_keys(key_info);
-            }
-            AccumulatingEvent::AckMessage(ref ack_payload) => {
-                self.state
-                    .sections
-                    .update_knowledge(ack_payload.src_prefix, ack_payload.ack_version);
-            }
-            AccumulatingEvent::ParsecPrune => {
-                if self.churn_in_progress {
-                    return Ok(None);
-                }
-            }
-            AccumulatingEvent::DkgResult {
-                ref participants,
-                ref dkg_result,
-            } => {
-                self.section_keys_provider
-                    .handle_dkg_result_event(participants, dkg_result)?;
-            }
-
-            AccumulatingEvent::Genesis { .. }
-            | AccumulatingEvent::Online(_)
-            | AccumulatingEvent::Offline(_)
-            | AccumulatingEvent::StartDkg(_)
-            | AccumulatingEvent::User(_)
-            | AccumulatingEvent::Relocate(_)
-            | AccumulatingEvent::RelocatePrepare(_, _)
-            | AccumulatingEvent::SendAckMessage(_) => (),
-        }
-
-        Ok(Some(AccumulatedEvent::new(event)))
     }
 
     pub fn can_poll_churn(&self) -> bool {
@@ -158,83 +88,6 @@ impl Chain {
 
         AccumulatingMessage::new(content, sk_share, pk_set, proof)
     }
-
-    /// Handles our own section info, or the section info of our sibling directly after a split.
-    /// Returns whether the event should be handled by the caller.
-    pub fn add_elders_info(
-        &mut self,
-        our_id: &PublicId,
-        elders_info: EldersInfo,
-        key_info: SectionKeyInfo,
-        proofs: AccumulatingProof,
-    ) -> Result<bool, RoutingError> {
-        // Split handling alone. wouldn't cater to merge
-        if elders_info
-            .prefix()
-            .is_extension_of(self.state.our_prefix())
-        {
-            match self.split_cache.take() {
-                None => {
-                    self.split_cache = Some(SplitCache {
-                        elders_info,
-                        key_info,
-                        proofs,
-                    });
-                    Ok(false)
-                }
-                Some(cache) => {
-                    let cache_pfx = *cache.elders_info.prefix();
-
-                    // Add our_info first so when we add sibling info, its a valid neighbour prefix
-                    // which does not get immediately purged.
-                    if cache_pfx.matches(our_id.name()) {
-                        self.do_add_elders_info(
-                            our_id,
-                            cache.elders_info,
-                            cache.key_info,
-                            cache.proofs,
-                        )?;
-                        self.state.sections.add_neighbour(elders_info);
-                    } else {
-                        self.do_add_elders_info(our_id, elders_info, key_info, proofs)?;
-                        self.state.sections.add_neighbour(cache.elders_info);
-                    }
-                    Ok(true)
-                }
-            }
-        } else {
-            self.do_add_elders_info(our_id, elders_info, key_info, proofs)?;
-            Ok(true)
-        }
-    }
-
-    fn do_add_elders_info(
-        &mut self,
-        our_id: &PublicId,
-        elders_info: EldersInfo,
-        key_info: SectionKeyInfo,
-        proofs: AccumulatingProof,
-    ) -> Result<(), RoutingError> {
-        let proof_block = self
-            .section_keys_provider
-            .combine_signatures_for_section_proof_block(
-                self.state.sections.our(),
-                key_info,
-                proofs,
-            )?;
-        self.section_keys_provider
-            .finalise_dkg(our_id, &elders_info)?;
-        self.state.push_our_new_info(elders_info, proof_block);
-        self.churn_in_progress = false;
-        Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct SplitCache {
-    elders_info: EldersInfo,
-    key_info: SectionKeyInfo,
-    proofs: AccumulatingProof,
 }
 
 #[cfg(test)]

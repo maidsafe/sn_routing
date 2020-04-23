@@ -9,7 +9,7 @@
 use crate::{
     chain::Chain,
     consensus::{
-        self, AccumulatedEvent, AccumulatingEvent, AckMessagePayload, DkgResultWrapper,
+        self, AccumulatingEvent, AccumulatingProof, AckMessagePayload, DkgResultWrapper,
         EldersChange, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
         OnlinePayload, ParsecRequest, ParsecResponse, SendAckMessagePayload,
     },
@@ -59,6 +59,8 @@ pub struct Approved {
     timer_token: u64,
     // DKG cache
     dkg_cache: BTreeMap<BTreeSet<PublicId>, EldersInfo>,
+    // The accumulated info during a split pfx change.
+    split_cache: Option<SplitCache>,
     // Messages we received but not accumulated yet, so may need to re-swarm.
     pending_voted_msgs: BTreeMap<PendingMessageKey, Message>,
     /// The knowledge of the non-elder members about our section.
@@ -110,6 +112,7 @@ impl Approved {
             gen_pfx_info,
             timer_token,
             dkg_cache: Default::default(),
+            split_cache: None,
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
         }
@@ -160,6 +163,7 @@ impl Approved {
             timer_token,
             // TODO: these fields should come from PausedState too
             dkg_cache: Default::default(),
+            split_cache: None,
             pending_voted_msgs: Default::default(),
             members_knowledge: Default::default(),
         };
@@ -740,25 +744,17 @@ impl Approved {
             return Ok(true);
         }
 
-        let (event, proofs) = match self
+        let (event, proof) = match self
             .chain
             .consensus_engine
             .poll(self.chain.state.sections.our())
         {
             None => return Ok(false),
-            Some((event, proofs)) => (event, proofs),
-        };
-
-        let old_prefix = *self.chain.state().our_prefix();
-        let was_elder = self.is_our_elder(core.id());
-
-        let event = match self.chain.process_accumulating(core.id(), event, proofs)? {
-            None => return Ok(false),
-            Some(event) => event,
+            Some((event, proof)) => (event, proof),
         };
 
         if let Some(event) = self.check_ready_or_backlog_churn_event(event) {
-            self.handle_accumulated_event(core, event, old_prefix, was_elder)?;
+            self.handle_accumulated_event(core, event, proof)?;
             return Ok(true);
         }
 
@@ -778,12 +774,7 @@ impl Approved {
                 self.chain.state().churn_event_backlog
             );
 
-            self.handle_accumulated_event(
-                core,
-                event,
-                *self.chain.state().our_prefix(),
-                self.is_our_elder(core.id()),
-            )?;
+            self.handle_accumulated_event(core, event, AccumulatingProof::default())?;
             Ok(true)
         } else {
             Ok(false)
@@ -792,9 +783,9 @@ impl Approved {
 
     fn check_ready_or_backlog_churn_event(
         &mut self,
-        event: AccumulatedEvent,
-    ) -> Option<AccumulatedEvent> {
-        let start_churn_event = match &event.content {
+        event: AccumulatingEvent,
+    ) -> Option<AccumulatingEvent> {
+        let start_churn_event = match &event {
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::Relocate(_) => true,
@@ -870,13 +861,12 @@ impl Approved {
     fn handle_accumulated_event(
         &mut self,
         core: &mut Core,
-        event: AccumulatedEvent,
-        old_pfx: Prefix<XorName>,
-        was_elder: bool,
+        event: AccumulatingEvent,
+        proof: AccumulatingProof,
     ) -> Result<()> {
         trace!("Handle accumulated event: {:?}", event);
 
-        match event.content {
+        match event {
             AccumulatingEvent::Genesis {
                 group,
                 related_info,
@@ -885,7 +875,7 @@ impl Approved {
                 log_or_panic!(
                     log::Level::Error,
                     "unexpected accumulated event: {:?}",
-                    event.content
+                    event
                 );
             }
             AccumulatingEvent::DkgResult {
@@ -894,18 +884,16 @@ impl Approved {
             } => self.handle_dkg_result_event(core, &participants, &dkg_result)?,
             AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload)?,
             AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id)?,
-            AccumulatingEvent::SectionInfo(_, _) => {
-                self.handle_section_info_event(core, old_pfx, was_elder, event.elders_change)?
+            AccumulatingEvent::SectionInfo(elders_info, key_info) => {
+                self.handle_section_info_event(core, elders_info, key_info, proof)?
             }
             AccumulatingEvent::NeighbourInfo(elders_info) => {
-                self.handle_neighbour_info_event(core, elders_info, event.elders_change)?
+                self.handle_neighbour_info_event(core, elders_info)?
             }
             AccumulatingEvent::TheirKeyInfo(key_info) => {
                 self.handle_their_key_info_event(core, key_info)?
             }
-            AccumulatingEvent::AckMessage(_payload) => {
-                // Update their_knowledge is handled within the chain.
-            }
+            AccumulatingEvent::AckMessage(payload) => self.handle_ack_message_event(payload),
             AccumulatingEvent::SendAckMessage(payload) => {
                 self.handle_send_ack_message_event(core, payload)?
             }
@@ -1070,6 +1058,10 @@ impl Approved {
         participants: &BTreeSet<PublicId>,
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
+        self.chain
+            .section_keys_provider
+            .handle_dkg_result_event(participants, dkg_result)?;
+
         if !self.is_our_elder(core.id()) {
             return Ok(());
         }
@@ -1091,15 +1083,25 @@ impl Approved {
     fn handle_section_info_event(
         &mut self,
         core: &mut Core,
-        old_pfx: Prefix<XorName>,
-        was_elder: bool,
-        elders_change: EldersChange,
+        elders_info: EldersInfo,
+        key_info: SectionKeyInfo,
+        proof: AccumulatingProof,
     ) -> Result<()> {
+        let old_prefix = *self.chain.state.our_prefix();
+        let was_elder = self.is_our_elder(core.id());
+
+        let change = EldersChange::builder(&self.chain.state.sections);
+        let change = if self.add_new_elders_info(core.id(), elders_info, key_info, proof)? {
+            change.build(&self.chain.state.sections)
+        } else {
+            return Ok(());
+        };
+
         let elders_info = self.chain.state().our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
         let is_elder = elders_info.is_member(core.id());
-        let is_split = info_prefix.is_extension_of(&old_pfx);
+        let is_split = info_prefix.is_extension_of(&old_prefix);
 
         core.msg_filter.reset();
 
@@ -1110,8 +1112,8 @@ impl Approved {
             return Ok(());
         }
 
-        if old_pfx.is_extension_of(&info_prefix) {
-            panic!("Merge not supported: {:?} -> {:?}", old_pfx, info_prefix);
+        if old_prefix.is_extension_of(&info_prefix) {
+            panic!("Merge not supported: {:?} -> {:?}", old_prefix, info_prefix);
         }
 
         let complete_data = self.prepare_parsec_reset(core.id())?;
@@ -1119,7 +1121,7 @@ impl Approved {
         if !is_elder {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
             // i.e the one that would be received with NodeApproval.
-            self.process_post_reset_events(core, old_pfx, complete_data.to_process);
+            self.process_post_reset_events(core, old_prefix, complete_data.to_process);
             self.demote(core, complete_data.gen_pfx_info);
 
             info!("Demoted");
@@ -1133,9 +1135,9 @@ impl Approved {
             complete_data.gen_pfx_info,
             complete_data.to_vote_again,
         )?;
-        self.process_post_reset_events(core, old_pfx, complete_data.to_process);
+        self.process_post_reset_events(core, old_prefix, complete_data.to_process);
 
-        self.update_peer_connections(core, &elders_change);
+        self.update_peer_connections(core, &change);
         self.send_neighbour_infos(core);
         self.send_genesis_updates(core);
         self.send_member_knowledge(core);
@@ -1161,13 +1163,88 @@ impl Approved {
         Ok(())
     }
 
+    // Handles our own section info, or the section info of our sibling directly after a split.
+    // Returns whether the event should be handled by the caller.
+    fn add_new_elders_info(
+        &mut self,
+        our_id: &PublicId,
+        elders_info: EldersInfo,
+        key_info: SectionKeyInfo,
+        proofs: AccumulatingProof,
+    ) -> Result<bool> {
+        // Split handling alone. wouldn't cater to merge
+        if elders_info
+            .prefix()
+            .is_extension_of(self.chain.state.our_prefix())
+        {
+            match self.split_cache.take() {
+                None => {
+                    self.split_cache = Some(SplitCache {
+                        elders_info,
+                        key_info,
+                        proofs,
+                    });
+                    Ok(false)
+                }
+                Some(cache) => {
+                    let cache_pfx = *cache.elders_info.prefix();
+
+                    // Add our_info first so when we add sibling info, its a valid neighbour prefix
+                    // which does not get immediately purged.
+                    if cache_pfx.matches(our_id.name()) {
+                        self.add_our_elders_info(
+                            our_id,
+                            cache.elders_info,
+                            cache.key_info,
+                            cache.proofs,
+                        )?;
+                        self.chain.state.sections.add_neighbour(elders_info);
+                    } else {
+                        self.add_our_elders_info(our_id, elders_info, key_info, proofs)?;
+                        self.chain.state.sections.add_neighbour(cache.elders_info);
+                    }
+                    Ok(true)
+                }
+            }
+        } else {
+            self.add_our_elders_info(our_id, elders_info, key_info, proofs)?;
+            Ok(true)
+        }
+    }
+
+    fn add_our_elders_info(
+        &mut self,
+        our_id: &PublicId,
+        elders_info: EldersInfo,
+        key_info: SectionKeyInfo,
+        proofs: AccumulatingProof,
+    ) -> Result<(), RoutingError> {
+        let proof_block = self
+            .chain
+            .section_keys_provider
+            .combine_signatures_for_section_proof_block(
+                self.chain.state.sections.our(),
+                key_info,
+                proofs,
+            )?;
+        self.chain
+            .section_keys_provider
+            .finalise_dkg(our_id, &elders_info)?;
+        self.chain.state.push_our_new_info(elders_info, proof_block);
+        self.chain.churn_in_progress = false;
+        Ok(())
+    }
+
     fn handle_neighbour_info_event(
         &mut self,
         core: &mut Core,
         elders_info: EldersInfo,
-        neighbour_change: EldersChange,
     ) -> Result<()> {
         info!("handle NeighbourInfo: {:?}", elders_info);
+
+        let change = EldersChange::builder(&self.chain.state.sections);
+        self.chain.state.sections.add_neighbour(elders_info.clone());
+        let change = change.build(&self.chain.state.sections);
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
@@ -1179,7 +1256,7 @@ impl Approved {
                 version: elders_info.version(),
                 prefix: *elders_info.prefix(),
             });
-        self.update_peer_connections(core, &neighbour_change);
+        self.update_peer_connections(core, &change);
         Ok(())
     }
 
@@ -1188,6 +1265,8 @@ impl Approved {
         core: &Core,
         key_info: SectionKeyInfo,
     ) -> Result<(), RoutingError> {
+        self.chain.state.sections.update_keys(&key_info);
+
         if !self.is_our_elder(core.id()) {
             return Ok(());
         }
@@ -1197,6 +1276,13 @@ impl Approved {
             ack_version: key_info.version(),
         });
         Ok(())
+    }
+
+    fn handle_ack_message_event(&mut self, payload: AckMessagePayload) {
+        self.chain
+            .state
+            .sections
+            .update_knowledge(payload.src_prefix, payload.ack_version)
     }
 
     fn handle_send_ack_message_event(
@@ -1220,7 +1306,12 @@ impl Approved {
 
     fn handle_prune_event(&mut self, core: &mut Core) -> Result<(), RoutingError> {
         if !self.is_our_elder(core.id()) {
-            debug!("Unhandled ParsecPrune event");
+            debug!("ignore ParsecPrune event - not elder");
+            return Ok(());
+        }
+
+        if self.chain.churn_in_progress {
+            debug!("ignore ParsecPrune event - churn in progress");
             return Ok(());
         }
 
@@ -1885,4 +1976,11 @@ fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo> {
         );
         err
     })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SplitCache {
+    elders_info: EldersInfo,
+    key_info: SectionKeyInfo,
+    proofs: AccumulatingProof,
 }
