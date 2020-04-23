@@ -16,7 +16,6 @@ use crate::{
     location::DstLocation,
     messages::{AccumulatingMessage, PlainMessage, Variant},
     network_params::NetworkParams,
-    relocation::RelocateDetails,
     rng::MainRng,
     section::{
         EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider,
@@ -166,16 +165,6 @@ impl Chain {
         }
 
         Ok(Some(AccumulatedEvent::new(event)))
-    }
-
-    /// Returns the details of the next scheduled relocation to be voted for, if any.
-    pub fn poll_relocation(&mut self) -> Option<RelocateDetails> {
-        // Delay relocation until no additional churn is in progress.
-        if !self.can_poll_churn() {
-            return None;
-        }
-
-        self.state.poll_relocation()
     }
 
     pub fn can_poll_churn(&self) -> bool {
