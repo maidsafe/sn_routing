@@ -6,16 +6,16 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+use super::{
+    AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
+    SectionProofBlock, SectionProofChain,
+};
 use crate::{
     consensus::AccumulatedEvent,
     error::Result,
     id::{P2pNode, PublicId},
     network_params::NetworkParams,
     relocation::{self, RelocateDetails},
-    section::{
-        AgeCounter, EldersInfo, MemberState, SectionKeyInfo, SectionMap, SectionMembers,
-        SectionProofBlock, SectionProofChain,
-    },
     xor_space::{Prefix, XorName, Xorable},
 };
 use std::{

@@ -12,6 +12,7 @@ mod network_stats;
 mod section_map;
 mod section_members;
 mod section_proof_chain;
+mod shared_state;
 
 pub use self::{
     elders_info::{quorum_count, EldersInfo},
@@ -22,6 +23,7 @@ pub use self::{
     section_proof_chain::{
         SectionKeyInfo, SectionProofBlock, SectionProofChain, SectionProofSlice, TrustStatus,
     },
+    shared_state::SharedState,
 };
 
 #[cfg(feature = "mock_base")]
