@@ -22,7 +22,6 @@ use crate::{
         self, AccumulatingMessage, BootstrapResponse, JoinRequest, MemberKnowledge, Message,
         MessageHash, MessageWithBytes, SrcAuthority, Variant, VerifyStatus,
     },
-    network_params::NetworkParams,
     pause::PausedState,
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
@@ -68,7 +67,7 @@ pub struct Approved {
 
 impl Approved {
     // Create the approved stage for the first node in the network.
-    pub fn first(core: &mut Core, network_params: NetworkParams) -> Result<Self> {
+    pub fn first(core: &mut Core) -> Result<Self> {
         let public_id = *core.full_id.public_id();
         let connection_info = core.transport.our_connection_info()?;
         let p2p_node = P2pNode::new(public_id, connection_info);
@@ -85,7 +84,6 @@ impl Approved {
 
         Ok(Self::new(
             core,
-            network_params,
             gen_pfx_info,
             first_dkg_result.secret_key_share,
         ))
@@ -94,7 +92,6 @@ impl Approved {
     // Create the approved stage for a regular node.
     pub fn new(
         core: &mut Core,
-        network_params: NetworkParams,
         gen_pfx_info: GenesisPfxInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
@@ -102,7 +99,6 @@ impl Approved {
 
         let chain = Chain::new(
             &mut core.rng,
-            network_params,
             core.full_id.clone(),
             gen_pfx_info.clone(),
             secret_key_share,
@@ -121,6 +117,7 @@ impl Approved {
 
     pub fn pause(self, core: Core) -> PausedState {
         PausedState {
+            network_params: core.network_params,
             chain: self.chain,
             full_id: core.full_id,
             gen_pfx_info: self.gen_pfx_info,
@@ -139,6 +136,7 @@ impl Approved {
         user_event_tx: Sender<Event>,
     ) -> (Self, Core) {
         let core = Core::resume(
+            state.network_params,
             state.full_id,
             state.transport,
             state.msg_filter,
@@ -353,13 +351,7 @@ impl Approved {
         core.msg_filter.reset();
 
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.chain = Chain::new(
-            &mut core.rng,
-            self.chain.network_params(),
-            core.full_id.clone(),
-            gen_pfx_info,
-            None,
-        );
+        self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info, None);
 
         Ok(())
     }
@@ -403,7 +395,6 @@ impl Approved {
         }
 
         Some(RelocateParams {
-            network_params: self.chain.network_params(),
             details: signed_msg,
             conn_infos,
         })
@@ -726,7 +717,10 @@ impl Approved {
         let mut old_pfx = *self.chain.state().our_prefix();
         let mut was_elder = self.is_our_elder(core.id());
 
-        while let Some(event) = self.chain.poll_accumulated(core.id())? {
+        while let Some(event) = self
+            .chain
+            .poll_accumulated(&core.network_params, core.id())?
+        {
             match event {
                 PollAccumulated::AccumulatedEvent(event) => {
                     self.handle_accumulated_event(core, event, old_pfx, was_elder)?
@@ -831,7 +825,11 @@ impl Approved {
     }
 
     fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) -> Result<()> {
-        if self.chain.add_member(payload.p2p_node.clone(), payload.age) {
+        if self.chain.add_member(
+            payload.p2p_node.clone(),
+            payload.age,
+            core.network_params.safe_section_size,
+        ) {
             info!("handle Online: {:?}.", payload);
 
             if self.is_our_elder(core.id()) {
@@ -846,7 +844,10 @@ impl Approved {
     }
 
     fn handle_offline_event(&mut self, core: &mut Core, pub_id: PublicId) -> Result<()> {
-        if let (Some(addr), _) = self.chain.remove_member(&pub_id) {
+        if let (Some(addr), _) = self
+            .chain
+            .remove_member(&pub_id, core.network_params.safe_section_size)
+        {
             info!("handle Offline: {}", pub_id);
             core.transport.disconnect(addr);
             let _ = self.members_knowledge.remove(pub_id.name());
@@ -879,7 +880,11 @@ impl Approved {
         core: &mut Core,
         details: RelocateDetails,
     ) -> Result<(), RoutingError> {
-        let node_knowledge = match self.chain.remove_member(&details.pub_id).1 {
+        let node_knowledge = match self
+            .chain
+            .remove_member(&details.pub_id, core.network_params.safe_section_size)
+            .1
+        {
             MemberState::Relocating { node_knowledge } => {
                 info!("handle Relocate: {:?}", details);
                 node_knowledge
@@ -1239,13 +1244,7 @@ impl Approved {
     // Demotes this node from elder to adult.
     fn demote(&mut self, core: &mut Core, gen_pfx_info: GenesisPfxInfo) {
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.chain = Chain::new(
-            &mut core.rng,
-            self.chain.network_params(),
-            core.full_id.clone(),
-            gen_pfx_info,
-            None,
-        );
+        self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info, None);
     }
 
     // Checking members vote status and vote to remove those non-resposive nodes.
@@ -1733,7 +1732,6 @@ struct CompleteParsecReset {
 }
 
 pub struct RelocateParams {
-    pub network_params: NetworkParams,
     pub conn_infos: Vec<SocketAddr>,
     pub details: SignedRelocateDetails,
 }

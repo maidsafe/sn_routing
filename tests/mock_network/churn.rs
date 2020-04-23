@@ -327,10 +327,10 @@ fn drop_random_nodes<R: Rng>(
             continue;
         }
 
-        let elder_size = unwrap!(node.inner.elder_size());
-        let safe_section_size = unwrap!(node.inner.safe_section_size());
+        let elder_size = node.inner.elder_size();
+        let safe_section_size = node.inner.safe_section_size();
 
-        let section = unwrap!(sections.get_mut(node.our_prefix()));
+        let section = sections.get_mut(node.our_prefix()).unwrap();
 
         // Drop at most as many nodes as is the minimal number of non-elders in the section.
         // This guarantees we never drop below `elder_size` even in case of split.

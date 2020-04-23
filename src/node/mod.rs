@@ -110,11 +110,10 @@ impl Node {
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
         let first = config.first;
-        let network_params = config.network_params;
         let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
         let stage = if first {
-            match Approved::first(&mut core, network_params) {
+            match Approved::first(&mut core) {
                 Ok(stage) => {
                     info!("{} Started a new network as a seed node.", core.name());
                     core.send_event(Event::Connected(Connected::First));
@@ -133,7 +132,7 @@ impl Node {
         } else {
             info!("{} Bootstrapping a new node.", core.name());
             core.transport.bootstrap();
-            Stage::Bootstrapping(Bootstrapping::new(network_params, None))
+            Stage::Bootstrapping(Bootstrapping::new(None))
         };
 
         let node = Self {
@@ -483,8 +482,7 @@ impl Node {
             Stage::Bootstrapping(stage) => stage.handle_timeout(&mut self.core, token),
             Stage::Joining(stage) => {
                 if stage.handle_timeout(&mut self.core, token) {
-                    let network_params = stage.network_params;
-                    self.rebootstrap(network_params)
+                    self.rebootstrap()
                 }
             }
             Stage::Approved(stage) => stage.handle_timeout(&mut self.core, token),
@@ -639,9 +637,8 @@ impl Node {
                         elders_info,
                     )?,
                 Variant::NodeApproval(gen_pfx_info) => {
-                    let network_params = stage.network_params;
                     let connect_type = stage.connect_type();
-                    self.approve(network_params, connect_type, *gen_pfx_info)
+                    self.approve(connect_type, *gen_pfx_info)
                 }
                 Variant::Bounce {
                     elders_version,
@@ -814,32 +811,21 @@ impl Node {
     // Transition from Bootstrapping to Joining
     fn join(&mut self, params: JoinParams) {
         let JoinParams {
-            network_params,
             elders_info,
             relocate_payload,
         } = params;
 
-        self.stage = Stage::Joining(Joining::new(
-            &mut self.core,
-            network_params,
-            elders_info,
-            relocate_payload,
-        ));
+        self.stage = Stage::Joining(Joining::new(&mut self.core, elders_info, relocate_payload));
     }
 
     // Transition from Joining to Approved
-    fn approve(
-        &mut self,
-        network_params: NetworkParams,
-        connect_type: Connected,
-        gen_pfx_info: GenesisPfxInfo,
-    ) {
+    fn approve(&mut self, connect_type: Connected, gen_pfx_info: GenesisPfxInfo) {
         info!(
             "This node has been approved to join the network at {:?}!",
             gen_pfx_info.elders_info.prefix(),
         );
 
-        let stage = Approved::new(&mut self.core, network_params, gen_pfx_info, None);
+        let stage = Approved::new(&mut self.core, gen_pfx_info, None);
         self.stage = Stage::Approved(stage);
         self.core.send_event(Event::Connected(connect_type));
     }
@@ -847,12 +833,11 @@ impl Node {
     // Transition from Approved to Bootstrapping on relocation
     fn relocate(&mut self, params: RelocateParams) {
         let RelocateParams {
-            network_params,
             conn_infos,
             details,
         } = params;
 
-        let mut stage = Bootstrapping::new(network_params, Some(details));
+        let mut stage = Bootstrapping::new(Some(details));
 
         for conn_info in conn_infos {
             stage.send_bootstrap_request(&mut self.core, conn_info)
@@ -862,9 +847,9 @@ impl Node {
     }
 
     // Transition from Joining to Bootstrapping on join failure
-    fn rebootstrap(&mut self, network_params: NetworkParams) {
+    fn rebootstrap(&mut self) {
         // TODO: preserve relocation details
-        self.stage = Stage::Bootstrapping(Bootstrapping::new(network_params, None));
+        self.stage = Stage::Bootstrapping(Bootstrapping::new(None));
         self.core.full_id = FullId::gen(&mut self.core.rng);
         self.core.transport.bootstrap();
     }
@@ -1051,18 +1036,14 @@ impl Node {
     }
 
     /// Returns the number of elders this node is using.
-    /// Only if we have a chain (meaning we are elders or adults) we will process this API
-    pub fn elder_size(&self) -> Option<usize> {
-        self.chain().map(|chain| chain.network_params().elder_size)
+    pub fn elder_size(&self) -> usize {
+        self.core.network_params.elder_size
     }
 
     /// Size at which our section splits. Since this is configurable, this method is used to
     /// obtain it.
-    ///
-    /// Only if we have a chain (meaning we are elders) we will process this API
-    pub fn safe_section_size(&self) -> Option<usize> {
-        self.chain()
-            .map(|chain| chain.network_params().safe_section_size)
+    pub fn safe_section_size(&self) -> usize {
+        self.core.network_params.safe_section_size
     }
 
     /// Provide a SectionProofSlice that proves the given signature to the given destination.
@@ -1097,15 +1078,9 @@ impl Node {
         let (transport_tx, transport_node_rx, transport_client_rx) = transport_channels();
         let (user_event_tx, user_event_rx) = crossbeam_channel::unbounded();
 
-        let network_params = config.network_params;
         let mut core = Core::new(config, timer_tx, transport_tx, user_event_tx);
 
-        let stage = Stage::Approved(Approved::new(
-            &mut core,
-            network_params,
-            gen_pfx_info,
-            secret_key_share,
-        ));
+        let stage = Stage::Approved(Approved::new(&mut core, gen_pfx_info, secret_key_share));
 
         let node = Self {
             stage,

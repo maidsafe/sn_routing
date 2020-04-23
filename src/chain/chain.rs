@@ -34,8 +34,6 @@ use std::{
 pub struct Chain {
     /// The consensus engine.
     pub consensus_engine: ConsensusEngine,
-    /// Network parameters
-    network_params: NetworkParams,
     /// Our current Section BLS keys.
     our_section_bls_keys: SectionKeys,
     /// The shared state of the section.
@@ -55,16 +53,6 @@ pub struct Chain {
 
 #[allow(clippy::len_without_is_empty)]
 impl Chain {
-    /// Returns the safe section size.
-    pub fn safe_section_size(&self) -> usize {
-        self.network_params.safe_section_size
-    }
-
-    /// Returns the full `NetworkParams` structure (if present)
-    pub fn network_params(&self) -> NetworkParams {
-        self.network_params
-    }
-
     /// Returns the shared section state.
     pub fn state(&self) -> &SharedState {
         &self.state
@@ -84,7 +72,6 @@ impl Chain {
     /// Create a new chain given genesis information
     pub fn new(
         rng: &mut MainRng,
-        network_params: NetworkParams,
         our_full_id: FullId,
         gen_info: GenesisPfxInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
@@ -96,7 +83,6 @@ impl Chain {
         let consensus_engine = ConsensusEngine::new(rng, our_full_id, &gen_info);
 
         Self {
-            network_params,
             our_section_bls_keys: SectionKeys {
                 public_key_set: gen_info.public_keys.clone(),
                 secret_key_share,
@@ -158,6 +144,7 @@ impl Chain {
     /// containers.
     pub fn poll_accumulated(
         &mut self,
+        network_params: &NetworkParams,
         our_id: &PublicId,
     ) -> Result<Option<PollAccumulated>, RoutingError> {
         if let Some(event) = self.poll_churn_event_backlog() {
@@ -166,7 +153,7 @@ impl Chain {
 
         // Note: it's important that `promote_and_demote_elders` happens before `poll_relocation`,
         // otherwise we might relocate a node that we still need.
-        if let Some(new_infos) = self.promote_and_demote_elders(our_id)? {
+        if let Some(new_infos) = self.promote_and_demote_elders(network_params, our_id)? {
             return Ok(Some(PollAccumulated::PromoteDemoteElders(new_infos)));
         }
 
@@ -315,12 +302,10 @@ impl Chain {
     /// # Panics
     ///
     /// Panics if churn is in progress
-    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8) -> bool {
+    pub fn add_member(&mut self, p2p_node: P2pNode, age: u8, safe_section_size: usize) -> bool {
         assert!(!self.churn_in_progress);
 
-        let added = self
-            .state
-            .add_member(p2p_node, age, self.safe_section_size());
+        let added = self.state.add_member(p2p_node, age, safe_section_size);
 
         if added {
             self.members_changed = true;
@@ -335,10 +320,14 @@ impl Chain {
     /// # Panics
     ///
     /// Panics if churn is in progress
-    pub fn remove_member(&mut self, pub_id: &PublicId) -> (Option<SocketAddr>, MemberState) {
+    pub fn remove_member(
+        &mut self,
+        pub_id: &PublicId,
+        safe_section_size: usize,
+    ) -> (Option<SocketAddr>, MemberState) {
         assert!(!self.churn_in_progress);
 
-        let (addr, state) = self.state.remove_member(pub_id, self.safe_section_size());
+        let (addr, state) = self.state.remove_member(pub_id, safe_section_size);
 
         if addr.is_some() {
             self.members_changed = true;
@@ -351,6 +340,7 @@ impl Chain {
     /// Returns a set of EldersInfos to vote for.
     fn promote_and_demote_elders(
         &mut self,
+        network_params: &NetworkParams,
         our_id: &PublicId,
     ) -> Result<Option<Vec<EldersInfo>>, RoutingError> {
         if !self.members_changed || !self.can_poll_churn() {
@@ -360,7 +350,7 @@ impl Chain {
 
         let new_infos = self
             .state
-            .promote_and_demote_elders(our_id.name(), &self.network_params)?;
+            .promote_and_demote_elders(network_params, our_id.name())?;
         self.churn_in_progress = new_infos.is_some();
         self.members_changed = false;
 
@@ -759,13 +749,7 @@ mod tests {
             parsec_version: 0,
         };
 
-        let mut chain = Chain::new(
-            rng,
-            Default::default(),
-            our_id,
-            genesis_info,
-            Some(secret_key_share),
-        );
+        let mut chain = Chain::new(rng, our_id, genesis_info, Some(secret_key_share));
 
         for neighbour_info in sections_iter {
             add_neighbour_elders_info(&mut chain, &our_pub_id, neighbour_info);
