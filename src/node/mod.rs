@@ -275,6 +275,14 @@ impl Node {
         }
     }
 
+    /// Returns whether the node is Elder.
+    pub fn is_elder(&self) -> bool {
+        self.stage
+            .approved()
+            .map(|stage| stage.chain.state().sections.our().is_member(self.core.id()))
+            .unwrap_or(false)
+    }
+
     /// Returns the information of all the current section elders.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> {
         self.stage
@@ -323,10 +331,11 @@ impl Node {
     /// Vote for a user-defined event.
     /// Returns `InvalidState` error if the node is not elder.
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) -> Result<()> {
+        let our_id = self.core.id();
         if let Some(stage) = self
             .stage
             .approved_mut()
-            .filter(|stage| stage.chain.is_self_elder())
+            .filter(|stage| stage.is_our_elder(our_id))
         {
             stage.vote_for_user_event(event);
             Ok(())
@@ -485,7 +494,7 @@ impl Node {
 
     fn handle_peer_lost(&mut self, peer_addr: SocketAddr) {
         if let Stage::Approved(stage) = &mut self.stage {
-            stage.handle_peer_lost(peer_addr);
+            stage.handle_peer_lost(&self.core, peer_addr);
         }
     }
 
@@ -877,7 +886,11 @@ impl Node {
                 self.core.name(),
                 stage.chain.state().our_prefix(),
                 stage.chain.state().our_info().version(),
-                if stage.chain.is_self_elder() { "!" } else { "" },
+                if stage.is_our_elder(self.core.id()) {
+                    "!"
+                } else {
+                    ""
+                },
             ),
             Stage::Terminated => write!(buffer, "[terminated]"),
         })
@@ -889,13 +902,6 @@ impl Node {
     /// Returns whether the node is approved member of a section.
     pub fn is_approved(&self) -> bool {
         self.stage.approved().is_some()
-    }
-
-    /// Returns whether the node is Elder.
-    pub fn is_elder(&self) -> bool {
-        self.chain()
-            .map(|chain| chain.is_self_elder())
-            .unwrap_or(false)
     }
 
     /// Indicates if there are any pending observations in the parsec object
@@ -1067,9 +1073,10 @@ impl Node {
     /// If this node is elder and `name` belongs to a member of our section, returns the age
     /// counter of that member. Otherwise returns `None`.
     pub fn member_age_counter(&self, name: &XorName) -> Option<u32> {
-        self.chain()
-            .filter(|chain| chain.is_self_elder())
-            .and_then(|chain| chain.state().our_members.get(name))
+        self.stage
+            .approved()
+            .filter(|stage| stage.is_our_elder(self.core.id()))
+            .and_then(|stage| stage.chain.state().our_members.get(name))
             .map(|info| info.age_counter_value())
     }
 

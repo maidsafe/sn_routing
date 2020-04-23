@@ -147,7 +147,8 @@ impl Approved {
             user_event_tx,
         );
 
-        let timer_token = if state.chain.is_self_elder() {
+        let is_self_elder = state.chain.state().sections.our().is_member(core.id());
+        let timer_token = if is_self_elder {
             core.timer
                 .schedule(state.chain.consensus_engine.gossip_period())
         } else {
@@ -194,7 +195,7 @@ impl Approved {
         }
     }
 
-    pub fn handle_peer_lost(&mut self, peer_addr: SocketAddr) {
+    pub fn handle_peer_lost(&mut self, core: &Core, peer_addr: SocketAddr) {
         let pub_id = if let Some(node) = self.chain.state().find_p2p_node_from_addr(&peer_addr) {
             debug!("Lost known peer {}", node);
             *node.public_id()
@@ -203,14 +204,14 @@ impl Approved {
             return;
         };
 
-        if self.chain.is_self_elder() && self.chain.state().our_members.contains(&pub_id) {
+        if self.is_our_elder(core.id()) && self.chain.state().our_members.contains(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
     }
 
     pub fn handle_timeout(&mut self, core: &mut Core, token: u64) {
         if self.timer_token == token {
-            if self.chain.is_self_elder() {
+            if self.is_our_elder(core.id()) {
                 self.timer_token = core
                     .timer
                     .schedule(self.chain.consensus_engine.gossip_period());
@@ -240,6 +241,11 @@ impl Approved {
         self.vote_for_event(AccumulatingEvent::User(event));
     }
 
+    /// Is the node with the given id an elder in our section?
+    pub fn is_our_elder(&self, id: &PublicId) -> bool {
+        self.chain.state().sections.our().is_member(id)
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
@@ -254,11 +260,11 @@ impl Approved {
             | Variant::Bounce { .. } => true,
 
             Variant::UserMessage(_) => self.should_handle_user_message(our_id, &msg.dst),
-            Variant::JoinRequest(req) => self.should_handle_join_request(req),
+            Variant::JoinRequest(req) => self.should_handle_join_request(our_id, req),
 
-            Variant::NeighbourInfo(_) | Variant::AckMessage { .. } => self.chain.is_self_elder(),
+            Variant::NeighbourInfo(_) | Variant::AckMessage { .. } => self.is_our_elder(our_id),
 
-            Variant::GenesisUpdate(info) => self.should_handle_genesis_update(info),
+            Variant::GenesisUpdate(info) => self.should_handle_genesis_update(our_id, info),
 
             Variant::MessageSignature(accumulating_msg) => {
                 match &accumulating_msg.content.variant {
@@ -268,7 +274,7 @@ impl Approved {
                     | Variant::AckMessage { .. }
                     | Variant::Relocate(_) => true,
 
-                    Variant::GenesisUpdate(info) => self.should_handle_genesis_update(info),
+                    Variant::GenesisUpdate(info) => self.should_handle_genesis_update(our_id, info),
 
                     // These variants are not be signature-accumulated
                     Variant::MessageSignature(_)
@@ -629,17 +635,18 @@ impl Approved {
         msg: Message,
         msg_bytes: Bytes,
     ) {
+        let is_self_elder = self.is_our_elder(core.id());
         let bounce = match &msg.variant {
             Variant::MessageSignature(_) | Variant::JoinRequest(_) => true,
-            Variant::Relocate(_) if self.chain.is_self_elder() => true,
+            Variant::Relocate(_) if is_self_elder => true,
             Variant::NeighbourInfo(_) | Variant::UserMessage(_) | Variant::AckMessage { .. }
-                if !self.chain.is_self_elder() =>
+                if !is_self_elder =>
             {
                 true
             }
-            Variant::GenesisUpdate(_) => self.chain.is_self_elder(),
+            Variant::GenesisUpdate(_) => is_self_elder,
             Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => false,
-            Variant::MemberKnowledge(_) if !self.chain.is_self_elder() => false,
+            Variant::MemberKnowledge(_) if !is_self_elder => false,
 
             _ => unreachable!("unexpected unhandled message: {:?}", msg),
         };
@@ -717,7 +724,7 @@ impl Approved {
 
     fn chain_poll(&mut self, core: &mut Core) -> Result<()> {
         let mut old_pfx = *self.chain.state().our_prefix();
-        let mut was_elder = self.chain.is_self_elder();
+        let mut was_elder = self.is_our_elder(core.id());
 
         while let Some(event) = self.chain.poll_accumulated()? {
             match event {
@@ -725,15 +732,15 @@ impl Approved {
                     self.handle_accumulated_event(core, event, old_pfx, was_elder)?
                 }
                 PollAccumulated::RelocateDetails(details) => {
-                    self.handle_relocate_polled(details)?;
+                    self.handle_relocate_polled(core, details)?;
                 }
                 PollAccumulated::PromoteDemoteElders(new_infos) => {
-                    self.handle_promote_and_demote_elders(new_infos)?;
+                    self.handle_promote_and_demote_elders(core, new_infos)?;
                 }
             }
 
             old_pfx = *self.chain.state().our_prefix();
-            was_elder = self.chain.is_self_elder();
+            was_elder = self.is_our_elder(core.id());
         }
 
         self.check_voting_status();
@@ -762,7 +769,7 @@ impl Approved {
             AccumulatingEvent::DkgResult {
                 participants,
                 dkg_result,
-            } => self.handle_dkg_result_event(&participants, &dkg_result)?,
+            } => self.handle_dkg_result_event(core, &participants, &dkg_result)?,
             AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload)?,
             AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id)?,
             AccumulatingEvent::SectionInfo(_, _) => {
@@ -772,7 +779,7 @@ impl Approved {
                 self.handle_neighbour_info_event(core, elders_info, event.elders_change)?
             }
             AccumulatingEvent::TheirKeyInfo(key_info) => {
-                self.handle_their_key_info_event(key_info)?
+                self.handle_their_key_info_event(core, key_info)?
             }
             AccumulatingEvent::AckMessage(_payload) => {
                 // Update their_knowledge is handled within the chain.
@@ -783,7 +790,7 @@ impl Approved {
             AccumulatingEvent::ParsecPrune => self.handle_prune_event(core)?,
             AccumulatingEvent::Relocate(payload) => self.handle_relocate_event(core, payload)?,
             AccumulatingEvent::RelocatePrepare(pub_id, count) => {
-                self.handle_relocate_prepare_event(pub_id, count);
+                self.handle_relocate_prepare_event(core, pub_id, count);
             }
             AccumulatingEvent::User(payload) => self.handle_user_event(core, payload)?,
         }
@@ -791,8 +798,12 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_relocate_polled(&mut self, details: RelocateDetails) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
+    fn handle_relocate_polled(
+        &mut self,
+        core: &Core,
+        details: RelocateDetails,
+    ) -> Result<(), RoutingError> {
+        if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
@@ -803,9 +814,10 @@ impl Approved {
 
     fn handle_promote_and_demote_elders(
         &mut self,
+        core: &Core,
         new_infos: Vec<EldersInfo>,
     ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
+        if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
@@ -822,7 +834,7 @@ impl Approved {
         if self.chain.add_member(payload.p2p_node.clone(), payload.age) {
             info!("handle Online: {:?}.", payload);
 
-            if self.chain.is_self_elder() {
+            if self.is_our_elder(core.id()) {
                 self.send_node_approval(core, payload.p2p_node, payload.their_knowledge);
                 self.print_network_stats();
             }
@@ -845,8 +857,13 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_relocate_prepare_event(&mut self, payload: RelocateDetails, count_down: i32) {
-        if !self.chain.is_self_elder() {
+    fn handle_relocate_prepare_event(
+        &mut self,
+        core: &Core,
+        payload: RelocateDetails,
+        count_down: i32,
+    ) {
+        if !self.is_our_elder(core.id()) {
             return;
         }
 
@@ -883,7 +900,7 @@ impl Approved {
 
         let _ = self.members_knowledge.remove(details.pub_id.name());
 
-        if !self.chain.is_self_elder() {
+        if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
@@ -914,10 +931,11 @@ impl Approved {
 
     fn handle_dkg_result_event(
         &mut self,
+        core: &Core,
         participants: &BTreeSet<PublicId>,
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
+        if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
@@ -1016,7 +1034,7 @@ impl Approved {
     ) -> Result<()> {
         info!("handle NeighbourInfo: {:?}", elders_info);
 
-        if !self.chain.is_self_elder() {
+        if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
@@ -1032,9 +1050,10 @@ impl Approved {
 
     fn handle_their_key_info_event(
         &mut self,
+        core: &Core,
         key_info: SectionKeyInfo,
     ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
+        if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
@@ -1050,7 +1069,7 @@ impl Approved {
         core: &mut Core,
         ack_payload: SendAckMessagePayload,
     ) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
+        if !self.is_our_elder(core.id()) {
             return Ok(());
         }
 
@@ -1065,7 +1084,7 @@ impl Approved {
     }
 
     fn handle_prune_event(&mut self, core: &mut Core) -> Result<(), RoutingError> {
-        if !self.chain.is_self_elder() {
+        if !self.is_our_elder(core.id()) {
             debug!("Unhandled ParsecPrune event");
             return Ok(());
         }
@@ -1598,21 +1617,24 @@ impl Approved {
     ////////////////////////////////////////////////////////////////////////////
 
     // Ignore stale GenesisUpdates
-    fn should_handle_genesis_update(&self, gen_pfx_info: &GenesisPfxInfo) -> bool {
-        !self.chain.is_self_elder()
-            && gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
+    fn should_handle_genesis_update(
+        &self,
+        our_id: &PublicId,
+        gen_pfx_info: &GenesisPfxInfo,
+    ) -> bool {
+        !self.is_our_elder(our_id) && gen_pfx_info.parsec_version > self.gen_pfx_info.parsec_version
     }
 
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
-    fn should_handle_join_request(&self, req: &JoinRequest) -> bool {
-        self.chain.is_self_elder() || req.elders_version < self.chain.state().our_info().version()
+    fn should_handle_join_request(&self, our_id: &PublicId, req: &JoinRequest) -> bool {
+        self.is_our_elder(our_id) || req.elders_version < self.chain.state().our_info().version()
     }
 
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
     // as a node.
     fn should_handle_user_message(&self, our_id: &PublicId, dst: &DstLocation) -> bool {
-        self.chain.is_self_elder() || dst.as_node().ok() == Some(our_id.name())
+        self.is_our_elder(our_id) || dst.as_node().ok() == Some(our_id.name())
     }
 
     // Connect to all elders from our section or neighbour sections that we are not yet connected

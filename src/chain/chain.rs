@@ -381,11 +381,6 @@ impl Chain {
         })
     }
 
-    /// Returns whether we are elder in our section.
-    pub fn is_self_elder(&self) -> bool {
-        self.state.is_peer_our_elder(&self.our_id)
-    }
-
     // Signs and proves the given message and wraps it in `AccumulatingMessage`.
     pub fn to_accumulating_message(
         &self,
