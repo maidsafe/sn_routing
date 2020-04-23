@@ -20,11 +20,10 @@ use crate::{
     rng::MainRng,
     section::{
         EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeys, SectionKeysProvider,
-        SectionProofBlock, SharedState,
+        SharedState,
     },
 };
 use bincode::serialize;
-use serde::Serialize;
 use std::{collections::BTreeSet, fmt::Debug, net::SocketAddr};
 
 /// Data chain.
@@ -352,7 +351,7 @@ impl Chain {
     ) -> Result<AccumulatingMessage> {
         let proof = self.state.prove(&dst, node_knowledge_override);
         let pk_set = self.section_keys_provider.public_key_set().clone();
-        let secret_key = self.section_keys_provider.secret_key_share()?;
+        let sk_share = self.section_keys_provider.secret_key_share()?;
 
         let content = PlainMessage {
             src: *self.state.our_prefix(),
@@ -360,7 +359,7 @@ impl Chain {
             variant,
         };
 
-        AccumulatingMessage::new(content, secret_key, pk_set, proof)
+        AccumulatingMessage::new(content, sk_share, pk_set, proof)
     }
 
     /// Check which nodes are unresponsive.
@@ -425,7 +424,13 @@ impl Chain {
         key_info: SectionKeyInfo,
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
-        let proof_block = self.combine_signatures_for_section_proof_block(key_info, proofs)?;
+        let proof_block = self
+            .section_keys_provider
+            .combine_signatures_for_section_proof_block(
+                self.state.sections.our(),
+                key_info,
+                proofs,
+            )?;
         self.section_keys_provider
             .finalise_dkg(our_id, &elders_info)?;
         self.state.push_our_new_info(elders_info, proof_block);
@@ -433,50 +438,6 @@ impl Chain {
         self.state.sections.prune_neighbours();
         self.state.remove_our_members_not_matching_our_prefix();
         Ok(())
-    }
-
-    pub fn combine_signatures_for_section_proof_block(
-        &self,
-        key_info: SectionKeyInfo,
-        proofs: AccumulatingProof,
-    ) -> Result<SectionProofBlock, RoutingError> {
-        let signature = self
-            .check_and_combine_signatures(&key_info, proofs)
-            .ok_or(RoutingError::InvalidNewSectionInfo)?;
-        Ok(SectionProofBlock::new(key_info, signature))
-    }
-
-    pub fn check_and_combine_signatures<S: Serialize + Debug>(
-        &self,
-        signed_payload: &S,
-        proofs: AccumulatingProof,
-    ) -> Option<bls::Signature> {
-        let signed_bytes = serialize(signed_payload)
-            .map_err(|err| {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Failed to serialise accumulated event: {:?} for {:?}",
-                    err,
-                    signed_payload
-                );
-                err
-            })
-            .ok()?;
-
-        proofs
-            .check_and_combine_signatures(
-                self.state.our_info(),
-                self.section_keys_provider.public_key_set(),
-                &signed_bytes,
-            )
-            .or_else(|| {
-                log_or_panic!(
-                    log::Level::Error,
-                    "Failed to combine signatures for accumulated event: {:?}",
-                    signed_payload
-                );
-                None
-            })
     }
 }
 
