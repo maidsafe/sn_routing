@@ -726,7 +726,7 @@ impl Approved {
         let mut old_pfx = *self.chain.state().our_prefix();
         let mut was_elder = self.is_our_elder(core.id());
 
-        while let Some(event) = self.chain.poll_accumulated()? {
+        while let Some(event) = self.chain.poll_accumulated(core.id())? {
             match event {
                 PollAccumulated::AccumulatedEvent(event) => {
                     self.handle_accumulated_event(core, event, old_pfx, was_elder)?
@@ -979,7 +979,7 @@ impl Approved {
             panic!("Merge not supported: {:?} -> {:?}", old_pfx, info_prefix);
         }
 
-        let complete_data = self.prepare_parsec_reset()?;
+        let complete_data = self.prepare_parsec_reset(core.id())?;
 
         if !is_elder {
             // Demote after the parsec reset, i.e genesis prefix info is for the new parsec,
@@ -1090,7 +1090,7 @@ impl Approved {
         }
 
         info!("handle ParsecPrune");
-        let complete_data = self.prepare_parsec_reset()?;
+        let complete_data = self.prepare_parsec_reset(core.id())?;
         self.complete_parsec_reset(
             core,
             complete_data.gen_pfx_info,
@@ -1111,11 +1111,11 @@ impl Approved {
     // Parsec and Chain management
     ////////////////////////////////////////////////////////////////////////////
 
-    fn prepare_parsec_reset(&mut self) -> Result<CompleteParsecReset> {
+    fn prepare_parsec_reset(&mut self, our_id: &PublicId) -> Result<CompleteParsecReset> {
         let ParsecResetData {
             gen_pfx_info,
             cached_events,
-        } = self.chain.prepare_parsec_reset()?;
+        } = self.chain.prepare_parsec_reset(our_id)?;
 
         let our_pfx = *self.chain.state().our_prefix();
 
