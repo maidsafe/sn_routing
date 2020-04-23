@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::{Chain, ParsecResetData},
+    chain::Chain,
     consensus::{
         self, AccumulatedEvent, AccumulatingEvent, AckMessagePayload, DkgResultWrapper,
         EldersChange, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent, NetworkEvent,
@@ -740,7 +740,11 @@ impl Approved {
             return Ok(true);
         }
 
-        let (event, proofs) = match self.chain.poll_consensus() {
+        let (event, proofs) = match self
+            .chain
+            .consensus_engine
+            .poll(self.chain.state.sections.our())
+        {
             None => return Ok(false),
             Some((event, proofs)) => (event, proofs),
         };
@@ -1205,11 +1209,18 @@ impl Approved {
     // Parsec and Chain management
     ////////////////////////////////////////////////////////////////////////////
 
+    /// Gets the data needed to initialise a new Parsec instance
     fn prepare_parsec_reset(&mut self, our_id: &PublicId) -> Result<CompleteParsecReset> {
-        let ParsecResetData {
-            gen_pfx_info,
-            cached_events,
-        } = self.chain.prepare_parsec_reset(our_id)?;
+        self.chain.state.handled_genesis_event = false;
+        let cached_events = self.chain.consensus_engine.prepare_reset(our_id);
+
+        let gen_pfx_info = GenesisPfxInfo {
+            elders_info: self.chain.state.our_info().clone(),
+            public_keys: self.chain.section_keys_provider.public_key_set().clone(),
+            state_serialized: bincode::serialize(&self.chain.state)?,
+            ages: self.chain.state.our_members.get_age_counters(),
+            parsec_version: self.chain.consensus_engine.parsec_version() + 1,
+        };
 
         let our_pfx = *self.chain.state().our_prefix();
 
@@ -1338,7 +1349,8 @@ impl Approved {
 
     // Checking members vote status and vote to remove those non-resposive nodes.
     fn check_voting_status(&mut self) {
-        let unresponsive_nodes = self.chain.check_vote_status();
+        let members = self.chain.state.our_info().member_ids();
+        let unresponsive_nodes = self.chain.consensus_engine.check_vote_status(members);
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
             self.chain
