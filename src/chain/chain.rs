@@ -398,15 +398,6 @@ impl Chain {
     }
 }
 
-/// The outcome of successful accumulated poll
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum PollAccumulated {
-    AccumulatedEvent(AccumulatedEvent),
-    RelocateDetails(RelocateDetails),
-    PromoteDemoteElders(Vec<EldersInfo>),
-}
-
 /// The outcome of a prefix change.
 pub struct ParsecResetData {
     /// The new genesis prefix info.
