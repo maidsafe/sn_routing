@@ -636,15 +636,21 @@ impl Approved {
     ) {
         let is_self_elder = self.is_our_elder(core.id());
         let bounce = match &msg.variant {
-            Variant::MessageSignature(_) | Variant::JoinRequest(_) => true,
+            Variant::MessageSignature(accumulating_msg) => match accumulating_msg.content.variant {
+                Variant::GenesisUpdate(_) => is_self_elder,
+                _ => true,
+            },
+            Variant::JoinRequest(_) => true,
             Variant::Relocate(_) if is_self_elder => true,
             Variant::NeighbourInfo(_) | Variant::UserMessage(_) | Variant::AckMessage { .. }
                 if !is_self_elder =>
             {
                 true
             }
-            Variant::GenesisUpdate(_) => is_self_elder,
-            Variant::BootstrapResponse(_) | Variant::NodeApproval(_) | Variant::Ping => false,
+            Variant::GenesisUpdate(_)
+            | Variant::BootstrapResponse(_)
+            | Variant::NodeApproval(_)
+            | Variant::Ping => false,
             Variant::MemberKnowledge(_) if !is_self_elder => false,
 
             _ => unreachable!("unexpected unhandled message: {:?}", msg),
