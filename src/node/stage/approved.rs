@@ -242,7 +242,8 @@ impl Approved {
 
     pub fn should_handle_message(&self, msg: &Message) -> bool {
         match &msg.variant {
-            Variant::Relocate(_)
+            Variant::UserMessage(_)
+            | Variant::Relocate(_)
             | Variant::BootstrapRequest(_)
             | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
@@ -251,9 +252,7 @@ impl Approved {
 
             Variant::JoinRequest(req) => self.should_handle_join_request(req),
 
-            Variant::NeighbourInfo(_) | Variant::UserMessage(_) | Variant::AckMessage { .. } => {
-                self.chain.is_self_elder()
-            }
+            Variant::NeighbourInfo(_) | Variant::AckMessage { .. } => self.chain.is_self_elder(),
 
             Variant::GenesisUpdate(info) => self.should_handle_genesis_update(info),
 
