@@ -27,7 +27,7 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(
-    exceeding_bitshifts,
+    arithmetic_overflow,
     mutable_transmutes,
     no_mangle_const_items,
     unknown_crate_types,
@@ -64,6 +64,8 @@
     unused_results,
     clippy::needless_borrow
 )]
+// Need this to stop clippy complaining about the `use quic_p2p` line which is actually necessary.
+#![allow(clippy::single_component_path_imports)]
 
 #[macro_use]
 extern crate serde_derive;
