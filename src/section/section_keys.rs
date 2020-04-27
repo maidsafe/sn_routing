@@ -61,11 +61,15 @@ pub struct SectionKeys {
 }
 
 impl SectionKeys {
-    pub fn new(dkg_result: DkgResult, our_id: &PublicId, new_elders_info: &EldersInfo) -> Self {
+    pub fn new(
+        public_key_set: bls::PublicKeySet,
+        secret_key_share: Option<bls::SecretKeyShare>,
+        our_id: &PublicId,
+        new_elders_info: &EldersInfo,
+    ) -> Self {
         Self {
-            public_key_set: dkg_result.public_key_set,
-            secret_key_share: dkg_result
-                .secret_key_share
+            public_key_set,
+            secret_key_share: secret_key_share
                 .and_then(|key| SectionKeyShare::new(key, our_id, new_elders_info)),
         }
     }
@@ -83,9 +87,14 @@ pub struct SectionKeysProvider {
 }
 
 impl SectionKeysProvider {
-    pub fn new(keys: SectionKeys) -> Self {
+    pub fn new(
+        public_key_set: bls::PublicKeySet,
+        secret_key_share: Option<bls::SecretKeyShare>,
+        our_id: &PublicId,
+        our_elders_info: &EldersInfo,
+    ) -> Self {
         Self {
-            keys,
+            keys: SectionKeys::new(public_key_set, secret_key_share, our_id, our_elders_info),
             new_keys: Default::default(),
         }
     }
@@ -130,7 +139,12 @@ impl SectionKeysProvider {
             .remove(first_name)
             .ok_or(RoutingError::InvalidElderDkgResult)?;
 
-        self.keys = SectionKeys::new(dkg_result, our_id, elders_info);
+        self.keys = SectionKeys::new(
+            dkg_result.public_key_set,
+            dkg_result.secret_key_share,
+            our_id,
+            elders_info,
+        );
         self.new_keys.clear();
 
         Ok(())
