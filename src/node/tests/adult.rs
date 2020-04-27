@@ -17,7 +17,7 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::EldersInfo,
+    section::{EldersInfo, SectionKeysProvider},
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -43,11 +43,7 @@ impl Env {
 
         let elders = create_elders(&mut rng, &network, None);
 
-        let public_key_set = elders[0]
-            .chain
-            .section_keys_provider
-            .public_key_set()
-            .clone();
+        let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
         let elders_info = elders[0].chain.state.our_info().clone();
         let gen_pfx_info = test_utils::create_gen_pfx_info(elders_info, public_key_set, 0);
 
@@ -72,7 +68,6 @@ impl Env {
         test_utils::create_gen_pfx_info(
             self.elders[0].chain.state.our_info().clone(),
             self.elders[0]
-                .chain
                 .section_keys_provider
                 .public_key_set()
                 .clone(),
@@ -103,6 +98,7 @@ impl Env {
 // Simplified representation of the section elder.
 struct Elder {
     chain: Chain,
+    section_keys_provider: SectionKeysProvider,
     addr: SocketAddr,
     full_id: FullId,
 }
@@ -122,17 +118,19 @@ fn create_elders(
         .into_iter()
         .enumerate()
         .map(|(index, (_, full_id))| {
-            let chain = Chain::new(
-                rng,
-                full_id.clone(),
-                gen_pfx_info.clone(),
+            let chain = Chain::new(rng, full_id.clone(), gen_pfx_info.clone());
+            let section_keys_provider = SectionKeysProvider::new(
+                gen_pfx_info.public_keys.clone(),
                 Some(secret_key_set.secret_key_share(index)),
+                full_id.public_id(),
+                &gen_pfx_info.elders_info,
             );
 
             let addr = network.gen_addr();
 
             Elder {
                 chain,
+                section_keys_provider,
                 addr,
                 full_id,
             }
@@ -145,12 +143,12 @@ fn genesis_update_message_signature(
     dst: XorName,
     gen_pfx_info: GenesisPfxInfo,
 ) -> Result<Message> {
-    let msg = genesis_update_accumulating_message(&sender.chain, dst, gen_pfx_info)?;
+    let msg = genesis_update_accumulating_message(sender, dst, gen_pfx_info)?;
     to_message_signature(&sender.full_id, msg)
 }
 
 fn genesis_update_accumulating_message(
-    sender: &Chain,
+    sender: &Elder,
     dst: XorName,
     gen_pfx_info: GenesisPfxInfo,
 ) -> Result<AccumulatingMessage> {
@@ -162,7 +160,7 @@ fn genesis_update_accumulating_message(
 
     let secret_key = sender.section_keys_provider.secret_key_share().unwrap();
     let public_key_set = sender.section_keys_provider.public_key_set().clone();
-    let proof = sender.state.prove(&content.dst, None);
+    let proof = sender.chain.state.prove(&content.dst, None);
 
     AccumulatingMessage::new(content, secret_key, public_key_set, proof)
 }

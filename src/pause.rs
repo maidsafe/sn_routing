@@ -8,7 +8,7 @@
 
 use crate::{
     chain::Chain, consensus::GenesisPfxInfo, id::FullId, message_filter::MessageFilter,
-    messages::QueuedMessage, network_params::NetworkParams,
+    messages::QueuedMessage, network_params::NetworkParams, section::SectionKeysProvider,
     signature_accumulator::SignatureAccumulator, transport::Transport, TransportEvent,
 };
 use crossbeam_channel as mpmc;
@@ -25,6 +25,7 @@ use std::collections::VecDeque;
 pub struct PausedState {
     pub(super) network_params: NetworkParams,
     pub(super) chain: Chain,
+    pub(super) section_keys_provider: SectionKeysProvider,
     pub(super) full_id: FullId,
     pub(super) gen_pfx_info: GenesisPfxInfo,
     pub(super) msg_filter: MessageFilter,
