@@ -10,7 +10,7 @@ use crate::{
     consensus::{ConsensusEngine, GenesisPfxInfo},
     id::FullId,
     rng::MainRng,
-    section::{SectionKeyShare, SectionKeys, SectionKeysProvider, SharedState},
+    section::{SectionKeysProvider, SharedState},
 };
 
 /// Data chain.
@@ -33,19 +33,16 @@ impl Chain {
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> Self {
         // TODO validate `gen_info` to contain adequate proofs
-        let our_id = *our_full_id.public_id();
-
-        let secret_key_share = secret_key_share
-            .and_then(|key| SectionKeyShare::new(key, &our_id, &gen_info.elders_info));
-        let section_keys = SectionKeys {
-            public_key_set: gen_info.public_keys.clone(),
+        let section_keys_provider = SectionKeysProvider::new(
+            gen_info.public_keys.clone(),
             secret_key_share,
-        };
-
+            our_full_id.public_id(),
+            &gen_info.elders_info,
+        );
         let consensus_engine = ConsensusEngine::new(rng, our_full_id, &gen_info);
 
         Self {
-            section_keys_provider: SectionKeysProvider::new(section_keys),
+            section_keys_provider,
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             consensus_engine,
         }
