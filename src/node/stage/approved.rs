@@ -27,7 +27,7 @@ use crate::{
     routing_table,
     section::{
         EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeysProvider, SharedState,
-        MIN_AGE, MIN_AGE_COUNTER,
+        SplitCache, MIN_AGE, MIN_AGE_COUNTER,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -148,6 +148,7 @@ impl Approved {
             transport: core.transport,
             transport_rx: None,
             sig_accumulator: self.sig_accumulator,
+            split_cache: self.split_cache,
         }
     }
 
@@ -181,9 +182,9 @@ impl Approved {
             sig_accumulator: state.sig_accumulator,
             gen_pfx_info: state.gen_pfx_info,
             timer_token,
+            split_cache: state.split_cache,
             // TODO: these fields should come from PausedState too
             dkg_cache: Default::default(),
-            split_cache: None,
             churn_in_progress: false,
             members_changed: false,
             pending_voted_msgs: Default::default(),
@@ -1993,11 +1994,4 @@ fn create_first_elders_info(p2p_node: P2pNode) -> Result<EldersInfo> {
         );
         err
     })
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct SplitCache {
-    elders_info: EldersInfo,
-    key_info: SectionKeyInfo,
-    proofs: AccumulatingProof,
 }

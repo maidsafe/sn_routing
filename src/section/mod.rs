@@ -32,3 +32,12 @@ pub use self::{
 pub use self::{
     elders_info::elders_info_for_test, section_proof_chain::section_proof_slice_for_test,
 };
+
+use crate::consensus::AccumulatingProof;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SplitCache {
+    pub elders_info: EldersInfo,
+    pub key_info: SectionKeyInfo,
+    pub proofs: AccumulatingProof,
+}
