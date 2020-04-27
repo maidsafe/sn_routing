@@ -40,14 +40,14 @@ impl SectionKeyShare {
 
     /// create a new share finding the position wihtin the elders.
     pub fn new(
-        key: bls::SecretKeyShare,
+        key: Option<bls::SecretKeyShare>,
         our_id: &PublicId,
         new_elders_info: &EldersInfo,
     ) -> Option<Self> {
-        Some(Self {
-            index: new_elders_info.member_ids().position(|id| id == our_id)?,
-            key,
-        })
+        let key = key?;
+        let index = new_elders_info.member_ids().position(|id| id == our_id)?;
+
+        Some(Self { index, key })
     }
 }
 
@@ -63,14 +63,11 @@ pub struct SectionKeys {
 impl SectionKeys {
     pub fn new(
         public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<bls::SecretKeyShare>,
-        our_id: &PublicId,
-        new_elders_info: &EldersInfo,
+        secret_key_share: Option<SectionKeyShare>,
     ) -> Self {
         Self {
             public_key_set,
-            secret_key_share: secret_key_share
-                .and_then(|key| SectionKeyShare::new(key, our_id, new_elders_info)),
+            secret_key_share,
         }
     }
 }
@@ -89,12 +86,10 @@ pub struct SectionKeysProvider {
 impl SectionKeysProvider {
     pub fn new(
         public_key_set: bls::PublicKeySet,
-        secret_key_share: Option<bls::SecretKeyShare>,
-        our_id: &PublicId,
-        our_elders_info: &EldersInfo,
+        secret_key_share: Option<SectionKeyShare>,
     ) -> Self {
         Self {
-            keys: SectionKeys::new(public_key_set, secret_key_share, our_id, our_elders_info),
+            keys: SectionKeys::new(public_key_set, secret_key_share),
             new_keys: Default::default(),
         }
     }
@@ -138,13 +133,10 @@ impl SectionKeysProvider {
             .new_keys
             .remove(first_name)
             .ok_or(RoutingError::InvalidElderDkgResult)?;
+        let secret_key_share =
+            SectionKeyShare::new(dkg_result.secret_key_share, our_id, elders_info);
 
-        self.keys = SectionKeys::new(
-            dkg_result.public_key_set,
-            dkg_result.secret_key_share,
-            our_id,
-            elders_info,
-        );
+        self.keys = SectionKeys::new(dkg_result.public_key_set, secret_key_share);
         self.new_keys.clear();
 
         Ok(())

@@ -27,7 +27,8 @@ use crate::{
     rng::MainRng,
     routing_table,
     section::{
-        EldersInfo, MemberState, SectionKeyInfo, SectionKeysProvider, MIN_AGE, MIN_AGE_COUNTER,
+        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeysProvider, MIN_AGE,
+        MIN_AGE_COUNTER,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -108,9 +109,7 @@ impl Approved {
 
         let section_keys_provider = SectionKeysProvider::new(
             gen_pfx_info.public_keys.clone(),
-            secret_key_share,
-            core.id(),
-            &gen_pfx_info.elders_info,
+            SectionKeyShare::new(secret_key_share, core.id(), &gen_pfx_info.elders_info),
         );
 
         let chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info.clone());
@@ -370,12 +369,8 @@ impl Approved {
 
         core.msg_filter.reset();
 
-        self.section_keys_provider = SectionKeysProvider::new(
-            gen_pfx_info.public_keys.clone(),
-            None,
-            core.id(),
-            &gen_pfx_info.elders_info,
-        );
+        self.section_keys_provider =
+            SectionKeysProvider::new(gen_pfx_info.public_keys.clone(), None);
         self.gen_pfx_info = gen_pfx_info.clone();
         self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info);
 
@@ -1479,12 +1474,8 @@ impl Approved {
 
     // Demotes this node from elder to adult.
     fn demote(&mut self, core: &mut Core, gen_pfx_info: GenesisPfxInfo) {
-        self.section_keys_provider = SectionKeysProvider::new(
-            gen_pfx_info.public_keys.clone(),
-            None,
-            core.id(),
-            &gen_pfx_info.elders_info,
-        );
+        self.section_keys_provider =
+            SectionKeysProvider::new(gen_pfx_info.public_keys.clone(), None);
         self.gen_pfx_info = gen_pfx_info.clone();
         self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info);
     }

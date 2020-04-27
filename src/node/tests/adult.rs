@@ -17,7 +17,7 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, SectionKeysProvider},
+    section::{EldersInfo, SectionKeyShare, SectionKeysProvider},
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -121,9 +121,11 @@ fn create_elders(
             let chain = Chain::new(rng, full_id.clone(), gen_pfx_info.clone());
             let section_keys_provider = SectionKeysProvider::new(
                 gen_pfx_info.public_keys.clone(),
-                Some(secret_key_set.secret_key_share(index)),
-                full_id.public_id(),
-                &gen_pfx_info.elders_info,
+                SectionKeyShare::new(
+                    Some(secret_key_set.secret_key_share(index)),
+                    full_id.public_id(),
+                    &gen_pfx_info.elders_info,
+                ),
             );
 
             let addr = network.gen_addr();
