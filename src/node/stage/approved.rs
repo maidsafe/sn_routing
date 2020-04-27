@@ -7,7 +7,6 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::Chain,
     consensus::{
         self, AccumulatingEvent, AccumulatingProof, AckMessagePayload, ConsensusEngine,
         DkgResultWrapper, EldersChange, EventSigPayload, GenesisPfxInfo, IntoAccumulatingEvent,
@@ -27,8 +26,8 @@ use crate::{
     rng::MainRng,
     routing_table,
     section::{
-        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeysProvider, MIN_AGE,
-        MIN_AGE_COUNTER,
+        EldersInfo, MemberState, SectionKeyInfo, SectionKeyShare, SectionKeysProvider, SharedState,
+        MIN_AGE, MIN_AGE_COUNTER,
     },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
@@ -55,9 +54,8 @@ const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 // The approved stage - node is a full member of a section and is performing its duties according
 // to its persona (infant, adult or elder).
 pub struct Approved {
-    pub chain: Chain,
     pub consensus_engine: ConsensusEngine,
-
+    pub shared_state: SharedState,
     section_keys_provider: SectionKeysProvider,
     sig_accumulator: SignatureAccumulator,
     gen_pfx_info: GenesisPfxInfo,
@@ -113,13 +111,17 @@ impl Approved {
             SectionKeyShare::new(secret_key_share, core.id(), &gen_pfx_info.elders_info),
         );
 
-        let chain = Chain::new(gen_pfx_info.clone());
         let consensus_engine =
             ConsensusEngine::new(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
+        let shared_state = SharedState::new(
+            gen_pfx_info.elders_info.clone(),
+            gen_pfx_info.public_keys.clone(),
+            gen_pfx_info.ages.clone(),
+        );
 
         Self {
-            chain,
             consensus_engine,
+            shared_state,
             section_keys_provider,
             sig_accumulator: Default::default(),
             gen_pfx_info,
@@ -136,8 +138,8 @@ impl Approved {
     pub fn pause(self, core: Core) -> PausedState {
         PausedState {
             network_params: core.network_params,
-            chain: self.chain,
             consensus_engine: self.consensus_engine,
+            shared_state: self.shared_state,
             section_keys_provider: self.section_keys_provider,
             full_id: core.full_id,
             gen_pfx_info: self.gen_pfx_info,
@@ -165,7 +167,7 @@ impl Approved {
             user_event_tx,
         );
 
-        let is_self_elder = state.chain.state.sections.our().is_member(core.id());
+        let is_self_elder = state.shared_state.sections.our().is_member(core.id());
         let timer_token = if is_self_elder {
             core.timer.schedule(state.consensus_engine.gossip_period())
         } else {
@@ -173,8 +175,8 @@ impl Approved {
         };
 
         let stage = Self {
-            chain: state.chain,
             consensus_engine: state.consensus_engine,
+            shared_state: state.shared_state,
             section_keys_provider: state.section_keys_provider,
             sig_accumulator: state.sig_accumulator,
             gen_pfx_info: state.gen_pfx_info,
@@ -197,8 +199,7 @@ impl Approved {
 
     pub fn handle_connection_failure(&mut self, core: &mut Core, addr: SocketAddr) {
         let node = self
-            .chain
-            .state
+            .shared_state
             .our_members
             .active()
             .map(|info| &info.p2p_node)
@@ -216,7 +217,7 @@ impl Approved {
     }
 
     pub fn handle_peer_lost(&mut self, core: &Core, peer_addr: SocketAddr) {
-        let pub_id = if let Some(node) = self.chain.state.find_p2p_node_from_addr(&peer_addr) {
+        let pub_id = if let Some(node) = self.shared_state.find_p2p_node_from_addr(&peer_addr) {
             debug!("Lost known peer {}", node);
             *node.public_id()
         } else {
@@ -224,7 +225,7 @@ impl Approved {
             return;
         };
 
-        if self.is_our_elder(core.id()) && self.chain.state.our_members.contains(&pub_id) {
+        if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(&pub_id) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
     }
@@ -243,8 +244,8 @@ impl Approved {
     }
 
     pub fn finish_handle_input(&mut self, core: &mut Core) {
-        if self.chain.state.our_info().len() == 1 {
-            // If we're the only node then invoke chain_poll directly
+        if self.shared_state.our_info().len() == 1 {
+            // If we're the only node then invoke poll_all directly
             if let Err(error) = self.poll_all(core) {
                 error!("poll failed: {:?}", error);
             }
@@ -261,7 +262,7 @@ impl Approved {
 
     /// Is the node with the given id an elder in our section?
     pub fn is_our_elder(&self, id: &PublicId) -> bool {
-        self.chain.state.sections.our().is_member(id)
+        self.shared_state.sections.our().is_member(id)
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -313,7 +314,7 @@ impl Approved {
 
     pub fn verify_message(&self, msg: &Message) -> Result<bool, RoutingError> {
         self.verify_message_quiet(msg).map_err(|error| {
-            messages::log_verify_failure(msg, &error, self.chain.state.sections.keys());
+            messages::log_verify_failure(msg, &error, self.shared_state.sections.keys());
             error
         })
     }
@@ -324,7 +325,7 @@ impl Approved {
         src: SrcAuthority,
         dst: DstLocation,
     ) -> Result<()> {
-        if self.chain.state.sections.is_new_neighbour(&elders_info) {
+        if self.shared_state.sections.is_new_neighbour(&elders_info) {
             let _ = self
                 .pending_voted_msgs
                 .entry(PendingMessageKey::NeighbourInfo {
@@ -394,15 +395,18 @@ impl Approved {
         }
 
         let conn_infos: Vec<_> = self
-            .chain
-            .state
+            .shared_state
             .sections
             .our_elders()
             .map(|p2p_node| *p2p_node.peer_addr())
             .collect();
 
         // Disconnect from everyone we know.
-        for addr in self.chain.state.known_nodes().map(|node| *node.peer_addr()) {
+        for addr in self
+            .shared_state
+            .known_nodes()
+            .map(|node| *node.peer_addr())
+        {
             core.transport.disconnect(addr);
         }
 
@@ -420,7 +424,7 @@ impl Approved {
         msg: AccumulatingMessage,
         src: PublicId,
     ) -> Result<()> {
-        if !self.chain.state.is_peer_elder(&src) {
+        if !self.shared_state.is_peer_elder(&src) {
             debug!(
                 "Received message signature from not known elder (still use it) {}, {:?}",
                 src, msg
@@ -450,8 +454,8 @@ impl Approved {
             destination, p2p_node
         );
 
-        let response = if self.chain.state.our_prefix().matches(&destination) {
-            let our_info = self.chain.state.our_info().clone();
+        let response = if self.shared_state.our_prefix().matches(&destination) {
+            let our_info = self.shared_state.our_info().clone();
             debug!(
                 "Sending BootstrapResponse::Join to {:?} ({:?})",
                 p2p_node, our_info
@@ -459,8 +463,7 @@ impl Approved {
             BootstrapResponse::Join(our_info)
         } else {
             let conn_infos: Vec<_> = self
-                .chain
-                .state
+                .shared_state
                 .sections
                 .closest(&destination)
                 .1
@@ -484,22 +487,22 @@ impl Approved {
             p2p_node, join_request.elders_version
         );
 
-        if join_request.elders_version < self.chain.state.our_info().version() {
+        if join_request.elders_version < self.shared_state.our_info().version() {
             self.resend_bootstrap_response_join(core, &p2p_node);
             return;
         }
 
         let pub_id = *p2p_node.public_id();
-        if !self.chain.state.our_prefix().matches(pub_id.name()) {
+        if !self.shared_state.our_prefix().matches(pub_id.name()) {
             debug!(
                 "Ignoring JoinRequest from {} - name doesn't match our prefix {:?}.",
                 pub_id,
-                self.chain.state.our_prefix()
+                self.shared_state.our_prefix()
             );
             return;
         }
 
-        if self.chain.state.our_members.contains(&pub_id) {
+        if self.shared_state.our_members.contains(&pub_id) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
                 pub_id
@@ -507,7 +510,7 @@ impl Approved {
             return;
         }
 
-        if self.chain.state.is_in_online_backlog(&pub_id) {
+        if self.shared_state.is_in_online_backlog(&pub_id) {
             debug!("Ignoring JoinRequest from {} - already in backlog.", pub_id);
             return;
         }
@@ -524,13 +527,13 @@ impl Approved {
 
             let details = payload.relocate_details();
 
-            if !self.chain.state.our_prefix().matches(&details.destination) {
+            if !self.shared_state.our_prefix().matches(&details.destination) {
                 debug!(
                     "Ignoring relocation JoinRequest from {} - destination {} doesn't match \
                      our prefix {:?}.",
                     pub_id,
                     details.destination,
-                    self.chain.state.our_prefix()
+                    self.shared_state.our_prefix()
                 );
                 return;
             }
@@ -559,7 +562,11 @@ impl Approved {
     ) {
         trace!("Received {:?} from {:?}", payload, p2p_node);
 
-        if self.chain.state.our_members.is_active(p2p_node.public_id()) {
+        if self
+            .shared_state
+            .our_members
+            .is_active(p2p_node.public_id())
+        {
             self.members_knowledge
                 .entry(*p2p_node.name())
                 .or_default()
@@ -664,7 +671,7 @@ impl Approved {
     fn try_relay_message(&mut self, core: &mut Core, msg: &MessageWithBytes) -> Result<()> {
         if !msg
             .message_dst()
-            .contains(core.name(), self.chain.state.our_prefix())
+            .contains(core.name(), self.shared_state.our_prefix())
             || msg.message_dst().is_multiple()
         {
             // Relay closer to the destination or broadcast to the rest of our section.
@@ -685,7 +692,7 @@ impl Approved {
 
         if !msg_with_bytes
             .message_dst()
-            .contains(core.name(), self.chain.state.our_prefix())
+            .contains(core.name(), self.shared_state.our_prefix())
         {
             return Ok(());
         }
@@ -741,7 +748,7 @@ impl Approved {
             return Ok(true);
         }
 
-        let (event, proof) = match self.consensus_engine.poll(self.chain.state.sections.our()) {
+        let (event, proof) = match self.consensus_engine.poll(self.shared_state.sections.our()) {
             None => return Ok(false),
             Some((event, proof)) => (event, proof),
         };
@@ -755,7 +762,7 @@ impl Approved {
     }
 
     pub fn can_poll_churn(&self) -> bool {
-        self.chain.state.handled_genesis_event && !self.churn_in_progress
+        self.shared_state.handled_genesis_event && !self.churn_in_progress
     }
 
     // Polls and processes a backlogged churn event, if any.
@@ -764,11 +771,11 @@ impl Approved {
             return Ok(false);
         }
 
-        if let Some(event) = self.chain.state.churn_event_backlog.pop_back() {
+        if let Some(event) = self.shared_state.churn_event_backlog.pop_back() {
             trace!(
                 "churn backlog poll {:?}, Others: {:?}",
                 event,
-                self.chain.state.churn_event_backlog
+                self.shared_state.churn_event_backlog
             );
 
             self.handle_accumulated_event(core, event, AccumulatingProof::default())?;
@@ -793,9 +800,9 @@ impl Approved {
             trace!(
                 "churn backlog {:?}, Other: {:?}",
                 event,
-                self.chain.state.churn_event_backlog
+                self.shared_state.churn_event_backlog
             );
-            self.chain.state.churn_event_backlog.push_front(event);
+            self.shared_state.churn_event_backlog.push_front(event);
             return None;
         }
 
@@ -813,8 +820,7 @@ impl Approved {
         self.members_changed = false;
 
         let new_infos = if let Some(new_infos) = self
-            .chain
-            .state
+            .shared_state
             .promote_and_demote_elders(&core.network_params, core.name())?
         {
             self.churn_in_progress = true;
@@ -844,7 +850,7 @@ impl Approved {
             return false;
         }
 
-        if let Some(details) = self.chain.state.poll_relocation() {
+        if let Some(details) = self.shared_state.poll_relocation() {
             if self.is_our_elder(our_id) {
                 self.vote_for_relocate_prepare(details, INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN);
             }
@@ -923,7 +929,7 @@ impl Approved {
 
         // On split membership may need to be checked again.
         self.members_changed = true;
-        self.chain.state.update(new_state);
+        self.shared_state.update(new_state);
 
         Ok(())
     }
@@ -931,7 +937,7 @@ impl Approved {
     fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) -> Result<()> {
         assert!(!self.churn_in_progress);
 
-        if self.chain.state.add_member(
+        if self.shared_state.add_member(
             payload.p2p_node.clone(),
             payload.age,
             core.network_params.safe_section_size,
@@ -955,8 +961,7 @@ impl Approved {
         assert!(!self.churn_in_progress);
 
         if let (Some(addr), _) = self
-            .chain
-            .state
+            .shared_state
             .remove_member(&pub_id, core.network_params.safe_section_size)
         {
             info!("handle Offline: {}", pub_id);
@@ -994,8 +999,7 @@ impl Approved {
         details: RelocateDetails,
     ) -> Result<(), RoutingError> {
         let node_knowledge = match self
-            .chain
-            .state
+            .shared_state
             .remove_member(&details.pub_id, core.network_params.safe_section_size)
             .1
         {
@@ -1036,13 +1040,12 @@ impl Approved {
         // node might be lagging behind the target section in the knowledge of the source section.
         let knowledge_index = cmp::min(
             node_knowledge,
-            self.chain
-                .state
+            self.shared_state
                 .sections
                 .knowledge_index(&DstLocation::Section(details.destination), None),
         );
 
-        let src = SrcLocation::Section(*self.chain.state.our_prefix());
+        let src = SrcLocation::Section(*self.shared_state.our_prefix());
         let dst = DstLocation::Node(*details.pub_id.name());
         let content = Variant::Relocate(Box::new(details));
 
@@ -1083,17 +1086,17 @@ impl Approved {
         key_info: SectionKeyInfo,
         proof: AccumulatingProof,
     ) -> Result<()> {
-        let old_prefix = *self.chain.state.our_prefix();
+        let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
 
-        let change = EldersChange::builder(&self.chain.state.sections);
+        let change = EldersChange::builder(&self.shared_state.sections);
         let change = if self.add_new_elders_info(core.id(), elders_info, key_info, proof)? {
-            change.build(&self.chain.state.sections)
+            change.build(&self.shared_state.sections)
         } else {
             return Ok(());
         };
 
-        let elders_info = self.chain.state.our_info();
+        let elders_info = self.shared_state.our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
         let is_elder = elders_info.is_member(core.id());
@@ -1148,7 +1151,7 @@ impl Approved {
 
         if is_split {
             info!("Split");
-            core.send_event(Event::SectionSplit(*self.chain.state.our_prefix()));
+            core.send_event(Event::SectionSplit(*self.shared_state.our_prefix()));
         }
 
         if !was_elder {
@@ -1171,7 +1174,7 @@ impl Approved {
         // Split handling alone. wouldn't cater to merge
         if elders_info
             .prefix()
-            .is_extension_of(self.chain.state.our_prefix())
+            .is_extension_of(self.shared_state.our_prefix())
         {
             match self.split_cache.take() {
                 None => {
@@ -1194,10 +1197,10 @@ impl Approved {
                             cache.key_info,
                             cache.proofs,
                         )?;
-                        self.chain.state.sections.add_neighbour(elders_info);
+                        self.shared_state.sections.add_neighbour(elders_info);
                     } else {
                         self.add_our_elders_info(our_id, elders_info, key_info, proofs)?;
-                        self.chain.state.sections.add_neighbour(cache.elders_info);
+                        self.shared_state.sections.add_neighbour(cache.elders_info);
                     }
                     Ok(true)
                 }
@@ -1218,13 +1221,14 @@ impl Approved {
         let proof_block = self
             .section_keys_provider
             .combine_signatures_for_section_proof_block(
-                self.chain.state.sections.our(),
+                self.shared_state.sections.our(),
                 key_info,
                 proofs,
             )?;
         self.section_keys_provider
             .finalise_dkg(our_id, &elders_info)?;
-        self.chain.state.push_our_new_info(elders_info, proof_block);
+        self.shared_state
+            .push_our_new_info(elders_info, proof_block);
         self.churn_in_progress = false;
         Ok(())
     }
@@ -1236,9 +1240,11 @@ impl Approved {
     ) -> Result<()> {
         info!("handle NeighbourInfo: {:?}", elders_info);
 
-        let change = EldersChange::builder(&self.chain.state.sections);
-        self.chain.state.sections.add_neighbour(elders_info.clone());
-        let change = change.build(&self.chain.state.sections);
+        let change = EldersChange::builder(&self.shared_state.sections);
+        self.shared_state
+            .sections
+            .add_neighbour(elders_info.clone());
+        let change = change.build(&self.shared_state.sections);
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
@@ -1259,7 +1265,7 @@ impl Approved {
         core: &Core,
         key_info: SectionKeyInfo,
     ) -> Result<(), RoutingError> {
-        self.chain.state.sections.update_keys(&key_info);
+        self.shared_state.sections.update_keys(&key_info);
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
@@ -1273,8 +1279,7 @@ impl Approved {
     }
 
     fn handle_ack_message_event(&mut self, payload: AckMessagePayload) {
-        self.chain
-            .state
+        self.shared_state
             .sections
             .update_knowledge(payload.src_prefix, payload.ack_version)
     }
@@ -1288,10 +1293,10 @@ impl Approved {
             return Ok(());
         }
 
-        let src = SrcLocation::Section(*self.chain.state.our_prefix());
+        let src = SrcLocation::Section(*self.shared_state.our_prefix());
         let dst = DstLocation::Section(ack_payload.ack_prefix.name());
         let variant = Variant::AckMessage {
-            src_prefix: *self.chain.state.our_prefix(),
+            src_prefix: *self.shared_state.our_prefix(),
             ack_version: ack_payload.ack_version,
         };
 
@@ -1333,18 +1338,18 @@ impl Approved {
 
     /// Gets the data needed to initialise a new Parsec instance
     fn prepare_parsec_reset(&mut self, our_id: &PublicId) -> Result<CompleteParsecReset> {
-        self.chain.state.handled_genesis_event = false;
+        self.shared_state.handled_genesis_event = false;
         let cached_events = self.consensus_engine.prepare_reset(our_id);
 
         let gen_pfx_info = GenesisPfxInfo {
-            elders_info: self.chain.state.our_info().clone(),
+            elders_info: self.shared_state.our_info().clone(),
             public_keys: self.section_keys_provider.public_key_set().clone(),
-            state_serialized: bincode::serialize(&self.chain.state)?,
-            ages: self.chain.state.our_members.get_age_counters(),
+            state_serialized: bincode::serialize(&self.shared_state)?,
+            ages: self.shared_state.our_members.get_age_counters(),
             parsec_version: self.consensus_engine.parsec_version() + 1,
         };
 
-        let our_pfx = *self.chain.state.our_prefix();
+        let our_pfx = *self.shared_state.our_prefix();
 
         let to_process = cached_events
             .iter()
@@ -1469,13 +1474,17 @@ impl Approved {
             SectionKeysProvider::new(gen_pfx_info.public_keys.clone(), None);
         self.consensus_engine =
             ConsensusEngine::new(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
-        self.chain = Chain::new(gen_pfx_info.clone());
+        self.shared_state = SharedState::new(
+            gen_pfx_info.elders_info.clone(),
+            gen_pfx_info.public_keys.clone(),
+            gen_pfx_info.ages.clone(),
+        );
         self.gen_pfx_info = gen_pfx_info;
     }
 
     // Checking members vote status and vote to remove those non-resposive nodes.
     fn check_voting_status(&mut self) {
-        let members = self.chain.state.our_info().member_ids();
+        let members = self.shared_state.our_info().member_ids();
         let unresponsive_nodes = self.consensus_engine.check_vote_status(members);
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
@@ -1512,7 +1521,7 @@ impl Approved {
     }
 
     fn vote_for_send_ack_message(&mut self, ack_payload: SendAckMessagePayload) {
-        let has_their_keys = self.chain.state.sections.keys().any(|(_, info)| {
+        let has_their_keys = self.shared_state.sections.keys().any(|(_, info)| {
             *info.prefix() == ack_payload.ack_prefix && info.version() == ack_payload.ack_version
         });
 
@@ -1536,7 +1545,7 @@ impl Approved {
     ) {
         info!(
             "Our section with {:?} has approved candidate {}.",
-            self.chain.state.our_prefix(),
+            self.shared_state.our_prefix(),
             p2p_node
         );
 
@@ -1551,10 +1560,10 @@ impl Approved {
     }
 
     fn send_neighbour_infos(&mut self, core: &mut Core) {
-        for pfx in self.chain.state.neighbour_prefixes() {
-            let src = SrcLocation::Section(*self.chain.state.our_prefix());
+        for pfx in self.shared_state.neighbour_prefixes() {
+            let src = SrcLocation::Section(*self.shared_state.our_prefix());
             let dst = DstLocation::Prefix(pfx);
-            let variant = Variant::NeighbourInfo(self.chain.state.our_info().clone());
+            let variant = Variant::NeighbourInfo(self.shared_state.our_info().clone());
 
             if let Err(err) = self.send_routing_message(core, src, dst, variant, None) {
                 debug!("Failed to send NeighbourInfo: {:?}", err);
@@ -1582,8 +1591,7 @@ impl Approved {
     pub fn create_genesis_updates(&self) -> Vec<(P2pNode, AccumulatingMessage)> {
         let payload = self.gen_pfx_info.trimmed();
 
-        self.chain
-            .state
+        self.shared_state
             .adults_and_infants_p2p_nodes()
             .cloned()
             .filter_map(|recipient| {
@@ -1651,7 +1659,7 @@ impl Approved {
 
         let mut p2p_recipients: Vec<_> = recipients
             .into_iter()
-            .filter_map(|pub_id| self.chain.state.our_members.get_p2p_node(pub_id.name()))
+            .filter_map(|pub_id| self.shared_state.our_members.get_p2p_node(pub_id.name()))
             .cloned()
             .collect();
 
@@ -1669,11 +1677,11 @@ impl Approved {
 
     fn send_member_knowledge(&mut self, core: &mut Core) {
         let payload = MemberKnowledge {
-            elders_version: self.chain.state.our_info().version(),
+            elders_version: self.shared_state.our_info().version(),
             parsec_version: self.consensus_engine.parsec_version(),
         };
 
-        for recipient in self.chain.state.sections.our_elders() {
+        for recipient in self.shared_state.sections.our_elders() {
             if recipient.public_id() == core.id() {
                 continue;
             }
@@ -1685,7 +1693,7 @@ impl Approved {
 
     fn send_bounce(&mut self, core: &mut Core, recipient: &SocketAddr, msg_bytes: Bytes) {
         let variant = Variant::Bounce {
-            elders_version: Some(self.chain.state.our_info().version()),
+            elders_version: Some(self.shared_state.our_info().version()),
             message: msg_bytes,
         };
 
@@ -1694,11 +1702,11 @@ impl Approved {
 
     // Resend the response with ours or our sibling's info in case of split.
     fn resend_bootstrap_response_join(&mut self, core: &mut Core, p2p_node: &P2pNode) {
-        let our_info = self.chain.state.our_info();
+        let our_info = self.shared_state.our_info();
 
         let response_section = Some(our_info)
             .filter(|info| info.prefix().matches(p2p_node.name()))
-            .or_else(|| self.chain.state.sections.get(&our_info.prefix().sibling()))
+            .or_else(|| self.shared_state.sections.get(&our_info.prefix().sibling()))
             .filter(|info| info.prefix().matches(p2p_node.name()))
             .cloned();
 
@@ -1738,8 +1746,8 @@ impl Approved {
         let (targets, dg_size) = routing_table::delivery_targets(
             msg.message_dst(),
             core.id(),
-            &self.chain.state.our_members,
-            &self.chain.state.sections,
+            &self.shared_state.our_members,
+            &self.shared_state.sections,
         )?;
 
         let targets: Vec<_> = targets
@@ -1800,8 +1808,10 @@ impl Approved {
         let accumulating_msg =
             self.to_accumulating_message(dst, variant, node_knowledge_override)?;
 
-        let targets =
-            routing_table::signature_targets(&dst, self.chain.state.sections.our_elders().cloned());
+        let targets = routing_table::signature_targets(
+            &dst,
+            self.shared_state.sections.our_elders().cloned(),
+        );
         for target in targets {
             if target.name() == core.name() {
                 if let Some(msg) = self.sig_accumulator.add_proof(accumulating_msg.clone()) {
@@ -1830,12 +1840,12 @@ impl Approved {
         variant: Variant,
         node_knowledge_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
-        let proof = self.chain.state.prove(&dst, node_knowledge_override);
+        let proof = self.shared_state.prove(&dst, node_knowledge_override);
         let pk_set = self.section_keys_provider.public_key_set().clone();
         let sk_share = self.section_keys_provider.secret_key_share()?;
 
         let content = PlainMessage {
-            src: *self.chain.state.our_prefix(),
+            src: *self.shared_state.our_prefix(),
             dst,
             variant,
         };
@@ -1859,7 +1869,7 @@ impl Approved {
     // Ignore `JoinRequest` if we are not elder unless the join request is outdated in which case we
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
     fn should_handle_join_request(&self, our_id: &PublicId, req: &JoinRequest) -> bool {
-        self.is_our_elder(our_id) || req.elders_version < self.chain.state.our_info().version()
+        self.is_our_elder(our_id) || req.elders_version < self.shared_state.our_info().version()
     }
 
     // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
@@ -1872,8 +1882,7 @@ impl Approved {
     // to and disconnect from peers that are no longer elders of neighbour sections.
     fn update_peer_connections(&mut self, core: &mut Core, change: &EldersChange) {
         let our_needed_connections: HashSet<_> = self
-            .chain
-            .state
+            .shared_state
             .known_nodes()
             .map(|node| *node.peer_addr())
             .collect();
@@ -1897,8 +1906,7 @@ impl Approved {
         };
 
         let new_key_info = self
-            .chain
-            .state
+            .shared_state
             .sections
             .keys()
             .find(|(prefix, _)| prefix.is_compatible(key_info.prefix()))
@@ -1911,7 +1919,7 @@ impl Approved {
 
     // Verifies message but doesn't log anything on failure, only returns result.
     fn verify_message_quiet(&self, msg: &Message) -> Result<bool> {
-        match msg.verify(self.chain.state.sections.keys()) {
+        match msg.verify(self.shared_state.sections.keys()) {
             Ok(VerifyStatus::Full) => Ok(true),
             Ok(VerifyStatus::ProofTooNew) if msg.dst.is_multiple() => {
                 // Proof is too new which can only happen if we've been already demoted but are
@@ -1926,13 +1934,13 @@ impl Approved {
 
     fn check_signed_relocation_details(&self, msg: &SignedRelocateDetails) -> bool {
         msg.signed_msg()
-            .verify(self.chain.state.sections.keys())
+            .verify(self.shared_state.sections.keys())
             .and_then(VerifyStatus::require_full)
             .map_err(|error| {
                 messages::log_verify_failure(
                     msg.signed_msg(),
                     &error,
-                    self.chain.state.sections.keys(),
+                    self.shared_state.sections.keys(),
                 );
                 error
             })
@@ -1940,7 +1948,7 @@ impl Approved {
     }
 
     fn print_network_stats(&self) {
-        self.chain.state.sections.network_stats().print()
+        self.shared_state.sections.network_stats().print()
     }
 }
 

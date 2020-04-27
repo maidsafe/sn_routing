@@ -66,7 +66,7 @@ impl Environment {
         }
     }
 
-    /// Get the chain network config.
+    /// Get the network params.
     pub fn network_params(&self) -> NetworkParams {
         self.network_params
     }

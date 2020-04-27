@@ -7,13 +7,12 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    chain::Chain,
     consensus::{ConsensusEngine, GenesisPfxInfo},
     id::FullId,
     message_filter::MessageFilter,
     messages::QueuedMessage,
     network_params::NetworkParams,
-    section::SectionKeysProvider,
+    section::{SectionKeysProvider, SharedState},
     signature_accumulator::SignatureAccumulator,
     transport::Transport,
     TransportEvent,
@@ -31,8 +30,8 @@ use std::collections::VecDeque;
 // version >= X.
 pub struct PausedState {
     pub(super) network_params: NetworkParams,
-    pub(super) chain: Chain,
     pub(super) consensus_engine: ConsensusEngine,
+    pub(super) shared_state: SharedState,
     pub(super) section_keys_provider: SectionKeysProvider,
     pub(super) full_id: FullId,
     pub(super) gen_pfx_info: GenesisPfxInfo,

@@ -705,7 +705,7 @@ pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
         .collect();
     if !non_neighbours.is_empty() {
         panic!(
-            "{}({:b}) Some sections in the chain aren't neighbours of our section: {:?}",
+            "{}({:b}) Some of our known sections aren't neighbours of our section: {:?}",
             our_name, our_prefix, non_neighbours,
         );
     }
@@ -719,7 +719,7 @@ pub fn verify_invariants_for_node(env: &Environment, node: &TestNode) {
     };
     if !all_neighbours_covered {
         panic!(
-            "{}({:b}) Some neighbours aren't fully covered by the chain: {:?}",
+            "{}({:b}) Some neighbours aren't fully covered by our known sections: {:?}",
             our_name,
             our_prefix,
             iter::once(*our_prefix)
