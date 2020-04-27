@@ -271,7 +271,6 @@ mod tests {
     use super::*;
     use crate::unwrap;
     use bincode::{deserialize, serialize};
-    use rand;
     use std::cmp::Ordering;
 
     // Constant bit length of `XorName`.

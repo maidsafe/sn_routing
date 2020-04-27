@@ -145,11 +145,7 @@ impl ParsecMap {
         };
         self.count_size(ser_size, msg_version);
 
-        let parsec = if let Some(parsec) = self.map.get_mut(&msg_version) {
-            parsec
-        } else {
-            return None;
-        };
+        let parsec = self.map.get_mut(&msg_version)?;
 
         match parsec.handle_request(&pub_id, request) {
             Ok(response) => {
