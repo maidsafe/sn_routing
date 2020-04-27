@@ -6,17 +6,10 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::{
-    consensus::{ConsensusEngine, GenesisPfxInfo},
-    id::FullId,
-    rng::MainRng,
-    section::SharedState,
-};
+use crate::{consensus::GenesisPfxInfo, section::SharedState};
 
 /// Data chain.
 pub struct Chain {
-    /// The consensus engine.
-    pub consensus_engine: ConsensusEngine,
     /// The shared state of the section.
     pub state: SharedState,
 }
@@ -24,12 +17,9 @@ pub struct Chain {
 #[allow(clippy::len_without_is_empty)]
 impl Chain {
     /// Create a new chain given genesis information
-    pub fn new(rng: &mut MainRng, our_full_id: FullId, gen_info: GenesisPfxInfo) -> Self {
-        let consensus_engine = ConsensusEngine::new(rng, our_full_id, &gen_info);
-
+    pub fn new(gen_info: GenesisPfxInfo) -> Self {
         Self {
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
-            consensus_engine,
         }
     }
 }
@@ -150,7 +140,7 @@ mod tests {
             parsec_version: 0,
         };
 
-        let mut chain = Chain::new(rng, our_id, genesis_info);
+        let mut chain = Chain::new(genesis_info);
 
         for neighbour_info in sections_iter {
             add_neighbour_elders_info(&mut chain, &our_pub_id, neighbour_info);

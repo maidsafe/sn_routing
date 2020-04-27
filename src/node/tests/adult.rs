@@ -118,7 +118,7 @@ fn create_elders(
         .into_iter()
         .enumerate()
         .map(|(index, (_, full_id))| {
-            let chain = Chain::new(rng, full_id.clone(), gen_pfx_info.clone());
+            let chain = Chain::new(gen_pfx_info.clone());
             let section_keys_provider = SectionKeysProvider::new(
                 gen_pfx_info.public_keys.clone(),
                 SectionKeyShare::new(

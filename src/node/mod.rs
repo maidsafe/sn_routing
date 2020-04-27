@@ -895,7 +895,6 @@ impl Node {
             .approved()
             .map(|stage| {
                 stage
-                    .chain
                     .consensus_engine
                     .parsec_map()
                     .has_unpolled_observations()
@@ -920,7 +919,7 @@ impl Node {
     pub fn parsec_last_version(&self) -> u64 {
         self.stage
             .approved()
-            .map(|stage| stage.chain.consensus_engine.parsec_version())
+            .map(|stage| stage.consensus_engine.parsec_version())
             .unwrap_or(0)
     }
 
@@ -1096,7 +1095,7 @@ impl Node {
 
     pub(crate) fn consensus_engine(&self) -> Result<&ConsensusEngine> {
         if let Some(stage) = self.stage.approved() {
-            Ok(&stage.chain.consensus_engine)
+            Ok(&stage.consensus_engine)
         } else {
             Err(RoutingError::InvalidState)
         }
@@ -1104,7 +1103,7 @@ impl Node {
 
     pub(crate) fn consensus_engine_mut(&mut self) -> Result<&mut ConsensusEngine> {
         if let Some(stage) = self.stage.approved_mut() {
-            Ok(&mut stage.chain.consensus_engine)
+            Ok(&mut stage.consensus_engine)
         } else {
             Err(RoutingError::InvalidState)
         }
