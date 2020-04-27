@@ -1479,8 +1479,8 @@ impl Approved {
     fn handle_elders_update(&mut self, core: &mut Core, gen_pfx_info: GenesisPfxInfo) {
         self.section_keys_provider =
             SectionKeysProvider::new(gen_pfx_info.public_keys.clone(), None);
-        self.consensus_engine =
-            ConsensusEngine::new(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
+        self.consensus_engine
+            .complete_reset(&mut core.rng, core.full_id.clone(), &gen_pfx_info);
         self.shared_state = SharedState::new(
             gen_pfx_info.elders_info.clone(),
             gen_pfx_info.public_keys.clone(),
