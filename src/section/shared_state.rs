@@ -462,14 +462,17 @@ mod test {
     use super::*;
     use crate::{
         consensus::generate_bls_threshold_secret_key,
-        id::P2pNode,
+        id::{FullId, P2pNode, PublicId},
         location::DstLocation,
         rng::{self, MainRng},
-        section::EldersInfo,
-        unwrap, FullId, Prefix, XorName,
+        section::{EldersInfo, MIN_AGE_COUNTER},
+        xor_space::{Prefix, XorName},
     };
-    use rand::Rng;
-    use std::{collections::BTreeMap, str::FromStr};
+    use rand::{seq::SliceRandom, Rng};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        str::FromStr,
+    };
 
     fn gen_elders_info(rng: &mut MainRng, pfx: Prefix<XorName>, version: u64) -> EldersInfo {
         let sec_size = 5;
@@ -481,7 +484,7 @@ mod test {
                 P2pNode::new(pub_id, ([127, 0, 0, 1], 9000 + index).into()),
             );
         });
-        unwrap!(EldersInfo::new_for_test(members, pfx, version))
+        EldersInfo::new_for_test(members, pfx, version).unwrap()
     }
 
     // start_pfx: the prefix of our section as string
@@ -505,7 +508,7 @@ mod test {
         let keys_to_update = updates
             .into_iter()
             .map(|(version, pfx_str)| {
-                let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
+                let pfx = Prefix::<XorName>::from_str(pfx_str).unwrap();
                 let elders_info = gen_elders_info(rng, pfx, version as u64);
                 let bls_keys = generate_bls_threshold_secret_key(rng, 1).public_keys();
                 let key_info =
@@ -516,13 +519,13 @@ mod test {
         let expected_keys = expected
             .into_iter()
             .map(|(pfx_str, index)| {
-                let pfx = unwrap!(Prefix::<XorName>::from_str(pfx_str));
+                let pfx = Prefix::<XorName>::from_str(pfx_str).unwrap();
                 (pfx, Some(index))
             })
             .collect::<Vec<_>>();
 
         let mut state = {
-            let start_section = unwrap!(keys_to_update.first());
+            let start_section = keys_to_update.first().expect("`updates` can't be empty");
             let info = start_section.1.clone();
             let keys = start_section.2.clone();
             SharedState::new(info, keys, Default::default())
@@ -637,12 +640,12 @@ mod test {
         );
 
         for (prefix_str, version) in updates {
-            let prefix = unwrap!(prefix_str.parse());
+            let prefix = prefix_str.parse().unwrap();
             state.sections.update_knowledge(prefix, version);
         }
 
         for (dst_name_prefix_str, expected_index) in expected_proving_indices {
-            let dst_name_prefix: Prefix<_> = unwrap!(dst_name_prefix_str.parse());
+            let dst_name_prefix: Prefix<_> = dst_name_prefix_str.parse().unwrap();
             let dst_name = dst_name_prefix.substituted_in(rng.gen());
             let dst = DstLocation::Section(dst_name);
 
@@ -668,5 +671,184 @@ mod test {
             vec![("1", 1), ("10", 2), ("11", 2)],
             vec![("10", 2), ("11", 2)],
         )
+    }
+
+    // Note: The following tests were move over from the former `chain` module.
+
+    enum SecInfoGen<'a> {
+        New(Prefix<XorName>, usize),
+        Add(&'a EldersInfo),
+        Remove(&'a EldersInfo),
+    }
+
+    fn gen_section_info(
+        rng: &mut MainRng,
+        gen: SecInfoGen,
+    ) -> (EldersInfo, HashMap<PublicId, FullId>) {
+        match gen {
+            SecInfoGen::New(pfx, n) => {
+                let mut full_ids = HashMap::new();
+                let mut members = BTreeMap::new();
+                for _ in 0..n {
+                    let some_id = FullId::within_range(rng, &pfx.range_inclusive());
+                    let peer_addr = ([127, 0, 0, 1], 9999).into();
+                    let pub_id = *some_id.public_id();
+                    let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
+                    let _ = full_ids.insert(*some_id.public_id(), some_id);
+                }
+                (EldersInfo::new(members, pfx, None).unwrap(), full_ids)
+            }
+            SecInfoGen::Add(info) => {
+                let mut members = info.member_map().clone();
+                let some_id = FullId::within_range(rng, &info.prefix().range_inclusive());
+                let peer_addr = ([127, 0, 0, 1], 9999).into();
+                let pub_id = *some_id.public_id();
+                let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
+                let mut full_ids = HashMap::new();
+                let _ = full_ids.insert(pub_id, some_id);
+                (
+                    EldersInfo::new(members, *info.prefix(), Some(info)).unwrap(),
+                    full_ids,
+                )
+            }
+            SecInfoGen::Remove(info) => {
+                let members = info.member_map().clone();
+                (
+                    EldersInfo::new(members, *info.prefix(), Some(info)).unwrap(),
+                    Default::default(),
+                )
+            }
+        }
+    }
+
+    fn add_neighbour_elders_info(
+        state: &mut SharedState,
+        our_id: &PublicId,
+        neighbour_info: EldersInfo,
+    ) {
+        assert!(
+            !neighbour_info.prefix().matches(our_id.name()),
+            "Only add neighbours."
+        );
+        state.sections.add_neighbour(neighbour_info)
+    }
+
+    fn gen_state<T>(
+        rng: &mut MainRng,
+        sections: T,
+    ) -> (
+        SharedState,
+        PublicId,
+        HashMap<PublicId, FullId>,
+        bls::SecretKeySet,
+    )
+    where
+        T: IntoIterator<Item = (Prefix<XorName>, usize)>,
+    {
+        let mut full_ids = HashMap::new();
+        let mut our_id = None;
+        let mut section_members = vec![];
+        for (pfx, size) in sections {
+            let (info, ids) = gen_section_info(rng, SecInfoGen::New(pfx, size));
+            if our_id.is_none() {
+                our_id = ids.values().next().cloned();
+            }
+            full_ids.extend(ids);
+            section_members.push(info);
+        }
+
+        let our_id = our_id.expect("our id");
+        let our_pub_id = *our_id.public_id();
+        let mut sections_iter = section_members.into_iter();
+
+        let elders_info = sections_iter.next().expect("section members");
+        let ages = elders_info
+            .member_ids()
+            .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
+            .collect();
+
+        let participants = elders_info.len();
+        let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
+        let public_key_set = secret_key_set.public_keys();
+
+        let mut state = SharedState::new(elders_info, public_key_set, ages);
+
+        for neighbour_info in sections_iter {
+            add_neighbour_elders_info(&mut state, &our_pub_id, neighbour_info);
+        }
+
+        (state, our_pub_id, full_ids, secret_key_set)
+    }
+
+    fn gen_00_state(
+        rng: &mut MainRng,
+    ) -> (
+        SharedState,
+        PublicId,
+        HashMap<PublicId, FullId>,
+        bls::SecretKeySet,
+    ) {
+        let elder_size: usize = 7;
+        gen_state(
+            rng,
+            vec![
+                (Prefix::from_str("00").unwrap(), elder_size),
+                (Prefix::from_str("01").unwrap(), elder_size),
+                (Prefix::from_str("10").unwrap(), elder_size),
+            ],
+        )
+    }
+
+    fn check_infos_for_duplication(state: &SharedState) {
+        let mut prefixes: Vec<Prefix<XorName>> = vec![];
+        for (_, info) in state.sections.all() {
+            if let Some(pfx) = prefixes.iter().find(|x| x.is_compatible(info.prefix())) {
+                panic!(
+                    "Found compatible prefixes! {:?} and {:?}",
+                    pfx,
+                    info.prefix()
+                );
+            }
+            prefixes.push(*info.prefix());
+        }
+    }
+
+    #[test]
+    fn generate_state() {
+        let mut rng = rng::new();
+
+        let (state, our_id, _, _) = gen_00_state(&mut rng);
+
+        assert_eq!(
+            state
+                .sections
+                .get(&Prefix::from_str("00").unwrap())
+                .map(|info| info.is_member(&our_id)),
+            Some(true)
+        );
+        assert_eq!(state.sections.get(&Prefix::from_str("").unwrap()), None);
+        assert!(state.our_history.validate());
+        check_infos_for_duplication(&state);
+    }
+
+    #[test]
+    fn neighbour_info_cleaning() {
+        let mut rng = rng::new();
+        let (mut state, our_id, _, _) = gen_00_state(&mut rng);
+        for _ in 0..100 {
+            let (new_info, _new_ids) = {
+                let old_info: Vec<_> = state.sections.other().map(|(_, info)| info).collect();
+                let info = old_info.choose(&mut rng).expect("neighbour infos");
+                if rng.gen_bool(0.5) {
+                    gen_section_info(&mut rng, SecInfoGen::Add(info))
+                } else {
+                    gen_section_info(&mut rng, SecInfoGen::Remove(info))
+                }
+            };
+
+            add_neighbour_elders_info(&mut state, &our_id, new_info);
+            assert!(state.our_history.validate());
+            check_infos_for_duplication(&state);
+        }
     }
 }
