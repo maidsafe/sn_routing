@@ -8,7 +8,6 @@
 
 use super::utils as test_utils;
 use crate::{
-    chain::Chain,
     consensus::{generate_bls_threshold_secret_key, GenesisPfxInfo},
     error::Result,
     id::FullId,
@@ -17,7 +16,7 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, SectionKeyShare, SectionKeysProvider},
+    section::{EldersInfo, SectionKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -44,7 +43,7 @@ impl Env {
         let elders = create_elders(&mut rng, &network, None);
 
         let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
-        let elders_info = elders[0].chain.state.our_info().clone();
+        let elders_info = elders[0].state.our_info().clone();
         let gen_pfx_info = test_utils::create_gen_pfx_info(elders_info, public_key_set, 0);
 
         let (subject, ..) = Node::approved(
@@ -66,7 +65,7 @@ impl Env {
 
     fn gen_pfx_info(&self, parsec_version: u64) -> GenesisPfxInfo {
         test_utils::create_gen_pfx_info(
-            self.elders[0].chain.state.our_info().clone(),
+            self.elders[0].state.our_info().clone(),
             self.elders[0]
                 .section_keys_provider
                 .public_key_set()
@@ -76,7 +75,7 @@ impl Env {
     }
 
     fn perform_elders_change(&mut self) {
-        let prev_elders_info = self.elders[0].chain.state.our_info();
+        let prev_elders_info = self.elders[0].state.our_info();
         self.elders = create_elders(&mut self.rng, &self.network, Some(prev_elders_info));
     }
 
@@ -97,7 +96,7 @@ impl Env {
 
 // Simplified representation of the section elder.
 struct Elder {
-    chain: Chain,
+    state: SharedState,
     section_keys_provider: SectionKeysProvider,
     addr: SocketAddr,
     full_id: FullId,
@@ -118,7 +117,11 @@ fn create_elders(
         .into_iter()
         .enumerate()
         .map(|(index, (_, full_id))| {
-            let chain = Chain::new(gen_pfx_info.clone());
+            let state = SharedState::new(
+                gen_pfx_info.elders_info.clone(),
+                gen_pfx_info.public_keys.clone(),
+                gen_pfx_info.ages.clone(),
+            );
             let section_keys_provider = SectionKeysProvider::new(
                 gen_pfx_info.public_keys.clone(),
                 SectionKeyShare::new(
@@ -131,7 +134,7 @@ fn create_elders(
             let addr = network.gen_addr();
 
             Elder {
-                chain,
+                state,
                 section_keys_provider,
                 addr,
                 full_id,
@@ -162,7 +165,7 @@ fn genesis_update_accumulating_message(
 
     let secret_key = sender.section_keys_provider.secret_key_share().unwrap();
     let public_key_set = sender.section_keys_provider.public_key_set().clone();
-    let proof = sender.chain.state.prove(&content.dst, None);
+    let proof = sender.state.prove(&content.dst, None);
 
     AccumulatingMessage::new(content, secret_key, public_key_set, proof)
 }

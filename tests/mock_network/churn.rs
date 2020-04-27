@@ -91,7 +91,7 @@ fn remove_unresponsive_node() {
         let event = gen_vec(&mut rng, 100);
         nodes.iter_mut().for_each(|node| {
             if *node.name() == non_responsive_name {
-                // `chain_accumulator` gets reset during parsec pruning, which will reset the
+                // `event_accumulator` gets reset during parsec pruning, which will reset the
                 // tracking of unresponsiveness as well. So this test has to assume there is no
                 // parsec pruning being carried out.
                 if responded < UNRESPONSIVE_WINDOW - UNRESPONSIVE_THRESHOLD - 1 && rng.gen_bool(0.3)
