@@ -12,7 +12,7 @@ use crate::{
     message_filter::MessageFilter,
     messages::QueuedMessage,
     network_params::NetworkParams,
-    section::{SectionKeysProvider, SharedState},
+    section::{SectionKeysProvider, SharedState, SplitCache},
     signature_accumulator::SignatureAccumulator,
     transport::Transport,
     TransportEvent,
@@ -41,4 +41,5 @@ pub struct PausedState {
     pub(super) transport: Transport,
     pub(super) transport_rx: Option<mpmc::Receiver<TransportEvent>>,
     pub(super) sig_accumulator: SignatureAccumulator,
+    pub(super) split_cache: Option<SplitCache>,
 }
