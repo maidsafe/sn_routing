@@ -10,15 +10,13 @@ use crate::{
     consensus::{ConsensusEngine, GenesisPfxInfo},
     id::FullId,
     rng::MainRng,
-    section::{SectionKeysProvider, SharedState},
+    section::SharedState,
 };
 
 /// Data chain.
 pub struct Chain {
     /// The consensus engine.
     pub consensus_engine: ConsensusEngine,
-    /// The section keys provider
-    pub section_keys_provider: SectionKeysProvider,
     /// The shared state of the section.
     pub state: SharedState,
 }
@@ -26,23 +24,10 @@ pub struct Chain {
 #[allow(clippy::len_without_is_empty)]
 impl Chain {
     /// Create a new chain given genesis information
-    pub fn new(
-        rng: &mut MainRng,
-        our_full_id: FullId,
-        gen_info: GenesisPfxInfo,
-        secret_key_share: Option<bls::SecretKeyShare>,
-    ) -> Self {
-        // TODO validate `gen_info` to contain adequate proofs
-        let section_keys_provider = SectionKeysProvider::new(
-            gen_info.public_keys.clone(),
-            secret_key_share,
-            our_full_id.public_id(),
-            &gen_info.elders_info,
-        );
+    pub fn new(rng: &mut MainRng, our_full_id: FullId, gen_info: GenesisPfxInfo) -> Self {
         let consensus_engine = ConsensusEngine::new(rng, our_full_id, &gen_info);
 
         Self {
-            section_keys_provider,
             state: SharedState::new(gen_info.elders_info, gen_info.public_keys, gen_info.ages),
             consensus_engine,
         }
@@ -154,9 +139,7 @@ mod tests {
             .collect();
 
         let participants = elders_info.len();
-        let our_id_index = 0;
         let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
-        let secret_key_share = secret_key_set.secret_key_share(our_id_index);
         let public_key_set = secret_key_set.public_keys();
 
         let genesis_info = GenesisPfxInfo {
@@ -167,7 +150,7 @@ mod tests {
             parsec_version: 0,
         };
 
-        let mut chain = Chain::new(rng, our_id, genesis_info, Some(secret_key_share));
+        let mut chain = Chain::new(rng, our_id, genesis_info);
 
         for neighbour_info in sections_iter {
             add_neighbour_elders_info(&mut chain, &our_pub_id, neighbour_info);

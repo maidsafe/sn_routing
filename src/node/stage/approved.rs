@@ -26,7 +26,9 @@ use crate::{
     relocation::{RelocateDetails, SignedRelocateDetails},
     rng::MainRng,
     routing_table,
-    section::{EldersInfo, MemberState, SectionKeyInfo, MIN_AGE, MIN_AGE_COUNTER},
+    section::{
+        EldersInfo, MemberState, SectionKeyInfo, SectionKeysProvider, MIN_AGE, MIN_AGE_COUNTER,
+    },
     signature_accumulator::SignatureAccumulator,
     time::Duration,
     xor_space::{Prefix, XorName},
@@ -54,6 +56,7 @@ const INITIAL_RELOCATE_COOL_DOWN_COUNT_DOWN: i32 = 10;
 pub struct Approved {
     pub chain: Chain,
 
+    section_keys_provider: SectionKeysProvider,
     sig_accumulator: SignatureAccumulator,
     gen_pfx_info: GenesisPfxInfo,
     timer_token: u64,
@@ -103,16 +106,19 @@ impl Approved {
     ) -> Self {
         let timer_token = core.timer.schedule(KNOWLEDGE_TIMEOUT);
 
-        let chain = Chain::new(
-            &mut core.rng,
-            core.full_id.clone(),
-            gen_pfx_info.clone(),
+        let section_keys_provider = SectionKeysProvider::new(
+            gen_pfx_info.public_keys.clone(),
             secret_key_share,
+            core.id(),
+            &gen_pfx_info.elders_info,
         );
 
+        let chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info.clone());
+
         Self {
-            sig_accumulator: Default::default(),
             chain,
+            section_keys_provider,
+            sig_accumulator: Default::default(),
             gen_pfx_info,
             timer_token,
             dkg_cache: Default::default(),
@@ -128,6 +134,7 @@ impl Approved {
         PausedState {
             network_params: core.network_params,
             chain: self.chain,
+            section_keys_provider: self.section_keys_provider,
             full_id: core.full_id,
             gen_pfx_info: self.gen_pfx_info,
             msg_filter: core.msg_filter,
@@ -163,8 +170,9 @@ impl Approved {
         };
 
         let stage = Self {
-            sig_accumulator: state.sig_accumulator,
             chain: state.chain,
+            section_keys_provider: state.section_keys_provider,
+            sig_accumulator: state.sig_accumulator,
             gen_pfx_info: state.gen_pfx_info,
             timer_token,
             // TODO: these fields should come from PausedState too
@@ -362,8 +370,14 @@ impl Approved {
 
         core.msg_filter.reset();
 
+        self.section_keys_provider = SectionKeysProvider::new(
+            gen_pfx_info.public_keys.clone(),
+            None,
+            core.id(),
+            &gen_pfx_info.elders_info,
+        );
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info, None);
+        self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info);
 
         Ok(())
     }
@@ -1055,8 +1069,7 @@ impl Approved {
         participants: &BTreeSet<PublicId>,
         dkg_result: &DkgResultWrapper,
     ) -> Result<(), RoutingError> {
-        self.chain
-            .section_keys_provider
+        self.section_keys_provider
             .handle_dkg_result_event(participants, dkg_result)?;
 
         if !self.is_our_elder(core.id()) {
@@ -1217,15 +1230,13 @@ impl Approved {
         proofs: AccumulatingProof,
     ) -> Result<(), RoutingError> {
         let proof_block = self
-            .chain
             .section_keys_provider
             .combine_signatures_for_section_proof_block(
                 self.chain.state.sections.our(),
                 key_info,
                 proofs,
             )?;
-        self.chain
-            .section_keys_provider
+        self.section_keys_provider
             .finalise_dkg(our_id, &elders_info)?;
         self.chain.state.push_our_new_info(elders_info, proof_block);
         self.churn_in_progress = false;
@@ -1341,7 +1352,7 @@ impl Approved {
 
         let gen_pfx_info = GenesisPfxInfo {
             elders_info: self.chain.state.our_info().clone(),
-            public_keys: self.chain.section_keys_provider.public_key_set().clone(),
+            public_keys: self.section_keys_provider.public_key_set().clone(),
             state_serialized: bincode::serialize(&self.chain.state)?,
             ages: self.chain.state.our_members.get_age_counters(),
             parsec_version: self.chain.consensus_engine.parsec_version() + 1,
@@ -1468,8 +1479,14 @@ impl Approved {
 
     // Demotes this node from elder to adult.
     fn demote(&mut self, core: &mut Core, gen_pfx_info: GenesisPfxInfo) {
+        self.section_keys_provider = SectionKeysProvider::new(
+            gen_pfx_info.public_keys.clone(),
+            None,
+            core.id(),
+            &gen_pfx_info.elders_info,
+        );
         self.gen_pfx_info = gen_pfx_info.clone();
-        self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info, None);
+        self.chain = Chain::new(&mut core.rng, core.full_id.clone(), gen_pfx_info);
     }
 
     // Checking members vote status and vote to remove those non-resposive nodes.
@@ -1503,7 +1520,7 @@ impl Approved {
     ) -> Result<(), RoutingError> {
         let key_info = SectionKeyInfo::from_elders_info(&elders_info, section_key);
         let signature_payload = EventSigPayload::new_for_section_key_info(
-            &self.chain.section_keys_provider.secret_key_share()?.key,
+            &self.section_keys_provider.secret_key_share()?.key,
             &key_info,
         )?;
         let acc_event = AccumulatingEvent::SectionInfo(elders_info, key_info);
@@ -1834,8 +1851,8 @@ impl Approved {
         node_knowledge_override: Option<u64>,
     ) -> Result<AccumulatingMessage> {
         let proof = self.chain.state.prove(&dst, node_knowledge_override);
-        let pk_set = self.chain.section_keys_provider.public_key_set().clone();
-        let sk_share = self.chain.section_keys_provider.secret_key_share()?;
+        let pk_set = self.section_keys_provider.public_key_set().clone();
+        let sk_share = self.section_keys_provider.secret_key_share()?;
 
         let content = PlainMessage {
             src: *self.chain.state.our_prefix(),
