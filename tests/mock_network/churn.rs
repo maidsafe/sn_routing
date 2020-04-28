@@ -727,7 +727,7 @@ fn setup_expectations<R: Rng>(
     let prefix: Prefix<XorName> = unwrap!(current_sections(nodes).choose(rng));
     let section_name = prefix.substituted_in(rng.gen());
 
-    let src_n0 = SrcLocation::Node(*nodes[index0].id());
+    let src_n0 = SrcLocation::Node(*nodes[index0].name());
     let src_s0 = SrcLocation::Section(prefix);
 
     let dst_n0 = DstLocation::Node(*nodes[index0].name());
