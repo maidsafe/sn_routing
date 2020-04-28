@@ -38,7 +38,7 @@ use crossbeam_channel::Sender;
 use itertools::Itertools;
 use rand::Rng;
 use std::{
-    cmp,
+    cmp::{self, Ordering},
     collections::{BTreeMap, BTreeSet, HashSet},
     iter, mem,
     net::SocketAddr,
@@ -602,10 +602,17 @@ impl Approved {
             core.send_direct_message(p2p_node.peer_addr(), response);
         }
 
-        if msg_version == self.consensus_engine.parsec_version() {
-            self.poll_all(core)
-        } else {
-            Ok(())
+        match msg_version.cmp(&self.consensus_engine.parsec_version()) {
+            Ordering::Equal => self.poll_all(core),
+            Ordering::Greater => {
+                // We are lagging behind. Send a request whose response might help us catch up.
+                self.send_parsec_gossip(
+                    core,
+                    Some((self.consensus_engine.parsec_version(), p2p_node)),
+                );
+                Ok(())
+            }
+            Ordering::Less => Ok(()),
         }
     }
 
