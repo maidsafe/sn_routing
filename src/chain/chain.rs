@@ -1589,7 +1589,7 @@ impl Chain {
     /// Returns whether we are a part of the given source.
     pub fn in_src_location(&self, src: &SrcLocation) -> bool {
         match src {
-            SrcLocation::Node(id) => self.our_id().name() == id.name(),
+            SrcLocation::Node(name) => self.our_id().name() == name,
             SrcLocation::Section(prefix) => prefix.matches(self.our_id().name()),
         }
     }

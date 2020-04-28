@@ -33,7 +33,7 @@ pub enum SrcAuthority {
 impl SrcAuthority {
     pub fn location(&self) -> SrcLocation {
         match self {
-            Self::Node { public_id, .. } => SrcLocation::Node(*public_id),
+            Self::Node { public_id, .. } => SrcLocation::Node(*public_id.name()),
             Self::Section { prefix, .. } => SrcLocation::Section(*prefix),
         }
     }

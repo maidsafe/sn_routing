@@ -8,7 +8,6 @@
 
 use crate::{
     error::{Result, RoutingError},
-    id::PublicId,
     xor_space::{Prefix, XorName},
 };
 
@@ -16,8 +15,8 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize, Debug)]
 pub enum SrcLocation {
-    /// A single node with the given public id.
-    Node(PublicId),
+    /// A single node with the given name.
+    Node(XorName),
     /// A section with the given prefix.
     Section(Prefix<XorName>),
 }
