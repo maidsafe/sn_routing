@@ -558,7 +558,7 @@ impl Node {
         match &self.stage {
             Stage::Bootstrapping(stage) => stage.should_handle_message(msg),
             Stage::Joining(stage) => stage.should_handle_message(msg),
-            Stage::Approved(stage) => stage.should_handle_message(msg),
+            Stage::Approved(stage) => stage.should_handle_message(self.core.id(), msg),
             Stage::Terminated => false,
         }
     }

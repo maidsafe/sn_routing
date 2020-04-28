@@ -240,16 +240,16 @@ impl Approved {
     // Message handling
     ////////////////////////////////////////////////////////////////////////////
 
-    pub fn should_handle_message(&self, msg: &Message) -> bool {
+    pub fn should_handle_message(&self, our_id: &PublicId, msg: &Message) -> bool {
         match &msg.variant {
-            Variant::UserMessage(_)
-            | Variant::Relocate(_)
+            Variant::Relocate(_)
             | Variant::BootstrapRequest(_)
             | Variant::MemberKnowledge(_)
             | Variant::ParsecRequest(..)
             | Variant::ParsecResponse(..)
             | Variant::Bounce { .. } => true,
 
+            Variant::UserMessage(_) => self.should_handle_user_message(our_id, &msg.dst),
             Variant::JoinRequest(req) => self.should_handle_join_request(req),
 
             Variant::NeighbourInfo(_) | Variant::AckMessage { .. } => self.chain.is_self_elder(),
@@ -663,7 +663,7 @@ impl Approved {
 
         let msg = msg_with_bytes.take_or_deserialize_message()?;
 
-        if self.should_handle_message(&msg) && self.verify_message(&msg)? {
+        if self.should_handle_message(core.id(), &msg) && self.verify_message(&msg)? {
             core.msg_filter.insert_incoming(&msg_with_bytes);
             core.msg_queue.push_back(msg.into_queued(None));
         } else {
@@ -1679,6 +1679,12 @@ impl Approved {
     // reply with `BootstrapResponse::Join` with the up-to-date info (see `handle_join_request`).
     fn should_handle_join_request(&self, req: &JoinRequest) -> bool {
         self.chain.is_self_elder() || req.elders_version < self.chain.our_info().version()
+    }
+
+    // If elder, always handle UserMessage, otherwise handle it only if addressed directly to us
+    // as a node.
+    fn should_handle_user_message(&self, our_id: &PublicId, dst: &DstLocation) -> bool {
+        self.chain.is_self_elder() || dst.as_node().ok() == Some(our_id.name())
     }
 
     // Connect to all elders from our section or neighbour sections that we are not yet connected
