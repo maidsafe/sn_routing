@@ -81,16 +81,16 @@ impl VoteStatuses {
 
 #[derive(Default)]
 pub struct EventAccumulator {
-    /// A map containing network events that have not been handled yet, together with their proofs
-    /// that have been collected so far. We are still waiting for more proofs, or to reach a state
-    /// where we can handle the event.
+    // A map containing network events that have not been accumulated yet, together with their
+    // proofs that have been collected so far. We are still waiting for more proofs, or to reach a
+    // state where we can handle the event.
     // FIXME: Purge votes that are older than a given period.
-    incomplete_events: BTreeMap<AccumulatingEvent, AccumulatingProof>,
-    /// Events that were handled: Further incoming proofs for these can be ignored.
-    /// When an event is completed, it cannot be polled or inserted again.
-    completed_events: BTreeSet<AccumulatingEvent>,
-    /// A struct retains the order of insertion, and keeps tracking of which node has not involved.
-    /// Entry will be created when an event reached consensus.
+    unaccumulated_events: BTreeMap<AccumulatingEvent, AccumulatingProof>,
+    // Events that were already accumulated: Further incoming proofs for these can be ignored.
+    // When an event is accumulated, it cannot be polled or inserted again.
+    accumulated_events: BTreeSet<AccumulatingEvent>,
+    // A struct retains the order of insertion, and keeps tracking of which node has not involved.
+    // Entry will be created when an event reached consensus.
     vote_statuses: VoteStatuses,
 }
 
@@ -101,12 +101,12 @@ impl EventAccumulator {
         event: AccumulatingEvent,
         proof_set: ProofSet,
     ) -> Result<(), InsertError> {
-        if self.completed_events.contains(&event) {
+        if self.accumulated_events.contains(&event) {
             return Err(InsertError::AlreadyComplete);
         }
 
         let proof = AccumulatingProof::from_proof_set(proof_set);
-        if self.incomplete_events.insert(event, proof).is_some() {
+        if self.unaccumulated_events.insert(event, proof).is_some() {
             return Err(InsertError::ReplacedAlreadyInserted);
         }
 
@@ -119,13 +119,13 @@ impl EventAccumulator {
         proof: Proof,
         signature: Option<EventSigPayload>,
     ) -> Result<(), InsertError> {
-        if self.completed_events.contains(&event) {
+        if self.accumulated_events.contains(&event) {
             self.vote_statuses.add_vote(&event, &proof.pub_id);
             return Err(InsertError::AlreadyComplete);
         }
 
         if !self
-            .incomplete_events
+            .unaccumulated_events
             .entry(event)
             .or_insert_with(AccumulatingProof::default)
             .add_proof(proof, signature)
@@ -141,9 +141,9 @@ impl EventAccumulator {
         event: AccumulatingEvent,
         all_voters: BTreeSet<PublicId>,
     ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
-        let proofs = self.incomplete_events.remove(&event)?;
+        let proofs = self.unaccumulated_events.remove(&event)?;
 
-        if !self.completed_events.insert(event.clone()) {
+        if !self.accumulated_events.insert(event.clone()) {
             log_or_panic!(log::Level::Warn, "Duplicate insert in completed events.");
         }
 
@@ -152,26 +152,26 @@ impl EventAccumulator {
         Some((event, proofs))
     }
 
-    pub fn incomplete_events(
+    pub fn unaccumulated_events(
         &self,
     ) -> impl Iterator<Item = (&AccumulatingEvent, &AccumulatingProof)> {
-        self.incomplete_events.iter()
+        self.unaccumulated_events.iter()
     }
 
     pub fn reset_accumulator(&mut self, our_id: &PublicId) -> RemainingEvents {
-        let completed_events = std::mem::take(&mut self.completed_events);
-        let incomplete_events = std::mem::take(&mut self.incomplete_events);
+        let accumulated_events = std::mem::take(&mut self.accumulated_events);
+        let unaccumulated_events = std::mem::take(&mut self.unaccumulated_events);
         self.vote_statuses = Default::default();
 
         RemainingEvents {
-            cached_events: incomplete_events
+            unaccumulated_events: unaccumulated_events
                 .into_iter()
                 .filter(|(_, proofs)| proofs.parsec_proofs.contains_id(our_id))
                 .map(|(event, proofs)| {
                     event.into_network_event_with(proofs.into_sig_shares().remove(our_id))
                 })
                 .collect(),
-            completed_events,
+            accumulated_events,
         }
     }
 
@@ -265,10 +265,10 @@ pub enum InsertError {
 /// The outcome of a prefix change.
 #[derive(Default, PartialEq, Eq, Debug)]
 pub struct RemainingEvents {
-    /// The cached events that should be revoted.
-    pub cached_events: BTreeSet<NetworkEvent>,
-    /// The completed events.
-    pub completed_events: BTreeSet<AccumulatingEvent>,
+    /// The remaining unaccumulated events that should be revoted.
+    pub unaccumulated_events: BTreeSet<NetworkEvent>,
+    /// The already accumulated events.
+    pub accumulated_events: BTreeSet<AccumulatingEvent>,
 }
 
 #[cfg(test)]
@@ -377,13 +377,13 @@ mod test {
     }
 
     fn incomplete_events(acc: &EventAccumulator) -> Vec<(AccumulatingEvent, AccumulatingProof)> {
-        acc.incomplete_events()
+        acc.unaccumulated_events()
             .map(|(e, p)| (e.clone(), p.clone()))
             .collect()
     }
 
-    fn completed_events(acc: &EventAccumulator) -> Vec<AccumulatingEvent> {
-        acc.completed_events.iter().cloned().collect()
+    fn accumulated_events(acc: &EventAccumulator) -> Vec<AccumulatingEvent> {
+        acc.accumulated_events.iter().cloned().collect()
     }
 
     #[test]
@@ -414,7 +414,7 @@ mod test {
         let mut acc = EventAccumulator::default();
         let _ = acc.insert_with_proof_set(data.event.clone(), data.proofs.clone());
 
-        let event_to_poll = unwrap!(acc.incomplete_events().next()).0.clone();
+        let event_to_poll = unwrap!(acc.unaccumulated_events().next()).0.clone();
         let result = acc.poll_event(event_to_poll, Default::default());
 
         assert_eq!(result, Some((data.event, data.acc_proofs)));
@@ -558,12 +558,12 @@ mod test {
         assert_eq!(
             result,
             RemainingEvents {
-                cached_events: BTreeSet::new(),
-                completed_events: vec![data.event].into_iter().collect()
+                unaccumulated_events: BTreeSet::new(),
+                accumulated_events: vec![data.event].into_iter().collect()
             }
         );
         assert_eq!(incomplete_events(&acc), vec![]);
-        assert_eq!(completed_events(&acc), vec![]);
+        assert_eq!(accumulated_events(&acc), vec![]);
     }
 
     #[test]
@@ -587,12 +587,12 @@ mod test {
         assert_eq!(
             result,
             RemainingEvents {
-                cached_events: vec![data.network_event].into_iter().collect(),
-                completed_events: BTreeSet::new(),
+                unaccumulated_events: vec![data.network_event].into_iter().collect(),
+                accumulated_events: BTreeSet::new(),
             }
         );
         assert_eq!(incomplete_events(&acc), vec![]);
-        assert_eq!(completed_events(&acc), vec![]);
+        assert_eq!(accumulated_events(&acc), vec![]);
     }
 
     #[test]
@@ -618,7 +618,7 @@ mod test {
 
         assert_eq!(result, RemainingEvents::default());
         assert_eq!(incomplete_events(&acc), vec![]);
-        assert_eq!(completed_events(&acc), vec![]);
+        assert_eq!(accumulated_events(&acc), vec![]);
     }
 
     #[test]

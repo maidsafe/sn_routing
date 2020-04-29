@@ -827,7 +827,7 @@ mod test {
             Some(true)
         );
         assert_eq!(state.sections.get(&Prefix::from_str("").unwrap()), None);
-        assert!(state.our_history.validate());
+        assert!(state.our_history.self_validate());
         check_infos_for_duplication(&state);
     }
 
@@ -847,7 +847,7 @@ mod test {
             };
 
             add_neighbour_elders_info(&mut state, &our_id, new_info);
-            assert!(state.our_history.validate());
+            assert!(state.our_history.self_validate());
             check_infos_for_duplication(&state);
         }
     }

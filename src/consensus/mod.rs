@@ -7,14 +7,14 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 mod event_accumulator;
-mod genesis_pfx_info;
+mod genesis_prefix_info;
 mod network_event;
 mod parsec;
 mod proof;
 
 pub use self::{
     event_accumulator::{AccumulatingProof, InsertError},
-    genesis_pfx_info::GenesisPfxInfo,
+    genesis_prefix_info::GenesisPrefixInfo,
     network_event::{
         AccumulatingEvent, AckMessagePayload, EldersChange, EventSigPayload, IntoAccumulatingEvent,
         NetworkEvent, OnlinePayload, SendAckMessagePayload,
@@ -50,7 +50,7 @@ pub struct ConsensusEngine {
 }
 
 impl ConsensusEngine {
-    pub fn new(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Self {
+    pub fn new(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) -> Self {
         let mut parsec_map = ParsecMap::default();
         parsec_map.init(rng, full_id, gen_pfx_info);
 
@@ -81,10 +81,6 @@ impl ConsensusEngine {
     ) -> Option<(AccumulatingEvent, AccumulatingProof)> {
         // TODO: implement Block::into_payload in parsec to avoid cloning.
         match block.payload() {
-            Observation::Accusation { .. } => {
-                // FIXME: Handle properly
-                unreachable!("...")
-            }
             Observation::Genesis {
                 group,
                 related_info,
@@ -136,7 +132,7 @@ impl ConsensusEngine {
 
                 let event = self
                     .accumulator
-                    .incomplete_events()
+                    .unaccumulated_events()
                     .find(|(event, proofs)| {
                         self.is_accumulated(event, proofs.parsec_proof_set(), our_elders)
                     })
@@ -144,33 +140,6 @@ impl ConsensusEngine {
 
                 self.accumulator
                     .poll_event(event, our_elders.member_ids().cloned().collect())
-            }
-            Observation::Add { peer_id, .. } => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "unexpected Parsec Add v{}: {}",
-                    self.parsec_map.last_version(),
-                    peer_id
-                );
-                None
-            }
-            Observation::Remove { peer_id, .. } => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "unexpected Parsec Remove v{}: {}",
-                    self.parsec_map.last_version(),
-                    peer_id
-                );
-                None
-            }
-            obs @ Observation::StartDkg(_) | obs @ Observation::DkgMessage(_) => {
-                log_or_panic!(
-                    log::Level::Error,
-                    "unexpected Parsec internal observation v{}: {:?}",
-                    self.parsec_map.last_version(),
-                    obs
-                );
-                None
             }
             Observation::DkgResult {
                 participants,
@@ -188,6 +157,19 @@ impl ConsensusEngine {
                     },
                     AccumulatingProof::default(),
                 ))
+            }
+            Observation::Add { .. }
+            | Observation::Remove { .. }
+            | Observation::Accusation { .. }
+            | Observation::StartDkg(_)
+            | Observation::DkgMessage(_) => {
+                log_or_panic!(
+                    log::Level::Error,
+                    "unexpected Parsec observation v{}: {:?}",
+                    self.parsec_map.last_version(),
+                    block.payload()
+                );
+                None
             }
         }
     }
@@ -243,14 +225,14 @@ impl ConsensusEngine {
     }
 
     // Prepares for reset of the consensus engine. Returns all events voted by us that have not
-    // accumulated yet, so they can be voted for again.
+    // accumulated yet, so they can be voted for again. Should be followed by `finalise_reset`.
     pub fn prepare_reset(&mut self, our_id: &PublicId) -> Vec<NetworkEvent> {
         let RemainingEvents {
-            cached_events,
-            completed_events,
+            unaccumulated_events,
+            accumulated_events,
         } = self.accumulator.reset_accumulator(our_id);
 
-        cached_events
+        unaccumulated_events
             .into_iter()
             .chain(
                 self.parsec_map
@@ -268,16 +250,16 @@ impl ConsensusEngine {
                     })
                     .cloned(),
             )
-            .filter(|event| !completed_events.contains(&event.payload))
+            .filter(|event| !accumulated_events.contains(&event.payload))
             .collect()
     }
 
-    // Completes the reset of the consensus engine.
-    pub fn complete_reset(
+    // Finalises the reset of the consensus engine.
+    pub fn finalise_reset(
         &mut self,
         rng: &mut MainRng,
         full_id: FullId,
-        gen_pfx_info: &GenesisPfxInfo,
+        gen_pfx_info: &GenesisPrefixInfo,
     ) {
         self.parsec_map.init(rng, full_id, gen_pfx_info)
     }

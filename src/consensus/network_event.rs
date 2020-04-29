@@ -221,35 +221,35 @@ impl Debug for NetworkEvent {
 #[derive(Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EldersChange {
     // Neighbour peers that became elders.
-    pub neighbour_added: BTreeSet<P2pNode>,
+    pub neighbours_added: BTreeSet<P2pNode>,
     // Neighbour peers that ceased to be elders.
-    pub neighbour_removed: BTreeSet<P2pNode>,
+    pub neighbours_removed: BTreeSet<P2pNode>,
 }
 
 impl EldersChange {
     pub fn builder(sections: &SectionMap) -> EldersChangeBuilder {
         EldersChangeBuilder {
-            old_neighbour: sections.other_elders().cloned().collect(),
+            old_neighbours: sections.other_elders().cloned().collect(),
         }
     }
 }
 
 pub struct EldersChangeBuilder {
-    old_neighbour: BTreeSet<P2pNode>,
+    old_neighbours: BTreeSet<P2pNode>,
 }
 
 impl EldersChangeBuilder {
     pub fn build(self, sections: &SectionMap) -> EldersChange {
-        let new_neighbour: BTreeSet<_> = sections.other_elders().cloned().collect();
+        let new_neighbours: BTreeSet<_> = sections.other_elders().cloned().collect();
 
         EldersChange {
-            neighbour_added: new_neighbour
-                .difference(&self.old_neighbour)
+            neighbours_added: new_neighbours
+                .difference(&self.old_neighbours)
                 .cloned()
                 .collect(),
-            neighbour_removed: self
-                .old_neighbour
-                .difference(&new_neighbour)
+            neighbours_removed: self
+                .old_neighbours
+                .difference(&new_neighbours)
                 .cloned()
                 .collect(),
         }

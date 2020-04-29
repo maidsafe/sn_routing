@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{AccumulatingEvent, GenesisPfxInfo, NetworkEvent},
+    consensus::{AccumulatingEvent, GenesisPrefixInfo, NetworkEvent},
     id::{FullId, PublicId},
     messages::Variant,
     rng::{self, MainRng, RngCompat},
@@ -119,7 +119,7 @@ impl Default for ParsecMap {
 }
 
 impl ParsecMap {
-    pub fn init(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) {
+    pub fn init(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) {
         self.add_new(rng, full_id, gen_pfx_info);
         self.remove_old();
     }
@@ -320,7 +320,7 @@ impl ParsecMap {
         }
     }
 
-    fn add_new(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) {
+    fn add_new(&mut self, rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) {
         if let Entry::Vacant(entry) = self.map.entry(gen_pfx_info.parsec_version) {
             let _ = entry.insert(create(rng, full_id, gen_pfx_info));
             self.size_counter = ParsecSizeCounter::default();
@@ -363,7 +363,7 @@ pub fn generate_bls_threshold_secret_key(
 }
 
 /// Create Parsec instance.
-fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPfxInfo) -> Parsec {
+fn create(rng: &mut MainRng, full_id: FullId, gen_pfx_info: &GenesisPrefixInfo) -> Parsec {
     #[cfg(feature = "mock")]
     let hash = {
         let fields = (gen_pfx_info.elders_info.hash(), gen_pfx_info.parsec_version);
@@ -454,7 +454,7 @@ mod tests {
         rng: &mut MainRng,
         full_ids: Vec<FullId>,
         version: u64,
-    ) -> GenesisPfxInfo {
+    ) -> GenesisPrefixInfo {
         let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
         let members = full_ids
             .iter()
@@ -469,7 +469,7 @@ mod tests {
             .member_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
-        GenesisPfxInfo {
+        GenesisPrefixInfo {
             elders_info,
             public_keys: generate_first_dkg_result(rng).public_key_set,
             state_serialized: Vec::new(),

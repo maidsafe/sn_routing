@@ -8,7 +8,7 @@
 
 use super::{AccumulatingMessage, MessageHash};
 use crate::{
-    consensus::{GenesisPfxInfo, ParsecRequest, ParsecResponse},
+    consensus::{GenesisPrefixInfo, ParsecRequest, ParsecResponse},
     relocation::{RelocateDetails, RelocatePayload},
     section::EldersInfo,
     xor_space::{Prefix, XorName},
@@ -30,7 +30,7 @@ pub enum Variant {
     UserMessage(Vec<u8>),
     /// Approves the joining node as a routing node.
     /// Section X -> Node joining X
-    NodeApproval(Box<GenesisPfxInfo>),
+    NodeApproval(Box<GenesisPrefixInfo>),
     /// Acknowledgement that the src section knows that the dst section is at the specified
     /// version.
     /// Section X -> Section Y
@@ -41,7 +41,7 @@ pub enum Variant {
         ack_version: u64,
     },
     /// Update sent to Adults and Infants by Elders
-    GenesisUpdate(Box<GenesisPfxInfo>),
+    GenesisUpdate(Box<GenesisPrefixInfo>),
     /// Send from a section to the node being relocated.
     Relocate(Box<RelocateDetails>),
     /// Sent from members of a section message's source location to the first hop. The

@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::{ConsensusEngine, GenesisPfxInfo},
+    consensus::{ConsensusEngine, GenesisPrefixInfo},
     id::FullId,
     message_filter::MessageFilter,
     messages::QueuedMessage,
@@ -34,7 +34,7 @@ pub struct PausedState {
     pub(super) shared_state: SharedState,
     pub(super) section_keys_provider: SectionKeysProvider,
     pub(super) full_id: FullId,
-    pub(super) gen_pfx_info: GenesisPfxInfo,
+    pub(super) gen_pfx_info: GenesisPrefixInfo,
     pub(super) msg_filter: MessageFilter,
     pub(super) msg_queue: VecDeque<QueuedMessage>,
     // TODO: instead of storing both transport and network_rx, store only the network config.

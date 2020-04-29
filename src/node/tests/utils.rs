@@ -14,7 +14,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    consensus::GenesisPfxInfo,
+    consensus::GenesisPrefixInfo,
     error::Result,
     id::{FullId, P2pNode, PublicId},
     messages::{Message, MessageWithBytes},
@@ -56,10 +56,10 @@ pub fn create_gen_pfx_info(
     elders_info: EldersInfo,
     public_keys: bls::PublicKeySet,
     parsec_version: u64,
-) -> GenesisPfxInfo {
+) -> GenesisPrefixInfo {
     let ages = elder_age_counters(elders_info.member_ids());
 
-    GenesisPfxInfo {
+    GenesisPrefixInfo {
         elders_info,
         public_keys,
         state_serialized: Vec::new(),
