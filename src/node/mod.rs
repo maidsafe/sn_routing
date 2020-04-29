@@ -15,7 +15,7 @@ pub use self::stage::{BOOTSTRAP_TIMEOUT, JOIN_TIMEOUT};
 
 use self::stage::{Approved, Bootstrapping, JoinParams, Joining, RelocateParams, Stage};
 use crate::{
-    consensus::GenesisPfxInfo,
+    consensus::GenesisPrefixInfo,
     core::Core,
     error::{Result, RoutingError},
     event::{Connected, Event},
@@ -328,7 +328,7 @@ impl Node {
     }
 
     /// Vote for a user-defined event.
-    /// Returns `InvalidState` error if the node is not elder.
+    /// Returns `InvalidState` error if we are not an elder.
     pub fn vote_for_user_event(&mut self, event: Vec<u8>) -> Result<()> {
         let our_id = self.core.id();
         if let Some(stage) = self
@@ -818,7 +818,7 @@ impl Node {
     }
 
     // Transition from Joining to Approved
-    fn approve(&mut self, connect_type: Connected, gen_pfx_info: GenesisPfxInfo) {
+    fn approve(&mut self, connect_type: Connected, gen_pfx_info: GenesisPrefixInfo) {
         info!(
             "This node has been approved to join the network at {:?}!",
             gen_pfx_info.elders_info.prefix(),
@@ -957,7 +957,7 @@ impl Node {
             .map(|info| info.version())
     }
 
-    /// Returns the elder of a section with the given prefix.
+    /// Returns the elders of a section with the given prefix.
     /// Prefix must be either our prefix or of one of our neighbours. Returns empty set otherwise.
     pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.shared_state()
@@ -1067,7 +1067,7 @@ impl Node {
     // Create new node which is already an approved member of a section.
     pub(crate) fn approved(
         config: NodeConfig,
-        gen_pfx_info: GenesisPfxInfo,
+        gen_pfx_info: GenesisPrefixInfo,
         secret_key_share: Option<bls::SecretKeyShare>,
     ) -> (Self, Receiver<Event>, Receiver<TransportEvent>) {
         let (timer_tx, timer_rx) = crossbeam_channel::unbounded();

@@ -83,7 +83,7 @@ impl SectionProofSlice {
         )
     }
 
-    pub fn last_new_key_info(&self) -> Option<&SectionKeyInfo> {
+    pub fn last_key_info(&self) -> Option<&SectionKeyInfo> {
         self.blocks.last().map(|block| block.key_info())
     }
 
@@ -185,7 +185,7 @@ impl SectionProofChain {
     }
 
     #[cfg(test)]
-    pub fn validate(&self) -> bool {
+    pub fn self_validate(&self) -> bool {
         let mut current = &self.genesis_key_info;
         for block in &self.blocks {
             if !validate_next_block(current, block) {
@@ -208,6 +208,7 @@ impl SectionProofChain {
             .unwrap_or(&self.genesis_key_info)
     }
 
+    /// Returns a slice of this chain starting at the given index.
     pub fn slice_from(&self, first_index: usize) -> SectionProofSlice {
         if first_index == 0 || self.blocks.is_empty() {
             return SectionProofSlice {

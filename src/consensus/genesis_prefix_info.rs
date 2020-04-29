@@ -15,8 +15,9 @@ use std::{
     fmt::{self, Debug, Formatter},
 };
 
+/// Info sent to nodes to update them about the state of the section.
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub struct GenesisPfxInfo {
+pub struct GenesisPrefixInfo {
     pub elders_info: EldersInfo,
     pub public_keys: bls::PublicKeySet,
     pub state_serialized: Vec<u8>,
@@ -24,7 +25,7 @@ pub struct GenesisPfxInfo {
     pub parsec_version: u64,
 }
 
-impl GenesisPfxInfo {
+impl GenesisPrefixInfo {
     pub fn trimmed(&self) -> Self {
         Self {
             elders_info: self.elders_info.clone(),
@@ -36,11 +37,11 @@ impl GenesisPfxInfo {
     }
 }
 
-impl Debug for GenesisPfxInfo {
+impl Debug for GenesisPrefixInfo {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(
             formatter,
-            "GenesisPfxInfo({:?}, elders_version: {}, parsec_version: {})",
+            "GenesisPrefixInfo({:?}, elders_version: {}, parsec_version: {})",
             self.elders_info.prefix(),
             self.elders_info.version(),
             self.parsec_version,

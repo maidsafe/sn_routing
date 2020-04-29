@@ -8,7 +8,7 @@
 
 use super::utils as test_utils;
 use crate::{
-    consensus::{generate_bls_threshold_secret_key, GenesisPfxInfo},
+    consensus::{generate_bls_threshold_secret_key, GenesisPrefixInfo},
     error::Result,
     id::FullId,
     location::DstLocation,
@@ -63,7 +63,7 @@ impl Env {
         }
     }
 
-    fn gen_pfx_info(&self, parsec_version: u64) -> GenesisPfxInfo {
+    fn gen_pfx_info(&self, parsec_version: u64) -> GenesisPrefixInfo {
         test_utils::create_gen_pfx_info(
             self.elders[0].state.our_info().clone(),
             self.elders[0]
@@ -79,7 +79,7 @@ impl Env {
         self.elders = create_elders(&mut self.rng, &self.network, Some(prev_elders_info));
     }
 
-    fn handle_genesis_update(&mut self, gen_pfx_info: GenesisPfxInfo) -> Result<()> {
+    fn handle_genesis_update(&mut self, gen_pfx_info: GenesisPrefixInfo) -> Result<()> {
         for elder in &self.elders {
             let msg = genesis_update_message_signature(
                 elder,
@@ -146,7 +146,7 @@ fn create_elders(
 fn genesis_update_message_signature(
     sender: &Elder,
     dst: XorName,
-    gen_pfx_info: GenesisPfxInfo,
+    gen_pfx_info: GenesisPrefixInfo,
 ) -> Result<Message> {
     let msg = genesis_update_accumulating_message(sender, dst, gen_pfx_info)?;
     to_message_signature(&sender.full_id, msg)
@@ -155,7 +155,7 @@ fn genesis_update_message_signature(
 fn genesis_update_accumulating_message(
     sender: &Elder,
     dst: XorName,
-    gen_pfx_info: GenesisPfxInfo,
+    gen_pfx_info: GenesisPrefixInfo,
 ) -> Result<AccumulatingMessage> {
     let content = PlainMessage {
         src: Prefix::default(),

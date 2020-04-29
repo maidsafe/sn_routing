@@ -59,7 +59,7 @@ impl SectionMembers {
         }
     }
 
-    /// Returns an iterator over the members that have not state == `Left`.
+    /// Returns an iterator over the members that are not in the `Left` state.
     pub fn active(&self) -> impl Iterator<Item = &MemberInfo> {
         self.members
             .values()
@@ -118,7 +118,7 @@ impl SectionMembers {
         )
     }
 
-    /// Check if the given `PublicId` is a member of our section.
+    /// Check if the given `PublicId` is an active member of our section.
     pub fn contains(&self, pub_id: &PublicId) -> bool {
         self.members
             .get(pub_id.name())
