@@ -903,8 +903,8 @@ impl Approved {
                 participants,
                 dkg_result,
             } => self.handle_dkg_result_event(core, &participants, &dkg_result)?,
-            AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload)?,
-            AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id)?,
+            AccumulatingEvent::Online(payload) => self.handle_online_event(core, payload),
+            AccumulatingEvent::Offline(pub_id) => self.handle_offline_event(core, pub_id),
             AccumulatingEvent::SectionInfo(elders_info, key_info) => {
                 self.handle_section_info_event(core, elders_info, key_info, proof)?
             }
@@ -952,8 +952,14 @@ impl Approved {
         Ok(())
     }
 
-    fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) -> Result<()> {
-        assert!(!self.churn_in_progress);
+    fn handle_online_event(&mut self, core: &mut Core, payload: OnlinePayload) {
+        if self.churn_in_progress {
+            log_or_panic!(
+                log::Level::Error,
+                "can't handle Online when churn is in progress"
+            );
+            return;
+        }
 
         if self.shared_state.add_member(
             payload.p2p_node.clone(),
@@ -971,12 +977,16 @@ impl Approved {
         } else {
             info!("ignore Online: {:?}.", payload);
         }
-
-        Ok(())
     }
 
-    fn handle_offline_event(&mut self, core: &mut Core, pub_id: PublicId) -> Result<()> {
-        assert!(!self.churn_in_progress);
+    fn handle_offline_event(&mut self, core: &mut Core, pub_id: PublicId) {
+        if self.churn_in_progress {
+            log_or_panic!(
+                log::Level::Error,
+                "can't handle Offline when churn is in progress"
+            );
+            return;
+        }
 
         if let (Some(addr), _) = self
             .shared_state
@@ -990,8 +1000,6 @@ impl Approved {
         } else {
             info!("ignore Offline: {}", pub_id);
         }
-
-        Ok(())
     }
 
     fn handle_relocate_prepare_event(
