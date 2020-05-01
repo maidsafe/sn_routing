@@ -769,21 +769,23 @@ impl Approved {
             Some((event, proof)) => (event, proof),
         };
 
-        if let Some(event) = self.check_ready_or_backlog_churn_event(event) {
+        if self.should_backlog_event(&event) {
+            self.backlog_event(event);
+            Ok(false)
+        } else {
             self.handle_accumulated_event(core, event, proof)?;
-            return Ok(true);
+            Ok(true)
         }
-
-        Ok(false)
     }
 
-    pub fn can_poll_churn(&self) -> bool {
+    // Can we perform an action right now that can result in churn?
+    fn is_ready_to_churn(&self) -> bool {
         self.shared_state.handled_genesis_event && !self.churn_in_progress
     }
 
     // Polls and processes a backlogged churn event, if any.
     fn poll_churn_event_backlog(&mut self, core: &mut Core) -> Result<bool> {
-        if !self.can_poll_churn() {
+        if !self.is_ready_to_churn() {
             return Ok(false);
         }
 
@@ -801,34 +803,30 @@ impl Approved {
         }
     }
 
-    fn check_ready_or_backlog_churn_event(
-        &mut self,
-        event: AccumulatingEvent,
-    ) -> Option<AccumulatingEvent> {
-        let is_churn_trigger = match &event {
+    fn should_backlog_event(&self, event: &AccumulatingEvent) -> bool {
+        let is_churn_trigger = match event {
             AccumulatingEvent::Online(_)
             | AccumulatingEvent::Offline(_)
             | AccumulatingEvent::Relocate(_) => true,
             _ => false,
         };
 
-        if is_churn_trigger && !self.can_poll_churn() {
-            trace!(
-                "churn backlog {:?}, Other: {:?}",
-                event,
-                self.shared_state.churn_event_backlog
-            );
-            self.shared_state.churn_event_backlog.push_front(event);
-            return None;
-        }
+        is_churn_trigger && !self.is_ready_to_churn()
+    }
 
-        Some(event)
+    fn backlog_event(&mut self, event: AccumulatingEvent) {
+        trace!(
+            "churn backlog {:?}, Other: {:?}",
+            event,
+            self.shared_state.churn_event_backlog
+        );
+        self.shared_state.churn_event_backlog.push_front(event);
     }
 
     // Generate a new section info based on the current set of members and vote for it if it
     // changed.
     fn promote_and_demote_elders(&mut self, core: &Core) -> Result<bool> {
-        if !self.members_changed || !self.can_poll_churn() {
+        if !self.members_changed || !self.is_ready_to_churn() {
             // Nothing changed that could impact elder set, or we cannot process it yet.
             return Ok(false);
         }
@@ -862,7 +860,7 @@ impl Approved {
     /// Polls and handles the next scheduled relocation, if any.
     fn poll_relocation(&mut self, our_id: &PublicId) -> bool {
         // Delay relocation until no additional churn is in progress.
-        if !self.can_poll_churn() {
+        if !self.is_ready_to_churn() {
             return false;
         }
 
