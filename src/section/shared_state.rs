@@ -46,10 +46,10 @@ pub struct SharedState {
 impl SharedState {
     pub fn new(
         elders_info: EldersInfo,
-        bls_keys: bls::PublicKeySet,
+        section_pk: bls::PublicKey,
         ages: BTreeMap<PublicId, AgeCounter>,
     ) -> Self {
-        let pk_info = SectionKeyInfo::from_elders_info(&elders_info, bls_keys.public_key());
+        let pk_info = SectionKeyInfo::from_elders_info(&elders_info, section_pk);
         let our_history = SectionProofChain::from_genesis(pk_info);
         let our_key_info = our_history.last_key_info().clone();
         let our_members = SectionMembers::new(&elders_info, &ages);
@@ -536,8 +536,8 @@ mod test {
         let mut state = {
             let start_section = keys_to_update.first().expect("`updates` can't be empty");
             let info = start_section.1.clone();
-            let keys = start_section.2.clone();
-            SharedState::new(info, keys, Default::default())
+            let public_key = start_section.2.public_key();
+            SharedState::new(info, public_key, Default::default())
         };
 
         // Act
@@ -644,7 +644,9 @@ mod test {
     ) {
         let mut state = SharedState::new(
             gen_elders_info(rng, Default::default(), 0),
-            generate_bls_threshold_secret_key(rng, 1).public_keys(),
+            generate_bls_threshold_secret_key(rng, 1)
+                .public_keys()
+                .public_key(),
             Default::default(),
         );
 
@@ -778,9 +780,9 @@ mod test {
 
         let participants = elders_info.num_elders();
         let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
-        let public_key_set = secret_key_set.public_keys();
+        let public_key = secret_key_set.public_keys().public_key();
 
-        let mut state = SharedState::new(elders_info, public_key_set, ages);
+        let mut state = SharedState::new(elders_info, public_key, ages);
 
         for neighbour_info in sections_iter {
             add_neighbour_elders_info(&mut state, &our_pub_id, neighbour_info);
