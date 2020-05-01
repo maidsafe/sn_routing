@@ -9,8 +9,9 @@
 use crate::{
     consensus::{
         self, AccumulatingEvent, AccumulatingProof, AckMessagePayload, ConsensusEngine,
-        DkgResultWrapper, EldersChange, EventSigPayload, GenesisPrefixInfo, IntoAccumulatingEvent,
-        NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse, SendAckMessagePayload,
+        DkgResultWrapper, EventSigPayload, GenesisPrefixInfo, IntoAccumulatingEvent,
+        NeighbourEldersRemoved, NetworkEvent, OnlinePayload, ParsecRequest, ParsecResponse,
+        SendAckMessagePayload,
     },
     core::Core,
     error::{Result, RoutingError},
@@ -39,7 +40,7 @@ use itertools::Itertools;
 use rand::Rng;
 use std::{
     cmp::{self, Ordering},
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet},
     iter, mem,
     net::SocketAddr,
 };
@@ -1104,12 +1105,13 @@ impl Approved {
         let old_prefix = *self.shared_state.our_prefix();
         let was_elder = self.is_our_elder(core.id());
 
-        let change = EldersChange::builder(&self.shared_state.sections);
-        let change = if self.add_new_elders_info(core.id(), elders_info, key_info, proof)? {
-            change.build(&self.shared_state.sections)
-        } else {
-            return Ok(());
-        };
+        let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
+        let neighbour_elders_removed =
+            if self.add_new_elders_info(core.id(), elders_info, key_info, proof)? {
+                neighbour_elders_removed.build(&self.shared_state.sections)
+            } else {
+                return Ok(());
+            };
 
         let elders_info = self.shared_state.our_info();
         let info_prefix = *elders_info.prefix();
@@ -1151,7 +1153,7 @@ impl Approved {
         )?;
         self.process_post_reset_events(core, old_prefix, complete_data.to_process);
 
-        self.update_peer_connections(core, &change);
+        self.prune_neighbour_connections(core, &neighbour_elders_removed);
         self.send_neighbour_infos(core);
         self.send_genesis_updates(core);
         self.send_member_knowledge(core);
@@ -1255,11 +1257,11 @@ impl Approved {
     ) -> Result<()> {
         info!("handle NeighbourInfo: {:?}", elders_info);
 
-        let change = EldersChange::builder(&self.shared_state.sections);
+        let neighbour_elders_removed = NeighbourEldersRemoved::builder(&self.shared_state.sections);
         self.shared_state
             .sections
             .add_neighbour(elders_info.clone());
-        let change = change.build(&self.shared_state.sections);
+        let neighbour_elders_removed = neighbour_elders_removed.build(&self.shared_state.sections);
 
         if !self.is_our_elder(core.id()) {
             return Ok(());
@@ -1271,7 +1273,7 @@ impl Approved {
                 version: elders_info.version(),
                 prefix: *elders_info.prefix(),
             });
-        self.update_peer_connections(core, &change);
+        self.prune_neighbour_connections(core, &neighbour_elders_removed);
         Ok(())
     }
 
@@ -1893,19 +1895,16 @@ impl Approved {
         self.is_our_elder(our_id) || dst.as_node().ok() == Some(our_id.name())
     }
 
-    // Connect to all elders from our section or neighbour sections that we are not yet connected
-    // to and disconnect from peers that are no longer elders of neighbour sections.
-    fn update_peer_connections(&mut self, core: &mut Core, change: &EldersChange) {
-        let our_needed_connections: HashSet<_> = self
-            .shared_state
-            .known_nodes()
-            .map(|node| *node.peer_addr())
-            .collect();
-
-        for p2p_node in &change.neighbours_removed {
+    // Disconnect from peers that are no longer elders of neighbour sections.
+    fn prune_neighbour_connections(
+        &mut self,
+        core: &mut Core,
+        neighbour_elders_removed: &NeighbourEldersRemoved,
+    ) {
+        for p2p_node in &neighbour_elders_removed.0 {
             // The peer might have been relocated from a neighbour to us - in that case do not
             // disconnect from them.
-            if our_needed_connections.contains(p2p_node.peer_addr()) {
+            if self.shared_state.is_known_peer(p2p_node.public_id()) {
                 continue;
             }
 
