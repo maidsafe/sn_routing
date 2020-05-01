@@ -283,7 +283,8 @@ impl Node {
                     .shared_state
                     .sections
                     .our()
-                    .contains_elder(self.core.id())
+                    .elders
+                    .contains_key(self.core.name())
             })
             .unwrap_or(false)
     }
@@ -307,7 +308,7 @@ impl Node {
         self.stage
             .approved()
             .into_iter()
-            .flat_map(move |stage| stage.shared_state.sections.closest(name).1.elder_nodes())
+            .flat_map(move |stage| stage.shared_state.sections.closest(name).1.elders.values())
     }
 
     /// Returns the information of all the current section adults.
@@ -967,7 +968,7 @@ impl Node {
     pub fn section_elders(&self, prefix: &Prefix<XorName>) -> BTreeSet<XorName> {
         self.shared_state()
             .and_then(|state| state.sections.get(prefix))
-            .map(|info| info.elder_names().copied().collect())
+            .map(|info| info.elders.keys().copied().collect())
             .unwrap_or_default()
     }
 

@@ -126,7 +126,8 @@ impl SectionKeysProvider {
 
     pub fn finalise_dkg(&mut self, our_id: &PublicId, elders_info: &EldersInfo) -> Result<()> {
         let first_name = elders_info
-            .elder_names()
+            .elders
+            .keys()
             .next()
             .ok_or(RoutingError::InvalidElderDkgResult)?;
         let dkg_result = self

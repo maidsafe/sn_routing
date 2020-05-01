@@ -386,7 +386,8 @@ fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefi
 
     if genesis_prefix_info
         .elders_info
-        .contains_elder(full_id.public_id())
+        .elders
+        .contains_key(full_id.public_id().name())
     {
         Parsec::from_genesis(
             #[cfg(feature = "mock")]

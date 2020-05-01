@@ -271,13 +271,14 @@ impl Env {
 
     fn new_elders_info_with_candidate(&mut self) -> DkgToSectionInfo {
         assert!(
-            self.elders_info.num_elders() < ELDER_SIZE,
+            self.elders_info.elders.len() < ELDER_SIZE,
             "There is already ELDER_SIZE elders - the candidate won't be promoted"
         );
 
         let new_elder_info = EldersInfo::new(
             self.elders_info
-                .elder_nodes()
+                .elders
+                .values()
                 .chain(iter::once(&self.candidate))
                 .map(|node| (*node.public_id().name(), node.clone()))
                 .collect(),
@@ -291,7 +292,7 @@ impl Env {
     fn new_elders_info_without_candidate(&mut self) -> DkgToSectionInfo {
         let old_info = self.new_elders_info_with_candidate();
         let new_elder_info = EldersInfo::new(
-            self.elders_info.elder_map().clone(),
+            self.elders_info.elders.clone(),
             old_info.new_elders_info.prefix,
             old_info.new_elders_info.version + 1,
         );
@@ -314,7 +315,7 @@ impl Env {
 
         let new_member_map = self
             .elders_info
-            .elder_map()
+            .elders
             .iter()
             .filter(|(_, node)| node.public_id() != dropped_elder_id)
             .map(|(name, node)| (*name, node.clone()))
