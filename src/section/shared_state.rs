@@ -124,7 +124,7 @@ impl SharedState {
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.our_info().contains_elder(pub_id)
+        self.our_info().elders.contains_key(pub_id.name())
     }
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
@@ -188,7 +188,7 @@ impl SharedState {
     pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
             .joined()
-            .filter(move |info| !self.our_info().contains_elder(info.p2p_node.public_id()))
+            .filter(move |info| !self.our_info().elders.contains_key(info.p2p_node.name()))
             .map(|info| &info.p2p_node)
     }
 
@@ -210,12 +210,12 @@ impl SharedState {
 
         let expected_elders_map = self.elder_candidates(network_params.elder_size);
         let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
-        let current_elders: BTreeSet<_> = self.our_info().elder_nodes().cloned().collect();
+        let current_elders: BTreeSet<_> = self.our_info().elders.values().cloned().collect();
 
         if expected_elders == current_elders {
             None
         } else {
-            let old_size = self.our_info().num_elders();
+            let old_size = self.our_info().elders.len();
 
             let new_info = EldersInfo::new(
                 expected_elders_map,
@@ -223,7 +223,7 @@ impl SharedState {
                 self.our_info().version + 1,
             );
 
-            if self.our_info().num_elders() < network_params.elder_size
+            if self.our_info().elders.len() < network_params.elder_size
                 && old_size >= network_params.elder_size
             {
                 panic!(
@@ -709,7 +709,7 @@ mod test {
                 (EldersInfo::new(members, prefix, 0), full_ids)
             }
             SecInfoGen::Add(info) => {
-                let mut members = info.elder_map().clone();
+                let mut members = info.elders.clone();
                 let some_id = FullId::within_range(rng, &info.prefix.range_inclusive());
                 let peer_addr = ([127, 0, 0, 1], 9999).into();
                 let pub_id = *some_id.public_id();
@@ -722,7 +722,7 @@ mod test {
                 )
             }
             SecInfoGen::Remove(info) => {
-                let elders = info.elder_map().clone();
+                let elders = info.elders.clone();
                 (
                     EldersInfo::new(elders, info.prefix, info.version + 1),
                     Default::default(),
@@ -777,7 +777,7 @@ mod test {
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
 
-        let participants = elders_info.num_elders();
+        let participants = elders_info.elders.len();
         let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
         let public_key = secret_key_set.public_keys().public_key();
 
@@ -832,7 +832,7 @@ mod test {
             state
                 .sections
                 .get(&Prefix::from_str("00").unwrap())
-                .map(|info| info.contains_elder(&our_id)),
+                .map(|info| info.elders.contains_key(our_id.name())),
             Some(true)
         );
         assert_eq!(state.sections.get(&Prefix::from_str("").unwrap()), None);

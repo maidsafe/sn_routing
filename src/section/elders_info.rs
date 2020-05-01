@@ -24,7 +24,7 @@ use std::{
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 pub struct EldersInfo {
     /// The section's complete set of elders as a map from their name to a `P2pNode`.
-    elders: BTreeMap<XorName, P2pNode>,
+    pub elders: BTreeMap<XorName, P2pNode>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Thus `EldersInfo`s with compatible prefixes always have different versions.
     pub version: u64,
@@ -42,38 +42,26 @@ impl EldersInfo {
         }
     }
 
-    pub(crate) fn elder_map(&self) -> &BTreeMap<XorName, P2pNode> {
-        &self.elders
-    }
-
-    pub(crate) fn contains_elder(&self, pub_id: &PublicId) -> bool {
-        self.elders.contains_key(pub_id.name())
-    }
-
-    pub(crate) fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
-        self.elders.values()
-    }
-
     pub(crate) fn elder_ids(&self) -> impl Iterator<Item = &PublicId> {
         self.elders.values().map(P2pNode::public_id)
     }
 
-    pub(crate) fn elder_names(&self) -> impl Iterator<Item = &XorName> {
-        self.elders.values().map(P2pNode::name)
-    }
-
-    pub(crate) fn num_elders(&self) -> usize {
-        self.elders.len()
-    }
-
     /// Returns `true` if the proofs are from a quorum of this section.
     pub(crate) fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.contains_elder(id)).count() >= quorum_count(self.num_elders())
+        proofs
+            .ids()
+            .filter(|id| self.elders.contains_key(id.name()))
+            .count()
+            >= quorum_count(self.elders.len())
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub(crate) fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.contains_elder(id)).count() == self.num_elders()
+        proofs
+            .ids()
+            .filter(|id| self.elders.contains_key(id.name()))
+            .count()
+            == self.elders.len()
     }
 
     /// Returns whether this `EldersInfo` is compatible and newer than the other.
@@ -89,7 +77,7 @@ impl Debug for EldersInfo {
             "EldersInfo {{ prefix: ({:b}), version: {}, elders: {{{}}} }}",
             self.prefix,
             self.version,
-            self.elder_nodes().format(", "),
+            self.elders.values().format(", "),
         )
     }
 }

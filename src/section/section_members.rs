@@ -40,7 +40,8 @@ impl SectionMembers {
     /// Constructs the container initially with the section elders.
     pub fn new(elders_info: &EldersInfo, ages: &BTreeMap<PublicId, AgeCounter>) -> Self {
         let members = elders_info
-            .elder_nodes()
+            .elders
+            .values()
             .map(|p2p_node| {
                 let info = MemberInfo {
                     age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),

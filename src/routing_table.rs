@@ -12,7 +12,7 @@ use crate::{
     error::{Result, RoutingError},
     id::{P2pNode, PublicId},
     location::DstLocation,
-    section::{EldersInfo, SectionMap, SectionMembers},
+    section::{SectionMap, SectionMembers},
     xor_space::{XorName, Xorable},
 };
 use itertools::Itertools;
@@ -78,7 +78,8 @@ pub fn delivery_targets(
                 // FIXME: only doing this for now to match RT.
                 // should confirm if needed esp after msg_relay changes.
                 let section: Vec<_> = section
-                    .elder_nodes()
+                    .elders
+                    .values()
                     .filter(|node| node.name() != our_id.name())
                     .cloned()
                     .collect();
@@ -113,7 +114,7 @@ pub fn delivery_targets(
                 let targets: Vec<_> = sections
                     .all()
                     .filter_map(is_compatible)
-                    .flat_map(EldersInfo::elder_nodes)
+                    .flat_map(|info| info.elders.values())
                     .filter(|node| node.name() != our_id.name())
                     .cloned()
                     .collect();
@@ -138,7 +139,7 @@ fn candidates(
     let filtered_sections = sections
         .sorted_by_distance_to(target_name)
         .into_iter()
-        .map(|(prefix, info)| (prefix, info.num_elders(), info.elder_nodes()));
+        .map(|(prefix, info)| (prefix, info.elders.len(), info.elders.values()));
 
     let mut dg_size = 0;
     let mut nodes_to_send = Vec::new();

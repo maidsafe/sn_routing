@@ -82,7 +82,7 @@ impl SectionMap {
     pub fn find_other_by_elder(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
         self.other
             .iter()
-            .find(|(_, info)| info.contains_elder(pub_id))
+            .find(|(_, info)| info.elders.contains_key(pub_id.name()))
             .map(|(_, info)| info)
     }
 
@@ -93,7 +93,8 @@ impl SectionMap {
         let mut best_info = self.our();
         for (prefix, info) in self.all() {
             // TODO: Remove the first check after verifying that section infos are never empty.
-            if info.num_elders() > 0 && best_prefix.cmp_distance(prefix, name) == Ordering::Greater
+            if !info.elders.is_empty()
+                && best_prefix.cmp_distance(prefix, name) == Ordering::Greater
             {
                 best_prefix = prefix;
                 best_info = info;
@@ -141,26 +142,24 @@ impl SectionMap {
 
     /// Returns all elders from all known sections.
     pub fn elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.all()
-            .map(|(_, info)| info)
-            .flat_map(EldersInfo::elder_nodes)
+        self.all().flat_map(|(_, info)| info.elders.values())
     }
 
     /// Returns all elders from our section.
     pub fn our_elders(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
-        self.our().elder_nodes()
+        self.our().elders.values()
     }
 
     /// Returns all elders from other sections.
     pub fn other_elders(&self) -> impl Iterator<Item = &P2pNode> {
-        self.other.values().flat_map(EldersInfo::elder_nodes)
+        self.other.values().flat_map(|info| info.elders.values())
     }
 
     /// Returns a `P2pNode` of an elder from a known section.
     pub fn get_elder(&self, name: &XorName) -> Option<&P2pNode> {
         self.all()
             .find(|(prefix, _)| prefix.matches(name))
-            .and_then(|(_, elders_info)| elders_info.elder_map().get(name))
+            .and_then(|(_, elders_info)| elders_info.elders.get(name))
     }
 
     /// Returns whether the given peer is elder in a known sections.
