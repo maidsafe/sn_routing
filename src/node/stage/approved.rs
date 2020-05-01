@@ -121,7 +121,7 @@ impl Approved {
             ConsensusEngine::new(&mut core.rng, core.full_id.clone(), &genesis_prefix_info);
         let shared_state = SharedState::new(
             genesis_prefix_info.elders_info.clone(),
-            genesis_prefix_info.public_keys.clone(),
+            genesis_prefix_info.public_keys.public_key(),
             genesis_prefix_info.ages.clone(),
         );
 
@@ -1509,7 +1509,7 @@ impl Approved {
         );
         self.shared_state = SharedState::new(
             genesis_prefix_info.elders_info.clone(),
-            genesis_prefix_info.public_keys.clone(),
+            genesis_prefix_info.public_keys.public_key(),
             genesis_prefix_info.ages.clone(),
         );
         self.genesis_prefix_info = genesis_prefix_info;
