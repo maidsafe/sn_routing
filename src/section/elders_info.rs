@@ -27,7 +27,7 @@ use std::{
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub struct EldersInfo {
     /// The section's complete set of elders as a map from their name to a `P2pNode`.
-    members: BTreeMap<XorName, P2pNode>,
+    elders: BTreeMap<XorName, P2pNode>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Thus `EldersInfo`s with compatible prefixes always have different versions.
     version: u64,
@@ -41,7 +41,7 @@ pub struct EldersInfo {
 
 impl Serialize for EldersInfo {
     fn serialize<S: Serializer>(&self, serialiser: S) -> Result<S::Ok, S::Error> {
-        (&self.members, self.version, &self.prefix, &self.prev_hash).serialize(serialiser)
+        (&self.elders, self.version, &self.prefix, &self.prev_hash).serialize(serialiser)
     }
 }
 
@@ -70,32 +70,28 @@ impl EldersInfo {
         Self::new_with_fields(members, version, prefix, prev.map(Self::hash).copied())
     }
 
-    pub fn member_map(&self) -> &BTreeMap<XorName, P2pNode> {
-        &self.members
+    pub fn elder_map(&self) -> &BTreeMap<XorName, P2pNode> {
+        &self.elders
     }
 
-    pub fn is_member(&self, pub_id: &PublicId) -> bool {
-        self.members.contains_key(pub_id.name())
+    pub fn contains_elder(&self, pub_id: &PublicId) -> bool {
+        self.elders.contains_key(pub_id.name())
     }
 
-    pub fn member_nodes(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
-        self.members.values()
+    pub fn elder_nodes(&self) -> impl Iterator<Item = &P2pNode> + ExactSizeIterator {
+        self.elders.values()
     }
 
-    pub fn member_ids(&self) -> impl Iterator<Item = &PublicId> {
-        self.members.values().map(P2pNode::public_id)
+    pub fn elder_ids(&self) -> impl Iterator<Item = &PublicId> {
+        self.elders.values().map(P2pNode::public_id)
     }
 
-    pub fn member_names(&self) -> impl Iterator<Item = &XorName> {
-        self.members.values().map(P2pNode::name)
+    pub fn elder_names(&self) -> impl Iterator<Item = &XorName> {
+        self.elders.values().map(P2pNode::name)
     }
 
-    pub fn len(&self) -> usize {
-        self.members.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.members.is_empty()
+    pub fn num_elders(&self) -> usize {
+        self.elders.len()
     }
 
     pub fn version(&self) -> u64 {
@@ -117,12 +113,12 @@ impl EldersInfo {
 
     /// Returns `true` if the proofs are from a quorum of this section.
     pub fn is_quorum(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.is_member(id)).count() >= quorum_count(self.len())
+        proofs.ids().filter(|id| self.contains_elder(id)).count() >= quorum_count(self.num_elders())
     }
 
     /// Returns `true` if the proofs are from all members of this section.
     pub fn is_total_consensus(&self, proofs: &ProofSet) -> bool {
-        proofs.ids().filter(|id| self.is_member(id)).count() == self.len()
+        proofs.ids().filter(|id| self.contains_elder(id)).count() == self.num_elders()
     }
 
     /// Returns `true` if `self` is a successor of `other_info`, according to its hash.
@@ -150,17 +146,17 @@ impl EldersInfo {
 
     /// Creates a new instance with the given fields, and computes its hash.
     fn new_with_fields(
-        members: BTreeMap<XorName, P2pNode>,
+        elders: BTreeMap<XorName, P2pNode>,
         version: u64,
         prefix: Prefix<XorName>,
         prev_hash: Option<Digest256>,
     ) -> Result<Self, RoutingError> {
         let hash = {
-            let fields = (&members, version, &prefix, &prev_hash);
+            let fields = (&elders, version, &prefix, &prev_hash);
             crypto::sha3_256(&serialize(&fields)?)
         };
         Ok(Self {
-            members,
+            elders,
             version,
             prefix,
             prev_hash,
@@ -176,7 +172,7 @@ impl Debug for EldersInfo {
             "EldersInfo {{ prefix: ({:b}), version: {}, members: {{{}}} }}",
             self.prefix,
             self.version,
-            self.member_nodes().format(", "),
+            self.elder_nodes().format(", "),
         )
     }
 }

@@ -174,7 +174,7 @@ impl Approved {
             user_event_tx,
         );
 
-        let is_self_elder = state.shared_state.sections.our().is_member(core.id());
+        let is_self_elder = state.shared_state.sections.our().contains_elder(core.id());
         let timer_token = if is_self_elder {
             core.timer.schedule(state.consensus_engine.gossip_period())
         } else {
@@ -251,7 +251,7 @@ impl Approved {
     }
 
     pub fn finish_handle_input(&mut self, core: &mut Core) {
-        if self.shared_state.our_info().len() == 1 {
+        if self.shared_state.our_info().num_elders() == 1 {
             // If we're the only node then invoke poll_all directly
             if let Err(error) = self.poll_all(core) {
                 error!("poll failed: {:?}", error);
@@ -269,7 +269,7 @@ impl Approved {
 
     /// Is the node with the given id an elder in our section?
     pub fn is_our_elder(&self, id: &PublicId) -> bool {
-        self.shared_state.sections.our().is_member(id)
+        self.shared_state.sections.our().contains_elder(id)
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -474,7 +474,7 @@ impl Approved {
                 .sections
                 .closest(&destination)
                 .1
-                .member_nodes()
+                .elder_nodes()
                 .map(|p2p_node| *p2p_node.peer_addr())
                 .collect();
             debug!("Sending BootstrapResponse::Rebootstrap to {}", p2p_node);
@@ -853,7 +853,7 @@ impl Approved {
         }
 
         for info in new_infos {
-            let participants: BTreeSet<_> = info.member_ids().copied().collect();
+            let participants: BTreeSet<_> = info.elder_ids().copied().collect();
             let _ = self.dkg_cache.insert(participants.clone(), info);
             self.vote_for_event(AccumulatingEvent::StartDkg(participants));
         }
@@ -1060,7 +1060,7 @@ impl Approved {
             node_knowledge,
             self.shared_state
                 .sections
-                .knowledge_index(&DstLocation::Section(details.destination), None),
+                .trusted_key_version(&DstLocation::Section(details.destination)),
         );
 
         let src = SrcLocation::Section(*self.shared_state.our_prefix());
@@ -1118,7 +1118,7 @@ impl Approved {
         let elders_info = self.shared_state.our_info();
         let info_prefix = *elders_info.prefix();
         let info_version = elders_info.version();
-        let is_elder = elders_info.is_member(core.id());
+        let is_elder = elders_info.contains_elder(core.id());
         let is_split = info_prefix.is_extension_of(&old_prefix);
 
         core.msg_filter.reset();
@@ -1506,7 +1506,7 @@ impl Approved {
 
     // Detect non-responsive peers and vote them out.
     fn vote_for_remove_unresponsive_peers(&mut self) {
-        let members = self.shared_state.our_info().member_ids();
+        let members = self.shared_state.our_info().elder_ids();
         let unresponsive_nodes = self.consensus_engine.detect_unresponsive(members);
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);

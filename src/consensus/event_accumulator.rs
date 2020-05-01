@@ -241,7 +241,7 @@ impl AccumulatingProof {
         signed_bytes: &[u8],
     ) -> Option<bls::Signature> {
         let fr_and_shares = elder_info
-            .member_ids()
+            .elder_ids()
             .enumerate()
             .filter_map(|(index, pub_id)| {
                 self.sig_shares

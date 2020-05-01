@@ -125,7 +125,7 @@ impl SharedState {
 
     /// Returns whether the given peer is elder in our section.
     pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.our_info().is_member(pub_id)
+        self.our_info().contains_elder(pub_id)
     }
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
@@ -178,7 +178,7 @@ impl SharedState {
         if self.our_members.contains(pub_id) {
             Some(self.sections.our())
         } else {
-            self.sections.find_other_by_member(pub_id)
+            self.sections.find_other_by_elder(pub_id)
         }
     }
 
@@ -186,7 +186,7 @@ impl SharedState {
     pub fn adults_and_infants_p2p_nodes(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
             .joined()
-            .filter(move |info| !self.our_info().is_member(info.p2p_node.public_id()))
+            .filter(move |info| !self.our_info().contains_elder(info.p2p_node.public_id()))
             .map(|info| &info.p2p_node)
     }
 
@@ -208,12 +208,12 @@ impl SharedState {
 
         let expected_elders_map = self.elder_candidates(network_params.elder_size);
         let expected_elders: BTreeSet<_> = expected_elders_map.values().cloned().collect();
-        let current_elders: BTreeSet<_> = self.our_info().member_nodes().cloned().collect();
+        let current_elders: BTreeSet<_> = self.our_info().elder_nodes().cloned().collect();
 
         if expected_elders == current_elders {
             Ok(None)
         } else {
-            let old_size = self.our_info().len();
+            let old_size = self.our_info().num_elders();
 
             let new_info = EldersInfo::new(
                 expected_elders_map,
@@ -221,7 +221,7 @@ impl SharedState {
                 Some(self.our_info()),
             )?;
 
-            if self.our_info().len() < network_params.elder_size
+            if self.our_info().num_elders() < network_params.elder_size
                 && old_size >= network_params.elder_size
             {
                 panic!(
@@ -285,10 +285,12 @@ impl SharedState {
         target: &DstLocation,
         node_knowledge_override: Option<u64>,
     ) -> SectionProofSlice {
-        let first_index = self
-            .sections
-            .knowledge_index(target, node_knowledge_override);
-        self.our_history.slice_from(first_index as usize)
+        let version = match (target, node_knowledge_override) {
+            (DstLocation::Node(_), Some(knowledge)) => knowledge,
+            _ => self.sections.trusted_key_version(target),
+        };
+
+        self.our_history.slice_from(version as usize)
     }
 
     /// Check if we know this node but have not yet processed it.
@@ -630,12 +632,12 @@ mod test {
     // the given dst locations are as expected.
     //
     // - `updates` - pairs of (prefix, version) to pass to `update_their_knowledge`
-    // - `expected_proving_indices` - pairs of (prefix, index) where the dst location name is
-    //   generated such that it matches `prefix` and `index` is the expected proving index.
+    // - `expected_trusted_key_versions` - pairs of (prefix, version) where the dst location name is
+    //   generated such that it matches `prefix` and `version` is the expected trusted key version.
     fn update_their_knowledge_and_check_proving_index(
         rng: &mut MainRng,
         updates: Vec<(&str, u64)>,
-        expected_proving_indices: Vec<(&str, u64)>,
+        expected_trusted_key_versions: Vec<(&str, u64)>,
     ) {
         let mut state = SharedState::new(
             gen_elders_info(rng, Default::default(), 0),
@@ -648,12 +650,12 @@ mod test {
             state.sections.update_knowledge(prefix, version);
         }
 
-        for (dst_name_prefix_str, expected_index) in expected_proving_indices {
+        for (dst_name_prefix_str, expected_version) in expected_trusted_key_versions {
             let dst_name_prefix: Prefix<_> = dst_name_prefix_str.parse().unwrap();
             let dst_name = dst_name_prefix.substituted_in(rng.gen());
             let dst = DstLocation::Section(dst_name);
 
-            assert_eq!(state.sections.proving_index(&dst), expected_index);
+            assert_eq!(state.sections.trusted_key_version(&dst), expected_version);
         }
     }
 
@@ -703,7 +705,7 @@ mod test {
                 (EldersInfo::new(members, prefix, None).unwrap(), full_ids)
             }
             SecInfoGen::Add(info) => {
-                let mut members = info.member_map().clone();
+                let mut members = info.elder_map().clone();
                 let some_id = FullId::within_range(rng, &info.prefix().range_inclusive());
                 let peer_addr = ([127, 0, 0, 1], 9999).into();
                 let pub_id = *some_id.public_id();
@@ -716,9 +718,9 @@ mod test {
                 )
             }
             SecInfoGen::Remove(info) => {
-                let members = info.member_map().clone();
+                let elders = info.elder_map().clone();
                 (
-                    EldersInfo::new(members, *info.prefix(), Some(info)).unwrap(),
+                    EldersInfo::new(elders, *info.prefix(), Some(info)).unwrap(),
                     Default::default(),
                 )
             }
@@ -767,11 +769,11 @@ mod test {
 
         let elders_info = sections_iter.next().expect("section members");
         let ages = elders_info
-            .member_ids()
+            .elder_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
             .collect();
 
-        let participants = elders_info.len();
+        let participants = elders_info.num_elders();
         let secret_key_set = generate_bls_threshold_secret_key(rng, participants);
         let public_key_set = secret_key_set.public_keys();
 
@@ -827,7 +829,7 @@ mod test {
             state
                 .sections
                 .get(&Prefix::from_str("00").unwrap())
-                .map(|info| info.is_member(&our_id)),
+                .map(|info| info.contains_elder(&our_id)),
             Some(true)
         );
         assert_eq!(state.sections.get(&Prefix::from_str("").unwrap()), None);
