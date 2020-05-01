@@ -72,7 +72,7 @@ pub fn delivery_targets(
         }
         DstLocation::Section(target_name) => {
             let (prefix, section) = sections.closest(target_name);
-            if prefix == sections.our().prefix() || prefix.is_neighbour(sections.our().prefix()) {
+            if *prefix == sections.our().prefix || prefix.is_neighbour(&sections.our().prefix) {
                 // Exclude our name since we don't need to send to ourself
 
                 // FIXME: only doing this for now to match RT.
@@ -89,13 +89,13 @@ pub fn delivery_targets(
             candidates(target_name, our_id, sections)?
         }
         DstLocation::Prefix(prefix) => {
-            if prefix.is_compatible(sections.our().prefix())
-                || prefix.is_neighbour(sections.our().prefix())
+            if prefix.is_compatible(&sections.our().prefix)
+                || prefix.is_neighbour(&sections.our().prefix)
             {
                 // only route the message when we have all the targets in our chain -
                 // this is to prevent spamming the network by sending messages with
                 // intentionally short prefixes
-                if prefix.is_compatible(sections.our().prefix())
+                if prefix.is_compatible(&sections.our().prefix)
                     && !prefix.is_covered_by(sections.prefixes())
                 {
                     return Err(RoutingError::CannotRoute);
@@ -146,7 +146,7 @@ fn candidates(
         nodes_to_send.extend(connected.cloned());
         dg_size = delivery_group_size(len);
 
-        if prefix == sections.our().prefix() {
+        if *prefix == sections.our().prefix {
             // Send to all connected targets so they can forward the message
             nodes_to_send.retain(|node| node.name() != our_id.name());
             dg_size = nodes_to_send.len();

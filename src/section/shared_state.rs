@@ -94,7 +94,7 @@ impl SharedState {
 
     /// Returns our own current section's prefix.
     pub fn our_prefix(&self) -> &Prefix<XorName> {
-        self.our_info().prefix()
+        &self.our_info().prefix
     }
 
     /// Returns adults from our own section.
@@ -219,8 +219,8 @@ impl SharedState {
 
             let new_info = EldersInfo::new(
                 expected_elders_map,
-                *self.our_info().prefix(),
-                self.our_info().version() + 1,
+                self.our_info().prefix,
+                self.our_info().version + 1,
             );
 
             if self.our_info().num_elders() < network_params.elder_size
@@ -238,7 +238,7 @@ impl SharedState {
 
     pub fn update_our_section(&mut self, elders_info: EldersInfo, proof_block: SectionProofBlock) {
         self.our_members
-            .remove_not_matching_our_prefix(elders_info.prefix());
+            .remove_not_matching_our_prefix(&elders_info.prefix);
         self.our_history.push(proof_block);
         self.sections.set_our(elders_info);
         self.sections.update_keys(self.our_history.last_key_info());
@@ -346,8 +346,8 @@ impl SharedState {
             .our_members
             .elder_candidates_matching_prefix(&other_prefix, network_params.elder_size);
 
-        let our_info = EldersInfo::new(our_elders, our_prefix, self.our_info().version() + 1);
-        let other_info = EldersInfo::new(other_elders, other_prefix, self.our_info().version() + 1);
+        let our_info = EldersInfo::new(our_elders, our_prefix, self.our_info().version + 1);
+        let other_info = EldersInfo::new(other_elders, other_prefix, self.our_info().version + 1);
 
         Some((our_info, other_info))
     }
@@ -382,7 +382,7 @@ impl SharedState {
     // Increment the age counters of the members.
     fn increment_age_counters(&mut self, trigger_node: &PublicId, safe_section_size: usize) {
         let our_section_size = self.our_members.joined().count();
-        let our_prefix = self.sections.our().prefix();
+        let our_prefix = &self.sections.our().prefix;
 
         // Is network startup in progress?
         let startup = *our_prefix == Prefix::default() && our_section_size < safe_section_size;
@@ -710,21 +710,21 @@ mod test {
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.elder_map().clone();
-                let some_id = FullId::within_range(rng, &info.prefix().range_inclusive());
+                let some_id = FullId::within_range(rng, &info.prefix.range_inclusive());
                 let peer_addr = ([127, 0, 0, 1], 9999).into();
                 let pub_id = *some_id.public_id();
                 let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
                 let mut full_ids = HashMap::new();
                 let _ = full_ids.insert(pub_id, some_id);
                 (
-                    EldersInfo::new(members, *info.prefix(), info.version() + 1),
+                    EldersInfo::new(members, info.prefix, info.version + 1),
                     full_ids,
                 )
             }
             SecInfoGen::Remove(info) => {
                 let elders = info.elder_map().clone();
                 (
-                    EldersInfo::new(elders, *info.prefix(), info.version() + 1),
+                    EldersInfo::new(elders, info.prefix, info.version + 1),
                     Default::default(),
                 )
             }
@@ -737,7 +737,7 @@ mod test {
         neighbour_info: EldersInfo,
     ) {
         assert!(
-            !neighbour_info.prefix().matches(our_id.name()),
+            !neighbour_info.prefix.matches(our_id.name()),
             "Only add neighbours."
         );
         state.sections.add_neighbour(neighbour_info)
@@ -812,14 +812,13 @@ mod test {
     fn check_infos_for_duplication(state: &SharedState) {
         let mut prefixes: Vec<Prefix<XorName>> = vec![];
         for (_, info) in state.sections.all() {
-            if let Some(prefix) = prefixes.iter().find(|x| x.is_compatible(info.prefix())) {
+            if let Some(prefix) = prefixes.iter().find(|x| x.is_compatible(&info.prefix)) {
                 panic!(
                     "Found compatible prefixes! {:?} and {:?}",
-                    prefix,
-                    info.prefix()
+                    prefix, info.prefix
                 );
             }
-            prefixes.push(*info.prefix());
+            prefixes.push(info.prefix);
         }
     }
 

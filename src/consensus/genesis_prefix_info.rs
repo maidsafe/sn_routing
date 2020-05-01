@@ -42,9 +42,7 @@ impl Debug for GenesisPrefixInfo {
         write!(
             formatter,
             "GenesisPrefixInfo({:?}, elders_version: {}, parsec_version: {})",
-            self.elders_info.prefix(),
-            self.elders_info.version(),
-            self.parsec_version,
+            self.elders_info.prefix, self.elders_info.version, self.parsec_version,
         )
     }
 }

@@ -27,9 +27,9 @@ pub struct EldersInfo {
     elders: BTreeMap<XorName, P2pNode>,
     /// The section version. This increases monotonically whenever the set of elders changes.
     /// Thus `EldersInfo`s with compatible prefixes always have different versions.
-    version: u64,
+    pub version: u64,
     /// The section prefix. It matches all the members' names.
-    prefix: Prefix<XorName>,
+    pub prefix: Prefix<XorName>,
 }
 
 impl EldersInfo {
@@ -66,14 +66,6 @@ impl EldersInfo {
         self.elders.len()
     }
 
-    pub(crate) fn version(&self) -> u64 {
-        self.version
-    }
-
-    pub(crate) fn prefix(&self) -> &Prefix<XorName> {
-        &self.prefix
-    }
-
     /// Returns `true` if the proofs are from a quorum of this section.
     pub(crate) fn is_quorum(&self, proofs: &ProofSet) -> bool {
         proofs.ids().filter(|id| self.contains_elder(id)).count() >= quorum_count(self.num_elders())
@@ -86,7 +78,7 @@ impl EldersInfo {
 
     /// Returns whether this `EldersInfo` is compatible and newer than the other.
     pub(crate) fn is_newer(&self, other: &Self) -> bool {
-        self.prefix().is_compatible(other.prefix()) && self.version() > other.version()
+        self.prefix.is_compatible(&other.prefix) && self.version > other.version
     }
 }
 

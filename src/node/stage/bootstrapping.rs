@@ -196,7 +196,7 @@ impl Bootstrapping {
         // Use a name that will match the destination even after multiple splits
         let extra_split_count = 3;
         let name_prefix = Prefix::new(
-            elders_info.prefix().bit_count() + extra_split_count,
+            elders_info.prefix.bit_count() + extra_split_count,
             destination,
         );
 

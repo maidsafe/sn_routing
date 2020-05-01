@@ -259,9 +259,9 @@ impl Env {
     // Accumulate `AckMessage` for the latest version of our own section.
     fn accumulate_self_ack_message(&mut self) {
         let event = AccumulatingEvent::AckMessage(AckMessagePayload {
-            dst_name: self.elders_info.prefix().name(),
-            src_prefix: *self.elders_info.prefix(),
-            ack_version: self.elders_info.version(),
+            dst_name: self.elders_info.prefix.name(),
+            src_prefix: self.elders_info.prefix,
+            ack_version: self.elders_info.version,
         });
 
         // This event needs total consensus.
@@ -281,8 +281,8 @@ impl Env {
                 .chain(iter::once(&self.candidate))
                 .map(|node| (*node.public_id().name(), node.clone()))
                 .collect(),
-            *self.elders_info.prefix(),
-            self.elders_info.version() + 1,
+            self.elders_info.prefix,
+            self.elders_info.version + 1,
         );
 
         self.updated_other_ids(new_elder_info)
@@ -292,8 +292,8 @@ impl Env {
         let old_info = self.new_elders_info_with_candidate();
         let new_elder_info = EldersInfo::new(
             self.elders_info.elder_map().clone(),
-            *old_info.new_elders_info.prefix(),
-            old_info.new_elders_info.version() + 1,
+            old_info.new_elders_info.prefix,
+            old_info.new_elders_info.version + 1,
         );
         self.updated_other_ids(new_elder_info)
     }
@@ -326,8 +326,8 @@ impl Env {
 
         let new_elders_info = EldersInfo::new(
             new_member_map,
-            *self.elders_info.prefix(),
-            self.elders_info.version() + 1,
+            self.elders_info.prefix,
+            self.elders_info.version + 1,
         );
         self.updated_other_ids(new_elders_info)
     }
@@ -483,7 +483,7 @@ fn handle_bootstrap() {
 fn send_genesis_update() {
     let mut env = Env::new(ELDER_SIZE);
 
-    let orig_elders_version = env.elders_info.version();
+    let orig_elders_version = env.elders_info.version;
 
     let adult0 = env.gen_peer();
     let adult1 = env.gen_peer();
@@ -506,7 +506,7 @@ fn send_genesis_update() {
     // Receive MemberKnowledge from the adult
     let parsec_version = env.subject.parsec_last_version();
     let variant = Variant::MemberKnowledge(MemberKnowledge {
-        elders_version: env.elders_info.version(),
+        elders_version: env.elders_info.version,
         parsec_version,
     });
     let msg = Message::single_src(&adult1.full_id, DstLocation::Direct, variant).unwrap();
@@ -516,7 +516,7 @@ fn send_genesis_update() {
     // contain the previous version.
     let message = utils::exactly_one(env.subject.create_genesis_updates());
     let proof = &message.1.proof;
-    verify_proof_chain_contains(proof, env.elders_info.version());
+    verify_proof_chain_contains(proof, env.elders_info.version);
     verify_proof_chain_does_not_contain(proof, orig_elders_version);
 }
 
