@@ -18,8 +18,7 @@ use rand::{
     Rng,
 };
 use routing::{
-    mock::Environment, rng::MainRng, NetworkParams, Prefix, PublicId, RelocationOverrides, XorName,
-    MIN_AGE,
+    mock::Environment, rng::MainRng, NetworkParams, Prefix, RelocationOverrides, XorName, MIN_AGE,
 };
 use std::iter;
 
@@ -227,13 +226,13 @@ fn choose_other_prefix<'a, R: Rng>(
 }
 
 // Removes random node from the given section but makes sure it's not the node at the given index.
-// Returns the index and the id of the removed node.
+// Returns the index and the name of the removed node.
 fn remove_random_node_from_section_except(
     rng: &mut MainRng,
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
     index_to_not_remove: usize,
-) -> (usize, PublicId) {
+) -> (usize, XorName) {
     if let Some(index) = indexed_nodes_with_prefix(nodes, prefix)
         .filter(|(index, _)| *index != index_to_not_remove)
         .map(|(index, _)| index)
@@ -241,7 +240,7 @@ fn remove_random_node_from_section_except(
     {
         let node = nodes.remove(index);
         info!("Remove node {} from {:?}", node.name(), prefix);
-        (index, *node.id())
+        (index, *node.name())
     } else {
         panic!(
             "Section {:?} does not have any nodes that can be removed",
@@ -301,14 +300,14 @@ fn churn_until_age_counter(
                 poll_until(env, nodes, |nodes| node_joined(nodes, nodes.len() - 1));
             }
             Churn::Remove => {
-                let (removed_index, id) =
+                let (removed_index, name) =
                     remove_random_node_from_section_except(&mut rng, nodes, prefix, node_index);
 
                 if removed_index < node_index {
                     node_index -= 1;
                 }
 
-                poll_until(env, nodes, |nodes| node_left(nodes, &id));
+                poll_until(env, nodes, |nodes| node_left(nodes, &name));
             }
         }
     }
@@ -324,17 +323,17 @@ fn node_relocated(
     source_prefix: &Prefix<XorName>,
     target_prefix: &Prefix<XorName>,
 ) -> bool {
-    let relocated_id = nodes[node_index].id();
+    let relocated_name = nodes[node_index].name();
 
     for node in nodes_with_prefix(nodes, source_prefix) {
         if !node.inner.is_elder() {
             continue;
         }
 
-        if node.inner.is_peer_our_member(&relocated_id) {
+        if node.inner.is_peer_our_member(&relocated_name) {
             trace!(
                 "Node {} is member of the source section {:?} according to {}",
-                relocated_id.name(),
+                relocated_name,
                 source_prefix,
                 node.name()
             );
@@ -348,15 +347,15 @@ fn node_relocated(
         }
 
         let node_prefix = node.inner.our_prefix().unwrap();
-        if node_prefix.is_extension_of(target_prefix) && !node_prefix.matches(relocated_id.name()) {
+        if node_prefix.is_extension_of(target_prefix) && !node_prefix.matches(relocated_name) {
             // Target section has split and the relocated node is in the other sub-section than this node.
             continue;
         }
 
-        if !node.inner.is_peer_our_member(&relocated_id) {
+        if !node.inner.is_peer_our_member(&relocated_name) {
             trace!(
                 "Node {} is not member of the target section {:?} according to {}",
-                relocated_id.name(),
+                relocated_name,
                 target_prefix,
                 node.name()
             );

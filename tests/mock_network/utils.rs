@@ -217,7 +217,7 @@ pub fn node_joined(nodes: &[TestNode], index: usize) -> bool {
         return false;
     }
 
-    let id = nodes[index].id();
+    let name = nodes[index].name();
 
     nodes
         .iter()
@@ -225,16 +225,16 @@ pub fn node_joined(nodes: &[TestNode], index: usize) -> bool {
         .filter(|node| {
             node.inner
                 .our_prefix()
-                .map(|prefix| prefix.matches(id.name()))
+                .map(|prefix| prefix.matches(&name))
                 .unwrap_or(false)
         })
         .all(|node| {
-            if node.inner.is_peer_our_member(&id) {
+            if node.inner.is_peer_our_member(&name) {
                 true
             } else {
                 trace!(
                     "Node {} is not yet member according to {}",
-                    id.name(),
+                    name,
                     node.name()
                 );
                 false
@@ -247,20 +247,20 @@ pub fn all_nodes_joined(nodes: &[TestNode], indices: impl IntoIterator<Item = us
 }
 
 // Returns whether all nodes recognize the node with the given id as left.
-pub fn node_left(nodes: &[TestNode], id: &PublicId) -> bool {
+pub fn node_left(nodes: &[TestNode], name: &XorName) -> bool {
     nodes
         .iter()
         .filter(|node| node.inner.is_elder())
         .all(|node| {
             // Note: need both checks because even if a node has been consensused as offline, it
             // can still be considered as elder until the new `SectionInfo`.
-            if node.inner.is_peer_our_member(id) {
-                trace!("Node {} is still member according to {}", id, node.name());
+            if node.inner.is_peer_our_member(name) {
+                trace!("Node {} is still member according to {}", name, node.name());
                 return false;
             }
 
-            if node.inner.is_peer_elder(id) {
-                trace!("Node {} is still elder according to {}", id, node.name());
+            if node.inner.is_peer_elder(name) {
+                trace!("Node {} is still elder according to {}", name, node.name());
                 return false;
             }
 
@@ -768,19 +768,19 @@ pub fn add_node_to_section(env: &Environment, nodes: &mut Vec<TestNode>, prefix:
 }
 
 // Removes one elder node from the given prefix but only from nodes in the given index range.
-// Returns the id of the removed node.
+// Returns the name of the removed node.
 fn remove_elder_from_section_in_range(
     nodes: &mut Vec<TestNode>,
     prefix: &Prefix<XorName>,
     index_range: Range<usize>,
-) -> PublicId {
+) -> XorName {
     let index = indexed_nodes_with_prefix(&nodes[index_range], prefix)
         .find(|(_, node)| node.inner.is_elder())
         .map(|(index, _)| index)
         .unwrap();
 
     info!("Remove node {} from {:?}", nodes[index].name(), prefix);
-    *nodes.remove(index).id()
+    *nodes.remove(index).name()
 }
 
 // Generate random prefixes with the given lengths.

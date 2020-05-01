@@ -758,7 +758,7 @@ impl Node {
             }
             Stage::Approved(stage) => stage
                 .shared_state
-                .find_section_by_member(sender.public_id())
+                .find_section_by_member(sender.name())
                 .map(|info| info.version),
             Stage::Terminated => unreachable!(),
         };
@@ -985,16 +985,16 @@ impl Node {
     }
 
     /// Returns whether the given peer is an elder known to us.
-    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
+    pub fn is_peer_elder(&self, name: &XorName) -> bool {
         self.shared_state()
-            .map(|state| state.is_peer_elder(pub_id))
+            .map(|state| state.is_peer_elder(name))
             .unwrap_or(false)
     }
 
     /// Returns whether the given peer is an elder of our section.
-    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
+    pub fn is_peer_our_elder(&self, name: &XorName) -> bool {
         self.shared_state()
-            .map(|state| state.is_peer_our_elder(pub_id))
+            .map(|state| state.is_peer_our_elder(name))
             .unwrap_or(false)
     }
 
@@ -1005,10 +1005,10 @@ impl Node {
             .flat_map(|state| state.known_nodes())
     }
 
-    /// Returns whether the given `PublicId` is a member of our section.
-    pub fn is_peer_our_member(&self, id: &PublicId) -> bool {
+    /// Returns whether the given `XorName` is a member of our section.
+    pub fn is_peer_our_member(&self, name: &XorName) -> bool {
         self.shared_state()
-            .map(|state| state.our_members.contains(id))
+            .map(|state| state.our_members.contains(name))
             .unwrap_or(false)
     }
 

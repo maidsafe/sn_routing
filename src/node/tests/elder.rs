@@ -338,11 +338,11 @@ impl Env {
     }
 
     fn is_candidate_member(&self) -> bool {
-        self.subject.is_peer_our_member(self.candidate.public_id())
+        self.subject.is_peer_our_member(self.candidate.name())
     }
 
     fn is_candidate_elder(&self) -> bool {
-        self.subject.is_peer_our_elder(self.candidate.public_id())
+        self.subject.is_peer_our_elder(self.candidate.name())
     }
 
     fn gen_peer(&mut self) -> Peer {

@@ -51,7 +51,7 @@ pub fn delivery_targets(
     our_members: &SectionMembers,
     sections: &SectionMap,
 ) -> Result<(Vec<P2pNode>, usize)> {
-    if !sections.is_elder(our_id) {
+    if !sections.is_elder(our_id.name()) {
         // We are not Elder - return all the elders of our section, so the message can be properly
         // relayed through them.
         let targets: Vec<_> = sections.our_elders().cloned().collect();

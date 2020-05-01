@@ -10,7 +10,7 @@ use super::{
     elders_info::EldersInfo, network_stats::NetworkStats, section_proof_chain::SectionKeyInfo,
 };
 use crate::{
-    id::{P2pNode, PublicId},
+    id::P2pNode,
     location::DstLocation,
     xor_space::{Prefix, XorName},
 };
@@ -79,10 +79,10 @@ impl SectionMap {
     }
 
     /// Find other section containing the given elder.
-    pub fn find_other_by_elder(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
+    pub fn find_other_by_elder(&self, elder_name: &XorName) -> Option<&EldersInfo> {
         self.other
             .iter()
-            .find(|(_, info)| info.elders.contains_key(pub_id.name()))
+            .find(|(_, info)| info.elders.contains_key(elder_name))
             .map(|(_, info)| info)
     }
 
@@ -163,8 +163,8 @@ impl SectionMap {
     }
 
     /// Returns whether the given peer is elder in a known sections.
-    pub fn is_elder(&self, pub_id: &PublicId) -> bool {
-        self.get_elder(pub_id.name()).is_some()
+    pub fn is_elder(&self, name: &XorName) -> bool {
+        self.get_elder(name).is_some()
     }
 
     /// Set the new version of our section.
