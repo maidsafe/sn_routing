@@ -22,8 +22,8 @@ fn node_drops() {
     let mut nodes = create_connected_nodes(&env, LOWERED_ELDER_SIZE + 2);
 
     let index = rng.gen_range(0, nodes.len());
-    let dropped_id = *nodes.remove(index).id();
+    let dropped_name = *nodes.remove(index).name();
 
-    poll_until(&env, &mut nodes, |nodes| node_left(nodes, &dropped_id));
+    poll_until(&env, &mut nodes, |nodes| node_left(nodes, &dropped_name));
     verify_invariants_for_nodes(&env, &nodes);
 }

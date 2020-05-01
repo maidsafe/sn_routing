@@ -7,8 +7,8 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use crate::{
-    id::PublicId,
     section::{AgeCounter, EldersInfo},
+    xor_space::XorName,
 };
 use std::{
     collections::BTreeMap,
@@ -21,7 +21,7 @@ pub struct GenesisPrefixInfo {
     pub elders_info: EldersInfo,
     pub public_keys: bls::PublicKeySet,
     pub state_serialized: Vec<u8>,
-    pub ages: BTreeMap<PublicId, AgeCounter>,
+    pub ages: BTreeMap<XorName, AgeCounter>,
     pub parsec_version: u64,
 }
 

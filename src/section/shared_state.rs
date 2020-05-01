@@ -46,7 +46,7 @@ impl SharedState {
     pub fn new(
         elders_info: EldersInfo,
         section_pk: bls::PublicKey,
-        ages: BTreeMap<PublicId, AgeCounter>,
+        ages: BTreeMap<XorName, AgeCounter>,
     ) -> Self {
         let pk_info = SectionKeyInfo::from_elders_info(&elders_info, section_pk);
         let our_history = SectionProofChain::from_genesis(pk_info);
@@ -101,7 +101,7 @@ impl SharedState {
     pub fn our_adults(&self) -> impl Iterator<Item = &P2pNode> {
         self.our_members
             .mature()
-            .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.public_id()))
+            .filter(move |p2p_node| !self.is_peer_our_elder(p2p_node.name()))
     }
 
     /// Returns all nodes we know (our members + neighbour elders).
@@ -113,18 +113,18 @@ impl SharedState {
     }
 
     /// Returns whether we know the given peer.
-    pub fn is_known_peer(&self, pub_id: &PublicId) -> bool {
-        self.our_members.is_active(pub_id) || self.sections.is_elder(pub_id)
+    pub fn is_known_peer(&self, name: &XorName) -> bool {
+        self.our_members.is_active(name) || self.sections.is_elder(name)
     }
 
-    /// Checks if given `PublicId` is an elder in our section or one of our neighbour sections.
-    pub fn is_peer_elder(&self, pub_id: &PublicId) -> bool {
-        self.sections.is_elder(pub_id)
+    /// Checks if given name is an elder in our section or one of our neighbour sections.
+    pub fn is_peer_elder(&self, name: &XorName) -> bool {
+        self.sections.is_elder(name)
     }
 
     /// Returns whether the given peer is elder in our section.
-    pub fn is_peer_our_elder(&self, pub_id: &PublicId) -> bool {
-        self.our_info().elders.contains_key(pub_id.name())
+    pub fn is_peer_our_elder(&self, name: &XorName) -> bool {
+        self.our_info().elders.contains_key(name)
     }
 
     pub fn find_p2p_node_from_addr(&self, socket_addr: &SocketAddr) -> Option<&P2pNode> {
@@ -140,15 +140,15 @@ impl SharedState {
             return false;
         }
 
-        if self.our_members.contains(p2p_node.public_id()) {
+        if self.our_members.contains(p2p_node.name()) {
             trace!("not adding node {} - already a member", p2p_node);
             return false;
         }
 
-        let pub_id = *p2p_node.public_id();
+        let name = *p2p_node.name();
 
         self.our_members.add(p2p_node, age);
-        self.increment_age_counters(&pub_id, safe_section_size);
+        self.increment_age_counters(&name, safe_section_size);
 
         true
     }
@@ -167,20 +167,22 @@ impl SharedState {
                 return (None, MemberState::Left);
             }
             Some(MemberState::Relocating { .. }) => (),
-            Some(MemberState::Joined) => self.increment_age_counters(pub_id, safe_section_size),
+            Some(MemberState::Joined) => {
+                self.increment_age_counters(pub_id.name(), safe_section_size)
+            }
         }
 
         self.relocate_queue
             .retain(|details| &details.pub_id != pub_id);
-        self.our_members.remove(pub_id)
+        self.our_members.remove(pub_id.name())
     }
 
     /// Find section which has member with the given id
-    pub fn find_section_by_member(&self, pub_id: &PublicId) -> Option<&EldersInfo> {
-        if self.our_members.contains(pub_id) {
+    pub fn find_section_by_member(&self, name: &XorName) -> Option<&EldersInfo> {
+        if self.our_members.contains(name) {
             Some(self.sections.our())
         } else {
-            self.sections.find_other_by_elder(pub_id)
+            self.sections.find_other_by_elder(name)
         }
     }
 
@@ -253,7 +255,7 @@ impl SharedState {
 
         let details = loop {
             if let Some(details) = self.relocate_queue.pop_back() {
-                if self.our_members.contains(&details.pub_id) {
+                if self.our_members.contains(details.pub_id.name()) {
                     break details;
                 } else {
                     trace!("Not relocating {} - not a member", details.pub_id);
@@ -263,7 +265,7 @@ impl SharedState {
             }
         };
 
-        if self.is_peer_our_elder(&details.pub_id) {
+        if self.is_peer_our_elder(details.pub_id.name()) {
             warn!(
                 "Not relocating {} - The peer is still our elder.",
                 details.pub_id,
@@ -380,7 +382,7 @@ impl SharedState {
     }
 
     // Increment the age counters of the members.
-    fn increment_age_counters(&mut self, trigger_node: &PublicId, safe_section_size: usize) {
+    fn increment_age_counters(&mut self, trigger_node: &XorName, safe_section_size: usize) {
         let our_section_size = self.our_members.joined().count();
         let our_prefix = &self.sections.our().prefix;
 
@@ -404,7 +406,7 @@ impl SharedState {
         let first_key_info = self.our_history.first_key_info();
 
         for member_info in self.our_members.joined_mut() {
-            if member_info.p2p_node.public_id() == trigger_node {
+            if member_info.p2p_node.name() == trigger_node {
                 continue;
             }
 
@@ -421,7 +423,7 @@ impl SharedState {
             let destination = relocation::compute_destination(
                 our_prefix,
                 member_info.p2p_node.name(),
-                trigger_node.name(),
+                trigger_node,
             );
             if our_prefix.matches(&destination) {
                 // Relocation destination inside the current section - ignoring.
@@ -773,8 +775,9 @@ mod test {
 
         let elders_info = sections_iter.next().expect("section members");
         let ages = elders_info
-            .elder_ids()
-            .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
+            .elders
+            .keys()
+            .map(|name| (*name, MIN_AGE_COUNTER))
             .collect();
 
         let participants = elders_info.elders.len();

@@ -11,7 +11,7 @@ use super::{
     member_info::{AgeCounter, MemberInfo, MemberState, MIN_AGE_COUNTER},
 };
 use crate::{
-    id::{P2pNode, PublicId},
+    id::P2pNode,
     xor_space::{Prefix, XorName},
 };
 use itertools::Itertools;
@@ -38,13 +38,13 @@ pub struct SectionMembers {
 
 impl SectionMembers {
     /// Constructs the container initially with the section elders.
-    pub fn new(elders_info: &EldersInfo, ages: &BTreeMap<PublicId, AgeCounter>) -> Self {
+    pub fn new(elders_info: &EldersInfo, ages: &BTreeMap<XorName, AgeCounter>) -> Self {
         let members = elders_info
             .elders
             .values()
             .map(|p2p_node| {
                 let info = MemberInfo {
-                    age_counter: *ages.get(p2p_node.public_id()).unwrap_or(&MIN_AGE_COUNTER),
+                    age_counter: *ages.get(p2p_node.name()).unwrap_or(&MIN_AGE_COUNTER),
                     state: MemberState::Joined,
                     p2p_node: p2p_node.clone(),
                     section_version: 0,
@@ -119,35 +119,35 @@ impl SectionMembers {
         )
     }
 
-    /// Check if the given `PublicId` is an active member of our section.
-    pub fn contains(&self, pub_id: &PublicId) -> bool {
+    /// Check if the given `XorName` is an active member of our section.
+    pub fn contains(&self, name: &XorName) -> bool {
         self.members
-            .get(pub_id.name())
+            .get(name)
             .map(|info| info.state != MemberState::Left)
             .unwrap_or(false)
     }
 
     /// Returns whether the given peer is an active (not left) member of our section.
-    pub fn is_active(&self, pub_id: &PublicId) -> bool {
+    pub fn is_active(&self, name: &XorName) -> bool {
         self.members
-            .get(pub_id.name())
+            .get(name)
             .map(|info| info.state != MemberState::Left)
             .unwrap_or(false)
     }
 
     /// Returns whether the given peer is mature (adult or elder)
-    pub fn is_mature(&self, pub_id: &PublicId) -> bool {
+    pub fn is_mature(&self, name: &XorName) -> bool {
         self.members
-            .get(pub_id.name())
+            .get(name)
             .map(|info| info.is_mature())
             .unwrap_or(false)
     }
 
     /// Returns the age counters of all our members.
-    pub fn get_age_counters(&self) -> BTreeMap<PublicId, AgeCounter> {
+    pub fn get_age_counters(&self) -> BTreeMap<XorName, AgeCounter> {
         self.members
             .values()
-            .map(|member_info| (*member_info.p2p_node.public_id(), member_info.age_counter))
+            .map(|member_info| (*member_info.p2p_node.name(), member_info.age_counter))
             .collect()
     }
 
@@ -184,10 +184,10 @@ impl SectionMembers {
 
     /// Remove a member from our section. Returns the SocketAddr and the state of the member before
     /// the removal.
-    pub fn remove(&mut self, pub_id: &PublicId) -> (Option<SocketAddr>, MemberState) {
+    pub fn remove(&mut self, name: &XorName) -> (Option<SocketAddr>, MemberState) {
         if let Some(info) = self
             .members
-            .get_mut(pub_id.name())
+            .get_mut(name)
             // TODO: Probably should actually remove them
             .filter(|info| info.state != MemberState::Left)
         {
@@ -202,7 +202,7 @@ impl SectionMembers {
             log_or_panic!(
                 log::Level::Error,
                 "Removing member that doesn't exist: {}",
-                pub_id
+                name
             );
 
             (None, MemberState::Left)

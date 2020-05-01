@@ -489,7 +489,11 @@ fn node_pause_and_resume_simple() {
     // If the paused node is elder, verify it caught up to the new node joining.
     if nodes.last().unwrap().inner.is_elder() {
         poll_until(&env, &mut nodes, |nodes| {
-            nodes.last().unwrap().inner.is_peer_our_member(&new_id)
+            nodes
+                .last()
+                .unwrap()
+                .inner
+                .is_peer_our_member(new_id.name())
         })
     }
 
@@ -525,7 +529,7 @@ fn node_pause_and_resume_during_split() {
 // Pauses a random node and poll the network for a while. Returns the paused state.
 fn pause_node_and_poll(env: &Environment, nodes: &mut Vec<TestNode>) -> PausedState {
     let index = env.new_rng().gen_range(0, nodes.len());
-    let id = *nodes[index].id();
+    let name = *nodes[index].name();
     let state = nodes.remove(index).inner.pause().unwrap();
 
     // Poll the network for a while and verify the other nodes do not see the node as going offline.
@@ -538,8 +542,8 @@ fn pause_node_and_poll(env: &Environment, nodes: &mut Vec<TestNode>) -> PausedSt
 
     assert!(nodes
         .iter()
-        .filter(|node| node.our_prefix().matches(id.name()) && node.inner.is_elder())
-        .all(|node| node.inner.is_peer_our_member(&id)));
+        .filter(|node| node.our_prefix().matches(&name) && node.inner.is_elder())
+        .all(|node| node.inner.is_peer_our_member(&name)));
 
     state
 }

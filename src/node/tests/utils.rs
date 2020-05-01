@@ -16,7 +16,7 @@
 use crate::{
     consensus::GenesisPrefixInfo,
     error::Result,
-    id::{FullId, P2pNode, PublicId},
+    id::{FullId, P2pNode},
     messages::{Message, MessageWithBytes},
     node::Node,
     rng::MainRng,
@@ -57,7 +57,7 @@ pub fn create_genesis_prefix_info(
     public_keys: bls::PublicKeySet,
     parsec_version: u64,
 ) -> GenesisPrefixInfo {
-    let ages = elder_age_counters(elders_info.elder_ids());
+    let ages = elder_age_counters(elders_info.elders.keys());
 
     GenesisPrefixInfo {
         elders_info,
@@ -68,13 +68,13 @@ pub fn create_genesis_prefix_info(
     }
 }
 
-pub fn elder_age_counters<'a, I>(elders: I) -> BTreeMap<PublicId, AgeCounter>
+pub fn elder_age_counters<'a, I>(elders: I) -> BTreeMap<XorName, AgeCounter>
 where
-    I: IntoIterator<Item = &'a PublicId>,
+    I: IntoIterator<Item = &'a XorName>,
 {
     elders
         .into_iter()
-        .map(|id| (*id, MIN_AGE_COUNTER))
+        .map(|name| (*name, MIN_AGE_COUNTER))
         .collect()
 }
 

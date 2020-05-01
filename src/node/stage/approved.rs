@@ -79,11 +79,10 @@ pub struct Approved {
 impl Approved {
     // Create the approved stage for the first node in the network.
     pub fn first(core: &mut Core) -> Result<Self> {
-        let public_id = *core.full_id.public_id();
         let connection_info = core.transport.our_connection_info()?;
-        let p2p_node = P2pNode::new(public_id, connection_info);
+        let p2p_node = P2pNode::new(*core.id(), connection_info);
         let mut ages = BTreeMap::new();
-        let _ = ages.insert(public_id, MIN_AGE_COUNTER);
+        let _ = ages.insert(*p2p_node.name(), MIN_AGE_COUNTER);
         let first_dkg_result = consensus::generate_first_dkg_result(&mut core.rng);
         let genesis_prefix_info = GenesisPrefixInfo {
             elders_info: create_first_elders_info(p2p_node),
@@ -237,7 +236,7 @@ impl Approved {
             return;
         };
 
-        if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(&pub_id) {
+        if self.is_our_elder(core.id()) && self.shared_state.our_members.contains(pub_id.name()) {
             self.vote_for_event(AccumulatingEvent::Offline(pub_id));
         }
     }
@@ -440,7 +439,7 @@ impl Approved {
         msg: AccumulatingMessage,
         src: PublicId,
     ) -> Result<()> {
-        if !self.shared_state.is_peer_elder(&src) {
+        if !self.shared_state.is_peer_elder(src.name()) {
             debug!(
                 "Received message signature from not known elder (still use it) {}, {:?}",
                 src, msg
@@ -519,7 +518,7 @@ impl Approved {
             return;
         }
 
-        if self.shared_state.our_members.contains(&pub_id) {
+        if self.shared_state.our_members.contains(pub_id.name()) {
             debug!(
                 "Ignoring JoinRequest from {} - already member of our section.",
                 pub_id
@@ -579,11 +578,7 @@ impl Approved {
     ) {
         trace!("Received {:?} from {:?}", payload, p2p_node);
 
-        if self
-            .shared_state
-            .our_members
-            .is_active(p2p_node.public_id())
-        {
+        if self.shared_state.our_members.is_active(p2p_node.name()) {
             self.members_knowledge
                 .entry(*p2p_node.name())
                 .or_default()
@@ -1931,7 +1926,7 @@ impl Approved {
         for p2p_node in &neighbour_elders_removed.0 {
             // The peer might have been relocated from a neighbour to us - in that case do not
             // disconnect from them.
-            if self.shared_state.is_known_peer(p2p_node.public_id()) {
+            if self.shared_state.is_known_peer(p2p_node.name()) {
                 continue;
             }
 

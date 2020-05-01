@@ -23,8 +23,7 @@ use routing::{
     quorum_count,
     rng::MainRng,
     test_consts::{UNRESPONSIVE_THRESHOLD, UNRESPONSIVE_WINDOW},
-    DstLocation, FullId, NetworkParams, Prefix, PublicId, SrcLocation, TransportConfig, XorName,
-    Xorable,
+    DstLocation, FullId, NetworkParams, Prefix, SrcLocation, TransportConfig, XorName, Xorable,
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -237,7 +236,7 @@ fn churn(params: Params) {
     for i in 0..params.churn_max_iterations {
         warn!("Iteration {}/{}", i, params.churn_max_iterations);
 
-        let (added_indices, dropped_ids) = if rng.gen_range(0.0, 1.0) < params.churn_probability {
+        let (added_indices, dropped_names) = if rng.gen_range(0.0, 1.0) < params.churn_probability {
             random_churn(
                 &mut rng,
                 &env,
@@ -257,7 +256,7 @@ fn churn(params: Params) {
             &mut nodes,
             params.message_schedule,
             added_indices,
-            dropped_ids,
+            dropped_names,
         );
 
         warn!(
@@ -317,10 +316,10 @@ fn drop_random_nodes<R: Rng>(
     rng: &mut R,
     nodes: &mut Vec<TestNode>,
     drop_probability: f64,
-) -> HashSet<PublicId> {
+) -> HashSet<XorName> {
     let mut sections = count_nodes_by_section(nodes);
     let mut dropped_indices = Vec::new();
-    let mut dropped_ids = HashSet::new();
+    let mut dropped_names = HashSet::new();
 
     for (index, node) in nodes.iter().enumerate() {
         if rng.gen_range(0.0, 1.0) >= drop_probability {
@@ -351,10 +350,10 @@ fn drop_random_nodes<R: Rng>(
     // Must drop from the end, so the indices are not invalidated.
     dropped_indices.sort();
     for index in dropped_indices.into_iter().rev() {
-        assert!(dropped_ids.insert(*nodes.remove(index).id()));
+        assert!(dropped_names.insert(*nodes.remove(index).name()));
     }
 
-    dropped_ids
+    dropped_names
 }
 
 #[derive(Default)]
@@ -448,7 +447,7 @@ fn shuffle_nodes<R: Rng>(rng: &mut R, nodes: &mut [TestNode]) {
 }
 
 // Churns the given network randomly. Returns any newly added indices and the
-// dropped node ids.
+// dropped node names.
 fn random_churn(
     rng: &mut MainRng,
     env: &Environment,
@@ -457,12 +456,12 @@ fn random_churn(
     drop_probability: f64,
     min_section_num: usize,
     max_section_num: usize,
-) -> (HashSet<usize>, HashSet<PublicId>) {
+) -> (HashSet<usize>, HashSet<XorName>) {
     assert!(min_section_num <= max_section_num);
 
     let section_num = count_sections(nodes);
 
-    let dropped_ids = if section_num > min_section_num {
+    let dropped_names = if section_num > min_section_num {
         drop_random_nodes(rng, nodes, drop_probability)
     } else {
         Default::default()
@@ -474,7 +473,7 @@ fn random_churn(
         Default::default()
     };
 
-    (added_indices, dropped_ids)
+    (added_indices, dropped_names)
 }
 
 fn progress_and_verify<R: Rng>(
@@ -483,16 +482,16 @@ fn progress_and_verify<R: Rng>(
     nodes: &mut [TestNode],
     message_schedule: MessageSchedule,
     added_indices: HashSet<usize>,
-    dropped_ids: HashSet<PublicId>,
+    dropped_names: HashSet<XorName>,
 ) {
     let expectations = match message_schedule {
         MessageSchedule::AfterChurn => {
-            poll_until_churn_complete(env, nodes, added_indices, dropped_ids);
+            poll_until_churn_complete(env, nodes, added_indices, dropped_names);
             setup_expectations(rng, nodes, env.elder_size())
         }
         MessageSchedule::DuringChurn => {
             let expectations = setup_expectations(rng, nodes, env.elder_size());
-            poll_until_churn_complete(env, nodes, added_indices, dropped_ids);
+            poll_until_churn_complete(env, nodes, added_indices, dropped_names);
             expectations
         }
     };
@@ -508,7 +507,7 @@ fn poll_until_churn_complete(
     env: &Environment,
     nodes: &mut [TestNode],
     mut added_indices: HashSet<usize>,
-    mut dropped_ids: HashSet<PublicId>,
+    mut dropped_names: HashSet<XorName>,
 ) {
     trace!(
         "Add {{{}}}, drop {{{}}}",
@@ -516,14 +515,14 @@ fn poll_until_churn_complete(
             .iter()
             .map(|index| nodes[*index].name())
             .format(", "),
-        dropped_ids.iter().map(|id| id.name()).format(", ")
+        dropped_names.iter().format(", ")
     );
 
     poll_until(env, nodes, |nodes| {
         added_indices.retain(|&index| !node_joined(nodes, index));
-        dropped_ids.retain(|id| !node_left(nodes, id));
+        dropped_names.retain(|name| !node_left(nodes, name));
 
-        added_indices.is_empty() && dropped_ids.is_empty()
+        added_indices.is_empty() && dropped_names.is_empty()
     })
 }
 

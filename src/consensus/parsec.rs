@@ -493,8 +493,9 @@ mod tests {
             .collect();
         let elders_info = EldersInfo::new(members, Prefix::<XorName>::default(), version);
         let ages = elders_info
-            .elder_ids()
-            .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
+            .elders
+            .keys()
+            .map(|name| (*name, MIN_AGE_COUNTER))
             .collect();
         GenesisPrefixInfo {
             elders_info,
