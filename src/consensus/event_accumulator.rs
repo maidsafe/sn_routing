@@ -189,11 +189,12 @@ impl EventAccumulator {
             .add_expectation(event, non_voted, &all_voters);
     }
 
-    pub fn check_vote_status<'a>(
+    pub fn detect_unresponsive<'a>(
         &self,
-        members: impl Iterator<Item = &'a PublicId>,
+        members: impl IntoIterator<Item = &'a PublicId>,
     ) -> BTreeSet<PublicId> {
         members
+            .into_iter()
             .filter(|peer_id| self.vote_statuses.is_unresponsive(peer_id))
             .cloned()
             .collect()
@@ -653,7 +654,7 @@ mod test {
         }
 
         let expected: BTreeSet<_> = iter::once(unresponsive_node).collect();
-        let detected = acc.check_vote_status(members.iter());
+        let detected = acc.detect_unresponsive(&members);
         assert_eq!(detected, expected);
     }
 }

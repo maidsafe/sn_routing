@@ -268,11 +268,11 @@ impl ConsensusEngine {
         self.parsec_map.init(rng, full_id, genesis_prefix_info)
     }
 
-    pub fn check_vote_status<'a>(
+    pub fn detect_unresponsive<'a>(
         &self,
-        members: impl Iterator<Item = &'a PublicId>,
+        members: impl IntoIterator<Item = &'a PublicId>,
     ) -> BTreeSet<PublicId> {
-        self.accumulator.check_vote_status(members)
+        self.accumulator.detect_unresponsive(members)
     }
 
     pub fn vote_for(&mut self, event: NetworkEvent) {

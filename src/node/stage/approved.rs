@@ -744,7 +744,7 @@ impl Approved {
     // Polls and processes all accumulated events.
     fn poll_all(&mut self, core: &mut Core) -> Result<()> {
         while self.poll_one(core)? {}
-        self.check_voting_status();
+        self.vote_for_remove_unresponsive_peers();
 
         Ok(())
     }
@@ -1504,10 +1504,10 @@ impl Approved {
         self.genesis_prefix_info = genesis_prefix_info;
     }
 
-    // Checking members vote status and vote to remove those non-resposive nodes.
-    fn check_voting_status(&mut self) {
+    // Detect non-responsive peers and vote them out.
+    fn vote_for_remove_unresponsive_peers(&mut self) {
         let members = self.shared_state.our_info().member_ids();
-        let unresponsive_nodes = self.consensus_engine.check_vote_status(members);
+        let unresponsive_nodes = self.consensus_engine.detect_unresponsive(members);
         for pub_id in &unresponsive_nodes {
             info!("Voting for unresponsive node {:?}", pub_id);
             self.consensus_engine
