@@ -55,7 +55,7 @@ impl Env {
         let network = Network::new();
 
         let (elders_info, full_ids) =
-            test_utils::create_elders_info(&mut rng, &network, sec_size, None);
+            test_utils::create_elders_info(&mut rng, &network, sec_size, 0);
         let secret_key_set = generate_bls_threshold_secret_key(&mut rng, full_ids.len());
         let genesis_prefix_info = test_utils::create_genesis_prefix_info(
             elders_info.clone(),
@@ -282,7 +282,7 @@ impl Env {
                 .map(|node| (*node.public_id().name(), node.clone()))
                 .collect(),
             *self.elders_info.prefix(),
-            Some(&self.elders_info),
+            self.elders_info.version() + 1,
         )
         .unwrap();
 
@@ -294,7 +294,7 @@ impl Env {
         let new_elder_info = EldersInfo::new(
             self.elders_info.elder_map().clone(),
             *old_info.new_elders_info.prefix(),
-            Some(&old_info.new_elders_info),
+            old_info.new_elders_info.version() + 1,
         )
         .unwrap();
         self.updated_other_ids(new_elder_info)
@@ -329,7 +329,7 @@ impl Env {
         let new_elders_info = EldersInfo::new(
             new_member_map,
             *self.elders_info.prefix(),
-            Some(&self.elders_info),
+            self.elders_info.version() + 1,
         )
         .unwrap();
         self.updated_other_ids(new_elders_info)

@@ -221,7 +221,7 @@ impl SharedState {
             let new_info = EldersInfo::new(
                 expected_elders_map,
                 *self.our_info().prefix(),
-                Some(self.our_info()),
+                self.our_info().version() + 1,
             )?;
 
             if self.our_info().num_elders() < network_params.elder_size
@@ -347,8 +347,9 @@ impl SharedState {
             .our_members
             .elder_candidates_matching_prefix(&other_prefix, network_params.elder_size);
 
-        let our_info = EldersInfo::new(our_elders, our_prefix, Some(self.our_info()))?;
-        let other_info = EldersInfo::new(other_elders, other_prefix, Some(self.our_info()))?;
+        let our_info = EldersInfo::new(our_elders, our_prefix, self.our_info().version() + 1)?;
+        let other_info =
+            EldersInfo::new(other_elders, other_prefix, self.our_info().version() + 1)?;
 
         Ok(Some((our_info, other_info)))
     }
@@ -490,11 +491,11 @@ mod test {
         (0..sec_size).for_each(|index| {
             let pub_id = *FullId::within_range(rng, &prefix.range_inclusive()).public_id();
             let _ = members.insert(
-                pub_id,
+                *pub_id.name(),
                 P2pNode::new(pub_id, ([127, 0, 0, 1], 9000 + index).into()),
             );
         });
-        EldersInfo::new_for_test(members, prefix, version).unwrap()
+        EldersInfo::new(members, prefix, version).unwrap()
     }
 
     // updates: our section prefix followed by the prefixes of the sections we update the keys for,
@@ -707,7 +708,7 @@ mod test {
                     let _ = members.insert(*pub_id.name(), P2pNode::new(pub_id, peer_addr));
                     let _ = full_ids.insert(*some_id.public_id(), some_id);
                 }
-                (EldersInfo::new(members, prefix, None).unwrap(), full_ids)
+                (EldersInfo::new(members, prefix, 0).unwrap(), full_ids)
             }
             SecInfoGen::Add(info) => {
                 let mut members = info.elder_map().clone();
@@ -718,14 +719,14 @@ mod test {
                 let mut full_ids = HashMap::new();
                 let _ = full_ids.insert(pub_id, some_id);
                 (
-                    EldersInfo::new(members, *info.prefix(), Some(info)).unwrap(),
+                    EldersInfo::new(members, *info.prefix(), info.version() + 1).unwrap(),
                     full_ids,
                 )
             }
             SecInfoGen::Remove(info) => {
                 let elders = info.elder_map().clone();
                 (
-                    EldersInfo::new(elders, *info.prefix(), Some(info)).unwrap(),
+                    EldersInfo::new(elders, *info.prefix(), info.version() + 1).unwrap(),
                     Default::default(),
                 )
             }

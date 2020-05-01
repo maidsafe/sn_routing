@@ -108,7 +108,7 @@ mod tests {
             let other_ids = secret_ids.values().zip(secret_bls_ids.values()).skip(1);
 
             let prefix = Prefix::new(0, *unwrap!(all_nodes.keys().next()));
-            let elders_info = unwrap!(EldersInfo::new(all_nodes.clone(), prefix, None));
+            let elders_info = unwrap!(EldersInfo::new(all_nodes.clone(), prefix, 0));
             let key_info = SectionKeyInfo::from_elders_info(&elders_info, pk_set.public_key());
             let proof = SectionProofSlice::from_genesis(key_info);
 

@@ -9,8 +9,6 @@
 use crate::{crypto::signing::Signature, id::PublicId};
 #[cfg(test)]
 use crate::{error::Result, id::FullId};
-#[cfg(any(test, feature = "mock_base"))]
-use bincode::serialize;
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
@@ -38,9 +36,8 @@ impl Proof {
 
     /// Create a new proof for `payload`
     #[cfg(test)]
-    #[allow(clippy::new_ret_no_self)]
     pub fn new<S: Serialize>(full_id: &FullId, payload: &S) -> Result<Self> {
-        let sig = full_id.sign(&serialize(&payload)?[..]);
+        let sig = full_id.sign(&bincode::serialize(&payload)?[..]);
         Ok(Self {
             pub_id: *full_id.public_id(),
             sig,
@@ -48,9 +45,9 @@ impl Proof {
     }
 
     /// Validates `payload` against this `Proof`'s `key` and `sig`.
-    #[cfg(any(test, feature = "mock_base"))]
+    #[cfg(test)]
     pub fn validate_signature<S: Serialize>(&self, payload: &S) -> bool {
-        match serialize(payload) {
+        match bincode::serialize(payload) {
             Ok(data) => self.pub_id.verify(&data[..], &self.sig),
             _ => false,
         }
@@ -81,36 +78,9 @@ impl ProofSet {
         self.sigs.contains_key(id)
     }
 
-    /// Validates `payload` against all signatures.
-    #[cfg(feature = "mock_base")]
-    pub fn validate_signatures<S: Serialize>(&self, payload: &S) -> bool {
-        match serialize(payload) {
-            Ok(data) => self.validate_signatures_for_bytes(data.as_slice()),
-            _ => false,
-        }
-    }
-
-    /// Validates `data` against all signatures.
-    #[cfg(feature = "mock_base")]
-    fn validate_signatures_for_bytes(&self, data: &[u8]) -> bool {
-        self.sigs.iter().all(|(id, sig)| id.verify(data, sig))
-    }
-
     /// Returns an iterator of all public IDs that have signed.
     pub fn ids(&self) -> impl Iterator<Item = &PublicId> {
         self.sigs.keys()
-    }
-
-    /// Removes the node's signature. Returns `false` if it already didn't exist.
-    #[cfg(feature = "mock_base")]
-    pub fn remove(&mut self, id: &PublicId) -> bool {
-        self.sigs.remove(id).is_some()
-    }
-
-    /// Merges the other proof set into this one.
-    #[cfg(feature = "mock_base")]
-    pub fn merge(&mut self, other: Self) {
-        self.sigs.extend(other.sigs);
     }
 }
 

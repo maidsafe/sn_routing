@@ -30,7 +30,7 @@ pub fn create_elders_info(
     rng: &mut MainRng,
     network: &Network,
     elder_size: usize,
-    prev: Option<&EldersInfo>,
+    version: u64,
 ) -> (EldersInfo, BTreeMap<XorName, FullId>) {
     let full_ids: BTreeMap<_, _> = (0..elder_size)
         .map(|_| {
@@ -48,7 +48,7 @@ pub fn create_elders_info(
         })
         .collect();
 
-    let elders_info = EldersInfo::new(members_map, Prefix::default(), prev).unwrap();
+    let elders_info = EldersInfo::new(members_map, Prefix::default(), version).unwrap();
     (elders_info, full_ids)
 }
 

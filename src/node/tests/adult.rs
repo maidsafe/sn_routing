@@ -16,7 +16,7 @@ use crate::{
     network_params::NetworkParams,
     node::{Node, NodeConfig},
     rng::{self, MainRng},
-    section::{EldersInfo, SectionKeyShare, SectionKeysProvider, SharedState},
+    section::{SectionKeyShare, SectionKeysProvider, SharedState},
     xor_space::{Prefix, XorName},
 };
 use mock_quic_p2p::Network;
@@ -40,7 +40,7 @@ impl Env {
         let mut rng = rng::new();
         let network = Network::new();
 
-        let elders = create_elders(&mut rng, &network, None);
+        let elders = create_elders(&mut rng, &network, 0);
 
         let public_key_set = elders[0].section_keys_provider.public_key_set().clone();
         let elders_info = elders[0].state.our_info().clone();
@@ -76,8 +76,8 @@ impl Env {
     }
 
     fn perform_elders_change(&mut self) {
-        let prev_elders_info = self.elders[0].state.our_info();
-        self.elders = create_elders(&mut self.rng, &self.network, Some(prev_elders_info));
+        let current_version = self.elders[0].state.our_info().version();
+        self.elders = create_elders(&mut self.rng, &self.network, current_version + 1);
     }
 
     fn handle_genesis_update(&mut self, genesis_prefix_info: GenesisPrefixInfo) -> Result<()> {
@@ -103,15 +103,10 @@ struct Elder {
     full_id: FullId,
 }
 
-fn create_elders(
-    rng: &mut MainRng,
-    network: &Network,
-    prev_info: Option<&EldersInfo>,
-) -> Vec<Elder> {
+fn create_elders(rng: &mut MainRng, network: &Network, version: u64) -> Vec<Elder> {
     let secret_key_set = generate_bls_threshold_secret_key(rng, ELDER_SIZE);
     let public_key_set = secret_key_set.public_keys();
-    let (elders_info, full_ids) =
-        test_utils::create_elders_info(rng, network, ELDER_SIZE, prev_info);
+    let (elders_info, full_ids) = test_utils::create_elders_info(rng, network, ELDER_SIZE, version);
     let genesis_prefix_info =
         test_utils::create_genesis_prefix_info(elders_info, public_key_set, 0);
 

@@ -377,7 +377,8 @@ fn create(rng: &mut MainRng, full_id: FullId, genesis_prefix_info: &GenesisPrefi
     #[cfg(feature = "mock")]
     let hash = {
         let fields = (
-            genesis_prefix_info.elders_info.hash(),
+            genesis_prefix_info.elders_info.prefix(),
+            genesis_prefix_info.elders_info.version(),
             genesis_prefix_info.parsec_version,
         );
         crypto::sha3_256(&unwrap!(bincode::serialize(&fields)))
@@ -482,13 +483,14 @@ mod tests {
         let socket_addr: SocketAddr = ([127, 0, 0, 1], 9999).into();
         let members = full_ids
             .iter()
-            .map(|id| (*id.public_id(), P2pNode::new(*id.public_id(), socket_addr)))
+            .map(|id| {
+                (
+                    *id.public_id().name(),
+                    P2pNode::new(*id.public_id(), socket_addr),
+                )
+            })
             .collect();
-        let elders_info = unwrap!(EldersInfo::new_for_test(
-            members,
-            Prefix::<XorName>::default(),
-            version
-        ));
+        let elders_info = EldersInfo::new(members, Prefix::<XorName>::default(), version).unwrap();
         let ages = elders_info
             .elder_ids()
             .map(|pub_id| (*pub_id, MIN_AGE_COUNTER))
